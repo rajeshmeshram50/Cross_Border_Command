@@ -189,6 +189,45 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
   }, [previewUrl]);
 
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+  /* ── Overlap avoidance ──────────────────────────────────────────────
+     Two signature boxes sharing the same spot is not a cosmetic problem: the
+     lower one cannot be grabbed any more, and Zoho receives two signature
+     fields stacked on each other, so the signer sees one box where two were
+     meant. Boxes could be dragged straight on top of one another because the
+     drag only clamped to the page edges. */
+  const GAP = 8;
+
+
+  const hits = (a: Box, b: Box) =>
+    a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+
+  /** Nearest free spot for `box`, walking UP the sheet (the direction the
+   *  signature strip already cascades), then starting a new column to the
+   *  right when a column is full. Returns the original position when the page
+   *  genuinely has no room, so a box is never lost. */
+  const freeSpot = (box: Box, others: Box[]): { x: number; y: number } => {
+    if (!others.some(o => hits(box, o))) return { x: box.x, y: box.y };
+    const stepY = box.height + GAP;
+    const stepX = box.width + GAP;
+    for (let col = 0; col < 6; col++) {
+      const x = clamp(box.x + col * stepX, 0, A4_W - box.width);
+      for (let row = 0; row < 40; row++) {
+        const y = box.y - row * stepY;
+        if (y < 0) break;
+        const cand = { ...box, x, y };
+        if (!others.some(o => hits(cand, o))) return { x, y };
+      }
+      // Column exhausted upward — try the same column downward before moving right.
+      for (let row = 1; row < 40; row++) {
+        const y = box.y + row * stepY;
+        if (y > A4_H - box.height) break;
+        const cand = { ...box, x, y };
+        if (!others.some(o => hits(cand, o))) return { x, y };
+      }
+    }
+    return { x: box.x, y: box.y };
+  };
   const setActive = (patch: Partial<Box>, target?: BoxTarget) => setBoxes(b => {
     const key = target?.key ?? activeKey;
     const arr = (b[key] ?? []).slice();
@@ -214,12 +253,24 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
        start a fresh column to the right once one runs off the top of the
        sheet — otherwise every further box clamps onto y=0 and stacks there. */
     const perCol = Math.max(1, Math.floor(680 / 70) + 1);
-    arr.push({
+    const wanted = {
       ...last,
       page: viewPage,
       x: clamp(60 + Math.floor(onPage / perCol) * (width + 20), 0, A4_W - width),
       y: clamp(720 - (onPage % perCol) * 70, 0, A4_H - height),
-    });
+    };
+    /* The cascade above only counted THIS signer's boxes, so with more than
+       one party the new box could still land on someone else's. Settle it
+       against every box on the page. */
+    /* Read the occupied spots off `b` (the state this updater was handed),
+       not the render's closure, so a rapid second click still sees the box
+       the first one added. */
+    const taken: Box[] = [];
+    for (const [k, l] of Object.entries(b)) {
+      (l ?? []).forEach(x => { if ((x.page ?? 0) === viewPage) taken.push(x); });
+      void k;
+    }
+    arr.push({ ...wanted, ...freeSpot(wanted, taken) });
     setActiveBoxIdx(arr.length - 1);
     return { ...b, [activeKey]: arr };
   });
@@ -260,7 +311,42 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
     if (d.mode === 'move') setActive({ x: clamp(d.init.x + dx, 0, A4_W - d.init.width), y: clamp(d.init.y + dy, 0, A4_H - d.init.height) }, d.target);
     else setActive({ width: clamp(d.init.width + dx, 40, A4_W - d.init.x), height: clamp(d.init.height + dy, 24, A4_H - d.init.y) }, d.target);
   };
-  const onUp = () => { dragRef.current = null; window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
+  /* Settle the box the user just let go of.
+     The drag itself stays completely free - fighting the pointer mid-gesture
+     feels broken - but a box dropped on top of another is nudged to the
+     nearest clear spot on release. Overlapping boxes hid each other (the one
+     underneath could no longer be grabbed) and reached Zoho as two signature
+     fields in the same place. */
+  const settleDrag = (d: { mode: 'move' | 'resize'; target?: BoxTarget }) => {
+    const key = d.target?.key ?? activeKey;
+    const idx = d.target?.boxIdx ?? activeBoxIdx;
+    setBoxes(prev => {
+      const list = prev[key] ?? [];
+      const box = list[idx];
+      if (!box) return prev;
+      const page = box.page ?? 0;
+      const others: Box[] = [];
+      for (const [k, l] of Object.entries(prev)) {
+        (l ?? []).forEach((b, i) => {
+          if (k === key && i === idx) return;
+          if ((b.page ?? 0) === page) others.push(b);
+        });
+      }
+      if (!others.some(o => hits(box, o))) return prev;
+      const spot = freeSpot(box, others);
+      if (spot.x === box.x && spot.y === box.y) return prev;
+      const arr = list.slice();
+      arr[idx] = { ...box, ...spot };
+      return { ...prev, [key]: arr };
+    });
+  };
+  const onUp = () => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    if (d) settleDrag(d);
+  };
 
   const send = async () => {
     /* Second line of defence behind the disabled button. A double Zoho request

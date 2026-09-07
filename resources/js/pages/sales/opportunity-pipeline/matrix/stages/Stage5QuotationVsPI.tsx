@@ -235,7 +235,19 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
      * The 20s background poll keeps sigLoaded=true, so it never re-flashes. */
     setSigLoaded(false);
     setSigByRow({});
-    void fetchSignatures(true);
+    /* Two-step load, so the row is locked for a moment instead of ~10 seconds.
+     *
+     * A single sync=1 fetch round-trips Zoho for every in-progress request, and
+     * the whole row sat on "Checking..." for as long as that took. The first
+     * call now reads our own database (fast) and unlocks the row; the sync call
+     * follows and reconciles with Zoho.
+     *
+     * Safe in the one direction that matters: our database can only be BEHIND
+     * Zoho, never ahead - a request row is written before Zoho is called. So
+     * the brief pre-sync state can under-report progress ("Sent" for a document
+     * Zoho has since completed), which keeps Edit locked and Send hidden. It
+     * can never show a document as free to send or edit when it is not. */
+    void fetchSignatures(false).then(() => fetchSignatures(true));
     const t = setInterval(() => void fetchSignatures(true), 20000);
     return () => clearInterval(t);
   }, [leadId, docType, fetchSignatures]);
@@ -505,6 +517,16 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   const rows = docType === 'quotation' ? quotations : pis;
   const anyActing = actingId !== null;
 
+  /* Nothing in a row is actionable until its signature status is known.
+   *
+   * Send and Edit already waited on this, but Convert to PI, Email and the
+   * More menu did not - so for the seconds the Zoho-sync fetch takes, the row
+   * read as half locked and half live, and a user could still act on a
+   * document whose real state had not arrived yet. The row now holds still as
+   * one unit until the status lands, which is what it looks like it is doing
+   * while the Status cell says "Checking...". */
+  const rowBusy = anyActing || !sigLoaded;
+
   /* Email rate-limit cooldown — server caps sends at 3 per doc per minute
    * (429). Keep that row's Email button disabled-looking until it frees.
    * Keyed by `${kind}:${id}` → epoch-ms; a 1s ticker re-renders the countdown. */
@@ -740,9 +762,23 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
           </div>
         </div>
 
-        {/* Document table */}
-        <div className="s5-tbl-card smd-fade-in" key={docType}>
-          <div className="s5-tbl-wrap">
+        {/* Document table.
+            While the signature status is still loading the WHOLE table is
+            sealed, not just the per-row buttons: a veil covers it, swallows
+            every click, and `inert` takes the rows out of the tab order too.
+            Scrolling is frozen with it - a half-usable table invited exactly
+            the actions this is here to prevent (QA #232). The two-step load
+            keeps this to a moment rather than the old Zoho round-trip. */}
+        <div className="s5-tbl-card smd-fade-in" key={docType} style={{ position: 'relative' }}>
+          {!sigLoaded && (
+            <div className="s5-tbl-veil" aria-live="polite">
+              {/* currentColor spinner, not .s5-sig-spin — that one is white for
+                  the purple button and would be invisible on this light veil. */}
+              <span className="s5-icn-spin" />
+              <span>Checking signature status…</span>
+            </div>
+          )}
+          <div className="s5-tbl-wrap" inert={!sigLoaded} style={!sigLoaded ? { overflow: 'hidden' } : undefined}>
             <table className="s5-tbl">
               <thead>
                 <tr>
@@ -870,7 +906,10 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                         </td>
                       )}
                       <td>
-                        <div className="s5-acts">
+                        {/* Dimmed + click-through disabled as one block while the
+                            signature status is still loading, so the row visibly
+                            holds still instead of offering half-live actions. */}
+                        <div className="s5-acts" style={!sigLoaded ? { opacity: .55, cursor: 'wait' } : undefined}>
                           {docType === 'quotation' && (
                             terminal ? (
                               <span className="s5-converted-chip">{titleCase(r.status)}</span>
@@ -879,7 +918,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                                 type="button" className="s5-convert2"
                                 title={piLocked ? 'A Proforma Invoice already exists — only one PI per lead' : 'Convert to PI'}
                                 onClick={() => { if (loading || piLocked) return; openConvert(r as QuotationRow); }}
-                                disabled={anyActing || piLocked || loading}
+                                disabled={rowBusy || piLocked || loading}
                                 style={piLocked ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
                               >
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -985,12 +1024,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               stays available after every send (no one-time hide)
                               so the document can be re-emailed to the customer
                               as many times as needed; each send fires a toast. */}
-                          <Tooltip label={cooldownLeft(docType, r.id) > 0 ? `Please wait ${cooldownLeft(docType, r.id)}s (max 3 per minute)` : 'Send via Email'}>
+                          <Tooltip label={!sigLoaded ? 'Checking signature status…' : cooldownLeft(docType, r.id) > 0 ? `Please wait ${cooldownLeft(docType, r.id)}s (max 3 per minute)` : 'Send via Email'}>
                             <button type="button"
                               className={`s5-icn s5-icn-mail${cooldownLeft(docType, r.id) > 0 ? ' s5-icn-cooling' : ''}`}
                               // Also blocked while any row action (e.g. opening a
                               // PDF) is in flight, so no second action fires mid-view.
-                              onClick={() => void onEmail(docType, r.id, r.code)} disabled={anyActing || isEmailing(docType, r.id)}>
+                              onClick={() => void onEmail(docType, r.id, r.code)} disabled={rowBusy || isEmailing(docType, r.id)}>
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
                             </button>
                           </Tooltip>
@@ -1038,7 +1077,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               </Tooltip>
                             );
                           })()}
-                          <Tooltip label="More Actions">
+                          <Tooltip label={!sigLoaded ? 'Checking signature status…' : 'More Actions'}>
                             <button
                               type="button" className="s5-icn s5-icn-more"
                               onClick={(e) => {
@@ -1048,7 +1087,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                                 const el = e.currentTarget as HTMLButtonElement;
                                 setMoreMenu(prev => prev && prev.id === r.id && prev.kind === docType ? null : { kind: docType, id: r.id, anchor: el });
                               }}
-                              disabled={anyActing}
+                              disabled={rowBusy}
                             >
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/></svg>
                             </button>
@@ -1711,6 +1750,16 @@ const STAGE5_CSS = `
 /* ─── Table card ─── */
 .s5-tbl-card { border: 1.5px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.06); background: #fff; }
 .s5-tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* Sits over the whole table while the signature status loads. It is the
+   element that receives the clicks, so nothing underneath can be reached. */
+.s5-tbl-veil {
+  position: absolute; inset: 0; z-index: 6;
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  background: rgba(255,255,255,.72); backdrop-filter: blur(1.5px);
+  border-radius: inherit; cursor: wait;
+  font-size: 11.5px; font-weight: 700; color: #64748B; letter-spacing: .2px;
+}
+[data-bs-theme="dark"] .s5-tbl-veil { background: rgba(15,23,42,.72); color: #94A3B8; }
 /* Plain neutral-grey scrollbar (not the themed violet one) — matches Stage 3/4. */
 .s5-tbl-wrap::-webkit-scrollbar { width: 9px; height: 9px; }
 .s5-tbl-wrap::-webkit-scrollbar-track { background: transparent; }

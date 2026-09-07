@@ -1415,7 +1415,13 @@ class SalesLeadController extends Controller
         if (!$user) abort(401);
 
         $leadQ = Lead::query();
-        $this->applyScope($leadQ, $user);
+        /* Read path: widened like the list and detail endpoints.
+           A lead transferred away is still VISIBLE to its former owner, so
+           the page opens -- but this query used the owner-only filter and
+           findOrFail then 404'd, which surfaced as "Could not load ..." on a
+           page the user was allowed to read. Widening only affects what is
+           SEEN; every write path below keeps the strict filter. */
+        $this->applyScope($leadQ, $user, null, true);
         $lead = $leadQ->findOrFail($leadId);
 
         $rows = LeadProduct::with([
@@ -1680,7 +1686,13 @@ class SalesLeadController extends Controller
         if (!$user) abort(401);
 
         $leadQ = Lead::query();
-        $this->applyScope($leadQ, $user);
+        /* Read path: widened like the list and detail endpoints.
+           A lead transferred away is still VISIBLE to its former owner, so
+           the page opens -- but this query used the owner-only filter and
+           findOrFail then 404'd, which surfaced as "Could not load ..." on a
+           page the user was allowed to read. Widening only affects what is
+           SEEN; every write path below keeps the strict filter. */
+        $this->applyScope($leadQ, $user, null, true);
         $lead = $leadQ->findOrFail($leadId);
 
         $rows = LeadProductSharedPrice::with([
@@ -1720,7 +1732,13 @@ class SalesLeadController extends Controller
         if (!$user) abort(401);
 
         $leadQ = Lead::query();
-        $this->applyScope($leadQ, $user);
+        /* Read path: widened like the list and detail endpoints.
+           A lead transferred away is still VISIBLE to its former owner, so
+           the page opens -- but this query used the owner-only filter and
+           findOrFail then 404'd, which surfaced as "Could not load ..." on a
+           page the user was allowed to read. Widening only affects what is
+           SEEN; every write path below keeps the strict filter. */
+        $this->applyScope($leadQ, $user, null, true);
         $lead = $leadQ->findOrFail($leadId);
 
         $product = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
@@ -2158,7 +2176,13 @@ class SalesLeadController extends Controller
         if (!$user) abort(401);
 
         $leadQ = Lead::query();
-        $this->applyScope($leadQ, $user);
+        /* Read path: widened like the list and detail endpoints.
+           A lead transferred away is still VISIBLE to its former owner, so
+           the page opens -- but this query used the owner-only filter and
+           findOrFail then 404'd, which surfaced as "Could not load ..." on a
+           page the user was allowed to read. Widening only affects what is
+           SEEN; every write path below keeps the strict filter. */
+        $this->applyScope($leadQ, $user, null, true);
         $lead = $leadQ->findOrFail($leadId);
 
         $rows = LeadAcknowledgement::where('lead_id', $lead->id)

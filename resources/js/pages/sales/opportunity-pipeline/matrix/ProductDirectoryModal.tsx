@@ -646,7 +646,11 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                 {!loading && rows.length === 0 && !draftOpen && (
                   <tr>
                     <td colSpan={8} className="pdm-status">
-                      No products mapped yet — click <strong>Map Product</strong> to add the first.
+                      {/* A read-only viewer has no Map Product button (it is hidden
+                          above), so pointing them at it read as a broken screen. */}
+                      {readOnly
+                        ? <>No products are mapped to this opportunity.</>
+                        : <>No products mapped yet — click <strong>Map Product</strong> to add the first.</>}
                     </td>
                   </tr>
                 )}

@@ -932,11 +932,11 @@ export default function SalesQPI() {
    * so an in-progress request flips to Signed without a manual refresh. */
   useEffect(() => {
     let alive = true;
-    const load = async () => {
+    const load = async (sync: boolean) => {
       try {
         const [qr, pr] = await Promise.allSettled([
-          api.get('/clm/signature-requests', { params: { document_type: 'quotation', sync: 1 } }),
-          api.get('/clm/signature-requests', { params: { document_type: 'proforma_invoice', sync: 1 } }),
+          api.get('/clm/signature-requests', { params: { document_type: 'quotation', sync: sync ? 1 : 0 } }),
+          api.get('/clm/signature-requests', { params: { document_type: 'proforma_invoice', sync: sync ? 1 : 0 } }),
         ]);
         if (!alive) return;
         const map: Record<string, { id: number; status: string }> = {};
@@ -952,8 +952,13 @@ export default function SalesQPI() {
       } catch { /* signature status is best-effort — never blocks the table */ }
       finally { if (alive) setSigLoaded(true); }
     };
-    void load();
-    const t = setInterval(load, 20000);
+    /* Read our own database first so the rows unlock immediately, then sync
+       with Zoho. Both calls here span the whole client, so a single sync=1
+       load left every row waiting on the slowest Zoho round-trip. Mirrors
+       Stage 5; our database can only lag Zoho, never lead it, so the brief
+       pre-sync state never unlocks something it shouldn't. */
+    void load(false).then(() => load(true));
+    const t = setInterval(() => void load(true), 20000);
     return () => { alive = false; clearInterval(t); };
   }, [sigTick]);
 
