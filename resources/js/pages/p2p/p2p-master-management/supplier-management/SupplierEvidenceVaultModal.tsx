@@ -789,25 +789,31 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           <div className="cev-groups">
             {GROUPS.map(g => (
               <div key={g.key} className={`cev-group ${group === g.key ? 'is-active' : ''}`}>
-                <button
-                  type="button"
-                  className="cev-group-main"
-                  onClick={() => selectGroup(g.key)}
-                >
-                  <span className="cev-group-icon"><Glyph d={g.icon} size={17} sw={2.1} /></span>
-                  <span className="cev-group-text">
-                    <span className="cev-group-title">{g.title}</span>
-                    <span className="cev-group-sub">{g.sub}</span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="cev-group-overview"
-                  onClick={() => { setOverview(g.key); setOverviewPage(1); }}
-                  title="View all documents in one list"
-                >
-                  <Glyph d={VAULT_GLYPHS.list} size={12} sw={2.3} /> {g.overview}
-                </button>
+                {/* Tooltip carries the full title: the label truncates with an
+                    ellipsis when the overview button leaves it too little room
+                    (see .sev .cev-group-text in the stylesheet). */}
+                <Tooltip label={`${g.title} — ${g.sub}`}>
+                  <button
+                    type="button"
+                    className="cev-group-main"
+                    onClick={() => selectGroup(g.key)}
+                  >
+                    <span className="cev-group-icon"><Glyph d={g.icon} size={17} sw={2.1} /></span>
+                    <span className="cev-group-text">
+                      <span className="cev-group-title">{g.title}</span>
+                      <span className="cev-group-sub">{g.sub}</span>
+                    </span>
+                  </button>
+                </Tooltip>
+                <Tooltip label="View all documents in one list">
+                  <button
+                    type="button"
+                    className="cev-group-overview"
+                    onClick={() => { setOverview(g.key); setOverviewPage(1); }}
+                  >
+                    <Glyph d={VAULT_GLYPHS.list} size={12} sw={2.3} /> {g.overview}
+                  </button>
+                </Tooltip>
               </div>
             ))}
           </div>

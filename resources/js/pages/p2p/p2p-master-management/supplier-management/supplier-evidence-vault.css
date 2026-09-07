@@ -680,6 +680,23 @@
   transition: background .2s, color .2s, border-color .2s, box-shadow .2s, transform .25s;
 }
 
+/* The title is nowrap (wrapping it beside the icon reads badly), so a long one
+   — "Case to Case Documents & Agreements" — overflowed its box and ran UNDER
+   the overview button, which is opaque and sits at z-index 2: the name looked
+   chopped off mid-word. Clip the text column to the space actually left beside
+   the button and end it with an ellipsis; the full title is on its tooltip. */
+.sev .cev-group-text {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sev .cev-group-title,
+.sev .cev-group-sub {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .sev .cev-group-title {
   font-size: 13px;
   font-weight: 800;

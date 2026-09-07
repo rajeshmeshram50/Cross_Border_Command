@@ -1498,11 +1498,6 @@ export default function AddProductModal(props: {
                     </Field>
                     <Field label="Generic Name" required icon={<i className="ri-price-tag-3-line" />} error={fieldErrors.genericName}>
                       <input className="apm-input apm-input-mf" placeholder="Enter generic name" maxLength={GENERIC_NAME_MAX} value={genericName} onChange={e => handleProductNameChange(e.target.value, 'genericName', setGenericName)} />
-                      {/* maxLength truncates an over-long paste without saying
-                          anything; the counter is what makes the cap visible. */}
-                      <div className={`apm-char-count${genericName.length >= GENERIC_NAME_MAX ? ' is-full' : ''}`}>
-                        {genericName.length} / {GENERIC_NAME_MAX} characters
-                      </div>
                     </Field>
                   </div>
 
