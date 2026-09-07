@@ -399,46 +399,17 @@ export default function HeaderFooterPanel({
           <div
             onMouseDown={startDrag('logo')}
             data-tpl-no-popover="1"
-<<<<<<< HEAD
-            style={{
-              ...draggableItemStyle(logoPos),
-              /* Edge-aware width cap — the same rule the title block below
-                 uses, and for the same reason. (#2)
-                 The logo is centre-anchored at logo_pos, which defaults to
-                 x:10%, so half its width extends LEFT of that point. Its cap
-                 was a flat pixel value with no relation to how much room is
-                 actually there, so on a header ~840px wide the centre sits at
-                 84px and anything wider than ~168px had its left half clipped
-                 by the shell's overflow:hidden — the reported cropped logo.
-                 Capping at twice the distance to the nearest edge means the
-                 logo can always be drawn symmetrically about its anchor
-                 whatever the header width or where it has been dragged. The
-                 pixel ceiling is kept as the design limit; CSS min() takes
-                 whichever binds first.
-                 It sits on the WRAPPER, not the <img>: the wrapper is
-                 absolutely positioned inside the relative header, so a
-                 percentage resolves against the header. On the image it would
-                 resolve against this shrink-to-fit wrapper, which is sized by
-                 the image itself — circular, and silently ignored. */
-              maxWidth: `min(${Math.max(180, logoHeightPx * 3)}px, ${Math.min(60, 2 * Math.min(logoPos.x, 100 - logoPos.x))}%)`,
-            }}
-=======
             ref={logoElRef}
             style={draggableItemStyle(logoPos, logoHalfPx, dragging === 'logo')}
->>>>>>> 4cd9e95fb599e6db933e25117a2cfea77bf8c57d
             title={readOnly ? '' : 'Drag to reposition logo'}
           >
             {header.logo_url ? (
               <img src={header.logo_url} alt="logo" draggable={false}
-<<<<<<< HEAD
-                style={{ height: logoHeightPx, width: 'auto', maxWidth: '100%', objectFit: 'contain', pointerEvents: 'none', display: 'block' }} />
-=======
                 /* min() with 100% is the last resort: a logo wider than the
                    band itself cannot be positioned out of trouble, so it is
                    scaled down to fit instead of being cut. objectFit keeps the
                    aspect ratio either way. */
                 style={{ height: logoHeightPx, maxWidth: `min(${Math.max(180, logoHeightPx * 3)}px, 100%)`, objectFit: 'contain', pointerEvents: 'none' }} />
->>>>>>> 4cd9e95fb599e6db933e25117a2cfea77bf8c57d
             ) : (
               <div className="tpl-logo-placeholder" style={{ width: Math.max(72, logoHeightPx * 1.8), maxWidth: '100%', height: logoHeightPx, borderRadius: 6, border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 11, fontWeight: 700, letterSpacing: 1, background: '#f8fafc', pointerEvents: 'none' }}>
                 LOGO

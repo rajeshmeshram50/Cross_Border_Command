@@ -269,17 +269,16 @@ export default function CtcLivePreview({
         </div>
       </div>
 
-      {/* Positioned wrapper for the page stack + its loading veil. The veil is
-          a SIBLING of the scroller, not a child: inside it, it would scroll
-          away with the pages and stop covering anything. */}
-      <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      {/* scrollable stack of pages (the "book") */}
-      {/* The stage is the positioning context for the loading scrim, so the
-          scrim covers the pages but never the toolbar above them — Refresh and
-          the page nav stay reachable while a render is running (#6). It cannot
-          live inside the scroller either: an absolutely positioned child there
-          sizes to the scrolled CONTENT, so it would drift off as the user
-          scrolls instead of holding over the visible area. */}
+      {/* scrollable stack of pages (the "book")
+          The stage is the positioning context for the loading veil, so the
+          veil covers the pages but never the toolbar above them — Refresh and
+          the page nav stay reachable while a render is running (#6). The veil
+          is a SIBLING of the scroller, never a child: an absolutely positioned
+          child of a scroll container sizes to the scrolled CONTENT, so it would
+          drift away as the user scrolls instead of holding over the visible
+          area.
+          (Merge note: this wrapper arrived from both sides of the #6 fix and
+          was briefly nested inside itself. One is all it needs.) */}
       <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex' }}>
       <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
         {status === 'error' && (
