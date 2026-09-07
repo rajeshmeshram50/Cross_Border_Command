@@ -121,6 +121,15 @@ export type MasterConfig = {
   // Billing Address) and tenants cannot extend it.
   lockedFixed?: boolean;
   /**
+   * Why this master is locked, in the user's words. REQUIRED alongside
+   * lockedFixed: the Add button is rendered DISABLED carrying this as its
+   * tooltip rather than being hidden. A restriction nobody can see is
+   * indistinguishable from a broken permission -- QA filed "Add Designation
+   * missing despite full Master permissions" (CBC #1, 02-09-2026) against
+   * exactly that silence. Say what is fixed and why, not just "not allowed".
+   */
+  lockedReason?: string;
+  /**
    * The module this master really belongs to, for masters reached from another
    * module's menu rather than the Master Control Center. Set it and the page
    * renders that module's header treatment (the .frm-cstrip strip used by HR >
@@ -393,6 +402,10 @@ const C: Record<string, MasterConfig> = {
     // MasterController blocks the POST so a direct API hit cannot add one
     // either. Existing rows stay editable.
     lockedFixed: true,
+    lockedReason: 'Designations is a fixed master. The six seeded titles (Director / CEO, '
+      + 'Head of Department, Team Leader, Executive, Employee, Intern / Trainee) are the whole '
+      + 'org hierarchy, and every HR screen that groups by level depends on exactly that set. '
+      + 'Existing designations can still be edited.',
     fields: [
       { n: 'name', l: 'Designation Name', t: 'text', r: true, p: 'e.g., Senior Software Engineer' },
       { n: 'code', l: 'Designation Code', t: 'text', auto: true, hint: '(auto-generated)', p: 'DGN-XXX' },
@@ -573,9 +586,12 @@ const C: Record<string, MasterConfig> = {
     desc: 'Fixed vocabulary: Warehouse, Registered Office, Billing Address. No additions allowed.',
     cat: 'Geography & Location',
     // Locked-fixed master — backend rejects POST and the three rows are
-    // is_system protected from edit/delete. UI hides the Add button via
-    // this flag so users aren't tempted to try.
+    // is_system protected from edit/delete. The Add button is shown DISABLED
+    // with lockedReason as its tooltip, so the restriction explains itself.
     lockedFixed: true,
+    lockedReason: 'Address Types is a fixed master. Only Registered Office, Warehouse and '
+      + 'Branch are allowed — the address forms across Sales, P2P and CLM are built around '
+      + 'exactly those three. Existing types can still be edited.',
     fields: [
       { n: 'name', l: 'Address Type', t: 'text', r: true, p: 'e.g. Registered Office, Warehouse' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
@@ -1947,6 +1963,9 @@ const C: Record<string, MasterConfig> = {
     // Trigger points are seed-managed (Onboarding / Exit / Promotion) — no manual
     // Add button; existing rows stay editable.
     lockedFixed: true,
+    lockedReason: 'Trigger Points is a fixed master. Each trigger is wired to code that runs '
+      + 'when it fires, so a new one added here would never trigger anything. Existing trigger '
+      + 'points can still be edited.',
     fields: [
       { n: 'module_name', l: 'Module Name', t: 'text', r: true, p: 'e.g. Onboarding, Offboarding, Event Based', full: true },
       { n: 'description', l: 'Description', t: 'textarea', p: 'Describe when this trigger activates and what documents it generates...', full: true },

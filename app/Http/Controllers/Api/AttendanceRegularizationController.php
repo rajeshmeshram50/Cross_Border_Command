@@ -1676,15 +1676,42 @@ class AttendanceRegularizationController extends Controller
     private function hasAttendanceGrant($user, string $perm = 'can_add'): bool
     {
         if (!$user) return false;
-        if (in_array($user->user_type, self::ADMIN_TYPES, true)) return true;
+
+        // Super admin is outside the tenant permission table entirely and
+        // holds no rows by design — nothing to consult.
+        if ($user->user_type === 'super_admin') return true;
 
         $moduleId = \App\Models\Module::where('slug', 'hr.attendance')->value('id');
         if (!$moduleId) return false;
 
-        return \App\Models\Permission::where('user_id', $user->id)
+        $row = \App\Models\Permission::where('user_id', $user->id)
             ->where('module_id', $moduleId)
-            ->where($perm, true)
-            ->exists();
+            ->first();
+
+        /* WHERE A ROW EXISTS, THE ROW DECIDES — for every user_type.
+         *
+         * This used to return true for the whole ADMIN_TYPES list
+         * (super_admin, client_admin, branch_user) BEFORE looking at the
+         * permission row, so a branch user granted Attendance view-only still
+         * passed the can_edit test: Approve / Reject lit up in the UI (the
+         * list sets can_act_now from this same call) and setStatus() then
+         * allowed the action. A client admin could not actually restrict their
+         * own branch users -- the permission matrix they configured was
+         * ignored for this module (CBC #2, 02-09-2026).
+         *
+         * The irony is that the note above already says "user_type is not a
+         * privilege", and then the code used it as one.
+         *
+         * The no-row fallback keeps the original behaviour for tenants whose
+         * admin logins were never given rows for this module, so nobody who
+         * can approve today loses that on deploy. Every login that HAS a row
+         * -- which is how client_admin and branch_user are provisioned -- is
+         * now governed by it. */
+        if (!$row) {
+            return in_array($user->user_type, self::ADMIN_TYPES, true);
+        }
+
+        return (bool) $row->{$perm};
     }
 
     /** Is the signed-in user the reporting manager of the request's employee?

@@ -479,7 +479,7 @@ class MasterController extends Controller
         // to sit at. Existing rows stay editable — only creation is blocked.
         $lockedFixed = [
             'address_types' => 'Address Types is a fixed master. Only Registered Office, Warehouse, and Branch are allowed — no new types can be added.',
-            'designations' => 'Designations is a fixed master. The five seeded titles cover the whole hierarchy — no new designations can be added.',
+            'designations' => 'Designations is a fixed master. The six seeded titles (Director / CEO, Head of Department, Team Leader, Executive, Employee, Intern / Trainee) cover the whole hierarchy — no new designations can be added. Existing designations can still be edited.',
         ];
         if (isset($lockedFixed[$slug])) {
             return response()->json(['message' => $lockedFixed[$slug]], 403);

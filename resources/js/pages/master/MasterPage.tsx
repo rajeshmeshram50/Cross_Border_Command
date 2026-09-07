@@ -76,6 +76,11 @@ function MasterPageInner({
   const isSuperAdmin = user?.user_type === 'super_admin';
   const fullSlug = `master.${cfg.slug}`;
   const modulePerm = user?.permissions?.[fullSlug];
+  /* Does the user hold can_add, IGNORING the lockedFixed override? Needed to
+     tell "you lack permission" (show nothing) apart from "this master is
+     closed" (show the disabled, explained button). */
+  const permitsAdd = isSuperAdmin || !!modulePerm?.can_add;
+
   const caps = useMemo(() => ({
     view:   isSuperAdmin || !!modulePerm?.can_view,
     // `lockedFixed` masters (e.g. address_types) override permissions —
@@ -2189,12 +2194,31 @@ function MasterPageInner({
                 setPriorityFilter={setKpiPriorityFilter}
               />
             )}
-            {caps.add && (
+            {caps.add ? (
               <button type="button" className="mp-add-btn" onClick={openAdd}>
                 <i className="ri-add-line" />
                 Add {singular}
               </button>
-            )}
+            ) : cfg.lockedFixed && permitsAdd ? (
+              /* Locked master, and the user DOES hold can_add: show the button
+                 DISABLED with the reason, rather than nothing at all.
+                 Hiding it made a deliberate product rule look like a broken
+                 permission -- QA filed "Add Designation not visible despite
+                 full Master permissions" against exactly this (CBC #1). The
+                 restriction now explains itself at the point of confusion.
+                 A user WITHOUT can_add still sees nothing: for them the button
+                 is genuinely out of scope and a lock message would mislead. */
+              <button
+                type="button"
+                className="mp-add-btn"
+                disabled
+                title={cfg.lockedReason || `${cfg.title} is a fixed master — no new records can be added.`}
+                style={{ opacity: 0.5, cursor: 'not-allowed' }}
+              >
+                <i className="ri-lock-line" />
+                Add {singular}
+              </button>
+            ) : null}
           </>
         }
       />
