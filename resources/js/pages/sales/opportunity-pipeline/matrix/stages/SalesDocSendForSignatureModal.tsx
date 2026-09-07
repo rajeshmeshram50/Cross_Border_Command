@@ -108,7 +108,11 @@ interface Props {
    *  resolved server-side from the customer's primary contact). */
   customerName?: string | null;
   onClose: () => void;
-  onSent?: () => void;
+  /** Fired after a successful send, carrying the request the server just
+   *  created. The caller needs the real id (not a placeholder) so it can lock
+   *  the row immediately -- waiting for the next status fetch leaves the doc
+   *  looking unsent for as long as that round-trip takes. */
+  onSent?: (created?: { id: number; status: string }) => void;
 }
 
 const ROLE_LABEL: Record<SignerRole, string> = { buyer: 'Customer' };
@@ -344,7 +348,10 @@ export default function SalesDocSendForSignatureModal({
         notes:             notes.trim(),
       });
       toast.success('Sent for signature', r.data?.message ?? 'Document sent to the signer(s).');
-      onSent?.();
+      const createdId = Number(r.data?.data?.signature_request_id ?? 0);
+      onSent?.(createdId > 0
+        ? { id: createdId, status: String(r.data?.data?.status ?? 'inprogress').toLowerCase() }
+        : undefined);
       onClose();
     } catch (e: any) {
       const msg = e?.response?.data?.message

@@ -1176,7 +1176,24 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
           leadId={leadId}
           customerName={sigSendFor.customerName}
           onClose={() => setSigSendFor(null)}
-          onSent={() => { void fetchSignatures(true); }}
+          /* Lock the row the instant the send succeeds.
+             Previously this only kicked off fetchSignatures(true), and that
+             fetch round-trips Zoho -- for the ~10s it takes, sigByRow still
+             held the PRE-send value, so the button stayed a live blue "Send
+             for Sign" and the pencil stayed enabled on a PI that was already
+             out with the customer. The server refuses the second send with a
+             409, so nothing broke, but the user saw an actionable button and
+             an error toast on a document that had just been sent.
+             Writing the request the server actually created (real id, so
+             Remind and the tracker work at once) closes that window; the
+             fetch below still runs and corrects this if Zoho disagrees. */
+          onSent={(created) => {
+            if (created && sigSendFor) {
+              const key = `${sigSendFor.kind}:${sigSendFor.id}`;
+              setSigByRow(prev => ({ ...prev, [key]: { id: created.id, status: created.status, docId: sigSendFor.id } }));
+            }
+            void fetchSignatures(true);
+          }}
         />
       )}
 

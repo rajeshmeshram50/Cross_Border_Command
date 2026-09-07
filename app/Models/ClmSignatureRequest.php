@@ -141,6 +141,27 @@ class ClmSignatureRequest extends Model
     }
 
     /**
+     * The live request for a sales document that is OUT with the signer and
+     * awaiting a response, or null when there is none.
+     *
+     * Deliberately narrower than hasSentForDoc (which also counts `completed`)
+     * and than the send-path guard (which also counts `draft`): this answers
+     * only "is a request sitting with the customer right now?", which is the
+     * question the edit lock asks. `draft` was never sent, and every terminal
+     * state -- declined, recalled, superseded, expired -- is precisely when an
+     * edit-then-resend is the intended workflow.
+     */
+    public static function awaitingSignatureForDoc(int $clientId, string $documentType, int $docId): ?self
+    {
+        return static::where('client_id', $clientId)
+            ->where('document_type', $documentType)
+            ->where('trade_doc_id', $docId)
+            ->where('status', 'inprogress')
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    /**
      * Mark any still-pending (draft / inprogress) signature request for a
      * sales document as superseded — called when that document is EDITED
      * while a signature is in flight, so the stale request no longer counts

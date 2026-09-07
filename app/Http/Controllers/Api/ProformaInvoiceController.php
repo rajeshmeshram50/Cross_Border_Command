@@ -479,6 +479,34 @@ class ProformaInvoiceController extends Controller
             ], 409);
         }
 
+        /* A PI that is OUT with the signer is locked too.
+         *
+         * Both screens (Sales Matrix Stage 5 and Quotations vs PI) already grey
+         * the pencil out and say "PI sent for signature - editing locked", but
+         * only the browser was enforcing it: this method accepted the edit and
+         * supersedeForDoc() below then silently killed the live Zoho request the
+         * customer was holding a link to. Any moment the screen lost the race --
+         * the seconds before the signature status loads, a second tab opened
+         * before the send, the back button -- the edit went through for real.
+         *
+         * That is why the flash kept being reported as unfixed: the fixes were
+         * on the screen, and a screen cannot hold this line. Recall the request
+         * first (or wait for the decline) and the edit is allowed again, which
+         * is what every non-inprogress state below permits. */
+        $awaiting = \App\Models\ClmSignatureRequest::awaitingSignatureForDoc(
+            $user->client_id,
+            \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE,
+            $row->id,
+        );
+        if ($awaiting) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This PI has been sent for signature and is awaiting a response, so it can no longer be edited. '
+                    . 'Recall the signature request first if the document needs to change.',
+                'data'    => ['signature_request_id' => $awaiting->id],
+            ], 409);
+        }
+
         $data  = $this->validatePayload($request);
 
         /* B32: a PI created from a quotation must keep the source quote's

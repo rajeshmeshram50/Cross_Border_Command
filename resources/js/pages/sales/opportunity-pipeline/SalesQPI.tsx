@@ -1755,10 +1755,15 @@ export default function SalesQPI() {
               const pStatus = r.id ? sigByRow[`pi:${r.id}`]?.status : undefined;
               const pSent   = pStatus === 'inprogress';
               const pSigned = pStatus === 'completed';
-              const pLocked = pSent || pSigned;
+              /* Locked until the status is KNOWN. pStatus is undefined for the
+                 seconds the signature fetch takes, so both flags read false and
+                 the pencil rendered fully enabled on an already-sent PI for that
+                 whole window. Stage 5 already waits on this flag; this page did
+                 not, which is why the flash survived every earlier fix here. */
+              const pLocked = !sigLoaded || pSent || pSigned;
               return (
             <ActionBtn
-              title={readOnly ? readOnlyHint : pSigned ? 'PI signed — editing locked' : pSent ? 'PI sent for signature — editing locked' : 'Edit PI'}
+              title={readOnly ? readOnlyHint : !sigLoaded ? 'Checking signature status…' : pSigned ? 'PI signed — editing locked' : pSent ? 'PI sent for signature — editing locked' : 'Edit PI'}
               icon={<IconEdit />}
               color="#16a34a"
               disabled={readOnly || pLocked}
@@ -2152,7 +2157,18 @@ export default function SalesQPI() {
           leadId={sigSendFor.leadId}
           customerName={sigSendFor.customerName}
           onClose={() => setSigSendFor(null)}
-          onSent={() => setSigTick(t => t + 1)}
+          /* Lock the row on success rather than waiting for the poller.
+             sigTick only schedules a refetch, and that refetch syncs with
+             Zoho -- until it lands the row still reads as unsent, so Send
+             stayed clickable and Edit stayed enabled on a PI already out
+             with the customer. Mirrors Stage 5. */
+          onSent={(created) => {
+            if (created && sigSendFor) {
+              const key = `${sigSendFor.kind}:${sigSendFor.id}`;
+              setSigByRow(prev => ({ ...prev, [key]: { id: created.id, status: created.status } }));
+            }
+            setSigTick(t => t + 1);
+          }}
         />
       )}
     </div>
