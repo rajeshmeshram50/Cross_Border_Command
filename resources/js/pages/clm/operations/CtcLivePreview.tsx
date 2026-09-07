@@ -213,13 +213,23 @@ export default function CtcLivePreview({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: bg, borderLeft: `1.5px solid ${border}` }}>
+      {/* The spin keyframes live HERE, not in a parent. (#6)
+          .ctc-spin was only ever defined inside ClmCtcForm's inline <style>,
+          and the HR Document Template screen renders this preview without that
+          component anywhere on the page — so its spinner was a motionless arc.
+          A shared component cannot depend on a sibling being mounted for its
+          own animation to work. */}
+      <style>{`
+        @keyframes ctcPreviewSpin { to { transform: rotate(360deg); } }
+        .ctc-preview-spin { animation: ctcPreviewSpin .7s linear infinite; transform-origin: 50% 50%; }
+      `}</style>
       {/* preview toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '7px 10px', background: barBg, borderBottom: `1px solid ${border}`, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={fg} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
           <span style={{ fontSize: 10, fontWeight: 800, color: fg, letterSpacing: '.03em' }}>Live PDF Preview</span>
           {status === 'loading' && (
-            <svg className="ctc-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={fg} strokeWidth="2.6" strokeLinecap="round" style={{ marginLeft: 4 }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+            <svg className="ctc-preview-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={fg} strokeWidth="2.6" strokeLinecap="round" style={{ marginLeft: 4 }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -232,13 +242,28 @@ export default function CtcLivePreview({
           <button type="button" style={navBtn(activePage >= numPages)} disabled={activePage >= numPages} onClick={() => goto(activePage + 1)} title="Next page">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
           </button>
-          <button type="button" style={{ ...navBtn(false), background: dark ? 'rgba(124,58,237,.25)' : '#EDE9FE', color: fg }} onClick={() => void render()} title="Refresh preview now">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+          {/* The refresh icon itself spins while the render runs, so the
+              button that was clicked is the thing that reacts (#6). */}
+          <button
+            type="button"
+            style={{ ...navBtn(false), background: dark ? 'rgba(124,58,237,.25)' : '#EDE9FE', color: fg, cursor: status === 'loading' ? 'progress' : 'pointer' }}
+            onClick={() => { if (status !== 'loading') void render(); }}
+            aria-busy={status === 'loading'}
+            title={status === 'loading' ? 'Rendering preview…' : 'Refresh preview now'}
+          >
+            <svg className={status === 'loading' ? 'ctc-preview-spin' : undefined} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
           </button>
         </div>
       </div>
 
       {/* scrollable stack of pages (the "book") */}
+      {/* The stage is the positioning context for the loading scrim, so the
+          scrim covers the pages but never the toolbar above them — Refresh and
+          the page nav stay reachable while a render is running (#6). It cannot
+          live inside the scroller either: an absolutely positioned child there
+          sizes to the scrolled CONTENT, so it would drift off as the user
+          scrolls instead of holding over the visible area. */}
+      <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex' }}>
       <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
         {status === 'error' && (
           <div style={{ margin: 'auto', textAlign: 'center', color: dark ? '#fca5a5' : '#b91c1c', fontSize: 12, fontWeight: 600, maxWidth: 260 }}>
@@ -262,6 +287,29 @@ export default function CtcLivePreview({
             <canvas ref={el => { canvasRefs.current[i] = el; }} style={{ display: 'block', width: '100%' }} />
           </div>
         ))}
+      </div>
+      {/* Loader for a REFRESH, not just the first load. (#6)
+          The message below only renders while numPages === 0, so once a
+          preview existed the pages simply sat there unchanged during a
+          re-render and nothing on screen said the click had done anything.
+          This scrim covers the stack instead: the old pages stay legible
+          underneath, so the user can see what is being replaced, but they
+          are visibly held while the new PDF is generated. */}
+      {status === 'loading' && numPages > 0 && (
+        <div
+          style={{
+            position: 'absolute', inset: 0, zIndex: 4,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: dark ? 'rgba(15,10,30,.55)' : 'rgba(255,255,255,.62)',
+            backdropFilter: 'blur(1.5px)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 10, background: barBg, border: `1.5px solid ${border}`, boxShadow: '0 6px 22px rgba(8,3,28,.18)' }}>
+            <svg className="ctc-preview-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={fg} strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: fg }}>Rendering preview…</span>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );
