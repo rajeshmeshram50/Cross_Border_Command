@@ -11976,6 +11976,41 @@
   }
 }
 
+/* Groups button — the emphasised sibling of Template / Import Excel. (#96)
+   These colours used to be an inline style attribute on the button, which
+   beats every stylesheet rule including the dark-mode one. So in dark theme
+   Template and Import Excel correctly followed .rec-btn-ghost onto the dark
+   surface while Groups stayed a pale lilac sticker beside them — the reported
+   inconsistency. It reads as the other two being wrong; it was Groups that
+   could not be themed.
+   Kept as a class so the highlight survives, but now with a dark variant that
+   sits on the same surface as its neighbours: same violet accent the ghost
+   button already uses on hover, so Groups still stands out as the "do this
+   first" action without breaking out of the theme. */
+.holiday-page .hol-groups-btn {
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  border: 1px solid #c4b5fd;
+  color: #6d28d9;
+  font-weight: 700;
+}
+.holiday-page .hol-groups-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #ddd6fe, #c4b5fd);
+  border-color: #a78bfa;
+  color: #5b21b6;
+}
+[data-bs-theme="dark"] .holiday-page .hol-groups-btn,
+[data-layout-mode="dark"] .holiday-page .hol-groups-btn {
+  background: rgba(124, 92, 252, 0.18);
+  border-color: rgba(167, 139, 250, 0.55);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .holiday-page .hol-groups-btn:hover:not(:disabled),
+[data-layout-mode="dark"] .holiday-page .hol-groups-btn:hover:not(:disabled) {
+  background: rgba(124, 92, 252, 0.3);
+  border-color: rgba(167, 139, 250, 0.8);
+  color: #ddd6fe;
+}
+
 
 /* ── HR Employees page (HrEmployees) ──────────────────────────────────────
    Moved out of the inline <style> blocks in HrEmployees.tsx. */

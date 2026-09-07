@@ -552,10 +552,13 @@ export default function HrHoliday() {
                     {importing ? <Spinner size="sm" /> : <i className="ri-file-excel-2-line" />}Import Excel
                   </button>
                   {/* Groups sits beside "Add Holiday" and is highlighted so it's
-                      clear this is where you create groups first. */}
+                      clear this is where you create groups first. The highlight
+                      lives in .hol-groups-btn, NOT in a style attribute — inline
+                      colours outrank the dark-theme rules, which left this button
+                      pale lilac in dark mode while Template and Import Excel
+                      beside it went dark. (#96) */}
                   <Tooltip label="Create & manage holiday groups — add a group here first, then assign holidays to it">
-                    <button type="button" className="rec-btn-ghost hol-groups-btn" onClick={() => setManageGroupsOpen(true)}
-                      style={{ background: 'linear-gradient(135deg,#ede9fe,#ddd6fe)', border: '1px solid #c4b5fd', color: '#6d28d9', fontWeight: 700 }}>
+                    <button type="button" className="rec-btn-ghost hol-groups-btn" onClick={() => setManageGroupsOpen(true)}>
                       <i className="ri-folder-add-line" />Groups
                     </button>
                   </Tooltip>
