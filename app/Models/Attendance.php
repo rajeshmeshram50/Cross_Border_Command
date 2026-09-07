@@ -44,9 +44,25 @@ class Attendance extends Model
 
     protected $appends = ['total_worked_seconds', 'next_direction', 'punches_count'];
 
+    /**
+     * withTrashed() — attendance outlives employment. (#91)
+     *
+     * Completing an exit soft-deletes the employee row, and Employee applies
+     * the SoftDeletes global scope to this relation too, so a leaver's
+     * attendance came back with a NULL employee: the rows were all still
+     * there, queried by employee_id and never touched by the soft delete, but
+     * every list that renders a name got nothing to render. That is the
+     * "records cannot be accessed from Attendance" half of the ticket — the
+     * history was not missing, it was unattributed.
+     *
+     * Auditing a leaver's attendance is the whole point of keeping it, so the
+     * relation must reach a trashed employee. Callers that want to EXCLUDE
+     * leavers filter on the employment window (see dailyView), which is a
+     * different question from whether the name resolves.
+     */
     public function employee(): BelongsTo
     {
-        return $this->belongsTo(Employee::class);
+        return $this->belongsTo(Employee::class)->withTrashed();
     }
 
     public function user(): BelongsTo

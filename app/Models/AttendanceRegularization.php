@@ -54,9 +54,15 @@ class AttendanceRegularization extends Model
         'approved_at'            => 'datetime',
     ];
 
+    /**
+     * withTrashed() — a request outlives the employment it was filed under.
+     * Completing an exit soft-deletes the employee, which blanked the name on
+     * any request still sitting in the approval queue, leaving an approver a
+     * row they could neither read nor attribute. (#91)
+     */
     public function employee(): BelongsTo
     {
-        return $this->belongsTo(Employee::class);
+        return $this->belongsTo(Employee::class)->withTrashed();
     }
 
     public function attendance(): BelongsTo
