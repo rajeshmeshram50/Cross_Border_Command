@@ -11795,9 +11795,24 @@
 .pay-mini-tile-num--amber  { color: #a06f00; }
 .pay-mini-tile-num--blue   { color: #0c63b0; }
 .pay-mini-tile-num--purple { color: #5a3fd1; }
-/* Dark: the surface follows --vz-card-bg like the hero cards, so only the
-   shadow needs toning down. Strip colours carry through unchanged. */
-[data-bs-theme="dark"] .pay-mini-tile { box-shadow: 0 2px 10px rgba(0,0,0,0.28); }
+/* Dark: the surface must be set EXPLICITLY. (#143, #145)
+   The base rule uses `var(--vz-card-bg, #ffffff)`, and the note that used to
+   live here claimed the surface "follows --vz-card-bg like the hero cards".
+   It does not. Bootstrap scopes --vz-card-bg to `.card`, and these tiles are
+   plain divs in a Row — outside any card — so the variable never resolves and
+   the #ffffff FALLBACK wins, in both themes. That is why the Total Gross /
+   Net Pay / PF / TDS / LOP tiles on Salary Report and the Synced Employees /
+   Missing Punch / Paid + Unpaid Leave tiles on Biometric Input stayed white
+   on a dark page: not a missing dark rule, a variable that was never in scope.
+   (The same trap is documented at the audit-log popover and in DataTable.css.)
+   #222831 is the dark card surface the rest of the app already uses. Light
+   mode is untouched — the fallback was doing the right thing there by
+   accident, and still is. */
+[data-bs-theme="dark"] .pay-mini-tile {
+  background: #222831;
+  border-color: rgba(255,255,255,0.10);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.28);
+}
 [data-bs-theme="dark"] .pay-mini-tile-num--green  { color: #6ee7b7; }
 [data-bs-theme="dark"] .pay-mini-tile-num--red    { color: #fda192; }
 [data-bs-theme="dark"] .pay-mini-tile-num--amber  { color: #fcd34d; }
