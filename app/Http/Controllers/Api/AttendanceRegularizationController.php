@@ -957,13 +957,21 @@ class AttendanceRegularizationController extends Controller
      * Why this employee's attendance is closed to correction, or null when it
      * is still open. (#88)
      *
-     * Closed when the employee has EXITED — a completed exit carrying a last
-     * working day (a rehire spends that exit, so it does not count), or, for
-     * someone removed through Employee Management with no exit record at all,
-     * the soft-delete date, which is the only end-of-employment marker there
-     * is. Mirrors the window AttendanceController::employeeSummary() reports,
-     * so what the Attendance tab shows as "employment ended" is exactly what
-     * this refuses to let through.
+     * Closed only when employment has actually ENDED — either a COMPLETED exit
+     * (`exit_case_status = 'Closed'`, the same completion test ExitController
+     * uses when it stamps `completed_at`, and the one the exit listings filter
+     * on), or, for someone removed through Employee Management with no exit
+     * record at all, the soft-delete date, which is the only end-of-employment
+     * marker there is. A rehire spends the exit, so a stamped `rehired_at`
+     * re-opens the record.
+     *
+     * An IN-PROGRESS exit does NOT close attendance. `last_working_day` is
+     * captured at Stage 1, the moment notice is filed, and the employee keeps
+     * working from there — often for the whole notice period — so keying the
+     * gate off that date alone locked out people still on the floor punching
+     * in. They are precisely the ones who need corrections, because their F&F
+     * has not been priced yet. Only Stage 4 closure freezes the record, and
+     * that is what this tests.
      *
      * Returns a sentence, not a bool, so the caller does not have to
      * reconstruct which of the two cases it hit.
@@ -973,6 +981,7 @@ class AttendanceRegularizationController extends Controller
         $exit = \App\Models\EmployeeExit::where('employee_id', $employee->id)
             ->whereNull('rehired_at')
             ->whereNotNull('last_working_day')
+            ->where('exit_case_status', 'Closed')
             ->orderByDesc('last_working_day')
             ->first();
 
