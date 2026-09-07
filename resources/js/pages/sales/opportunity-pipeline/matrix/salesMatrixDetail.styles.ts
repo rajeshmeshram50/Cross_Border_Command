@@ -1118,11 +1118,43 @@ export const SALES_MATRIX_DETAIL_CSS = `
   }
   .smd-cust-left { padding-left: 0; }
   .smd-cust-name { white-space: normal; overflow-wrap: anywhere; }
-  /* Meta wraps onto multiple lines instead of scrolling off-screen; the
-     decorative single-line dividers are hidden once items wrap. */
-  .smd-cust-meta { flex-wrap: wrap; justify-content: flex-start; gap: 8px 12px; width: 100%; }
+  /* A 2-column GRID, not wrapping flex.
+     The row holds a wide WhatsApp button and three chips of quite different
+     widths, so wrapping them left every line a different length and the block
+     read as misaligned. On a grid they line up in equal columns, matching the
+     2-column stepper directly below. The decorative dividers go: they only
+     make sense on a single unbroken line. */
+  .smd-cust-meta {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px; width: 100%; align-items: stretch; justify-content: stretch;
+  }
+  /* Grid items default to min-width: auto, so a long opportunity code or
+     country name would widen its own column out of the pair. */
+  .smd-cust-meta > * { min-width: 0; }
+  .smd-meta { width: 100%; }
+  .smd-meta-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .smd-cust-sep, .smd-cust-line { display: none; }
-  .smd-back-btn { margin-left: auto; }
+  /* Full width on its own row — it is the action, not another fact. */
+  .smd-back-btn { grid-column: 1 / -1; margin-left: 0; justify-content: center; }
+  .smd-hdr-wa { justify-content: center; }
+
+  /* Action pills on the same 2-column grid as everything else here.
+     They wrap from 1200px down, and as flex items each took its own content
+     width — so "Remark" sat beside "Key Opportunity" and every row ended
+     somewhere different. Equal columns line the block up with the meta row
+     above and the stepper below. The hairline separators are dropped: they
+     divide a continuous row, and this is no longer one. */
+  .smd-toolbar {
+    display: grid; grid-template-columns: repeat(2, 1fr);
+    gap: 7px; overflow-x: visible;
+  }
+  .smd-toolbar > .smd-act {
+    width: 100%; min-width: 0;
+    /* Left-aligned icon + label reads faster down a column than centred text,
+       which drifts about as each label changes length. */
+    justify-content: flex-start;
+  }
+  .smd-toolbar > .smd-act-sep { display: none; }
 
   /* 2 columns × 3 rows fits a phone cleanly; 3 columns squeezed the labels. */
   .smd-stepper { grid-template-columns: repeat(2, 1fr); gap: 6px; }

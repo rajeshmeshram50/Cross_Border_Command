@@ -1229,13 +1229,19 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
               /* Is the PI still sendable? Same rule as a trade doc: a live
                  or finished signing round means it can't be queued again. */
               const piSigStatus = payload.pi_document?.signature_request?.status ?? null;
-              const piSendable  = !!payload.pi_document
+              /* The PI is only pinned to the customer-side tabs (see the row
+                 below), so on the others it is not on screen and must stay out
+                 of the select-all arithmetic — otherwise "select all" on the
+                 Consignee tab would quietly tick a row nobody can see, and the
+                 header checkbox could never reach its "all" state. */
+              const piOnThisTab = tdTab === 'all' || tdTab === 'buyer';
+              const piSendable  = !!payload.pi_document && piOnThisTab
                 && !(!!piSigStatus && !['draft', 'recalled', 'superseded'].includes(piSigStatus));
               /* Select-all must agree with what the header checkbox visually
                  covers — the PI row sits under it like every other row, so
                  leaving it out made "all" mean "all except the first one". */
               const totalSelectable = selectableIds.length + (piSendable ? 1 : 0);
-              const pickedCount     = selectableIds.filter(id => tdSelected.has(id)).length + (piSelected ? 1 : 0);
+              const pickedCount     = selectableIds.filter(id => tdSelected.has(id)).length + (piSelected && piOnThisTab ? 1 : 0);
               const allSel  = totalSelectable > 0 && pickedCount === totalSelectable;
               const someSel = pickedCount > 0 && !allSel;
               const toggleAll = () => {
@@ -1373,7 +1379,16 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                             derived from its products, and it is signable in its
                             own right. Outside the pager on purpose: it is one
                             fixed row, not part of the catalogue being paged. */}
-                        {payload.pi_document && (() => {
+                        {/* The PI belongs to the CUSTOMER, so it is pinned only
+                            to the tabs a customer-side document appears on: the
+                            flat list (Customer = Consignee) and Customer
+                            Documents. It used to render on every tab, so the
+                            Consignee Documents tab opened with a customer
+                            document sitting at the top of it — and "Customer +
+                            Consignee 0" still showed a row. Its counting stays
+                            exactly as it was: this row is outside the pager by
+                            design, so no count changes here. */}
+                        {payload.pi_document && piOnThisTab && (() => {
                           const pd  = payload.pi_document;
                           const sig = pd.signature_request;
                           const sent = !!sig && !['draft', 'recalled', 'superseded'].includes(sig.status);
@@ -2732,4 +2747,39 @@ const LASM_CSS = `
   border-color: rgba(103,232,249,.35); color: #c4b5fd;
 }
 [data-bs-theme="dark"] .lasm-bulk-clear:hover { background: rgba(124,58,237,.18); }
+
+/* ── Responsive ─────────────────────────────────────────────────────────
+   This modal had no breakpoints at all: the shell kept its 620px fixed
+   height and 24px backdrop padding, the table kept 18px cell padding, and on
+   a phone the result was a small floating box with a table too wide to read
+   and a pager wrapping into three lines. */
+@media (max-width: 900px) {
+  .lasm-overlay { padding: 12px; }
+  .lasm-shell { height: calc(100vh - 24px); height: calc(100dvh - 24px); }
+  .lasm-table-wrap { margin: 12px 14px 14px; }
+  .lasm-head { padding: 13px 16px; }
+  .lasm-tabs { padding: 0 16px; }
+}
+@media (max-width: 640px) {
+  /* Full screen: a phone has no room to spare for a floating card, and the
+     table needs every pixel it can get. */
+  .lasm-overlay { padding: 0; }
+  .lasm-shell { height: 100vh; height: 100dvh; max-width: none; border-radius: 0; }
+  .lasm-head { padding: 11px 13px; gap: 9px; }
+  .lasm-head-icon { width: 32px; height: 32px; }
+  .lasm-head-title { font-size: 14.5px; }
+  .lasm-head-sub { font-size: 11px; }
+  .lasm-tabs { padding: 0 12px; }
+  .lasm-table-wrap { margin: 10px 10px 12px; border-radius: 11px; }
+  /* Columns keep a readable width and the region scrolls sideways, rather
+     than every column squashing until nothing can be read. The scroll box
+     already carries overflow: auto. */
+  .lasm-table, .lasm-td-table { min-width: 560px; font-size: 12px; }
+  .lasm-table thead th, .lasm-td-table thead th { padding: 10px 12px; }
+  .lasm-table tbody td, .lasm-td-table tbody td { padding: 10px 12px; font-size: 12px; }
+  /* Pager on one line, its controls allowed to wrap under the count instead
+     of each piece taking a line of its own. */
+  .lasm-pager { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .lasm-pager-info { font-size: 11px; }
+}
 `;

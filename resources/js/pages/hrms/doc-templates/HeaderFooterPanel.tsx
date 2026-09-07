@@ -176,6 +176,14 @@ export default function HeaderFooterPanel({
   // React's normal batching; positions are stored as percentages so the
   // layout scales when the container resizes.
   const headerRef = useRef<HTMLDivElement | null>(null);
+  /* Which item is under the pointer right now.
+     The edge snap below is a RESTING rule, not a dragging one: applied live it
+     made the item jump to an edge the instant the pointer crossed a third
+     boundary, so dragging vertically threw it sideways. While dragging, the raw
+     position is used and the item simply follows the mouse; the snap re-applies
+     when the button is released. */
+  const [dragging, setDragging] = useState<'logo' | 'title' | null>(null);
+
   const startDrag = (which: 'logo' | 'title') => (e: React.MouseEvent) => {
     if (readOnly) return;
     if (e.button !== 0) return;
@@ -214,12 +222,14 @@ export default function HeaderFooterPanel({
       else                   setHeader({ ...header, title_pos: next });
     };
     const onUp = () => {
+      setDragging(null);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       document.body.style.userSelect = '';
     };
     document.body.style.userSelect = 'none';
     window.addEventListener('mousemove', onMove);
+    setDragging(which);
     window.addEventListener('mouseup', onUp);
   };
 
@@ -251,15 +261,97 @@ export default function HeaderFooterPanel({
     return () => ro.disconnect();
   }, [header.show_title]);
 
-  const draggableItemStyle = (pos: PointPct): React.CSSProperties => ({
+  /* @param halfPx  Half the item's widest possible rendered width. When given,
+   *   the item's centre is clamped so that half cannot fall outside the band.
+   *
+   * Items are CENTRE-anchored (translate(-50%,-50%)), so half of one sits to
+   * the LEFT of pos.x. pos.x is a percentage but the item's width is in pixels,
+   * so as the header narrows — which is exactly what opening the Live PDF pane
+   * does to the editor column — that percentage shrinks in px while the item
+   * does not, and the band's overflow:hidden cuts the overhang off. The logo
+   * lost its left edge that way; the title block already guards against the
+   * same thing with a maxWidth cap.
+   *
+   * clamp() keeps it in pure CSS, so it re-solves on every resize with no
+   * measurement and no observer — and no observer means no feedback loop. */
+  /* The logo's ACTUAL rendered half-width, measured.
+   *
+   * The clamp below needs to know how far the logo reaches either side of its
+   * centre. Using its maximum POSSIBLE width instead — max(180, height*3) —
+   * over-insets every logo narrower than that, which showed up as a permanent
+   * empty gap down the left of the header even when nothing was at risk of
+   * being cut. Measuring means the clamp only moves the logo when it genuinely
+   * would not fit.
+   *
+   * Observing the logo is safe here: this effect changes the element's
+   * POSITION, never its size, so it cannot re-trigger its own observer. The
+   * equality guard stops sub-pixel churn from re-rendering on every frame. */
+  const logoElRef = useRef<HTMLDivElement>(null);
+  const [logoHalfPx, setLogoHalfPx] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const el = logoElRef.current;
+    if (!el) { setLogoHalfPx(undefined); return; }
+    const measure = () => {
+      const w = el.getBoundingClientRect().width;
+      if (!w) return;
+      const half = w / 2;
+      setLogoHalfPx(prev => (prev !== undefined && Math.abs(prev - half) < 0.5) ? prev : half);
+    };
+    measure();
+    const ro = 'ResizeObserver' in window ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [header.logo_url, header.show_logo, logoHeightPx]);
+
+  /* Horizontal placement for an item whose position is stored as a PERCENT but
+     whose width is in PIXELS.
+   *
+   * A percentage alone is the wrong unit here: at x=10 the logo sits 86px from
+   * the edge in a full-width editor and 0px once the Live PDF pane halves it,
+   * so the same template looked differently aligned depending on what else was
+   * open.
+   *
+   * The DOCX exporter already snaps logo alignment to THIRDS — left, centre or
+   * right — so a proportional on-screen position was showing something Word
+   * would never reproduce. Matching that here makes the preview honest and
+   * fixes the drift at the same time: the outer thirds pin to their edge and
+   * only the middle third stays proportional. */
+  const edgeSnappedLeft = (pos: PointPct, halfPx?: number, live = false): string => {
+    if (!halfPx) return `${pos.x}%`;
+    // Mid-drag: follow the pointer, only kept inside the band.
+    if (live) return `clamp(${halfPx}px, ${pos.x}%, calc(100% - ${halfPx}px))`;
+    if (pos.x <= 33.34) return `${halfPx}px`;                        // left edge
+    if (pos.x >= 66.66) return `calc(100% - ${halfPx}px)`;           // right edge
+    return `clamp(${halfPx}px, ${pos.x}%, calc(100% - ${halfPx}px))`; // middle
+  };
+
+  const draggableItemStyle = (pos: PointPct, halfPx?: number, live = false): React.CSSProperties => ({
     position: 'absolute',
-    left: `${pos.x}%`,
+    left: edgeSnappedLeft(pos, halfPx, live),
     top:  `${pos.y}%`,
     transform: 'translate(-50%, -50%)',
     cursor: readOnly ? 'default' : 'grab',
     userSelect: 'none',
     touchAction: 'none',
   });
+
+  /* Same thirds rule as the logo, but for a block whose width is set by its
+     TEXT rather than measured — so it pins with left/right instead of a
+     half-width offset, and grows inwards from the edge it is pinned to. */
+  const edgePinnedStyle = (pos: PointPct, live = false): React.CSSProperties => {
+    const base: React.CSSProperties = {
+      position: 'absolute',
+      top: `${pos.y}%`,
+      cursor: readOnly ? 'default' : 'grab',
+      userSelect: 'none',
+      touchAction: 'none',
+    };
+    // Mid-drag: plain centre anchoring, so the block tracks the pointer.
+    if (live) return { ...base, left: `${pos.x}%`, transform: 'translate(-50%, -50%)' };
+    if (pos.x <= 33.34) return { ...base, left: 0, transform: 'translateY(-50%)' };
+    if (pos.x >= 66.66) return { ...base, right: 0, transform: 'translateY(-50%)' };
+    return { ...base, left: `${pos.x}%`, transform: 'translate(-50%, -50%)' };
+  };
 
   return (
     /* height:100% + column flex — only under fillHeight. The shell is a CHILD
@@ -307,6 +399,7 @@ export default function HeaderFooterPanel({
           <div
             onMouseDown={startDrag('logo')}
             data-tpl-no-popover="1"
+<<<<<<< HEAD
             style={{
               ...draggableItemStyle(logoPos),
               /* Edge-aware width cap — the same rule the title block below
@@ -329,11 +422,23 @@ export default function HeaderFooterPanel({
                  the image itself — circular, and silently ignored. */
               maxWidth: `min(${Math.max(180, logoHeightPx * 3)}px, ${Math.min(60, 2 * Math.min(logoPos.x, 100 - logoPos.x))}%)`,
             }}
+=======
+            ref={logoElRef}
+            style={draggableItemStyle(logoPos, logoHalfPx, dragging === 'logo')}
+>>>>>>> 4cd9e95fb599e6db933e25117a2cfea77bf8c57d
             title={readOnly ? '' : 'Drag to reposition logo'}
           >
             {header.logo_url ? (
               <img src={header.logo_url} alt="logo" draggable={false}
+<<<<<<< HEAD
                 style={{ height: logoHeightPx, width: 'auto', maxWidth: '100%', objectFit: 'contain', pointerEvents: 'none', display: 'block' }} />
+=======
+                /* min() with 100% is the last resort: a logo wider than the
+                   band itself cannot be positioned out of trouble, so it is
+                   scaled down to fit instead of being cut. objectFit keeps the
+                   aspect ratio either way. */
+                style={{ height: logoHeightPx, maxWidth: `min(${Math.max(180, logoHeightPx * 3)}px, 100%)`, objectFit: 'contain', pointerEvents: 'none' }} />
+>>>>>>> 4cd9e95fb599e6db933e25117a2cfea77bf8c57d
             ) : (
               <div className="tpl-logo-placeholder" style={{ width: Math.max(72, logoHeightPx * 1.8), maxWidth: '100%', height: logoHeightPx, borderRadius: 6, border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 11, fontWeight: 700, letterSpacing: 1, background: '#f8fafc', pointerEvents: 'none' }}>
                 LOGO
@@ -346,15 +451,26 @@ export default function HeaderFooterPanel({
             ref={titleBlockRef}
             data-tpl-no-popover="1"
             style={{
-              ...draggableItemStyle(titlePos),
+              ...edgePinnedStyle(titlePos, dragging === 'title'),
               cursor: readOnly ? 'default' : 'text',
               textAlign: (header.align === 'left' || header.align === 'center' || header.align === 'right') ? header.align : 'right',
-              // Block is center-anchored at titlePos, so its half-width can't
-              // exceed the distance to the nearest edge or it spills out of the
-              // (overflow:hidden) header. Cap maxWidth = 2 × that gap, ceiling
-              // 60%. Long unbreakable strings then wrap instead of clipping off
-              // the right edge.
-              maxWidth: `${Math.min(60, 2 * Math.min(titlePos.x, 100 - titlePos.x))}%`,
+              /* Width available to the title.
+               *
+               * It used to be capped at 2 × the distance from titlePos to the
+               * nearest edge, because a CENTRE-anchored block cannot reach
+               * further than that without spilling out of the (overflow:hidden)
+               * band. At the default x=88 that is 24% — a quarter of the header,
+               * and a quarter of a SHRINKING header once the Live PDF pane opens,
+               * which is what truncated the company name to "Inorbvict
+               * Healthcare India P…".
+               *
+               * In the outer thirds the block is edge-pinned rather than
+               * centred (see edgeSnappedLeft), so that constraint no longer
+               * applies: it can use everything the logo is not occupying. The
+               * logo's measured width plus a 24px gutter is exactly that. */
+              maxWidth: (titlePos.x <= 33.34 || titlePos.x >= 66.66) && logoHalfPx
+                ? `calc(100% - ${Math.round(logoHalfPx * 2) + 24}px)`
+                : `${Math.min(60, 2 * Math.min(titlePos.x, 100 - titlePos.x))}%`,
               boxSizing: 'border-box',
               overflowWrap: 'anywhere',
             }}

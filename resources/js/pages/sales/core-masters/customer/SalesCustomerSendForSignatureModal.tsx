@@ -1107,7 +1107,11 @@ export default function SalesCustomerSendForSignatureModal({
       // the nudge just drifted every page's signature 70pt higher than the
       // last - by page 5 the box sat 280pt above the signature line.
       const samePage = (last.page ?? 0) === viewPage;
-      arr.push({ ...last, page: viewPage, y: samePage ? Math.max(0, (last.y ?? DEFAULTS.y) - 70) : (last.y ?? DEFAULTS.y) });
+      const wanted = { ...last, page: viewPage, y: samePage ? Math.max(0, (last.y ?? DEFAULTS.y) - 70) : (last.y ?? DEFAULTS.y) };
+      /* The -70 nudge only dodged the PREVIOUS box of this same role. With a
+         second party on the page, or after enough boxes, the new one still
+         landed on an occupied spot — settle it against every box on the page. */
+      arr.push({ ...wanted, ...sigFreeSpot(wanted, sigOccupied(docId, viewPage)) });
       return { ...prev, [docId]: { ...docSlice, [role]: arr } };
     });
     setActiveRoleBoxIdx(list.length);
@@ -1225,7 +1229,11 @@ export default function SalesCustomerSendForSignatureModal({
       // Offset only when the new box shares the previous box's page (see
       // addRoleBox) - otherwise each page's signature drifts upward.
       const samePage = (last.page ?? 0) === viewPage;
-      arr.push({ ...DEFAULTS, ...last, page: viewPage, y: samePage ? Math.max(0, (last.y ?? DEFAULTS.y) - 80) : (last.y ?? DEFAULTS.y) });
+      const wanted = { ...DEFAULTS, ...last, page: viewPage, y: samePage ? Math.max(0, (last.y ?? DEFAULTS.y) - 80) : (last.y ?? DEFAULTS.y) };
+      /* Settle against every box already on this page, not just the previous
+         one — the fixed -80 offset ran out after a few boxes and stacked. */
+      const taken = arr.filter(b => (b.page ?? 0) === viewPage);
+      arr.push({ ...wanted, ...sigFreeSpot(wanted, taken) });
       setActiveBoxIdx(arr.length - 1);
       return { ...prev, [activeDocId]: arr };
     });
@@ -1269,6 +1277,10 @@ export default function SalesCustomerSendForSignatureModal({
        previously inactive box, so the move writes back to it and not to
        whatever was active when the listener was registered. */
     target?: BoxTarget;
+    /* Where the move actually finished. onSigPointerUp is bound through
+       addEventListener, so it reads the render's state, not the state the
+       drag just wrote — this carries the final position across. */
+    last?: { x: number; y: number };
   } | null>(null);
   /* Track the wrapper width via ResizeObserver so the overlay renders
    * correctly from the FIRST paint after the iframe loads, not after
@@ -1424,6 +1436,70 @@ export default function SalesCustomerSendForSignatureModal({
 
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
+  /* ── Overlap avoidance ──────────────────────────────────────────────
+     A box dropped on top of another hides it — the lower one can no longer be
+     grabbed — and Zoho receives two signature fields in the same place, so the
+     signer sees one box where two were meant. The drag only clamped to the
+     page edges, so nothing stopped it. */
+  const SIG_GAP = 8;
+  const sigHits = (a: DocSettings, b: DocSettings) =>
+    a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+
+  /** Nearest clear spot, walking UP the sheet first (the direction the
+   *  signature strip already cascades) and starting a new column to the right
+   *  when one fills. Falls back downward at the top edge, and returns the
+   *  original position when the page genuinely has no room — a box is never
+   *  lost, it just stays where the user put it. */
+  const sigFreeSpot = (box: DocSettings, others: DocSettings[]): { x: number; y: number } => {
+    if (!others.some(o => sigHits(box, o))) return { x: box.x, y: box.y };
+    const stepY = box.height + SIG_GAP;
+    const stepX = box.width + SIG_GAP;
+    for (let col = 0; col < 6; col++) {
+      const x = clamp(box.x + col * stepX, 0, A4_W - box.width);
+      for (let row = 0; row < 40; row++) {
+        const y = box.y - row * stepY;
+        if (y < 0) break;
+        if (!others.some(o => sigHits({ ...box, x, y }, o))) return { x, y };
+      }
+      for (let row = 1; row < 40; row++) {
+        const y = box.y + row * stepY;
+        if (y > A4_H - box.height) break;
+        if (!others.some(o => sigHits({ ...box, x, y }, o))) return { x, y };
+      }
+    }
+    return { x: box.x, y: box.y };
+  };
+
+  /** Every box on `page` of `docId` EXCEPT the one identified by
+   *  (role, boxIdx). Spans all three placement modes and — importantly —
+   *  all roles, since a Buyer box and a Consignee box collide just as badly
+   *  as two of the same party's. */
+  const sigOccupied = (docId: number, page: number, exRole?: SignerRoleKey | null, exIdx?: number): DocSettings[] => {
+    const out: DocSettings[] = [];
+    const push = (b: DocSettings | undefined) => { if (b && (b.page ?? 0) === page) out.push(b); };
+    if (roleMode) {
+      const roles = new Set<string>([
+        ...Object.keys(signerSettings[docId] ?? {}),
+        ...Object.keys(roleExtraBoxes[docId] ?? {}),
+      ]);
+      roles.forEach(r => {
+        const role = r as SignerRoleKey;
+        const primary = signerSettings[docId]?.[role];
+        if (!(role === exRole && exIdx === 0)) push(primary);
+        (roleExtraBoxes[docId]?.[role] ?? []).forEach((b, i) => {
+          if (role === exRole && exIdx === i + 1) return;
+          push(b);
+        });
+      });
+      return out;
+    }
+    if (multiBox) {
+      (multiBoxes[docId] ?? []).forEach((b, i) => { if (i !== exIdx) push(b); });
+      return out;
+    }
+    return out;   // single-box mode has nothing to collide with
+  };
+
   const onSigPointerMove = (e: PointerEvent) => {
     const drag = dragStateRef.current;
     if (!drag || !activeDocId) return;
@@ -1437,6 +1513,7 @@ export default function SalesCustomerSendForSignatureModal({
     if (drag.mode === 'move') {
       const x = clamp(drag.initial.x + dxPt, 0, A4_W - drag.initial.width);
       const y = clamp(drag.initial.y + dyPt, 0, A4_H - drag.initial.height);
+      drag.last = { x, y };
       updateActiveSettings({ x, y }, drag.target);
     } else {
       // Resize from bottom-right: width grows with +dx, height grows
@@ -1448,9 +1525,28 @@ export default function SalesCustomerSendForSignatureModal({
   };
 
   const onSigPointerUp = () => {
+    const drag = dragStateRef.current;
     dragStateRef.current = null;
     window.removeEventListener('pointermove', onSigPointerMove);
     window.removeEventListener('pointerup', onSigPointerUp);
+
+    /* Settle the box the user just let go of.
+       The drag itself stays completely free — fighting the pointer mid-gesture
+       feels broken — but a box that comes to rest on another is nudged to the
+       nearest clear spot here. `drag.last` carries the final position because
+       this handler's view of state predates the drag; every OTHER box is read
+       from state safely, since none of them moved during the gesture. */
+    if (!drag || drag.mode !== 'move' || !drag.last) return;
+    const docId = drag.target?.docId ?? activeDocId;
+    if (!docId) return;
+    const role   = roleMode ? (drag.target?.role ?? activeSignerRole) : null;
+    const boxIdx = roleMode ? (drag.target?.boxIdx ?? activeRoleBoxIdx) : (drag.target?.boxIdx ?? activeBoxIdx);
+    const moved: DocSettings = { ...drag.initial, x: drag.last.x, y: drag.last.y };
+    const others = sigOccupied(docId, moved.page ?? 0, role, boxIdx);
+    if (!others.some(o2 => sigHits(moved, o2))) return;
+    const spot = sigFreeSpot(moved, others);
+    if (spot.x === moved.x && spot.y === moved.y) return;
+    updateActiveSettings(spot, drag.target ?? { docId, role, boxIdx });
   };
 
   if (!open) return null;

@@ -53,8 +53,8 @@
    Sourcing Tracker header in the P2P prototype (.c2c-scope), recoloured from
    its cyan into the violet this page runs on. Sits left of the collapse
    chevron, inside .bref-box__header-right. */
-.sup-fig .sup-scope{display:inline-flex;align-items:stretch;gap:3px;padding:3px;margin:4px 0;background:rgba(255,255,255,.62);border:1px solid rgba(124,58,237,.28);border-radius:10px;box-shadow:0 1px 3px rgba(91,33,182,.12) inset;flex-shrink:0;}
-.sup-fig .sup-scope__tab{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:inherit;font-size:10.5px;font-weight:800;letter-spacing:-.1px;color:#6d28d9;background:transparent;border:none;border-radius:8px;padding:7px 12px;cursor:pointer;white-space:nowrap;transition:all .18s cubic-bezier(.22,1,.36,1);}
+.sup-fig .sup-scope{height:var(--sl-tab-h,44px);display:inline-flex;align-items:stretch;gap:3px;padding:3px;margin:4px 0;background:rgba(255,255,255,.62);border:1px solid rgba(124,58,237,.28);border-radius:10px;box-shadow:0 1px 3px rgba(91,33,182,.12) inset;flex-shrink:0;}
+.sup-fig .sup-scope__tab{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:inherit;font-size:12px;font-weight:800;letter-spacing:-.1px;color:#6d28d9;background:transparent;border:none;border-radius:8px;padding:7px 12px;cursor:pointer;white-space:nowrap;transition:all .18s cubic-bezier(.22,1,.36,1);}
 /* font-weight:400 is the fix for "the icons look too bold".
    The tab sets font-weight:800 for its LABEL, and the icon, being a font glyph,
    inherited it. Remix Icon ships a single weight, so the browser had nothing to
@@ -69,7 +69,7 @@
 .sup-fig .sup-scope__tab:hover{color:#5b21b6;background:rgba(124,58,237,.12);}
 .sup-fig .sup-scope__tab.is-active{color:#fff;background:linear-gradient(135deg,#a78bfa,#7c3aed 60%,#5b21b6);box-shadow:0 3px 9px -3px rgba(91,33,182,.6),0 1px 0 rgba(255,255,255,.25) inset;}
 .sup-fig .sup-scope__tab.is-active:hover{color:#fff;}
-@media(max-width:1200px){.sup-fig .sup-scope__tab{padding:6px 9px;font-size:9.5px;}}
+@media(max-width:1200px){.sup-fig .sup-scope__tab{padding:6px 9px;font-size:11px;}}
 /* Below this the strip's own text already wraps; the labels lose their nouns
    rather than the group losing its place. */
 @media(max-width:900px){.sup-fig .sup-scope__tab{padding:6px 8px;}}
@@ -109,7 +109,7 @@
      touching, which read as one control. */
   .sup-fig .bref-box__header-right{gap:10px;}
   .sup-fig .sup-scope{margin:0;}
-  .sup-fig .sup-scope__tab{padding:8px 10px;font-size:10.5px;}
+  .sup-fig .sup-scope__tab{padding:8px 10px;font-size:12px;}
 }
 [data-bs-theme="dark"] .sup-fig .sup-scope,
 [data-layout-mode="dark"] .sup-fig .sup-scope{background:rgba(255,255,255,.06);border-color:rgba(167,139,250,.34);}
@@ -172,7 +172,7 @@
 .sup-fig .sl-refine{position:relative;flex-shrink:0;}
 .sup-fig .sl-refine-btn{
   display:inline-flex;align-items:center;gap:7px;
-  height:38px;padding:0 16px;border-radius:11px;
+  height:var(--sl-ctrl-h,38px);padding:0 16px;border-radius:11px;
   font-family:inherit;font-size:12.5px;font-weight:700;color:#fff;
   background:linear-gradient(135deg,#a78bfa 0%,#8b5cf6 35%,#7c3aed 68%,#5b21b6 100%);
   border:none;cursor:pointer;white-space:nowrap;
@@ -347,7 +347,7 @@
 }
 
 /* TOOLBAR — purple tabs + search (Figma sl-toolbar) */
-.sup-fig .sl-toolbar{display:flex;align-items:center;gap:14px;padding:12px 14px;border-bottom:1px solid #e2d4fa;background:linear-gradient(110deg,#faf5ff 0%,#f3e8ff 35%,#ede9fe 70%,#ddd6fe 100%);}
+.sup-fig .sl-toolbar{--sl-tab-h:44px;--sl-ctrl-h:38px;display:flex;align-items:center;gap:14px;padding:12px 14px;border-bottom:1px solid #e2d4fa;background:linear-gradient(110deg,#faf5ff 0%,#f3e8ff 35%,#ede9fe 70%,#ddd6fe 100%);}
 .sup-fig .sl-tabs{display:flex;gap:8px;flex-shrink:0;background:rgba(255,255,255,.55);border:1px solid rgba(139,92,246,.22);border-radius:11px;padding:4px;}
 .sup-fig .sl-tab{display:inline-flex;align-items:center;gap:7px;font-family:inherit;font-size:12.5px;font-weight:700;color:#6d28d9;background:linear-gradient(135deg,#f5f1fe,#ede9fe);border:1px solid rgba(139,92,246,.2);border-radius:8px;padding:8px 14px;cursor:pointer;white-space:nowrap;transition:background .16s,color .16s,box-shadow .16s,border-color .16s;}
 .sup-fig .sl-tab:hover{color:#5b21b6;background:linear-gradient(135deg,#ede9fe,#ddd6fe);border-color:rgba(139,92,246,.35);}
@@ -362,7 +362,7 @@
    column) without swallowing the whole strip. flex-basis with shrink lets it
    give way on narrow screens; margin-left:auto keeps it at the right end,
    where the Filter button used to sit. */
-.sup-fig .sl-search{flex:0 1 660px;margin-left:auto;display:flex;align-items:center;gap:9px;min-width:0;background:rgba(255,255,255,.8);border:1.5px solid rgba(139,92,246,.28);border-radius:11px;padding:9px 12px 9px 14px;box-shadow:0 1px 0 rgba(255,255,255,.95) inset;transition:border-color .16s,box-shadow .16s;}
+.sup-fig .sl-search{height:var(--sl-ctrl-h,38px);flex:0 1 660px;margin-left:auto;display:flex;align-items:center;gap:9px;min-width:0;background:rgba(255,255,255,.8);border:1.5px solid rgba(139,92,246,.28);border-radius:11px;padding:0 12px 0 14px;box-shadow:0 1px 0 rgba(255,255,255,.95) inset;transition:border-color .16s,box-shadow .16s;}
 .sup-fig .sl-search:focus-within{border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.18);}
 .sup-fig .sl-search-ico{flex-shrink:0;}
 .sup-fig .sl-search input{flex:1;min-width:0;border:none;outline:none;background:transparent;font-family:inherit;font-size:13px;font-weight:500;color:#3b0764;}
@@ -511,7 +511,19 @@
    the label shrinks so the "+N" badge sits against its last visible
    character instead of at a fixed offset. Scoped to .sl-trunc so the
    segment PILLS in the overflow popover (plain .sl-seg) are untouched. */
-.sup-fig .sl-seg.sl-trunc{max-width:none;min-width:0;flex:0 1 auto;}
+.sup-fig .sl-seg.sl-trunc{
+  max-width:none;min-width:0;flex:0 1 auto;
+  /* inline-block, NOT inline-flex: .sl-trunc relies on it for text-overflow,
+     and a flex box has no ellipsis. */
+  display:inline-block;
+  padding:3px 9px;border-radius:20px;
+  background:#F5F3FF;border:1px solid #DDD6FE;color:#5B21B6;
+  font-size:10.5px;font-weight:700;line-height:1.35;
+}
+[data-bs-theme="dark"] .sup-fig .sl-seg.sl-trunc,
+[data-layout-mode="dark"] .sup-fig .sl-seg.sl-trunc{
+  background:rgba(139,92,246,.16);border-color:rgba(167,139,250,.34);color:#ddd6fe;
+}
 .sup-fig .sl-seg{font-weight:600;color:#475569;}
 .sup-fig .sl-seg-wrap{display:inline-flex;align-items:center;gap:4px;max-width:166px;min-width:0;}
 .sup-fig .sl-seg-more{flex:none;font-family:inherit;font-size:10px;font-weight:800;color:#7c3aed;background:#f1eafe;border:1px solid #ddd0f7;border-radius:999px;padding:2px 7px;cursor:pointer;line-height:1;transition:all .15s;}
@@ -553,12 +565,16 @@
 [data-bs-theme="dark"] .sup-fig .seg-modal-chip:hover{border-color:rgba(167,139,250,.6);box-shadow:0 4px 11px rgba(0,0,0,.4);}
 
 /* Contact Persons popup */
-.sc-ov{position:fixed;inset:0;z-index:1200;background:rgba(49,22,99,.42);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px;font-family: var(--font-sans);}
+/* Backdrop matched to the P2P prototype: a neutral slate at 55% with a 5px
+   blur, not the violet tint this page was using. A coloured scrim reads as
+   part of the page's own palette, so the dialog looked tinted rather than
+   lifted off it; neutral is what makes the popup the only thing in focus. */
+.sc-ov{position:fixed;inset:0;z-index:1200;background:rgba(15,23,42,.55);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;padding:20px;font-family: var(--font-sans);}
 /* No border. The 1.5px rgba(255,255,255,.65) ring that used to be here was
    drawn OUTSIDE the overflow clip, so it traced the whole box — including the
    purple header — and read as a pale hairline inset around the gradient. The
    Figma .sc-pop has no border at all; the shadow alone lifts it off the page. */
-.sc-pop{width:100%;max-width:480px;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.45);}
+.sc-pop{width:100%;max-width:480px;background:#F7F7FA;border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.45);}
 .sc-head{display:flex;align-items:center;gap:12px;padding:16px 18px;background:linear-gradient(115deg,#4c1d95 0%,#5b21b6 28%,#6d28d9 55%,#7c3aed 80%,#8b5cf6 100%);color:#fff;}
 .sc-head-ico{width:38px;height:38px;border-radius:11px;flex-shrink:0;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;}
 .sc-title{font-size:15.5px;font-weight:700;}
@@ -575,10 +591,13 @@
 .sc-pg-arrow{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #E2D4FA;border-radius:8px;background:#fff;color:#6d28d9;cursor:pointer;transition:background .14s,color .14s,border-color .14s;}
 .sc-pg-arrow:hover:not(:disabled){background:#7c3aed;color:#fff;border-color:transparent;}
 .sc-pg-arrow:disabled{opacity:.4;cursor:not-allowed;}
-.sc-row{display:flex;align-items:flex-start;gap:12px;padding:12px 6px;border-bottom:1px solid #f1ecfb;}
+.sc-row{display:flex;align-items:flex-start;gap:12px;padding:12px 6px;border-bottom:1px solid #ECE9F5;}
+.sc-row:last-child{border-bottom:none;}
 .sc-row:last-child{border-bottom:none;}
 .sc-avatar{width:38px;height:38px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;background:linear-gradient(135deg,#8b5cf6,#7c3aed);}
 .sc-name{font-size:13px;font-weight:700;color:#1e293b;display:flex;align-items:center;gap:8px;}
+.sc-name > span:first-child{text-transform:capitalize;}
+.sup-fig .sl-contact{text-transform:capitalize;}
 .sc-role{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:99px;}
 .sc-role.is-primary{background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;}
 .sc-role.is-other{background:#f1eafe;color:#7c3aed;border:1px solid #ddd0f7;}
