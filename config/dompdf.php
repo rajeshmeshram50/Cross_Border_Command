@@ -20,7 +20,23 @@ return [
         ],
         'artifactPathValidation' => null,
         'log_output_file' => null,
-        'enable_font_subsetting' => false,
+        /*
+         * Embed only the glyphs a document actually uses, not the whole
+         * font file. (#4)
+         *
+         * This was the package default, and it made every generated PDF
+         * carry a complete copy of each DejaVu face it touched. A live
+         * template preview of two paragraphs came out at 911 KB, of which
+         * ~880 KB was font: the browser had to download that and pdf.js had
+         * to parse it before anything appeared, on every debounced keystroke.
+         * With subsetting the same preview is 49 KB — 18x smaller.
+         *
+         * Safe for the base-14 families (Helvetica, Times, Courier) because
+         * those are never embedded at all; it only affects the DejaVu faces
+         * the PDF blades fall back to for Unicode. Verified that the subset
+         * still carries the non-ASCII glyphs those templates use.
+         */
+        'enable_font_subsetting' => true,
         'pdf_backend' => 'CPDF',
         'default_media_type' => 'screen',
         'default_paper_size' => 'a4',
