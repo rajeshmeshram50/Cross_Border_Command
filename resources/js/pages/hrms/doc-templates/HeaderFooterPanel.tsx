@@ -293,11 +293,29 @@ export default function HeaderFooterPanel({
     return () => ro?.disconnect();
   }, [header.logo_url, header.show_logo, logoHeightPx]);
 
+  /* Horizontal placement for an item whose position is stored as a PERCENT but
+     whose width is in PIXELS.
+   *
+   * A percentage alone is the wrong unit here: at x=10 the logo sits 86px from
+   * the edge in a full-width editor and 0px once the Live PDF pane halves it,
+   * so the same template looked differently aligned depending on what else was
+   * open.
+   *
+   * The DOCX exporter already snaps logo alignment to THIRDS — left, centre or
+   * right — so a proportional on-screen position was showing something Word
+   * would never reproduce. Matching that here makes the preview honest and
+   * fixes the drift at the same time: the outer thirds pin to their edge and
+   * only the middle third stays proportional. */
+  const edgeSnappedLeft = (pos: PointPct, halfPx?: number): string => {
+    if (!halfPx) return `${pos.x}%`;
+    if (pos.x <= 33.34) return `${halfPx}px`;                        // left edge
+    if (pos.x >= 66.66) return `calc(100% - ${halfPx}px)`;           // right edge
+    return `clamp(${halfPx}px, ${pos.x}%, calc(100% - ${halfPx}px))`; // middle
+  };
+
   const draggableItemStyle = (pos: PointPct, halfPx?: number): React.CSSProperties => ({
     position: 'absolute',
-    left: halfPx
-      ? `clamp(${halfPx}px, ${pos.x}%, calc(100% - ${halfPx}px))`
-      : `${pos.x}%`,
+    left: edgeSnappedLeft(pos, halfPx),
     top:  `${pos.y}%`,
     transform: 'translate(-50%, -50%)',
     cursor: readOnly ? 'default' : 'grab',

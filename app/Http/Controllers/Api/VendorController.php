@@ -598,6 +598,20 @@ class VendorController extends Controller
            wipe every international supplier's TIN. The bug was invisible: the
            guard reads correctly, it was just being handed the wrong variable. */
         $countryId = $address['country_id'] ?? null;
+
+        /* Fall back to the supplier's STORED country when the payload carries
+           no address.
+           An edit that does not touch the address sends no address block, so
+           $countryId was null, $isIntl was false, and the domestic clear below
+           wiped the TIN of a supplier whose country the database knew perfectly
+           well. The scope of an EXISTING supplier is a property of the record,
+           not of whatever this particular request happened to include. */
+        if (!$countryId && !empty($data['id'])) {
+            $countryId = DB::table('vendor_addresses')
+                ->where('vendor_id', (int) $data['id'])
+                ->where('is_primary', true)
+                ->value('country_id');
+        }
         $isIndia = $countryId && DB::table('master_countries')
             ->where('id', $countryId)->whereRaw('LOWER(name) = ?', ['india'])->exists();
         $isIntl  = $countryId && !$isIndia;

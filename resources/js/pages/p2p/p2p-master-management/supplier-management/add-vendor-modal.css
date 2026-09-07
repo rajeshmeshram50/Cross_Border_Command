@@ -257,8 +257,8 @@
   display: flex; align-items: center; justify-content: center;
 }
 .avm-step-text { flex: 1; min-width: 0; }
-.avm-step-title { font-size: 13.5px; font-weight: 700; color: #1e1b4b; letter-spacing: -0.01em; }
-.avm-step-sub   { font-size: 11px; font-weight: 500; color: #94a3b8; margin-top: 2px; }
+.avm-step-title { font-size: 13.5px; font-weight: 600; color: #1e1b4b; letter-spacing: -0.01em; }
+.avm-step-sub   { font-size: 11px; font-weight: 500; color: #7c3aed; margin-top: 2px; }
 .avm-step-badge {
   flex-shrink: 0; padding: 4px 11px; border-radius: 99px;
   font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
@@ -541,7 +541,7 @@
 .avm-section-green  .avm-section-icon { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
 .avm-section-purple .avm-section-icon { background: #f5f1fe; color: #7c3aed; border-color: #e2d4fa; }
 .avm-section-headtext { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
-.avm-section-title { font-size: 11px; font-weight: 700; color: #5b21b6; letter-spacing: 0.02em; text-transform: uppercase; }
+.avm-section-title { font-size: 11px; font-weight: 600; color: #5b21b6; letter-spacing: 0.02em; text-transform: uppercase; }
 .avm-section-sub   { font-size: 10.5px; font-weight: 500; color: #a78bfa; letter-spacing: 0; }
 .avm-section-sub::before { content: '|'; margin-right: 7px; color: #c4b5fd; font-weight: 600; }
 /* Amber section keeps its amber icon, but the title + subtitle use the same
@@ -566,7 +566,7 @@
    optical centre — sat on the text baseline it rides high beside the label.
    As a flex box it is centred on its own box instead. */
 .avm-section-add-btn i {
-  font-size: 13px; line-height: 1;
+  font-size: 15px; line-height: 1;
   display: flex; align-items: center; justify-content: center;
 }
 .avm-section-add-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124,58,237,.5); }
@@ -653,7 +653,7 @@
    surrounding form chrome doesn't shout at the user. */
 .avm-field-label {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11px; font-weight: 700;
+  font-size: 11px; font-weight: 600;
   letter-spacing: 0; text-transform: none;
   color: #3b0764;
   margin-bottom: 0;
@@ -1948,6 +1948,10 @@
 
 /* KYC reference table (Figma): SR-No badge, expiry pills, Mandatory/Optional
    pair, upload/download action buttons, and a search bar above the table. */
+/* Display-only capitalisation, matching the supplier list and the Contact
+   Persons popup — a name typed in lower case reads as a name without anyone
+   rewriting the stored value. */
+.avm-contact-name { text-transform: capitalize; }
 .avm-sr-badge {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 26px; height: 24px; padding: 0 6px;

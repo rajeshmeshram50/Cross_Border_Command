@@ -725,12 +725,31 @@ export default function AddVendorModal(props: {
   useEffect(() => {
     if (gstApplicable !== 'Yes' && kycTab === 'gst') setKycTab('bank');
   }, [gstApplicable, kycTab]);
+  /* Previous scope, so the reset below can tell a real CHANGE from the first
+     run. Without it the effect fired once on hydration and blanked whatever had
+     just been loaded. */
+  const prevDocTypeRef = useRef<SegDocType | null>(null);
   useEffect(() => {
     if (country && countryOpts.length === 0) return;
     const derived = supplierDocType === 'domestic' ? 'Yes' : 'No';
     setGstApplicable(derived);
     clearFieldError('gstApplicable');
-    if (derived === 'No') { setGstNumber(''); clearFieldError('gstNumber'); }
+
+    /* Clear the tax number only when the scope actually CHANGED, never on the
+       first run.
+       This used to read `if (derived === 'No')`, which is true exactly when the
+       supplier is INTERNATIONAL — so the one case it fired on was the one case
+       it must not: the same field carries the TIN there. Opening an existing
+       international supplier loaded its TIN and then wiped it a tick later,
+       once the country resolved and this effect ran.
+       On a genuine India ⇄ overseas switch the old number IS meaningless — a
+       GSTIN must not be carried forward as a TIN — so the reset stays for that. */
+    const prev = prevDocTypeRef.current;
+    if (prev !== null && prev !== supplierDocType) {
+      setGstNumber('');
+      clearFieldError('gstNumber');
+    }
+    prevDocTypeRef.current = supplierDocType;
   }, [supplierDocType, country, countryOpts]); 
 
   const [ddDraft,    setDdDraft]    = useState<DdDraft>(EMPTY_DD_DRAFT);
@@ -2581,8 +2600,12 @@ export default function AddVendorModal(props: {
 
             if (step > 1) {
               const yesNo = (b: boolean) => (b ? 'Yes' : 'No');
+              /* Supplier Code and Company Website are deliberately absent.
+                 The code is already in the modal's own title ("Edit Supplier —
+                 S-001"), so repeating it here spends a column restating what is
+                 on screen; the website is not something anyone reviews before
+                 moving to the next stage. */
               const identityFields: PrevField[] = [
-                { label: 'Supplier Code',        value: vendorCode || '—' },
                 { label: 'Company Name',         value: companyName || '—' },
                 { label: 'Legal Name',           value: legalName || '—' },
                 { label: 'Supplier Type',        value: labelFor(vendorType, SUPPLIER_TYPE_OPTS) || vendorType || '—' },
@@ -2590,11 +2613,15 @@ export default function AddVendorModal(props: {
                 { label: 'Risk Level',           value: labelFor(riskLevel, riskLevelOpts) || '—' },
                 { label: 'Supplier Behaviour',   value: (SUPPLIER_BEHAVIOUR_OPTS.find(o => o.value === vendorBehaviour)?.label) || '—' },
                 { label: 'Supplier Category', value: (SUPPLIER_CATEGORY_OPTS.find(o => o.value === supplierCategory)?.label) || '—' },
-                { label: 'Company Website',      value: website || 'NA' },
               ];
-              if (supplierDocType === 'domestic') {
-                identityFields.push({ label: 'GST Number', value: gstNumber || '—' });
-              }
+              /* One column, two identities — the same field carries a GSTIN for
+                 a domestic supplier and a TIN for an international one, so the
+                 recap has to label it for the scope it is describing. The
+                 international side had no entry at all, so a mandatory field
+                 was missing from the review. */
+              identityFields.push(supplierDocType === 'domestic'
+                ? { label: 'GST Number', value: gstNumber || '—' }
+                : { label: 'Tax Identification Number (TIN)', value: gstNumber || '—' });
 
               prevStages.push({
                 name: 'Stage 1 — Supplier Legal Identity',
@@ -2832,32 +2859,48 @@ export default function AddVendorModal(props: {
                             const removed = segment.filter(s => !vs.includes(s));
                             if (removed.length) {
                               const lockedRemoved = removed.filter(s => lockedSegments.includes(s));
+                              /* A segment with ANY uploaded document against it
+                                 cannot be removed — full stop.
+
+                                 This used to allow the removal when another
+                                 remaining segment still required the same
+                                 document (an "orphan-only" test), so two
+                                 segments sharing a requirement could be dropped
+                                 one at a time. That reads as the file being the
+                                 thing under protection; it is not. The evidence
+                                 was collected FOR this segment, and dropping the
+                                 segment silently discards the reason it was
+                                 asked for even though the file survives under
+                                 another heading.
+
+                                 Optional documents count too: docKeys() returns
+                                 every code in the DCP rule regardless of M/O, so
+                                 an optional file that was actually uploaded is
+                                 evidence on the record like any other. */
                               const uploadedSet = new Set(uploadedKeys);
-                              const keepKeys = new Set(vs.flatMap(s => segReqKeys[String(s)] ?? []));
                               const docRemoved = removed.filter(s => !lockedRemoved.includes(s)
-                                && (segReqKeys[String(s)] ?? []).some(k => uploadedSet.has(k) && !keepKeys.has(k)));
+                                && (segReqKeys[String(s)] ?? []).some(k => uploadedSet.has(k)));
                               if (lockedRemoved.length) {
                                 const label = (id: string) => segmentOpts.find(o => o.value === id)?.label ?? id;
                                 const by = (r: string) => lockedRemoved.filter(s => lockedSegmentReasons[String(s)] === r).map(label);
                                 const poNames   = lockedRemoved.filter(s => !['spi', 'product'].includes(lockedSegmentReasons[String(s)] ?? '')).map(label);
                                 const spiNames  = by('spi');
                                 const prodNames = by('product');
-                                const plural = (n: string[], one: string, many: string) => (n.length > 1 ? many : one);
                                 if (poNames.length) {
-                                  toast.error('Cannot remove segment', `${poNames.join(', ')} — ${plural(poNames, 'this segment has', 'these segments have')} a product on an issued Purchase Order.`);
+                                  toast.error('Cannot remove segment', `${poNames.join(', ')} — used on a Purchase Order.`);
                                 }
                                 if (spiNames.length) {
-                                  toast.error('Cannot remove segment', `${spiNames.join(', ')} — ${plural(spiNames, 'this segment has', 'these segments have')} a product on a Supplier Invoice.`);
+                                  toast.error('Cannot remove segment', `${spiNames.join(', ')} — used on a Supplier Invoice.`);
                                 }
                                 if (prodNames.length) {
-                                  toast.error('Cannot remove segment', `${prodNames.join(', ')} — a product in ${plural(prodNames, 'this segment is', 'these segments is')} mapped to this supplier. Unmap it under Map Product first.`);
+                                  toast.error('Cannot remove segment', `${prodNames.join(', ')} — has a mapped product. Unmap it first.`);
                                 }
                               }
                               if (docRemoved.length) {
                                 const n = docRemoved.map(id => segmentOpts.find(o => o.value === id)?.label ?? id);
                                 toast.error(
                                   'Cannot remove segment',
-                                  `${n.join(', ')} — ${n.length > 1 ? 'documents have' : 'a document has'} been uploaded against ${n.length > 1 ? 'requirements only these segments ask for' : 'a requirement only this segment asks for'}. Delete ${n.length > 1 ? 'those files' : 'that file'} in KYC / Due Diligence first.`,
+                                  `${n.join(', ')} — has uploaded documents. Delete them in KYC / Due Diligence first.`,
                                 );
                               }
                               const blocked = [...lockedRemoved, ...docRemoved];
@@ -3203,7 +3246,7 @@ export default function AddVendorModal(props: {
                                   <td>{idx + 1}</td>
                                   <td>
                                     <Tooltip label={r.name || '—'}>
-                                      <strong>{r.name && r.name.length > 20 ? r.name.slice(0, 20) + '…' : (r.name || '—')}</strong>
+                                      <strong className="avm-contact-name">{r.name && r.name.length > 20 ? r.name.slice(0, 20) + '…' : (r.name || '—')}</strong>
                                     </Tooltip>
                                     {r.isPrimary && (
                                       <span className="avm-primary-tag ms-2">Primary</span>
@@ -4913,7 +4956,7 @@ function BankTable(props: { rows: BankRow[];  international?: boolean; onRemove?
     >
           {props.rows.map((r, i) => (
             <tr key={r.id}>
-              <td>{String(i + 1).padStart(2, '0')}</td>
+              <td><span className="avm-sr-badge">{String(i + 1).padStart(2, '0')}</span></td>
               <td><strong>{r.bankName}</strong></td>
               <td>{r.branchName}</td>
               <td><span className="font-monospace fs-13">{r.accountNumber}</span></td>
@@ -4948,7 +4991,7 @@ function GstScrutinyTable(props: { rows: GstScrutinyRow[] }) {
     >
       {props.rows.map((r, i) => (
         <tr key={r.id}>
-          <td>{String(i + 1).padStart(2, '0')}</td>
+          <td><span className="avm-sr-badge">{String(i + 1).padStart(2, '0')}</span></td>
           <td>{fmtDMY(r.scrutinyDate)}</td>
           <td><span className="font-monospace fs-13">{r.gstNumber}</span></td>
           <td>
@@ -5267,7 +5310,7 @@ export function MappedProductsViewPopup(props: {
          control the header has space for. */
       headerAction={
         <button className="avm-cp-head-btn" onClick={openMapForm} disabled={saving || rows === null}>
-          <i className="ri-add-line" /> Map Product
+          <i className="ri-add-line" /> Map New Product
         </button>
       }
       footer={<button className="avm-btn-ghost" onClick={props.onClose} disabled={saving}>Close</button>}
@@ -5277,7 +5320,7 @@ export function MappedProductsViewPopup(props: {
       ) : failed ? (
         <div className="avm-empty avm-empty-accent">Could not load the mapped products. Close and try again.</div>
       ) : rows.length === 0 ? (
-        <div className="avm-empty avm-empty-accent">No products mapped yet. Click "Map Product" to begin.</div>
+        <div className="avm-empty avm-empty-accent">No products mapped yet. Click "Map New Product" to begin.</div>
       ) : (
         /* Read-only rows: editing and removing a mapping stay in the supplier
            form, where the rest of the step's validation lives. */
