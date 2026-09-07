@@ -612,6 +612,13 @@ class ProductController extends Controller
      * ────────────────────────────────────────────────────────────── */
     public function storeCore(Request $request)
     {
+        foreach (['description', 'confidential_info'] as $textField) {
+            $value = $request->input($textField);
+            if (is_string($value)) {
+                $request->merge([$textField => str_replace(["\r\n", "\r"], "\n", $value)]);
+            }
+        }
+
         $data = $request->validate([
             'id'                    => 'nullable|integer|exists:products,id',
             'name'                  => 'required|string|max:100',
