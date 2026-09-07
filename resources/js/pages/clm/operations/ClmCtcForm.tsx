@@ -2096,8 +2096,13 @@ function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t:
         pre.add(`${i}:${idx >= 0 ? idx : 0}`);
       });
       setSel(pre);
-      setLoading(false);
-    });
+    })
+    /* Always clear the flag, on every outcome.
+       The Send button is now gated on it, so a throw anywhere above would
+       leave the modal permanently unusable rather than merely contact-less.
+       Individual requests already swallow their own errors, so reaching here
+       with an empty list is a normal (if unhelpful) result, not a failure. */
+      .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2114,6 +2119,10 @@ function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t:
   });
   const badgeTone = (badge: string) => badge === 'SUPPLIER' ? { fg: t.dark ? '#6ee7b7' : '#059669' } : badge === 'CONSIGNEE' ? { fg: t.dark ? '#67e8f9' : '#0891b2' } : { fg: t.dark ? '#c4b5fd' : '#7C3AED' };
   const submit = () => {
+    /* Contact persons decide WHO the agreement goes to, so there is nothing
+       to send until they arrive. The button below is disabled over that
+       window; this is the second line of defence. */
+    if (loading) return;
     const recipients = cps.map((cp, i) => {
       const chosen = (contacts[i] || []).filter((_, j) => sel.has(`${i}:${j}`));
       if (!chosen.length) return null;
@@ -2204,7 +2213,11 @@ function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t:
           <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 9, fontWeight: 600, color: t.textMuted }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>Sent via secure e-sign link</span>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.1)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-            <button onClick={submit} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', color: '#fff', fontSize: 10.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(109,40,217,.4)' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg> Send for Signing &amp; Negotiation</button>
+            {/* Live only once the contact persons have loaded. The recipients ARE
+                the contacts, so until they land the click could only ever fail
+                — it ran submit() against an empty list and answered a
+                still-loading screen with "No recipients". */}
+            <button onClick={submit} disabled={loading} title={loading ? 'Loading contact persons…' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', borderRadius: 9, border: 'none', background: loading ? '#C4B5FD' : 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', color: '#fff', fontSize: 10.5, fontWeight: 800, cursor: loading ? 'wait' : 'pointer', fontFamily: 'inherit', boxShadow: loading ? 'none' : '0 4px 14px rgba(109,40,217,.4)' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg> {loading ? 'Loading contacts…' : <>Send for Signing &amp; Negotiation</>}</button>
           </div>
         </div>
       </div>
