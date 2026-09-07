@@ -213,6 +213,12 @@ export default function CtcLivePreview({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: bg, borderLeft: `1.5px solid ${border}` }}>
+      {/* .ctc-spin was defined only inside ClmCtcForm’s style block, which the
+          HR Document Template editor never renders — so every spinner in this
+          panel was a STATIC arc there, which is worse than no spinner at all:
+          it looks like a stalled icon rather than work in progress. This panel
+          is shared by both editors, so it carries its own keyframes. */}
+      <style>{'.ctc-spin{animation:ctcSpin .7s linear infinite}@keyframes ctcSpin{to{transform:rotate(360deg)}}'}</style>
       {/* preview toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '7px 10px', background: barBg, borderBottom: `1px solid ${border}`, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -232,12 +238,25 @@ export default function CtcLivePreview({
           <button type="button" style={navBtn(activePage >= numPages)} disabled={activePage >= numPages} onClick={() => goto(activePage + 1)} title="Next page">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
           </button>
-          <button type="button" style={{ ...navBtn(false), background: dark ? 'rgba(124,58,237,.25)' : '#EDE9FE', color: fg }} onClick={() => void render()} title="Refresh preview now">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+          <button
+            type="button"
+            style={{ ...navBtn(status === 'loading'), background: dark ? 'rgba(124,58,237,.25)' : '#EDE9FE', color: fg }}
+            disabled={status === 'loading'}
+            onClick={() => void render()}
+            title={status === 'loading' ? 'Rendering…' : 'Refresh preview now'}
+            aria-busy={status === 'loading'}
+          >
+            {status === 'loading'
+              ? <svg className="ctc-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+              : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>}
           </button>
         </div>
       </div>
 
+      {/* Positioned wrapper for the page stack + its loading veil. The veil is
+          a SIBLING of the scroller, not a child: inside it, it would scroll
+          away with the pages and stop covering anything. */}
+      <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {/* scrollable stack of pages (the "book") */}
       <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
         {status === 'error' && (
@@ -262,6 +281,42 @@ export default function CtcLivePreview({
             <canvas ref={el => { canvasRefs.current[i] = el; }} style={{ display: 'block', width: '100%' }} />
           </div>
         ))}
+      </div>
+
+      {/* Re-render veil.
+          Only when pages are ALREADY on screen. The empty state below the
+          toolbar already says "Rendering preview…" for the first render; the
+          gap was every render after it, where the previous pages stayed fully
+          painted and the only sign of activity was a 12px spinner in the
+          toolbar corner. The document looked finished while it was being
+          rebuilt, so a change appeared to have done nothing.
+          The stale pages stay visible underneath, dimmed — the user keeps
+          their place in the document instead of the panel going blank. */}
+      {status === 'loading' && numPages > 0 && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'absolute', inset: 0, zIndex: 5,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: dark ? 'rgba(15,10,31,.55)' : 'rgba(255,255,255,.62)',
+            backdropFilter: 'blur(1.5px)',
+            cursor: 'progress',
+          }}
+        >
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '8px 14px', borderRadius: 999,
+            background: dark ? 'rgba(30,20,55,.95)' : '#fff',
+            border: `1.5px solid ${border}`,
+            boxShadow: '0 6px 20px rgba(8,3,28,.18)',
+            fontSize: 11.5, fontWeight: 700, color: fg,
+          }}>
+            <svg className="ctc-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+            Updating preview…
+          </span>
+        </div>
+      )}
       </div>
     </div>
   );

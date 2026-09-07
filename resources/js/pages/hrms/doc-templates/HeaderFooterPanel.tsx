@@ -251,9 +251,71 @@ export default function HeaderFooterPanel({
     return () => ro.disconnect();
   }, [header.show_title]);
 
-  const draggableItemStyle = (pos: PointPct): React.CSSProperties => ({
+  /* @param halfPx  Half the item's widest possible rendered width. When given,
+   *   the item's centre is clamped so that half cannot fall outside the band.
+   *
+   * Items are CENTRE-anchored (translate(-50%,-50%)), so half of one sits to
+   * the LEFT of pos.x. pos.x is a percentage but the item's width is in pixels,
+   * so as the header narrows — which is exactly what opening the Live PDF pane
+   * does to the editor column — that percentage shrinks in px while the item
+   * does not, and the band's overflow:hidden cuts the overhang off. The logo
+   * lost its left edge that way; the title block already guards against the
+   * same thing with a maxWidth cap.
+   *
+   * clamp() keeps it in pure CSS, so it re-solves on every resize with no
+   * measurement and no observer — and no observer means no feedback loop. */
+  /* The logo's ACTUAL rendered half-width, measured.
+   *
+   * The clamp below needs to know how far the logo reaches either side of its
+   * centre. Using its maximum POSSIBLE width instead — max(180, height*3) —
+   * over-insets every logo narrower than that, which showed up as a permanent
+   * empty gap down the left of the header even when nothing was at risk of
+   * being cut. Measuring means the clamp only moves the logo when it genuinely
+   * would not fit.
+   *
+   * Observing the logo is safe here: this effect changes the element's
+   * POSITION, never its size, so it cannot re-trigger its own observer. The
+   * equality guard stops sub-pixel churn from re-rendering on every frame. */
+  const logoElRef = useRef<HTMLDivElement>(null);
+  const [logoHalfPx, setLogoHalfPx] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const el = logoElRef.current;
+    if (!el) { setLogoHalfPx(undefined); return; }
+    const measure = () => {
+      const w = el.getBoundingClientRect().width;
+      if (!w) return;
+      const half = w / 2;
+      setLogoHalfPx(prev => (prev !== undefined && Math.abs(prev - half) < 0.5) ? prev : half);
+    };
+    measure();
+    const ro = 'ResizeObserver' in window ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [header.logo_url, header.show_logo, logoHeightPx]);
+
+  /* Horizontal placement for an item whose position is stored as a PERCENT but
+     whose width is in PIXELS.
+   *
+   * A percentage alone is the wrong unit here: at x=10 the logo sits 86px from
+   * the edge in a full-width editor and 0px once the Live PDF pane halves it,
+   * so the same template looked differently aligned depending on what else was
+   * open.
+   *
+   * The DOCX exporter already snaps logo alignment to THIRDS — left, centre or
+   * right — so a proportional on-screen position was showing something Word
+   * would never reproduce. Matching that here makes the preview honest and
+   * fixes the drift at the same time: the outer thirds pin to their edge and
+   * only the middle third stays proportional. */
+  const edgeSnappedLeft = (pos: PointPct, halfPx?: number): string => {
+    if (!halfPx) return `${pos.x}%`;
+    if (pos.x <= 33.34) return `${halfPx}px`;                        // left edge
+    if (pos.x >= 66.66) return `calc(100% - ${halfPx}px)`;           // right edge
+    return `clamp(${halfPx}px, ${pos.x}%, calc(100% - ${halfPx}px))`; // middle
+  };
+
+  const draggableItemStyle = (pos: PointPct, halfPx?: number): React.CSSProperties => ({
     position: 'absolute',
-    left: `${pos.x}%`,
+    left: edgeSnappedLeft(pos, halfPx),
     top:  `${pos.y}%`,
     transform: 'translate(-50%, -50%)',
     cursor: readOnly ? 'default' : 'grab',
@@ -307,12 +369,17 @@ export default function HeaderFooterPanel({
           <div
             onMouseDown={startDrag('logo')}
             data-tpl-no-popover="1"
-            style={draggableItemStyle(logoPos)}
+            ref={logoElRef}
+            style={draggableItemStyle(logoPos, logoHalfPx)}
             title={readOnly ? '' : 'Drag to reposition logo'}
           >
             {header.logo_url ? (
               <img src={header.logo_url} alt="logo" draggable={false}
-                style={{ height: logoHeightPx, maxWidth: Math.max(180, logoHeightPx * 3), objectFit: 'contain', pointerEvents: 'none' }} />
+                /* min() with 100% is the last resort: a logo wider than the
+                   band itself cannot be positioned out of trouble, so it is
+                   scaled down to fit instead of being cut. objectFit keeps the
+                   aspect ratio either way. */
+                style={{ height: logoHeightPx, maxWidth: `min(${Math.max(180, logoHeightPx * 3)}px, 100%)`, objectFit: 'contain', pointerEvents: 'none' }} />
             ) : (
               <div className="tpl-logo-placeholder" style={{ width: Math.max(72, logoHeightPx * 1.8), height: logoHeightPx, borderRadius: 6, border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 11, fontWeight: 700, letterSpacing: 1, background: '#f8fafc', pointerEvents: 'none' }}>
                 LOGO
