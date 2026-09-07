@@ -8190,6 +8190,20 @@
 .att-emp-exit-pill i { font-size: 10px; }
 [data-bs-theme="dark"] .att-emp-exit-pill { background: rgba(148,163,184,0.18); color: #cbd5e1; }
 
+/* Serving notice — shaped like the exit pill because it sits in the same slot,
+   but amber rather than slate: this person is still working, and the grey
+   "Left" pill beside them means the opposite thing. (#13) */
+.att-emp-notice-pill {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin-top: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #fef3c7; color: #92400e;
+  font-size: 9.5px; font-weight: 700;
+}
+.att-emp-notice-pill i { font-size: 10px; }
+[data-bs-theme="dark"] .att-emp-notice-pill { background: rgba(245,158,11,0.18); color: #fcd34d; }
+
 /* "Include exited" next to the roster count. The status tabs above filter the
    roster; this changes who is in it, so it sits with the count instead. */
 .att-emplist-exited {

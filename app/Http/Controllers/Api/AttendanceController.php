@@ -1037,6 +1037,27 @@ class AttendanceController extends Controller
             if ($exitIso !== null && $date > $exitIso && !$today) {
                 $statusToday = 'Exited';
             }
+
+            /* HAS LEFT versus IS LEAVING — two different states that were
+               reported as one. (#13)
+               $exitIso above is the employment WINDOW: it exists from the
+               moment notice is filed at Stage 1, because that is when the last
+               working day is captured, and it correctly bounds the calendar and
+               the log at both ends. But it says nothing about whether the
+               person has actually gone. Using it to label them made an employee
+               serving notice — still on the floor, still punching in every
+               morning — read as "Exited" in the roster.
+               Someone has LEFT only once the exit case is Closed (the marker
+               ExitController stamps with completed_at at Stage 4), or when they
+               were removed through Employee Management with no exit record at
+               all. Until then they are an ordinary employee with a known end
+               date, which is what noticeUntil says instead. */
+            $exitCompleted = $emp->exit
+                && !$emp->exit->rehired_at
+                && (string) ($emp->exit->exit_case_status ?? 'Open') === 'Closed';
+            $hasLeft       = $exitCompleted || ($emp->deleted_at !== null);
+            $exitedOnIso   = $hasLeft ? ($exitIso ?? $emp->deleted_at?->toDateString()) : null;
+            $noticeUntil   = (!$hasLeft && $exitIso !== null) ? $exitIso : null;
             // Approved leave wins over an "Absent" reading (no attendance row).
             if (isset($onLeaveSet[$emp->id]) && strcasecmp($statusToday, 'Absent') === 0) {
                 $statusToday = 'Leave';
@@ -1202,10 +1223,21 @@ class AttendanceController extends Controller
                 // Lets the SPA blank out calendar cells before the employee
                 // joined instead of painting them as attendance days (CBC #74).
                 'dateOfJoining'     => $joinIso,
-                /* Last working day, or null for current staff. Lets the SPA
-                   badge a leaver in the roster and blank their calendar cells
-                   after this date, the way dateOfJoining does before it (#91). */
-                'exitedOn'          => $exitIso,
+                /* The day they LEFT — set only once the exit is complete, so
+                   the roster badges someone who has actually gone. Null while
+                   an exit is still in progress: that person is on notice, not
+                   out the door. (#91, narrowed by #13) */
+                'exitedOn'          => $exitedOnIso,
+                /* Their last working day while the exit is still IN PROGRESS.
+                   Same date, different meaning — it lets the roster say "on
+                   notice until X" rather than mislabelling them as exited, and
+                   keeps the end of their employment window on screen. (#13) */
+                'noticeUntil'       => $noticeUntil,
+                /* The employment window's far end whatever the exit's stage —
+                   what the calendar bounds itself by. Kept separate from the
+                   two above precisely because bounding a window and saying
+                   somebody has left are different questions. (#13) */
+                'employedUntil'     => $exitIso,
                 // Default office hours fall back to 09:30 – 18:30 (9 h
                 // working window). Employees with a parseable shift string
                 // like "General (09:00 – 18:00)" override this — handled
