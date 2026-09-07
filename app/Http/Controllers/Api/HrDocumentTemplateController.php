@@ -279,17 +279,13 @@ class HrDocumentTemplateController extends Controller
         return str_contains($path, '/') ? $path : null;
     }
 
-    /** Public-disk file → base64 data URI, or null when unreadable. */
+    /** Public-disk file → base64 data URI, or null when unreadable.
+     *
+     *  Downscaled and cached — see App\Support\InlineImage. Embedding the
+     *  logo at its stored size was 99% of this preview’s render time. */
     private function previewImageDataUri(string $path): ?string
     {
-        try {
-            $disk = \Illuminate\Support\Facades\Storage::disk('public');
-            if (!$path || !$disk->exists($path)) return null;
-            $mime = $disk->mimeType($path) ?: 'image/png';
-            return 'data:' . $mime . ';base64,' . base64_encode($disk->get($path));
-        } catch (\Throwable $e) {
-            return null;
-        }
+        return \App\Support\InlineImage::dataUri($path);
     }
 
     /** Rewrite local <img src> values into data URIs for DomPDF. */
