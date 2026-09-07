@@ -466,6 +466,15 @@ class AttendanceController extends Controller
             'shift_start'      => $shiftStart,
             'shift_end'        => $shiftEnd,
             'weekly_off'       => (string) ($emp->weekly_off ?? ''),
+            /* Resolved weekly-off DAYS, not just the label — see the matching
+               `weeklyOffDates` in dailyView(). The employee-profile calendar
+               ran the same label-scanning guess and had the same blind spots,
+               so it gets the same server-resolved answer. (#94) */
+            'weekly_off_dates' => (object) \App\Support\WeekOff::datesInRange(
+                (string) ($emp->weekly_off ?? ''),
+                $start->copy(),
+                $end->copy(),
+            ),
             'expected_minutes' => $this->expectedMinutesFromWindow($shiftStart, $shiftEnd),
             'logs'             => $this->buildHistoryLogs(
                 $history,
@@ -708,7 +717,14 @@ class AttendanceController extends Controller
                 'reportingManagerUser:id,name',
                 'branch:id,shifts', // shift-window resolution (resolveShiftWindow) without an N+1
                 // Last working day, to label a leaver's post-exit days (#91).
-                'exit:id,employee_id,last_working_day,rehired_at',
+                /* exit_case_status is REQUIRED here, not decorative: it is how
+                   "has left" is told apart from "is leaving" (#13). Leave it
+                   out of this column list and the attribute reads null, every
+                   exit looks Open, and a fully exited employee is badged as
+                   serving notice. A constrained select that silently omits a
+                   column a caller depends on fails quietly — nothing errors,
+                   the answer is just wrong. */
+                'exit:id,employee_id,last_working_day,rehired_at,exit_case_status',
             ])
             ->orderBy('display_name');
 
@@ -973,7 +989,7 @@ class AttendanceController extends Controller
             }
         }
 
-        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $detailMode, $date, $histStart, $histEnd, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $holidayByGroupCal, $mtdEndC, $dateC, $onLeaveSet, $leaveDaysByEmp, $leaveLogByEmp, $pendingCorrections) {
+        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $detailMode, $date, $histStart, $histEnd, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $holidayByGroupCal, $calendarHolidayEnd, $mtdEndC, $dateC, $onLeaveSet, $leaveDaysByEmp, $leaveLogByEmp, $pendingCorrections) {
             [$parsedStart, $parsedEnd] = $emp->resolveShiftWindow();
             $shiftStart = $parsedStart ?: $defaultShiftStart;
             $shiftEnd   = $parsedEnd   ?: $defaultShiftEnd;
@@ -1028,6 +1044,27 @@ class AttendanceController extends Controller
             if ($exitIso !== null && $date > $exitIso && !$today) {
                 $statusToday = 'Exited';
             }
+
+            /* HAS LEFT versus IS LEAVING — two different states that were
+               reported as one. (#13)
+               $exitIso above is the employment WINDOW: it exists from the
+               moment notice is filed at Stage 1, because that is when the last
+               working day is captured, and it correctly bounds the calendar and
+               the log at both ends. But it says nothing about whether the
+               person has actually gone. Using it to label them made an employee
+               serving notice — still on the floor, still punching in every
+               morning — read as "Exited" in the roster.
+               Someone has LEFT only once the exit case is Closed (the marker
+               ExitController stamps with completed_at at Stage 4), or when they
+               were removed through Employee Management with no exit record at
+               all. Until then they are an ordinary employee with a known end
+               date, which is what noticeUntil says instead. */
+            $exitCompleted = $emp->exit
+                && !$emp->exit->rehired_at
+                && (string) ($emp->exit->exit_case_status ?? 'Open') === 'Closed';
+            $hasLeft       = $exitCompleted || ($emp->deleted_at !== null);
+            $exitedOnIso   = $hasLeft ? ($exitIso ?? $emp->deleted_at?->toDateString()) : null;
+            $noticeUntil   = (!$hasLeft && $exitIso !== null) ? $exitIso : null;
             // Approved leave wins over an "Absent" reading (no attendance row).
             if (isset($onLeaveSet[$emp->id]) && strcasecmp($statusToday, 'Absent') === 0) {
                 $statusToday = 'Leave';
@@ -1193,10 +1230,21 @@ class AttendanceController extends Controller
                 // Lets the SPA blank out calendar cells before the employee
                 // joined instead of painting them as attendance days (CBC #74).
                 'dateOfJoining'     => $joinIso,
-                /* Last working day, or null for current staff. Lets the SPA
-                   badge a leaver in the roster and blank their calendar cells
-                   after this date, the way dateOfJoining does before it (#91). */
-                'exitedOn'          => $exitIso,
+                /* The day they LEFT — set only once the exit is complete, so
+                   the roster badges someone who has actually gone. Null while
+                   an exit is still in progress: that person is on notice, not
+                   out the door. (#91, narrowed by #13) */
+                'exitedOn'          => $exitedOnIso,
+                /* Their last working day while the exit is still IN PROGRESS.
+                   Same date, different meaning — it lets the roster say "on
+                   notice until X" rather than mislabelling them as exited, and
+                   keeps the end of their employment window on screen. (#13) */
+                'noticeUntil'       => $noticeUntil,
+                /* The employment window's far end whatever the exit's stage —
+                   what the calendar bounds itself by. Kept separate from the
+                   two above precisely because bounding a window and saying
+                   somebody has left are different questions. (#13) */
+                'employedUntil'     => $exitIso,
                 // Default office hours fall back to 09:30 – 18:30 (9 h
                 // working window). Employees with a parseable shift string
                 // like "General (09:00 – 18:00)" override this — handled
@@ -1235,6 +1283,28 @@ class AttendanceController extends Controller
                 'holidays'          => $detailMode
                     ? (object) ($holidayByGroupCal[$emp->holiday_group_id ?? self::HOLIDAY_COMPANY_KEY]
                         ?? $holidayByGroupCal[self::HOLIDAY_COMPANY_KEY] ?? [])
+                    : (object) [],
+                /* { "YYYY-MM-DD": true } — the employee's weekly-off days,
+                   resolved SERVER-SIDE by WeekOff and spanning the same window
+                   as `holidays` above. (#94)
+                   The SPA used to receive only the `weeklyOff` LABEL and
+                   re-derive the days by scanning it for weekday names. That
+                   could not express "1st & 3rd Saturday" — it saw the word
+                   "Saturday" and marked every one of them off — and a label
+                   with no weekday in it at all, like the seeded "Week Off
+                   Policy", matched nothing, so the calendar showed no weekly
+                   off whatsoever. WeekOff is the single authority everywhere
+                   else (payroll, leave, the log builder); the calendar now
+                   reads the same answer instead of guessing at the label.
+                   Runs past today on purpose, exactly like the holiday map: a
+                   weekly off is a known recurring pattern, so upcoming ones
+                   paint rather than leaving the rest of the month blank. */
+                'weeklyOffDates'    => $detailMode
+                    ? (object) \App\Support\WeekOff::datesInRange(
+                        (string) ($emp->weekly_off ?? ''),
+                        \Carbon\Carbon::parse($histStart),
+                        $calendarHolidayEnd,
+                    )
                     : (object) [],
                 /* Null unless a regularization for THIS date is still awaiting
                    a decision (#92). The SPA shows its pill on

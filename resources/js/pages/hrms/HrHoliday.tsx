@@ -151,7 +151,7 @@ export default function HrHoliday() {
      is gone — every column sorts from its own header arrow now.
 
      PIXEL widths, not percentages (#60). The table runs `table-layout: fixed`
-     with `minWidth={1250}`, and DataTable prepends a 56px serial column — a
+     with `minWidth={1395}`, and DataTable prepends a 56px serial column — a
      fixed value. Mixing that with percentages made the two sizing systems
      fight: the percentages resolve against the table's own width, which the
      56px then pushes past, so the browser redistributed the shortfall across
@@ -166,7 +166,9 @@ export default function HrHoliday() {
      convention (and same reasoning) as Exit Management's column block.
 
      Sum MUST stay in step with minWidth below:
-       56 serial + 138+365+176+138+113+151+113 = 1250. */
+       56 serial + 138+250+260+176+138+113+151+113 = 1395.
+     (Description became its own column in #2; Holiday Name gave up the width
+      it had been using for the second line that column replaced.) */
   const columns = useMemo<DataTableColumn<HolidayRow>[]>(() => [
     {
       header: 'Holiday ID',
@@ -180,8 +182,11 @@ export default function HrHoliday() {
     {
       header: 'Holiday Name',
       accessorKey: 'name',
-      // wrap: the description rides on a second line under the name.
-      meta: { width: 365, wrap: true },
+      /* Name only. The description used to ride on a second line inside this
+         cell, which is why the table had no Description column at all — the
+         data was on screen but filed under the wrong heading, unsortable and
+         impossible to scan down. It has its own column now. (#2) */
+      meta: { width: 250, wrap: true },
       cell: info => {
         const r = info.row.original;
         /* Truncation is done in CSS, not by slicing the string. A 50-char cut
@@ -210,14 +215,30 @@ export default function HrHoliday() {
                 <div className="fw-bold fs-13" style={clip}>{r.name}</div>
               </Tooltip>
             </div>
-            {r.description && (
-              <Tooltip label={r.description}>
-                <div className="text-muted" style={{ fontSize: 11.5, ...clip }}>
-                  {r.description}
-                </div>
-              </Tooltip>
-            )}
           </>
+        );
+      },
+    },
+    {
+      /* Its own column, beside the name rather than beneath it. (#2)
+         Same one-line clip + hover-for-full-text the name uses, so a long
+         description cannot drag the row height out and every row stays the
+         same height whatever it contains (the reasoning from CBC #54). */
+      header: 'Description',
+      accessorKey: 'description',
+      meta: { width: 260, wrap: true },
+      cell: info => {
+        const d = info.row.original.description;
+        if (!d) return <span className="text-muted">—</span>;
+        return (
+          <Tooltip label={d}>
+            <div
+              className="text-muted"
+              style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}
+            >
+              {d}
+            </div>
+          </Tooltip>
         );
       },
     },
@@ -509,7 +530,7 @@ export default function HrHoliday() {
                  Employee Onboarding hub. */
               fitToViewport
               autoFitRows
-              minWidth={1250}
+              minWidth={1395}
               loading={loading}
               searchValue={search}
               onSearchChange={setSearch}
@@ -552,10 +573,13 @@ export default function HrHoliday() {
                     {importing ? <Spinner size="sm" /> : <i className="ri-file-excel-2-line" />}Import Excel
                   </button>
                   {/* Groups sits beside "Add Holiday" and is highlighted so it's
-                      clear this is where you create groups first. */}
+                      clear this is where you create groups first. The highlight
+                      lives in .hol-groups-btn, NOT in a style attribute — inline
+                      colours outrank the dark-theme rules, which left this button
+                      pale lilac in dark mode while Template and Import Excel
+                      beside it went dark. (#96) */}
                   <Tooltip label="Create & manage holiday groups — add a group here first, then assign holidays to it">
-                    <button type="button" className="rec-btn-ghost hol-groups-btn" onClick={() => setManageGroupsOpen(true)}
-                      style={{ background: 'linear-gradient(135deg,#ede9fe,#ddd6fe)', border: '1px solid #c4b5fd', color: '#6d28d9', fontWeight: 700 }}>
+                    <button type="button" className="rec-btn-ghost hol-groups-btn" onClick={() => setManageGroupsOpen(true)}>
                       <i className="ri-folder-add-line" />Groups
                     </button>
                   </Tooltip>

@@ -315,6 +315,49 @@ class HrTemplateDocxRenderer
         return null;
     }
 
+    /**
+     * Image style that fits the logo INSIDE its header cell.
+     *
+     * addImage(['height' => N]) constrains one axis only and lets the width
+     * follow the aspect ratio, with nothing stopping it at the cell edge. A
+     * wide/banner logo — the common case, since most company logos are far
+     * wider than tall — then rendered several times wider than the column it
+     * lived in: a 1200x200 mark at 60pt height came out 360pt wide against a
+     * 112pt cell. The table has a FIXED layout, so Word keeps the columns where
+     * they are and the picture simply overruns the one beside it, covering the
+     * company name and running past the right margin. That is the reported
+     * "company name partially displayed" — the text was always written in full,
+     * it was being sat on by the logo.
+     *
+     * Scaling by whichever axis binds first keeps the aspect ratio and
+     * guarantees the image never exceeds the cell in either direction. A logo
+     * that already fits is scaled DOWN only, never enlarged, so the configured
+     * height still means what it says for ordinary square-ish marks.
+     *
+     * @param int $maxHeightPt Configured logo height, in points.
+     * @param int $cellWidthTwips Width of the logo cell, in twips.
+     */
+    public static function logoFitStyle(string $absLogo, int $maxHeightPt, int $cellWidthTwips): array
+    {
+        $maxWidthPt = $cellWidthTwips / 20.0;   // 20 twips per point
+
+        $dim = @getimagesize($absLogo);
+        if (!is_array($dim) || ($dim[0] ?? 0) <= 0 || ($dim[1] ?? 0) <= 0) {
+            /* Intrinsic size unknown (a format getimagesize cannot read). Cap
+               BOTH axes rather than the height alone — a squashed logo is
+               recoverable, a header with the company name buried under it is
+               what we are fixing. */
+            return ['height' => $maxHeightPt, 'width' => $maxWidthPt];
+        }
+
+        $scale = min($maxHeightPt / $dim[1], $maxWidthPt / $dim[0], 1.0);
+
+        return [
+            'width'  => round($dim[0] * $scale, 2),
+            'height' => round($dim[1] * $scale, 2),
+        ];
+    }
+
     private static function writeHeader($section, array $cfg): void
     {
         $logoPath = $cfg['logo_path'] ?? null;
@@ -362,7 +405,7 @@ class HrTemplateDocxRenderer
          * two exports agree. */
         $absLogo = self::resolveDocxLogo($logoPath) ?: self::logoFromUrl($cfg['logo_url'] ?? null);
         if ($absLogo) {
-            try { $logoCell->addImage($absLogo, ['height' => $logoH]); }
+            try { $logoCell->addImage($absLogo, self::logoFitStyle($absLogo, $logoH, $logoW)); }
             catch (Throwable $e) { $logoCell->addText('[Logo]', ['italic' => true, 'color' => '808080']); }
         } elseif ($logoPath || !empty($cfg['logo_url'])) {
             /* A logo WAS configured but could not be resolved. Say so in the

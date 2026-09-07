@@ -8190,6 +8190,20 @@
 .att-emp-exit-pill i { font-size: 10px; }
 [data-bs-theme="dark"] .att-emp-exit-pill { background: rgba(148,163,184,0.18); color: #cbd5e1; }
 
+/* Serving notice — shaped like the exit pill because it sits in the same slot,
+   but amber rather than slate: this person is still working, and the grey
+   "Left" pill beside them means the opposite thing. (#13) */
+.att-emp-notice-pill {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin-top: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #fef3c7; color: #92400e;
+  font-size: 9.5px; font-weight: 700;
+}
+.att-emp-notice-pill i { font-size: 10px; }
+[data-bs-theme="dark"] .att-emp-notice-pill { background: rgba(245,158,11,0.18); color: #fcd34d; }
+
 /* "Include exited" next to the roster count. The status tabs above filter the
    roster; this changes who is in it, so it sits with the count instead. */
 .att-emplist-exited {
@@ -11974,6 +11988,63 @@
     flex: 1 1 calc(50% - 8px);
     justify-content: center;
   }
+}
+
+/* Holiday toolbar — one set of metrics for every button in the row. (#60)
+   Template and Import Excel (.rec-btn-ghost) sat beside Add Holiday
+   (.rec-btn-primary) with quietly different geometry: 16px side padding
+   against 18px, font-weight 600 against 700, a 5px icon gap against 7px, and
+   no letter-spacing. Same height and radius, so nothing looked broken — the
+   labels just sat at different optical widths and the icons at different
+   distances from their text, which reads as the row being misaligned rather
+   than as four buttons of different kinds.
+   The metrics are matched here; the FILL deliberately is not. Add Holiday is
+   the primary action and keeps its gradient, Groups keeps its violet tint,
+   and the other two stay ghost — that hierarchy is the point of the row.
+   Scoped to .holiday-page: .rec-btn-ghost is used across recruitment, the
+   modals and half a dozen other pages, and this is a fix for this toolbar,
+   not a change to the button everywhere. */
+.holiday-page .dt-toolbar-actions .rec-btn-ghost {
+  padding-left: 18px;
+  padding-right: 18px;
+  font-weight: 700;
+  gap: 7px;
+  letter-spacing: 0.01em;
+}
+
+/* Groups button — the emphasised sibling of Template / Import Excel. (#96)
+   These colours used to be an inline style attribute on the button, which
+   beats every stylesheet rule including the dark-mode one. So in dark theme
+   Template and Import Excel correctly followed .rec-btn-ghost onto the dark
+   surface while Groups stayed a pale lilac sticker beside them — the reported
+   inconsistency. It reads as the other two being wrong; it was Groups that
+   could not be themed.
+   Kept as a class so the highlight survives, but now with a dark variant that
+   sits on the same surface as its neighbours: same violet accent the ghost
+   button already uses on hover, so Groups still stands out as the "do this
+   first" action without breaking out of the theme. */
+.holiday-page .hol-groups-btn {
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  border: 1px solid #c4b5fd;
+  color: #6d28d9;
+  font-weight: 700;
+}
+.holiday-page .hol-groups-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #ddd6fe, #c4b5fd);
+  border-color: #a78bfa;
+  color: #5b21b6;
+}
+[data-bs-theme="dark"] .holiday-page .hol-groups-btn,
+[data-layout-mode="dark"] .holiday-page .hol-groups-btn {
+  background: rgba(124, 92, 252, 0.18);
+  border-color: rgba(167, 139, 250, 0.55);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .holiday-page .hol-groups-btn:hover:not(:disabled),
+[data-layout-mode="dark"] .holiday-page .hol-groups-btn:hover:not(:disabled) {
+  background: rgba(124, 92, 252, 0.3);
+  border-color: rgba(167, 139, 250, 0.8);
+  color: #ddd6fe;
 }
 
 

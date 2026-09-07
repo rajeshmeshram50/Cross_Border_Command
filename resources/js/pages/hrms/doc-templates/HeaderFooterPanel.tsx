@@ -411,7 +411,7 @@ export default function HeaderFooterPanel({
                    aspect ratio either way. */
                 style={{ height: logoHeightPx, maxWidth: `min(${Math.max(180, logoHeightPx * 3)}px, 100%)`, objectFit: 'contain', pointerEvents: 'none' }} />
             ) : (
-              <div className="tpl-logo-placeholder" style={{ width: Math.max(72, logoHeightPx * 1.8), height: logoHeightPx, borderRadius: 6, border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 11, fontWeight: 700, letterSpacing: 1, background: '#f8fafc', pointerEvents: 'none' }}>
+              <div className="tpl-logo-placeholder" style={{ width: Math.max(72, logoHeightPx * 1.8), maxWidth: '100%', height: logoHeightPx, borderRadius: 6, border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 11, fontWeight: 700, letterSpacing: 1, background: '#f8fafc', pointerEvents: 'none' }}>
                 LOGO
               </div>
             )}
