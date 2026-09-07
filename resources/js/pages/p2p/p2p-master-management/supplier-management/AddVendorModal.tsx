@@ -96,6 +96,20 @@ export const SUPPLIER_CATEGORY_OPTS: { value: string; label: string }[] = [
   { value: 'blacklisted', label: 'Blacklisted' },
 ];
 
+/* Fixed vocabulary, like SUPPLIER_CATEGORY_OPTS above.
+   This was read from master_vendor_behaviour, which meant the four values had
+   to be typed into the master for every client — and they were not: "Genuine"
+   existed only under one tenant, so everyone else saw three options with
+   nothing to indicate one was missing. The list is product vocabulary, not
+   tenant data, so it belongs here. The form sends the NAME and the server
+   resolves it to a master row per tenant (same as Supplier Type). */
+export const SUPPLIER_BEHAVIOUR_OPTS: { value: string; label: string }[] = [
+  { value: 'Genuine',                      label: 'Genuine' },
+  { value: 'Cooperative & Responsive',     label: 'Cooperative & Responsive' },
+  { value: 'Non Responsive & Inconsistent', label: 'Non Responsive & Inconsistent' },
+  { value: 'Fraud Alert',                  label: 'Fraud Alert' },
+];
+
 export type VendorPayload = {
   companyName: string;
   legalName: string;
@@ -767,6 +781,10 @@ export default function AddVendorModal(props: {
     gstPercentage: string;
   };
   const [productOpts,    setProductOpts]    = useState<ProductOpt[]>([]);
+  /* Distinguishes "still fetching" from "fetched, and there are none".
+     Without it an empty catalogue showed "Loading products…" forever, which
+     reads as a hung request rather than an empty list. */
+  const [productOptsLoaded, setProductOptsLoaded] = useState(false);
   /* Still filled from the options bundle, but no longer rendered: GST % is
      inherited from the product and shown read-only in the mapping popup. */
   const [, setGstPctOpts] = useState<Opt[]>([]);
@@ -1108,7 +1126,7 @@ export default function AddVendorModal(props: {
       company_name?: string | null; legal_name?: string | null; website?: string | null;
       gst_applicable?: string | null; gst_number?: string | null;
       vendor_type_id?: number | null; vendor_type_name?: string | null; risk_level_id?: number | null;
-      vendor_behaviour_id?: number | null; segment_id?: number | null;
+      vendor_behaviour_id?: number | null; vendor_behaviour_name?: string | null; segment_id?: number | null;
       segment_ids?: Array<number | string> | string | null;
       compliance_behaviour_id?: number | null;
       classification_id?: number | null;
@@ -1151,7 +1169,7 @@ export default function AddVendorModal(props: {
         setGstNumber(v.gst_number ?? '');
         setVendorType(v.vendor_type_name ?? '');
         setRiskLevel(numStr(v.risk_level_id));
-        setVendorBehaviour(numStr(v.vendor_behaviour_id));
+        setVendorBehaviour(v.vendor_behaviour_name ?? '');
         const fromIds: string[] = Array.isArray((v as any).segment_ids)
           ? (v as any).segment_ids.map((x: any) => String(x)).filter(Boolean)
           : typeof (v as any).segment_ids === 'string'
@@ -1395,10 +1413,17 @@ export default function AddVendorModal(props: {
         legal_name: legalName || null,
         website: website || null,
         gst_applicable: gstApplicable,
-        gst_number: gstApplicable === 'Yes' ? (gstNumber.trim() || null) : null,
+        /* The same column carries a GSTIN for a domestic supplier and a TIN for
+           an international one, so it must NOT be dropped on gst_applicable=No —
+           an international supplier is always "No", because GST is Indian.
+           Sending null here discarded every TIN before the request left the
+           browser, which is why the field looked like it never saved. The
+           server carries the matching rule; both sides have to know it. */
+        gst_number: (isInternational || gstApplicable === 'Yes') ? (gstNumber.trim() || null) : null,
         vendor_type: vendorType || null,
         risk_level_id: riskLevel ? Number(riskLevel) : null,
-        vendor_behaviour_id: vendorBehaviour ? Number(vendorBehaviour) : null,
+        // The NAME, not an id — the server find-or-creates the master row.
+        vendor_behaviour: vendorBehaviour || null,
         segment_id: (segment ?? [])[0] ? Number((segment ?? [])[0]) : null,
         segment_ids: (segment ?? []).map(Number),
         supplier_category: supplierCategory || 'general',
@@ -2034,6 +2059,7 @@ export default function AddVendorModal(props: {
   const fetchProductOptsIfNeeded = async (force = false): Promise<ProductOpt[]> => {
     if (productOpts.length && !force) return productOpts;
     try {
+      setProductOptsLoaded(false);
       type ProductRow = {
         id: number; product_code?: string; name?: string;
         status?: string; step_completed?: number;
@@ -2060,6 +2086,7 @@ export default function AddVendorModal(props: {
       setProductOpts(opts);
       return opts;
     } catch { /* silent — modal falls back to manual entry */ }
+    finally { setProductOptsLoaded(true); }
     return [];
   };
   const fetchGstPctOptsIfNeeded = async () => { /* seeded from bundle */ };
@@ -2111,7 +2138,11 @@ export default function AddVendorModal(props: {
       productName:   picked?.name ?? '',
       hsnSacCode:    picked?.hsn  ?? '',
       segment:       picked?.segment ?? '',
-      purchasePrice: picked?.basePrice ?? d.purchasePrice,
+      /* Purchase price is NOT taken from the product's base price. What this
+         supplier charges is a negotiated figure and has no reason to match the
+         catalogue price; prefilling it made a guess look like a fact and got
+         saved unchanged. GST % still comes from the product — that one IS the
+         product's own tax rate. */
       gstPercentage: picked?.gstPercentage ?? d.gstPercentage,
     }));
   };
@@ -2557,7 +2588,7 @@ export default function AddVendorModal(props: {
                 { label: 'Supplier Type',        value: labelFor(vendorType, SUPPLIER_TYPE_OPTS) || vendorType || '—' },
                 { label: 'Segment',              value: segment.map(s => labelFor(s, segmentOpts) || s).join(', ') || '—' },
                 { label: 'Risk Level',           value: labelFor(riskLevel, riskLevelOpts) || '—' },
-                { label: 'Supplier Behaviour',   value: labelFor(vendorBehaviour, behaviourOpts) || '—' },
+                { label: 'Supplier Behaviour',   value: (SUPPLIER_BEHAVIOUR_OPTS.find(o => o.value === vendorBehaviour)?.label) || '—' },
                 { label: 'Supplier Category', value: (SUPPLIER_CATEGORY_OPTS.find(o => o.value === supplierCategory)?.label) || '—' },
                 { label: 'Company Website',      value: website || 'NA' },
               ];
@@ -2844,7 +2875,7 @@ export default function AddVendorModal(props: {
                   </div>
                   <div className="avm-grid-3">
                     <Field label="Supplier Behaviour" required error={fieldErrors.vendorBehaviour}>
-                      <SelectInput value={vendorBehaviour} onChange={(v) => { setVendorBehaviour(v); clearFieldError('vendorBehaviour'); }} placeholder="Select" options={behaviourOpts} />
+                      <SelectInput value={vendorBehaviour} onChange={(v) => { setVendorBehaviour(v); clearFieldError('vendorBehaviour'); }} placeholder="Select" options={SUPPLIER_BEHAVIOUR_OPTS} />
                     </Field>
                     <Field label="Supplier Category">
                       <SelectInput
@@ -2874,7 +2905,9 @@ export default function AddVendorModal(props: {
                     </Field>
                   </div>
                   <div className="avm-grid-4">
-                    <Field label="Country" required addNew onAdd={() => setQuickAdd('countries')} error={fieldErrors.country}>
+                    {/* No quick-add: the country list is a closed, standard set (ISO), not
+                        tenant vocabulary, so there is nothing legitimate to add. */}
+                    <Field label="Country" required error={fieldErrors.country}>
                       <LockField
                         locked={stateLocked || countryScopeLocked}
                         onLockClick={stateLocked ? lockToast : scopeLockToast}
@@ -3515,6 +3548,8 @@ export default function AddVendorModal(props: {
         <AddProductMappingPopup
           onAddProduct={() => setNewProductOpen(true)}
           addingProduct={newProductBusy}
+          optsLoaded={productOptsLoaded}
+          editing={mapEditingId !== null}
           draft={mapDraft}
           setDraft={setMapDraft}
           productOpts={(() => {
@@ -3596,8 +3631,9 @@ export default function AddVendorModal(props: {
                 break;
               }
               case 'vendor_behaviour': {
-                const label = String(row.name ?? '');
-                if (label) { setBehaviourOpts(prev => [...prev, { value: id, label }]); setVendorBehaviour(id); clearFieldError('vendorBehaviour'); }
+                /* Fixed vocabulary — see SUPPLIER_BEHAVIOUR_OPTS. Nothing to
+                   add, and selecting by id would put an id into a name-valued
+                   select and blank the field. */
                 break;
               }
               case 'segments': {
@@ -4929,7 +4965,7 @@ function GstScrutinyTable(props: { rows: GstScrutinyRow[] }) {
   );
 }
 
-function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: string) => void; onEdit?: (id: string) => void; busy?: boolean; readOnly?: boolean }) {
+function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: string) => void; onEdit?: (id: string) => void; busy?: boolean; readOnly?: boolean; allowRemove?: boolean }) {
   return (
     <KycTable
       isEmpty={props.rows.length === 0}
@@ -4968,11 +5004,16 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
                       </button>
                     </Tooltip>
                   )}
+                  {/* Unmapping is not offered from the list popup: it is a
+                      destructive change to saved data sitting one click from a
+                      read action, and the mapping step is where it belongs. */}
+                  {props.allowRemove !== false && (
                   <Tooltip label="Remove product">
                     <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => props.onRemove(r.id)} aria-label="Remove product" disabled={props.busy}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
                     </button>
                   </Tooltip>
+                  )}
                 </div>
               </td>
               )}
@@ -5031,7 +5072,7 @@ function MappedProductsPopup(props: {
       {n === 0 ? (
         <div className="avm-empty avm-empty-accent">No products mapped yet. Click "Map Product" to begin.</div>
       ) : (
-        <ProductMappingTable rows={props.rows} onRemove={props.onRemove} onEdit={props.onEdit} busy={busy} />
+        <ProductMappingTable rows={props.rows} onRemove={props.onRemove} onEdit={props.onEdit} busy={busy} allowRemove={false} />
       )}
     </PopupChrome>
   );
@@ -5171,7 +5212,7 @@ export function MappedProductsViewPopup(props: {
       productName:   picked?.name ?? '',
       hsnSacCode:    picked?.hsn  ?? '',
       segment:       picked?.segment ?? '',
-      purchasePrice: picked?.basePrice ?? d.purchasePrice,
+      // Not prefilled from the product — see the wizard's copy of this handler.
       gstPercentage: picked?.gstPercentage ?? d.gstPercentage,
     }));
   };
@@ -5271,6 +5312,7 @@ export function MappedProductsViewPopup(props: {
 
     {mapOpen && (
       <AddProductMappingPopup
+        optsLoaded
         draft={mapDraft}
         setDraft={setMapDraft}
         productOpts={mappableOpts}
@@ -5952,16 +5994,29 @@ function AddProductMappingPopup(props: {
    *  not exist yet can be created without leaving this mapping. */
   onAddProduct?: () => void;
   addingProduct?: boolean;
+  /** True once the product fetch has RESOLVED — an empty list then means "none
+   *  exist", not "still loading". */
+  optsLoaded?: boolean;
+  /** Editing an existing mapping. The product itself is then fixed: changing it
+   *  would be a different mapping, not an edit of this one. Only the commercial
+   *  terms are editable. */
+  editing?: boolean;
 }) {
   const { draft, setDraft, productOpts, onProductChange, recompute, onClose, onSave } = props;
   const set = <K extends keyof ProductMappingDraft>(k: K, v: ProductMappingDraft[K]) => setDraft({ ...draft, [k]: v });
   return (
     <PopupShell title="Map Product" icon="ri-box-3-line" subtitle="Link a product with purchase price & GST for this supplier" onClose={onClose} onSave={onSave}>
       <div className="avm-grid-2">
-        <Field label="Product Name" required addNew={!!props.onAddProduct} addLoading={props.addingProduct} onAdd={props.onAddProduct}>
+        <Field label="Product Name" required addNew={!!props.onAddProduct && !props.editing} addLoading={props.addingProduct} onAdd={props.onAddProduct}>
           {productOpts.length > 0
-            ? <SelectInput value={draft.productId} onChange={onProductChange} placeholder="Select Product Name" options={productOpts} />
-            : <input className="avm-input" placeholder="Loading products…" value={draft.productName} onChange={e => set('productName', e.target.value)} />}
+            ? <SelectInput value={draft.productId} onChange={onProductChange} placeholder="Select Product Name" options={productOpts} disabled={props.editing} />
+            : <input
+                className="avm-input"
+                placeholder={props.optsLoaded ? 'No product found' : 'Loading products…'}
+                value={draft.productName}
+                readOnly={props.optsLoaded}
+                onChange={e => set('productName', e.target.value)}
+              />}
         </Field>
         <Field label="Product Code">
           <input className="avm-input" value={formatProductCode(draft.productCode) || draft.productCode} readOnly placeholder="Auto-fills from product" />

@@ -172,7 +172,12 @@ type ApiVendor = {
  * on the right colour. */
 function typeKind(type: string): 'material' | 'logistics' | 'services' {
   const t = (type || '').toLowerCase();
-  if (t.includes('logist')) return 'logistics';
+  /* Movement-of-goods types all take the teal pill Figma gives Logistics.
+     Matching 'logist' alone meant "FFD / Transporter" — a type tenants create
+     themselves — matched nothing and fell through to the material default, so
+     it rendered violet and was indistinguishable from Material / Goods.
+     'ffd' = Freight Forwarding Division. */
+  if (t.includes('logist') || t.includes('transport') || t.includes('ffd') || t.includes('freight')) return 'logistics';
   if (t.includes('service')) return 'services';
   return 'material';
 }
@@ -1013,14 +1018,14 @@ useEffect(() => {
                   className={`sup-scope__tab ${scopeTab === 'domestic' ? 'is-active' : ''}`}
                   onClick={() => setScopeTab('domestic')}
                 >
-                  <i className="ri-home-4-line" />Domestic<span className="sup-scope__word"> Suppliers</span>
+                  <i className="ri-home-4-line" />Domestic<span className="sup-scope__word"> Supplier</span>
                 </button>
                 <button
                   type="button"
                   className={`sup-scope__tab ${scopeTab === 'international' ? 'is-active' : ''}`}
                   onClick={() => setScopeTab('international')}
                 >
-                  <i className="ri-global-line" />International<span className="sup-scope__word"> Suppliers</span>
+                  <i className="ri-global-line" />International<span className="sup-scope__word"> Supplier</span>
                 </button>
               </div>
               <div className="sl-search">
@@ -1073,11 +1078,20 @@ useEffect(() => {
                         <th className="sl-th-2line sl-col-c"><span>Supplier</span><span>Code</span></th>
                         <th>Supplier Name</th>
                         <th className="sl-col-c">Supplier Type</th>
-                        <th>Segment</th>
+                        {/* Left, with the cell: a segment name is free text of
+                            unpredictable length and can carry a +N badge beside
+                            it, so it reads down a left edge like Supplier Name
+                            rather than shifting with every row's width. */}
+                        <th className="sl-th-left">Segment</th>
                         <th className="sl-col-c">Country</th>
                         <th className="sl-col-c">State</th>
                         <th className="sl-th-2line sl-col-c"><span>GST State</span><span>Code</span></th>
-                        <th>Contact Person</th>
+                        {/* Left, not centred: a person's name is free text and
+                            the longest value in this column, so centring it
+                            leaves the column ragged on both edges instead of
+                            lining up down one — same reasoning as Supplier
+                            Name and Email. */}
+                        <th className="sl-th-left">Contact Person</th>
                         <th className="sl-col-c">Contact No</th>
                         <th className="sl-th-email">Email</th>
                         <th>Supplier Category</th>
@@ -1153,7 +1167,7 @@ useEffect(() => {
                                 )
                                 : <Tooltip label="No category set on this supplier yet"><span className="sl-state">—</span></Tooltip>}
                             </td>
-                            <td>
+                            <td className="sl-col-c">
                               {compliance
                                 ? (
                                   <span className={`sl-compliant ${compliance.cls}`}>

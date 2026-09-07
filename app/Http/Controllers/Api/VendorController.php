@@ -517,6 +517,17 @@ class VendorController extends Controller
             'vendor_type'              => 'nullable|string|max:255',
             'risk_level_id'            => 'nullable|integer|exists:master_risk_levels,id',
             'vendor_behaviour_id'      => 'nullable|integer|exists:master_vendor_behaviour,id',
+            // Supplier Behaviour is a fixed frontend vocabulary (Genuine /
+            // Cooperative & Responsive / Fraud Alert / Non Responsive &
+            // Inconsistent), same arrangement as Supplier Type above: the form
+            // sends the NAME and we resolve it to a master row per tenant.
+            //
+            // It was read straight from the master before, so the four values
+            // had to be typed into master_vendor_behaviour for every client —
+            // and they were not: "Genuine" existed only under client 1, so
+            // every other tenant saw three options and no way to tell one was
+            // missing.
+            'vendor_behaviour'         => 'nullable|string|max:255',
             'segment_id'               => 'nullable|integer|exists:clm_segments,id',
             // Supplier Segment is multi-select. Accepts an array of ids or a
             // comma-joined string; normalised + synced into vendor_segments.
@@ -563,6 +574,16 @@ class VendorController extends Controller
         }
         unset($data['vendor_type']);   // not a column on vendors
 
+        // Resolve the behaviour NAME → master_vendor_behaviour id.
+        if (!empty($data['vendor_behaviour'])) {
+            $vb = \App\Models\Masters\VendorBehaviour::firstOrCreate(
+                ['client_id' => $user->client_id, 'name' => trim($data['vendor_behaviour'])],
+                ['branch_id' => $user->branch_id, 'status' => 'Active', 'created_by' => $user->id],
+            );
+            $data['vendor_behaviour_id'] = $vb->id;
+        }
+        unset($data['vendor_behaviour']);   // not a column on vendors
+
         // Normalise the multi-segment selection to a clean, ordered list of
         // existing clm_segments ids; the scalar segment_id keeps the first.
         // Scoped to the caller's client so a foreign segment id can't be synced.
@@ -570,7 +591,13 @@ class VendorController extends Controller
         $data['segment_id'] = $segIds[0] ?? null;
         unset($data['segment_ids']);   // synced separately, not a vendors column
 
-        $countryId = $data['address']['country_id'] ?? null;
+        /* Read from $address, NOT $data['address'] — the address was unset from
+           $data above (it is not a vendors column), so $data['address'] is gone
+           by the time we get here. Reading it there made $countryId always null,
+           which made $isIntl always FALSE, which let the domestic clear below
+           wipe every international supplier's TIN. The bug was invisible: the
+           guard reads correctly, it was just being handed the wrong variable. */
+        $countryId = $address['country_id'] ?? null;
         $isIndia = $countryId && DB::table('master_countries')
             ->where('id', $countryId)->whereRaw('LOWER(name) = ?', ['india'])->exists();
         $isIntl  = $countryId && !$isIndia;

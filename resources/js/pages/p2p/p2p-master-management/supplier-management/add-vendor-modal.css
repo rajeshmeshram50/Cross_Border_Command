@@ -556,8 +556,18 @@
   padding: 7px 12px; border-radius: 9px;
   background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6); color: #fff; border: none;
   font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer;
+  /* Inherited leading made the label's line box taller than the text, so
+     align-items:center centred that box instead of the glyphs in it. */
+  line-height: 1;
   box-shadow: 0 3px 9px rgba(124,58,237,.42);
   transition: transform .14s, box-shadow .14s;
+}
+/* The "+" is an icon font, and an icon font's baseline is not the glyph's
+   optical centre — sat on the text baseline it rides high beside the label.
+   As a flex box it is centred on its own box instead. */
+.avm-section-add-btn i {
+  font-size: 13px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
 }
 .avm-section-add-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124,58,237,.5); }
 
@@ -664,12 +674,17 @@
    (Risk Level / Supplier Behaviour / Segment / Compliance / Country)
    without leaving the form. */
 .avm-field-plus {
-  width: 18px; height: 18px;
-  border: none; border-radius: 5px;
-  background: #7c3aed; color: #fff;
-  font-size: 14px; font-weight: 500; line-height: 1; cursor: pointer;
+  width: 20px; height: 20px;
+  border: none; border-radius: 6px;
+  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 45%, #7c3aed 100%);
+  color: #fff;
+  font-size: 15px; font-weight: 600; line-height: 1; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 5px rgba(124, 58, 237, .35), 0 1px 0 rgba(255,255,255,.28) inset;
+  transition: box-shadow .15s, transform .12s;
 }
+.avm-field-plus:hover:not(:disabled) { box-shadow: 0 3px 8px rgba(124,58,237,.48), 0 1px 0 rgba(255,255,255,.35) inset; }
+.avm-field-plus:active:not(:disabled) { transform: translateY(1px); }
 .avm-field-plus:disabled { opacity: .85; cursor: progress; }
 /* Read-only input (State Code auto-fill) — light in light mode, dark in dark mode. */
 .avm-input-ro { background: #f1f5f9; color: #475569; cursor: default; }
@@ -1701,7 +1716,11 @@
 /* font-size here drives the Add Contact Person popup title (it renders text
    directly in .avm-cp-title, not .avm-cp-htitle) — match Figma's 16px DM Sans.
    PopupShell titles use .avm-cp-htitle, which keeps its own size. */
-.avm-cp-title { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 800; letter-spacing: -0.2px; }
+/* line-height:1 on the ROW so the container adds no leading of its own — the
+   two children then centre against each other rather than against a taller,
+   invisible line box, which is what made the icon and the label read as
+   sitting at slightly different heights. */
+.avm-cp-title { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 800; letter-spacing: -0.2px; line-height: 1; }
 .avm-cp-title i {
   width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0; font-size: 18px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -1709,7 +1728,7 @@
   border: 1px solid rgba(255,255,255,.38);
   box-shadow: 0 5px 14px rgba(0,0,0,.18), 0 1px 0 rgba(255,255,255,.4) inset;
 }
-.avm-cp-htext { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.avm-cp-htext { display: flex; flex-direction: column; justify-content: center; gap: 1px; min-width: 0; }
 .avm-cp-htitle { font-size: 16px; font-weight: 800; letter-spacing: -0.2px; line-height: 1.1; }
 .avm-cp-subtitle { font-size: 11px; font-weight: 500; color: rgba(255,255,255,.82); text-shadow: none; line-height: 1.2; }
 .avm-cp-close {
@@ -1733,10 +1752,20 @@
   border: 1px solid rgba(255,255,255,.42);
   background: rgba(255,255,255,.18); color: #fff;
   font: inherit; font-size: 12px; font-weight: 700; letter-spacing: -0.1px;
+  /* line-height:1 so the label's line box is the text itself. Inherited leading
+     made the box taller than the glyphs, and align-items:center then centred
+     that box rather than what you can see in it. */
+  line-height: 1;
   cursor: pointer; white-space: nowrap;
   transition: background .15s, border-color .15s;
 }
-.avm-cp-head-btn i { font-size: 15px; }
+/* Same for the icon, and as a block so it is measured as a box rather than sat
+   on the text baseline — an icon font's baseline is not the glyph's centre, so
+   baseline alignment leaves the "+" riding high next to the label. */
+.avm-cp-head-btn i {
+  font-size: 15px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
 .avm-cp-head-btn:hover:not(:disabled) { background: rgba(255,255,255,.32); border-color: rgba(255,255,255,.6); }
 .avm-cp-head-btn:disabled { opacity: .5; cursor: not-allowed; }
 /* position:relative — see .avm-qa-body. Anchors .avm-cp-saving-veil to the body
