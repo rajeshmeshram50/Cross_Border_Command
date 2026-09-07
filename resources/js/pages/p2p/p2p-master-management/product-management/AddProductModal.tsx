@@ -546,23 +546,9 @@ export default function AddProductModal(props: {
     return true;
   };
 
-  const removeVendor = async (v: VendorEntry) => {
-    if (vendors.length <= 1) {
-      toast.info('Cannot remove', 'A product must keep at least one mapped supplier. Add another supplier first, or remove the product.');
-      return;
-    }
-    const ok = await confirm({
-      title: 'Remove mapped supplier?',
-      message: `“${v.vendorName}” will be unmapped from this product.`,
-      confirmLabel: 'Remove',
-      cancelLabel: 'Cancel',
-      tone: 'danger',
-      icon: 'delete-bin-line',
-    });
-    if (!ok) return;
-    if (vendorEditingId === v.id) setVendorEditingId(null);
-    await commitVendorList(vendors.filter(row => row.id !== v.id), 'Supplier removed', `${v.vendorName} unmapped from this product`);
-  };
+  /* There is deliberately no removeVendor() here any more. The only route that
+     unmaps a supplier from a product is unmapForSegmentChange(), reached from
+     the segment-change gate — see the Mapped Suppliers popup's Action column. */
 
   const requestSegmentChange = async (v: string) => {
     if (v === segmentId || segChecking) return;
@@ -1901,13 +1887,12 @@ export default function AddProductModal(props: {
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                                 </button>
                               </Tooltip>
-                              {vendors.length > 1 && (
-                                <Tooltip label="Remove supplier">
-                                  <button type="button" className="apm-sup-del" aria-label="Remove supplier" disabled={saving} onClick={() => removeVendor(v)}>
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                                  </button>
-                                </Tooltip>
-                              )}
+                              {/* No Remove here on purpose. Unmapping a supplier
+                                  is only offered by the segment-change gate
+                                  (see segGatePending below), where dropping the
+                                  mapping is the point of the dialog. Leaving a
+                                  delete on this popup meant a mapping could be
+                                  torn off in passing, with nothing asking why. */}
                             </div>
                           </td>
                         </tr>
