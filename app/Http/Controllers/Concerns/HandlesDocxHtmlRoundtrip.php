@@ -597,10 +597,15 @@ trait HandlesDocxHtmlRoundtrip
                 $logoCell  = $r->addCell($logoW, ['valign' => 'center', 'noWrap' => false]);
                 $titleCell = $r->addCell($usable - $logoW, ['valign' => 'center', 'noWrap' => false]);
                 try {
-                    $logoCell->addImage($logoAbsPath, [
-                        'height'    => (int) ($headerCfg['logo_height'] ?? 62),
-                        'alignment' => $logoAlign,
-                    ]);
+                    /* Fit the logo to its cell instead of constraining height
+                       alone. A wide mark otherwise renders far wider than the
+                       column, and in this fixed-layout table it overruns the
+                       title cell and covers the company name (#2). */
+                    $logoCell->addImage($logoAbsPath, \App\Services\HrTemplateDocxRenderer::logoFitStyle(
+                        $logoAbsPath,
+                        (int) ($headerCfg['logo_height'] ?? 62),
+                        $logoW,
+                    ) + ['alignment' => $logoAlign]);
                 } catch (\Throwable $e) { /* skip an unreadable image rather than fail the export */ }
                 if ($title !== '') {
                     $titleCell->addText(htmlspecialchars($title, ENT_QUOTES), ['bold' => true, 'size' => 12, 'color' => $color], ['alignment' => $hAlign]);
