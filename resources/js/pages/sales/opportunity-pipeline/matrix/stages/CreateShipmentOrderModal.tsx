@@ -809,7 +809,19 @@ const SCOPED_CSS = `
   background: #fffaf0;
   border-radius: 16px;
   box-shadow: 0 18px 48px rgba(15,23,42,.30);
-  overflow: hidden; display: flex; flex-direction: column;
+  overflow: hidden;
+  /* GRID, not flex, for the three rows.
+     The body is meant to be the one scroller, and with flex that depended on
+     the body resolving a definite height from a parent that only has a
+     max-height. When it did not, the body grew to its natural size instead,
+     the overflow went to the modal, and overflow: hidden here CLIPPED it —
+     Remarks sits last, so Remarks was what vanished, with no scrollbar
+     anywhere to reach it (QA #239). It showed up on short screens first
+     because that is where the form first exceeds the cap.
+     minmax(0, 1fr) states the same intent without relying on that: the middle
+     row may not grow past its share, so the overflow has nowhere to go but
+     the body's own scroller. Header and footer stay auto-sized. */
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 /* Save lock overlay (QA #131) — blankets the modal while saving so every
@@ -878,10 +890,57 @@ const SCOPED_CSS = `
   overflow-y: auto; padding: 16px 22px; background: #fffaf0;
   /* Don't hand the scroll to the page behind once this hits its end. */
   overscroll-behavior: contain;
+  /* Momentum on iOS. touch-action is deliberately left at its default:
+     pinning it to pan-y is a RESTRICTION, and the default already allows the
+     vertical drag this needs while permitting pinch-zoom over the form. */
+  -webkit-overflow-scrolling: touch;
 }
+
+/* Make the scroll VISIBLE.
+   The body has always scrolled, but nothing said so: a phone's overlay
+   scrollbar only appears mid-gesture, and the form is long enough that the
+   cut always landed in the gap between two fields — so the screen looked
+   complete and finished, with eleven more fields below the fold (QA #239).
+   Two affordances, both pure CSS:
+     · an always-visible scrollbar track
+     · a soft shadow at whichever edge still has content past it. The
+       background-attachment: local trick scrolls the two cover gradients with
+       the content while the two shadows stay put, so each shadow is revealed
+       only while there is something in that direction. */
+.cso-body {
+  background-image:
+    linear-gradient(#fffaf0 34%, rgba(255,250,240,0)),
+    linear-gradient(rgba(255,250,240,0), #fffaf0 66%),
+    radial-gradient(farthest-side at 50% 0,   rgba(180,83,9,.20), rgba(180,83,9,0)),
+    radial-gradient(farthest-side at 50% 100%, rgba(180,83,9,.20), rgba(180,83,9,0));
+  background-position: 0 0, 0 100%, 0 0, 0 100%;
+  background-repeat: no-repeat;
+  background-size: 100% 26px, 100% 26px, 100% 9px, 100% 9px;
+  background-attachment: local, local, scroll, scroll;
+}
+.cso-body::-webkit-scrollbar { width: 10px; }
+.cso-body::-webkit-scrollbar-track { background: rgba(253,230,138,.35); border-radius: 999px; }
+.cso-body::-webkit-scrollbar-thumb { background: #f0b464; border-radius: 999px; border: 2px solid #fffaf0; }
+.cso-body::-webkit-scrollbar-thumb:hover { background: #d97706; }
+.cso-body {
+  scrollbar-width: thin; scrollbar-color: #f0b464 rgba(253,230,138,.35);
+  /* Reserve the track even before there is anything to scroll, so the strip
+     is visible from the moment the modal opens rather than appearing only
+     mid-gesture. It also stops the form shifting sideways by the scrollbar's
+     width the instant the content grows past the fold. */
+  scrollbar-gutter: stable;
+}
+/* The track is painted even at rest — an overlay scrollbar that only appears
+   while scrolling is no use to someone who does not yet know the area
+   scrolls, which is the whole complaint in QA #239. */
+.cso-body::-webkit-scrollbar-track { background: rgba(253,230,138,.55); }
 /* Header and footer keep their height; the body absorbs all the shrinking.
-   Without this the footer's buttons get squeezed on a short viewport. */
+   Kept for the inner flex rows (the head and foot are themselves flex
+   containers); the modal's own rows are sized by the grid above. */
 .cso-head, .cso-foot { flex-shrink: 0; }
+/* min-height: 0 is what a FLEX child needed; the grid row already caps it.
+   Harmless to keep, and it keeps the rule honest if the display ever moves
+   back. */
 
 /* Top strip — 4×2 fact box */
 .cso-strip {
@@ -1136,6 +1195,22 @@ const SCOPED_CSS = `
 /* Dark mode */
 [data-bs-theme="dark"] .cso-modal { background: #1a1538; }
 [data-bs-theme="dark"] .cso-body  { background: #1a1538; }
+/* Same cover/shadow pair on the dark surface — the light gradients would
+   otherwise paint two cream bands across the top and bottom of the body. */
+[data-bs-theme="dark"] .cso-body {
+  background-image:
+    linear-gradient(#1a1538 34%, rgba(26,21,56,0)),
+    linear-gradient(rgba(26,21,56,0), #1a1538 66%),
+    radial-gradient(farthest-side at 50% 0,   rgba(0,0,0,.42), rgba(0,0,0,0)),
+    radial-gradient(farthest-side at 50% 100%, rgba(0,0,0,.42), rgba(0,0,0,0));
+  background-position: 0 0, 0 100%, 0 0, 0 100%;
+  background-repeat: no-repeat;
+  background-size: 100% 26px, 100% 26px, 100% 9px, 100% 9px;
+  background-attachment: local, local, scroll, scroll;
+  scrollbar-color: #7c5cbf rgba(124,92,191,.22);
+}
+[data-bs-theme="dark"] .cso-body::-webkit-scrollbar-track { background: rgba(124,92,191,.22); }
+[data-bs-theme="dark"] .cso-body::-webkit-scrollbar-thumb { background: #7c5cbf; border-color: #1a1538; }
 [data-bs-theme="dark"] .cso-strip {
   background: rgba(252,191,36,.10); border-color: rgba(252,191,36,.30);
 }
@@ -1181,9 +1256,35 @@ const SCOPED_CSS = `
   .cso-strip { grid-template-columns: repeat(2, 1fr); }
   .cso-strip-cell:nth-child(4n) { border-right: 1px solid #fde68a; }
   .cso-strip-cell:nth-child(2n) { border-right: none; }
+  /* The no-bottom-border rule assumes FOUR columns, so at two it stripped the
+     separator from the last two ROWS and the strip lost a line through its
+     middle. Put it back, then clear only the genuine last row. */
+  .cso-strip-cell:nth-last-child(-n+4) { border-bottom: 1px solid #fde68a; }
+  .cso-strip-cell:nth-last-child(-n+2) { border-bottom: none; }
+  [data-bs-theme="dark"] .cso-strip-cell:nth-child(4n) { border-right-color: rgba(252,191,36,.20); }
+  [data-bs-theme="dark"] .cso-strip-cell:nth-last-child(-n+4) { border-bottom-color: rgba(252,191,36,.20); }
   .cso-grid { grid-template-columns: repeat(2, 1fr); }
 }
+/* ── Phones ─────────────────────────────────────────────────────────────
+   The modal gets a DEFINITE height here, not just a max-height.
+   That distinction is the whole bug. With only "max-height", the modal is
+   content-sized up to that cap, and a flex child asked to fill it
+   ("flex: 1 1 auto" + "min-height: 0" + "overflow-y: auto") has no definite
+   height to bound itself against — so the body grew to its natural size, the
+   overflow went to the modal, and "overflow: hidden" there CLIPPED the rest
+   instead of scrolling it. Everything below Freight Cost was simply cut off,
+   with no scrollbar anywhere to reach it (QA #239).
+   Pinning the modal to the viewport height makes the body's share definite,
+   which is what finally hands the overflow to its own scroller. Header and
+   footer keep their size (flex-shrink: 0 from the base rules), so the body
+   absorbs all of it. */
 @media (max-width: 640px) {
+  .cso-backdrop { padding: 0; align-items: stretch; }
+  .cso-modal {
+    width: 100%; border-radius: 0;
+    height: 100vh; height: 100dvh;
+    max-height: none;
+  }
   .cso-grid { grid-template-columns: 1fr; }
   .cso-head { flex-direction: column; align-items: flex-start; }
   .cso-head-right { width: 100%; flex-wrap: wrap; }
@@ -1192,13 +1293,49 @@ const SCOPED_CSS = `
   .cso-foot { flex-wrap: wrap; }
   .cso-foot-actions { width: 100%; }
   .cso-foot-actions .cso-btn { flex: 1; }
-  /* A stacked header on a phone eats most of a short screen. Give the modal
-     the full viewport there so the body keeps a usable amount of it. */
-  .cso-backdrop { padding: 8px; }
-  .cso-modal { max-height: 96vh; max-height: 96dvh; }
   /* The textarea's own resize handle is unusable on touch and can be dragged
      taller than the modal; the body scrolls instead. */
   .cso-textarea { resize: none; }
+
+  /* Give the FORM the screen back.
+     The chrome above it — orange header plus the eight-cell read-only summary
+     — is sized for a desktop, and on a phone it ate almost the whole modal:
+     the body scrolled, but only about two fields were ever visible at once, so
+     filling the form meant scrolling past the same summary again and again and
+     the Remarks block at the bottom was a long way down. Nothing is hidden —
+     the chrome just stops being desktop-sized. */
+  .cso-head { padding: 10px 14px; gap: 8px; }
+  .cso-head-ico { width: 30px; height: 30px; }
+  .cso-head-title { font-size: 14px; }
+  .cso-head-sub { font-size: 10px; }
+  .cso-pill { padding: 3px 9px; font-size: 9.5px; }
+  .cso-close { width: 28px; height: 28px; }
+  .cso-strip-cell { padding: 7px 10px; }
+  .cso-strip-label { font-size: 9px; margin-bottom: 2px; }
+  .cso-strip-val { font-size: 11.5px; }
+  .cso-strip { margin-bottom: 12px; }
+  .cso-body { padding: 12px 14px; }
+  .cso-foot { padding: 10px 14px; }
+}
+
+/* Narrow phones (iPhone SE / mini and the 320px floor). The two-column
+   summary keeps its shape here — one column would double its height, which is
+   the opposite of what a short screen needs — so the sizes come down instead,
+   and the header subtitle goes: it repeats what the title already says. */
+@media (max-width: 400px) {
+  /* No padding / radius / max-height overrides here: this width is inside the
+     640px block above, where the modal deliberately fills the screen and the
+     BACKDROP scrolls. Re-imposing a max-height would put the broken nested
+     scroller back. Only the sizes come down. */
+  .cso-head-sub { display: none; }
+  .cso-head-title { font-size: 13px; }
+  .cso-strip-cell { padding: 6px 8px; }
+  .cso-strip-val { font-size: 11px; }
+  .cso-body { padding: 10px 11px; }
+  .cso-foot { padding: 9px 11px; }
+  /* The note wraps onto its own line above the buttons at this width; letting
+     it sit beside them squeezed both into something unreadable. */
+  .cso-foot-note { font-size: 10px; }
 }
 /* Short-but-wide viewports (a laptop with dev-tools docked, a split screen) —
    trim the vertical padding so the form keeps as much room as possible. */
