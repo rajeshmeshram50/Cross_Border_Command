@@ -51,12 +51,26 @@ export default function Login({ onForgotPassword }: LoginProps) {
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID) return;
 
-    const renderBtn = () => {
+    /* Width the button was last drawn at. The guard below is what stops the
+       ResizeObserver from feeding itself: clearing the host collapses it to its
+       44px min-height and Google's iframe grows it back, and ResizeObserver
+       fires on HEIGHT as well as width — so an unguarded re-render triggered
+       the next one and the page downloaded a fresh 56 kB button iframe, its
+       avatar and its font on a loop until the tab was closed. */
+    let lastWidth = -1;
+
+    const renderBtn = (force = false) => {
       if (!window.google?.accounts?.id || !googleBtnRef.current) return;
-      googleBtnRef.current.innerHTML = '';
+      // Measured BEFORE clearing — the host is w-full, so this is the layout
+      // width and does not depend on what is currently inside it.
       const measured = googleBtnRef.current.offsetWidth;
       // Google button max width is 400; clamp here.
       const width = Math.min(Math.max(measured || 320, 200), 400);
+      // Nothing the button would be drawn differently for. Return before
+      // touching the DOM, so this callback causes no resize of its own.
+      if (!force && width === lastWidth) return;
+      lastWidth = width;
+      googleBtnRef.current.innerHTML = '';
       // Pick the Google button variant that matches the current theme —
       // the bright white 'outline' button looked harsh on the dark login
       // card. Google's brand guide officially supports a dark variant
@@ -108,7 +122,7 @@ export default function Login({ onForgotPassword }: LoginProps) {
     // Re-render when the user flips dark/light on this page — the theme
     // toggle mutates <html data-bs-theme> and we need to re-issue the
     // button with the matching `filled_black` / `outline` variant.
-    const themeObserver = new MutationObserver(() => renderBtn());
+    const themeObserver = new MutationObserver(() => renderBtn(true));
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-bs-theme'] });
     return () => { ro?.disconnect(); themeObserver.disconnect(); };
   }, []);

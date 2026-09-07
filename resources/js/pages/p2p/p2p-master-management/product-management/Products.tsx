@@ -144,6 +144,11 @@ function apiToCard(row: Record<string, unknown>): Product {
 
 const SEGMENTS = ['All Segments', 'Dry Fruits', 'Rice & Grains', 'Spices', 'Coconut Oil', 'Seeds', 'Coffee Beans', 'Pulses', 'Mango Pulp', 'Millets', 'Chemicals'];
 
+/* Filter rows read "<code> - <description>". Descriptions in master_hsn_codes
+   run long, so they are clipped to this many characters — the full text stays
+   in the row's tooltip. */
+const HSN_DESC_MAX = 25;
+
 const HSN_CODES = ['08013100', '10063020', '09103030', '15131100', '12074090', '09011190', '07136000', '08045010', '09042120', '09041110', '10082930', '22072000'];
 const CONDITIONS = ['New', 'Refurbished', 'Open Box', 'Second Hand'];
 
@@ -219,12 +224,25 @@ export default function Products() {
   const [hsnOpts,     setHsnOpts]       = useState<string[]>(HSN_CODES);
   const [conditionOpts, setConditionOpts] = useState<string[]>(CONDITIONS);
   const [hazClassOpts, setHazClassOpts] = useState<string[]>([]);
+  /* HSN rows carry a description in the master bundle. The filter still sends
+     the bare code to the API, so the description is kept in a side map and
+     only joined in at render time. */
+  const [hsnDescs, setHsnDescs] = useState<Record<string, string>>({});
+
+  const hsnLabel = useCallback((code: string) => {
+    const desc = hsnDescs[code];
+    if (!desc) return code;
+    const short = desc.length > HSN_DESC_MAX
+      ? `${desc.slice(0, HSN_DESC_MAX).trimEnd()}…`
+      : desc;
+    return `${code} - ${short}`;
+  }, [hsnDescs]);
 
   useEffect(() => {
     type IdRow = { id: number | string; status?: string | null };
     type Bundle = {
       segments: Array<IdRow & { title?: string | null; name?: string | null }>;
-      hsn_codes: Array<IdRow & { hsn_code?: string | null }>;
+      hsn_codes: Array<IdRow & { hsn_code?: string | null; description?: string | null }>;
       uom: Array<IdRow & { title?: string | null; short_code?: string | null }>;
       conditions: Array<IdRow & { title?: string | null }>;
       haz_class: Array<IdRow & { name?: string | null }>;
@@ -244,10 +262,17 @@ export default function Products() {
     const applyBundle = (b: Bundle) => {
       const seg  = (b.segments  ?? []).map(r => r.title ?? r.name ?? '').filter(Boolean);
       const hsn  = (b.hsn_codes ?? []).map(r => r.hsn_code ?? '').filter(Boolean);
+      const hsnDesc: Record<string, string> = {};
+      (b.hsn_codes ?? []).forEach(r => {
+        const code = (r.hsn_code ?? '').trim();
+        const desc = (r.description ?? '').trim();
+        if (code && desc && !hsnDesc[code]) hsnDesc[code] = desc;
+      });
       const cond = (b.conditions ?? []).map(r => r.title ?? '').filter(Boolean);
       const haz  = (b.haz_class ?? []).map(r => r.name ?? '').filter(Boolean);
       if (seg.length)  setSegmentOpts(dedupe(seg));
       if (hsn.length)  setHsnOpts(dedupe(hsn));
+      if (Object.keys(hsnDesc).length) setHsnDescs(hsnDesc);
       if (cond.length) setConditionOpts(dedupe(cond));
       if (haz.length)  setHazClassOpts(dedupe(haz));
     };
@@ -313,7 +338,12 @@ export default function Products() {
     ];
     multi.forEach(([key, group]) => {
       (filters[key] as string[]).forEach(v => {
-        out.push({ id: `${key}:${v}`, group, label: v, onRemove: () => toggleMulti(key, v) });
+        out.push({
+          id: `${key}:${v}`,
+          group,
+          label: key === 'hsn' ? hsnLabel(v) : v,
+          onRemove: () => toggleMulti(key, v),
+        });
       });
     });
 
@@ -330,7 +360,7 @@ export default function Products() {
       });
     });
     return out;
-  }, [filters]);
+  }, [filters, hsnLabel]);
 
   const toolbarChips = useMemo<FilterChip[]>(() => {
     const out: FilterChip[] = [];
@@ -894,7 +924,13 @@ export default function Products() {
 
               case 'hsn':
                 return hsnOpts.map(v => (
-                  <CheckRow key={v} label={v} checked={filters.hsn.includes(v)} onChange={() => toggleMulti('hsn', v)} />
+                  <CheckRow
+                    key={v}
+                    label={hsnLabel(v)}
+                    tip={hsnDescs[v] ? `${v} - ${hsnDescs[v]}` : undefined}
+                    checked={filters.hsn.includes(v)}
+                    onChange={() => toggleMulti('hsn', v)}
+                  />
                 ));
 
               case 'hazClass':
@@ -1044,13 +1080,17 @@ function FrozenRows(props: { options: string[] }) {
   );
 }
 
-function CheckRow(props: { label: string; checked: boolean; onChange: () => void }) {
-  const long = props.label.length > 28;
+function CheckRow(props: { label: string; checked: boolean; onChange: () => void; tip?: string }) {
+  /* `tip` is for rows whose visible label is already abbreviated (HSN codes
+     carry a clipped description) — those always get a tooltip with the full
+     text, not just the ones that overflow. */
+  const tip = props.tip ?? props.label;
+  const long = props.tip !== undefined || props.label.length > 28;
   const span = <span className="prd-filter-row-txt">{props.label}</span>;
   return (
     <label className="prd-filter-row">
       <input type="checkbox" checked={props.checked} onChange={props.onChange} />
-      {long ? <Tooltip label={props.label}>{span}</Tooltip> : span}
+      {long ? <Tooltip label={tip}>{span}</Tooltip> : span}
     </label>
   );
 }
