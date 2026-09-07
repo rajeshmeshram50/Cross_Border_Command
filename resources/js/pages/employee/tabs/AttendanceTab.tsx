@@ -43,6 +43,8 @@ interface AttendancePanelResponse {
   shift_start?: string | null;
   shift_end?: string | null;
   weekly_off?: string | null;
+  /** Weekly-off days resolved server-side by WeekOff (#94). */
+  weekly_off_dates?: Record<string, boolean>;
   expected_minutes?: number;
   logs?: AttLog[];
   date_of_joining?: string | null;
@@ -219,6 +221,7 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
     shiftStart: data.shift_start || data.employee.shift_start || '09:30',
     shiftEnd:   data.shift_end   || data.employee.shift_end   || '18:30',
     weeklyOff:  data.weekly_off || '',
+    weeklyOffDates: data.weekly_off_dates || {},
     logs:       data.logs || [],
     // Blanks out calendar cells from before the employee joined (CBC #74).
     dateOfJoining: data.date_of_joining || data.employee?.date_of_joining || null,

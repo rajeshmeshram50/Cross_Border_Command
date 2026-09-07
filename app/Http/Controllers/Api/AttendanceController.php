@@ -466,6 +466,15 @@ class AttendanceController extends Controller
             'shift_start'      => $shiftStart,
             'shift_end'        => $shiftEnd,
             'weekly_off'       => (string) ($emp->weekly_off ?? ''),
+            /* Resolved weekly-off DAYS, not just the label — see the matching
+               `weeklyOffDates` in dailyView(). The employee-profile calendar
+               ran the same label-scanning guess and had the same blind spots,
+               so it gets the same server-resolved answer. (#94) */
+            'weekly_off_dates' => (object) \App\Support\WeekOff::datesInRange(
+                (string) ($emp->weekly_off ?? ''),
+                $start->copy(),
+                $end->copy(),
+            ),
             'expected_minutes' => $this->expectedMinutesFromWindow($shiftStart, $shiftEnd),
             'logs'             => $this->buildHistoryLogs(
                 $history,
@@ -973,7 +982,7 @@ class AttendanceController extends Controller
             }
         }
 
-        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $detailMode, $date, $histStart, $histEnd, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $holidayByGroupCal, $mtdEndC, $dateC, $onLeaveSet, $leaveDaysByEmp, $leaveLogByEmp, $pendingCorrections) {
+        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $detailMode, $date, $histStart, $histEnd, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $holidayByGroupCal, $calendarHolidayEnd, $mtdEndC, $dateC, $onLeaveSet, $leaveDaysByEmp, $leaveLogByEmp, $pendingCorrections) {
             [$parsedStart, $parsedEnd] = $emp->resolveShiftWindow();
             $shiftStart = $parsedStart ?: $defaultShiftStart;
             $shiftEnd   = $parsedEnd   ?: $defaultShiftEnd;
@@ -1235,6 +1244,28 @@ class AttendanceController extends Controller
                 'holidays'          => $detailMode
                     ? (object) ($holidayByGroupCal[$emp->holiday_group_id ?? self::HOLIDAY_COMPANY_KEY]
                         ?? $holidayByGroupCal[self::HOLIDAY_COMPANY_KEY] ?? [])
+                    : (object) [],
+                /* { "YYYY-MM-DD": true } — the employee's weekly-off days,
+                   resolved SERVER-SIDE by WeekOff and spanning the same window
+                   as `holidays` above. (#94)
+                   The SPA used to receive only the `weeklyOff` LABEL and
+                   re-derive the days by scanning it for weekday names. That
+                   could not express "1st & 3rd Saturday" — it saw the word
+                   "Saturday" and marked every one of them off — and a label
+                   with no weekday in it at all, like the seeded "Week Off
+                   Policy", matched nothing, so the calendar showed no weekly
+                   off whatsoever. WeekOff is the single authority everywhere
+                   else (payroll, leave, the log builder); the calendar now
+                   reads the same answer instead of guessing at the label.
+                   Runs past today on purpose, exactly like the holiday map: a
+                   weekly off is a known recurring pattern, so upcoming ones
+                   paint rather than leaving the rest of the month blank. */
+                'weeklyOffDates'    => $detailMode
+                    ? (object) \App\Support\WeekOff::datesInRange(
+                        (string) ($emp->weekly_off ?? ''),
+                        \Carbon\Carbon::parse($histStart),
+                        $calendarHolidayEnd,
+                    )
                     : (object) [],
                 /* Null unless a regularization for THIS date is still awaiting
                    a decision (#92). The SPA shows its pill on

@@ -56,6 +56,9 @@ export interface AttLogsEmployee {
   shiftStart: string;
   shiftEnd: string;
   weeklyOff: string;
+  /** { 'YYYY-MM-DD': true } — weekly-off days resolved by WeekOff server-side.
+   *  `weeklyOff` above is the display label only; it is not parsed here (#94). */
+  weeklyOffDates?: Record<string, boolean>;
   logs: AttLog[];
   /** 'YYYY-MM-DD' — nothing before this is an attendance day (CBC #74). */
   dateOfJoining?: string | null;
@@ -757,24 +760,26 @@ function CalendarMonthGrid({
   for (const lg of (employee.logs || [])) {
     if (lg.iso) logByIso.set(lg.iso, lg);
   }
-  const weeklyOffDays = new Set<number>();
-  for (const tok of (employee.weeklyOff || '').split(/[\s,]+/)) {
-    const key = tok.slice(0, 3).toLowerCase();
-    const map: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
-    if (map[key] !== undefined) weeklyOffDays.add(map[key]);
-  }
+  /* Server-resolved weekly-off days (#94). The label scan this replaces marked
+     every Saturday off for a rotational pattern, and marked nothing at all for
+     a label carrying no weekday name — "Week Off Policy", which is what the
+     seeded employees hold — so the calendar showed no weekly off at all. */
+  const weeklyOffMap = employee.weeklyOffDates || {};
   /* Out of scope before the joining date, exactly as future days are. The
      backend drops those days from `logs`, but the weekly-off fallback below
      would still paint every pre-joining Sunday as "Weekly Off" (CBC #74). */
   const joinedIso = employee.dateOfJoining || null;
   const preJoin = (iso: string) => !!joinedIso && iso < joinedIso;
+  /* A weekly off is a known recurring pattern, so upcoming ones paint like a
+     declared holiday does rather than leaving the rest of the month blank
+     (#94) — the future gate applies to attendance facts, not to the roster
+     pattern. Pre-joining days stay out of scope at the other end. */
   const statusFor = (iso: string): DayStatus | null => {
-    if (iso > TODAY_ISO) return null;
     if (preJoin(iso)) return null;
     const fromLog = logByIso.get(iso);
     if (fromLog) return fromLog.status;
-    const d = parseISO(iso);
-    if (weeklyOffDays.has(d.getDay())) return 'Weekly Off';
+    if (weeklyOffMap[iso]) return 'Weekly Off';
+    if (iso > TODAY_ISO) return null;
     return null;
   };
 
