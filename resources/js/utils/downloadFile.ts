@@ -44,7 +44,25 @@ export async function downloadFile(rawUrl: string | null | undefined, filename =
   try {
     const res = await fetch(url, { credentials: 'include' });
     if (!res.ok) throw new Error('fetch failed: ' + res.status);
-    saveBlob(await res.blob(), name);
+    const blob = await res.blob();
+
+    /* A 200 is not proof the file was found.
+     *
+     * A path the web root does not serve — anything whose bytes moved to Azure,
+     * for instance — falls through to Laravel's catch-all, which answers with
+     * the SPA: HTTP 200, Content-Type text/html, body index.html. Saving that
+     * under a .pdf name produces a file whose reader says "Failed to load PDF
+     * document", which points suspicion at whatever generated the document
+     * when in truth it was never fetched.
+     *
+     * Only guard when the caller did NOT ask for an HTML file. */
+    if (/^text\/html/i.test(blob.type) && !/\.html?$/i.test(name)) {
+      throw new Error(
+        'The server returned a web page instead of the file — the download path was not found.',
+      );
+    }
+
+    saveBlob(blob, name);
   } catch {
     window.open(url, '_blank', 'noopener,noreferrer');
   }

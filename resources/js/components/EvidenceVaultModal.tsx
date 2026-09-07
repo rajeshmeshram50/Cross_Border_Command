@@ -3,6 +3,7 @@ import { Modal, ModalBody } from 'reactstrap';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { resolveFileUrl } from '../utils/resolveFileUrl';
+import { downloadFile } from '../utils/downloadFile';
 import ProgressDial from './ui/ProgressDial';
 import Tooltip from './ui/Tooltip';
 import '../../css/recruitment.css';
@@ -356,16 +357,15 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
         URL.revokeObjectURL(objUrl);
         toast.success('Downloaded', 'Signed PDF saved.');
       } else if (d.url) {
-        // Direct anchor download — NOT fetch(): uploaded files are served from
-        // storage / a different origin, and fetch() trips a CORS error there.
-        // An anchor download works for same-origin files and falls back to
-        // opening the file in a new tab cross-origin (no CORS preflight).
-        const a = document.createElement('a');
-        a.href = d.url;
-        a.download = d.name || 'document';
-        a.target = '_blank';
-        a.rel = 'noopener';
-        document.body.appendChild(a); a.click(); a.remove();
+        /* Was a direct anchor download, on the reasoning that fetch() trips CORS
+           on cross-origin storage. True — but an <a download> is IGNORED
+           cross-origin too, so the target="_blank" fallback fired every time on
+           the deployed server and the file OPENED instead of saving.
+
+           downloadFile() solves it from the other end: our own uploads are
+           streamed back THROUGH the API, same-origin, with an attachment
+           disposition — so there is no CORS to trip and no fallback to reach. */
+        await downloadFile(d.url, d.name || undefined);
         toast.success('Downloaded', 'Document saved.');
       } else {
         toast.info('Not available yet', 'This document has not been generated / signed yet.');

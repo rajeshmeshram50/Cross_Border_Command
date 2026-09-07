@@ -4,7 +4,7 @@ import api from '../../../../api';
 /* Force-download helper. A cross-origin <a download> is IGNORED by the browser
    (see downloadFile.ts) — on Azure the signed PDFs are a different origin, so
    the link opened the file instead of saving it. */
-import { downloadFile } from '../../../../utils/downloadFile';import { resolveFileUrl } from '../../../../utils/resolveFileUrl';import { useToast } from '../../../../contexts/ToastContext';
+import { downloadFile, saveApiBlob } from '../../../../utils/downloadFile';import { resolveFileUrl } from '../../../../utils/resolveFileUrl';import { useToast } from '../../../../contexts/ToastContext';
 import Tooltip from '../../../../components/ui/Tooltip';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import { SigningTrackerModal } from '../SigningTrackerModal';
@@ -280,12 +280,44 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
      stream — two saves of the same file, and the browser prompting twice. The
      key is per-row, so downloading one document never disables another's. */
   const [dlBusy, setDlBusy] = useState<string | null>(null);
-  const runDownload = async (key: string, url: string | null | undefined, name: string) => {
-    if (!url || dlBusy) return;
+  /* A SIGNED document is fetched through its signature endpoint, never through
+     the signed_url the row carries.
+
+     signed_url points into uploads/signed_documents/, which downloadFile() has
+     no API route for — so it fell through to a same-origin fetch of
+     /uploads/signed_documents/…. On the server those PDFs live on Azure, so
+     nothing is at that path on the web root and Laravel's catch-all answers
+     with the SPA: HTTP 200, body index.html, saved under a .pdf name. The
+     reader then says "Failed to load PDF document", which points suspicion at
+     the generator when the file was never fetched at all.
+
+     The signature route is same-origin, tenant-checked and already sets an
+     attachment disposition, so nothing new has to be built or secured, and
+     saveApiBlob() verifies the %PDF magic bytes so a wrong response fails
+     loudly instead of being written to disk. */
+  const runDownload = async (
+    key: string,
+    url: string | null | undefined,
+    name: string,
+    sig?: { id?: number | null; kind?: 'signed' | 'certificate' },
+  ) => {
+    if (dlBusy) return;
+    const sigId = sig?.id ?? null;
+    if (!sigId && !url) return;
     setDlBusy(key);
-    try { await downloadFile(url, name); }
-    catch { toast.error('Download failed', 'Could not download the file.'); }
-    finally { setDlBusy(null); }
+    try {
+      if (sigId) {
+        const path = sig?.kind === 'certificate'
+          ? `/clm/signature-requests/${sigId}/certificate`
+          : `/clm/signature-requests/${sigId}/download-file/0`;
+        const res = await api.get(path, { responseType: 'blob' });
+        await saveApiBlob(res.data as Blob, name, 'pdf');
+      } else {
+        await downloadFile(url!, name);
+      }
+    } catch (e: any) {
+      toast.error('Download failed', e?.message || 'Could not download the file.');
+    } finally { setDlBusy(null); }
   };
 
   const [previewingId, setPreviewingId] = useState<number | null>(null);
@@ -1442,14 +1474,14 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                       the signed invoice back) had no exit. */}
                                   {sig?.signed_url && (
                                     <Tooltip label="View / download signed PDF">
-                                      <button type="button" disabled={dlBusy === `sig-${sig.signature_request_id}`} onClick={() => { void runDownload(`sig-${sig.signature_request_id}`, sig.signed_url, 'signed-document.pdf'); }} className="lasm-btn-icon" aria-label="Signed PDF">
+                                      <button type="button" disabled={dlBusy === `sig-${sig.id}`} onClick={() => { void runDownload(`sig-${sig.id}`, sig.signed_url, 'signed-document.pdf', { id: sig.id, kind: 'signed' }); }} className="lasm-btn-icon" aria-label="Signed PDF">
                                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                                       </button>
                                     </Tooltip>
                                   )}
                                   {sig?.certificate_url && (
                                     <Tooltip label="Certificate of Completion">
-                                      <button type="button" disabled={dlBusy === `cert-${sig.signature_request_id}`} onClick={() => { void runDownload(`cert-${sig.signature_request_id}`, sig.certificate_url, 'certificate.pdf'); }} className="lasm-btn-cert" aria-label="Certificate">
+                                      <button type="button" disabled={dlBusy === `cert-${sig.id}`} onClick={() => { void runDownload(`cert-${sig.id}`, sig.certificate_url, 'certificate.pdf', { id: sig.id, kind: 'certificate' }); }} className="lasm-btn-cert" aria-label="Certificate">
                                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>
                                       </button>
                                     </Tooltip>
@@ -1583,7 +1615,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                 {/* Signed PDF + Certificate — once the doc is signed. */}
                                 {tdSig?.signed_url && (
                                   <Tooltip label="View / download signed PDF">
-                                    <button type="button" disabled={dlBusy === `td-${tdSig.signature_request_id}`} onClick={() => { void runDownload(`td-${tdSig.signature_request_id}`, tdSig.signed_url, 'signed-document.pdf'); }} className="lasm-btn-icon" aria-label="Signed PDF">
+                                    <button type="button" disabled={dlBusy === `td-${tdSig.id}`} onClick={() => { void runDownload(`td-${tdSig.id}`, tdSig.signed_url, 'signed-document.pdf', { id: tdSig.id, kind: 'signed' }); }} className="lasm-btn-icon" aria-label="Signed PDF">
                                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                                     </button>
                                   </Tooltip>
@@ -1985,14 +2017,14 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                               </Tooltip>
                               {sig?.signed_url && (
                                 <Tooltip label="View / download signed PDF">
-                                  <button type="button" disabled={dlBusy === `sig-${sig.signature_request_id}`} onClick={() => { void runDownload(`sig-${sig.signature_request_id}`, sig.signed_url, 'signed-document.pdf'); }} className="lasm-btn-icon" aria-label="Signed PDF">
+                                  <button type="button" disabled={dlBusy === `sig-${sig.id}`} onClick={() => { void runDownload(`sig-${sig.id}`, sig.signed_url, 'signed-document.pdf', { id: sig.id, kind: 'signed' }); }} className="lasm-btn-icon" aria-label="Signed PDF">
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                                   </button>
                                 </Tooltip>
                               )}
                               {sig?.certificate_url && (
                                 <Tooltip label="Certificate of Completion">
-                                  <button type="button" disabled={dlBusy === `cert-${sig.signature_request_id}`} onClick={() => { void runDownload(`cert-${sig.signature_request_id}`, sig.certificate_url, 'certificate.pdf'); }} className="lasm-btn-cert" aria-label="Certificate">
+                                  <button type="button" disabled={dlBusy === `cert-${sig.id}`} onClick={() => { void runDownload(`cert-${sig.id}`, sig.certificate_url, 'certificate.pdf', { id: sig.id, kind: 'certificate' }); }} className="lasm-btn-cert" aria-label="Certificate">
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>
                                   </button>
                                 </Tooltip>

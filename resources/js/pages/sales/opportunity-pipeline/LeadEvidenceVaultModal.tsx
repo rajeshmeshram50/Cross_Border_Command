@@ -6,6 +6,7 @@ import api from '../../../api';
 import Tooltip from '../../../components/ui/Tooltip';
 import { useToast } from '../../../contexts/ToastContext';
 import { signatureRequestsToVaultDocs, type SigReqRow } from '../../../utils/vaultSignatureRows';
+import { downloadFile } from '../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../utils/resolveFileUrl';
 import type { VaultData, VaultDoc, VaultStatus } from '../core-masters/customer/CustomerEvidenceVaultModal';
 
@@ -519,11 +520,20 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
   const canViewOrDownload = !!doc.attachment_url;
   const canReupload = !!ownerId && !!doc.doc_code;
 
-  const download = () => {
-    if (!doc.attachment_url) return;
-    const a = document.createElement('a');
-    a.href = doc.attachment_url; a.download = doc.attachment || ''; a.target = '_blank'; a.rel = 'noreferrer';
-    document.body.appendChild(a); a.click(); a.remove();
+  /* An <a download> is IGNORED for a cross-origin file, and on the deployed
+     server attachments live on Azure Blob — so the browser dropped the download
+     attribute, target="_blank" took over, and the document OPENED in a new tab
+     instead of saving. That is the whole of the reported bug, and it cannot be
+     reproduced locally, where the file is same-origin under /storage.
+
+     downloadFile() streams our own uploads back through the API same-origin
+     with an attachment disposition, which works either way. */
+  const [dling, setDling] = useState(false);
+  const download = async () => {
+    if (!doc.attachment_url || dling) return;
+    setDling(true);
+    try { await downloadFile(doc.attachment_url, doc.attachment || undefined); }
+    finally { setDling(false); }
   };
 
   const onPick = async (f: File | undefined) => {
@@ -575,9 +585,10 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         </a>
       </Tooltip>
-      <Tooltip label={canViewOrDownload ? `Download ${doc.attachment}` : 'No attachment yet'}>
-        <button type="button" disabled={!canViewOrDownload} onClick={download}
-                className={`lev-act lev-act-download ${!canViewOrDownload ? 'is-disabled' : ''}`} aria-label="Download">
+      <Tooltip label={!canViewOrDownload ? 'No attachment yet' : dling ? 'Downloading…' : `Download ${doc.attachment}`}>
+        <button type="button" disabled={!canViewOrDownload || dling} onClick={() => { void download(); }}
+                aria-busy={dling}
+                className={`lev-act lev-act-download ${(!canViewOrDownload || dling) ? 'is-disabled' : ''}`} aria-label="Download">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </button>
       </Tooltip>
