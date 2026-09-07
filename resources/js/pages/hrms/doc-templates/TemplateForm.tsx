@@ -1307,7 +1307,7 @@ function Step3(props: {
               position: 'absolute', top: 0, right: 0, bottom: 0,
               width: '34%', minWidth: 320,
               display: 'flex', minHeight: 0,
-              border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden',
+              border: '1px solid var(--vz-border-color)', borderRadius: 10, overflow: 'hidden',
             }}>
               {/* top/bottom: 0 makes this box's height definite, which is what
                   the previewer's own height:100% resolves against — a document

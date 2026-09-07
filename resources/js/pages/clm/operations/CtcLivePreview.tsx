@@ -3,6 +3,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 // eslint-disable-next-line import/no-unresolved
 import PdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
 import api from '../../../api';
+import { useTheme } from '../../../contexts/ThemeContext';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorker as unknown as string;
 
@@ -27,13 +28,28 @@ type Props = {
   pageConfig?: Record<string, unknown>;
   headerConfig?: Record<string, unknown>;
   footerConfig?: Record<string, unknown>;
+  /** Force a palette. Normally OMITTED — the preview reads the app theme
+   *  itself, so it cannot be left light on a dark page by a caller that simply
+   *  forgot to pass this. (#8) */
   dark?: boolean;
 };
 
 export default function CtcLivePreview({
   endpoint = '/clm/ctc-contracts/preview-live',
-  contractId, content, pageConfig, headerConfig, footerConfig, dark = false,
+  contractId, content, pageConfig, headerConfig, footerConfig, dark: darkProp,
 }: Props) {
+  /* The preview themes ITSELF. (#8)
+     `dark` was a required-in-practice prop defaulting to false, and callers
+     kept forgetting it: the HR template editor never passed it at all, so the
+     preview panel stayed on its light palette — a white stage and pale violet
+     chrome — on a fully dark page. Reading the theme here means every caller,
+     present and future, is right by default.
+     useTheme() also tracks live toggles, so flipping the theme while a preview
+     is open (or a modal holding one is open) repaints it, which a value
+     sampled once at mount could not do. An explicit prop still wins, for a
+     caller that genuinely needs to pin the palette. */
+  const { theme } = useTheme();
+  const dark = darkProp ?? theme === 'dark';
   const [numPages, setNumPages] = useState(0);
   const [activePage, setActivePage] = useState(1);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');

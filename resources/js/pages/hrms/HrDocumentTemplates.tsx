@@ -740,7 +740,6 @@ function TemplateViewModal({
                   content={row.content_html || ''}
                   headerConfig={row.header_config || undefined}
                   footerConfig={row.footer_config || undefined}
-                  dark={document.documentElement.getAttribute('data-bs-theme') === 'dark'}
                 />
               </div>
             )}
