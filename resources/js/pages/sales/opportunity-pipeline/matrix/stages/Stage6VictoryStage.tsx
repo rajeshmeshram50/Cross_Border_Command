@@ -753,6 +753,10 @@ const STAGE6_CSS = `
   border: 1.5px solid;
   display: flex; flex-direction: column; gap: 3px;
   min-height: 48px;
+  /* Grid items default to min-width: auto (= their content width), so a long
+     company name or destination widened its own column past 1fr and pushed the
+     whole grid outside the card — the narrower the screen, the worse. */
+  min-width: 0;
 }
 .s6-cell-violet  { border-color: #ddd6fe; }
 .s6-cell-blue    { border-color: #bfdbfe; }
@@ -763,7 +767,13 @@ const STAGE6_CSS = `
 .s6-cell-cyan    { border-color: #a5f3fc; }
 .s6-cell-slate   { border-color: #cbd5e1; }
 .s6-cell-label   { font-size: 9px; font-weight: 800; letter-spacing: .1em; color: #94a3b8; text-transform: uppercase; }
-.s6-cell-value   { font-size: 12.5px; font-weight: 700; color: #1e293b; display: flex; align-items: center; min-height: 18px; }
+.s6-cell-value   {
+  font-size: 12.5px; font-weight: 700; color: #1e293b;
+  display: flex; align-items: center; min-height: 18px;
+  /* Wrap rather than run out of the cell: these carry free text (company
+     names, destinations) with no natural break points. */
+  min-width: 0; overflow-wrap: anywhere;
+}
 .s6-code {
   font-family: 'Inter',monospace; font-size: 11px; font-weight: 800;
   background: #fef3c7; color: #b45309;
@@ -784,6 +794,7 @@ const STAGE6_CSS = `
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   padding: 12px 8px; border-radius: 12px;
   border: 1.5px solid; background: #fff;
+  min-width: 0;
 }
 .s6-kpi-ico {
   width: 34px; height: 34px; border-radius: 10px;
@@ -856,7 +867,7 @@ const STAGE6_CSS = `
 .s6-shp-grid { display: grid; gap: 12px; padding: 14px 18px; }
 .s6-shp-grid-3 { grid-template-columns: repeat(3, 1fr); }
 .s6-shp-grid-4 { grid-template-columns: repeat(4, 1fr); }
-.s6-shp-cell { display: flex; flex-direction: column; gap: 3px; }
+.s6-shp-cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .s6-shp-cell-wide { grid-column: 1 / -1; }
 /* Attachment chips (shipment form uploads). */
 .s6-shp-attach { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
@@ -873,7 +884,7 @@ const STAGE6_CSS = `
 [data-bs-theme="dark"] .s6-shp-attach-chip { background: rgba(124,58,237,.14); border-color: rgba(167,139,250,.35); color: #c4b5fd; }
 [data-bs-theme="dark"] .s6-shp-attach-chip:hover { background: rgba(124,58,237,.22); }
 .s6-shp-label { font-size: 9.5px; font-weight: 800; letter-spacing: .1em; color: #94a3b8; }
-.s6-shp-val   { font-size: 12.5px; font-weight: 700; color: #1e293b; }
+.s6-shp-val   { font-size: 12.5px; font-weight: 700; color: #1e293b; min-width: 0; overflow-wrap: anywhere; }
 .s6-shp-val.s6-shp-amber   { color: #b45309; }
 .s6-shp-val.s6-shp-blue    { color: #1e40af; }
 .s6-shp-val.s6-shp-emerald { color: #6d28d9; }
@@ -925,6 +936,8 @@ const STAGE6_CSS = `
 @media (max-width: 520px) {
   .s6-summary-grid, .s6-shp-grid-3, .s6-shp-grid-4 { grid-template-columns: 1fr; }
   .s6-kpis { grid-template-columns: repeat(2, 1fr); }
-  .s6-title { font-size: 24px; }
+  /* The base size is 21px, so this rule was GROWING the title on the
+     narrowest screens — the one place it has least room. */
+  .s6-title { font-size: 18px; }
 }
 `;

@@ -420,7 +420,14 @@ class SegmentDocUploadController extends Controller
         // Pass the ORIGINAL route id ($id) for the shipment lookup. For a
         // "same as customer" consignee, $owner was swapped to the linked
         // Customer above, so $owner->id can't be trusted for the lead filter.
-        $shipments = $this->buildShipmentAgreements($owner, $type, $cid, $company_dd, $owner_kyc, $trade_licenses, $id);
+        /* EVERY deal, then the shipment-linked subset.
+         * The document buckets and their ratios are applicable-based, so a deal
+         * that has a PI but no shipment order yet still carries its documents —
+         * previously those parties showed 0 in the vault while the Buyer Profile
+         * counted them. total_shipments and shipment_agreements stay strictly
+         * shipment-linked, so the Case-to-Case shipment UI is unchanged. */
+        $deals     = $this->buildShipmentAgreements($owner, $type, $cid, $company_dd, $owner_kyc, $trade_licenses, $id, false);
+        $shipments = array_values(array_filter($deals, fn ($r) => !empty($r['has_shipment'])));
 
         // ── Header KPIs ─────────────────────────────────────────────────────
         // Customer/Consignee vaults have two document families:
@@ -444,9 +451,37 @@ class SegmentDocUploadController extends Controller
         $agreements = [];
         if (in_array($type, ['customer', 'consignee'], true)) {
             $agreements = $this->buildEntityAgreements($cid, $type, $id, $segmentIds);
-            $c2c = function (string $key) use ($shipments) {
+
+            /* Plus the agreements this party's DEALS require.
+             *
+             * buildEntityAgreements() resolves from the party's own segment
+             * tags only. C-010 is tagged foods / Travel & Luggage but trades
+             * Test Segment 30 goods, so its deal needs four agreements (two
+             * already signed) while this bucket resolved to nothing — the cell
+             * read 0/0 and the popup said "No agreements in this bucket yet"
+             * over a deal that plainly had them.
+             * Party-level rows are KEPT and listed first, so a party with
+             * applicable agreements but no deal yet still shows them (CBC #66);
+             * deal rows are appended and de-duplicated by library id, since one
+             * agreement is signed once however many deals reference it. */
+            $seenAgr = [];
+            foreach ($agreements as $a) {
+                if (!empty($a['db_id'])) $seenAgr[(int) $a['db_id']] = true;
+            }
+            foreach ($deals as $s) {
+                $rows = !empty($s['buyer_is_consignee'])
+                    ? array_merge($s['agreements_buyer'] ?? [], $s['agreements_consignee'] ?? [])
+                    : ($type === 'consignee' ? ($s['agreements_consignee'] ?? []) : ($s['agreements_buyer'] ?? []));
+                foreach ($rows as $r) {
+                    $k = (int) ($r['db_id'] ?? 0);
+                    if ($k && isset($seenAgr[$k])) continue;
+                    if ($k) $seenAgr[$k] = true;
+                    $agreements[] = $r;
+                }
+            }
+            $c2c = function (string $key) use ($deals) {
                 $signed = 0; $total = 0;
-                foreach ($shipments as $s) {
+                foreach ($deals as $s) {
                     $parts   = explode('/', $s[$key]['ratio'] ?? '0/0');
                     $signed += (int) ($parts[0] ?? 0);
                     $total  += (int) ($parts[1] ?? 0);
@@ -455,6 +490,45 @@ class SegmentDocUploadController extends Controller
             };
             $c2cTd  = $c2c('trade_docs');
             $c2cAgr = $c2c('agreement');
+
+            /* The Trade Documents LIST, rebuilt from the same rows the count
+             * above is summed from.
+             *
+             * trade_documents_count came from the per-deal ratios while
+             * trade_documents stayed the standard 'td' bucket — and the DCP no
+             * longer stores doc_selections['td'], so that bucket is permanently empty.
+             * One response therefore said "1 document" and handed back an empty
+             * array, which the single-bucket popup rendered as "No documents in
+             * this bucket yet" under a non-zero cell (QA #3, #4, #9, #10).
+             * Agreements were already fixed this way (CBC #66, just above);
+             * this does the same for trade documents. Rows are concatenated
+             * WITHOUT de-duplicating across deals, because the count sums the
+             * per-deal ratios the same way — the same library document on two
+             * deals is two obligations. */
+            $c2cTradeRows = [];
+            foreach ($deals as $s) {
+                $buyerRows = $s['trade_docs_buyer']     ?? [];
+                $consRows  = $s['trade_docs_consignee'] ?? [];
+                // Mirrors how the ratio picks its set: when Customer = Consignee
+                // only this party's side is shown, otherwise both sides apply.
+                /* Same rule as the ratio above:
+                   · one entity  → the union, de-duplicated, so a both-parties
+                     document is one row and a consignee-only one is not lost;
+                   · two entities → this party's own side only. The other party
+                     has its own vault; listing its documents here inflated the
+                     customer's figure with the consignee's obligations. */
+                $sideRows = !empty($s['buyer_is_consignee'])
+                    ? array_merge($buyerRows, $consRows)
+                    : ($type === 'consignee' ? $consRows : $buyerRows);
+                $seenInDeal = [];
+                foreach ($sideRows as $r) {
+                    $k = ($r['db_id'] ?? 'x') . '|' . ($r['name'] ?? '');
+                    if (isset($seenInDeal[$k])) continue;
+                    $seenInDeal[$k] = true;
+                    $c2cTradeRows[] = $r;
+                }
+            }
+            $trade_documents = $c2cTradeRows;
 
             $stdRows             = array_merge($company_dd, $owner_kyc, $trade_licenses);
             $stdVerified         = collect($stdRows)->where('status', 'Verified')->count();
@@ -695,7 +769,11 @@ class SegmentDocUploadController extends Controller
      * are the party's standard-doc progress (same across its shipments); the
      * Trade-Docs / Agreement ratios are per-shipment from signature completion.
      */
-    private function buildShipmentAgreements(Model $owner, string $type, int $cid, array $companyDd, array $ownerKyc, array $tradeLicenses, int $entityId): array
+    /** @param bool $shipmentLinkedOnly  false = every deal, shipment order or not.
+     *  The document buckets need ALL deals (a PI already carries applicable
+     *  documents); total_shipments / shipment_agreements still want only the
+     *  shipment-linked ones, so callers filter on the has_shipment flag. */
+    private function buildShipmentAgreements(Model $owner, string $type, int $cid, array $companyDd, array $ownerKyc, array $tradeLicenses, int $entityId, bool $shipmentLinkedOnly = true): array
     {
         // Vendors aren't modelled as buyer/consignee shipments here.
         if (!in_array($type, ['customer', 'consignee'], true) || !$cid) return [];
@@ -812,7 +890,8 @@ class SegmentDocUploadController extends Controller
         $sr = 0;
         foreach ($leads as $lead) {
             $lid = (int) $lead->id;
-            if (!isset($shipLeadIds[$lid])) continue;   // shipment-linked only
+            $hasShipment = isset($shipLeadIds[$lid]);
+            if ($shipmentLinkedOnly && !$hasShipment) continue;
             $reqs = $sigByLead->get($lid) ?? collect();
 
             // List EVERY applicable trade-doc / agreement (per the lead's
@@ -928,8 +1007,16 @@ class SegmentDocUploadController extends Controller
             $primary = $type === 'consignee'
                 ? ['trade' => $tradeCons, 'agr' => $agrCons]
                 : ['trade' => $tradeBuyer, 'agr' => $agrBuyer];
-            $tradeAll = $buyerIsConsignee ? $primary['trade'] : $dedupe(array_merge($tradeBuyer, $tradeCons));
-            $agrAll   = $buyerIsConsignee ? $primary['agr']   : $dedupe(array_merge($agrBuyer, $agrCons));
+            /* One party, one combined set — counted ONCE.
+             * When Customer = Consignee this took the buyer side alone to avoid
+             * double-counting a both-parties document. It did avoid that, but it
+             * also dropped genuinely CONSIGNEE-only documents — which apply to
+             * the very same entity when the two are one. De-duplicating the
+             * union solves both: every applicable document appears exactly once,
+             * whichever side it was filed under. $primary is still the party
+             * whose vault this is, used below. */
+            $tradeAll = $buyerIsConsignee ? $dedupe(array_merge($tradeBuyer, $tradeCons)) : $primary['trade'];
+            $agrAll   = $buyerIsConsignee ? $dedupe(array_merge($agrBuyer, $agrCons))   : $primary['agr'];
             $signed   = fn (array $d) => collect($d)->where('status', 'Signed')->count();
 
             $sr++;
@@ -947,6 +1034,7 @@ class SegmentDocUploadController extends Controller
                 'agreement'      => $this->ratio($signed($agrAll), count($agrAll)),
                 'risk'           => ($signed($tradeAll) + $signed($agrAll)) >= (count($tradeAll) + count($agrAll)) && (count($tradeAll) + count($agrAll)) > 0 ? 'Compliant' : 'Medium',
                 'buyer_is_consignee' => $buyerIsConsignee,
+                'has_shipment'   => $hasShipment,
                 'trade_docs_buyer'      => $tradeBuyer,
                 'trade_docs_consignee'  => $tradeCons,
                 'agreements_buyer'      => $agrBuyer,
@@ -1075,13 +1163,21 @@ class SegmentDocUploadController extends Controller
             fn ($x) => mb_strtolower(trim((string) $x)),
             explode(',', (string) $partySegRaw)
         )));
-        if ($partySegs) {
-            $segments = $segments->filter(
-                fn ($sg) => in_array(mb_strtolower(trim((string) $sg->name)), $partySegs, true)
-                         || in_array(mb_strtolower(trim((string) $sg->code)), $partySegs, true)
-            )->values();
-            if ($segments->isEmpty()) return $empty;
-        }
+        /* NOT narrowed to the party's own segments any more.
+         *
+         * A deal's required documents follow what is being TRADED — the
+         * products on the PI — not the segment tags sitting on the customer or
+         * consignee master. Intersecting the two hid documents the deal
+         * genuinely requires: C-010 trades Test Segment 30 goods while the
+         * customer record is tagged foods / Travel & Luggage, so the overlap
+         * was empty and the vault showed the PI alone — while the send modal
+         * and the Buyer Profile both counted four. Two sources agreeing, and
+         * the disagreeing one being the filter, is what settled it.
+         * The filter's own comment already held the principle: hiding a
+         * required document is worse than showing a spare one.
+         * $partySegments is kept in the signature (callers still pass it) so
+         * the party is still identified for the buyer/consignee split below. */
+        unset($partySegs);
 
         // Index signature requests by [docType][party] => [libId => request],
         // newest first. The library id lives in trade_doc_ids (multi-doc sends)
@@ -1147,8 +1243,15 @@ class SegmentDocUploadController extends Controller
         foreach ($segments as $seg) {
             // Agreements applicable to this segment.
             foreach ($this->matchSegmentLibrary(ClmAgreementLibrary::query(), $cid, $seg, 'agr_status') as $a) {
-                // Not marked Necessary for this deal → not this deal's document.
-                if (($needs['agreement:' . $a->id] ?? null) !== true) continue;
+                /* APPLICABLE-based, not Necessary-based.
+                 * This used to skip anything the deal had not ticked Necessary.
+                 * The Sales-Matrix popup itself lists every applicable document
+                 * and simply LABELS each one Necessary / Not necessary, so
+                 * dropping the un-ticked ones here made the vault show fewer
+                 * documents than the screen the tick came from — and left the
+                 * Buyer Profile (which counts applicable) disagreeing with both.
+                 * Necessity is a property of a document, not a reason to hide
+                 * it. $needs stays loaded for the trade-doc pass below. */
                 [$forBuyer, $forCons] = $this->partyFlags($a->party);
                 $name = $a->title ?: $a->code;
                 // Trade docs + agreements are mandatory documents for the deal.
@@ -1167,8 +1270,7 @@ class SegmentDocUploadController extends Controller
 
             // Trade documents applicable to this segment.
             foreach ($this->matchSegmentLibrary(ClmTradeDocLibrary::query(), $cid, $seg, 'status') as $m) {
-                // Same rule as agreements above.
-                if (($needs['trade_doc:' . $m->id] ?? null) !== true) continue;
+                // Applicable-based, same as agreements above.
                 [$forBuyer, $forCons] = $this->partyFlags($m->party);
                 $name = $m->title ?: ($m->name ?: $m->code);
                 // Trade docs + agreements are mandatory documents for the deal.
