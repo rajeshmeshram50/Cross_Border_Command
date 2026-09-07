@@ -11990,6 +11990,28 @@
   }
 }
 
+/* Holiday toolbar — one set of metrics for every button in the row. (#60)
+   Template and Import Excel (.rec-btn-ghost) sat beside Add Holiday
+   (.rec-btn-primary) with quietly different geometry: 16px side padding
+   against 18px, font-weight 600 against 700, a 5px icon gap against 7px, and
+   no letter-spacing. Same height and radius, so nothing looked broken — the
+   labels just sat at different optical widths and the icons at different
+   distances from their text, which reads as the row being misaligned rather
+   than as four buttons of different kinds.
+   The metrics are matched here; the FILL deliberately is not. Add Holiday is
+   the primary action and keeps its gradient, Groups keeps its violet tint,
+   and the other two stay ghost — that hierarchy is the point of the row.
+   Scoped to .holiday-page: .rec-btn-ghost is used across recruitment, the
+   modals and half a dozen other pages, and this is a fix for this toolbar,
+   not a change to the button everywhere. */
+.holiday-page .dt-toolbar-actions .rec-btn-ghost {
+  padding-left: 18px;
+  padding-right: 18px;
+  font-weight: 700;
+  gap: 7px;
+  letter-spacing: 0.01em;
+}
+
 /* Groups button — the emphasised sibling of Template / Import Excel. (#96)
    These colours used to be an inline style attribute on the button, which
    beats every stylesheet rule including the dark-mode one. So in dark theme
