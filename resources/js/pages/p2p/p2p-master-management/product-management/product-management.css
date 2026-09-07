@@ -5470,18 +5470,19 @@
    flow rather than absolutely positioned: .apm-field establishes no containing
    block of its own, so an absolute counter resolves against .apm-section and
    drifts to the bottom-right of the whole section card instead of sitting
-   under the field it counts. */
+   under the field it counts.
+
+   Stays grey at the cap. Reaching the limit is not an error — the text is
+   simply clipped — and a red counter next to a red-bordered field read as a
+   failed save. text-align covers the icon-field case: those children sit in
+   .apm-master-field (a plain block), where align-self has nothing to act on. */
 .apm-char-count {
   align-self: flex-end;
+  text-align: right;
   font-size: 11px;
   line-height: 1;
   color: var(--vz-secondary-color);
   font-variant-numeric: tabular-nums;
-}
-
-.apm-char-count.is-full {
-  color: #dc2626;
-  font-weight: 600;
 }
 
 .apm-field-label {

@@ -282,16 +282,8 @@ export default function AddProductModal(props: {
       cleaned = cleaned.replace(/(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi, '');
       issues.push('Suspicious SQL-like patterns are not allowed');
     }
-    /* The cap is enforced here rather than by the textarea's maxLength: the
-       browser truncates an over-long paste before any handler runs, so the
-       text just disappeared with nothing said. Letting the full paste reach
-       this point is what makes it possible to say how much was dropped. */
     if (cleaned.length > DESCRIPTION_MAX) {
-      const dropped = cleaned.length - DESCRIPTION_MAX;
       cleaned = cleaned.slice(0, DESCRIPTION_MAX);
-      issues.push(
-        `Limited to ${DESCRIPTION_MAX.toLocaleString()} characters — the last ${dropped.toLocaleString()} were not added`,
-      );
     }
     setDescription(cleaned);
     if (issues.length) {
@@ -1509,7 +1501,7 @@ export default function AddProductModal(props: {
                       onChange={e => handleDescriptionChange(e.target.value)}
                       rows={3}
                     />
-                    <div className={`apm-char-count${description.length >= DESCRIPTION_MAX ? ' is-full' : ''}`}>
+                    <div className="apm-char-count">
                       {description.length.toLocaleString()} / {DESCRIPTION_MAX.toLocaleString()} characters
                     </div>
                   </Field>
@@ -1608,8 +1600,8 @@ export default function AddProductModal(props: {
                         maxLength={CONFIDENTIAL_MAX}
                         rows={4}
                       />
-                      <div className={`apm-char-count${confidential.length >= CONFIDENTIAL_MAX ? ' is-full' : ''}`}>
-                        {confidential.length} / {CONFIDENTIAL_MAX} characters
+                      <div className="apm-char-count">
+                        {confidential.length.toLocaleString()} / {CONFIDENTIAL_MAX.toLocaleString()} characters
                       </div>
                     </Field>
                 </SectionCard>
