@@ -35,8 +35,10 @@ class AttendancePunch extends Model
         return $this->belongsTo(Attendance::class);
     }
 
+    /** withTrashed() — same reason as Attendance::employee(): a leaver's
+     *  punches stay on the record and must still resolve to a name. (#91) */
     public function employee(): BelongsTo
     {
-        return $this->belongsTo(Employee::class);
+        return $this->belongsTo(Employee::class)->withTrashed();
     }
 }

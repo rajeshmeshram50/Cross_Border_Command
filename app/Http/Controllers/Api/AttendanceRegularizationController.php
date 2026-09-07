@@ -144,19 +144,22 @@ class AttendanceRegularizationController extends Controller
             abort(422, 'You cannot regularize a future date. Pick today or a past day.');
         }
 
-        /* Exit gate — an employee who has left cannot have their attendance
-         * corrected. (#88)
+        /* Exit gate — an employee whose employment has ENDED cannot have their
+         * attendance corrected. (#88)
          *
          * Their history stays READABLE (that is #87, and reading a leaver's
-         * record is the ordinary case at F&F time), but the record itself is
-         * closed: their F&F has been priced off it, so rewriting a punch now
-         * would move money that has already been settled. Nothing stopped it —
+         * record is the ordinary case at F&F time), but a closed record must
+         * not be rewritten: the F&F was priced off it, so moving a punch now
+         * moves money that has already been settled. Nothing stopped it —
          * there was no exit check anywhere in this controller, so a request
          * could be filed against a leaver and approved straight through.
          *
-         * Filing is refused outright, whatever the date: a leaver has no open
-         * attendance to correct. The message names the last working day so the
-         * refusal is actionable rather than mysterious. */
+         * Date-aware on purpose. An exit that is still in progress leaves the
+         * employee working out their notice, and those days stay correctable;
+         * only a completed exit, or a date past the last working day, is
+         * refused. employmentClosedReason() carries that rule and returns a
+         * sentence naming the date, so the refusal is actionable rather than
+         * mysterious. */
         if ($closed = $this->employmentClosedReason($employee, $dateStr)) {
             abort(422, $closed);
         }
@@ -957,16 +960,37 @@ class AttendanceRegularizationController extends Controller
      * Why this employee's attendance is closed to correction, or null when it
      * is still open. (#88)
      *
-     * Closed when the employee has EXITED — a completed exit carrying a last
-     * working day (a rehire spends that exit, so it does not count), or, for
-     * someone removed through Employee Management with no exit record at all,
-     * the soft-delete date, which is the only end-of-employment marker there
-     * is. Mirrors the window AttendanceController::employeeSummary() reports,
-     * so what the Attendance tab shows as "employment ended" is exactly what
-     * this refuses to let through.
+     * There are three cases, and the middle one is the whole point of #88.
+     *
+     * 1. EXIT COMPLETED — `exit_case_status = 'Closed'`, the marker
+     *    ExitController stamps alongside `completed_at` at Stage 4 closure and
+     *    the one the exit listings filter on. Closure prices the Full & Final
+     *    off the attendance record as it stands, so every date is frozen: a
+     *    correction now would move money that has already been settled.
+     *    Closure also soft-deletes the employee, but the row can be restored
+     *    by the Disabled-employees toggle, so the exit is tested in its own
+     *    right rather than leaning on `deleted_at`.
+     *
+     * 2. EXIT IN PROGRESS — refused only for dates AFTER the last working day.
+     *    `last_working_day` is captured at Stage 1, the moment notice is
+     *    filed, and the employee keeps working from there, usually for the
+     *    whole notice period. Gating on the mere existence of that date locked
+     *    out people still on the floor punching in every morning — and they
+     *    are the ones who most need corrections, because their F&F has not
+     *    been priced yet. Their served days stay open; only days past their
+     *    last working day are refused, because they were not employed then.
+     *    That is the same window `AttendanceController::dailyView()` rosters a
+     *    leaver by and `employeeSummary()` reports, so the sheet and this gate
+     *    agree on where employment ended.
+     *
+     * 3. REMOVED, NO EXIT RECORD — deleted through Employee Management. The
+     *    soft-delete date is the only end-of-employment marker there is.
+     *
+     * A rehire spends the exit (`rehired_at`), so none of the above applies to
+     * someone who is back on the books.
      *
      * Returns a sentence, not a bool, so the caller does not have to
-     * reconstruct which of the two cases it hit.
+     * reconstruct which case it hit.
      */
     private function employmentClosedReason(Employee $employee, string $dateStr): ?string
     {
@@ -977,12 +1001,29 @@ class AttendanceRegularizationController extends Controller
             ->first();
 
         if ($exit) {
-            $lwd = Carbon::parse($exit->last_working_day);
-            return 'This employee left on ' . $lwd->format('j M Y')
-                . ' — attendance for an exited employee can no longer be regularized,'
-                . ' their Full & Final is priced off the record as it stands.';
+            $lwd      = Carbon::parse($exit->last_working_day);
+            $isClosed = (string) ($exit->exit_case_status ?? 'Open') === 'Closed';
+
+            // 1 — case closed: the whole record is frozen, whatever the date.
+            if ($isClosed) {
+                return 'This employee left on ' . $lwd->format('j M Y')
+                    . ' — attendance for an exited employee can no longer be regularized,'
+                    . ' their Full & Final is priced off the record as it stands.';
+            }
+
+            // 2 — still serving notice: their worked days remain open, but a
+            // day past the last working day is not an attendance day at all.
+            if ($dateStr > $lwd->toDateString()) {
+                return 'This employee\'s last working day is ' . $lwd->format('j M Y')
+                    . ' — attendance after that date cannot be regularized.'
+                    . ' Days up to and including their last working day can still be corrected'
+                    . ' while the exit is in progress.';
+            }
+
+            return null;
         }
 
+        // 3 — removed through Employee Management, no exit record.
         if ($employee->deleted_at) {
             return 'This employee was removed from Employee Management on '
                 . $employee->deleted_at->format('j M Y')

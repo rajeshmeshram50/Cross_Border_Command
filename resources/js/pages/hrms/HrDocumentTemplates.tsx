@@ -8,6 +8,7 @@ import Tooltip from '../../components/ui/Tooltip';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import DataTable, { ActionCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import { TemplateRow, EmployeeCategory, RoleType, DocStatus, ROLE_TYPES } from './doc-templates/TemplateForm';
+import CtcLivePreview from '../clm/operations/CtcLivePreview';
 import '../../../css/recruitment.css';
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -23,8 +24,6 @@ const STATUS_TONES: Record<DocStatus, { bg: string; fg: string; dot: string }> =
   Deprecated: { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444' },
 };
 
-/** Shown in the View dialog when a web-editor template has no body yet. */
-const NO_CONTENT_HTML = '<p style="color:#9ca3af">No content yet.</p>';
 
 interface Stats { total: number; active: number; draft: number; deprecated: number; by_category: Record<string, number>; }
 
@@ -644,8 +643,11 @@ function TemplateViewModal({
     ['Signing mode', row.requires_signature ? (row.signing_mode || '-') : '-'],
   ];
 
+  /* size xl, not lg: the body now carries a real A4 page render rather than
+     a paragraph of text, and at lg the page was squeezed into an unreadable
+     column beside the metadata grid. (#8) */
   return (
-    <Modal isOpen toggle={onClose} centered size="lg" className="hdt-view-modal">
+    <Modal isOpen toggle={onClose} centered size="xl" className="hdt-view-modal">
       <ModalBody className="p-0">
         <div
           className="d-flex align-items-center gap-3 px-3 py-3"
@@ -714,20 +716,32 @@ function TemplateViewModal({
                 </div>
               </div>
             ) : (
-              /* Its own scrollbar, so a long template cannot push the metadata
-                 above it off the screen. */
+              /* The REAL document, not the raw body. (#8)
+                 This used to dump content_html into a div, which showed the
+                 template as unstyled text: no letterhead, no logo, no footer,
+                 no page boundaries, and {{placeholders}} sitting in a wall of
+                 prose. "View" is the read-only counterpart of the editor, so it
+                 should show what the editor's own preview pane shows — the same
+                 dompdf render the generated document uses.
+                 Same component and endpoint the Template Design tab drives, so
+                 the two can never drift apart, and passing the saved row's own
+                 header/footer config means the letterhead is this template's,
+                 not a generic one. */
               <div
                 style={{
-                  border: '1px solid var(--vz-border-color)', borderRadius: 10, padding: 14,
-                  background: '#fff', color: '#1f2937', fontSize: 12.5, lineHeight: 1.6,
-                  maxHeight: '40vh', overflowY: 'auto', overscrollBehavior: 'contain',
-                  wordBreak: 'break-word', overflowWrap: 'anywhere',
+                  border: '1px solid var(--vz-border-color)', borderRadius: 10,
+                  overflow: 'hidden', height: '48vh', minHeight: 280,
+                  background: 'var(--vz-secondary-bg)',
                 }}
-                /* Authored by an admin in this tenant's own editor and stored as
-                   the template body - the same string the editor and the
-                   generated document already render. */
-                dangerouslySetInnerHTML={{ __html: row.content_html || NO_CONTENT_HTML }}
-              />
+              >
+                <CtcLivePreview
+                  endpoint="/hr-document-templates/preview-live"
+                  contractId={row.id}
+                  content={row.content_html || ''}
+                  headerConfig={row.header_config || undefined}
+                  footerConfig={row.footer_config || undefined}
+                />
+              </div>
             )}
           </div>
         </div>

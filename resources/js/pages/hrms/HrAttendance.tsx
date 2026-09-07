@@ -102,9 +102,20 @@ interface AttendanceEmployee {
      fact — but a holiday is declared in advance, which is the whole point of
      announcing one. */
   holidays?: Record<string, string>;
+  /* { "YYYY-MM-DD": true } — weekly-off days resolved by WeekOff on the
+     server, over the same window as `holidays`. The label in `weeklyOff` is
+     for display only; it is not parsed here any more (#94). */
+  weeklyOffDates?: Record<string, boolean>;
   /* Last working day, or null for current staff. Bounds the calendar the way
      dateOfJoining does at the other end, and badges the roster row (#91). */
   exitedOn?: string | null;
+  /** Last working day while an exit is still IN PROGRESS. Same date as
+   *  exitedOn would carry, but the person has not left yet — they are serving
+   *  notice and must not be badged as exited (#13). */
+  noticeUntil?: string | null;
+  /** Far end of the employment window whatever the exit's stage — what the
+   *  calendar bounds itself by, distinct from having left (#13). */
+  employedUntil?: string | null;
 }
 
 interface PunchEvent {
@@ -892,6 +903,12 @@ export default function HrAttendance() {
                                 is the only place that date is on screen (#91). */}
                             {e.exitedOn && (
                               <span className="att-emp-exit-pill"><i className="ri-logout-box-r-line" />Left {fmtShort(e.exitedOn)}</span>
+                            )}
+                            {/* Serving notice — still employed, still expected
+                                to punch in. Says when they finish rather than
+                                claiming they have already gone (#13). */}
+                            {!e.exitedOn && e.noticeUntil && (
+                              <span className="att-emp-notice-pill"><i className="ri-time-line" />On notice till {fmtShort(e.noticeUntil)}</span>
                             )}
                             {e.correction?.status === 'Pending' && (
                               <span className="att-emp-corr-pill"><i className="ri-error-warning-line" />Correction Pending</span>
@@ -1703,12 +1720,16 @@ function CalendarMonthGrid({
   for (const lg of (employee.logs || [])) {
     if (lg.iso) logByIso.set(lg.iso, lg);
   }
-  const weeklyOffDays = new Set<number>();
-  for (const tok of (employee.weeklyOff || '').split(/[\s,]+/)) {
-    const key = tok.slice(0, 3).toLowerCase();
-    const map: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
-    if (map[key] !== undefined) weeklyOffDays.add(map[key]);
-  }
+  /* Weekly-off days come RESOLVED from the server (#94).
+     This used to scan the `weeklyOff` label for weekday names and mark those
+     weekdays off forever. Two things were wrong with that. It could not express
+     a rotational pattern — "Rotational — 1st & 3rd Saturday" contains the word
+     "Saturday", so every Saturday in the month went off — and a label with no
+     weekday name in it, like the seeded "Week Off Policy", matched nothing at
+     all, which is why the calendar showed no weekly off despite one being
+     configured. WeekOff on the server is the single authority the rest of the
+     system (payroll, leave, the log builder) already agrees with. */
+  const weeklyOffMap = employee.weeklyOffDates || {};
   /* Everything before the joining date is out of scope — the same way future
      days are. The backend already drops those days from `logs`, but the
      weekly-off fallback below would still have painted every pre-joining
@@ -1720,7 +1741,9 @@ function CalendarMonthGrid({
      would otherwise paint every Sunday since they left. Reuses the pre-joining
      styling and the same "not clickable" rule: there is no day panel to open
      for a date the employee did not work. */
-  const exitedIso = employee.exitedOn || null;
+  /* Bound the calendar by the employment WINDOW, not by having left, so an
+     employee serving notice still gets their full month painted (#13). */
+  const exitedIso = employee.employedUntil || employee.exitedOn || null;
   const postExit = (iso: string) => !!exitedIso && iso > exitedIso;
   const outOfService = (iso: string) => preJoin(iso) || postExit(iso);
   const holidayMap = employee.holidays || {};
@@ -1728,16 +1751,17 @@ function CalendarMonthGrid({
      thing on this calendar that legitimately outruns today (#93).
      Ordered after the log deliberately: a holiday somebody actually WORKED has
      an attendance row and must keep reading Present, not be overpainted by the
-     declaration. Weekly Off stays behind both, and future weekly-offs are still
-     left blank — that is a recurring pattern, not an announcement. */
+     declaration. Weekly Off stays behind both, and — like a holiday — it now
+     paints on FUTURE cells too (#94): a weekly off is a fixed recurring
+     pattern, so the rest of the month is already known. Leaving it blank made
+     the calendar look as though no weekly off was configured, which is the
+     shape the bug was reported in. */
   const statusFor = (iso: string): DayStatus | null => {
     if (outOfService(iso)) return null;
     const fromLog = logByIso.get(iso);
     if (fromLog) return fromLog.status;
     if (holidayMap[iso]) return 'Holiday';
-    if (iso > TODAY_ISO) return null;
-    const d = parseISO(iso);
-    if (weeklyOffDays.has(d.getDay())) return 'Weekly Off';
+    if (weeklyOffMap[iso]) return 'Weekly Off';
     return null;
   };
 

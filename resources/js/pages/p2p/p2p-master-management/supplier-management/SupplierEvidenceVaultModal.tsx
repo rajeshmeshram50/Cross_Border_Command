@@ -178,12 +178,19 @@ const GROUPS: { key: GroupKey; title: string; sub: string; icon: ReactNode; over
   { key: 'case-to-case', title: 'Case to Case Documents & Agreements', sub: 'PER DEAL · TRADE DOCS & AGREEMENTS', icon: VAULT_GLYPHS.clipboardCheck, overview: 'Send Documents & Agreements for Signature' },
 ];
 
-const TABS: { key: TabKey; label: string; icon: ReactNode; countKey: keyof VaultData; group: GroupKey }[] = [
+const TABS: { key: TabKey; label: string; sectionTitle?: string; icon: ReactNode; countKey: keyof VaultData; group: GroupKey }[] = [
   { key: 'company-dd',          label: 'Company Due Diligence', icon: VAULT_GLYPHS.home,      countKey: 'company_dd_count',       group: 'standard' },
   { key: 'owner-kyc',           label: 'Owner KYC Details',     icon: VAULT_GLYPHS.user,      countKey: 'owner_kyc_count',        group: 'standard' },
   { key: 'trade-licenses',      label: 'Trade Licenses',        icon: VAULT_GLYPHS.monitor,   countKey: 'trade_license_count',    group: 'standard' },
-  { key: 'trade-documents',     label: 'Trade Documents',       icon: VAULT_GLYPHS.file,      countKey: 'trade_documents_count',  group: 'case-to-case' },
-  { key: 'shipment-agreements', label: 'Agreements',            icon: VAULT_GLYPHS.fileLines, countKey: 'total_shipments',        group: 'case-to-case' },
+  /* Trade documents and agreements are ONE tab, not two. Both hang off the
+     same transaction, so splitting them meant opening the same shipment row
+     twice to see the papers that belong to it — and the deal table, its
+     ratios and its Complete/Partial/Pending pills were rendered twice over
+     the same rows. The sub-table now lists both, each row carrying its own
+     category so Send / Remind still target the right library. */
+  { key: 'trade-documents',     label: 'Trade Documents & Agreements (Per Transaction)',
+                                sectionTitle: 'Trade Documents & Agreements',
+                                                                  icon: VAULT_GLYPHS.file,    countKey: 'trade_documents_count',  group: 'case-to-case' },
 ];
 
 const EMPTY_VAULT: VaultData = {
@@ -872,7 +879,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
             <div className="cev-section-left">
               <div className="cev-section-icon"><Glyph d={tabMeta.icon} size={16} /></div>
               <div>
-                <div className="cev-section-title">{tabMeta.label}</div>
+                <div className="cev-section-title">{tabMeta.sectionTitle ?? tabMeta.label}</div>
                 <div className="cev-section-sub">{sectionSub(tab)}</div>
               </div>
             </div>
@@ -909,10 +916,10 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           </div>
 
           {group === 'case-to-case' && (tab === 'trade-documents' || tab === 'shipment-agreements')
-            ? <VendorDealTable key={`${shipmentIdMode}-${tab}`} mode={shipmentIdMode} docKind={tab === 'shipment-agreements' ? 'agreement' : 'trade'}
+            ? <VendorDealTable key={`${shipmentIdMode}-${tab}`} mode={shipmentIdMode} docKind="both"
                                rows={shipmentIdMode === 'with' ? (vault.vendor_with_shipment ?? []) : (vault.vendor_without_shipment ?? [])}
                                ownerId={supplier?.db_id ?? null} onReload={reloadVault}
-                               onSendTradeDoc={(d) => { if (d.db_id) { setSendKind(tab === 'shipment-agreements' ? 'agreement' : 'trade'); setSendDocIds([d.db_id]); } }} onRemindTradeDoc={handleRemind} />
+                               onSendTradeDoc={(d, category) => { if (d.db_id) { setSendKind(category === 'agreement' ? 'agreement' : 'trade'); setSendDocIds([d.db_id]); } }} onRemindTradeDoc={handleRemind} />
             : tab === 'shipment-agreements'
               ? <ShipmentTable rows={vault.shipment_agreements} />
               : <DocsTable rows={docsForTab} tab={tab} ownerType="supplier" ownerId={supplier?.db_id ?? null} onReload={reloadVault}
@@ -1705,14 +1712,17 @@ function dealDocState(d: VaultDoc): { label: string; c: [string, string, string,
   return { label: 'Pending', c: ['#fef2f2', '#dc2626', '#fca5a5', '#ef4444'] };
 }
 
-function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, category = 'td', emptyLabel = 'No trade documents on record.' }: {
-  rows: VaultDoc[];
+/* Rows arrive already tagged with the library they came from, because one
+   transaction's list mixes trade documents and agreements. The tag is what
+   Send / Remind key off — a shared `category` prop would send an agreement
+   into the trade-document library. */
+function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, emptyLabel = 'No trade documents or agreements on record.' }: {
+  rows: { doc: VaultDoc; category: 'td' | 'agreement' }[];
   ownerId: number | null;
   onReload: () => Promise<void> | void;
-  onSendTradeDoc?: (doc: VaultDoc) => void;
+  onSendTradeDoc?: (doc: VaultDoc, category: 'td' | 'agreement') => void;
   onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
 
-  category?: 'td' | 'agreement';
   emptyLabel?: string;
 }) {
   return (
@@ -1731,14 +1741,17 @@ function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTra
       <tbody>
         {rows.length === 0 ? (
           <tr><td colSpan={7} style={{ padding: 18, textAlign: 'center', color: 'var(--dl-muted)', fontSize: 11, background: 'var(--dl-docrow)' }}>{emptyLabel}</td></tr>
-        ) : rows.map((d, di) => {
+        ) : rows.map(({ doc: d, category }, di) => {
           const st = dealDocState(d);
+          /* Falls back to the library name so an agreement with no reference
+             of its own still reads as an agreement in a mixed list. */
+          const sub = d.reference || d.doc_code || (category === 'agreement' ? 'Agreement' : '');
           return (
-            <tr key={`${d.doc_code ?? 'doc'}-${di}`} style={{ background: 'var(--dl-docrow)', borderBottom: '1px solid var(--dl-docline)' }}>
+            <tr key={`${category}-${d.doc_code ?? 'doc'}-${di}`} style={{ background: 'var(--dl-docrow)', borderBottom: '1px solid var(--dl-docline)' }}>
               <td style={{ padding: '11px 12px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, color: '#0e7490' }}>{di + 1}</td>
               <td style={{ padding: '11px 12px' }}>
                 <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--dl-ink, #083344)' }}>{d.name}</div>
-                {(d.reference || d.doc_code) && <div style={{ fontSize: 9, color: 'var(--dl-muted)', marginTop: 2 }}>{d.reference || d.doc_code}</div>}
+                {sub && <div style={{ fontSize: 9, color: 'var(--dl-muted)', marginTop: 2 }}>{sub}</div>}
               </td>
               <td style={{ padding: '11px 12px', textAlign: 'center' }}>
                 <span style={{ fontSize: 8.5, fontWeight: 800, padding: '2.5px 8px', borderRadius: 5, ...(d.requirement === 'O' ? { background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0' } : { background: 'linear-gradient(135deg,#fef3c7,#fde68a)', color: '#92400e', border: '1px solid #fcd34d' }) }}>{d.requirement === 'O' ? 'OPT' : 'REQ'}</span>
@@ -1749,7 +1762,9 @@ function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTra
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 6, background: st.c[0], color: st.c[1], border: `1px solid ${st.c[2]}` }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: st.c[3], display: 'inline-block' }} />{st.label}</span>
               </td>
               <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                <VaultRowActions doc={d} ownerType="supplier" ownerId={ownerId} category={category} onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} />
+                <VaultRowActions doc={d} ownerType="supplier" ownerId={ownerId} category={category} onReload={onReload}
+                                 onSendTradeDoc={onSendTradeDoc ? (sd) => onSendTradeDoc(sd, category) : undefined}
+                                 onRemindTradeDoc={onRemindTradeDoc} />
               </td>
             </tr>
           );
@@ -1759,15 +1774,18 @@ function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTra
   );
 }
 
-function VendorDealTable({ mode, rows, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, docKind = 'trade' }: {
+function VendorDealTable({ mode, rows, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, docKind = 'both' }: {
   mode: 'with' | 'without';
   rows: VendorDealRow[];
   ownerId: number | null;
   onReload: () => Promise<void> | void;
-  onSendTradeDoc?: (doc: VaultDoc) => void;
+  onSendTradeDoc?: (doc: VaultDoc, category: 'td' | 'agreement') => void;
   onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
 
-  docKind?: 'trade' | 'agreement';
+  /* 'both' is what the merged Trade Documents & Agreements tab uses — trade
+     docs first, then the agreements for the same transaction. The single-kind
+     values are kept so the table can still be pointed at one library. */
+  docKind?: 'trade' | 'agreement' | 'both';
 }) {
   const [open, setOpen] = useState<number | null>(null);
 
@@ -1821,10 +1839,14 @@ function VendorDealTable({ mode, rows, ownerId, onReload, onSendTradeDoc, onRemi
                     <tr>
                       <td colSpan={span} style={{ padding: 0, background: 'var(--dl-panel)', borderTop: '1.5px solid var(--dl-line)', borderBottom: '1.5px solid var(--dl-line)' }}>
 
-                        <DealDocsSubTable rows={docKind === 'agreement' ? (r.agreements ?? []) : (r.docs ?? [])} ownerId={ownerId}
+                        <DealDocsSubTable rows={[
+                                            ...(docKind === 'agreement' ? [] : (r.docs ?? []).map(d => ({ doc: d, category: 'td' as const }))),
+                                            ...(docKind === 'trade'     ? [] : (r.agreements ?? []).map(d => ({ doc: d, category: 'agreement' as const }))),
+                                          ]} ownerId={ownerId}
                                           onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc}
-                                          category={docKind === 'agreement' ? 'agreement' : 'td'}
-                                          emptyLabel={docKind === 'agreement' ? 'No agreements on record.' : 'No trade documents on record.'} />
+                                          emptyLabel={docKind === 'agreement' ? 'No agreements on record.'
+                                                    : docKind === 'trade'     ? 'No trade documents on record.'
+                                                    : 'No trade documents or agreements on record.'} />
                       </td>
                     </tr>
                   )}
@@ -1912,7 +1934,7 @@ function sectionSub(tab: TabKey): string {
     case 'company-dd':       return 'Business registration, tax, compliance & identity documents';
     case 'owner-kyc':        return 'Director identity, address proof & personal compliance documents';
     case 'trade-licenses':   return 'Export, import & product-specific trade authorization licenses';
-    case 'trade-documents':  return 'Sales contracts, purchase orders & signed trade agreements';
+    case 'trade-documents':  return 'Shipment-wise supplier trade documents & purchase agreements';
     case 'shipment-agreements': return 'Per-shipment compliance matrix grouped by customer-supplier link';
   }
 }

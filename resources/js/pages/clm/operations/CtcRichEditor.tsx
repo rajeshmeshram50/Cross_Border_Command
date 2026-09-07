@@ -1407,8 +1407,23 @@ export function ctcExtensions(opts?: {
     FontFamily,
     Color,
     BackgroundColor,
-    Subscript,
-    Superscript,
+    /* Subscript and Superscript must EXCLUDE each other. (#7)
+     *
+     * TipTap 3's marks ship with no `excludes` at all, so ProseMirror was happy
+     * to stack them: pressing X² then X₂ produced <sub><sup>text</sup></sub>
+     * with both toolbar buttons lit, and the character rendered as neither one
+     * thing nor the other. They are opposite vertical alignments of the same
+     * glyph — a character cannot be both, so the schema should say so rather
+     * than leaving the toolbar to police it.
+     *
+     * Declaring it on the schema (instead of unsetting the sibling inside each
+     * click handler) means every route in obeys it: the toolbar, the Mod-.
+     * and Mod-, keyboard shortcuts, and pasted or DOCX-imported HTML that
+     * carries a nested <sub><sup>. Each mark names ITSELF too, because
+     * ProseMirror's default `excludes` is the mark's own name and spelling out
+     * a value replaces that default rather than adding to it. */
+    Subscript.extend({ excludes: 'subscript superscript' }),
+    Superscript.extend({ excludes: 'superscript subscript' }),
     /* Tables — Insert Table here, plus tables carried in from an uploaded
        DOCX. resizable: TRUE so a column can be dragged to width the way it
        can in Word; it was off because the widths it writes were considered

@@ -3,6 +3,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 // eslint-disable-next-line import/no-unresolved
 import PdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
 import api from '../../../api';
+import { useTheme } from '../../../contexts/ThemeContext';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorker as unknown as string;
 
@@ -27,13 +28,28 @@ type Props = {
   pageConfig?: Record<string, unknown>;
   headerConfig?: Record<string, unknown>;
   footerConfig?: Record<string, unknown>;
+  /** Force a palette. Normally OMITTED — the preview reads the app theme
+   *  itself, so it cannot be left light on a dark page by a caller that simply
+   *  forgot to pass this. (#8) */
   dark?: boolean;
 };
 
 export default function CtcLivePreview({
   endpoint = '/clm/ctc-contracts/preview-live',
-  contractId, content, pageConfig, headerConfig, footerConfig, dark = false,
+  contractId, content, pageConfig, headerConfig, footerConfig, dark: darkProp,
 }: Props) {
+  /* The preview themes ITSELF. (#8)
+     `dark` was a required-in-practice prop defaulting to false, and callers
+     kept forgetting it: the HR template editor never passed it at all, so the
+     preview panel stayed on its light palette — a white stage and pale violet
+     chrome — on a fully dark page. Reading the theme here means every caller,
+     present and future, is right by default.
+     useTheme() also tracks live toggles, so flipping the theme while a preview
+     is open (or a modal holding one is open) repaints it, which a value
+     sampled once at mount could not do. An explicit prop still wins, for a
+     caller that genuinely needs to pin the palette. */
+  const { theme } = useTheme();
+  const dark = darkProp ?? theme === 'dark';
   const [numPages, setNumPages] = useState(0);
   const [activePage, setActivePage] = useState(1);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
@@ -253,11 +269,17 @@ export default function CtcLivePreview({
         </div>
       </div>
 
-      {/* Positioned wrapper for the page stack + its loading veil. The veil is
-          a SIBLING of the scroller, not a child: inside it, it would scroll
-          away with the pages and stop covering anything. */}
-      <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      {/* scrollable stack of pages (the "book") */}
+      {/* scrollable stack of pages (the "book")
+          The stage is the positioning context for the loading veil, so the
+          veil covers the pages but never the toolbar above them — Refresh and
+          the page nav stay reachable while a render is running (#6). The veil
+          is a SIBLING of the scroller, never a child: an absolutely positioned
+          child of a scroll container sizes to the scrolled CONTENT, so it would
+          drift away as the user scrolls instead of holding over the visible
+          area.
+          (Merge note: this wrapper arrived from both sides of the #6 fix and
+          was briefly nested inside itself. One is all it needs.) */}
+      <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex' }}>
       <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
         {status === 'error' && (
           <div style={{ margin: 'auto', textAlign: 'center', color: dark ? '#fca5a5' : '#b91c1c', fontSize: 12, fontWeight: 600, maxWidth: 260 }}>

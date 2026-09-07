@@ -497,7 +497,10 @@ export default function TemplateEditor({
              the unknown-token banner, when it shows) leaves, so the column ends
              flush with the sidebar however tall those are. A minHeight would
              re-introduce the mismatch the moment the banner appeared. */
-          style={{ border: '1px solid #e5e7eb', borderTop: 'none', borderRadius: '0 0 10px 10px', padding: '14px 18px', background: '#fff', flex: 1, minHeight: 0, overflowY: 'auto' }}
+          /* Tighter inset on every side — 14/18 was leaving a visible margin
+             the document itself does not have, so the editable area read as
+             narrower than the page it represents. */
+          style={{ border: '1px solid #e5e7eb', borderTop: 'none', borderRadius: '0 0 10px 10px', padding: '8px 10px', background: '#fff', flex: 1, minHeight: 0, overflowY: 'auto' }}
         >
           <EditorContent editor={editor} />
         </div>

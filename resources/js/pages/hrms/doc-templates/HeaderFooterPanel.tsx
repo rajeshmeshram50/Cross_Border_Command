@@ -176,6 +176,14 @@ export default function HeaderFooterPanel({
   // React's normal batching; positions are stored as percentages so the
   // layout scales when the container resizes.
   const headerRef = useRef<HTMLDivElement | null>(null);
+  /* Which item is under the pointer right now.
+     The edge snap below is a RESTING rule, not a dragging one: applied live it
+     made the item jump to an edge the instant the pointer crossed a third
+     boundary, so dragging vertically threw it sideways. While dragging, the raw
+     position is used and the item simply follows the mouse; the snap re-applies
+     when the button is released. */
+  const [dragging, setDragging] = useState<'logo' | 'title' | null>(null);
+
   const startDrag = (which: 'logo' | 'title') => (e: React.MouseEvent) => {
     if (readOnly) return;
     if (e.button !== 0) return;
@@ -214,12 +222,14 @@ export default function HeaderFooterPanel({
       else                   setHeader({ ...header, title_pos: next });
     };
     const onUp = () => {
+      setDragging(null);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       document.body.style.userSelect = '';
     };
     document.body.style.userSelect = 'none';
     window.addEventListener('mousemove', onMove);
+    setDragging(which);
     window.addEventListener('mouseup', onUp);
   };
 
@@ -306,22 +316,42 @@ export default function HeaderFooterPanel({
    * would never reproduce. Matching that here makes the preview honest and
    * fixes the drift at the same time: the outer thirds pin to their edge and
    * only the middle third stays proportional. */
-  const edgeSnappedLeft = (pos: PointPct, halfPx?: number): string => {
+  const edgeSnappedLeft = (pos: PointPct, halfPx?: number, live = false): string => {
     if (!halfPx) return `${pos.x}%`;
+    // Mid-drag: follow the pointer, only kept inside the band.
+    if (live) return `clamp(${halfPx}px, ${pos.x}%, calc(100% - ${halfPx}px))`;
     if (pos.x <= 33.34) return `${halfPx}px`;                        // left edge
     if (pos.x >= 66.66) return `calc(100% - ${halfPx}px)`;           // right edge
     return `clamp(${halfPx}px, ${pos.x}%, calc(100% - ${halfPx}px))`; // middle
   };
 
-  const draggableItemStyle = (pos: PointPct, halfPx?: number): React.CSSProperties => ({
+  const draggableItemStyle = (pos: PointPct, halfPx?: number, live = false): React.CSSProperties => ({
     position: 'absolute',
-    left: edgeSnappedLeft(pos, halfPx),
+    left: edgeSnappedLeft(pos, halfPx, live),
     top:  `${pos.y}%`,
     transform: 'translate(-50%, -50%)',
     cursor: readOnly ? 'default' : 'grab',
     userSelect: 'none',
     touchAction: 'none',
   });
+
+  /* Same thirds rule as the logo, but for a block whose width is set by its
+     TEXT rather than measured — so it pins with left/right instead of a
+     half-width offset, and grows inwards from the edge it is pinned to. */
+  const edgePinnedStyle = (pos: PointPct, live = false): React.CSSProperties => {
+    const base: React.CSSProperties = {
+      position: 'absolute',
+      top: `${pos.y}%`,
+      cursor: readOnly ? 'default' : 'grab',
+      userSelect: 'none',
+      touchAction: 'none',
+    };
+    // Mid-drag: plain centre anchoring, so the block tracks the pointer.
+    if (live) return { ...base, left: `${pos.x}%`, transform: 'translate(-50%, -50%)' };
+    if (pos.x <= 33.34) return { ...base, left: 0, transform: 'translateY(-50%)' };
+    if (pos.x >= 66.66) return { ...base, right: 0, transform: 'translateY(-50%)' };
+    return { ...base, left: `${pos.x}%`, transform: 'translate(-50%, -50%)' };
+  };
 
   return (
     /* height:100% + column flex — only under fillHeight. The shell is a CHILD
@@ -370,7 +400,7 @@ export default function HeaderFooterPanel({
             onMouseDown={startDrag('logo')}
             data-tpl-no-popover="1"
             ref={logoElRef}
-            style={draggableItemStyle(logoPos, logoHalfPx)}
+            style={draggableItemStyle(logoPos, logoHalfPx, dragging === 'logo')}
             title={readOnly ? '' : 'Drag to reposition logo'}
           >
             {header.logo_url ? (
@@ -381,7 +411,7 @@ export default function HeaderFooterPanel({
                    aspect ratio either way. */
                 style={{ height: logoHeightPx, maxWidth: `min(${Math.max(180, logoHeightPx * 3)}px, 100%)`, objectFit: 'contain', pointerEvents: 'none' }} />
             ) : (
-              <div className="tpl-logo-placeholder" style={{ width: Math.max(72, logoHeightPx * 1.8), height: logoHeightPx, borderRadius: 6, border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 11, fontWeight: 700, letterSpacing: 1, background: '#f8fafc', pointerEvents: 'none' }}>
+              <div className="tpl-logo-placeholder" style={{ width: Math.max(72, logoHeightPx * 1.8), maxWidth: '100%', height: logoHeightPx, borderRadius: 6, border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 11, fontWeight: 700, letterSpacing: 1, background: '#f8fafc', pointerEvents: 'none' }}>
                 LOGO
               </div>
             )}
@@ -392,15 +422,26 @@ export default function HeaderFooterPanel({
             ref={titleBlockRef}
             data-tpl-no-popover="1"
             style={{
-              ...draggableItemStyle(titlePos),
+              ...edgePinnedStyle(titlePos, dragging === 'title'),
               cursor: readOnly ? 'default' : 'text',
               textAlign: (header.align === 'left' || header.align === 'center' || header.align === 'right') ? header.align : 'right',
-              // Block is center-anchored at titlePos, so its half-width can't
-              // exceed the distance to the nearest edge or it spills out of the
-              // (overflow:hidden) header. Cap maxWidth = 2 × that gap, ceiling
-              // 60%. Long unbreakable strings then wrap instead of clipping off
-              // the right edge.
-              maxWidth: `${Math.min(60, 2 * Math.min(titlePos.x, 100 - titlePos.x))}%`,
+              /* Width available to the title.
+               *
+               * It used to be capped at 2 × the distance from titlePos to the
+               * nearest edge, because a CENTRE-anchored block cannot reach
+               * further than that without spilling out of the (overflow:hidden)
+               * band. At the default x=88 that is 24% — a quarter of the header,
+               * and a quarter of a SHRINKING header once the Live PDF pane opens,
+               * which is what truncated the company name to "Inorbvict
+               * Healthcare India P…".
+               *
+               * In the outer thirds the block is edge-pinned rather than
+               * centred (see edgeSnappedLeft), so that constraint no longer
+               * applies: it can use everything the logo is not occupying. The
+               * logo's measured width plus a 24px gutter is exactly that. */
+              maxWidth: (titlePos.x <= 33.34 || titlePos.x >= 66.66) && logoHalfPx
+                ? `calc(100% - ${Math.round(logoHalfPx * 2) + 24}px)`
+                : `${Math.min(60, 2 * Math.min(titlePos.x, 100 - titlePos.x))}%`,
               boxSizing: 'border-box',
               overflowWrap: 'anywhere',
             }}
@@ -474,7 +515,10 @@ export default function HeaderFooterPanel({
           footer leave (flex:1 + minHeight:0). Otherwise it keeps the original
           grow-with-content sizing, which is what the scroller-based drafts
           need — minHeight 320 just stops an empty document collapsing. */}
-      <div className="tpl-page-body" style={{ padding: 18, background: '#fff', ...(fillHeight ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } : { minHeight: 320 }) }}>
+      {/* 18px here plus the editor surface’s own inset stacked into a wide
+          double margin, so the editable area sat well inside the page shell it
+          is meant to represent. */}
+      <div className="tpl-page-body" style={{ padding: 8, background: '#fff', ...(fillHeight ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } : { minHeight: 320 }) }}>
         {children}
       </div>
 
