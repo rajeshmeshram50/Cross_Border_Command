@@ -504,6 +504,11 @@ export default function AddVendorModal(props: {
   type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
   const EMPTY_SEG_DOCS: SegmentDocs = { kyc:[], dd:[], tl:[], td:[], qc:[] };
   const [segmentDocs, setSegmentDocs] = useState<SegmentDocs>(EMPTY_SEG_DOCS);
+  /* True while the segment rules are being fetched.
+     Without it the tabs render their empty state during the round trip, which
+     reads as "this supplier has no documents" — the opposite of the truth, and
+     the moment a user is most likely to conclude something is broken. */
+  const [segmentDocsLoading, setSegmentDocsLoading] = useState(false);
 
   const [segmentDocKeys, setSegmentDocKeys] = useState<Record<string, string[]>>({});
 
@@ -539,6 +544,19 @@ export default function AddVendorModal(props: {
       const { data } = await api.post(`/segment-uploads/supplier/${ownerId}`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
+      /* Record the key immediately.
+         uploadedKeys was populated once, at hydration, and never again — so a
+         document uploaded in THIS session was invisible to the segment-removal
+         guard. Upload two files against a segment, remove the segment, and the
+         guard checked a list that predated both files, allowed it, and the
+         uploads were orphaned. The guard can only be as current as the list it
+         reads. */
+      /* SegmentGuard keys are "category|doc_code" (dd|DD-001). refKey is the
+         UI form, "tab::code" (company::DD-001) — a different shape entirely, so
+         pushing it verbatim would never match and the guard would stay blind. */
+      const guardKey = `${category}|${doc_code}`;
+      setUploadedKeys(prev => (prev.includes(guardKey) ? prev : [...prev, guardKey]));
+
       const row = data?.data;
       if (row?.attachment_url) {
         setSegmentRefUploads(prev => {
@@ -730,7 +748,21 @@ export default function AddVendorModal(props: {
      just been loaded. */
   const prevDocTypeRef = useRef<SegDocType | null>(null);
   useEffect(() => {
-    if (country && countryOpts.length === 0) return;
+    /* Do nothing until the country has RESOLVED to a real option.
+       supplierDocType is derived by looking `country` up in countryOpts, so it
+       reports 'international' whenever that lookup fails — including at mount,
+       when country is still '' and nothing has loaded. That is a default, not a
+       reading, and baselining on it was the whole bug: opening a DOMESTIC
+       supplier recorded 'international' at mount, hydration then set the real
+       country, the scope flipped to 'domestic', the comparison below saw a
+       change that never happened, and it blanked the GST number that had just
+       been loaded.
+       Both halves matter — `country` must be set AND present in countryOpts.
+       Checking only `countryOpts.length` still passes during the window where
+       the options have arrived but the hydrated id is not among them yet. */
+    const scopeResolved = !!country && countryOpts.some(o => o.value === country);
+    if (!scopeResolved) return;
+
     const derived = supplierDocType === 'domestic' ? 'Yes' : 'No';
     setGstApplicable(derived);
     clearFieldError('gstApplicable');
@@ -958,9 +990,10 @@ export default function AddVendorModal(props: {
     const ids = (segment ?? [])
       .map(s => Number(s))
       .filter(n => Number.isFinite(n) && n > 0);
-    if (ids.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTradeDocRows([]); setSegmentDocKeys({}); return; }
+    if (ids.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTradeDocRows([]); setSegmentDocKeys({}); setSegmentDocsLoading(false); return; }
 
     let cancelled = false;
+    setSegmentDocsLoading(true);
     Promise.all([
       Promise.all(
         ids.map(id =>
@@ -1017,8 +1050,8 @@ export default function AddVendorModal(props: {
         attachment: null,
         attachmentName: '',
       })));
-    });
-    return () => { cancelled = true; };
+    }).finally(() => { if (!cancelled) setSegmentDocsLoading(false); });
+    return () => { cancelled = true; setSegmentDocsLoading(false); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, segment, supplierDocType]);
 
@@ -3375,6 +3408,7 @@ export default function AddVendorModal(props: {
             }>
 
               {kycTab === 'company' && (
+                segmentDocsLoading ? <ShimmerTable rows={4} cols={6} /> :
                 ddRows.length === 0 && segmentDocs.dd.length > 0 ? (
                   <SupplierSegmentRefTable
                     title="DD DOCUMENT NAME"
@@ -3394,6 +3428,7 @@ export default function AddVendorModal(props: {
                 )
               )}
               {kycTab === 'owner' && (
+                segmentDocsLoading ? <ShimmerTable rows={4} cols={6} /> :
                 ownerRows.length === 0 && segmentDocs.kyc.length > 0 ? (
                   <SupplierSegmentRefTable
                     title="KYC DOCUMENT NAME"
@@ -3411,6 +3446,7 @@ export default function AddVendorModal(props: {
                 )
               )}
               {kycTab === 'license' && (
+                segmentDocsLoading ? <ShimmerTable rows={4} cols={6} /> :
                 licenseRows.length === 0 && segmentDocs.tl.length > 0 ? (
                   <SupplierSegmentRefTable
                     title="TRADE LICENSE NAME"

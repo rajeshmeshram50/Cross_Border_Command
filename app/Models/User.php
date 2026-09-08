@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Concerns\EnforcesUniqueEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -15,6 +16,13 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 class User extends Authenticatable
 {
+    /* Email uniqueness — the rule itself lives in
+       config/email_uniqueness.php; these two lines only say which
+       identity this model belongs to. (#email-unique) */
+    use EnforcesUniqueEmail;
+    protected static string $emailScope   = 'login';
+    protected static array  $emailColumns = ['email'];
+
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, Notifiable, SoftDeletes;
 

@@ -50,12 +50,33 @@ export default function HrDocumentTemplates() {
   const [deleteTarget, setDeleteTarget] = useState<TemplateRow | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  /* Read-only View. The list endpoint already returns the WHOLE row —
-     content_html, header/footer config, signers and every flag — so this needs
-     no second fetch; the details were on the page all along with no way to look
-     at them. Edit was the only way in, which meant opening the editor (and
-     risking a save) just to read a template. */
+  /* Read-only View. Edit used to be the only way in, which meant opening the
+     editor — and risking a save — just to read a template.
+     The heavy half of the row (content_html, header/footer config, signers) is
+     fetched HERE, on open, rather than arriving with the list. The list once
+     carried it for every template so that this modal could show one; that made
+     every page load pay for a body the user had not asked to see. */
   const [viewTarget, setViewTarget] = useState<TemplateRow | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+
+  const openView = async (r: TemplateRow) => {
+    // Paint immediately from the list row — code, name, flags and dates are all
+    // present already, so the modal opens filled in and only the document body
+    // arrives late. Fetching first would leave the button dead for a beat.
+    setViewTarget(r);
+    setViewLoading(true);
+    try {
+      const { data } = await api.get(`/hr-document-templates/${r.id}`);
+      /* Only if this is still the row on screen. Close-then-open-another during
+         the fetch would otherwise drop the first template's body into the
+         second one's modal. */
+      setViewTarget(prev => (prev && prev.id === r.id ? { ...prev, ...data } : prev));
+    } catch (err: any) {
+      toast.error('Could not load the template', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setViewLoading(false);
+    }
+  };
 
   const fetchAll = async () => {
     try {
@@ -376,7 +397,7 @@ export default function HrDocumentTemplates() {
             {/* View (read-only), Edit (opens the template editor),
                 Deprecate/Activate, Delete. View is first: it is the
                 non-destructive one, and the one reached most often. */}
-            <ActionBtn icon="ri-eye-line" tone="primary" onClick={() => setViewTarget(r)} title="View" />
+            <ActionBtn icon="ri-eye-line" tone="primary" onClick={() => void openView(r)} title="View" />
             <ActionBtn icon="ri-pencil-line" tone="info" onClick={() => navigate(`/hr/doc-templates/${r.id}/edit`)} title="Edit" />
             <ActionBtn
               icon={r.status === 'Active' ? 'ri-forbid-2-line' : 'ri-checkbox-circle-line'}
@@ -588,6 +609,7 @@ export default function HrDocumentTemplates() {
 
       <TemplateViewModal
         row={viewTarget}
+        loading={viewLoading}
         onClose={() => setViewTarget(null)}
         onEdit={id => { setViewTarget(null); navigate(`/hr/doc-templates/${id}/edit`); }}
       />
@@ -617,8 +639,8 @@ export default function HrDocumentTemplates() {
  * dialog, never the page, and the content preview keeps its own scrollbar so a
  * long template cannot push the metadata off screen. */
 function TemplateViewModal({
-  row, onClose, onEdit,
-}: { row: TemplateRow | null; onClose: () => void; onEdit: (id: number) => void }) {
+  row, loading, onClose, onEdit,
+}: { row: TemplateRow | null; loading?: boolean; onClose: () => void; onEdit: (id: number) => void }) {
   if (!row) return null;
 
   const tone = STATUS_TONES[row.status] || STATUS_TONES.Draft;
@@ -734,13 +756,25 @@ function TemplateViewModal({
                   background: 'var(--vz-secondary-bg)',
                 }}
               >
-                <CtcLivePreview
-                  endpoint="/hr-document-templates/preview-live"
-                  contractId={row.id}
-                  content={row.content_html || ''}
-                  headerConfig={row.header_config || undefined}
-                  footerConfig={row.footer_config || undefined}
-                />
+                {/* The body arrives from show() after the modal opens, so hold
+                    the frame until it does. Rendering the preview against an
+                    empty string first would paint a blank sheet of A4 — which
+                    reads as "this template has no content", the one thing it
+                    must not say about a template that has plenty. */}
+                {loading && !row.content_html ? (
+                  <div className="d-flex align-items-center justify-content-center gap-2 h-100" style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>
+                    <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                    Loading document…
+                  </div>
+                ) : (
+                  <CtcLivePreview
+                    endpoint="/hr-document-templates/preview-live"
+                    contractId={row.id}
+                    content={row.content_html || ''}
+                    headerConfig={row.header_config || undefined}
+                    footerConfig={row.footer_config || undefined}
+                  />
+                )}
               </div>
             )}
           </div>
