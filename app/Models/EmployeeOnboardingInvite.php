@@ -2,12 +2,20 @@
 
 namespace App\Models;
 
+use App\Support\Concerns\EnforcesUniqueEmail;
 use App\Models\Masters\Departments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeeOnboardingInvite extends Model
 {
+    /* Guarded on WRITE as well as read: this table is a source in the
+       'candidate' scope, so without the trait an invite could be created
+       for an address the scope would then refuse to a candidate. (#email-unique) */
+    use EnforcesUniqueEmail;
+    protected static string $emailScope   = 'candidate';
+    protected static array  $emailColumns = ['invitee_email'];
+
     protected $fillable = [
         'client_id', 'branch_id', 'created_by',
         'invitee_name', 'invitee_email',
