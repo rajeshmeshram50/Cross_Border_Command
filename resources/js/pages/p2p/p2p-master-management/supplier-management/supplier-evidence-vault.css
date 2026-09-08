@@ -1257,3 +1257,206 @@
   transform: translateY(-1px);
   box-shadow: 0 6px 20px rgba(8, 145, 178, .55), inset 0 1px 0 rgba(255, 255, 255, .22);
 }
+
+/* ── Case to Case overview: shipment picker + per-deal document list ─────
+   The popup opens on a list of the supplier's deals rather than a flat pile
+   of every trade document, so a row can name the shipment it belongs to.
+   Both header buttons sit on the teal band, so they are drawn as translucent
+   white chips like the close button next to them. */
+.sev-ov .sev-ov-back,
+.sev-ov .sev-ov-bulk {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .15);
+  border: 1px solid rgba(255, 255, 255, .25);
+  color: #fff;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sev-ov .sev-ov-back:hover,
+.sev-ov .sev-ov-bulk:hover:not(:disabled) {
+  background: rgba(255, 255, 255, .28);
+}
+
+.sev-ov .sev-ov-bulk:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.sev-ov .sev-ov-back i {
+  font-size: 15px;
+  line-height: 1;
+  margin-left: -4px;
+}
+
+.sev-ov .sev-ov-pick-cap {
+  padding: 14px 22px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #0f2433;
+  background: #f7fbfd;
+  border-bottom: 1px solid #eef4f7;
+}
+
+.sev-ov .sev-ov-pick-empty {
+  padding: 34px;
+  text-align: center;
+  font-size: 12px;
+  color: #7c93a5;
+}
+
+.sev-ov .sev-ov-picks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sev-ov .sev-ov-pick {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 13px 22px;
+  background: #fff;
+  border: 0;
+  border-bottom: 1px solid #eef4f7;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sev-ov .sev-ov-picks li:nth-child(even) .sev-ov-pick {
+  background: #fafdff;
+}
+
+.sev-ov .sev-ov-pick:hover {
+  background: #eef9fd;
+}
+
+.sev-ov .sev-ov-pick-code {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #f0fdff, #e0f9ff);
+  border: 1px solid rgba(6, 182, 212, .25);
+  color: #0891b2;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+
+.sev-ov .sev-ov-pick-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.sev-ov .sev-ov-pick-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0f2433;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sev-ov .sev-ov-pick-sub {
+  font-size: 10.5px;
+  color: #7c93a5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sev-ov .sev-ov-pick-go {
+  flex-shrink: 0;
+  color: #a5b9c9;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.sev-ov .sev-ov-pick:hover .sev-ov-pick-go {
+  color: #0891b2;
+}
+
+/* The per-deal table carries a tick column, so the centred-column rule keyed
+   to child positions (1 / 3 / 4 on the standard four-column table) lands on
+   the wrong cells. Restate it for this five-column shape: only the document
+   name stays left. */
+.sev-ov .cev-ov-table.sev-ov-c2c thead th:nth-child(3) {
+  text-align: left;
+}
+
+.sev-ov .cev-ov-table.sev-ov-c2c thead th:nth-child(2),
+.sev-ov .cev-ov-table.sev-ov-c2c thead th:nth-child(5) {
+  text-align: center;
+}
+
+.sev-ov .cev-ov-table.sev-ov-c2c input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  accent-color: #0891b2;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.sev-ov .cev-ov-table.sev-ov-c2c input[type="checkbox"]:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+
+.sev-ov .sev-ov-acts {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sev-ov .sev-ov-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 11px;
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: 9.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sev-ov .sev-ov-act-send {
+  background: linear-gradient(135deg, #f0fdff, #e0f9ff);
+  color: #0891b2;
+  border: 1px solid rgba(6, 182, 212, .25);
+}
+
+.sev-ov .sev-ov-act-send:hover:not(:disabled) {
+  background: linear-gradient(135deg, #e0f9ff, #cffafe);
+}
+
+.sev-ov .sev-ov-act-track {
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+}
+
+.sev-ov .sev-ov-act-track:hover:not(:disabled) {
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+}
+
+.sev-ov .sev-ov-act:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}

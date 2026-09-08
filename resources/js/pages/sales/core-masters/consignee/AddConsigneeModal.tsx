@@ -1594,6 +1594,24 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         toast.warning('Same as Customer is on', '"Same as Customer" links the consignee to exactly one customer. Turn it off to map additional customers.');
         return;
       }
+      /* Every mapped customer must sit on the SAME side of the border.
+       *
+       * One consignee has one address, so it is either in India or outside it
+       * — it cannot be domestic for one customer and international for another.
+       * The server already refuses the save (it compares each customer against
+       * the consignee's own country), but only after the whole form is filled
+       * in, and the message then names the consignee's country rather than the
+       * pick that caused it. Catch it at the click, where the two countries are
+       * on screen next to each other. */
+      const pickedDomestic = isDomesticCountry(customer.country);
+      if (isDomesticCountry(opt.country) !== pickedDomestic) {
+        toast.warning(
+          'Domestic and international cannot be mixed',
+          `${customer.name} is ${pickedDomestic ? 'in India' : 'outside India'} and ${opt.name} is ${pickedDomestic ? 'outside India' : 'in India'}. `
+          + 'A consignee has one address, so every customer it is mapped to must be on the same side.',
+        );
+        return;
+      }
       setExtraCustomerIds(prev => [...prev, id]);
     }
   };
@@ -2291,11 +2309,20 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 {filteredCustomers.map(c => {
                   const picked = isCustomerPicked(c);
                   const isPrimary = !!c.db_id && customer?.db_id === c.db_id;
+                  /* Sits on the other side of the border from the customer
+                   * already picked — can't be mapped to the same consignee, so
+                   * dim it and say why instead of letting it look selectable. */
+                  const crossBorder = !picked && !!customer
+                    && isDomesticCountry(c.country) !== isDomesticCountry(customer.country);
                   return (
                   <button
                     key={c.db_id ?? c.id}
                     className={`acm-picker-option ${picked ? 'is-picked' : ''}`}
                     onClick={() => togglePickCustomer(c)}
+                    style={crossBorder ? { opacity: 0.45 } : undefined}
+                    title={crossBorder
+                      ? `${c.name} is ${isDomesticCountry(c.country) ? 'in India' : 'outside India'}; the selected customer is not. A consignee cannot be mapped across the border.`
+                      : undefined}
                   >
                     <input
                       type="checkbox"
@@ -2308,6 +2335,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                       <div className="acm-pop-name">
                         {c.name}
                         {isPrimary && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 20, padding: '1px 7px' }}>PRIMARY</span>}
+                        {crossBorder && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#b45309', background: '#fef3c7', borderRadius: 20, padding: '1px 7px' }}>{isDomesticCountry(c.country) ? 'DOMESTIC' : 'INTERNATIONAL'}</span>}
                       </div>
                       <div className="acm-pop-meta">{c.id} • {truncSegment(c.segment)} • {c.country}</div>
                     </div>

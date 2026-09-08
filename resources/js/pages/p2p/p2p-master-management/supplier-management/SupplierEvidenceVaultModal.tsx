@@ -366,6 +366,18 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   const [overviewPage, setOverviewPage] = useState(1);
 
   const [ovDownloadingKey, setOvDownloadingKey] = useState<string | null>(null);
+  /* Case to Case overview drill-down: the deal whose documents are on screen
+     (null = the shipment / procurement picker), the rows ticked inside it, and
+     the signing tracker opened from a row. */
+  const [ovDeal, setOvDeal] = useState<string | null>(null);
+  const [ovPicked, setOvPicked] = useState<string[]>([]);
+  const [ovTrack, setOvTrack] = useState<{ id: number; code: string } | null>(null);
+
+  const closeOverview = useCallback(() => {
+    setOverview(null);
+    setOvDeal(null);
+    setOvPicked([]);
+  }, []);
   const [ovUpload, setOvUpload] = useState<{ doc: VaultDoc; category: 'dd' | 'kyc' | 'tl' } | null>(null);
 
   const [shipmentIdMode, setShipmentIdMode] = useState<'with' | 'without'>('with');
@@ -816,7 +828,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                   <button
                     type="button"
                     className="cev-group-overview"
-                    onClick={() => { setOverview(g.key); setOverviewPage(1); }}
+                    onClick={() => { setOverview(g.key); setOverviewPage(1); setOvDeal(null); setOvPicked([]); }}
                   >
                     <Glyph d={VAULT_GLYPHS.list} size={12} sw={2.3} /> {g.overview}
                   </button>
@@ -970,22 +982,78 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
 
       {overview && (() => {
         const isStd = overview === 'standard';
-        type OvRow = { doc: VaultDoc; cat: 'dd' | 'kyc' | 'tl' | 'td' };
+        type OvCat = 'dd' | 'kyc' | 'tl' | 'td' | 'agreement';
+        type OvRow = { doc: VaultDoc; cat: OvCat };
         const stdDocs: OvRow[] = isStd ? [
           ...vault.company_dd.map(d => ({ doc: d, cat: 'dd' as const })),
           ...vault.owner_kyc.map(d => ({ doc: d, cat: 'kyc' as const })),
           ...vault.trade_licenses.map(d => ({ doc: d, cat: 'tl' as const })),
         ] : [];
-        const c2cDocs: OvRow[] = isStd ? [] : vault.trade_documents.map(d => ({ doc: d, cat: 'td' as const }));
-        const title = isStd ? 'Standard Documents — Overview' : 'Case to Case Agreements — Overview';
+
+        /* Case to Case is per deal, so one flat list of every trade document
+           went ambiguous the moment a supplier had two shipments — the same
+           Purchase Order appeared twice with nothing saying which shipment it
+           belonged to. The popup asks for the deal first and drills into it;
+           `ovDeal` null keeps the picker on screen. Trade documents and
+           agreements sit in one list here, exactly as they do in the per
+           transaction tab, each row carrying its own category so Resend still
+           targets the right library. */
+        const dealCode = (v?: string | null) => {
+          const t = (v ?? '').trim();
+          return t && t !== '—' ? t : '';
+        };
+        const deals = (isStd ? [] : [
+          ...(vault.vendor_with_shipment ?? []),
+          ...(vault.vendor_without_shipment ?? []),
+        ]).map((r, i) => {
+          const code = dealCode(r.shipment_id) || dealCode(r.procurement_id);
+          return {
+            key:   code || `deal-${r.sr ?? i}`,
+            code,
+            label: code || 'SHP-001',
+            title: r.customer || r.supplier || '—',
+            sub:   r.consignee || '',
+            rows: [
+              ...(r.docs ?? []).map(d => ({ doc: d, cat: 'td' as const })),
+              ...(r.agreements ?? []).map(d => ({ doc: d, cat: 'agreement' as const })),
+            ] as OvRow[],
+          };
+        });
+        const deal    = isStd ? null : (deals.find(d => d.key === ovDeal) ?? null);
+        const picking = !isStd && !deal;
+        const docs: OvRow[] = isStd ? stdDocs : (deal?.rows ?? []);
+        const keyed = docs.map((r, i) => ({ ...r, key: `${deal?.key ?? 'std'}-${i}` }));
+
+        const title = isStd
+          ? 'Standard Documents — Overview'
+          : (deal ? `Case to Case — ${deal.code}` : 'Case to Case Documents & Agreements — Overview');
         const sub = isStd
           ? 'All Company Due Diligence, Owner KYC & Trade Licenses documents in one list'
-          : 'All Trade Documents & Agreements in one list';
-        const docs: OvRow[] = isStd ? stdDocs : c2cDocs;
+          : (deal
+            ? `Trade Documents & Agreements for ${deal.title}`
+            : 'Select a shipment to view its Trade Documents & Agreements');
+
+        /* One envelope carries one library, so a mixed tick list (a trade doc
+           AND an agreement) has no single destination — and a row with no
+           db_id was never saved against the deal, so there is nothing to send.
+           Both cases keep the button visible but disabled with the reason on
+           its tooltip, rather than silently dropping rows from the send. */
+        const picked    = keyed.filter(r => ovPicked.includes(r.key));
+        const pickedIds = picked.map(r => r.doc.db_id).filter((n): n is number => !!n);
+        const oneKind   = new Set(picked.map(r => r.cat)).size === 1;
+        const canBulk   = !viewOnly && picked.length > 0 && pickedIds.length === picked.length && oneKind;
+        const sendable  = keyed.filter(r => !viewOnly && !!r.doc.db_id);
+
+        const sendDocs = (rows: OvRow[]) => {
+          const ids = rows.map(r => r.doc.db_id).filter((n): n is number => !!n);
+          if (!ids.length) return;
+          setSendKind(rows[0].cat === 'agreement' ? 'agreement' : 'trade');
+          setSendDocIds(ids);
+        };
 
         void overviewPage;
         return (
-          <div className="cev-ov-overlay sev-ov" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) setOverview(null); }}>
+          <div className="cev-ov-overlay sev-ov" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) closeOverview(); }}>
             <div className="cev-ov-card">
               <div className="cev-ov-head">
                 <span className="cev-ov-head-icon"><Glyph d={VAULT_GLYPHS.list} size={18} /></span>
@@ -993,67 +1061,180 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                   <div className="cev-ov-title">{title}</div>
                   <div className="cev-ov-sub">{sub}</div>
                 </div>
-                <button type="button" className="cev-ov-close" onClick={() => setOverview(null)} aria-label="Close"><i className="ri-close-line" /></button>
+                {deal && picked.length > 0 && (
+                  <Tooltip label={canBulk
+                    ? `Send the ${picked.length} selected document${picked.length > 1 ? 's' : ''} for signature`
+                    : (oneKind
+                      ? 'One of the ticked rows is not saved against this deal yet'
+                      : 'Trade documents and agreements go out separately — tick one kind at a time')}>
+                    <button type="button" className="sev-ov-bulk" disabled={!canBulk} onClick={() => sendDocs(picked)}>
+                      <Glyph d={VAULT_GLYPHS.send} size={11} /> Resend {picked.length} selected
+                    </button>
+                  </Tooltip>
+                )}
+                {deal && (
+                  <button type="button" className="sev-ov-back" onClick={() => { setOvDeal(null); setOvPicked([]); }}>
+                    <i className="ri-arrow-left-s-line" aria-hidden /> Back to shipments
+                  </button>
+                )}
+                <button type="button" className="cev-ov-close" onClick={closeOverview} aria-label="Close"><i className="ri-close-line" /></button>
               </div>
-              <div className="cev-ov-body">
-                <table className="cev-ov-table">
-                  <thead><tr><th style={{ width: 62 }}>Sr No</th><th>Document Name</th><th style={{ width: 150 }}>Status</th><th style={{ width: 150 }}>Action</th></tr></thead>
-                  <tbody>
-                    {docs.length === 0 ? (
-                      <tr><td colSpan={4} className="cev-ov-empty">No documents available.</td></tr>
-                    ) : docs.map((row, i) => {
-                      const d = row.doc;
-                      const absIdx = i;
-                      const raw = d.attachment_url;
-                      const url = raw ? resolveFileUrl(raw) : null;
-                      const fname = d.attachment || `${d.name}.pdf`;
-                      const dlKey = `${overview}-${absIdx}`;
-                      const dling = ovDownloadingKey === dlKey;
-                      const canUpload = !viewOnly && row.cat !== 'td' && !!supplier?.db_id && !!d.doc_code;
-                      return (
-                        <tr key={`${overview}-${absIdx}`}>
-                          <td className="cev-ov-num">{absIdx + 1}</td>
-                          <td className="cev-ov-name">{d.name}</td>
-                          <td><OvStatusPill s={evEffectiveStatus(d)} /></td>
-                          <td>
-                            {url ? (
-                              <button
-                                type="button"
-                                className="cev-ov-dl"
-                                disabled={dling}
-                                onClick={async () => {
-                                  setOvDownloadingKey(dlKey);
-                                  try { await downloadFile(url, fname); } finally { setOvDownloadingKey(null); }
-                                }}
-                              >
-                                {dling
-                                  ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Downloading…</>
-                                  : <><i className="ri-download-2-line" aria-hidden /> Download</>}
-                              </button>
-                            ) : canUpload ? (
-                              <button
-                                type="button"
-                                className="cev-ov-up"
-                                onClick={() => setOvUpload({ doc: d, category: row.cat as 'dd' | 'kyc' | 'tl' })}
-                              >
-                                <i className="ri-upload-2-line" aria-hidden /> Upload
-                              </button>
-                            ) : (
-                              <button type="button" className="cev-ov-dl" disabled>
-                                <i className="ri-download-2-line" aria-hidden /> Download
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+
+              {picking ? (
+                <div className="cev-ov-body">
+                  <div className="sev-ov-pick-cap">Select a Shipment / Procurement to view its Trade Documents &amp; Agreements</div>
+                  {deals.length === 0 ? (
+                    <div className="sev-ov-pick-empty">No shipments or procurements for this supplier yet.</div>
+                  ) : (
+                    <ul className="sev-ov-picks">
+                      {deals.map(d => (
+                        <li key={d.key}>
+                          <button type="button" className="sev-ov-pick" onClick={() => { setOvDeal(d.key); setOvPicked([]); }}>
+                            <span className="sev-ov-pick-code">{d.label}</span>
+                            <span className="sev-ov-pick-text">
+                              <span className="sev-ov-pick-title">{d.title}</span>
+                              <span className="sev-ov-pick-sub">{d.sub || '—'}</span>
+                            </span>
+                            <span className="sev-ov-pick-go" aria-hidden><i className="ri-arrow-right-s-line" /></span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : deal ? (
+                <div className="cev-ov-body">
+                  <table className="cev-ov-table sev-ov-c2c">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 44 }}>
+                          <input
+                            type="checkbox"
+                            aria-label="Select all documents"
+                            disabled={sendable.length === 0}
+                            checked={sendable.length > 0 && picked.length === sendable.length}
+                            onChange={(e) => setOvPicked(e.target.checked ? sendable.map(r => r.key) : [])}
+                          />
+                        </th>
+                        <th style={{ width: 62 }}>Sr No</th>
+                        <th>Document Name</th>
+                        <th style={{ width: 128 }}>Status</th>
+                        <th style={{ width: 186 }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {keyed.length === 0 ? (
+                        <tr><td colSpan={5} className="cev-ov-empty">No trade documents or agreements on this deal yet.</td></tr>
+                      ) : keyed.map((r, i) => {
+                        const d = r.doc;
+                        const canSend  = !viewOnly && !!d.db_id;
+                        const canTrack = !!d.signature_request_id;
+                        return (
+                          <tr key={r.key}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${d.name}`}
+                                disabled={!canSend}
+                                checked={ovPicked.includes(r.key)}
+                                onChange={(e) => setOvPicked(prev => e.target.checked ? [...prev, r.key] : prev.filter(k => k !== r.key))}
+                              />
+                            </td>
+                            <td className="cev-ov-num">{i + 1}</td>
+                            <Tooltip label={d.name} disabled={(d.name || '').length <= 40}>
+                              <td className="cev-ov-name">{(d.name || '').length > 40 ? (d.name || '').slice(0, 40) + '…' : d.name}</td>
+                            </Tooltip>
+                            <td><OvStatusPill s={evEffectiveStatus(d)} /></td>
+                            <td>
+                              <div className="sev-ov-acts">
+                                <Tooltip label={canSend ? 'Send this document for signature again' : 'Available once the document is saved against this deal'}>
+                                  <button type="button" className="sev-ov-act sev-ov-act-send" disabled={!canSend} onClick={() => sendDocs([r])}>
+                                    <Glyph d={VAULT_GLYPHS.send} size={11} /> Resend
+                                  </button>
+                                </Tooltip>
+                                <Tooltip label={canTrack ? 'Signing activity tracker' : 'Nothing has been sent for signature yet'}>
+                                  <button
+                                    type="button"
+                                    className="sev-ov-act sev-ov-act-track"
+                                    disabled={!canTrack}
+                                    onClick={() => setOvTrack({ id: d.signature_request_id as number, code: d.doc_code || d.name || deal.label })}
+                                  >
+                                    <Glyph d={VAULT_GLYPHS.clock} size={11} /> Track
+                                  </button>
+                                </Tooltip>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="cev-ov-body">
+                  <table className="cev-ov-table">
+                    <thead><tr><th style={{ width: 62 }}>Sr No</th><th>Document Name</th><th style={{ width: 150 }}>Status</th><th style={{ width: 150 }}>Action</th></tr></thead>
+                    <tbody>
+                      {docs.length === 0 ? (
+                        <tr><td colSpan={4} className="cev-ov-empty">No documents available.</td></tr>
+                      ) : docs.map((row, i) => {
+                        const d = row.doc;
+                        const absIdx = i;
+                        const raw = d.attachment_url;
+                        const url = raw ? resolveFileUrl(raw) : null;
+                        const fname = d.attachment || `${d.name}.pdf`;
+                        const dlKey = `${overview}-${absIdx}`;
+                        const dling = ovDownloadingKey === dlKey;
+                        const canUpload = !viewOnly && row.cat !== 'td' && !!supplier?.db_id && !!d.doc_code;
+                        return (
+                          <tr key={`${overview}-${absIdx}`}>
+                            <td className="cev-ov-num">{absIdx + 1}</td>
+                            <td className="cev-ov-name">{d.name}</td>
+                            <td><OvStatusPill s={evEffectiveStatus(d)} /></td>
+                            <td>
+                              {url ? (
+                                <button
+                                  type="button"
+                                  className="cev-ov-dl"
+                                  disabled={dling}
+                                  onClick={async () => {
+                                    setOvDownloadingKey(dlKey);
+                                    try { await downloadFile(url, fname); } finally { setOvDownloadingKey(null); }
+                                  }}
+                                >
+                                  {dling
+                                    ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Downloading…</>
+                                    : <><i className="ri-download-2-line" aria-hidden /> Download</>}
+                                </button>
+                              ) : canUpload ? (
+                                <button
+                                  type="button"
+                                  className="cev-ov-up"
+                                  onClick={() => setOvUpload({ doc: d, category: row.cat as 'dd' | 'kyc' | 'tl' })}
+                                >
+                                  <i className="ri-upload-2-line" aria-hidden /> Upload
+                                </button>
+                              ) : (
+                                <button type="button" className="cev-ov-dl" disabled>
+                                  <i className="ri-download-2-line" aria-hidden /> Download
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         );
       })()}
+
+      {ovTrack && (
+        <SigningTrackerModal sigId={ovTrack.id} code={ovTrack.code} onClose={() => setOvTrack(null)} />
+      )}
 
       {ovUpload && (<>
         <style>{'.avm-cp-backdrop{z-index:13000!important;}html div.master-datepicker-popup{z-index:13100!important;}'}</style>

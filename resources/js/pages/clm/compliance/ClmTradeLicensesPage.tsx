@@ -39,15 +39,23 @@ export default function ClmTradeLicensesPage() {
   const [deleting, setDeleting] = useState(false);
   // All-authorities popover — opened from the +N badge in the ISSUING
   // AUTHORITY column (same pattern as the DCP authorities popover).
-  const [authPop, setAuthPop] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
+  // flipUp/maxH keep the popover inside the viewport — same clamp as the CLM
+  // document-master lists (QA #4).
+  const [authPop, setAuthPop] = useState<{ id: number; names: string[]; x: number; y: number; flipUp: boolean; maxH: number } | null>(null);
   // Close the fixed-positioned authorities popover on scroll/resize so it can't
   // drift away from its badge (capture:true catches ancestor + table scrolls).
   useEffect(() => {
     if (!authPop) return;
     const close = () => setAuthPop(null);
-    window.addEventListener('scroll', close, true);
+    // A scroll inside the popover must not close it, or a long list is unscrollable.
+    const onScroll = (e: Event) => {
+      const t = e.target as Element | null;
+      if (t && typeof t.closest === 'function' && t.closest('.clm-pop')) return;
+      close();
+    };
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', close);
-    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+    return () => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', close); };
   }, [authPop]);
 
   const reload = () => {
@@ -191,7 +199,15 @@ export default function ClmTradeLicensesPage() {
                               {extra > 0 && (
                                 <Tooltip label="View all authorities"><button
                                   type="button"
-                                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setAuthPop(authPop?.id === r.id ? null : { id: r.id, names: list, x: b.left, y: b.bottom + 4 }); }}
+                                  onClick={e => {
+                                    if (authPop?.id === r.id) { setAuthPop(null); return; }
+                                    const b = e.currentTarget.getBoundingClientRect();
+                                    const estH = Math.min(280, 34 + list.length * 30);
+                                    const below = window.innerHeight - b.bottom - 12;
+                                    const above = b.top - 12;
+                                    const flipUp = below < estH && above > below;
+                                    setAuthPop({ id: r.id, names: list, x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp, maxH: Math.max(120, Math.min(280, flipUp ? above : below)) });
+                                  }}
                                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
                                   +{extra}
                                 </button></Tooltip>
@@ -233,7 +249,7 @@ export default function ClmTradeLicensesPage() {
       {authPop && createPortal(
         <>
           <div onClick={() => setAuthPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(authPop.x, window.innerWidth - 230), top: authPop.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(authPop.x, window.innerWidth - 230), top: authPop.flipUp ? undefined : authPop.y, bottom: authPop.flipUp ? (window.innerHeight - authPop.y) : undefined, zIndex: 601, width: 210, maxHeight: authPop.maxH, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Authorities ({authPop.names.length})</div>
             {authPop.names.map((name, i) => (
               <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
