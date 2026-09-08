@@ -7039,6 +7039,32 @@
 
 [data-bs-theme="dark"] .ep-fnf-row { background: rgba(16,185,129,0.08); }
 [data-bs-theme="dark"] .ep-fnf-row.is-ded { background: rgba(239,68,68,0.08); }
+
+/* The last light-mode leaks in the exit wizard (#3). Each of these was written
+   as an opaque pastel or a solid #fff and had no dark counterpart, so they
+   stayed light while the modal around them went dark. Same remedy used
+   throughout this file: a translucent tint of the same hue over whatever
+   surface is behind, and a light-side text colour. */
+[data-bs-theme="dark"] .ep-fnf-row--earn { background: rgba(16,185,129,0.10); color: #34d399; }
+[data-bs-theme="dark"] .ep-fnf-row--ded  { background: rgba(239,68,68,0.10);  color: #f87171; }
+
+[data-bs-theme="dark"] .ep-status-pill--pending {
+  background: rgba(245,158,11,0.20); color: #fcd34d; border-color: rgba(245,158,11,0.40);
+}
+[data-bs-theme="dark"] .ep-status-pill--done {
+  background: rgba(16,185,129,0.20); color: #6ee7b7; border-color: rgba(16,185,129,0.40);
+}
+
+/* Sub-pills are outline chips: the border already carries the meaning, so the
+   fill only has to disappear into the card rather than pick up a tint. */
+[data-bs-theme="dark"] .ep-sub-pill.is-pending  { background: transparent; border-color: rgba(245,158,11,0.55); color: #fcd34d; }
+[data-bs-theme="dark"] .ep-sub-pill.is-approved { background: transparent; border-color: rgba(16,185,129,0.55); color: #6ee7b7; }
+[data-bs-theme="dark"] .ep-sub-pill.is-rejected { background: transparent; border-color: rgba(239,68,68,0.55);  color: #fca5a5; }
+
+[data-bs-theme="dark"] .ep-btn--reject {
+  background: rgba(239,68,68,0.16); color: #fca5a5; border-color: rgba(239,68,68,0.42);
+}
+[data-bs-theme="dark"] .ep-btn--reject:hover { background: rgba(239,68,68,0.26); }
 [data-bs-theme="dark"] .ep-fnf-field {
   border-color: rgba(167,139,250,0.50); box-shadow: none;
   background: rgba(255,255,255,0.04);
