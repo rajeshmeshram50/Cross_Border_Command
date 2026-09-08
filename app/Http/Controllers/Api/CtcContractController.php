@@ -1551,6 +1551,43 @@ class CtcContractController extends Controller
         // the blade's $document->title still resolves.
         $document = $row ?: new CtcContract(['title' => 'Agreement (draft preview)']);
 
+        /* Same render cache as the Trade Document preview — see the note there.
+         * dompdf is ~99% of this request (8 ms of HTML, 1.5 s of PDF on a 183k
+         * draft) and its options do not make it faster, so the saving has to
+         * come from not rendering the same document twice. The key covers every
+         * input the blade reads, including the date its footer stamps, so any
+         * change misses and re-renders. base64 because the cache store is a
+         * database text column and PDF bytes are not valid UTF-8. */
+        $cacheKey = 'clm:ctcpreview:' . sha1(implode('|', [
+            (int) $user->client_id,
+            (string) ($row->code ?? 'DRAFT'),
+            md5($processedHtml),
+            md5(json_encode($headerConfig)),
+            md5(json_encode($footerConfig)),
+            md5(json_encode($pageConfig)),
+            md5((string) $headerLogoBase64),
+            now()->format('Y-m-d'),
+        ]));
+        $headers = [
+            'Content-Type'        => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="ctc-preview.pdf"',
+        ];
+        /* Best-effort, both ways.
+         *
+         * A preview must never fail because the CACHE failed. On a server
+         * where the cache table has not been migrated, or Redis is down, or
+         * the store is set to 'array', these calls throw or no-op — and
+         * without the guard that would turn a working preview into a 500.
+         * Swallowed, the worst case is exactly the behaviour before this
+         * cache existed: render it. */
+        try {
+            if ($hit = \Illuminate\Support\Facades\Cache::get($cacheKey)) {
+                return response(base64_decode($hit), 200, $headers);
+            }
+        } catch (\Throwable $e) {
+            // fall through and render
+        }
+
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.clm-signature-document', [
             'document'         => $document,
             'party'            => null,
@@ -1567,7 +1604,18 @@ class CtcContractController extends Controller
         ])->setPaper('a4')->setOption('isPhpEnabled', true);
 
         // Inline so the frontend can pull it as a blob and paint it with pdf.js.
-        return $pdf->stream('ctc-preview.pdf');
+                $bytes = $pdf->output();
+        /* Skip absurd blobs: the store here is a database text column, and a
+           multi-megabyte base64 row per preview is not worth the write. */
+        if (strlen($bytes) <= 5 * 1024 * 1024) {
+            try {
+                \Illuminate\Support\Facades\Cache::put($cacheKey, base64_encode($bytes), now()->addMinutes(10));
+            } catch (\Throwable $e) {
+                // caching is an optimisation, never a requirement
+            }
+        }
+
+        return response($bytes, 200, $headers);
     }
 
     /**

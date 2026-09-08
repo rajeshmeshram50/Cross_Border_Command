@@ -256,6 +256,18 @@ export default function SalesLeadWorksheet() {
 
   const [leads, setLeads]       = useState<Lead[]>([]);
   const [loading, setLoading]   = useState(false);
+  /* When the current skeleton went up, or null while no skeleton is showing.
+   *
+   * A tab switch answers in ~10 ms on this dataset, so the skeleton was drawn
+   * and torn down inside a single frame — correct, and completely invisible,
+   * which reads as "the shimmer does not work". Holding it for a moment makes
+   * the state legible instead of flickering the table.
+   *
+   * Only set by startNewQuery, so it applies to a tab / filter change and not
+   * to pagination or a background reload — those keep the dim and stay as
+   * fast as the server is. */
+  const skeletonSinceRef = useRef<number | null>(null);
+  const SKELETON_MIN_MS = 450;
   const [total, setTotal]       = useState(0);
   const [lastPage, setLastPage] = useState(1);
   /* Bucket counts shown in the tab pills. Keyed by string (not TabKey) so it
@@ -561,7 +573,11 @@ export default function SalesLeadWorksheet() {
       toast.error('Load failed', e?.response?.data?.message ?? 'Could not load leads');
       setLeads([]); setTotal(0); setLastPage(1);
     } finally {
-      setLoading(false);
+      const since = skeletonSinceRef.current;
+      const left  = since === null ? 0 : SKELETON_MIN_MS - (Date.now() - since);
+      skeletonSinceRef.current = null;
+      if (left > 0) setTimeout(() => setLoading(false), left);
+      else setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, dealState, debouncedQ, page, rpp, toast, activeFilters, reloadKey]);
@@ -581,18 +597,41 @@ export default function SalesLeadWorksheet() {
   const allChecked = pageIds.length > 0 && pageIds.every(id => selected.has(id));
   const someChecked = pageIds.some(id => selected.has(id));
 
+  /* Clear the rows when the QUESTION changes.
+   *
+   * The skeleton renders on `loading && rows.length === 0`. Switching a tab
+   * or applying a filter left the previous answer sitting in `rows`, so the
+   * condition was false and all the user got was the tbody dimmed to 55%
+   * opacity — read as "the shimmer is not working". Dropping the rows first
+   * is also honest: they belong to the tab you just left.
+   *
+   * Deliberately NOT called for pagination or the background reload after an
+   * action: there the table is answering the same question and a full
+   * skeleton flash would be worse than the dim.
+   *
+   * setLoading(true) goes with the clear, in the SAME batch. fetchLeads only
+   * raises it once the effect runs, which left one painted frame holding
+   * rows=[] and loading=false — and that combination renders the "No leads
+   * found" empty state, so the tab switch flashed the empty message where the
+   * skeleton should have been. */
+  const startNewQuery = () => {
+    setRows([]);
+    setLoading(true);
+    setPage(1);
+    setSelected(new Set());
+    skeletonSinceRef.current = Date.now();
+  };
+
   const switchTab = (next: TabKey) => {
     setTab(next);
     // Always land on the In Progress sub-tab when (re)entering Key Opportunity.
     if (next === 'key_opportunity') setDealState('in_progress');
-    setPage(1);
-    setSelected(new Set());
+    startNewQuery();
   };
 
   const switchDealState = (next: DealState) => {
     setDealState(next);
-    setPage(1);
-    setSelected(new Set());
+    startNewQuery();
   };
 
   const toggleRow = (oppId: string) => {
@@ -1084,7 +1123,8 @@ export default function SalesLeadWorksheet() {
                     }
                     return next;
                   });
-                  setPage(1);
+                  // Removing a chip narrows the question too — same skeleton.
+                  startNewQuery();
                 }}
               >
                 ×
@@ -1093,7 +1133,7 @@ export default function SalesLeadWorksheet() {
           ))}
           <button
             className="lwp-chip-clear-all"
-            onClick={() => { setActiveFilters({}); setPage(1); }}
+            onClick={() => { setActiveFilters({}); startNewQuery(); }}
           >
             Clear all
           </button>
@@ -1479,7 +1519,7 @@ export default function SalesLeadWorksheet() {
         initial={activeFilters}
         options={filterOptions}
         onClose={() => setFilterOpen(false)}
-        onApply={(f) => { setActiveFilters(f); setPage(1); }}
+        onApply={(f) => { setActiveFilters(f); startNewQuery(); }}
       />
 
       <LeadDetailsModal

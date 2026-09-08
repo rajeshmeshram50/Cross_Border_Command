@@ -442,6 +442,19 @@ class ClmAgreementController extends Controller
 
         $lead = Lead::where('client_id', $user->client_id)->findOrFail((int) $leadId);
 
+        /* ?light=1 — drop the document BODIES from the response.
+         *
+         * Each row carries its full `content`, and on a real lead that is
+         * nearly the whole payload: measured at 364 KB for one lead, of which
+         * 359 KB was content (two agreements at 170 KB each). The Sales Matrix
+         * CLM panel renders two progress bars from this and never reads a
+         * body, so it was downloading a third of a megabyte to draw "2 of 3
+         * uploaded" — on every lead it opens.
+         *
+         * The send modal still asks for the full payload: it seeds its editor
+         * from `content`. Opt-in, so every existing caller is unchanged. */
+        $light = $request->boolean('light');
+
         // Stage 5 = "Quotation vs PI". Stage 5 complete ⇒ lead has moved
         // to stage 6+ (Victory). The button on the Sales Matrix detail
         // card stays disabled until then.
@@ -611,7 +624,7 @@ class ClmAgreementController extends Controller
                without it every agreement reported null however it had been marked.
                It failed quietly: `$needs[...] ?? null` swallows the undefined
                variable, so the field was always present and always empty. */
-            $agreementsOut = $agreements->map(function (ClmAgreementLibrary $a) use ($latestPerAgreement, $needs) {
+            $agreementsOut = $agreements->map(function (ClmAgreementLibrary $a) use ($latestPerAgreement, $needs, $light) {
                 $req = $latestPerAgreement[$a->id] ?? null;
                 $sigOut = null;
                 if ($req) {
@@ -650,7 +663,7 @@ class ClmAgreementController extends Controller
                      * popup in the workplace can hydrate without an
                      * extra round-trip. Per-row send-time overrides
                      * layer over these without mutating the saved row. */
-                    'content'        => $a->content,
+                    'content'        => $light ? null : $a->content,
                     'header_config'  => is_array($a->header_config) ? $a->header_config : null,
                     'footer_config'  => is_array($a->footer_config) ? $a->footer_config : null,
                 ];
@@ -1346,6 +1359,43 @@ class ClmAgreementController extends Controller
         // $document->title still resolves.
         $document = $row ?: new ClmAgreementLibrary(['title' => 'Agreement (draft preview)']);
 
+        /* Same render cache as the Trade Document preview — see the note there.
+         * dompdf is ~99% of this request (8 ms of HTML, 1.5 s of PDF on a 183k
+         * draft) and its options do not make it faster, so the saving has to
+         * come from not rendering the same document twice. The key covers every
+         * input the blade reads, including the date its footer stamps, so any
+         * change misses and re-renders. base64 because the cache store is a
+         * database text column and PDF bytes are not valid UTF-8. */
+        $cacheKey = 'clm:agrpreview:' . sha1(implode('|', [
+            (int) $user->client_id,
+            (string) ($row->code ?? 'DRAFT'),
+            md5($processedHtml),
+            md5(json_encode($headerConfig)),
+            md5(json_encode($footerConfig)),
+            md5(json_encode($pageConfig)),
+            md5((string) $headerLogoBase64),
+            now()->format('Y-m-d'),
+        ]));
+        $headers = [
+            'Content-Type'        => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="agreement-preview.pdf"',
+        ];
+        /* Best-effort, both ways.
+         *
+         * A preview must never fail because the CACHE failed. On a server
+         * where the cache table has not been migrated, or Redis is down, or
+         * the store is set to 'array', these calls throw or no-op — and
+         * without the guard that would turn a working preview into a 500.
+         * Swallowed, the worst case is exactly the behaviour before this
+         * cache existed: render it. */
+        try {
+            if ($hit = \Illuminate\Support\Facades\Cache::get($cacheKey)) {
+                return response(base64_decode($hit), 200, $headers);
+            }
+        } catch (\Throwable $e) {
+            // fall through and render
+        }
+
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.clm-signature-document', [
             'document'         => $document,
             'party'            => null,
@@ -1361,7 +1411,18 @@ class ClmAgreementController extends Controller
             'headerLogoBase64' => $headerLogoBase64,
         ])->setPaper('a4')->setOption('isPhpEnabled', true);
 
-        return $pdf->stream('agreement-preview.pdf');
+                $bytes = $pdf->output();
+        /* Skip absurd blobs: the store here is a database text column, and a
+           multi-megabyte base64 row per preview is not worth the write. */
+        if (strlen($bytes) <= 5 * 1024 * 1024) {
+            try {
+                \Illuminate\Support\Facades\Cache::put($cacheKey, base64_encode($bytes), now()->addMinutes(10));
+            } catch (\Throwable $e) {
+                // caching is an optimisation, never a requirement
+            }
+        }
+
+        return response($bytes, 200, $headers);
     }
 
 

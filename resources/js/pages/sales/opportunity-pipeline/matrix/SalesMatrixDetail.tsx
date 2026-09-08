@@ -681,7 +681,11 @@ export default function SalesMatrixDetail() {
   useEffect(() => {
     if (!resolvedLeadId) { setAgreementApplicable(null); return; }
     let cancelled = false;
-    api.get(`/clm/leads/${resolvedLeadId}/agreement-applicable`)
+    /* light=1 — this panel draws two progress bars and never reads a document
+       body, but the full response carries every agreement's `content`:
+       measured at 364 KB for one lead, 359 KB of it bodies. The send modal
+       fetches the full payload itself when it opens, so nothing is lost. */
+    api.get(`/clm/leads/${resolvedLeadId}/agreement-applicable`, { params: { light: 1 } })
       .then(res => {
         if (cancelled) return;
         setAgreementApplicable((res.data?.data ?? null) as AgreementApplicablePayload | null);
@@ -1879,7 +1883,11 @@ export default function SalesMatrixDetail() {
         open={agreementModalOpen}
         leadId={resolvedLeadId}
         view={agreementModalView}
-        data={agreementApplicable}
+        /* Not seeded from the panel's copy any more — that one is `light` and
+           has no document bodies, and the modal seeds its editor from them.
+           It fetches the full payload on open regardless, so this only costs
+           the loading state it already has for the un-seeded case. */
+        data={null}
         onClose={() => {
           setAgreementModalOpen(false);
           // Re-pull so the Segment Details card reflects any status that
