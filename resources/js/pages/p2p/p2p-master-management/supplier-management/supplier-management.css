@@ -54,7 +54,13 @@
    its cyan into the violet this page runs on. Sits left of the collapse
    chevron, inside .bref-box__header-right. */
 .sup-fig .sup-scope{height:var(--sl-tab-h,44px);display:inline-flex;align-items:stretch;gap:3px;padding:3px;margin:4px 0;background:rgba(255,255,255,.62);border:1px solid rgba(124,58,237,.28);border-radius:10px;box-shadow:0 1px 3px rgba(91,33,182,.12) inset;flex-shrink:0;}
-.sup-fig .sup-scope__tab{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:inherit;font-size:12px;font-weight:800;letter-spacing:-.1px;color:#6d28d9;background:transparent;border:none;border-radius:8px;padding:7px 12px;cursor:pointer;white-space:nowrap;transition:all .18s cubic-bezier(.22,1,.36,1);}
+/* Inactive tab: a white pill with its own border, per Figma — not transparent.
+   Transparent let the tab dissolve into the strip, so the control read as one
+   pill with a label floating beside it rather than as two choices, and the
+   unselected side did not look pressable. The border is carried on BOTH states
+   (the active one just paints it transparent) so selecting a tab cannot change
+   its width and shunt the other one sideways. */
+.sup-fig .sup-scope__tab{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:inherit;font-size:12px;font-weight:800;letter-spacing:-.1px;color:#6d28d9;background:linear-gradient(135deg,#f5f1fe,#ede9fe);border:1px solid rgba(124,58,237,.22);border-radius:8px;padding:6px 11px;cursor:pointer;white-space:nowrap;transition:all .18s cubic-bezier(.22,1,.36,1);}
 /* font-weight:400 is the fix for "the icons look too bold".
    The tab sets font-weight:800 for its LABEL, and the icon, being a font glyph,
    inherited it. Remix Icon ships a single weight, so the browser had nothing to
@@ -66,8 +72,13 @@
   font-size:12px;flex-shrink:0;font-weight:400;
   -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
 }
-.sup-fig .sup-scope__tab:hover{color:#5b21b6;background:rgba(124,58,237,.12);}
-.sup-fig .sup-scope__tab.is-active{color:#fff;background:linear-gradient(135deg,#a78bfa,#7c3aed 60%,#5b21b6);box-shadow:0 3px 9px -3px rgba(91,33,182,.6),0 1px 0 rgba(255,255,255,.25) inset;}
+.sup-fig .sup-scope__tab:hover{color:#5b21b6;background:rgba(124,58,237,.10);border-color:rgba(124,58,237,.38);}
+/* Active fill: an even violet, not the old #a78bfa→#5b21b6 ramp. That ramp ran
+   from a light lilac to near-black across 120px, so the pill read as two
+   different purples with the label sitting over the join; Figma's is one
+   colour with only enough gradient to keep it from looking flat. The shadow
+   comes down with it — a tab is a selection, not a raised button. */
+.sup-fig .sup-scope__tab.is-active{color:#fff;background:linear-gradient(135deg,#8b5cf6,#7c3aed);border-color:transparent;box-shadow:0 2px 6px -2px rgba(91,33,182,.45);}
 .sup-fig .sup-scope__tab.is-active:hover{color:#fff;}
 @media(max-width:1200px){.sup-fig .sup-scope__tab{padding:6px 9px;font-size:11px;}}
 /* Below this the strip's own text already wraps; the labels lose their nouns
@@ -113,8 +124,14 @@
 }
 [data-bs-theme="dark"] .sup-fig .sup-scope,
 [data-layout-mode="dark"] .sup-fig .sup-scope{background:rgba(255,255,255,.06);border-color:rgba(167,139,250,.34);}
-[data-bs-theme="dark"] .sup-fig .sup-scope__tab,
-[data-layout-mode="dark"] .sup-fig .sup-scope__tab{color:#c4b5fd;}
+/* :not(.is-active) is load-bearing. These rules sit below .is-active in the
+   file and carry the same specificity, so without it the dark theme would win
+   on source order and repaint the SELECTED tab with the inactive surface —
+   losing the violet fill exactly where it carries the meaning. */
+[data-bs-theme="dark"] .sup-fig .sup-scope__tab:not(.is-active),
+[data-layout-mode="dark"] .sup-fig .sup-scope__tab:not(.is-active){color:#c4b5fd;background:rgba(255,255,255,.05);border-color:rgba(167,139,250,.30);}
+[data-bs-theme="dark"] .sup-fig .sup-scope__tab:not(.is-active):hover,
+[data-layout-mode="dark"] .sup-fig .sup-scope__tab:not(.is-active):hover{color:#ddd6fe;background:rgba(167,139,250,.16);border-color:rgba(167,139,250,.45);}
 
 .sup-fig .bref-box__header-right{flex-shrink:0;display:flex;align-items:center;gap:6px;position:relative;z-index:1;}
 .sup-fig .bref-box__toggle{width:26px;height:26px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.75);border:1.5px solid rgba(124,58,237,.22);color:#7c3aed;transition:transform .24s cubic-bezier(.22,1,.36,1);box-shadow:0 1px 4px rgba(124,58,237,.10),inset 0 1px 0 rgba(255,255,255,.9);}

@@ -73,7 +73,32 @@ class HrDocumentTemplateController extends Controller
     {
         $this->authorize($request, 'can_view');
 
-        $q = HrDocumentTemplate::query()->with(self::WITH);
+        /* LIST COLUMNS ONLY. The four heavy columns are deliberately absent:
+             content_html  longText — the entire document body
+             header_config \ JSON letterhead blocks, logo references included
+             footer_config /
+             signers         JSON
+             audit_log       JSON, and it only ever grows
+           This endpoint used to return whole rows, so opening the list shipped
+           every template's full body — a page that renders code, name, type and
+           status was downloading the documents themselves, all of them, before
+           it could paint. The only screen that wants those fields is the View
+           modal, which shows ONE template at a time and now fetches it from
+           show() when it opens.
+           Keep this list in step with the columns the table and its filters
+           actually read; a field added to the UI but not here arrives as null,
+           which looks like missing data rather than a missing select. */
+        $q = HrDocumentTemplate::query()
+            ->select([
+                'id', 'client_id', 'branch_id',
+                'code', 'name', 'description',
+                'employee_category', 'role_type', 'doc_type', 'trigger_point_id',
+                'version', 'status', 'editor_mode',
+                'is_mandatory', 'requires_signature', 'requires_manager_approval', 'include_in_audit',
+                'signing_mode', 'docx_path', 'docx_original_name',
+                'created_by', 'created_at', 'updated_at',
+            ])
+            ->with(self::WITH);
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
         if ($search = $request->query('search')) {

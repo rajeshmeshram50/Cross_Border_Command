@@ -443,6 +443,10 @@ export default function Vendors() {
      Two tabs, no "All": the list is always looking at one side or the other,
      and Domestic is the landing state because it is the larger book. */
   const [scopeTab, setScopeTab] = useState<'domestic' | 'international'>('domestic');
+  /* Read once here rather than comparing the string at each of the three places
+     the GST State Code column is built (header, cell, empty-row span) — those
+     three have to agree or the table's columns stop lining up. */
+  const isIntlScope = scopeTab === 'international';
   const [addOpen, setAddOpen] = useState(false);
   /* Domestic / International is asked BEFORE the form opens, because the
      answer changes what the form may OFFER — Country, and the GST block that
@@ -579,6 +583,15 @@ export default function Vendors() {
      Every later fetch sets `refetching` instead, which only dims the rows. */
   const [loading, setLoading] = useState(true);
   const [refetching, setRefetching] = useState(false);
+  /* A THIRD loading state, for the two actions that replace the row set outright
+     rather than adjusting it: switching Domestic ⇄ International, and applying a
+     filter.
+     Dimming is the right feedback when the rows coming back are broadly the
+     rows already on screen — paging, resizing. It is the wrong feedback here,
+     because dimmed rows still READ as the answer, and for a second the user is
+     looking at Domestic suppliers under an International tab. A shimmer says
+     "this set is being replaced", which is what actually happened. */
+  const [swapping, setSwapping] = useState(false);
   const bootedRef = useRef(false);
   /* "What We Are Doing Here" stepper — collapsible, open by default to
      mirror the Figma. Purely presentational. */
@@ -734,6 +747,7 @@ export default function Vendors() {
         bootedRef.current = true;
         setLoading(false);
         setRefetching(false);
+        setSwapping(false);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -747,6 +761,17 @@ export default function Vendors() {
      Domestic → International while on page 3 would ask the API for page 3 of a
      one-page result and render an empty table. */
   useEffect(() => { setPage(1); }, [tab, debouncedSearch, scopeTab, catParam, compParam]);
+
+  /* Raise the shimmer for a scope switch or a filter change — and only those.
+     Search is deliberately not here: it has its own spinner in the magnifier
+     and fires on every debounce, so shimmering would strobe the table as the
+     user types. Paging is not here either; those rows are the same set, one
+     page along, and the dim already covers it.
+     bootedRef keeps the first mount out of it — `loading` owns that paint, and
+     raising both would swap one skeleton for another. */
+  useEffect(() => {
+    if (bootedRef.current) setSwapping(true);
+  }, [scopeTab, catParam, compParam]);
 
   /* Dynamic rows-per-page — pick the count that fits between the table's top
      and the bottom of the viewport, so the page fills the screen and the rest
@@ -1063,8 +1088,11 @@ useEffect(() => {
 
             {/* Table — purple Figma table wired to the real /vendors data.
                 Pagination is client-side (10 rows/page). */}
-            {loading ? (
-              <div className="p-3"><ShimmerTable rows={8} cols={15} /></div>
+            {/* cols follows the header — the international scope drops GST State
+                Code, and a skeleton that is one column wider than the table it
+                stands in for makes the layout jump when the rows land. */}
+            {loading || swapping ? (
+              <div className="p-3"><ShimmerTable rows={8} cols={isIntlScope ? 14 : 15} /></div>
             ) : (
               <>
                 {/* Dimmed, not replaced: on a refetch the previous rows stay
@@ -1085,7 +1113,15 @@ useEffect(() => {
                         <th className="sl-th-left">Segment</th>
                         <th className="sl-col-c">Country</th>
                         <th className="sl-col-c">State</th>
-                        <th className="sl-th-2line sl-col-c"><span>GST State</span><span>Code</span></th>
+                        {/* A GST state code is an Indian registration artefact —
+                            the first two digits of a GSTIN. An international
+                            supplier has no GSTIN, so the column could only ever
+                            render an em dash down its whole length: a column
+                            that occupies width to say nothing. It goes with the
+                            scope it belongs to. */}
+                        {!isIntlScope && (
+                          <th className="sl-th-2line sl-col-c"><span>GST State</span><span>Code</span></th>
+                        )}
                         {/* Left, not centred: a person's name is free text and
                             the longest value in this column, so centring it
                             leaves the column ragged on both edges instead of
@@ -1101,8 +1137,12 @@ useEffect(() => {
                       </tr>
                     </thead>
                     <tbody>
+                      {/* The empty row's span follows the header: dropping GST
+                          State Code for the international scope takes the count
+                          with it, or the row spans a column that is not there
+                          and the table's right edge pulls in. */}
                       {pageRows.length === 0 ? (
-                        <tr><td colSpan={15} className="sl-empty">No suppliers found.</td></tr>
+                        <tr><td colSpan={isIntlScope ? 14 : 15} className="sl-empty">No suppliers found.</td></tr>
                       ) : pageRows.map((v, i) => {
                         const kind = typeKind(v.type);
                         const flag = supplierCategory(v.category);
@@ -1138,7 +1178,9 @@ useEffect(() => {
                             </td>
                             <td className="sl-col-c"><span className="sl-country">{v.country || '—'}</span></td>
                             <td className="sl-col-c"><span className="sl-state">{v.state}</span></td>
-                            <td className="sl-col-c">{v.stateCode ? <span className="sl-gstcode">{v.stateCode}</span> : <span className="sl-state">—</span>}</td>
+                            {!isIntlScope && (
+                              <td className="sl-col-c">{v.stateCode ? <span className="sl-gstcode">{v.stateCode}</span> : <span className="sl-state">—</span>}</td>
+                            )}
                             <td>
                               <span className="sl-contact-wrap">
                                 <Tooltip label={v.contactName}><span className="sl-contact sl-trunc">{v.contactName}</span></Tooltip>

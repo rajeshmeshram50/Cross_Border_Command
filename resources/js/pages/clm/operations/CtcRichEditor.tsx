@@ -2182,8 +2182,13 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
           all four were already registered in useCtcEditor — only the buttons
           were missing here, which is what would have made switching the Trade
           Document editor onto this toolbar a downgrade. */}
-      <TB active={editor.isActive('superscript')} onClick={() => editor.chain().focus().toggleSuperscript().run()} title="Superscript"><span style={{ fontSize: 11 }}>X²</span></TB>
-      <TB active={editor.isActive('subscript')}   onClick={() => editor.chain().focus().toggleSubscript().run()}   title="Subscript"><span style={{ fontSize: 11 }}>X₂</span></TB>
+      {/* Mutually exclusive. TipTap models these as two independent marks, so
+          both could be active at once — the character then carries a raised AND
+          a lowered baseline, which no renderer can honour and the DOCX export
+          resolves arbitrarily. Unsetting the other in the SAME chain means one
+          undo step, not two. */}
+      <TB active={editor.isActive('superscript')} onClick={() => editor.chain().focus().unsetSubscript().toggleSuperscript().run()} title="Superscript"><span style={{ fontSize: 11 }}>X²</span></TB>
+      <TB active={editor.isActive('subscript')}   onClick={() => editor.chain().focus().unsetSuperscript().toggleSubscript().run()} title="Subscript"><span style={{ fontSize: 11 }}>X₂</span></TB>
       {!hideColor && (<>
       <label className="ctcte-btn ctcte-color" title="Text colour">
         <span style={{ borderBottom: `3px solid ${editor.getAttributes('textStyle').color || '#1f2937'}`, lineHeight: 1 }}>A</span>
