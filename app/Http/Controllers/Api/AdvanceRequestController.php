@@ -132,7 +132,10 @@ class AdvanceRequestController extends Controller
             }
         }
 
-        return response()->json($q->get()->map(fn ($r) => $this->serialize($r)));
+        $rows = $q->get();
+        // One query for every row's recovery ledger, instead of ~4 per row.
+        $this->primeLedger($rows->pluck('id')->all());
+        return response()->json($rows->map(fn ($r) => $this->serialize($r)));
     }
 
    
@@ -1931,34 +1934,76 @@ class AdvanceRequestController extends Controller
      * schedules. "Ongoing" = a recurring EMI/bi-monthly plan whose last cycle
      * hasn't passed. Optionally excludes one advance (the one being edited).
      */
-    /** Per-cycle recovery rows the payroll engine has recorded for an advance
-     *  on a given stream ('self' or 'return'). Empty if the ledger is absent. */
-    private function recoveryLedgerRows($advanceId, string $stream): array
+    /* ── Recovery-ledger cache ────────────────────────────────────────────
+     * serialize() asks for a row's recovery ledger up to four times. Each ask
+     * used to run its OWN query plus a Schema::hasTable() probe (an uncached
+     * pg_class lookup), so a list of N advances cost ~4N queries — measured at
+     * 1,207 queries / 304 ms for 300 rows, growing without limit.
+     *
+     * Now the ledger is fetched for a whole SET of advances in one query and
+     * answered from memory. index() primes it with the ids it is about to
+     * serialise; a single-row path fetches just that id on first ask. Same
+     * values, same output — 1 query instead of 4N.
+     *
+     * Per-instance, not static, so nothing leaks between requests in a
+     * long-lived worker. */
+    private array $ledgerCache = [];      // "<advance_id>|<stream>" => rows
+    private array $ledgerLoaded = [];     // advance ids already fetched
+    private ?bool $ledgerTableExists = null;
+
+    private function ledgerTableExists(): bool
     {
-        if (!\Illuminate\Support\Facades\Schema::hasTable('advance_recovery_ledger')) {
-            return [];
+        if ($this->ledgerTableExists === null) {
+            $this->ledgerTableExists = \Illuminate\Support\Facades\Schema::hasTable('advance_recovery_ledger');
         }
-        return DB::table('advance_recovery_ledger')
-            ->where('advance_request_id', $advanceId)->where('stream', $stream)
-            ->orderBy('year')->orderBy('month')
-            ->get(['year', 'month', 'amount', 'carried'])
-            ->map(fn ($r) => [
+        return $this->ledgerTableExists;
+    }
+
+    /** Load the ledger for these advances in ONE query. Ids already loaded are
+     *  skipped, so calling it again after index() costs nothing. */
+    private function primeLedger(array $advanceIds): void
+    {
+        $ids = array_values(array_diff(
+            array_unique(array_filter(array_map('intval', $advanceIds))),
+            array_keys($this->ledgerLoaded)
+        ));
+        if (!$ids) return;
+        // Mark loaded up-front: an advance with no ledger rows must not be
+        // re-queried every time it is asked for.
+        foreach ($ids as $id) $this->ledgerLoaded[$id] = true;
+        if (!$this->ledgerTableExists()) return;
+
+        foreach (
+            DB::table('advance_recovery_ledger')
+                ->whereIn('advance_request_id', $ids)
+                ->orderBy('year')->orderBy('month')
+                ->get(['advance_request_id', 'stream', 'year', 'month', 'amount', 'carried'])
+            as $r
+        ) {
+            $this->ledgerCache[$r->advance_request_id . '|' . $r->stream][] = [
                 'year'    => (int) $r->year,
                 'month'   => (int) $r->month,
                 'amount'  => (float) $r->amount,
                 'carried' => (float) $r->carried,
-            ])->all();
+            ];
+        }
+    }
+
+    /** Per-cycle recovery rows the payroll engine has recorded for an advance
+     *  on a given stream ('self' or 'return'). Empty if the ledger is absent. */
+    private function recoveryLedgerRows($advanceId, string $stream): array
+    {
+        $id = (int) $advanceId;
+        if (!isset($this->ledgerLoaded[$id])) $this->primeLedger([$id]);
+        return $this->ledgerCache[$id . '|' . $stream] ?? [];
     }
 
     /** Total the payroll engine has recovered for an advance on a stream. */
     private function recoveryLedgerTotal($advanceId, string $stream): float
     {
-        if (!\Illuminate\Support\Facades\Schema::hasTable('advance_recovery_ledger')) {
-            return 0.0;
-        }
-        return round((float) DB::table('advance_recovery_ledger')
-            ->where('advance_request_id', $advanceId)->where('stream', $stream)
-            ->sum('amount'), 2);
+        return round(array_sum(array_column(
+            $this->recoveryLedgerRows($advanceId, $stream), 'amount'
+        )), 2);
     }
 
     /** Total the employee has repaid DIRECTLY (from profile, not payroll) against

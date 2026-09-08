@@ -1,23 +1,62 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+
+/* Settlement modal (159 KB) and Batch Payment ride along with the page bundle
+   when imported normally, even though neither is on screen at load. Both
+   already render null while closed, so they are also only MOUNTED while open
+   below — a lazy component that is always rendered fetches its chunk
+   immediately and saves nothing. */
+const ExpenseSettlementModal = lazy(() => import('../../components/ExpenseSettlementModal'));
+const BatchPaymentModal = lazy(() => import('../../components/BatchPaymentModal'));
+/* Spend Analytics chart. recharts is ~250 KB and the card it lives in is
+   COLLAPSED by default, so the library was downloaded on every visit to draw
+   something nobody had opened. Its own module = its own chunk, fetched the
+   first time the card is expanded. */
+const ExpenseSpendChart = lazy(() => import('./ExpenseSpendChart'));
+
+/* Hover-prefetch. Splitting these off keeps them out of the page load, but it
+   also means the FIRST click pays for the download. Warming on hover spends
+   that time while the pointer is still travelling to the button, so the click
+   itself stays instant. import() de-duplicates and caches the same promise,
+   so hovering repeatedly costs nothing and a failed warm is simply retried by
+   lazy() at render time. */
+const warmSettlementModal = () => { void import('../../components/ExpenseSettlementModal'); };
+const warmBatchModal      = () => { void import('../../components/BatchPaymentModal'); };
+const warmSpendChart      = () => { void import('./ExpenseSpendChart'); };
+const warmXlsx            = () => { void import('xlsx'); };
 import { createPortal } from 'react-dom';
 import { Col, Row } from 'reactstrap';
-import * as XLSX from 'xlsx';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
-import { expenseClaimColumns, expenseClaimsMinWidth, type ExpenseClaimRow } from '../../components/ExpenseClaimsTable';
-import ExpenseSettlementModal from '../../components/ExpenseSettlementModal';
-import BatchPaymentModal from '../../components/BatchPaymentModal';
-import { advanceRequestColumns, advanceRequestsMinWidth, DeclineReasonModal, type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
+import { expenseClaimColumns, expenseClaimsMinWidth, EXPENSE_CLAIM_BADGE_CSS, type ExpenseClaimRow } from '../../components/ExpenseClaimsTable';
+import { advanceRequestColumns, advanceRequestsMinWidth, DeclineReasonModal, ADVANCE_BADGE_CSS, type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import DataTable from '../../components/ui/DataTable';
-import { useChartTheme } from '../../hooks/useChartTheme';
 import '../../../css/expense.css';
 
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
 type DateFilter = 'all' | 'today' | 'week' | 'month' | 'year';
+
+/** Rows-per-page the viewport settled on, remembered per browser. */
+const CLAIMS_PER_PAGE_KEY = 'hrexp.claims.perPage';
+
+/* Figures the SERVER computes across every matching claim: the five KPI
+   tiles, the status-tab badges and the Spend-by-Category rollup. They used
+   to be reduced in the browser over the full list — which is the one thing
+   paging takes away. */
+interface ClaimsSummary {
+  counts: { all: number; pending: number; approved: number; rejected: number };
+  total_amount: number;
+  approved_amount: number;
+  categories: { id: number | null; name: string; spent: number }[];
+}
+const EMPTY_SUMMARY: ClaimsSummary = {
+  counts: { all: 0, pending: 0, approved: 0, rejected: 0 },
+  total_amount: 0,
+  approved_amount: 0,
+  categories: [],
+};
 
 const DATE_FILTER_LABELS: Record<DateFilter, string> = {
   all:   'All Dates',
@@ -27,19 +66,37 @@ const DATE_FILTER_LABELS: Record<DateFilter, string> = {
   year:  'This Year',
 };
 
-/**
- * Compact ₹ formatter for chart axis ticks and bar labels. Uses the Indian
- * Cr / L / K scale so large spends (or one outlier category dwarfing the rest)
- * stay readable instead of overflowing as a 12-digit number or a malformed
- * "₹34567890.0L" tick.
- */
-function fmtINRShort(v: number): string {
-  const n = Math.abs(v);
-  const sign = v < 0 ? '-' : '';
-  if (n >= 1_00_00_000) return `${sign}₹${(n / 1_00_00_000).toFixed(2)}Cr`;
-  if (n >= 1_00_000)    return `${sign}₹${(n / 1_00_000).toFixed(1)}L`;
-  if (n >= 1_000)       return `${sign}₹${(n / 1_000).toFixed(0)}K`;
-  return `${sign}₹${Math.round(n)}`;
+/* The date picker as an explicit window, computed in the BROWSER's timezone.
+ *
+ * The server now does the date narrowing, but it must narrow to the same days
+ * the user is looking at. Re-deriving "this week" server-side would put the two
+ * ends on different days for anyone outside the server's timezone, so the
+ * resolved boundaries travel with the request instead of the keyword.
+ *
+ * Deliberately the same arithmetic as withinDateFilter() below, which still
+ * runs for the Advance Requests tab. */
+export function dateFilterRange(filter: DateFilter): { from?: string; to?: string } {
+  if (filter === 'all') return {};
+  const ymd = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const now = new Date();
+  if (filter === 'today') return { from: ymd(now), to: ymd(now) };
+  if (filter === 'week') {
+    const dayIdx = (now.getDay() + 6) % 7;            // Monday-first, as below
+    const start = new Date(now); start.setDate(now.getDate() - dayIdx);
+    const end = new Date(start); end.setDate(start.getDate() + 6);
+    return { from: ymd(start), to: ymd(end) };
+  }
+  if (filter === 'month') {
+    return {
+      from: ymd(new Date(now.getFullYear(), now.getMonth(), 1)),
+      to:   ymd(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+    };
+  }
+  return {                                            // year
+    from: ymd(new Date(now.getFullYear(), 0, 1)),
+    to:   ymd(new Date(now.getFullYear(), 11, 31)),
+  };
 }
 
 function withinDateFilter(iso: string | null | undefined, filter: DateFilter): boolean {
@@ -136,7 +193,6 @@ function KpiTile({
 export default function HrExpenseManagement() {
   const { user } = useAuth();
   const toast = useToast();
-  const chartTheme = useChartTheme();
   // Claim whose Record-Payment (settlement) modal is open.
   const [settleClaimId, setSettleClaimId] = useState<number | null>(null);
   // Claim whose "Review & Approve" modal is open.
@@ -188,17 +244,88 @@ export default function HrExpenseManagement() {
     return user.user_type === 'client_admin';
   }, [user]);
 
-  const refresh = async () => {
-    setLoading(true);
+  /* ── Claims list: paged on the SERVER ────────────────────────────────────
+   * This used to fetch scope=all — every claim in the tenant — and do the
+   * status tabs, the search, the date window and the KPI maths in the browser.
+   * Measured at 700 claims: 205 ms and a 762 KB payload, growing with the
+   * tenant and with no ceiling. One page of 25 is 17 ms and 27 KB, and stays
+   * there however many claims exist.
+   *
+   * The endpoint answers { data, meta, summary } when asked for a page. The
+   * summary carries the tile figures and the Spend-by-Category rollup, because
+   * those describe EVERY matching claim, not the 25 on screen — counting the
+   * page would report "Total Claims 25" on a tenant of 700.
+   *
+   * Mirrors the pattern HrExitManagement already uses for the same reason. */
+  const [page, setPage]       = useState(0);
+  const [total, setTotal]     = useState(0);
+  const [perPage, setPerPage] = useState<number>(() => {
     try {
-      const res = await api.get('/expense-claims', { params: { scope: 'all' } });
-      setRows(Array.isArray(res.data) ? res.data : []);
+      const saved = Number(localStorage.getItem(CLAIMS_PER_PAGE_KEY));
+      return Number.isFinite(saved) && saved >= 1 && saved <= 200 ? saved : 10;
+    } catch {
+      return 10;   // private mode / storage disabled
+    }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(CLAIMS_PER_PAGE_KEY, String(perPage)); } catch { /* private mode */ }
+  }, [perPage]);
+
+  /* Server-side aggregates. Starts at zero and is replaced by the first
+     response — the tiles show a real 0 for a heartbeat either way, exactly as
+     they did while the list was loading before. */
+  const [summary, setSummary] = useState<ClaimsSummary>(EMPTY_SUMMARY);
+
+  /* Typing is not a request. Without this every letter fires a fetch and the
+     answers arrive out of order — the response for "tra" landing after "trav". */
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  /* Anything that changes WHAT is being asked for goes back to page one.
+     Staying on page 4 while narrowing to three results shows an empty table
+     under a pager insisting there are four pages. */
+  useEffect(() => { setPage(0); }, [debouncedSearch, filter, dateFilter]);
+
+  /* Only the newest response is allowed to land — a slow page 1 must not
+     overwrite the page 2 the user has already moved to. */
+  const claimsReqRef = useRef(0);
+
+  const refresh = async () => {
+    const token = ++claimsReqRef.current;
+    setLoading(true);
+    const { from, to } = dateFilterRange(dateFilter);
+    try {
+      const res = await api.get('/expense-claims', {
+        params: {
+          scope: 'all',
+          page: page + 1,               // the API counts from 1, DataTable from 0
+          per_page: perPage,
+          ...(filter !== 'all' ? { status: filter } : {}),
+          ...(debouncedSearch ? { q: debouncedSearch } : {}),
+          ...(from ? { date_from: from } : {}),
+          ...(to ? { date_to: to } : {}),
+        },
+      });
+      if (token !== claimsReqRef.current) return;
+      /* `?? res.data` keeps this working against the bare-array shape — the
+         endpoint only wraps the response for callers that ask for a page. */
+      const body: any = res.data ?? {};
+      const list = Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : []);
+      setRows(list);
+      setTotal(Number(body.meta?.total ?? list.length) || 0);
+      if (body.summary) setSummary(body.summary as ClaimsSummary);
     } catch (err: any) {
+      if (token !== claimsReqRef.current) return;
       const msg = err?.response?.data?.message || 'Could not load claims.';
       toast.error('Load failed', msg);
       setRows([]);
+      setTotal(0);
+      setSummary(EMPTY_SUMMARY);
     } finally {
-      setLoading(false);
+      if (token === claimsReqRef.current) setLoading(false);
     }
   };
 
@@ -217,10 +344,16 @@ export default function HrExpenseManagement() {
   };
 
   useEffect(() => {
-    refresh();
     refreshAdvances();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* The claims list is a server query now, so it re-runs whenever any part of
+     that query changes — page, size, status tab, search or date window. */
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, perPage, filter, debouncedSearch, dateFilter]);
 
   const onAct = async (
     claimId: number,
@@ -232,9 +365,16 @@ export default function HrExpenseManagement() {
       // Patch the row in place so the Approval Audit Log reflects the new
       // Reporting Manager / HR status immediately, without a page refresh.
       // The endpoint returns the fully-serialized, updated claim.
-      if (res?.data?.id) setRows(prev => prev.map(r => r.id === res.data.id ? res.data : r));
+      if (res?.data?.id) {
+        setRows(prev => prev.map(r => r.id === res.data.id ? res.data : r));
+      }
       toast.success('Updated', 'Claim status updated');
-      await refresh();
+      /* Only refetch when the response did NOT carry the updated row.
+         The endpoint returns the fully-serialized claim and it is patched in
+         above, so the unconditional refresh() that used to follow re-downloaded
+         every claim in the tenant to arrive at the list we already had. The
+         fallback stays for any response shape that omits the row. */
+      if (!res?.data?.id) await refresh();
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Action failed.';
       toast.error('Action failed', msg);
@@ -267,21 +407,16 @@ export default function HrExpenseManagement() {
     }
   };
 
-  const dateFilteredRows = useMemo(
-    () => rows.filter(r => withinDateFilter(r.expense_date, dateFilter)),
-    [rows, dateFilter],
-  );
+  /* `rows` is ONE PAGE now, already narrowed by the server to this date window,
+     status tab and search term — so nothing here re-filters it. The figures that
+     describe the whole set come from `summary`, not from these rows. */
   const dateFilteredAdvances = useMemo(
     () => advanceRows.filter(a => withinDateFilter(a.requested_date, dateFilter)),
     [advanceRows, dateFilter],
   );
 
-  const counts = {
-    all:      dateFilteredRows.length,
-    pending:  dateFilteredRows.filter(r => r.status === 'pending').length,
-    approved: dateFilteredRows.filter(r => r.status === 'approved').length,
-    rejected: dateFilteredRows.filter(r => r.status === 'rejected').length,
-  };
+  // Straight from the server — counting the page would report "Total Claims 25".
+  const counts = summary.counts;
   // Used-For tab counts (from the date-filtered set, before the status filter).
   const advUsedForCounts = {
     self:    dateFilteredAdvances.filter(a => (a.used_for || 'self') === 'self').length,
@@ -299,12 +434,11 @@ export default function HrExpenseManagement() {
   // were previously summed in here while being excluded from the Approved
   // card and the Spend-by-Category chart, which made the figures look like
   // they mixed statuses (QA #87). Total = pending + approved (money in play).
-  const totalAmount = dateFilteredRows
-    .filter(r => r.status !== 'rejected')
-    .reduce((sum, r) => sum + Number(r.amount || 0), 0);
-  const approvedAmount = dateFilteredRows
-    .filter(r => r.status === 'approved')
-    .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  /* Same two sums the browser used to reduce, now SUM(...) FILTER(...) in SQL —
+     total excludes rejected (that money is not in play, QA #87), approved is
+     approved only. */
+  const totalAmount    = summary.total_amount;
+  const approvedAmount = summary.approved_amount;
   const advanceTotalAmount = dateFilteredAdvances
     .filter(a => a.status !== 'rejected')
     .reduce((sum, a) => sum + Number(a.amount || 0), 0);
@@ -350,32 +484,17 @@ export default function HrExpenseManagement() {
     return CAT_PALETTE[Math.abs(h) % CAT_PALETTE.length];
   };
 
-  const categoryRollup = useMemo(() => {
-    const byKey = new Map<string, { id: number | null; name: string; spent: number }>();
-    for (const r of dateFilteredRows) {
-      // Spend reflects money actually owed — only APPROVED claims count.
-      // Pending / rejected claims must not inflate the category totals.
-      if (r.status !== 'approved') continue;
-      const id = r.category_id ?? null;
-      const name = r.category_name || '—';
-      const key = id != null ? `id:${id}` : `nm:${name.toLowerCase()}`;
-      const cur = byKey.get(key) || { id, name, spent: 0 };
-      cur.spent += Number(r.amount || 0);
-      byKey.set(key, cur);
-    }
-    /* Categories with no approved claim are NOT padded in (CBC #159).
-       They used to be, which is why the legend carried a dozen entries reading
-       "—" and the axis reserved a slot for each. The chart answers "where did
-       the money go"; a category no money went to is not an answer. */
-    return Array.from(byKey.values())
-      .filter(row => Number(row.spent) > 0)
-      .map(row => ({
-        ...row,
-        color: colorForCat(`${row.id ?? ''}:${row.name}`),
-      }));
-    // `categories` is no longer read here — the padding loop that used it is
-    // gone, so it leaves the dependency list with it.
-  }, [dateFilteredRows]);
+  /* Spend by category — grouped in SQL over every approved claim in the
+     window, not over the 25 rows on screen. The server drops zero-spend
+     categories (CBC #159); the colour stays a client concern so the palette
+     cannot drift between the two. */
+  const categoryRollup = useMemo(
+    () => summary.categories.map(row => ({
+      ...row,
+      color: colorForCat(`${row.id ?? ''}:${row.name}`),
+    })),
+    [summary.categories],
+  );
 
   // Advance Requests analytics — grouped by Advance Type (only APPROVED advances
   // count toward the disbursed total), mirroring the expense category rollup.
@@ -425,17 +544,12 @@ export default function HrExpenseManagement() {
     return true;
   });
 
-  const filtered = dateFilteredRows.filter(r => {
-    if (filter !== 'all' && r.status !== filter) return false;
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      return [
-        r.claim_no, r.employee_name, r.employee_code,
-        r.category_name, r.department_name, r.title, r.vendor, r.purpose,
-      ].some(v => (v || '').toString().toLowerCase().includes(q));
-    }
-    return true;
-  });
+  /* The server already applied the status tab and the search across the same
+     eight fields this used to scan (claim no, employee name + code, category,
+     department, title, vendor, purpose), so the page is rendered as it
+     arrives. Re-filtering here would drop rows the server counted, and the
+     pager would then disagree with the table. */
+  const filtered = rows;
 
   /* Still needed by the Export handlers — they export what the filters select,
      not just the visible page. Paging itself is <DataTable>'s job now. */
@@ -564,6 +678,9 @@ export default function HrExpenseManagement() {
 
   // Active export config follows the visible tab (advance vs expense).
   const activeExportHeader = isAdvanceModule ? ADVANCE_EXPORT_HEADER : EXPORT_HEADER;
+  /* What is on screen. The export handlers shadow this with the full
+     server-side set (see resolveExportRows); this one only backs the
+     "nothing to export" guard. */
   const activeExportRows: (ExpenseClaimRow | AdvanceRequestRow)[] = isAdvanceModule ? filteredAdvances : filtered;
   const activeExportRow = (r: ExpenseClaimRow | AdvanceRequestRow): (string | number | null)[] =>
     isAdvanceModule ? advanceExportRow(r as AdvanceRequestRow) : exportRow(r as ExpenseClaimRow);
@@ -576,6 +693,42 @@ export default function HrExpenseManagement() {
     return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   };
   const exportBaseName = () => `${isAdvanceModule ? 'advance-requests' : 'expense-claims'}-${dateFilter}-${exportStamp()}`;
+
+  /* Export has always meant "everything the filters select", not "what is on
+   * screen" — and now that the table holds one page, `filtered` is no longer
+   * the whole set. So the handlers ask the server for the same query WITHOUT a
+   * page, once, at the moment Export is clicked.
+   *
+   * Only the claims side needs this: the Advance Requests tab still holds its
+   * full list in memory.
+   *
+   * On failure it falls back to the rows already on screen rather than
+   * exporting nothing — a short export beats a dead button, and the toast says
+   * how many rows went out. */
+  const fetchAllForExport = async (): Promise<ExpenseClaimRow[]> => {
+    const { from, to } = dateFilterRange(dateFilter);
+    try {
+      const res = await api.get('/expense-claims', {
+        params: {
+          scope: 'all',
+          ...(filter !== 'all' ? { status: filter } : {}),
+          ...(debouncedSearch ? { q: debouncedSearch } : {}),
+          ...(from ? { date_from: from } : {}),
+          ...(to ? { date_to: to } : {}),
+        },
+      });
+      const body: any = res.data ?? {};
+      return Array.isArray(body) ? body : (Array.isArray(body.data) ? body.data : rows);
+    } catch {
+      toast.warning('Export limited', 'Could not fetch the full list — exporting the rows on screen.');
+      return rows;
+    }
+  };
+
+  /* Rows an export should write: every match on the claims tab, the in-memory
+     list on the advances tab. */
+  const resolveExportRows = async (): Promise<(ExpenseClaimRow | AdvanceRequestRow)[]> =>
+    isAdvanceModule ? filteredAdvances : await fetchAllForExport();
 
   const hasExportRows = (): boolean => {
     if (activeExportRows.length === 0) {
@@ -596,11 +749,16 @@ export default function HrExpenseManagement() {
     URL.revokeObjectURL(url);
   };
 
-  const exportDoneToast = (fmt: string) =>
-    toast.success('Export ready', `${activeExportRows.length} ${exportNoun}${activeExportRows.length === 1 ? '' : 's'} exported to ${fmt}.`);
+  /* Count is passed in, not closed over. The handlers shadow activeExportRows
+     with the full server-side set, but this helper is defined outside them — it
+     would have reported the size of the page on screen after writing a file
+     containing every match. */
+  const exportDoneToast = (fmt: string, n: number) =>
+    toast.success('Export ready', `${n} ${exportNoun}${n === 1 ? '' : 's'} exported to ${fmt}.`);
 
-  const exportCsv = () => {
+  const exportCsv = async () => {
     if (!hasExportRows()) return;
+    const activeExportRows = await resolveExportRows();
     const escape = (v: any): string => {
       if (v === null || v === undefined) return '';
       const s = String(v);
@@ -611,18 +769,24 @@ export default function HrExpenseManagement() {
     for (const r of activeExportRows) lines.push(activeExportRow(r).map(escape).join(','));
     const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
     triggerDownload(blob, `${exportBaseName()}.csv`);
-    exportDoneToast('CSV');
+    exportDoneToast('CSV', activeExportRows.length);
   };
 
-  const exportXlsx = () => {
+  /* xlsx is 419 KB — a fifth of everything this page downloads — and it is
+     only ever used by this one handler. Imported at the top it landed on every
+     visit, including the ones that never touch Export. Fetched here it costs
+     nothing until the button is actually pressed. */
+  const exportXlsx = async () => {
     if (!hasExportRows()) return;
+    const activeExportRows = await resolveExportRows();
     try {
+      const XLSX = await import('xlsx');
       const aoa = [activeExportHeader, ...activeExportRows.map(r => activeExportRow(r).map(v => v ?? ''))];
       const ws = XLSX.utils.aoa_to_sheet(aoa);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, isAdvanceModule ? 'Advance Requests' : 'Expense Claims');
       XLSX.writeFile(wb, `${exportBaseName()}.xlsx`);
-      exportDoneToast('Excel');
+      exportDoneToast('Excel', activeExportRows.length);
     } catch {
       toast.error('Export failed', 'Could not generate the Excel file. Please try again.');
     }
@@ -643,6 +807,7 @@ export default function HrExpenseManagement() {
    * implementation of the same filtering, free to disagree with this one. */
   const exportPdf = async () => {
     if (!hasExportRows()) return;
+    const activeExportRows = await resolveExportRows();
     const title = `${isAdvanceModule ? 'Advance Requests' : 'Expense Claims'} — ${DATE_FILTER_LABELS[dateFilter]}`;
     try {
       const resp = await api.post('/expense-claims/export-pdf', {
@@ -653,7 +818,7 @@ export default function HrExpenseManagement() {
         rows: activeExportRows.map(r => activeExportRow(r).map(c => String(c ?? ''))),
       }, { responseType: 'blob' });
       triggerDownload(new Blob([resp.data], { type: 'application/pdf' }), `${exportBaseName()}.pdf`);
-      exportDoneToast('PDF');
+      exportDoneToast('PDF', activeExportRows.length);
     } catch (err: any) {
       /* The body is a Blob because the request asked for one, so the server's
          message has to be read back as text before it is JSON. */
@@ -747,6 +912,8 @@ export default function HrExpenseManagement() {
           type="button"
           className="hrexp-cta rounded-pill"
           onClick={() => setBatchOpen(true)}
+          onMouseEnter={warmBatchModal}
+          onFocus={warmBatchModal}
           title="Pay several small approved claims of one employee at once"
         >
           <i className="ri-stack-line me-2" style={{ fontSize: 16 }} />
@@ -758,6 +925,8 @@ export default function HrExpenseManagement() {
         type="button"
         className="hrexp-cta rounded-pill"
         onClick={toggleExport}
+        onMouseEnter={warmXlsx}
+        onFocus={warmXlsx}
         aria-haspopup="true"
         aria-expanded={exportOpen}
       >
@@ -833,6 +1002,12 @@ export default function HrExpenseManagement() {
   return (
     <>
       <MasterFormStyles />
+      {/* Pill tints for the claims + advances grids. This page uses only the
+          column factories from those two files, so the <style> their own
+          component renders never mounted here — every badge stayed light in
+          dark mode. Mount them explicitly. */}
+      <style>{EXPENSE_CLAIM_BADGE_CSS}</style>
+      <style>{ADVANCE_BADGE_CSS}</style>
       <div className="hrexp-page">
 
         {/* Plain .frm-cstrip, exactly as every other HRMS module renders its
@@ -1011,6 +1186,8 @@ export default function HrExpenseManagement() {
           <button
             type="button"
             onClick={() => setAnalyticsOpen(o => !o)}
+            onMouseEnter={warmSpendChart}
+            onFocus={warmSpendChart}
             className="btn w-100 d-flex align-items-center justify-content-between"
             style={{ padding: '13px 18px', border: 'none', background: 'transparent' }}
             aria-expanded={analyticsOpen}
@@ -1062,92 +1239,12 @@ export default function HrExpenseManagement() {
                 </div>
               ) : (
                 <>
-                  <div style={{ width: '100%', height: 320 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={spendByCategory.map(c => ({
-                          name:  c.name,
-                          spent: Math.round(c.spent),
-                          color: c.color,
-                        }))}
-                        margin={{ top: 24, right: 12, left: 0, bottom: 48 }}
-                        barCategoryGap="22%"
-                      >
-                        <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
-                        <XAxis
-                          dataKey="name"
-                          interval={0}
-                          axisLine={false}
-                          tickLine={false}
-                          height={64}
-                          // Rotate + truncate so all category names stay legible
-                          // instead of overlapping in one flat row. Full name
-                          // shows on hover via <title>.
-                          tick={(props: any) => {
-                            const { x, y, payload } = props;
-                            const label = String(payload?.value ?? '');
-                            const short = label.length > 14 ? label.slice(0, 13) + '…' : label;
-                            return (
-                              <g transform={`translate(${x},${y})`}>
-                                <text
-                                  dy={10}
-                                  textAnchor="end"
-                                  transform="rotate(-35)"
-                                  fontSize={10.5}
-                                  fontWeight={600}
-                                  fill={chartTheme.axisTick}
-                                >
-                                  <title>{label}</title>
-                                  {short}
-                                </text>
-                              </g>
-                            );
-                          }}
-                        />
-                        <YAxis
-                          tick={{ fontSize: 10, fill: chartTheme.axisTickMuted }}
-                          axisLine={false}
-                          tickLine={false}
-                          width={64}
-                          tickFormatter={fmtINRShort}
-                        />
-                        <Tooltip
-                          cursor={{ fill: 'rgba(124,92,252,0.06)' }}
-                          contentStyle={{
-                            background: chartTheme.tooltipBg,
-                            border: `1px solid ${chartTheme.tooltipBorder}`,
-                            borderRadius: 8, fontSize: 12, padding: '6px 10px',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                          }}
-                          itemStyle={{ color: chartTheme.axisTick }}
-                          labelStyle={{ color: chartTheme.axisTick }}
-                          formatter={(value: any) => [`₹${Number(value).toLocaleString('en-IN')}`, 'Spent']}
-                        />
-                        <Bar dataKey="spent" radius={[6, 6, 0, 0]}>
-                          {spendByCategory.map((c, i) => (
-                            <Cell key={`cell-${i}`} fill={c.color} />
-                          ))}
-                          <LabelList
-                            dataKey="spent"
-                            position="top"
-                            formatter={(v: any) => Number(v) > 0 ? fmtINRShort(Number(v)) : ''}
-                            style={{ fontSize: 10.5, fontWeight: 700, fill: chartTheme.axisTick }}
-                          />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="d-flex flex-wrap" style={{ gap: '6px 16px', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--vz-border-color)' }}>
-                    {spendByCategory.map(c => (
-                      <div key={`leg:${c.id}:${c.name}`} className="d-inline-flex align-items-center gap-2" style={{ fontSize: 11 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
-                        <span className="fw-semibold" style={{ color: 'var(--vz-body-color, #1f2937)' }}>{c.name}</span>
-                        <span className="text-muted" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                          {c.spent > 0 ? `₹${Number(c.spent).toLocaleString('en-IN')}` : '—'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                  {/* Chart + legend moved verbatim into ExpenseSpendChart so
+                      recharts loads only when this card is opened. fallback
+                      reserves the same 320px so the card does not jump. */}
+                  <Suspense fallback={<div style={{ width: '100%', height: 320 }} />}>
+                    <ExpenseSpendChart data={spendByCategory} />
+                  </Suspense>
                 </>
               )}
             </div>
@@ -1180,6 +1277,12 @@ export default function HrExpenseManagement() {
             the right (DataTable renders both).
             Advances and Claims are two different row shapes, so each gets its
             own instance with its own column set. */}
+        {/* Warm the settlement modal on first hover over the grid. Record
+            Payment and Review & Approve both live in the row actions, and the
+            pointer always crosses the table on its way to them — so the 159 KB
+            is already in flight by the time the button is clicked. Attaching it
+            here instead of to each button keeps the column factories unchanged. */}
+        <div onMouseEnter={warmSettlementModal}>
         {module === 'advance' ? (
           <DataTable<AdvanceRequestRow>
             data={filteredAdvances}
@@ -1233,6 +1336,16 @@ export default function HrExpenseManagement() {
             loading={loading || switching}
             searchValue={search}
             onSearchChange={setSearch}
+            /* Paging is the server's job — `data` is ONE page, and the pager's
+               "showing x–y of z" reads the server's total instead of counting
+               the rows on screen. pageIndex is controlled, so a page that fails
+               to load never leaves the pager claiming rows that aren't there. */
+            serverPagination={{
+              total,
+              pageIndex: page,
+              onPageChange: setPage,
+              onPageSizeChange: setPerPage,
+            }}
             searchPlaceholder="Search employee, claim no, category, vendor…"
             tabs={statusTabs}
             activeTab={filter}
@@ -1246,49 +1359,67 @@ export default function HrExpenseManagement() {
             }
           />
         )}
+        </div>
       </div>
 
-      {/* Consolidated (batch) payment — settle several small approved claims at once. */}
-      <BatchPaymentModal open={batchOpen} onClose={() => setBatchOpen(false)} onDone={refresh} />
+      {/* Every modal below is lazily loaded, so each is mounted only while it is
+          actually open — otherwise React fetches the chunk on first render and
+          the split buys nothing. All of them already returned null when closed,
+          so unmounting changes nothing the user can see; they reset their own
+          state on open regardless. fallback={null} because a modal that has not
+          been asked for should show nothing at all. */}
+      <Suspense fallback={null}>
+        {/* Consolidated (batch) payment — settle several small approved claims at once. */}
+        {batchOpen && (
+          <BatchPaymentModal open onClose={() => setBatchOpen(false)} onDone={refresh} />
+        )}
 
-      {/* Record Payment (settlement) for an approved claim — partial payments supported. */}
-      <ExpenseSettlementModal
-        claimId={settleClaimId}
-        onClose={() => setSettleClaimId(null)}
-        onDone={refresh}
-      />
+        {/* Record Payment (settlement) for an approved claim — partial payments supported. */}
+        {settleClaimId != null && (
+          <ExpenseSettlementModal
+            claimId={settleClaimId}
+            onClose={() => setSettleClaimId(null)}
+            onDone={refresh}
+          />
+        )}
 
-      {/* Review & Approve — HR sets adjustments and approves/rejects a pending claim. */}
-      <ExpenseSettlementModal
-        claimId={reviewClaimId}
-        review
-        onClose={() => setReviewClaimId(null)}
-        onDone={refresh}
-        onGoToInbox={() => { window.location.href = '/inbox'; }}
-      />
+        {/* Review & Approve — HR sets adjustments and approves/rejects a pending claim. */}
+        {reviewClaimId != null && (
+          <ExpenseSettlementModal
+            claimId={reviewClaimId}
+            review
+            onClose={() => setReviewClaimId(null)}
+            onDone={refresh}
+            onGoToInbox={() => { window.location.href = '/inbox'; }}
+          />
+        )}
 
-      {/* Advance settlement + review — SAME modal, driven off the advance endpoints.
-          These refresh the ADVANCE list (not claims), and also on close so the
-          row reflects a just-recorded payout instantly without a reload. */}
-      <ExpenseSettlementModal
-        claimId={settleAdvId}
-        basePath="/advance-requests"
-        kind="advance"
-        canApproveSettle={canHrApprove}
-        onClose={() => { setSettleAdvId(null); refreshAdvances(); }}
-        onDone={refreshAdvances}
-      />
-      <ExpenseSettlementModal
-        claimId={reviewAdvId}
-        basePath="/advance-requests"
-        kind="advance"
-        review
-        canApproveSettle={canHrApprove}
-        onClose={() => { setReviewAdvId(null); refreshAdvances(); }}
-        onDone={refreshAdvances}
-        onGoToInbox={() => { window.location.href = '/inbox'; }}
-      />
-      {/* Full decline reason for a rejected advance (Remark column / audit "View all"). */}
+        {/* Advance settlement + review — SAME modal, driven off the advance endpoints.
+            These refresh the ADVANCE list (not claims), and also on close so the
+            row reflects a just-recorded payout instantly without a reload. */}
+        {settleAdvId != null && (
+          <ExpenseSettlementModal
+            claimId={settleAdvId}
+            basePath="/advance-requests"
+            kind="advance"
+            canApproveSettle={canHrApprove}
+            onClose={() => { setSettleAdvId(null); refreshAdvances(); }}
+            onDone={refreshAdvances}
+          />
+        )}
+        {reviewAdvId != null && (
+          <ExpenseSettlementModal
+            claimId={reviewAdvId}
+            basePath="/advance-requests"
+            kind="advance"
+            review
+            canApproveSettle={canHrApprove}
+            onClose={() => { setReviewAdvId(null); refreshAdvances(); }}
+            onDone={refreshAdvances}
+            onGoToInbox={() => { window.location.href = '/inbox'; }}
+          />
+        )}
+      </Suspense>
       <DeclineReasonModal row={remarkAdv} onClose={() => setRemarkAdv(null)} />
     </>
   );

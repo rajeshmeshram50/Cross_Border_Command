@@ -167,11 +167,11 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
   if (!open) return null;
 
   const pillStatus = (c: PayableClaim) => {
-    if (c.status === 'approved') return <span style={{ ...chip, background: '#d1fae5', color: '#065f46' }}>Approved</span>;
+    if (c.status === 'approved') return <span className="bpw-chip-ok" style={{ ...chip, background: '#d1fae5', color: '#065f46' }}>Approved</span>;
     const stageLabel = c.pending_stage === 'hr' ? 'Pending HR approval' : 'Pending reporting manager';
     return (
       <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
-        <span style={{ ...chip, background: '#fef3c7', color: '#a16207' }}>Pending review</span>
+        <span className="bpw-chip-warn" style={{ ...chip, background: '#fef3c7', color: '#a16207' }}>Pending review</span>
         <span style={{ fontSize: 10, color: '#94a3b8' }}>({stageLabel})</span>
       </span>
     );
@@ -184,12 +184,12 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
     <>
       <style>{BPW_CSS}</style>
       <div style={backdrop} onMouseDown={saving ? undefined : onClose}>
-        <div style={{ ...card, position: 'relative' }} onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
+        <div className="bpw-card" style={{ ...card, position: 'relative' }} onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
           {/* Full-modal blocking loader while the payment is processing — no
               other control (close, reupload, pay again) is clickable until it
               finishes. (QA #112) */}
           {saving && (
-            <div style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(255,255,255,.72)', backdropFilter: 'blur(1.5px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+            <div className="bpw-veil" style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(255,255,255,.72)', backdropFilter: 'blur(1.5px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
               <svg className="bpw-spin" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
               <div style={{ fontSize: 14, fontWeight: 800, color: '#0e7490' }}>Processing payment…</div>
               <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280' }}>Please don’t close this window.</div>
@@ -214,8 +214,8 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
               <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>Previous batch payments</div>
               <button style={primaryBtn} onClick={() => { resetForm(); setView('select'); }}><span style={{ fontSize: 16 }}>＋</span> Make New Payment</button>
             </div>
-            <div style={tableWrap}>
-              <table style={table}>
+            <div className="bpw-tablewrap" style={tableWrap}>
+              <table className="bpw-table" style={table}>
                 <thead><tr>{['SR NO', 'DATE', 'EMPLOYEE', 'EXPENSE IDS', 'METHOD', 'UTR / REFERENCE', 'AMOUNT', 'NOTE', 'ZOHO', 'PROOF'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
                 <tbody>
                   {loading ? <tr><td colSpan={10} style={emptyTd}>Loading…</td></tr>
@@ -243,7 +243,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
           </div>
           <div className="bpw-foot" style={footer}>
             <div style={{ fontSize: 12.5, color: '#64748b' }}>Pay several small approved claims of one employee at once.</div>
-            <button style={ghostBtn} onClick={onClose}>Close</button>
+            <button className="bpw-ghost" style={ghostBtn} onClick={onClose}>Close</button>
           </div>
         </div>
       </div>
@@ -253,9 +253,9 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
           backdrop / History) returns to the history popup underneath. ═══ */}
       {(view === 'select' || view === 'pay') && (
         <div style={{ ...backdrop, zIndex: 9100 }} onMouseDown={saving ? undefined : () => { resetForm(); setView('history'); }}>
-          <div style={{ ...card, position: 'relative' }} onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
+          <div className="bpw-card" style={{ ...card, position: 'relative' }} onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
             {saving && (
-              <div style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(255,255,255,.72)', backdropFilter: 'blur(1.5px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+              <div className="bpw-veil" style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(255,255,255,.72)', backdropFilter: 'blur(1.5px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
                 <svg className="bpw-spin" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
                 <div style={{ fontSize: 14, fontWeight: 800, color: '#0e7490' }}>Processing payment…</div>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280' }}>Please don’t close this window.</div>
@@ -272,7 +272,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
               </div>
               <button onClick={() => { resetForm(); setView('history'); }} style={xBtn} aria-label="Close">✕</button>
             </div>
-            <div className="bpw-rail" style={rail}>
+            <div className="bpw-rail" className="bpw-railbar" style={rail}>
               <div className="bpw-stepper">
                 {[
                   { n: 1, key: 'select', title: 'Select claims', sub: 'Employee & expenses', icon: 'ri-list-check-2' },
@@ -319,8 +319,8 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                   />
                 </div>
 
-                <div style={tableWrap}>
-                  <table style={table}>
+                <div className="bpw-tablewrap" style={tableWrap}>
+                  <table className="bpw-table" style={table}>
                     <thead><tr>
                       <th style={{ ...th, width: 40 }}><input type="checkbox" checked={allChecked} onChange={toggleAll} disabled={payableRows.length === 0} /></th>
                       {['SR', 'EXP ID', 'DATE', 'CATEGORY', 'NOTE', 'FILES', 'AMOUNT', 'STATUS', 'ACTION'].map(h => <th key={h} style={th}>{h}</th>)}
@@ -330,7 +330,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                         : loading ? <tr><td colSpan={10} style={emptyTd}>Loading…</td></tr>
                           : payable.length === 0 ? <tr><td colSpan={10} style={emptyTd}>No unpaid claims for this employee.</td></tr>
                             : claimSlice.map((c, i) => (
-                              <tr key={c.id} style={selected.has(c.id) ? { background: '#ecfeff' } : undefined}>
+                              <tr key={c.id} className={selected.has(c.id) ? 'bpw-row-sel' : undefined} style={selected.has(c.id) ? { background: '#ecfeff' } : undefined}>
                                 <td style={td}>{c.payable ? <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} /> : <span title="Approve it first" style={{ color: '#cbd5e1' }}>—</span>}</td>
                                 <td style={td}>{(claimPage - 1) * PAGE + i + 1}</td>
                                 <td style={{ ...td, fontFamily: 'monospace' }}>{c.exp_no}</td>
@@ -341,7 +341,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                                 <td style={{ ...td, fontWeight: 700 }}>{inr(c.amount)}</td>
                                 <td style={td}>{pillStatus(c)}</td>
                                 <td style={td}>{c.payable
-                                  ? <button style={ghostSm} onClick={() => setViewId(c.id)}>View</button>
+                                  ? <button className="bpw-ghost" style={ghostSm} onClick={() => setViewId(c.id)}>View</button>
                                   : c.pending_stage === 'hr'
                                     ? <button style={warnSm} onClick={() => setReviewId(c.id)}>Review &amp; Approve</button>
                                     : <button style={disabledSm} disabled title="Waiting for the reporting manager to approve first">Review &amp; Approve</button>}</td>
@@ -375,17 +375,17 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                 <div style={grid3}>
                   <div>
                     <label style={lbl}>UTR / Reference Number <span style={req}>*</span></label>
-                    <input style={input} value={reference} onChange={e => setReference(e.target.value)} placeholder="e.g. HDFC0012345678" />
+                    <input className="bpw-input" style={input} value={reference} onChange={e => setReference(e.target.value)} placeholder="e.g. HDFC0012345678" />
                   </div>
                   <div>
                     <label style={lbl}>Method <span style={req}>*</span></label>
-                    <select style={input} value={paymentType} onChange={e => setPaymentType(e.target.value)}>
+                    <select className="bpw-input" style={input} value={paymentType} onChange={e => setPaymentType(e.target.value)}>
                       {['Bank Transfer', 'UPI', 'PhonePe', 'Cheque'].map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                   </div>
                   <div>
                     <label style={lbl}>Goods / Service <span style={req}>*</span></label>
-                    <select style={input} value={expenseType} onChange={e => setExpenseType(e.target.value as 'Goods' | 'Service')}>
+                    <select className="bpw-input" style={input} value={expenseType} onChange={e => setExpenseType(e.target.value as 'Goods' | 'Service')}>
                       <option value="Goods">Goods</option><option value="Service">Service</option>
                     </select>
                   </div>
@@ -393,7 +393,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                 <div style={{ ...grid2, marginTop: 14 }}>
                   <div>
                     <label style={lbl}>Note (optional)</label>
-                    <input style={input} value={note} onChange={e => setNote(e.target.value)} placeholder="Reference / remark for this payout" />
+                    <input className="bpw-input" style={input} value={note} onChange={e => setNote(e.target.value)} placeholder="Reference / remark for this payout" />
                   </div>
                   <div>
                     <label style={lbl}>Proof of payment <span style={req}>*</span></label>
@@ -415,18 +415,18 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                       e.target.value = '';
                     }} />
                     {proof ? (
-                      <div style={proofBox}>
+                      <div className="bpw-sunken" style={proofBox}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                           <i className="ri-file-text-line" style={{ fontSize: 18, color: '#0e7490', flexShrink: 0 }} />
                           <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600, color: '#0f172a' }}>{proof.name}</span>
                         </span>
                         <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                          <button type="button" style={proofBtn} onClick={() => window.open(URL.createObjectURL(proof), '_blank')}><i className="ri-eye-line" /> View</button>
-                          <button type="button" style={proofBtn} onClick={() => proofInputRef.current?.click()}><i className="ri-refresh-line" /> Reupload</button>
+                          <button type="button" className="bpw-ghost" style={proofBtn} onClick={() => window.open(URL.createObjectURL(proof), '_blank')}><i className="ri-eye-line" /> View</button>
+                          <button type="button" className="bpw-ghost" style={proofBtn} onClick={() => proofInputRef.current?.click()}><i className="ri-refresh-line" /> Reupload</button>
                         </span>
                       </div>
                     ) : (
-                      <div style={attachZone} onClick={() => proofInputRef.current?.click()}>
+                      <div className="bpw-attach" style={attachZone} onClick={() => proofInputRef.current?.click()}>
                         <i className="ri-attachment-2" style={{ fontSize: 18 }} /> <span style={{ fontWeight: 700, letterSpacing: .3 }}>ATTACH PROOF</span>
                       </div>
                     )}
@@ -444,9 +444,9 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                   : 'Pay several small approved claims of one employee at once.'}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              {view === 'pay' && <button style={ghostBtn} onClick={() => setView('select')}>← Back</button>}
-              {view === 'select' && <button style={ghostBtn} onClick={() => { resetForm(); setView('history'); }}>← History</button>}
-              <button style={ghostBtn} onClick={onClose}>Close</button>
+              {view === 'pay' && <button className="bpw-ghost" style={ghostBtn} onClick={() => setView('select')}>← Back</button>}
+              {view === 'select' && <button className="bpw-ghost" style={ghostBtn} onClick={() => { resetForm(); setView('history'); }}>← History</button>}
+              <button className="bpw-ghost" style={ghostBtn} onClick={onClose}>Close</button>
               {view === 'select' && (
                 <button style={{ ...primaryBtn, opacity: selected.size === 0 ? .5 : 1 }} disabled={selected.size === 0} onClick={() => setView('pay')}>Next → {inr(total)}</button>
               )}
@@ -481,14 +481,15 @@ function ExpenseIds({ nos }: { nos: string[] }) {
   const close = () => { t.current = setTimeout(() => setRect(null), 120); };
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-      {shown.map(n => <span key={n} style={idPill}>{n}</span>)}
+      {shown.map(n => <span key={n} className="bpw-idpill" style={idPill}>{n}</span>)}
       {rest > 0 && <span ref={ref} style={morePill} onMouseEnter={open} onMouseLeave={close}>+{rest}</span>}
       {rect && createPortal(
         <div onMouseEnter={open} onMouseLeave={close}
+          className="bpw-popover"
           style={{ ...popover, top: rect.bottom + 6, left: Math.max(8, Math.min(rect.left, window.innerWidth - 340)) }}>
           <div style={popTitle}>EXPENSE IDS ({nos.length})</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {nos.map(n => <span key={n} style={idPill}>{n}</span>)}
+            {nos.map(n => <span key={n} className="bpw-idpill" style={idPill}>{n}</span>)}
           </div>
         </div>, document.body)}
     </span>
@@ -605,5 +606,95 @@ const BPW_CSS = `
 .bpw-step-pending .bpw-num{background:#e2e8f0;color:#94a3b8;}
 .bpw-step-pending .bpw-title{color:#94a3b8;}
 .bpw-step-pending .bpw-sub{color:#cbd5e1;}
+
+/* DARK MODE
+   The whole modal was hard-coded light — a white card over a dark page.
+   Every surface is set by an inline style object, so each override needs
+   !important, the same reason the short-viewport rules above carry it.
+   Palette is lifted from ExpenseSettlementModal so the two Expense modals
+   read as one modal in the dark rather than two different ones. */
+[data-bs-theme="dark"] .bpw-card,
+[data-layout-mode="dark"] .bpw-card{background:#0b2029 !important;color:#e2e8f0 !important;box-shadow:0 30px 80px rgba(0,0,0,.6) !important;/* !important is load-bearing here: these are set as INLINE custom properties on the card so the select can read them, and an inline custom property beats a plain rule — without it the employee dropdown stayed white. */--vz-card-bg:#0b2029 !important;--vz-border-color:#173947 !important;--vz-secondary-bg:#0d2730 !important;--vz-body-color:#e2e8f0 !important;--vz-secondary-color:#94a3b8 !important;--vz-primary-bg-subtle:rgba(6,182,212,.16) !important;}
+/* Body / rail / footer bands. */
+[data-bs-theme="dark"] .bpw-card .bpw-body,
+[data-layout-mode="dark"] .bpw-card .bpw-body{background:#0b2029 !important;color:#e2e8f0 !important;}
+[data-bs-theme="dark"] .bpw-card .bpw-foot,
+[data-layout-mode="dark"] .bpw-card .bpw-foot{background:#0c232c !important;border-color:#173947 !important;color:#94a3b8 !important;}
+[data-bs-theme="dark"] .bpw-card .bpw-railbar,
+[data-layout-mode="dark"] .bpw-card .bpw-railbar{background:#0c232c !important;border-color:#173947 !important;color:#cbd5e1 !important;}
+[data-bs-theme="dark"] .bpw-card label,
+[data-layout-mode="dark"] .bpw-card label{color:#94a3b8 !important;}
+/* Table — the teal head stays, the body turns over. */
+[data-bs-theme="dark"] .bpw-tablewrap,
+[data-layout-mode="dark"] .bpw-tablewrap{border-color:#173947 !important;background:#0b2029 !important;}
+[data-bs-theme="dark"] .bpw-table th,
+[data-layout-mode="dark"] .bpw-table th{background:#0e7490 !important;color:#ecfeff !important;}
+[data-bs-theme="dark"] .bpw-table td,
+[data-layout-mode="dark"] .bpw-table td{border-top-color:#173947 !important;color:#e2e8f0 !important;}
+[data-bs-theme="dark"] .bpw-table tbody tr:nth-child(even) td,
+[data-layout-mode="dark"] .bpw-table tbody tr:nth-child(even) td{background:rgba(6,182,212,.06) !important;}
+/* The ticked row carries an inline background on the <tr> itself. A
+   translucent teal on the <td> alone just tinted that near-white fill, so
+   the row still read as a light band. Clear the row first, then paint the
+   cells, and force the colour onto the inner spans that set their own. */
+[data-bs-theme="dark"] .bpw-row-sel,
+[data-layout-mode="dark"] .bpw-row-sel{background:transparent !important;}
+[data-bs-theme="dark"] .bpw-row-sel td,
+[data-layout-mode="dark"] .bpw-row-sel td{background:rgba(6,182,212,.22) !important;color:#ecfeff !important;}
+[data-bs-theme="dark"] .bpw-table tbody tr:hover td,
+[data-layout-mode="dark"] .bpw-table tbody tr:hover td{background:rgba(6,182,212,.12) !important;}
+/* Inputs and the neutral buttons — white fills on a dark card. */
+[data-bs-theme="dark"] .bpw-input,
+[data-layout-mode="dark"] .bpw-input{background:#0d2730 !important;border-color:#173947 !important;color:#e2e8f0 !important;}
+[data-bs-theme="dark"] .bpw-input::placeholder,
+[data-layout-mode="dark"] .bpw-input::placeholder{color:#64748b !important;}
+[data-bs-theme="dark"] .bpw-ghost,
+[data-layout-mode="dark"] .bpw-ghost{background:#0d2730 !important;border-color:#173947 !important;color:#cffafe !important;}
+[data-bs-theme="dark"] .bpw-ghost:hover,
+[data-layout-mode="dark"] .bpw-ghost:hover{background:rgba(6,182,212,.16) !important;}
+[data-bs-theme="dark"] .bpw-sunken,
+[data-layout-mode="dark"] .bpw-sunken{background:#0d2730 !important;border-color:#173947 !important;color:#e2e8f0 !important;}
+[data-bs-theme="dark"] .bpw-attach,
+[data-layout-mode="dark"] .bpw-attach{background:rgba(6,182,212,.08) !important;border-color:#155e75 !important;color:#67e8f9 !important;}
+[data-bs-theme="dark"] .bpw-popover,
+[data-layout-mode="dark"] .bpw-popover{background:#0c232c !important;border-color:#173947 !important;color:#e2e8f0 !important;box-shadow:0 16px 40px rgba(0,0,0,.55) !important;}
+/* Status chips: pastel fills that wash out on the dark card. Same tints the
+   claims grid uses, so a chip means the same thing on both screens. */
+[data-bs-theme="dark"] .bpw-chip-ok,
+[data-layout-mode="dark"] .bpw-chip-ok{background:rgba(34,197,94,.13) !important;color:#86efac !important;box-shadow:inset 0 0 0 1px rgba(34,197,94,.26);}
+[data-bs-theme="dark"] .bpw-chip-warn,
+[data-layout-mode="dark"] .bpw-chip-warn{background:rgba(245,158,11,.13) !important;color:#fcd34d !important;box-shadow:inset 0 0 0 1px rgba(245,158,11,.26);}
+[data-bs-theme="dark"] .bpw-idpill,
+[data-layout-mode="dark"] .bpw-idpill{box-shadow:inset 0 0 0 1px rgba(6,182,212,.26);}
+[data-bs-theme="dark"] .bpw-idpill,
+[data-layout-mode="dark"] .bpw-idpill{background:rgba(6,182,212,.18) !important;color:#67e8f9 !important;}
+/* Stepper — the pending step is the last light-on-light surface. */
+[data-bs-theme="dark"] .bpw-step-pending,
+[data-layout-mode="dark"] .bpw-step-pending{background:#0d2730 !important;border-color:#173947 !important;}
+[data-bs-theme="dark"] .bpw-step-pending .bpw-badge,
+[data-layout-mode="dark"] .bpw-step-pending .bpw-badge{background:#123340 !important;color:#64748b !important;}
+[data-bs-theme="dark"] .bpw-step-pending .bpw-num,
+[data-layout-mode="dark"] .bpw-step-pending .bpw-num{background:#173947 !important;color:#94a3b8 !important;border-color:#0b2029 !important;}
+[data-bs-theme="dark"] .bpw-step-active,
+[data-layout-mode="dark"] .bpw-step-active{background:rgba(6,182,212,.14) !important;}
+[data-bs-theme="dark"] .bpw-step-active .bpw-title,
+[data-layout-mode="dark"] .bpw-step-active .bpw-title{color:#cffafe !important;}
+[data-bs-theme="dark"] .bpw-step-active .bpw-sub,
+[data-layout-mode="dark"] .bpw-step-active .bpw-sub{color:#67e8f9 !important;}
+[data-bs-theme="dark"] .bpw-step-active .bpw-num,
+[data-layout-mode="dark"] .bpw-step-active .bpw-num{border-color:#0b2029 !important;}
+[data-bs-theme="dark"] .bpw-step-done,
+[data-layout-mode="dark"] .bpw-step-done{background:rgba(34,197,94,.14) !important;}
+[data-bs-theme="dark"] .bpw-step-done .bpw-title,
+[data-layout-mode="dark"] .bpw-step-done .bpw-title{color:#bbf7d0 !important;}
+[data-bs-theme="dark"] .bpw-step-done .bpw-sub,
+[data-layout-mode="dark"] .bpw-step-done .bpw-sub{color:#6ee7b7 !important;}
+[data-bs-theme="dark"] .bpw-step-done .bpw-num,
+[data-layout-mode="dark"] .bpw-step-done .bpw-num{background:#0b2029 !important;color:#4ade80 !important;border-color:#0b2029 !important;}
+[data-bs-theme="dark"] .bpw-line,
+[data-layout-mode="dark"] .bpw-line{background:#173947;}
+/* The processing veil was a white wash — it lit the whole card up. */
+[data-bs-theme="dark"] .bpw-veil,
+[data-layout-mode="dark"] .bpw-veil{background:rgba(11,32,41,.82) !important;}
 `;
 const totalBanner: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, background: 'linear-gradient(120deg,#0e7490,#0891b2 60%,#06b6d4)', color: '#fff', borderRadius: 14, padding: '18px 22px', marginBottom: 18, flexWrap: 'wrap' };

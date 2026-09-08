@@ -123,13 +123,32 @@ const RECOVERY_LABEL: Record<string, string> = {
   bimonthly:  'Bi-Monthly',
 };
 
-const BADGE_DARK_CSS = `
-[data-bs-theme="dark"] .adv-id-badge       { background: #11324d !important; color: #7cc4f8 !important; }
-[data-bs-theme="dark"] .adv-type-badge     { background: #2a1d5c !important; color: #c4b5fd !important; }
-[data-bs-theme="dark"] .adv-recovery-badge { background: #0c2e2b !important; color: #5eead4 !important; }
-[data-bs-theme="dark"] .adv-status-badge--pending  { background: #3a2a08 !important; color: #fbbf24 !important; }
-[data-bs-theme="dark"] .adv-status-badge--approved { background: #0c2e1d !important; color: #4ade80 !important; }
-[data-bs-theme="dark"] .adv-status-badge--rejected { background: #3a0e1e !important; color: #f9a8d4 !important; }
+/* Exported: the HR Expense Management page imports only the COLUMN factory
+   from this file, not the component that renders it, so these rules were
+   never injected there and every pill stayed light in dark mode. The page
+   now mounts this itself. */
+export const ADVANCE_BADGE_CSS = `
+/* Translucent washes + a hairline, matching the Expense Claims grid — solid
+   tints read as chips stuck on top of the row instead of part of it. */
+[data-bs-theme="dark"] .adv-id-badge,
+[data-layout-mode="dark"] .adv-id-badge       { background: rgba(56,189,248,0.13) !important; color: #7cc4f8 !important; box-shadow: inset 0 0 0 1px rgba(56,189,248,0.26); }
+[data-bs-theme="dark"] .adv-type-badge,
+[data-layout-mode="dark"] .adv-type-badge     { background: rgba(139,92,246,0.14) !important; color: #c4b5fd !important; box-shadow: inset 0 0 0 1px rgba(139,92,246,0.28); }
+[data-bs-theme="dark"] .adv-recovery-badge,
+[data-layout-mode="dark"] .adv-recovery-badge { background: rgba(20,184,166,0.13) !important; color: #5eead4 !important; box-shadow: inset 0 0 0 1px rgba(20,184,166,0.26); }
+[data-bs-theme="dark"] .adv-status-badge--pending,
+[data-layout-mode="dark"] .adv-status-badge--pending  { background: rgba(245,158,11,0.13) !important; color: #fcd34d !important; box-shadow: inset 0 0 0 1px rgba(245,158,11,0.26); }
+[data-bs-theme="dark"] .adv-status-badge--approved,
+[data-layout-mode="dark"] .adv-status-badge--approved { background: rgba(34,197,94,0.13) !important;  color: #86efac !important; box-shadow: inset 0 0 0 1px rgba(34,197,94,0.26); }
+[data-bs-theme="dark"] .adv-status-badge--rejected,
+[data-layout-mode="dark"] .adv-status-badge--rejected { background: rgba(244,63,94,0.13) !important;  color: #fda4af !important; box-shadow: inset 0 0 0 1px rgba(244,63,94,0.26); }
+/* Confirm / decline dialogs were still a white card over the dark grid. */
+[data-bs-theme="dark"] .adv-dialog,
+[data-layout-mode="dark"] .adv-dialog { background: #1e2329 !important; color: #e2e8f0 !important; }
+[data-bs-theme="dark"] .adv-dialog .form-control,
+[data-layout-mode="dark"] .adv-dialog .form-control,
+[data-bs-theme="dark"] .adv-dialog textarea,
+[data-layout-mode="dark"] .adv-dialog textarea { background: #262b30 !important; border-color: rgba(255,255,255,0.10) !important; color: #e2e8f0 !important; }
 
 /* Confirm Approve / Reject button — hover lift + brightness so the action
    has visible feedback, plus a disabled state used while the request is
@@ -669,7 +688,7 @@ export default function AdvanceRequestsTable({
   );
   return (
     <>
-      <style>{BADGE_DARK_CSS}</style>
+      <style>{ADVANCE_BADGE_CSS}</style>
       <DeclineReasonModal row={remarkRow} onClose={() => setRemarkRow(null)} />
       {/* Search/paging off: callers own their sub-tabs, filters and pager and
           pass the page slice in. */}
@@ -716,7 +735,7 @@ export function DeclineReasonModal({ row, onClose }: { row: AdvanceRequestRow | 
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
       }}
     >
-      <div
+      <div className="adv-dialog"
         onMouseDown={e => e.stopPropagation()}
         style={{
           width: 'min(560px, 100%)', maxHeight: '80vh', overflow: 'hidden',
@@ -1263,7 +1282,7 @@ function AdvanceConfirmModal({
     >
       <div
         onClick={e => e.stopPropagation()}
-        className="border-0"
+        className="border-0 adv-dialog"
         style={{
           background: '#ffffff', color: '#1f2937',
           borderRadius: 16, overflow: 'hidden',

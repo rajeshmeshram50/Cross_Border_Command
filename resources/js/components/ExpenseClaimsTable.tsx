@@ -133,7 +133,11 @@ function paymentStatusOf(c: ExpenseClaimRow): 'paid' | 'partial' | 'pending' | n
    backgrounds via inline styles (fine in light mode), which washed out to
    bright chips on the dark table. These rules override only in dark mode
    (!important beats the inline light colours); light mode is untouched. */
-const BADGE_DARK_CSS = `
+/* Exported: the HR Expense Management page imports only the COLUMN factory
+   from this file, not the component that renders it, so these rules were
+   never injected there and every pill stayed light in dark mode. The page
+   now mounts this itself. */
+export const EXPENSE_CLAIM_BADGE_CSS = `
 /* Column alignment — header + data line up per column. Text columns stay
    left; Amount is right-aligned (currency convention); Status & Action are
    centred. The th.<class> selectors out-rank the blanket "thead th left"
@@ -141,14 +145,70 @@ const BADGE_DARK_CSS = `
 .exp-claims-table thead th { text-align: left; }
 .exp-claims-table thead th.exp-col-amount, .exp-claims-table td.exp-col-amount { text-align: right; }
 .exp-claims-table thead th.exp-col-status, .exp-claims-table td.exp-col-status { text-align: center; }
-[data-bs-theme="dark"] .exp-id-badge  { background: #2a1d5c !important; color: #c4b5fd !important; }
-[data-bs-theme="dark"] .exp-cat-badge { background: rgba(255,255,255,0.08) !important; color: #cbd5e1 !important; }
-[data-bs-theme="dark"] .exp-status-badge--pending  { background: #3a2a08 !important; color: #fbbf24 !important; }
-[data-bs-theme="dark"] .exp-status-badge--approved { background: #0c2e1d !important; color: #4ade80 !important; }
-[data-bs-theme="dark"] .exp-status-badge--rejected { background: #3a0e1e !important; color: #f9a8d4 !important; }
-[data-bs-theme="dark"] .exp-pay-badge--paid    { background: #0c2e1d !important; color: #4ade80 !important; }
-[data-bs-theme="dark"] .exp-pay-badge--partial { background: #3a2a08 !important; color: #fbbf24 !important; }
-[data-bs-theme="dark"] .exp-pay-badge--pending { background: #3a1608 !important; color: #fdba74 !important; }
+/* Pills in dark mode are TRANSLUCENT washes with a matching hairline, not
+   solid blocks. The solid tints (#0c2e1d, #3a2a08, #2a1d5c…) were opaque
+   colour chips sitting on top of the row instead of in it — every one read as
+   highlighted, so nothing did. A low-alpha wash lets the row show through, the
+   border carries the shape, and the text does the signalling.
+   Same recipe as the CLM Segment Master grid. */
+[data-bs-theme="dark"] .exp-id-badge,
+[data-layout-mode="dark"] .exp-id-badge { background: rgba(139,92,246,0.14) !important; color: #c4b5fd !important; box-shadow: inset 0 0 0 1px rgba(139,92,246,0.28); }
+[data-bs-theme="dark"] .exp-cat-badge,
+[data-layout-mode="dark"] .exp-cat-badge { background: rgba(255,255,255,0.05) !important; color: #cbd5e1 !important; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
+[data-bs-theme="dark"] .exp-status-badge--pending,
+[data-layout-mode="dark"] .exp-status-badge--pending  { background: rgba(245,158,11,0.13) !important; color: #fcd34d !important; box-shadow: inset 0 0 0 1px rgba(245,158,11,0.26); }
+[data-bs-theme="dark"] .exp-status-badge--approved,
+[data-layout-mode="dark"] .exp-status-badge--approved { background: rgba(34,197,94,0.13) !important;  color: #86efac !important; box-shadow: inset 0 0 0 1px rgba(34,197,94,0.26); }
+[data-bs-theme="dark"] .exp-status-badge--rejected,
+[data-layout-mode="dark"] .exp-status-badge--rejected { background: rgba(244,63,94,0.13) !important;  color: #fda4af !important; box-shadow: inset 0 0 0 1px rgba(244,63,94,0.26); }
+[data-bs-theme="dark"] .exp-pay-badge--paid,
+[data-layout-mode="dark"] .exp-pay-badge--paid    { background: rgba(34,197,94,0.13) !important;  color: #86efac !important; box-shadow: inset 0 0 0 1px rgba(34,197,94,0.26); }
+[data-bs-theme="dark"] .exp-pay-badge--partial,
+[data-layout-mode="dark"] .exp-pay-badge--partial { background: rgba(245,158,11,0.13) !important; color: #fcd34d !important; box-shadow: inset 0 0 0 1px rgba(245,158,11,0.26); }
+[data-bs-theme="dark"] .exp-pay-badge--pending,
+[data-layout-mode="dark"] .exp-pay-badge--pending { background: rgba(249,115,22,0.13) !important; color: #fdba74 !important; box-shadow: inset 0 0 0 1px rgba(249,115,22,0.26); }
+/* Zoho Sync had no class at all, so it kept its light tones while every pill
+   beside it went dark — the one cream chip left in the row. */
+[data-bs-theme="dark"] .exp-zoho-badge--completed,
+[data-layout-mode="dark"] .exp-zoho-badge--completed { background: rgba(34,197,94,0.13) !important;  color: #86efac !important; box-shadow: inset 0 0 0 1px rgba(34,197,94,0.26); }
+[data-bs-theme="dark"] .exp-zoho-badge--partial,
+[data-layout-mode="dark"] .exp-zoho-badge--partial   { background: rgba(99,102,241,0.15) !important; color: #a5b4fc !important; box-shadow: inset 0 0 0 1px rgba(99,102,241,0.28); }
+[data-bs-theme="dark"] .exp-zoho-badge--pending,
+[data-layout-mode="dark"] .exp-zoho-badge--pending   { background: rgba(245,158,11,0.13) !important; color: #fcd34d !important; box-shadow: inset 0 0 0 1px rgba(245,158,11,0.26); }
+/* Approval-trail stage chips in the expanded row — same family. */
+[data-bs-theme="dark"] .ep-audit-stage-badge--pending,
+[data-layout-mode="dark"] .ep-audit-stage-badge--pending  { background: rgba(255,255,255,0.05) !important; color: #cbd5e1 !important; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
+[data-bs-theme="dark"] .ep-audit-stage-badge--approved,
+[data-layout-mode="dark"] .ep-audit-stage-badge--approved { background: rgba(34,197,94,0.13) !important; color: #86efac !important; box-shadow: inset 0 0 0 1px rgba(34,197,94,0.26); }
+[data-bs-theme="dark"] .ep-audit-stage-badge--rejected,
+[data-layout-mode="dark"] .ep-audit-stage-badge--rejected { background: rgba(244,63,94,0.13) !important; color: #fda4af !important; box-shadow: inset 0 0 0 1px rgba(244,63,94,0.26); }
+/* Review & Approve is the one loud gradient in the grid. Keep it clearly the
+   primary action, but at a depth that belongs on a dark row rather than the
+   neon mint it renders as. */
+[data-bs-theme="dark"] .exp-review-btn,
+[data-layout-mode="dark"] .exp-review-btn { background: linear-gradient(135deg,#0d9488,#0f766e) !important; color: #ecfeff !important; border: 1px solid rgba(45,212,191,0.38) !important; }
+[data-bs-theme="dark"] .exp-review-btn:hover,
+[data-layout-mode="dark"] .exp-review-btn:hover { background: linear-gradient(135deg,#0f9e8e,#0e8377) !important; }
+/* …and its HR-stage variant, a pale blue that glares just as hard. */
+[data-bs-theme="dark"] .exp-review-btn--hr,
+[data-layout-mode="dark"] .exp-review-btn--hr { background: rgba(59,130,246,0.18) !important; color: #93c5fd !important; border: 1px solid rgba(59,130,246,0.38) !important; }
+[data-bs-theme="dark"] .exp-review-btn--hr:hover,
+[data-layout-mode="dark"] .exp-review-btn--hr:hover { background: rgba(59,130,246,0.26) !important; }
+/* The linked-advance pill and the two confirm dialogs were the last light
+   surfaces in this table — a white card over the dark grid. */
+/* The disabled / already-done round action buttons use a light grey
+   gradient to say "not available" — on a dark row that grey is the
+   brightest thing in the grid. Same meaning, dark values. */
+[data-bs-theme="dark"],
+[data-layout-mode="dark"] { --exp-mute-a: #3f4854; --exp-mute-b: #4b5563; --exp-mute-c: #374151; }
+[data-bs-theme="dark"] .exp-adv-badge,
+[data-layout-mode="dark"] .exp-adv-badge { background: rgba(6,182,212,0.13) !important; color: #67e8f9 !important; box-shadow: inset 0 0 0 1px rgba(6,182,212,0.26); }
+[data-bs-theme="dark"] .exp-dialog,
+[data-layout-mode="dark"] .exp-dialog { background: #1e2329 !important; color: #e2e8f0 !important; }
+[data-bs-theme="dark"] .exp-dialog .form-control,
+[data-layout-mode="dark"] .exp-dialog .form-control,
+[data-bs-theme="dark"] .exp-dialog textarea,
+[data-layout-mode="dark"] .exp-dialog textarea { background: #262b30 !important; border-color: rgba(255,255,255,0.10) !important; color: #e2e8f0 !important; }
 `;
 
 function fmtDate(iso: string | null | undefined): string {
@@ -299,7 +359,7 @@ export function expenseClaimColumns({
       cell: info => {
         const adv = info.row.original.reimbursement_for;
         return adv?.advance_no
-          ? <span className="badge rounded-pill" style={{ background: '#e0f2fe', color: '#0369a1', fontWeight: 700, padding: '4px 10px' }}><i className="ri-links-line me-1" />{adv.advance_no}</span>
+          ? <span className="badge rounded-pill exp-adv-badge" style={{ background: '#e0f2fe', color: '#0369a1', fontWeight: 700, padding: '4px 10px' }}><i className="ri-links-line me-1" />{adv.advance_no}</span>
           : <span className="text-muted">—</span>;
       },
     },
@@ -406,7 +466,7 @@ export function expenseClaimColumns({
           /* nowrap so the label can never break between the icon and the word,
              or mid-word, whatever width the column ends up at. (#170) */
           <span
-            className="d-inline-flex align-items-center gap-1 fw-semibold"
+            className={`d-inline-flex align-items-center gap-1 fw-semibold exp-zoho-badge exp-zoho-badge--${z}`}
             style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: t.bg, color: t.fg, whiteSpace: 'nowrap' }}
             title={t.label}
           >
@@ -453,7 +513,7 @@ export default function ExpenseClaimsTable({
   );
   return (
     <>
-      <style>{BADGE_DARK_CSS}</style>
+      <style>{EXPENSE_CLAIM_BADGE_CSS}</style>
       {/* Search and paging stay OFF here: the callers (employee profile expense
           tab) already own the sub-tabs, filter chips and their own
           WorklistPager, and hand this component the page slice. */}
@@ -598,7 +658,7 @@ function ExpenseActionCell({
                 type="button"
                 onClick={() => onReview(c)}
                 title={isOwn ? 'Your own request — your reporting manager approves it' : undefined}
-                className="btn btn-sm d-inline-flex align-items-center justify-content-center gap-1 rounded-pill fw-semibold"
+                className={`btn btn-sm d-inline-flex align-items-center justify-content-center gap-1 rounded-pill fw-semibold exp-review-btn ${atHrStage ? 'exp-review-btn--hr' : ''}`}
                 style={{ height: 28, padding: '0 12px', fontSize: 11.5, ...reviewBtnStyle, whiteSpace: 'nowrap', ...(isOwn ? { opacity: 0.5, cursor: 'not-allowed' } : null) }}
               >
                 <i className="ri-eye-line" /> Review &amp; Approve
@@ -647,8 +707,8 @@ function ExpenseActionCell({
                 // Disabled state is conveyed by the muted grey gradient, NOT
                 // element opacity — CSS opacity also dims the ::after tooltip pill,
                 // which made the tooltip render faint on the disabled button.
-                background: !canEmail ? 'linear-gradient(135deg,#cbd5e1,#94a3b8)'
-                  : emailedAlready ? 'linear-gradient(135deg,#94a3b8,#64748b)'
+                background: !canEmail ? 'linear-gradient(135deg,var(--exp-mute-a,#cbd5e1),var(--exp-mute-b,#94a3b8))'
+                  : emailedAlready ? 'linear-gradient(135deg,var(--exp-mute-b,#94a3b8),var(--exp-mute-c,#64748b))'
                   : 'linear-gradient(135deg,#6366f1,#4f46e5)',
               }}
             >
@@ -1214,6 +1274,7 @@ function DeclineReasonModal({ claim, onClose }: { claim: ExpenseClaimRow | null;
     >
       <div
         onMouseDown={e => e.stopPropagation()}
+        className="exp-dialog"
         style={{
           width: 'min(560px, 100%)', maxHeight: '80vh', overflow: 'hidden',
           background: '#fff', borderRadius: 12, boxShadow: '0 24px 60px rgba(0,0,0,0.28)',
@@ -1307,7 +1368,7 @@ function ExpenseConfirmModal({
     >
       <div
         onClick={e => e.stopPropagation()}
-        className="border-0"
+        className="border-0 exp-dialog"
         style={{
           background: '#ffffff', color: '#1f2937',
           borderRadius: 16, overflow: 'hidden',
