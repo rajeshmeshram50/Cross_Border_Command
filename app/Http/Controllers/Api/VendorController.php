@@ -38,6 +38,42 @@ class VendorController extends Controller
     /** Per-file image / document cap in KB — mirrors ProductController. */
     private const MAX_UPLOAD_KB = 2048;
 
+    /* Field labels for validation messages (CS-169).
+     *
+     * Laravel builds a message from the FIELD NAME: `vendor_type_id` becomes
+     * "The vendor type id field is required." Every one of these columns is
+     * called a Supplier in the UI, so the user was told to fix a field that is
+     * not on their screen under a name the product does not use.
+     *
+     * The columns keep their names — renaming `vendor_*` would touch the
+     * schema, the API contract and three controllers, and none of that is
+     * visible to the person reading the error. Only the label changes.
+     *
+     * Non-vendor fields are here too where the column name reads badly on its
+     * own ("gst_number" → "GST Number"), since a message is only as clear as
+     * the worst field it can name.
+     */
+    private const FIELD_LABELS = [
+        'vendor_id'                => 'supplier',
+        'vendor_code'              => 'supplier code',
+        'vendor_name'              => 'supplier name',
+        'vendor_type_id'           => 'supplier type',
+        'vendor_type'              => 'supplier type',
+        'vendor_behaviour_id'      => 'supplier behaviour',
+        'vendor_behaviour'         => 'supplier behaviour',
+        'gst_number'               => 'GST Number',
+        'gst_applicable'           => 'GST Applicable',
+        'address.country_id'       => 'country',
+        'address.state_id'         => 'state',
+        'address.state_code'       => 'state code',
+        'address.address_line'     => 'registered office address',
+        'address.contact_name'     => 'contact name',
+        'address.contact_no'       => 'contact number',
+        'address.email'            => 'email',
+        'primary_address.country_id' => 'country',
+        'primary_address.state_id'   => 'state',
+    ];
+
     /** Relations eager-loaded on GET /vendors/{id}. */
     private const SHOW_WITH = [
         'addresses',
@@ -572,7 +608,7 @@ class VendorController extends Controller
                 // cannot masquerade as a link.
                 'regex:/^https?:\/\/[^\s]+$/i',
             ],
-        ]);
+        ], [], self::FIELD_LABELS);
 
         // Pull the address off $data (not a vendors column) — upserted onto the
         // vendor's primary address inside the transaction below.
@@ -925,7 +961,7 @@ class VendorController extends Controller
             // path echoed back on edit when the file is unchanged.
             'primary_address.attachment_path'          => 'nullable|string|max:500',
             'primary_attachment'                       => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:' . self::MAX_UPLOAD_KB,
-        ]);
+        ], [], self::FIELD_LABELS);
         // NB: additional contacts are NOT handled here — they have their own
         // CRUD endpoints (storeContact / updateContact / destroyContact) so
         // each persists independently and can be edited/deleted on its own.
@@ -1080,7 +1116,7 @@ class VendorController extends Controller
             'attachment'       => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:' . self::MAX_UPLOAD_KB,
             // Existing stored path echoed back on edit when the file is unchanged.
             'attachment_path'  => 'nullable|string|max:500',
-        ]);
+        ], [], self::FIELD_LABELS);
 
         // An address's domain half is case-insensitive, so Gmail@gmail.com and
         // gmail@gmail.com are one mailbox. Stored as typed they are two rows,
@@ -1256,7 +1292,7 @@ class VendorController extends Controller
         ], [
             'account_number.regex' => $accountMsg,
             'ifsc.regex'           => $routingMsg,
-        ]);
+        ], [], self::FIELD_LABELS);
     }
 
     /** Is this supplier's primary address in India? Drives IFSC vs SWIFT. */
@@ -1411,7 +1447,7 @@ class VendorController extends Controller
             'last_filing_date'        => 'nullable|date',
             'prev_non_gst_2a_invoice' => 'nullable|string|max:255',
             'red_flags'               => 'nullable|string|max:2000',
-        ]);
+        ], [], self::FIELD_LABELS);
     }
 
     private function shapeGst(VendorGstScrutiny $g): array
@@ -1483,7 +1519,7 @@ class VendorController extends Controller
             'trade_licenses.*.existing_path'          => 'nullable|string|max:500',
             'tl_files'                                => 'nullable|array',
             'tl_files.*'                              => 'file|mimes:jpg,jpeg,png,webp,pdf|max:' . self::MAX_UPLOAD_KB,
-        ]);
+        ], [], self::FIELD_LABELS);
         // NB: Bank Accounts + GST Scrutiny are NOT handled here — they have
         // their own CRUD endpoints so each row persists the moment it's added
         // (no dependency on "Save & Next").
@@ -1595,13 +1631,13 @@ class VendorController extends Controller
             'mappings.*.gst_percentage'   => 'nullable|numeric|min:0',
             'mappings.*.gst_amount'       => 'nullable|numeric|min:0',
             'mappings.*.total_amount'     => 'nullable|numeric|min:0',
-        ]);
+        ], [], self::FIELD_LABELS);
 
         // Same-product-twice guard — mirrors the modal's duplicate check.
         $productIds = array_column($data['mappings'], 'product_id');
         if (count($productIds) !== count(array_unique($productIds))) {
             return response()->json([
-                'message' => 'A product can only be mapped once per vendor.',
+                'message' => 'A product can only be mapped once per supplier.',
             ], 422);
         }
 
