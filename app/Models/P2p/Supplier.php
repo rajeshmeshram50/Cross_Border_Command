@@ -2,6 +2,7 @@
 
 namespace App\Models\P2p;
 
+use App\Support\Concerns\EnforcesUniqueEmail;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -14,6 +15,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Supplier extends Model
 {
+    /* Email uniqueness — the rule itself lives in
+       config/email_uniqueness.php; these two lines only say which
+       identity this model belongs to. (#email-unique) */
+    use EnforcesUniqueEmail;
+    protected static string $emailScope   = 'vendor';
+    protected static array  $emailColumns = ['email'];
+
     use SoftDeletes;
 
     protected $table = 'p2p_suppliers';

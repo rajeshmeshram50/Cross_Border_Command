@@ -3,7 +3,9 @@ import WorklistPager from "../../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
+import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
+import { useConfirm } from '../../../contexts/ConfirmContext';
 import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import Tooltip from '../../../components/ui/Tooltip';
@@ -89,6 +91,8 @@ export function nextSegmentCode(rows: { code: string }[]): string {
 
 export default function ClmSegmentPage() {
   const toast = useToast();
+  const confirm  = useConfirm();
+  const navigate = useNavigate();
 
   const [rows, setRows]       = useState<Segment[]>([]);
   const [counts, setCounts]   = useState<Counts>({ all: 0, highly: 0, less: 0 });
@@ -188,10 +192,45 @@ export default function ClmSegmentPage() {
 
   const onSave = async (form: SegmentForm, id?: number): Promise<SaveResult> => {
     try {
+      let created: { id: number; name: string; code?: string } | null = null;
       if (id) { await api.put(`/clm/segments/${id}`, form); toast.success('Updated', `${clipName(form.name)} saved`); }
-      else    { await api.post('/clm/segments', form);     toast.success('Added',   `${clipName(form.name)} added`); }
+      else {
+        const res = await api.post('/clm/segments', form);
+        const row = res.data?.data;
+        if (row?.id) created = { id: Number(row.id), name: String(row.name ?? form.name), code: row.code ? String(row.code) : undefined };
+        toast.success('Added', `${clipName(form.name)} added`);
+      }
       bustSegmentConsumerBundles();
       setModalOpen(false); setEditing(null); reload();
+
+      /* A brand-new segment has no document rule yet, and until it gets one it
+         contributes nothing to any Evidence Vault. Offer the next step here
+         rather than leaving the user to find the Document Control Panel on
+         their own. Only on CREATE — an edit is not a new rule. Declining just
+         saves the segment, which is the old behaviour untouched. */
+      if (created) {
+        const go = await confirm({
+          tone: 'teal',   // matches the CLM module, not the generic indigo prompt
+          icon: 'file-list-3-line',
+          title: 'Add a document rule?',
+          /* Names the four categories exactly as the Document Control Panel
+             labels them, so the prompt and the screen it leads to agree. */
+          message: (
+            <>
+              <b>{clipName(created.name)}</b> is saved. Set up its document rule now —
+              the KYC, Due Diligence, Trade Licenses and Quality &amp; Compliance
+              documents this segment requires?
+            </>
+          ),
+          confirmLabel: 'Yes, add rule',
+          cancelLabel: 'Not now',
+        });
+        if (go) {
+          /* The Document Control Panel opens its Add Segment Rule popup with
+             this segment already chosen — see the state it reads on mount. */
+          navigate('/clm/document-panel', { state: { openRuleForSegment: created } });
+        }
+      }
       return { ok: true };
     } catch (e: any) {
       const status = e?.response?.status as number | undefined;

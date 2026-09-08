@@ -469,9 +469,7 @@ class SegmentDocUploadController extends Controller
                 if (!empty($a['db_id'])) $seenAgr[(int) $a['db_id']] = true;
             }
             foreach ($deals as $s) {
-                $rows = !empty($s['buyer_is_consignee'])
-                    ? array_merge($s['agreements_buyer'] ?? [], $s['agreements_consignee'] ?? [])
-                    : ($type === 'consignee' ? ($s['agreements_consignee'] ?? []) : ($s['agreements_buyer'] ?? []));
+                $rows = $type === 'consignee' ? ($s['agreements_consignee'] ?? []) : ($s['agreements_buyer'] ?? []);
                 foreach ($rows as $r) {
                     $k = (int) ($r['db_id'] ?? 0);
                     if ($k && isset($seenAgr[$k])) continue;
@@ -1015,8 +1013,19 @@ class SegmentDocUploadController extends Controller
              * union solves both: every applicable document appears exactly once,
              * whichever side it was filed under. $primary is still the party
              * whose vault this is, used below. */
+            /* The document's PARTY marking decides who sees it — not whether
+             * the two parties happen to be one company. An agreement marked
+             * Consignee stays on the consignee side even when the consignee is
+             * the customer; it is a consignee obligation either way, and the
+             * customer's vault should not carry it.
+             * $primary is this vault's own side. */
+            /* TRADE DOCS keep the old rule: one entity means one combined set,
+               de-duplicated. AGREEMENTS do not — an agreement marked Consignee
+               is the consignee's to sign, so it stays out of the customer's
+               vault even when the two are the same company (and the other way
+               round). Only agreements were reported; trade docs are untouched. */
             $tradeAll = $buyerIsConsignee ? $dedupe(array_merge($tradeBuyer, $tradeCons)) : $primary['trade'];
-            $agrAll   = $buyerIsConsignee ? $dedupe(array_merge($agrBuyer, $agrCons))   : $primary['agr'];
+            $agrAll   = $primary['agr'];
             $signed   = fn (array $d) => collect($d)->where('status', 'Signed')->count();
 
             $sr++;
@@ -1404,12 +1413,14 @@ class SegmentDocUploadController extends Controller
             foreach ($this->matchSegmentLibrary(ClmAgreementLibrary::query(), $cid, $seg, 'agr_status') as $a) {
                 $aid = (int) $a->id;
                 if (isset($seen[$aid])) continue;
-                // Consignee vault lists only consignee-side agreements; the customer
-                // vault lists every segment agreement (mirrors the profile cell).
-                if ($type === 'consignee') {
-                    [, $forCons] = $this->partyFlags($a->party);
-                    if (!$forCons) continue;
-                }
+                /* Each vault lists its OWN side. The customer path used to list
+                 * every segment agreement, so a Consignee-marked one surfaced in
+                 * the customer's vault — and when the consignee IS the customer
+                 * that read as the same company being asked twice. The party
+                 * marking decides who owes a document; the entity relationship
+                 * does not change it. */
+                [$forBuyer, $forCons] = $this->partyFlags($a->party);
+                if (!($type === 'consignee' ? $forCons : $forBuyer)) continue;
                 $seen[$aid] = true;
                 $rows[] = [
                     'db_id'     => $aid,
