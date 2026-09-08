@@ -42,6 +42,9 @@ class AnnouncementController extends Controller
     private const ATTACH_MAX_KB     = 20 * 1024;            // 20 MB
     private const ATTACH_MIME_TYPES = 'png,jpg,jpeg,pdf';
 
+    private const DEFAULT_PER_PAGE = 25;
+    private const MAX_PER_PAGE     = 200;
+
    
 
     public function index(Request $request)
@@ -64,7 +67,20 @@ class AnnouncementController extends Controller
         if ($type = $request->query('type'))     $q->where('type', $type);
         if ($status = $request->query('status')) $q->where('status', $status);
 
-        return response()->json($q->orderByDesc('id')->get());
+        $q->orderByDesc('id');
+
+        // Pagination is opt-in: a caller that asks for a page gets the
+        // {data, total, ...} envelope, anything else still gets a plain array.
+        if ($request->has('per_page') || $request->has('page')) {
+            $requested = $request->query('per_page');
+            $perPage = is_numeric($requested) && (int) $requested > 0
+                ? min(self::MAX_PER_PAGE, (int) $requested)
+                : self::DEFAULT_PER_PAGE;
+
+            return response()->json($q->paginate($perPage));
+        }
+
+        return response()->json($q->get());
     }
 
     public function show(Request $request, $id)
@@ -125,13 +141,19 @@ class AnnouncementController extends Controller
 
         $get = fn (string $s) => (int) ($rows[$s] ?? 0);
 
+        // Counted here rather than in the browser: the list is paginated, so
+        // counting the rows on screen would report the High Priority card as
+        // "2 of the 10 rows loaded" instead of the figure for the whole tenant.
+        $highPriority = (clone $q)->where('priority', 'High')->count();
+
         return response()->json([
-            'total'     => (int) $rows->sum(),
-            'active'    => $get('Active'),
-            'scheduled' => $get('Scheduled'),
-            'draft'     => $get('Draft'),
-            'expired'   => $get('Expired'),
-            'archived'  => $get('Archived'),
+            'total'         => (int) $rows->sum(),
+            'active'        => $get('Active'),
+            'scheduled'     => $get('Scheduled'),
+            'draft'         => $get('Draft'),
+            'expired'       => $get('Expired'),
+            'archived'      => $get('Archived'),
+            'high_priority' => $highPriority,
         ]);
     }
 
