@@ -700,35 +700,7 @@ function TemplateViewModal({
           className="d-flex flex-column gap-3 p-3"
           style={{ maxHeight: 'calc(100vh - 230px)', overflowY: 'auto', overscrollBehavior: 'contain' }}
         >
-          {row.description && (
-            <div style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)', whiteSpace: 'pre-wrap' }}>
-              {row.description}
-            </div>
-          )}
-
-          <div className="d-flex flex-wrap" style={{ rowGap: 10, columnGap: 0 }}>
-            {meta.map(([k, v]) => (
-              <div key={k} style={{ flex: '0 0 33.333%', minWidth: 0, paddingRight: 12 }}>
-                <div style={LABEL}>{k}</div>
-                <div className="text-truncate" style={{ fontSize: 12.5, fontWeight: 500 }} title={v}>{v}</div>
-              </div>
-            ))}
-          </div>
-
-          {row.requires_signature && !!row.signers?.length && (
-            <div className="d-flex flex-column gap-1">
-              <div style={LABEL}>Signers</div>
-              {row.signers.map((sg: any, i: number) => (
-                <div key={i} className="d-flex align-items-center gap-2" style={{ fontSize: 12 }}>
-                  <span className="fw-semibold">{sg?.label || sg?.name || `Signer ${i + 1}`}</span>
-                  {sg?.role && <span style={{ color: 'var(--vz-secondary-color)', fontSize: 11.5 }}>{sg.role}</span>}
-                </div>
-              ))}
-            </div>
-          )}
-
           <div className="d-flex flex-column gap-1">
-            <div style={LABEL}>Template content</div>
             {row.editor_mode === 'word' ? (
               <div style={{ fontSize: 12.5 }}>
                 <i className="ri-file-word-2-line me-1" style={{ color: '#2b579a' }} />
@@ -752,7 +724,7 @@ function TemplateViewModal({
               <div
                 style={{
                   border: '1px solid var(--vz-border-color)', borderRadius: 10,
-                  overflow: 'hidden', height: '48vh', minHeight: 280,
+                  overflow: 'hidden', height: '64vh', minHeight: 340,
                   background: 'var(--vz-secondary-bg)',
                 }}
               >
@@ -778,6 +750,46 @@ function TemplateViewModal({
               </div>
             )}
           </div>
+          {/* Metadata folded away. (#42-follow-up)
+              The dialog is opened to LOOK at the document, but the field grid
+              filled the panel and pushed the page render to the very bottom —
+              in a 1210px window only the letterhead was visible, so the thing
+              being viewed needed scrolling to reach. The preview now leads and
+              the fields sit under a disclosure: still one click away, no longer
+              in front of the document. */}
+          <details className="hdt-view-meta">
+            <summary style={{ cursor: 'pointer', fontSize: 12, fontWeight: 700, color: 'var(--vz-secondary-color)' }}>
+              Template details
+            </summary>
+            <div className="d-flex flex-column gap-3 pt-3">
+            {row.description && (
+              <div style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)', whiteSpace: 'pre-wrap' }}>
+                {row.description}
+              </div>
+            )}
+
+            <div className="d-flex flex-wrap" style={{ rowGap: 10, columnGap: 0 }}>
+              {meta.map(([k, v]) => (
+                <div key={k} style={{ flex: '0 0 33.333%', minWidth: 0, paddingRight: 12 }}>
+                  <div style={LABEL}>{k}</div>
+                  <div className="text-truncate" style={{ fontSize: 12.5, fontWeight: 500 }} title={v}>{v}</div>
+                </div>
+              ))}
+            </div>
+
+            {row.requires_signature && !!row.signers?.length && (
+              <div className="d-flex flex-column gap-1">
+                <div style={LABEL}>Signers</div>
+                {row.signers.map((sg: any, i: number) => (
+                  <div key={i} className="d-flex align-items-center gap-2" style={{ fontSize: 12 }}>
+                    <span className="fw-semibold">{sg?.label || sg?.name || `Signer ${i + 1}`}</span>
+                    {sg?.role && <span style={{ color: 'var(--vz-secondary-color)', fontSize: 11.5 }}>{sg.role}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            </div>
+          </details>
         </div>
 
         <div className="d-flex justify-content-end gap-2 px-3 py-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>

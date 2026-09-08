@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Col, Row, Modal, ModalBody, Spinner, Input } from 'reactstrap';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Col, Row, Modal, ModalBody, Spinner } from 'reactstrap';
 import * as XLSX from 'xlsx';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
@@ -31,7 +31,6 @@ interface HolidayRow {
   description: string | null;
   holiday_group_id: number | null;
   group?: { id: number; name: string } | null;
-  created_at?: string;
 }
 
 const TYPE_OPTIONS: { value: HolidayType; label: string }[] = [
@@ -49,6 +48,7 @@ const TYPE_TONES: Record<string, { bg: string; fg: string }> = {
   Regional:   { bg: '#d8f5e6', fg: '#0f8a4d' },
   Optional:   { bg: '#f1f1f4', fg: '#5b6270' },
 };
+const PER_PAGE_KEY = 'cbc.hr.holidays.perPage.v1';
 
 const MONTH_ABBR =['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -67,15 +67,13 @@ function weekdayName(raw: any): string {
   return WEEKDAYS[d.getDay()];
 }
 
-// A holiday is "past" (frozen / read-only) once its date is before today.
-// Recurring (yearly) holidays are never frozen — their next occurrence is
-// always upcoming. Mirrors the backend guard in HolidayController.
 export default function HrHoliday() {
   const toast = useToast();
   const confirmDialog = useConfirm();
 
   const [rows, setRows] = useState<HolidayRow[]>([]);
   const [groups, setGroups] = useState<HolidayGroup[]>([]);
+  const [years, setYears] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState('');
@@ -83,7 +81,21 @@ export default function HrHoliday() {
   const [yearFilter, setYearFilter] = useState('All');
   const [groupFilter, setGroupFilter] = useState('All');
 
-  /* Paging lives in <DataTable> now. */
+  const [page, setPage] = useState(0);
+  const [perPage, setPerPage] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(PER_PAGE_KEY));
+      return Number.isFinite(saved) && saved > 0 && saved <= 200 ? saved : 10;
+    } catch {
+      return 10;
+    }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(PER_PAGE_KEY, String(perPage)); } catch {}
+  }, [perPage]);
+
+  const [total, setTotal] = useState(0);
+  const reqRef = useRef(0);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<HolidayRow | null>(null);
@@ -99,82 +111,57 @@ export default function HrHoliday() {
     } catch { setGroups([]); }
   };
 
-  const fetchHolidays = async () => {
+  const fetchHolidays = useCallback(async () => {
+    const token = ++reqRef.current;
+    setLoading(true);
     try {
-      setLoading(true);
-      const res = await api.get('/holidays');
-      setRows(Array.isArray(res.data) ? res.data : []);
+      const res = await api.get('/holidays', {
+        params: {
+          page: page + 1,
+          per_page: perPage,
+          ...(search.trim() ? { search: search.trim() } : {}),
+          ...(typeFilter !== 'All' ? { type: typeFilter } : {}),
+          ...(yearFilter !== 'All' ? { year: yearFilter } : {}),
+          ...(groupFilter !== 'All' ? { holiday_group_id: groupFilter } : {}),
+        },
+      });
+      if (token !== reqRef.current) return;
+      const body = res.data ?? {};
+      setRows(Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : []));
+      setTotal(Number(body.total ?? (Array.isArray(body) ? body.length : 0)) || 0);
+      if (Array.isArray(body.years)) setYears(body.years.map((y: any) => String(y)));
     } catch (err: any) {
+      if (token !== reqRef.current) return;
       toast.error('Could not load holidays', err?.response?.data?.message || 'Please try again.');
       setRows([]);
+      setTotal(0);
     } finally {
-      setLoading(false);
+      if (token === reqRef.current) setLoading(false);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, perPage, search, typeFilter, yearFilter, groupFilter]);
 
   const refreshAll = () => { fetchGroups(); fetchHolidays(); };
 
-  useEffect(() => { refreshAll(); }, []);
-
-  const years = useMemo(() => {
-    const set = new Set<string>();
-    rows.forEach(r => { const y = String(r.date || '').slice(0, 4); if (y) set.add(y); });
-    return Array.from(set).sort((a, b) => Number(b) - Number(a));
-  }, [rows]);
+  useEffect(() => { fetchGroups(); }, []);
+  useEffect(() => { fetchHolidays(); }, [fetchHolidays]);
 
   const groupName = (id: number | null | undefined) =>
     id ? (groups.find(g => g.id === id)?.name || '—') : '—';
 
-  // Groups assigned to ≥1 employee. A holiday in such a group can still be
-  // EDITED (auto-propagates), but it can't be DELETED — employees depend on it.
   const inUseGroupIds = useMemo(
     () => new Set(groups.filter(g => (g.employees_count ?? 0) > 0).map(g => g.id)),
     [groups],
   );
 
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return rows.filter(r => {
-      if (typeFilter !== 'All' && r.type !== typeFilter) return false;
-      if (yearFilter !== 'All' && String(r.date || '').slice(0, 4) !== yearFilter) return false;
-      if (groupFilter !== 'All' && String(r.holiday_group_id ?? '') !== groupFilter) return false;
-      if (!needle) return true;
-      return (
-        r.name.toLowerCase().includes(needle) ||
-        (r.code || '').toLowerCase().includes(needle) ||
-        (r.description || '').toLowerCase().includes(needle)
-      );
-    });
-  }, [rows, search, typeFilter, yearFilter, groupFilter]);
+  const applyFilter = (set: (v: string) => void) => (v: string) => { set(v); setPage(0); };
 
-  /* Columns for the shared <DataTable>. The hand-rolled Holiday-ID sort header
-     is gone — every column sorts from its own header arrow now.
-
-     PIXEL widths, not percentages (#60). The table runs `table-layout: fixed`
-     with `minWidth={1395}`, and DataTable prepends a 56px serial column — a
-     fixed value. Mixing that with percentages made the two sizing systems
-     fight: the percentages resolve against the table's own width, which the
-     56px then pushes past, so the browser redistributed the shortfall across
-     every column and the widths on screen were never the widths declared here.
-     They also summed to 95, not 100, which left 5% to be handed out by the
-     same redistribution — worst on first paint, while the shimmer rows are up
-     and the table is at its minimum width, which is when the misalignment was
-     reported.
-
-     Pixels remove the negotiation: each column gets exactly what it asks for
-     and .dt-scroll scrolls when the viewport cannot fit the total. Same
-     convention (and same reasoning) as Exit Management's column block.
-
-     Sum MUST stay in step with minWidth below:
-       56 serial + 138+250+260+176+138+113+151+113 = 1395.
-     (Description became its own column in #2; Holiday Name gave up the width
-      it had been using for the second line that column replaced.) */
   const columns = useMemo<DataTableColumn<HolidayRow>[]>(() => [
     {
       header: 'Holiday ID',
       id: 'code',
       accessorFn: (r: HolidayRow) => r.code || `HOL-${r.id}`,
-      // Natural alphanumeric so HOL-2 sorts before HOL-10.
+
       sortingFn: (a, b, id) => String(a.getValue(id)).localeCompare(String(b.getValue(id)), undefined, { numeric: true, sensitivity: 'base' }),
       meta: { width: 138 },
       cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
@@ -182,26 +169,11 @@ export default function HrHoliday() {
     {
       header: 'Holiday Name',
       accessorKey: 'name',
-      /* Name only. The description used to ride on a second line inside this
-         cell, which is why the table had no Description column at all — the
-         data was on screen but filed under the wrong heading, unsortable and
-         impossible to scan down. It has its own column now. (#2) */
+
       meta: { width: 250, wrap: true },
       cell: info => {
         const r = info.row.original;
-        /* Truncation is done in CSS, not by slicing the string. A 50-char cut
-           still overflowed when the text had no spaces to break on (e.g. a
-           pasted "wwwww…" run): `fit-content` then sized the div past the
-           column and the text painted over the Group cell. `textOverflow`
-           handles any content, whatever it contains.
 
-           The NAME clips on one line now, exactly like the description under
-           it. It used to `overflowWrap: anywhere` instead, which kept a long
-           name inside the column but paid for it in HEIGHT — a pasted title ran
-           to three lines and dragged the whole row with it, so four holidays
-           filled the screen (CBC #54). One line each keeps every row the same
-           height whatever is in it, and the full text is one hover away on both
-           lines rather than only on the description. */
         const clip = {
           maxWidth: '100%',
           overflow: 'hidden',
@@ -220,10 +192,7 @@ export default function HrHoliday() {
       },
     },
     {
-      /* Its own column, beside the name rather than beneath it. (#2)
-         Same one-line clip + hover-for-full-text the name uses, so a long
-         description cannot drag the row height out and every row stays the
-         same height whatever it contains (the reasoning from CBC #54). */
+
       header: 'Description',
       accessorKey: 'description',
       meta: { width: 260, wrap: true },
@@ -255,8 +224,7 @@ export default function HrHoliday() {
       },
     },
     {
-      /* Sorts on the ISO date string (already sortable as text) rather than the
-         dd-Mon-yyyy label. */
+
       header: 'Date',
       accessorKey: 'date',
       meta: { width: 138, align: 'center' },
@@ -286,9 +254,7 @@ export default function HrHoliday() {
       meta: { width: 113, align: 'center' },
       cell: info => {
         const r = info.row.original;
-        /* Edit always allowed (the change auto-propagates to the group's
-           employees). Delete is blocked while the holiday's group is assigned
-           to employees — they depend on this date. */
+
         const delLocked = r.holiday_group_id != null && inUseGroupIds.has(r.holiday_group_id);
         return (
           <div className="rec-row-actions justify-content-center">
@@ -336,8 +302,7 @@ export default function HrHoliday() {
   };
 
   const downloadTemplate = () => {
-    // Use real group names from this tenant in the sample so the Group column
-    // is self-explanatory; fall back to a generic example when none exist.
+
     const sampleGroup = groups[0]?.name || 'Indian Employees';
     const sample = [
       { Name: 'Republic Day',           Date: '2026-01-26', Type: 'Public',   Recurring: 'Yes', Group: sampleGroup, Description: 'National holiday' },
@@ -357,9 +322,6 @@ export default function HrHoliday() {
     if (fileRef.current) fileRef.current.value = '';
     if (!file) return;
 
-    // No hard "pick a group first" gate — each Excel row carries its own Group
-    // column now. Rows with a blank/unknown Group fall back to the group
-    // selected in the filter above (if any).
     setImporting(true);
     try {
       const buf = await file.arrayBuffer();
@@ -413,7 +375,7 @@ export default function HrHoliday() {
         <Col xs={12}>
           <div className="rec-page holiday-page">
             <style>{`
-              /* ── Holiday Calendar — visual polish (scoped to this page only) ── */
+
               .holiday-page .rec-list-frame{
                 background: linear-gradient(180deg,#ffffff 0%, #fcfbff 100%);
                 border: 1px solid #efeafd;
@@ -429,16 +391,6 @@ export default function HrHoliday() {
               }
               .holiday-page .rec-list-scroll{ overflow-x: auto; }
 
-              /* Table header: NO overrides on purpose. It is inherited wholesale
-                 from .rec-list-table thead th (13px x 12px padding, 10.5px / 700
-                 micro-caps at 0.08em, soft grey gradient bar, 1px divider) so
-                 Holiday, Recruitment, Employee Onboarding and HR Employees all
-                 present an identical header. This page used to paint a lavender
-                 band with heavier, tighter type, which read as a different table
-                 system. Body cells keep the violet identity below. */
-
-              /* rows — zebra + smooth violet hover with accent rail. Padding is
-                 inherited (14px x 12px) so the cells line up with the header. */
               .holiday-page .rec-list-table tbody td{
                 border-bottom: 1px solid #f4f0fc;
                 vertical-align: middle;
@@ -450,7 +402,6 @@ export default function HrHoliday() {
                 box-shadow: inset 3px 0 0 #7c3aed;
               }
 
-              /* Holiday ID pill — gradient chip */
               .holiday-page .rec-id-pill{
                 background: linear-gradient(135deg,#efe9fe,#e6ddfc);
                 color: #6d28d9;
@@ -462,11 +413,9 @@ export default function HrHoliday() {
                 font-size: 11.5px;
               }
 
-              /* action icons — subtle lift on hover */
               .holiday-page .rec-act{ transition: transform .12s ease, background .15s ease; }
               .holiday-page .rec-act:hover{ transform: translateY(-1px); }
 
-              /* responsive — toolbar wraps cleanly, table scrolls instead of squashing */
               @media (max-width: 992px){
                 .holiday-page .rec-req-filter-row{ gap: 8px; }
                 .holiday-page .hol-actions{ margin-left: 0 !important; width: 100%; justify-content: flex-start; flex-wrap: wrap; }
@@ -476,7 +425,6 @@ export default function HrHoliday() {
                 .holiday-page .hol-filter .hol-filter-sel{ min-width: 0 !important; width: 100%; flex: 1; }
               }
 
-              /* ── dark mode — translucent violet, no harsh light panels ── */
               [data-bs-theme="dark"] .holiday-page .rec-list-frame{
                 background: linear-gradient(180deg, rgba(124,58,237,.07), rgba(124,58,237,.02));
                 border-color: rgba(167,139,250,.18);
@@ -486,7 +434,7 @@ export default function HrHoliday() {
                 background: linear-gradient(180deg, rgba(124,58,237,.06), transparent);
                 border-bottom-color: rgba(167,139,250,.16);
               }
-              /* Dark header is inherited too — see the light-mode note above. */
+
               [data-bs-theme="dark"] .holiday-page .rec-list-table tbody td{ border-bottom-color: rgba(255,255,255,.05); }
               [data-bs-theme="dark"] .holiday-page .rec-list-table tbody tr:nth-child(even){ background: rgba(255,255,255,.02); }
               [data-bs-theme="dark"] .holiday-page .rec-list-table tbody tr:hover{
@@ -514,31 +462,32 @@ export default function HrHoliday() {
               </div>
             </div>
 
-            {/* Shared list table (components/ui/DataTable) — search, sortable
-                headers and the rows-per-page pager live in the component; the
-                Group/Type/Year pickers and the Template / Import / Groups / Add
-                buttons ride in its toolbar. */}
             <DataTable<HolidayRow>
-              data={filtered}
+              data={rows}
               columns={columns}
               serial
               accent="violet"
-              /* fitToViewport + autoFitRows together: the card stretches to the
-                 bottom of the window and the page size is measured from the
-                 space that leaves, so the pager sits pinned at the bottom
-                 instead of floating under a short list. Same pairing as the
-                 Employee Onboarding hub. */
+
               fitToViewport
               autoFitRows
+              minAutoRows={10}
               minWidth={1395}
               loading={loading}
+              serverPagination={{
+                total,
+                pageIndex: page,
+                onPageChange: setPage,
+                onPageSizeChange: setPerPage,
+              }}
               searchValue={search}
               onSearchChange={setSearch}
               searchPlaceholder="Search holidays…"
               emptyMessage={
                 <>
                   <i className="ri-calendar-2-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                  {rows.length === 0 ? 'No holidays yet — click Add Holiday or Import Excel to get started' : 'No holidays match your filters'}
+                  {(search.trim() || typeFilter !== 'All' || yearFilter !== 'All' || groupFilter !== 'All')
+                    ? 'No holidays match your filters'
+                    : 'No holidays yet — click Add Holiday or Import Excel to get started'}
                 </>
               }
               toolbarActions={
@@ -546,21 +495,21 @@ export default function HrHoliday() {
                   <div className="hol-filter d-flex align-items-center gap-2">
                     <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Group</span>
                     <div className="hol-filter-sel" style={{ minWidth: 160 }}>
-                      <MasterSelect value={groupFilter} onChange={setGroupFilter}
+                      <MasterSelect value={groupFilter} onChange={applyFilter(setGroupFilter)}
                         options={[{ value: 'All', label: 'All Groups' }, ...groups.map(g => ({ value: String(g.id), label: g.name }))]} placeholder="All Groups" />
                     </div>
                   </div>
                   <div className="hol-filter d-flex align-items-center gap-2">
                     <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Type</span>
                     <div className="hol-filter-sel" style={{ minWidth: 130 }}>
-                      <MasterSelect value={typeFilter} onChange={setTypeFilter}
+                      <MasterSelect value={typeFilter} onChange={applyFilter(setTypeFilter)}
                         options={[{ value: 'All', label: 'All Types' }, ...TYPE_OPTIONS]} placeholder="All Types" />
                     </div>
                   </div>
                   <div className="hol-filter d-flex align-items-center gap-2">
                     <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Year</span>
                     <div className="hol-filter-sel" style={{ minWidth: 95 }}>
-                      <MasterSelect value={yearFilter} onChange={setYearFilter}
+                      <MasterSelect value={yearFilter} onChange={applyFilter(setYearFilter)}
                         options={[{ value: 'All', label: 'All Years' }, ...years.map(y => ({ value: y, label: y }))]} placeholder="All Years" />
                     </div>
                   </div>
@@ -572,12 +521,7 @@ export default function HrHoliday() {
                   <button type="button" className="rec-btn-ghost" onClick={() => fileRef.current?.click()} disabled={importing}>
                     {importing ? <Spinner size="sm" /> : <i className="ri-file-excel-2-line" />}Import Excel
                   </button>
-                  {/* Groups sits beside "Add Holiday" and is highlighted so it's
-                      clear this is where you create groups first. The highlight
-                      lives in .hol-groups-btn, NOT in a style attribute — inline
-                      colours outrank the dark-theme rules, which left this button
-                      pale lilac in dark mode while Template and Import Excel
-                      beside it went dark. (#96) */}
+
                   <Tooltip label="Create & manage holiday groups — add a group here first, then assign holidays to it">
                     <button type="button" className="rec-btn-ghost hol-groups-btn" onClick={() => setManageGroupsOpen(true)}>
                       <i className="ri-folder-add-line" />Groups
@@ -628,21 +572,13 @@ function HolidayModal({
   const [date, setDate] = useState('');
   const [type, setType] = useState<HolidayType | ''>('');
   const [groupId, setGroupId] = useState('');
-  /* No control for this any more — the "Repeat every year" checkbox was
-     removed. The state stays only so an EDIT round-trips whatever is already
-     stored: it hydrates from the record below and goes back out unchanged, so
-     saving a holiday that was already flagged recurring (they can still arrive
-     through the Excel import) does not silently turn the flag off. A new
-     holiday starts false and there is no longer any way to make it true. */
+
   const [isRecurring, setIsRecurring] = useState(false);
   const [description, setDescription] = useState('');
 
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // TOMORROW (browser-local) as YYYY-MM-DD — the earliest selectable holiday
-  // date. A holiday must be planned at least a day ahead, so today and all
-  // past dates are disabled (setDate(+1) rolls month/year over correctly).
   const minDateStr = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() + 1);
@@ -677,11 +613,7 @@ function HolidayModal({
   const handleSubmit = async () => {
     const local: Record<string, string> = {};
     if (!name.trim()) local.name = 'Holiday name is required';
-    /* A holiday name is a label, not a number. The input already strips special
-       characters, but a purely numeric value ("2026", "12345") still cleared the
-       required check and saved as a holiday name (CBC #59). Digits stay allowed
-       INSIDE a name ("Diwali 2026", "2nd October"), so the rule only demands at
-       least one letter. Mirrored server-side in HolidayController. */
+
     else if (!/^(?=.*\p{L})[\p{L}\p{N} .'\-]+$/u.test(name.trim()))
       local.name = 'Holiday name must include at least one letter — numbers alone are not a valid name';
     if (!groupId) local.group = 'Holiday group is required';
@@ -749,13 +681,7 @@ function HolidayModal({
           <Row className="g-3">
             <Col md={6}>
               <label className="rec-form-label">Holiday Name<span className="req">*</span></label>
-              {/* Letters, numbers, spaces and basic name punctuation only — strips
-                  special chars (@, #, $, …) as the user types/pastes. */}
-              {/* Every control on this form freezes while the save is in
-                  flight, matching the buttons below. They all stayed live, so a
-                  second click could fire another submit and anything changed
-                  after the first one was never in the request — the form showed
-                  one holiday and the server stored another (CBC #53). */}
+
               <input type="text" className={`rec-input${errors.name ? ' is-invalid' : ''}`} placeholder="e.g. Republic Day"
                 value={name} onChange={e => setName(e.target.value.replace(/[^a-zA-Z0-9 .'\-]/g, ''))} maxLength={191}
                 disabled={saving} />
@@ -823,8 +749,7 @@ function ManageGroupsModal({
   const [status, setStatus] = useState('Active');
   const [saving, setSaving] = useState(false);
   const [nameErr, setNameErr] = useState('');
-  // The add/edit form is now hidden until the user clicks "Add Group" (header)
-  // or the Edit icon — keeps the popup clean instead of an always-open form.
+
   const [formOpen, setFormOpen] = useState(false);
 
   useEffect(() => {
@@ -841,12 +766,7 @@ function ManageGroupsModal({
 
   const save = async () => {
     if (!name.trim()) { setNameErr('Group name is required'); return; }
-    /* Group names are labels — letters, numbers, spaces and hyphens only, and
-       they must contain at least one LETTER. (#58) Without the lookahead a
-       purely numeric "12345" passed both here and the API. Digits stay legal
-       inside a name so "Diwali 2026" and "Group 1" still save; only a name made
-       entirely of digits/spaces/hyphens is refused. Kept identical to the rule
-       in HolidayGroupController so the form and the API agree. */
+
     if (!/^(?=.*\p{L})[\p{L}\p{N} \-]+$/u.test(name.trim())) {
       setNameErr('Group name must include at least one letter — numbers alone are not a valid name');
       return;
@@ -947,26 +867,7 @@ function ManageGroupsModal({
                   <tr key={g.id}>
                     <td className="text-center text-muted fs-13">{idx + 1}</td>
                     <td><span className="rec-id-pill">{g.code || `HGRP-${g.id}`}</span></td>
-                    {/* whiteSpace:'normal' is load-bearing. The table carries
-                        Velzon's `table-nowrap`, which sets `white-space: nowrap`
-                        on EVERY cell — that silently defeated the wrap + clamp
-                        below, so a long description rendered as one endless
-                        line and stretched the column until the whole modal
-                        scrolled sideways (#49). Overridden here only, so the
-                        Code / Holidays / Actions cells keep their nowrap.
-
-                        Same overflow guard as the holiday list, but this table
-                        is hand-rolled (table-layout: auto), where
-                        nowrap+ellipsis would just widen the column instead of
-                        truncating. Wrap mid-word and clamp to 2 lines — that
-                        holds regardless of layout mode. `overflow-wrap: anywhere`
-                        (not `break-word`) is what lets an unbroken 200-char
-                        string shrink the column in auto layout. */}
                     <td style={{ whiteSpace: 'normal' }}>
-                      {/* The NAME gets the same clamp as the description. It
-                          already wrapped, so it never broke the layout — but an
-                          unbroken 200-char name still grew the row to a dozen
-                          lines, which is the same problem one step quieter. */}
                       <Tooltip label={g.name}>
                         <div
                           className="fw-bold fs-13"
@@ -1030,8 +931,6 @@ function ManageGroupsModal({
           <button type="button" className="rec-btn-ghost" onClick={onClose}>Done</button>
         </div>
 
-        {/* Add / Edit Group — a separate popup over the groups list (opened from
-            the header "Add Group" button or a row's Edit icon). */}
         <Modal isOpen={formOpen} toggle={closeForm} centered backdrop="static" keyboard={false}
           zIndex={1060} modalClassName="rec-form-modal master-modal" contentClassName="rec-form-content border-0"
           style={{ maxWidth: 540, width: '94vw' }}>
@@ -1039,9 +938,6 @@ function ManageGroupsModal({
             <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6d28d9 0%, #8b5cf6 60%, #a78bfa 100%)' }}>
               <div className="d-flex align-items-center justify-content-between">
                 <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15 }}>{editing ? 'Edit Group' : 'Add Group'}</h5>
-                {/* Guarded like Cancel below. The backdrop and Esc are already
-                    disabled for this dialog, which left this ✕ as the only way
-                    to walk out mid-save. */}
                 <button type="button" onClick={closeForm} disabled={saving}
                   style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 30, height: 30, opacity: saving ? 0.5 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
                   <i className="ri-close-line" style={{ fontSize: 18 }} />
@@ -1050,11 +946,6 @@ function ManageGroupsModal({
             </div>
             <div style={{ padding: '18px 20px' }}>
               <Row className="g-3">
-                {/* Frozen while the save is in flight, like the buttons below.
-                    Both stayed editable, so anything typed after clicking Save
-                    was never in the request — the field showed one value and the
-                    server stored another, with nothing on screen to say so
-                    (CBC #50). */}
                 <Col md={12}>
                   <label className="rec-form-label">Group Name<span className="req">*</span></label>
                   <input type="text" className={`rec-input${nameErr ? ' is-invalid' : ''}`} placeholder="e.g. Indian Employees"
