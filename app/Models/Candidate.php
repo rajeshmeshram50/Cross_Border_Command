@@ -2,12 +2,20 @@
 
 namespace App\Models;
 
+use App\Support\Concerns\EnforcesUniqueEmail;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Candidate extends Model
 {
+    /* Email uniqueness — the rule itself lives in
+       config/email_uniqueness.php; these two lines only say which
+       identity this model belongs to. (#email-unique) */
+    use EnforcesUniqueEmail;
+    protected static string $emailScope   = 'candidate';
+    protected static array  $emailColumns = ['email'];
+
     use SoftDeletes;
 
     protected $fillable = [

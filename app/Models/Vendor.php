@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Concerns\EnforcesUniqueEmail;
 use App\Models\Masters\ComplianceBehaviours;
 use App\Models\Masters\CustomerClassifications;
 use App\Models\Masters\RiskLevels;
@@ -19,6 +20,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Vendor extends Model
 {
+    /* Email uniqueness — the rule itself lives in
+       config/email_uniqueness.php; these two lines only say which
+       identity this model belongs to. (#email-unique) */
+    use EnforcesUniqueEmail;
+    protected static string $emailScope   = 'vendor';
+    protected static array  $emailColumns = ['primary_email'];
+
     use SoftDeletes;
 
     protected $fillable = [

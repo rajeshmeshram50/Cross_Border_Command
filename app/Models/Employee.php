@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Concerns\EnforcesUniqueEmail;
 use App\Models\Masters\Countries;
 use App\Models\Masters\Departments;
 use App\Models\Masters\Designations;
@@ -14,6 +15,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Employee extends Model
 {
+    /* Email uniqueness — the rule itself lives in
+       config/email_uniqueness.php; these two lines only say which
+       identity this model belongs to. (#email-unique) */
+    use EnforcesUniqueEmail;
+    protected static string $emailScope   = 'employee';
+    protected static array  $emailColumns = ['email', 'official_email'];
+
     use SoftDeletes;
 
     /**
