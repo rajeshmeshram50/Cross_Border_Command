@@ -4271,6 +4271,10 @@ function SelectInput(props: {
   placeholder?: string;
   options: Array<string | { value: string; label: string; badges?: SelectOptBadge[] }>;
   disabled?: boolean;
+  /** Shown inside the menu when the option list is genuinely empty, in place of
+   *  the bare "No options". Say WHY it is empty — an empty picker with no
+   *  explanation reads as broken rather than as "nothing qualifies yet". */
+  emptyText?: string;
 }) {
   const normalized = props.options.map(o => typeof o === 'string' ? { value: o, label: o } : o);
   return (
@@ -4281,6 +4285,7 @@ function SelectInput(props: {
         placeholder={props.placeholder ?? 'Select'}
         onChange={props.onChange}
         disabled={props.disabled}
+        emptyText={props.emptyText}
       />
     </div>
   );
@@ -6193,20 +6198,36 @@ function AddProductMappingPopup(props: {
   editing?: boolean;
 }) {
   const { draft, setDraft, productOpts, onProductChange, recompute, onClose, onSave } = props;
-  const set = <K extends keyof ProductMappingDraft>(k: K, v: ProductMappingDraft[K]) => setDraft({ ...draft, [k]: v });
+  /* The `set(key, value)` helper that used to live here is gone with the
+     free-text product fallback that was its only caller. Every remaining input
+     goes through setDraft(recompute(...)) because each one feeds the totals. */
   return (
     <PopupShell title="Map Product" icon="ri-box-3-line" subtitle="Link a product with purchase price & GST for this supplier" onClose={onClose} onSave={onSave}>
       <div className="avm-grid-2">
         <Field label="Product Name" required addNew={!!props.onAddProduct && !props.editing} addLoading={props.addingProduct} onAdd={props.onAddProduct}>
-          {productOpts.length > 0
-            ? <SelectInput value={draft.productId} onChange={onProductChange} placeholder="Select Product Name" options={productOpts} disabled={props.editing} />
-            : <input
-                className="avm-input"
-                placeholder={props.optsLoaded ? 'No product found' : 'Loading products…'}
-                value={draft.productName}
-                readOnly={props.optsLoaded}
-                onChange={e => set('productName', e.target.value)}
-              />}
+          {/* ALWAYS the dropdown — never a bare text box.
+              An empty list used to swap this control for a read-only <input>
+              reading "No product found", which changed the field's whole shape:
+              the user lost the chevron, could not open it to see for themselves,
+              and got no hint of WHY it was empty. The emptiness is now where it
+              belongs — inside the menu — and the control stays a picker.
+              The old fallback also let you TYPE a product name that could never
+              save: the mapping needs a product_id, and validation rejects a
+              draft without one, so anything typed there was discarded on Save. */}
+          <SelectInput
+            value={draft.productId}
+            onChange={onProductChange}
+            placeholder={props.optsLoaded ? 'Select Product Name' : 'Loading products…'}
+            options={productOpts}
+            disabled={props.editing || !props.optsLoaded}
+            /* Says why, and what to do about it. This list is filtered to the
+               supplier's own segments, so "empty" nearly always means the
+               products exist but belong to segments this supplier is not
+               onboarded for — which is not obvious from an empty menu. */
+            emptyText={props.optsLoaded
+              ? 'No product in this supplier’s segments — use + to create one.'
+              : 'Loading products…'}
+          />
         </Field>
         <Field label="Product Code">
           <input className="avm-input" value={formatProductCode(draft.productCode) || draft.productCode} readOnly placeholder="Auto-fills from product" />

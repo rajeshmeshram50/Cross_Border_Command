@@ -581,11 +581,19 @@ class SegmentDocUploadController extends Controller
             // mirroring how the standard buckets above expose verified-vs-total.
             $vendorSegIds  = $this->resolveSegmentIds($owner, 'vendor', $cid);
             $agreementLib  = $this->vendorSupplierLibrary($cid, $vendorSegIds, ClmAgreementLibrary::class, 'agr_status');
+            /* party_id is load-bearing: without it this loaded EVERY supplier's
+               agreement signature requests in the tenant, and overlaySupplierDocs
+               matches them to library documents by doc id alone. One supplier
+               signing an agreement therefore showed every other supplier in the
+               client as having signed it too — with that supplier's signed-on
+               date and a link to their signed PDF. Compliance data for the wrong
+               party, presented as fact. */
             $vendorAgrReqs = ClmSignatureRequest::where('client_id', $cid)
                 ->where('model_name', 'Vendor')
                 ->where('document_type', ClmSignatureRequest::DOC_AGREEMENT)
+                ->where('party_id', $id)
                 ->get();
-            $agreements      = $this->overlaySupplierDocs($agreementLib, $vendorAgrReqs, ClmSignatureRequest::DOC_AGREEMENT);
+            $agreements      = $this->overlaySupplierDocs($agreementLib, $vendorAgrReqs, ClmSignatureRequest::DOC_AGREEMENT, $id);
             $agreementsCount = count($agreements);
         }
 
@@ -942,7 +950,7 @@ class SegmentDocUploadController extends Controller
                     $paths = is_array($sigReq->signed_document_paths) ? $sigReq->signed_document_paths : [];
                     $signedUrl = $paths[0]['file_url'] ?? $paths[0]['url'] ?? null;
                     if (!$signedUrl && $sigReq->signed_document_path) {
-                        $signedUrl = Storage::disk('public')->url($sigReq->signed_document_path);
+                        $signedUrl = file_url($sigReq->signed_document_path);
                     }
                 }
                 $piRow = [
@@ -1096,7 +1104,7 @@ class SegmentDocUploadController extends Controller
                 $p = $paths[$i] ?? $paths[0] ?? null;
                 $signedUrl = $p['file_url'] ?? $p['url'] ?? null;
                 if (!$signedUrl && $r->signed_document_path) {
-                    $signedUrl = Storage::disk('public')->url($r->signed_document_path);
+                    $signedUrl = file_url($r->signed_document_path);
                 }
                 $out[] = [
                     'sig_req_id'  => (int) $r->id,
@@ -1482,7 +1490,7 @@ class SegmentDocUploadController extends Controller
         $paths  = is_array($req->signed_document_paths) ? $req->signed_document_paths : [];
         $signedUrl = $paths[0]['file_url'] ?? $paths[0]['url'] ?? null;
         if (!$signedUrl && $req->signed_document_path) {
-            $signedUrl = Storage::disk('public')->url($req->signed_document_path);
+            $signedUrl = file_url($req->signed_document_path);
         }
 
         return [
@@ -1559,7 +1567,16 @@ class SegmentDocUploadController extends Controller
      * @param  \Illuminate\Support\Collection  $reqs     this vendor's sig-requests on this lead
      * @param  string  $docType  DOC_TRADE | DOC_AGREEMENT — which signature kind to overlay
      */
-    private function overlaySupplierDocs(\Illuminate\Support\Collection $libDocs, $reqs, string $docType = ClmSignatureRequest::DOC_TRADE): array
+    /**
+     * @param int|null $partyId When given, only signature requests belonging to
+     *        THIS supplier are overlaid. The caller's query should already be
+     *        scoped — this is the second lock, because the index below matches
+     *        on document id alone and would otherwise attribute one supplier's
+     *        signature to every supplier sharing that document.
+     *        Left null by the lead-scoped callers, whose boundary is the deal
+     *        (lead_id), not the party.
+     */
+    private function overlaySupplierDocs(\Illuminate\Support\Collection $libDocs, $reqs, string $docType = ClmSignatureRequest::DOC_TRADE, ?int $partyId = null): array
     {
         if ($libDocs->isEmpty()) return [];
 
@@ -1567,6 +1584,7 @@ class SegmentDocUploadController extends Controller
         $sigIndex = [];
         foreach ($reqs->sortByDesc('id') as $r) {
             if ($r->model_name !== 'Vendor' || $r->document_type !== $docType) continue;
+            if ($partyId !== null && (int) $r->party_id !== $partyId) continue;
             $ids = is_array($r->trade_doc_ids) && $r->trade_doc_ids ? $r->trade_doc_ids : [$r->trade_doc_id];
             foreach ((array) $ids as $id) { $id = (int) $id; if ($id && !isset($sigIndex[$id])) $sigIndex[$id] = $r; }
         }
@@ -1587,7 +1605,7 @@ class SegmentDocUploadController extends Controller
             $paths = $sig && is_array($sig->signed_document_paths) ? $sig->signed_document_paths : [];
             $signedUrl = $paths[0]['file_url'] ?? $paths[0]['url'] ?? null;
             if (!$signedUrl && $sig && $sig->signed_document_path) {
-                $signedUrl = Storage::disk('public')->url($sig->signed_document_path);
+                $signedUrl = file_url($sig->signed_document_path);
             }
             $rows[] = [
                 'id'                   => $sig ? (int) $sig->id : (int) $m->id,
@@ -1605,7 +1623,7 @@ class SegmentDocUploadController extends Controller
                 'status'               => $status,
                 'doc_code'             => $m->code,
                 'requirement'          => 'M',
-                'certificate_url'      => $sig && $sig->certificate_path ? Storage::disk('public')->url($sig->certificate_path) : null,
+                'certificate_url'      => $sig ? file_url($sig->certificate_path) : null,
             ];
         }
         return $rows;
