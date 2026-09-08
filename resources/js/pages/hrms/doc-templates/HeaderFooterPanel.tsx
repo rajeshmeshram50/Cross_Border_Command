@@ -515,7 +515,10 @@ export default function HeaderFooterPanel({
           footer leave (flex:1 + minHeight:0). Otherwise it keeps the original
           grow-with-content sizing, which is what the scroller-based drafts
           need — minHeight 320 just stops an empty document collapsing. */}
-      <div className="tpl-page-body" style={{ padding: 18, background: '#fff', ...(fillHeight ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } : { minHeight: 320 }) }}>
+      {/* 18px here plus the editor surface’s own inset stacked into a wide
+          double margin, so the editable area sat well inside the page shell it
+          is meant to represent. */}
+      <div className="tpl-page-body" style={{ padding: 8, background: '#fff', ...(fillHeight ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } : { minHeight: 320 }) }}>
         {children}
       </div>
 

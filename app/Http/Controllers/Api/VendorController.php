@@ -122,11 +122,19 @@ class VendorController extends Controller
          * anything not matched HERE silently stops being findable — so the
          * address-side fields are joined in rather than dropped. */
         if ($search = trim((string) $request->query('q', ''))) {
-            $q->where(function ($w) use ($search) {
+            /* Supplier Category is stored as a slug (star / general / high_risk /
+               blacklisted) but displayed as "High Risk", so a user typing what
+               they can see would match nothing. Fold spaces to underscores for
+               that one comparison. */
+            $catTerm = str_replace(' ', '_', mb_strtolower($search));
+
+            $q->where(function ($w) use ($search, $catTerm) {
                 $w->where('company_name', 'ilike', "%{$search}%")
                   ->orWhere('legal_name',   'ilike', "%{$search}%")
                   ->orWhere('vendor_code',  'ilike', "%{$search}%")
                   ->orWhere('primary_email','ilike', "%{$search}%")
+                  ->orWhere('gst_number',   'ilike', "%{$search}%")
+                  ->orWhere('supplier_category', 'ilike', "%{$catTerm}%")
                   ->orWhereHas('addresses', function ($a) use ($search) {
                       $a->where('contact_name', 'ilike', "%{$search}%")
                         ->orWhere('contact_no', 'ilike', "%{$search}%")
@@ -134,7 +142,14 @@ class VendorController extends Controller
                         ->orWhere('city',       'ilike', "%{$search}%")
                         ->orWhere('state_code', 'ilike', "%{$search}%");
                   })
-                  ->orWhereHas('primaryAddress.state', fn ($s) => $s->where('name', 'ilike', "%{$search}%"));
+                  ->orWhereHas('primaryAddress.state',   fn ($s) => $s->where('name', 'ilike', "%{$search}%"))
+                  // Country, Supplier Type and Segment are all COLUMNS on the
+                  // list, so they have to be searchable or the box is lying
+                  // about what it covers. Segment is the pivot, not the legacy
+                  // scalar, because that is what the column renders.
+                  ->orWhereHas('primaryAddress.country', fn ($c) => $c->where('name', 'ilike', "%{$search}%"))
+                  ->orWhereHas('vendorType',             fn ($t) => $t->where('name', 'ilike', "%{$search}%"))
+                  ->orWhereHas('segments',               fn ($g) => $g->where('name', 'ilike', "%{$search}%"));
             });
         }
         if ($status = $request->query('status')) {

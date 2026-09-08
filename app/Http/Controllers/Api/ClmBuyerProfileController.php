@@ -541,18 +541,16 @@ class ClmBuyerProfileController extends Controller
             $applicAgr = $agrIdsForSegments($segIds);
             foreach ($applicAgr as $aid) $dealAgrByCustomer[(int) $cust->id][(int) $aid] = true;
             $applicTd  = $tdIdsForSegments($segIds);
-            /* With no separate consignee the single party carries both sides,
-               so count the combined set once and read signatures from either
-               side's map. With a separate consignee each keeps its own. */
-            $ownSide   = $separateConsignee ? 'buyer' : 'any';
-            $agrSigSet = $separateConsignee
-                ? ($agrSigByLead[$lid]['Customer'] ?? [])
-                : (($agrSigByLead[$lid]['Customer'] ?? []) + ($agrSigByLead[$lid]['Consignee'] ?? []));
+            /* AGREEMENTS: buyer side always. The party marking decides who owes
+               an agreement — a Consignee-marked one is the consignee's to sign
+               even when the consignee is this same company.
+               TRADE DOCS: unchanged — with no separate consignee the one party
+               carries both sides, so the combined set is counted once. */
+            $agrBuyer  = $docProgress($applicAgr, $agrPartyById, $agrSigByLead[$lid]['Customer'] ?? [], 'buyer');
             $tdSigSet  = $separateConsignee
                 ? ($tdSigByLead[$lid]['Customer'] ?? [])
                 : (($tdSigByLead[$lid]['Customer'] ?? []) + ($tdSigByLead[$lid]['Consignee'] ?? []));
-            $agrBuyer  = $docProgress($applicAgr, $agrPartyById, $agrSigSet, $ownSide);
-            $tdBuyer   = $docProgress($applicTd,  $tdPartyById,  $tdSigSet,  $ownSide);
+            $tdBuyer   = $docProgress($applicTd, $tdPartyById, $tdSigSet, $separateConsignee ? 'buyer' : 'any');
             if ($pi) { $tdBuyer['t'] += 1; if (isset($piSignedIds[(int) $pi->id])) $tdBuyer['d'] += 1; }
 
             $base = [
@@ -680,11 +678,9 @@ class ClmBuyerProfileController extends Controller
                 $applicAgrByConsignee[(int) $co['db_id']] ?? [],
                 array_keys($dealAgrByConsignee[(int) $co['db_id']] ?? []),
             ));
-            /* A separate consignee lists CONSIGNEE-side agreements only, which
-               is exactly what buildEntityAgreements() does for a consignee
-               vault. A same-as-customer consignee is resolved to the customer
-               there (resolveOwner swaps the owner), so it follows the customer
-               rule instead — the buyer side. */
+            /* Consignee side, always — same rule as the buyer rows and the
+               vault: the party marking decides, not whether the two parties
+               are one company. */
             $cSide = 'consignee';
             $cSigned = ($sigByParty['Consignee#' . (int) $co['db_id']] ?? [])
                 + ($dealAgrSignedByConsignee[(int) $co['db_id']] ?? []);
