@@ -97,15 +97,24 @@ export function validateIfsc(value: string, label = 'IFSC Code'): string {
  * length rather than a pattern: 3–30 of A–Z, a–z, 0–9, hyphen, slash, period
  * and space. Symbols (@ # $ % & *) are out.
  *
- * Case is preserved, unlike GSTIN. A TIN is printed on a foreign tax
- * certificate exactly as issued, and uppercasing it would silently alter a
- * number the supplier has to match against their own paperwork. */
+ * UPPERCASED as you type (CS-170), like GSTIN.
+ * This used to preserve case, on the reasoning that a TIN is printed on a
+ * foreign tax certificate exactly as issued. That does not hold up: no national
+ * tax-ID scheme is case-sensitive, VAT and TIN numbers are conventionally
+ * written uppercase, and preserving case bought nothing while letting the SAME
+ * number be stored two ways — "gb123456789" and "GB123456789" — which reads as
+ * two suppliers to anyone scanning the list and defeats a case-sensitive
+ * duplicate check.
+ *
+ * TIN_ALLOWED still accepts both cases: it validates values that may have come
+ * from an import or an older row, and rejecting those for case would fail a
+ * number that is otherwise perfectly valid. */
 const TIN_ALLOWED = /^[A-Za-z0-9\-/. ]+$/;
 export const TIN_MAX = 30;
 
-/** Strips what a TIN may not contain, for use as you type. Does not change case. */
+/** Strips what a TIN may not contain and uppercases it, for use as you type. */
 export function sanitizeTin(raw: string): string {
-  return raw.replace(/[^A-Za-z0-9\-/. ]/g, '').slice(0, TIN_MAX);
+  return raw.replace(/[^A-Za-z0-9\-/. ]/g, '').toUpperCase().slice(0, TIN_MAX);
 }
 
 export function validateTin(value: string, label = 'Tax Identification Number (TIN)'): string {

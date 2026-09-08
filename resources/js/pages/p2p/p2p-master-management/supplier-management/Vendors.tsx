@@ -113,6 +113,12 @@ export type SupplierContact = {
 
 /* Fresh vs Recurring tab key. Fresh = newly onboarded supplier with no
    opportunity yet; Recurring = at least one opportunity created against it. */
+/* Per-screen key so other tables can adopt the same pattern without colliding —
+   the convention HrEmployees set. Versioned: bump the suffix if the DEFAULT
+   ever changes, because a remembered size always beats a new default and the
+   change would otherwise reach nobody who has already opened this page. */
+const PER_PAGE_KEY = 'cbc.p2p.suppliers.perPage.v1';
+
 type SupplierTab = 'all' | 'fresh' | 'recurring';
 
 /* Shape of an item in the paginated GET /api/vendors response. Only
@@ -602,14 +608,44 @@ export default function Vendors() {
   /* Row count across ALL pages, from the server. The pager can no longer derive
      it from the rows in hand, because the rows in hand are one page. */
   const [total, setTotal] = useState(0);
-  /* Newest-request token. rpp changes on every window resize, so two fetches can
-     be in flight at once and the slower must not overwrite the newer. */
+  /* Newest-request token. A scope switch, a filter and a debounced search can
+     each fire while the previous request is still out, so two can be in flight
+     at once and the slower must not overwrite the newer. */
   const reqRef = useRef(0);
   /* Search is a network call now, so it waits for a pause in typing instead of
      firing per keystroke. 350ms is the same delay HrEmployees uses. */
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [rpp, setRpp] = useState(10);
-  const autoFitRef = useRef(true); // false once the user picks a rows-per-page manually
+  /* Rows per page: a fixed 10 by default, remembered per screen — the same
+     contract HR Employees and Employee Onboarding use (see PER_PAGE_KEY in
+     HrEmployees.tsx).
+     It used to be DERIVED from the viewport: an effect measured the space under
+     the table and set rpp to whatever fitted. That made page size a property of
+     the window rather than of the list — it changed on resize, on zoom, on
+     opening devtools, and differed between two people looking at the same
+     tenant. Every one of those changes refetched, which is why this file needs
+     a stale-response token at all; rows moved under the cursor mid-read.
+     A remembered number does none of that.
+     Lazy initialiser so localStorage is read once on mount, and guarded because
+     a private-mode browser can throw on access. */
+  const savedRpp = useMemo(() => {
+    try {
+      const n = Number(localStorage.getItem(PER_PAGE_KEY));
+      return Number.isFinite(n) && n > 0 && n <= 200 ? n : null;
+    } catch {
+      return null;
+    }
+  }, []);
+  const [rpp, setRpp] = useState<number>(savedRpp ?? 10);
+  /* Auto-fit until the user picks a size, then never again. A pick is a
+     deliberate answer to this question and re-deriving it on the next resize
+     would keep overwriting it — so a remembered pick also starts this false. */
+  const autoFitRef = useRef(savedRpp === null);
+  /* Only a MANUAL pick is remembered. Persisting the fitted number too would
+     bake one machine's viewport in as a permanent choice and switch auto-fit
+     off for good on the next visit. */
+  const rememberRpp = (n: number) => {
+    try { localStorage.setItem(PER_PAGE_KEY, String(n)); } catch { /* private mode */ }
+  };
   // Stretch the card to the viewport while auto-fitting (default / empty state) so
   // the screen always fills like CLM Segment / T&C Master. A manual rows-per-page
   // pick turns this off so a small count sits compact (no big internal gap).
@@ -728,8 +764,9 @@ export default function Vendors() {
           tab,
         },
       });
-      // Stale-response guard: rpp changes on every resize, so two fetches can be
-      // in flight and the slower one must not overwrite the newer.
+      // Stale-response guard: a filter or a debounced search can fire while the
+      // last request is still out, and the slower one must not overwrite the
+      // newer.
       if (token !== reqRef.current) return;
       const body: any = res.data ?? {};
       const rows: ApiVendor[] = Array.isArray(body) ? body : (body.data ?? []);
@@ -741,8 +778,8 @@ export default function Vendors() {
       toast.error('Load failed', 'Could not load suppliers');
     } finally {
       /* Cleared on the WINNING response only — two fetches can be in flight
-         (rpp changes on every resize) and the slower one must not un-dim rows
-         the newer one is still replacing. */
+         (a filter change while a search is still out) and the slower one must
+         not un-dim rows the newer one is still replacing. */
       if (token === reqRef.current) {
         bootedRef.current = true;
         setLoading(false);
@@ -795,7 +832,6 @@ export default function Vendors() {
          content-height and shows a fixed number of rows. */
       if (window.innerWidth <= 820) {
         setFillH(prev => (prev === undefined ? prev : undefined));
-        if (autoFitRef.current) setRpp(prev => (prev === 10 ? prev : 10));
         return;
       }
 
@@ -821,18 +857,22 @@ export default function Vendors() {
       const footerH = footerEl?.offsetHeight ?? 0;
       const bottomReserve = footerH > 0 ? footerH + 8 : 15;
 
-      /* The HORIZONTAL scrollbar occupies height inside the scroll box and was
-         never subtracted. This table is 15 columns wide, so that bar is always
-         there — ~12-15px, which is exactly enough for the last row to miss the
-         cut and the box to grow a VERTICAL scrollbar as well. */
+      /* The HORIZONTAL scrollbar occupies height inside the scroll box. This
+         table is 15 columns wide so that bar is always there — ~12-15px, which
+         is exactly enough for the last row to miss the cut and the box to grow
+         a VERTICAL scrollbar as well. */
       const scrollbarH = Math.min(20, Math.max(0, el.offsetHeight - el.clientHeight));
 
       const cardH = Math.max(240, window.innerHeight - top - bottomReserve);
       const avail = cardH - THEAD - PAGER - scrollbarH;
-      /* Floor of 10, matching minAutoRows on the HRMS tables. At the old floor
-         of 4 a laptop viewport (or any zoom that left the table short) served a
-         four-row page, which reads as a broken list rather than a fitted one
-         and makes the same tenant look different on every machine. */
+      /* GROW to fill a tall screen, never shrink below 10. A short viewport
+         keeps the standard page; a tall one uses the room it has instead of
+         leaving half the card empty under ten rows.
+         The floor is the whole safeguard: without it this served four-row pages
+         on a laptop, which reads as a broken list rather than a fitted one.
+         Guarded with prev === fit so a resize that lands on the same number
+         costs no render and no refetch — only a real change in how many rows
+         fit is worth a request. */
       const fit = Math.max(10, Math.floor(avail / ROW));
       if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       setFillH(prev => (prev === cardH ? prev : cardH));
@@ -1296,7 +1336,10 @@ useEffect(() => {
                   {/* Shared dynamic pager lives INSIDE the stretched scroll card and
                       is pushed to its bottom (margin-top:auto) so a short list leaves
                       no gap between the table and the footer — mirrors CLM Segment. */}
-                  <WorklistPager total={total} page={curPage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} pageSizeOptions={[5, 10, 25, 50]} />
+                  {/* A size picked here stops the auto-fit and is remembered, so
+                      the next visit opens on the choice rather than re-deriving
+                      one over the top of it. */}
+                  <WorklistPager total={total} page={curPage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; rememberRpp(n); setRpp(n); setPage(1); }} pageSizeOptions={[5, 10, 25, 50]} />
                 </div>
               </>
             )}

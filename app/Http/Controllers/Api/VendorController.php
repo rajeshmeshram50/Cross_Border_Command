@@ -659,7 +659,14 @@ class VendorController extends Controller
                     'errors'  => ['gst_number' => ['TIN must be 3–30 characters: letters, digits, hyphen, slash, period and spaces only.']],
                 ], 422);
             }
-            $data['gst_number'] = $tin;
+            /* Uppercase on save (CS-170), matching the field's as-you-type
+               behaviour. The client already uppercases, so this is for every
+               other way a row arrives — an import, a direct API call, a script.
+               Normalising in one place at the boundary is what stops the same
+               number being stored as both "gb123456789" and "GB123456789",
+               which reads as two suppliers in a list and slips past any
+               case-sensitive uniqueness check. */
+            $data['gst_number'] = strtoupper($tin);
         }
 
         // India → GST is mandatory: an Indian supplier cannot be GST-Applicable = No

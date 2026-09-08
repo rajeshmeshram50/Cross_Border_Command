@@ -1,12 +1,46 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Col, Row, Modal, ModalBody } from 'reactstrap';
+import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import { leaveRequestsApi, ApiLeaveRequest, ApiLeaveApprover, ApiSandwichMeta } from './leavePlansApi';
 import { useTheme } from '../../contexts/ThemeContext';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
 
 type StatusFilter = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | 'All';
+
+/* Rows per page: 10 by default, remembered per screen — the contract
+   HrEmployees set and Employee Onboarding follows, so every list in the app
+   opens the same size. Versioned key: a remembered size always beats a new
+   default, so bump the suffix if the default ever moves. */
+const PER_PAGE_KEY = 'cbc.hr.leaveApprovals.perPage.v1';
+const PER_PAGE_DEFAULT = 10;
+const PER_PAGE_OPTIONS = [10, 25, 50];
+
+/* Rows that fit between the table's top and the bottom of the viewport, floored
+   at PER_PAGE_DEFAULT. This is a plain <table>, not <DataTable>, so the fit is
+   measured here rather than inherited.
+   Grow-only by design: a tall screen uses the room it has, a short one still
+   gets a full page instead of the three-row page an unfloored fit produces. */
+const ROW_H = 62, THEAD_H = 44, PAGER_H = 46;
+const fitRows = (topPx: number) => {
+  const footer = document.querySelector('footer.footer') as HTMLElement | null;
+  const avail = window.innerHeight - topPx - (footer?.offsetHeight ?? 0) - 24 - THEAD_H - PAGER_H;
+  return Math.max(PER_PAGE_DEFAULT, Math.floor(avail / ROW_H));
+};
+
+/** The remembered MANUAL choice, or null if the user has never made one.
+ *  Null is meaningful: it is what licences the auto-fit. Only a deliberate pick
+ *  is stored — persisting a fitted number would bake one machine's viewport in
+ *  as a permanent choice and disable the fit for good on the next visit. */
+const readPerPage = (): number | null => {
+  try {
+    const saved = Number(localStorage.getItem(PER_PAGE_KEY));
+    return Number.isFinite(saved) && saved > 0 && saved <= 200 ? saved : null;
+  } catch {
+    return null;
+  }
+};
 
 const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
   Pending:   { bg: '#fef3c7', fg: '#a16207' },
@@ -48,6 +82,41 @@ export default function HrLeaveApprovals() {
   const statusTone = (s: string) => (dark ? STATUS_TONE_DARK : STATUS_TONE)[s] || (dark ? STATUS_TONE_DARK.Pending : STATUS_TONE.Pending);
   const [rows, setRows] = useState<ApiLeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  /* Server-side paging. The queue used to render every matching request in one
+     table — 275 pending rows on a two-year-old branch, 363 KB of JSON, and it
+     only ever grows: nothing leaves a pending queue except a decision. */
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const savedPerPage = useMemo(() => {
+    return readPerPage();
+  }, []);
+  const [perPage, setPerPage] = useState<number>(savedPerPage ?? PER_PAGE_DEFAULT);
+  /* Auto-fit until the user picks a size. A remembered pick starts it false, so
+     the choice survives the next visit instead of being re-derived over. */
+  const autoFitRef = useRef(savedPerPage === null);
+  const tableRef = useRef<HTMLDivElement | null>(null);
+
+  /* Measure on mount and on a SETTLED resize. Debounced because a drag fires
+     scores of resize events, and each distinct row count is a refetch. */
+  useEffect(() => {
+    let t: number | undefined;
+    const measure = () => {
+      if (!autoFitRef.current) return;
+      const el = tableRef.current;
+      if (!el) return;
+      const fit = fitRows(el.getBoundingClientRect().top);
+      setPerPage(prev => (prev === fit ? prev : fit));
+    };
+    measure();
+    const raf = requestAnimationFrame(measure);
+    const onResize = () => { window.clearTimeout(t); t = window.setTimeout(measure, 180); };
+    window.addEventListener('resize', onResize);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(t);
+      window.removeEventListener('resize', onResize);
+    };
+  }, []);
   const [status, setStatus] = useState<StatusFilter>('Pending');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -70,20 +139,30 @@ export default function HrLeaveApprovals() {
   const refetch = useCallback(async () => {
     setLoading(true);
     try {
-      const list = await leaveRequestsApi.approvals({
+      const { data, total: n } = await leaveRequestsApi.approvalsPage({
         status: status === 'All' ? undefined : status,
         search: debouncedSearch || undefined,
+        page,
+        per_page: perPage,
       });
-      setRows(list);
+      setRows(data);
+      setTotal(n);
     } catch (err) {
       console.warn('[HrLeaveApprovals] load failed', err);
       setRows([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
-  }, [status, debouncedSearch]);
+  }, [status, debouncedSearch, page, perPage]);
 
   useEffect(() => { refetch(); }, [refetch]);
+
+  /* Back to page 1 whenever the result set is replaced rather than moved
+     through. Staying on page 6 while switching to a filter with two pages asks
+     the server for a page that does not exist and renders an empty table that
+     looks like "no results" instead of "wrong page". */
+  useEffect(() => { setPage(1); }, [status, debouncedSearch, perPage]);
 
   const openDetail = async (id: number) => {
     setOpenId(id);
@@ -241,7 +320,7 @@ export default function HrLeaveApprovals() {
             </button>
           </div>
 
-          <div className="lp-config-table-wrap" style={{ padding: 16 }}>
+          <div className="lp-config-table-wrap" style={{ padding: 16 }} ref={tableRef}>
             <table className="lp-config-table">
               <thead>
                 <tr>
@@ -255,13 +334,12 @@ export default function HrLeaveApprovals() {
                 </tr>
               </thead>
               <tbody>
+                {/* Shimmer rows, not a centred spinner. The spinner collapsed
+                    the table to a single line, so the surrounding layout jumped
+                    on every filter change and settled again when rows landed.
+                    Placeholder rows hold the table's shape. */}
                 {loading ? (
-                  <tr>
-                    <td colSpan={7} className="text-center py-5 text-muted">
-                      <i className="ri-loader-4-line ri-spin d-block mb-2" style={{ fontSize: 28, opacity: 0.4 }} />
-                      Loading approvals...
-                    </td>
-                  </tr>
+                  <ShimmerTableRows rows={8} cols={7} keyPrefix="lv-appr" />
                 ) : rows.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="text-center py-5 text-muted">
@@ -323,6 +401,62 @@ export default function HrLeaveApprovals() {
               </tbody>
             </table>
           </div>
+
+          {/* Pager. Hidden on a single page — a footer offering "1/1" and two
+              dead arrows is furniture, not information. Rendered while loading
+              too, so the row does not appear and disappear under the cursor. */}
+          {total > perPage && (
+            <div className="d-flex align-items-center justify-content-between gap-2 px-3 py-2"
+                 style={{ borderTop: '1px solid var(--vz-border-color)', fontSize: 12.5 }}>
+              <div className="d-flex align-items-center gap-2">
+                <span className="text-muted">
+                  {(page - 1) * perPage + 1}–{Math.min(page * perPage, total)} of {total}
+                </span>
+                <select
+                  className="form-select form-select-sm"
+                  style={{ width: 'auto', fontSize: 12.5 }}
+                  value={perPage}
+                  disabled={loading}
+                  onChange={e => {
+                    // A pick ends the auto-fit and is remembered; re-deriving a
+                    // size over a deliberate choice is what makes the control
+                    // feel broken.
+                    const n = Number(e.target.value);
+                    autoFitRef.current = false;
+                    try { localStorage.setItem(PER_PAGE_KEY, String(n)); } catch { /* private mode */ }
+                    setPerPage(n);
+                  }}
+                  aria-label="Rows per page"
+                >
+                  {/* The fitted size is rarely one of the presets (it is
+                      whatever the viewport allows, e.g. 14), and a <select>
+                      whose value matches no option renders blank. Fold the
+                      current size in so it always has something to show. */}
+                  {Array.from(new Set([...PER_PAGE_OPTIONS, perPage])).sort((a, b) => a - b)
+                    .map(n => <option key={n} value={n}>{n} / page</option>)}
+                </select>
+              </div>
+              <div className="d-flex align-items-center gap-2">
+                <button
+                  type="button"
+                  className="btn btn-light btn-sm"
+                  disabled={page <= 1 || loading}
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                >
+                  <i className="ri-arrow-left-s-line" />
+                </button>
+                <span className="text-muted">{page} / {Math.max(1, Math.ceil(total / perPage))}</span>
+                <button
+                  type="button"
+                  className="btn btn-light btn-sm"
+                  disabled={page >= Math.ceil(total / perPage) || loading}
+                  onClick={() => setPage(p => p + 1)}
+                >
+                  <i className="ri-arrow-right-s-line" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </Col>
 

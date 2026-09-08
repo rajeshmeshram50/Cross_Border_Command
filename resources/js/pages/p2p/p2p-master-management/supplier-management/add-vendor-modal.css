@@ -1497,7 +1497,11 @@
 }
 [data-bs-theme="dark"] .avm-section-violet,
 [data-bs-theme="dark"] .avm-section-purple { border-color: #3b2a6b; border-left-color: #a78bfa; }
-[data-bs-theme="dark"] .avm-section-amber  { border-color: #78350f; border-left-color: #f59e0b; }
+/* CS-169: the CONTAINER matches every other section — only the icon and the
+   heading text stay amber. The brown border (#78350f) with an orange spine
+   (#f59e0b) is what made this read as a differently-coloured box rather than
+   the same box with an amber heading. */
+[data-bs-theme="dark"] .avm-section-amber  { border-color: #3b2a6b; border-left-color: #a78bfa; }
 [data-bs-theme="dark"] .avm-section-teal   { border-color: #0f766e; border-left-color: #14b8a6; }
 [data-bs-theme="dark"] .avm-section-green  { border-color: #14532d; border-left-color: #4ade80; }
 [data-bs-theme="dark"] .avm-section-violet .avm-section-head,
@@ -1515,11 +1519,28 @@
 [data-bs-theme="dark"] .table-card.border,
 [data-bs-theme="dark"] .avm-modal .border { border-color: rgba(167,139,250,.14) !important; }
 [data-bs-theme="dark"] .avm-doc-count { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
-[data-bs-theme="dark"] .avm-section-amber  .avm-section-head { background: linear-gradient(135deg, #3f2c0a, #4a3408); }
+/* CS-169 / CS-173: the head takes the SAME flat violet as the violet/purple
+   sections — no amber wash at all. It was #3f2c0a→#4a3408, a lit olive-brown,
+   far brighter than the teal (#0c2522) and green (#14241a) heads on the same
+   modal, which is why this one section glowed. Both tickets asked for the
+   container to stop being yellow; this is the version that leaves nothing of it
+   behind except the icon and the words. */
+[data-bs-theme="dark"] .avm-section-amber  .avm-section-head { background: #241a47; }
 [data-bs-theme="dark"] .avm-section-teal   .avm-section-head { background: linear-gradient(135deg, #0c2522, #133e3a); }
 [data-bs-theme="dark"] .avm-section-green  .avm-section-head { background: linear-gradient(135deg, #14241a, #1a3225); }
 [data-bs-theme="dark"] .avm-section-title { color: #ede9fe; }
 [data-bs-theme="dark"] .avm-section-sub   { color: #a89fc7; }
+/* Heading stays amber in dark, per CS-169: "only the text and icon should
+   remain yellow, rest to look exactly like other container".
+   NOTE — this is the one point where CS-169 and CS-173 disagree. CS-173 read
+   "the colour should be light, its too much yellowish", which taken literally
+   would neutralise this text too; CS-169 is the more specific instruction and
+   is what is implemented. Both agree about the container, which is now identical
+   to the violet sections.
+   Worth knowing if this comes back: LIGHT mode deliberately paints the same two
+   lines purple (see the note above .avm-section-body, marked "user request"), so
+   dark and light now differ here on purpose. Flip these two rules to inherit if
+   the decision goes the other way. */
 [data-bs-theme="dark"] .avm-section-amber .avm-section-title { color: #fde68a; }
 [data-bs-theme="dark"] .avm-section-amber .avm-section-sub   { color: #fcd34d; }
 [data-bs-theme="dark"] .avm-field-label { color: #c4b5fd; }

@@ -3638,11 +3638,20 @@ export default function AddVendorModal(props: {
                 .filter(m => m.id !== mapEditingId)      
                 .map(m => String(m.productId ?? '')),
             );
-            return productOpts.filter(o => {
-              if (o.value === mapDraft.productId) return true;   
-              if (mapped.has(String(o.value))) return false;
-              return segSet.size === 0 || (o.segmentId != null && segSet.has(o.segmentId));
-            });
+            return productOpts
+              .filter(o => {
+                if (o.value === mapDraft.productId) return true;
+                if (mapped.has(String(o.value))) return false;
+                return segSet.size === 0 || (o.segmentId != null && segSet.has(o.segmentId));
+              })
+              /* Segment as a badge (CS-175). The label is "CODE — Name", which
+                 never says which segment a product belongs to — and a supplier
+                 with several segments sees products from all of them in one
+                 list, where similarly named products are indistinguishable.
+                 Violet is MasterSelect's documented tone for a category tag. */
+              .map(o => (o.segment
+                ? { ...o, badges: [{ text: o.segment, tone: 'violet' as const, title: `Segment: ${o.segment}` }] }
+                : o));
           })()}
           onProductChange={onMapProductChange}
           recompute={recomputeMapTotals}
@@ -4250,11 +4259,17 @@ function LockField({ locked, onLockClick, children }: { locked: boolean; onLockC
   );
 }
 
+/* `badges` rides through to MasterSelect, which renders each one as a pill to
+   the right of the option label. Used for the segment tag on Map Product: the
+   option text is "CODE — Name", which does not say which segment the product
+   belongs to, and two segments can carry similarly named products. */
+type SelectOptBadge = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string };
+
 function SelectInput(props: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
-  options: Array<string | { value: string; label: string }>;
+  options: Array<string | { value: string; label: string; badges?: SelectOptBadge[] }>;
   disabled?: boolean;
 }) {
   const normalized = props.options.map(o => typeof o === 'string' ? { value: o, label: o } : o);
@@ -5070,7 +5085,18 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
               <td><span className="font-monospace fs-13">{r.hsnSacCode || '—'}</span></td>
               <td>{r.segment ? <SegmentTags segment={r.segment} tagClassName="avm-seg-tag" /> : '—'}</td>
               <td className="text-end avm-num fs-13">₹{r.purchasePrice.toFixed(2)}</td>
-              <td className="text-end avm-num fs-13">{r.gstPercentage ? `${r.gstPercentage.toFixed(2)}%` : '—'}</td>
+              {/* 0% is a VALUE, not a blank (CS-168). This read
+                  `r.gstPercentage ? … : '—'`, and 0 is falsy — so a product
+                  deliberately configured at zero GST rendered the same em dash
+                  this table uses for "not set", telling the reader GST had
+                  never been mapped. The three currency columns either side
+                  already print 0.00 unconditionally; this one now matches them.
+                  Number.isFinite, not a null check: the field is typed number,
+                  so the only way it fails is NaN from a bad parse, and NaN is
+                  the one case where a dash is honest. */}
+              <td className="text-end avm-num fs-13">
+                {Number.isFinite(r.gstPercentage) ? `${r.gstPercentage.toFixed(2)}%` : '—'}
+              </td>
               <td className="text-end avm-num fs-13">₹{r.gstAmount.toFixed(2)}</td>
               <td className="text-end avm-num fs-13"><strong>₹{r.totalAmount.toFixed(2)}</strong></td>
               {!props.readOnly && (
@@ -5176,6 +5202,8 @@ export function MappedProductsViewPopup(props: {
      the form writes straight to /vendors/{id}/step/products and this popup
      reloads, so a mapping can be added without leaving the supplier list. */
   const [mapOpen,     setMapOpen]     = useState(false);
+  /** Row id being edited, or null when the form is adding (CS-168). */
+  const [mapEditingId, setMapEditingId] = useState<string | null>(null);
   const [mapDraft,    setMapDraft]    = useState<ProductMappingDraft>(EMPTY_MAPPING_DRAFT);
   const [productOpts, setProductOpts] = useState<ProductMappingOpt[]>([]);
   const [saving,      setSaving]      = useState(false);
@@ -5239,18 +5267,72 @@ export function MappedProductsViewPopup(props: {
   const mappableOpts = useMemo(() => {
     const segNames = new Set((props.segments ?? []).map(x => x.trim().toLowerCase()).filter(Boolean));
     const already  = new Set((rows ?? []).map(r => String(r.productId ?? '')));
-    return productOpts.filter(o => {
-      if (already.has(String(o.value))) return false;
-      return segNames.size === 0 || segNames.has(o.segment.trim().toLowerCase());
-    });
-  }, [productOpts, rows, props.segments]);
+    return productOpts
+      .filter(o => {
+        /* Keep the product being edited, even though it IS already mapped —
+           that is the whole point of editing it. Without this the option list
+           excludes it, the select matches nothing and renders blank over a
+           mapping that plainly has a product. (Mirrors the wizard's copy of
+           this filter.) */
+        if (o.value === mapDraft.productId) return true;
+        if (already.has(String(o.value))) return false;
+        return segNames.size === 0 || segNames.has(o.segment.trim().toLowerCase());
+      })
+      /* Segment badge (CS-175), same as the wizard's Map Product step — this
+         popup shares AddProductMappingPopup with it, so the two lists have to
+         read the same or the dropdown looks different depending on which door
+         you came through. */
+      .map(o => (o.segment
+        ? { ...o, badges: [{ text: o.segment, tone: 'violet' as const, title: `Segment: ${o.segment}` }] }
+        : o));
+    // mapDraft.productId is a dependency now — the filter keeps whichever
+    // product the draft points at, so the list has to recompute when it changes.
+  }, [productOpts, rows, props.segments, mapDraft.productId]);
 
-  const openMapForm = async () => {
-    setMapDraft(EMPTY_MAPPING_DRAFT);
-    setMapOpen(true);
+  /* Ensure the dropdown is populated. Shared by add and edit: the edit form
+     shows Product Name too (disabled), and an empty options list would render
+     it as a bare "Loading products…" box over a mapping that plainly has a
+     product. */
+  const ensureProductOpts = async () => {
     if (productOpts.length) return;
     try { setProductOpts(await loadMappableProducts()); }
     catch { toast.error('Load failed', 'Could not load the product list.'); }
+  };
+
+  const openMapForm = async () => {
+    setMapEditingId(null);
+    setMapDraft(EMPTY_MAPPING_DRAFT);
+    setMapOpen(true);
+    await ensureProductOpts();
+  };
+
+  /* Edit an existing mapping (CS-168). Reached from the row's pencil.
+     The draft is rebuilt from the ROW rather than re-fetched: the row already
+     holds every field the form edits, and a second read could disagree with
+     what the user is looking at.
+     Numbers go back to strings because the draft is what the inputs are bound
+     to, and a number in a text input loses a trailing "0" the moment it is
+     round-tripped. recompute is not called here — the stored totals are what
+     was actually saved, and recomputing on open would silently rewrite a
+     mapping the user has not touched. */
+  const openEditForm = async (rowId: string) => {
+    const row = (rows ?? []).find(r => r.id === rowId);
+    if (!row) return;
+    setMapEditingId(rowId);
+    setMapDraft({
+      productId:      row.productId != null ? String(row.productId) : '',
+      productCode:    row.productCode,
+      productName:    row.productName,
+      hsnSacCode:     row.hsnSacCode,
+      segment:        row.segment,
+      batchSerialLot: row.batchSerialLot,
+      purchasePrice:  String(row.purchasePrice ?? ''),
+      gstPercentage:  String(row.gstPercentage ?? ''),
+      gstAmount:      String(row.gstAmount ?? ''),
+      totalAmount:    String(row.totalAmount ?? ''),
+    });
+    setMapOpen(true);
+    await ensureProductOpts();
   };
 
   /* Refresh the dropdown so a product created a moment ago is in it. The form
@@ -5304,8 +5386,10 @@ export function MappedProductsViewPopup(props: {
     setSaving(true);
     try {
       const current = rows ?? [];
-      const next: ProductMappingRow[] = [...current, {
-        id: `new-${Date.now()}`,
+      const edited: ProductMappingRow = {
+        // Editing keeps the row's own id so the endpoint updates that mapping
+        // instead of deleting it and inserting a new one.
+        id: mapEditingId ?? `new-${Date.now()}`,
         productId: Number(mapDraft.productId),
         productCode: mapDraft.productCode,
         productName: mapDraft.productName,
@@ -5316,12 +5400,26 @@ export function MappedProductsViewPopup(props: {
         gstPercentage: Number(mapDraft.gstPercentage || 0),
         gstAmount: Number(mapDraft.gstAmount || 0),
         totalAmount: Number(mapDraft.totalAmount || 0),
-      }];
+      };
+      /* The endpoint replaces the WHOLE set, so every untouched row is re-sent
+         beside the changed one. Replacing in place rather than filter-then-
+         append also holds the row's position: a mapping that jumped to the
+         bottom of the table after an edit reads as a delete-and-re-add. */
+      const next: ProductMappingRow[] = mapEditingId
+        ? current.map(r => (r.id === mapEditingId ? edited : r))
+        : [...current, edited];
       await api.post(`/vendors/${props.vendorId}/step/products`, { mappings: mappingsPayload(next) });
       setMapOpen(false);
+      const wasEditing = mapEditingId !== null;
+      setMapEditingId(null);
       await loadMappings();
       props.onChanged?.();
-      toast.success('Product mapped', `${mapDraft.productName || 'Product'} is now linked to ${props.code}.`);
+      toast.success(
+        wasEditing ? 'Mapping updated' : 'Product mapped',
+        wasEditing
+          ? `${mapDraft.productName || 'Product'} has been updated for ${props.code}.`
+          : `${mapDraft.productName || 'Product'} is now linked to ${props.code}.`,
+      );
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save the product mapping';
       toast.error('Save failed', msg);
@@ -5358,9 +5456,18 @@ export function MappedProductsViewPopup(props: {
       ) : rows.length === 0 ? (
         <div className="avm-empty avm-empty-accent">No products mapped yet. Click "Map New Product" to begin.</div>
       ) : (
-        /* Read-only rows: editing and removing a mapping stay in the supplier
-           form, where the rest of the step's validation lives. */
-        <ProductMappingTable rows={rows} onRemove={() => {}} readOnly />
+        /* Edit is offered here (CS-168); unmapping is not.
+           They are not the same risk: correcting a price or a GST rate is a
+           revision of the row you are looking at, while removing the mapping
+           destroys saved data from a popup opened to READ it. Removal stays in
+           the supplier form, one deliberate step further in. */
+        <ProductMappingTable
+          rows={rows}
+          onEdit={openEditForm}
+          onRemove={() => {}}
+          allowRemove={false}
+          busy={saving}
+        />
       )}
     </PopupChrome>
 
@@ -5397,9 +5504,13 @@ export function MappedProductsViewPopup(props: {
         productOpts={mappableOpts}
         onProductChange={onMapProductChange}
         recompute={recomputeMappingTotals}
-        onAddProduct={() => setNewProductOpen(true)}
+        /* Editing fixes the product itself — changing it would be a different
+           mapping, not an edit of this one — so the form disables Product Name
+           and hides the "+ create product" affordance beside it. */
+        editing={mapEditingId !== null}
+        onAddProduct={mapEditingId === null ? () => setNewProductOpen(true) : undefined}
         addingProduct={newProductBusy}
-        onClose={() => setMapOpen(false)}
+        onClose={() => { setMapOpen(false); setMapEditingId(null); }}
         onSave={saveMapping}
       />
     )}
@@ -6064,7 +6175,7 @@ function GstScrutinyAddPopup(props: {
 function AddProductMappingPopup(props: {
   draft: ProductMappingDraft;
   setDraft: Setter<ProductMappingDraft>;
-  productOpts: Array<{ value: string; label: string }>;
+  productOpts: Array<{ value: string; label: string; badges?: SelectOptBadge[] }>;
   onProductChange: (productIdStr: string) => void;
   recompute: (d: ProductMappingDraft) => ProductMappingDraft;
   onClose: () => void;
