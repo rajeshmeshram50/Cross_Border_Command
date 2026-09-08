@@ -429,6 +429,19 @@ class SegmentDocUploadController extends Controller
         $deals     = $this->buildShipmentAgreements($owner, $type, $cid, $company_dd, $owner_kyc, $trade_licenses, $id, false);
         $shipments = array_values(array_filter($deals, fn ($r) => !empty($r['has_shipment'])));
 
+        /* Rows the Case-to-Case tables render.
+         *
+         * Every Case-to-Case figure on this response — trade_documents_count,
+         * agreements_count, total_documents, verified, pending — is summed from
+         * $deals below, but the tables were handed $shipments. A deal that has
+         * a PI and its applicable paperwork but no shipment order yet therefore
+         * counted towards the KPI and the tab badge while having no row to
+         * render: the Agreements tab came up empty under a non-zero count
+         * (QA #2, consignee vault). The tables are per DEAL — the tab itself
+         * says "PER DEAL" — so they get $deals. The Total Shipments KPI is a
+         * genuine shipment count and stays on $shipments. */
+        $ctcRows   = in_array($type, ['customer', 'consignee'], true) ? $deals : $shipments;
+
         // ── Header KPIs ─────────────────────────────────────────────────────
         // Customer/Consignee vaults have two document families:
         //   • Standard  = Company DD + Owner KYC + Trade Licences (one-time docs)
@@ -606,7 +619,7 @@ class SegmentDocUploadController extends Controller
                 'trade_licenses'         => $trade_licenses,
                 'trade_documents'        => $trade_documents,
                 'agreements'             => $agreements,
-                'shipment_agreements'    => $shipments,
+                'shipment_agreements'    => $ctcRows,
                 'last_updated'           => optional($uploads->max('updated_at'))->format('d-M-Y'),
             ],
         ]);

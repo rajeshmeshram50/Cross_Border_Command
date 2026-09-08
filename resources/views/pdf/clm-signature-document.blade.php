@@ -54,11 +54,46 @@
   // fallback so documents saved before the ruler existed render unchanged.
   $marginL = (int) max(10, min(60, $pcfg['margin_left'] ?? $marginX));
   $marginR = (int) max(10, min(60, $pcfg['margin_right'] ?? $marginX));
-  // dompdf has no support for the % free-drag positions HeaderFooterPanel
-  // emits — collapse them into a simple left/right 2-col header keyed off
-  // the logo's horizontal position (logo_pos.x ≤ 50 → logo on the left).
-  $logoX = isset($hcfg['logo_pos']['x']) ? (float) $hcfg['logo_pos']['x'] : 10.0;
-  $logoOnLeft = $logoX <= 50.0;
+  /* Place the logo and the title block where the draft editor actually put
+   * them.
+   *
+   * This used to ignore title_pos entirely and key a fixed 45/55 split off
+   * `logo_pos.x <= 50`, on the grounds that dompdf cannot do free positioning.
+   * It cannot — but it can do a two-cell table whose SPLIT and per-cell
+   * alignment are computed from the two positions, which honours the drag far
+   * more closely than a constant did. The editor already snaps an item in the
+   * outer thirds to that edge, so left / centre / right per cell is the whole
+   * vocabulary that has to survive.
+   *
+   * Before this, dragging the company name changed nothing in the PDF and the
+   * two views disagreed about where the header sat (QA #11).
+   */
+  $logoX  = isset($hcfg['logo_pos']['x'])  ? (float) $hcfg['logo_pos']['x']  : 10.0;
+  $titleX = isset($hcfg['title_pos']['x']) ? (float) $hcfg['title_pos']['x'] : 88.0;
+  $logoX  = max(0.0, min(100.0, $logoX));
+  $titleX = max(0.0, min(100.0, $titleX));
+  // Whichever sits further left takes the first cell.
+  $logoOnLeft = $logoX <= $titleX;
+  $firstX  = $logoOnLeft ? $logoX  : $titleX;
+  $secondX = $logoOnLeft ? $titleX : $logoX;
+  /* Split at the midpoint between them, clamped so neither cell collapses to
+     nothing when the two are dragged on top of each other. */
+  $splitPct = max(25.0, min(75.0, ($firstX + $secondX) / 2));
+  /* Alignment is measured INSIDE the cell the item landed in, not across the
+     whole band — an item at 55% is at the left of a cell that starts at 50%. */
+  $alignIn = function (float $x, float $start, float $end): string {
+    $span = max(1.0, $end - $start);
+    $rel  = ($x - $start) / $span * 100.0;
+    if ($rel <= 33.34) return 'left';
+    if ($rel >= 66.66) return 'right';
+    return 'center';
+  };
+  $firstAlign  = $alignIn($firstX, 0.0, $splitPct);
+  $secondAlign = $alignIn($secondX, $splitPct, 100.0);
+  $logoAlign   = $logoOnLeft ? $firstAlign  : $secondAlign;
+  $titleAlign  = $logoOnLeft ? $secondAlign : $firstAlign;
+  // .brand-logo is display:block, so its own margins do the aligning.
+  $logoMargin  = $logoAlign === 'right' ? '0 0 0 auto' : ($logoAlign === 'center' ? '0 auto' : '0');
   // Map HeaderFooterPanel's 'space-between' legacy value to right-align
   // so the title block doesn't ghost off the page on those older rows.
   if ($headerAlign === 'space-between')
@@ -725,39 +760,50 @@
   {{-- HEADER — driven by header_config, no hardcoded brand block. --}}
   <div class="content-wrapper main-content first-page-fix">
     <div class="page-header">
+      {{-- Two cells whose widths and alignment come from the draft editor's
+           logo_pos / title_pos, so the header prints where it was dragged. --}}
       <table>
         <tr>
           @if ($logoOnLeft)
-            <td style="width: 45%; text-align: left;">
-              @if ($headerShowLogo)
-                @if (!empty($headerLogoBase64))
-                  <img src="data:image/png;base64,{{ $headerLogoBase64 }}" class="brand-logo" alt="logo">
-                @endif
+            <td style="width: {{ round($splitPct, 2) }}%; text-align: {{ $logoAlign }};">
+              @if ($headerShowLogo && !empty($headerLogoBase64))
+                <img src="data:image/png;base64,{{ $headerLogoBase64 }}" class="brand-logo" alt="logo"
+                  style="margin: {{ $logoMargin }};">
               @endif
             </td>
-            <td style="width: 55%; text-align: {{ $headerAlign }};">
+            <td style="width: {{ round(100 - $splitPct, 2) }}%; text-align: {{ $titleAlign }};">
               @if ($headerShowTitle)
-                <div class="header-title">{!! nl2br(e($headerTitle)) !!}</div>
-                @if ($headerSubtitle !== '')
-                  <div class="header-subtitle">{!! nl2br(e($headerSubtitle)) !!}</div>
-                @endif
+                {{-- The cell's text-align POSITIONS this block (from title_pos);
+                     the inline-block's own align is the header's Align setting,
+                     which is what lines up a multi-line title/subtitle. Two
+                     separate jobs the editor also does separately. --}}
+                <div style="display: inline-block; text-align: {{ $headerAlign }};">
+                  <div class="header-title">{!! nl2br(e($headerTitle)) !!}</div>
+                  @if ($headerSubtitle !== '')
+                    <div class="header-subtitle">{!! nl2br(e($headerSubtitle)) !!}</div>
+                  @endif
+                </div>
               @endif
             </td>
           @else
-            <td style="width: 55%; text-align: {{ $headerAlign }};">
+            <td style="width: {{ round($splitPct, 2) }}%; text-align: {{ $titleAlign }};">
               @if ($headerShowTitle)
-                <div class="header-title">{!! nl2br(e($headerTitle)) !!}</div>
-                @if ($headerSubtitle !== '')
-                  <div class="header-subtitle">{!! nl2br(e($headerSubtitle)) !!}</div>
-                @endif
+                {{-- The cell's text-align POSITIONS this block (from title_pos);
+                     the inline-block's own align is the header's Align setting,
+                     which is what lines up a multi-line title/subtitle. Two
+                     separate jobs the editor also does separately. --}}
+                <div style="display: inline-block; text-align: {{ $headerAlign }};">
+                  <div class="header-title">{!! nl2br(e($headerTitle)) !!}</div>
+                  @if ($headerSubtitle !== '')
+                    <div class="header-subtitle">{!! nl2br(e($headerSubtitle)) !!}</div>
+                  @endif
+                </div>
               @endif
             </td>
-            <td style="width: 45%; text-align: right;">
-              @if ($headerShowLogo)
-                @if (!empty($headerLogoBase64))
-                  <img src="data:image/png;base64,{{ $headerLogoBase64 }}" class="brand-logo" alt="logo"
-                    style="margin-left:auto;">
-                @endif
+            <td style="width: {{ round(100 - $splitPct, 2) }}%; text-align: {{ $logoAlign }};">
+              @if ($headerShowLogo && !empty($headerLogoBase64))
+                <img src="data:image/png;base64,{{ $headerLogoBase64 }}" class="brand-logo" alt="logo"
+                  style="margin: {{ $logoMargin }};">
               @endif
             </td>
           @endif

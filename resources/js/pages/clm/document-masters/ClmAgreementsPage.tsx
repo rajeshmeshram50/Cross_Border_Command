@@ -244,16 +244,29 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<AgrLib | null>(null);
   // All-segments popover — opened from the +N badge in the SEGMENT column.
-  const [segOpen, setSegOpen] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
-  const [partyOpen, setPartyOpen] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
+  /* flipUp/maxH keep the popover inside the viewport: a +N badge on one of the
+   * last rows has almost no room below it, and the panel used to open downwards
+   * regardless and get cut off by the bottom of the screen (QA #4). */
+  const [segOpen, setSegOpen] = useState<{ id: number; names: string[]; x: number; y: number; flipUp: boolean; maxH: number } | null>(null);
+  // Same viewport clamp as the segment popover above (QA #4).
+  const [partyOpen, setPartyOpen] = useState<{ id: number; names: string[]; x: number; y: number; flipUp: boolean; maxH: number } | null>(null);
   // Close the fixed-positioned badge popovers on scroll/resize so they can't
   // drift out of the table (capture:true catches ancestor + table scrolls).
   useEffect(() => {
     if (!segOpen && !partyOpen) return;
     const close = () => { setSegOpen(null); setPartyOpen(null); };
-    window.addEventListener('scroll', close, true);
+    /* A scroll INSIDE the popover must not close it.
+       capture:true sees the popover's own scroll event too, so opening a long
+       segment list and reaching for the wheel dismissed it instantly — the list
+       was scrollable but unreachable (QA #4). Only page/table scrolls close it. */
+    const onScroll = (e: Event) => {
+      const t = e.target as Element | null;
+      if (t && typeof t.closest === 'function' && t.closest('.clm-pop')) return;
+      close();
+    };
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', close);
-    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+    return () => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', close); };
   }, [segOpen, partyOpen]);
   // Row whose PDF is currently downloading — drives the per-row spinner.
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
@@ -471,7 +484,16 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                                 <Tooltip label="View all segments">
                                   <button
                                     type="button"
-                                    onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(segOpen?.id === r.id ? null : { id: r.id, names: segList, x: b.left, y: b.bottom + 4 }); }}
+                                    onClick={e => {
+                                    if (segOpen?.id === r.id) { setSegOpen(null); return; }
+                                    const b = e.currentTarget.getBoundingClientRect();
+                                    // Open upwards when the space below can't hold the list.
+                                    const estH = Math.min(280, 34 + segList.length * 30);
+                                    const below = window.innerHeight - b.bottom - 12;
+                                    const above = b.top - 12;
+                                    const flipUp = below < estH && above > below;
+                                    setSegOpen({ id: r.id, names: segList, x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp, maxH: Math.max(120, Math.min(280, flipUp ? above : below)) });
+                                  }}
                                     style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
                                     +{extra}
                                   </button>
@@ -496,7 +518,15 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                                 <Tooltip label="View all parties">
                                   <button
                                     type="button"
-                                    onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setPartyOpen(partyOpen?.id === r.id ? null : { id: r.id, names: partyList, x: b.left, y: b.bottom + 4 }); }}
+                                    onClick={e => {
+                                      if (partyOpen?.id === r.id) { setPartyOpen(null); return; }
+                                      const b = e.currentTarget.getBoundingClientRect();
+                                      const estH = Math.min(280, 34 + partyList.length * 30);
+                                      const below = window.innerHeight - b.bottom - 12;
+                                      const above = b.top - 12;
+                                      const flipUp = below < estH && above > below;
+                                      setPartyOpen({ id: r.id, names: partyList, x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp, maxH: Math.max(120, Math.min(280, flipUp ? above : below)) });
+                                    }}
                                     style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
                                     +{extra}
                                   </button>
@@ -574,7 +604,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
       {segOpen && createPortal(
         <>
           <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.flipUp ? undefined : segOpen.y, bottom: segOpen.flipUp ? (window.innerHeight - segOpen.y) : undefined, zIndex: 601, width: 210, maxHeight: segOpen.maxH, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Segments ({segOpen.names.length})</div>
             {segOpen.names.map((name, i) => (
               <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
@@ -590,7 +620,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
       {partyOpen && createPortal(
         <>
           <div onClick={() => setPartyOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(partyOpen.x, window.innerWidth - 230), top: partyOpen.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(partyOpen.x, window.innerWidth - 230), top: partyOpen.flipUp ? undefined : partyOpen.y, bottom: partyOpen.flipUp ? (window.innerHeight - partyOpen.y) : undefined, zIndex: 601, width: 210, maxHeight: partyOpen.maxH, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Applicable Parties ({partyOpen.names.length})</div>
             {partyOpen.names.map((name, i) => (
               <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
