@@ -998,19 +998,27 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
            agreements sit in one list here, exactly as they do in the per
            transaction tab, each row carrying its own category so Resend still
            targets the right library. */
+        const dealCode = (v?: string | null) => {
+          const t = (v ?? '').trim();
+          return t && t !== '—' ? t : '';
+        };
         const deals = (isStd ? [] : [
           ...(vault.vendor_with_shipment ?? []),
           ...(vault.vendor_without_shipment ?? []),
-        ]).map(r => ({
-          key:   r.shipment_id || r.procurement_id || `deal-${r.sr}`,
-          code:  r.shipment_id || r.procurement_id || '—',
-          title: r.customer || r.supplier || '—',
-          sub:   r.consignee || '',
-          rows: [
-            ...(r.docs ?? []).map(d => ({ doc: d, cat: 'td' as const })),
-            ...(r.agreements ?? []).map(d => ({ doc: d, cat: 'agreement' as const })),
-          ] as OvRow[],
-        }));
+        ]).map((r, i) => {
+          const code = dealCode(r.shipment_id) || dealCode(r.procurement_id);
+          return {
+            key:   code || `deal-${r.sr ?? i}`,
+            code,
+            label: code || 'SHP-001',
+            title: r.customer || r.supplier || '—',
+            sub:   r.consignee || '',
+            rows: [
+              ...(r.docs ?? []).map(d => ({ doc: d, cat: 'td' as const })),
+              ...(r.agreements ?? []).map(d => ({ doc: d, cat: 'agreement' as const })),
+            ] as OvRow[],
+          };
+        });
         const deal    = isStd ? null : (deals.find(d => d.key === ovDeal) ?? null);
         const picking = !isStd && !deal;
         const docs: OvRow[] = isStd ? stdDocs : (deal?.rows ?? []);
@@ -1082,7 +1090,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                       {deals.map(d => (
                         <li key={d.key}>
                           <button type="button" className="sev-ov-pick" onClick={() => { setOvDeal(d.key); setOvPicked([]); }}>
-                            <span className="sev-ov-pick-code">{d.code}</span>
+                            <span className="sev-ov-pick-code">{d.label}</span>
                             <span className="sev-ov-pick-text">
                               <span className="sev-ov-pick-title">{d.title}</span>
                               <span className="sev-ov-pick-sub">{d.sub || '—'}</span>
@@ -1108,7 +1116,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                             onChange={(e) => setOvPicked(e.target.checked ? sendable.map(r => r.key) : [])}
                           />
                         </th>
-                        <th style={{ width: 52 }}>#</th>
+                        <th style={{ width: 62 }}>Sr No</th>
                         <th>Document Name</th>
                         <th style={{ width: 128 }}>Status</th>
                         <th style={{ width: 186 }}>Action</th>
@@ -1149,7 +1157,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                                     type="button"
                                     className="sev-ov-act sev-ov-act-track"
                                     disabled={!canTrack}
-                                    onClick={() => setOvTrack({ id: d.signature_request_id as number, code: d.doc_code || d.name || deal.code })}
+                                    onClick={() => setOvTrack({ id: d.signature_request_id as number, code: d.doc_code || d.name || deal.label })}
                                   >
                                     <Glyph d={VAULT_GLYPHS.clock} size={11} /> Track
                                   </button>
