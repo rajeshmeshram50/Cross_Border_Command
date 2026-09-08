@@ -382,7 +382,20 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
 
   const [shipmentIdMode, setShipmentIdMode] = useState<'with' | 'without'>('with');
 
+  /* Case to Case is not ready to be opened yet, so BOTH of its entry points —
+     the card itself and the "Send Documents & Agreements for Signature" button
+     that opens the overview — say so instead of going in. Handled here rather
+     than by disabling the buttons so a click still gets an answer: a dead card
+     reads as a broken one. Nothing behind the toast changes, so the vault stays
+     on whatever was already showing.
+
+     The Case to Case rendering below is left intact, not deleted — this gate is
+     the only thing standing between it and the screen when the feature lands. */
+  const comingSoon = () =>
+    toast.info('Coming soon', 'Case to Case documents & agreements are still being built.');
+
   const selectGroup = (g: GroupKey) => {
+    if (g === 'case-to-case') { comingSoon(); return; }
     setGroup(g);
     const first = TABS.find(t => t.group === g);
     if (first) setTab(first.key);
@@ -824,11 +837,18 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                     </span>
                   </button>
                 </Tooltip>
-                <Tooltip label="View all documents in one list">
+                {/* The hover has to agree with the click: promising "view all
+                    documents" on a button that answers "coming soon" is the
+                    same broken-looking card the gate exists to avoid. */}
+                <Tooltip label={g.key === 'case-to-case' ? 'Coming soon' : 'View all documents in one list'}>
                   <button
                     type="button"
                     className="cev-group-overview"
-                    onClick={() => { setOverview(g.key); setOverviewPage(1); setOvDeal(null); setOvPicked([]); }}
+                    onClick={() => {
+                      // Same gate as the card above — see selectGroup.
+                      if (g.key === 'case-to-case') { comingSoon(); return; }
+                      setOverview(g.key); setOverviewPage(1); setOvDeal(null); setOvPicked([]);
+                    }}
                   >
                     <Glyph d={VAULT_GLYPHS.list} size={12} sw={2.3} /> {g.overview}
                   </button>
