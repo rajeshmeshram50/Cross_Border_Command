@@ -85,6 +85,8 @@ export interface VaultShipmentRow {
   agreement:  { ratio: string; pct: number };
   risk: 'Compliant' | 'Medium' | 'High';
   buyer_is_consignee: boolean;
+  /** Deal has a shipment order. False → the Shipment ID column has nothing real to show. */
+  has_shipment?: boolean;
   trade_docs_buyer?:     VaultShipmentDoc[];
   trade_docs_consignee?: VaultShipmentDoc[];
   agreements_buyer?:     VaultShipmentDoc[];
@@ -827,7 +829,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                       className={`cnev-ov-shiptab ${activeShip?.id === r.id ? 'is-active' : ''}`}
                       onClick={() => { setOvShip(r.id); setOverviewPage(1); }}
                     >
-                      <i className="ri-truck-line" aria-hidden /> {r.shipment_id}
+                      <i className="ri-truck-line" aria-hidden /> {r.has_shipment === false ? 'Not shipped' : r.shipment_id}
                       <span className="cnev-ov-shiptab-opp">{r.opportunity_id}</span>
                     </button>
                   ))}
@@ -1356,7 +1358,7 @@ function ShipmentTable({ rows, kind, onSend, activeSend }: {
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={COLS} className="cnev-empty">No shipments for this consignee.</td></tr>
+              <tr><td colSpan={COLS} className="cnev-empty">No deals for this consignee.</td></tr>
             ) : filtered.map((r, i) => {
               const open = openId === r.id;
               return (
@@ -1364,7 +1366,9 @@ function ShipmentTable({ rows, kind, onSend, activeSend }: {
                   <tr style={{ cursor: 'pointer' }} onClick={() => setOpenId(open ? null : r.id)}>
                     <td style={{ textAlign: 'center' }}><span style={{ display: 'inline-block', transition: 'transform .18s', transform: open ? 'rotate(90deg)' : 'none', color: '#0891b2', fontWeight: 800 }}>▸</span></td>
                     <td>{i + 1}</td>
-                    <td><span className="cnev-chip-pill">● {r.shipment_id}</span></td>
+                    <td>{r.has_shipment === false
+                      ? <span className="cnev-chip-pill" style={{ opacity: .55 }} title="No shipment order raised for this deal yet">● Not shipped</span>
+                      : <span className="cnev-chip-pill">● {r.shipment_id}</span>}</td>
                     <td><span className="cnev-chip-pill cnev-chip-pill-warm">● {r.opportunity_id}</span></td>
                     <td>
                       <span className="cnev-cust-cell">

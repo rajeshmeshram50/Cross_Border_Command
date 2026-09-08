@@ -124,6 +124,8 @@ export interface VaultShipmentRow {
   agreement:  { ratio: string; pct: number };
   risk: 'Compliant' | 'Medium' | 'High';
   buyer_is_consignee: boolean;
+  /** Deal has a shipment order. False → the Shipment ID column has nothing real to show. */
+  has_shipment?: boolean;
   trade_docs_buyer?:     VaultShipmentDoc[];
   trade_docs_consignee?: VaultShipmentDoc[];
   agreements_buyer?:     VaultShipmentDoc[];
@@ -928,7 +930,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                       className={`cev-ov-shiptab ${activeShip?.id === r.id ? 'is-active' : ''}`}
                       onClick={() => { setOvShip(r.id); setOverviewPage(1); }}
                     >
-                      <i className="ri-truck-line" aria-hidden /> {r.shipment_id}
+                      <i className="ri-truck-line" aria-hidden /> {r.has_shipment === false ? 'Not shipped' : r.shipment_id}
                       <span className="cev-ov-shiptab-opp">{r.opportunity_id}</span>
                     </button>
                   ))}
@@ -1473,7 +1475,9 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend, activeSend }: {
                       <span style={{ display: 'inline-block', transition: 'transform .18s', transform: open ? 'rotate(90deg)' : 'none', color: '#0891b2', fontWeight: 800 }}>▸</span>
                     </td>
                     <td>{i + 1}</td>
-                    <td><span className="cev-chip-pill">● {r.shipment_id}</span></td>
+                    <td>{r.has_shipment === false
+                      ? <span className="cev-chip-pill" style={{ opacity: .55 }} title="No shipment order raised for this deal yet">● Not shipped</span>
+                      : <span className="cev-chip-pill">● {r.shipment_id}</span>}</td>
                     <td><span className="cev-chip-pill cev-chip-pill-warm">● {r.opportunity_id}</span></td>
                     <td>
                       <span className="cev-cust-cell">

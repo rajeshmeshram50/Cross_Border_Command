@@ -121,6 +121,11 @@ export default function SalesDocSendForSignatureModal({
   open, kind, docId, docCode, leadId, customerName, onClose, onSent,
 }: Props) {
   const toast = useToast();
+  /* The resolved signer for this document — name + email straight from the
+     server's resolver. null while loading; false once we know there is none
+     (the send would be refused, so say so before the click). */
+  const [resolvedSigner, setResolvedSigner] = useState<{ name: string; email: string } | null>(null);
+  const [signerLoaded, setSignerLoaded] = useState(false);
 
   // Quotation/PI signing always goes to a single signer — the customer's
   // primary contact person.
@@ -175,6 +180,27 @@ export default function SalesDocSendForSignatureModal({
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
   }, [open]);
+
+  /* Ask the server who this document will go to. Same resolver the send
+     runs, so the address shown is the address used — the panel used to print
+     a fixed sentence about "the customer's primary contact" and never the
+     address itself (QA #8). */
+  useEffect(() => {
+    if (!open) { setResolvedSigner(null); setSignerLoaded(false); return; }
+    let cancelled = false;
+    setSignerLoaded(false);
+    api.get('/clm/signature-requests/sales-doc-signers', {
+      params: { doc_kind: kind === 'pi' ? 'proforma_invoice' : 'quotation', doc_id: docId },
+    })
+      .then(r => {
+        if (cancelled) return;
+        const first = (r.data?.data ?? [])[0];
+        setResolvedSigner(first?.email ? { name: String(first.name ?? ''), email: String(first.email) } : null);
+      })
+      .catch(() => { if (!cancelled) setResolvedSigner(null); })
+      .finally(() => { if (!cancelled) setSignerLoaded(true); });
+    return () => { cancelled = true; };
+  }, [open, kind, docId]);
 
   /* ── Fetch + load the sales PDF into pdf.js (one document, rendered a
    * single page at a time onto a canvas — no <iframe>, so no second
@@ -368,6 +394,12 @@ export default function SalesDocSendForSignatureModal({
   const label = kind === 'pi' ? 'Proforma Invoice' : 'Quotation';
   const roleName = (_r: SignerRole) => customerName || 'Customer';
 
+  /* Who this actually goes to. Resolved by the server with the SAME code the
+     send uses, so the address on screen is the address that gets mailed. */
+  const signerLine = resolvedSigner
+    ? `${resolvedSigner.name} · ${resolvedSigner.email}`
+    : null;
+
   return createPortal(
     <div className="ssf-overlay" role="dialog" aria-modal="true">
       <style>{SSF_CSS}{SDS_CSS}</style>
@@ -510,7 +542,20 @@ export default function SalesDocSendForSignatureModal({
                 {roles.map(r => (
                   <div key={r} style={{ marginBottom: 6 }}>
                     <div className="ssf-recipient-name"><span className={`ssf-signer-dot ssf-signer-dot-${r}`} style={{ marginRight: 6 }} />{ROLE_LABEL[r]} · {roleName(r)}</div>
-                    <div className="ssf-recipient-email">Sent to &amp; signed by the customer's primary contact person (email from the customer record).</div>
+                    {/* The real address, not a description of where it comes
+                        from. While it loads, say so rather than showing an
+                        empty line; when there is none, warn here — the send is
+                        refused for exactly this reason, and finding that out
+                        after the click is worse. */}
+                    {!signerLoaded ? (
+                      <div className="ssf-recipient-email">Resolving signer…</div>
+                    ) : signerLine ? (
+                      <div className="ssf-recipient-email" title={signerLine}>{signerLine}</div>
+                    ) : (
+                      <div className="ssf-recipient-email" style={{ color: '#b91c1c', fontWeight: 700 }}>
+                        No contact email on this customer — add one before sending.
+                      </div>
+                    )}
                   </div>
                 ))}
                 <div className="ssf-options">

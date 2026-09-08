@@ -256,9 +256,13 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<TdLib | null>(null);
   // All-segments popover — opened from the +N badge in the SEGMENT column.
-  const [segOpen, setSegOpen] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
+  /* flipUp/maxH keep the popover inside the viewport: a +N badge on one of the
+   * last rows has almost no room below it, and the panel used to open downwards
+   * regardless and get cut off by the bottom of the screen (QA #4). */
+  const [segOpen, setSegOpen] = useState<{ id: number; names: string[]; x: number; y: number; flipUp: boolean; maxH: number } | null>(null);
   // All-parties popover — opened from the +N badge in the APPLICABLE PARTY column.
-  const [partyOpen, setPartyOpen] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
+  // Same viewport clamp as the segment popover above (QA #4).
+  const [partyOpen, setPartyOpen] = useState<{ id: number; names: string[]; x: number; y: number; flipUp: boolean; maxH: number } | null>(null);
   // These popovers are portalled with fixed positioning off the badge's rect, so
   // a page/table scroll leaves them behind (they drift out of the table and look
   // mispositioned). Close them on any scroll (capture:true catches ancestor +
@@ -472,7 +476,16 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                               <Tooltip label="View all segments">
                                 <button
                                   type="button"
-                                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(segOpen?.id === r.id ? null : { id: r.id, names: segList, x: b.left, y: b.bottom + 4 }); }}
+                                  onClick={e => {
+                                    if (segOpen?.id === r.id) { setSegOpen(null); return; }
+                                    const b = e.currentTarget.getBoundingClientRect();
+                                    // Open upwards when the space below can't hold the list.
+                                    const estH = Math.min(280, 34 + segList.length * 30);
+                                    const below = window.innerHeight - b.bottom - 12;
+                                    const above = b.top - 12;
+                                    const flipUp = below < estH && above > below;
+                                    setSegOpen({ id: r.id, names: segList, x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp, maxH: Math.max(120, Math.min(280, flipUp ? above : below)) });
+                                  }}
                                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
                                   +{extra}
                                 </button>
@@ -495,7 +508,15 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                               <Tooltip label="View all applicable parties">
                                 <button
                                   type="button"
-                                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setPartyOpen(partyOpen?.id === r.id ? null : { id: r.id, names: list, x: b.left, y: b.bottom + 4 }); }}
+                                  onClick={e => {
+                                    if (partyOpen?.id === r.id) { setPartyOpen(null); return; }
+                                    const b = e.currentTarget.getBoundingClientRect();
+                                    const estH = Math.min(280, 34 + list.length * 30);
+                                    const below = window.innerHeight - b.bottom - 12;
+                                    const above = b.top - 12;
+                                    const flipUp = below < estH && above > below;
+                                    setPartyOpen({ id: r.id, names: list, x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp, maxH: Math.max(120, Math.min(280, flipUp ? above : below)) });
+                                  }}
                                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
                                   +{extra}
                                 </button>
@@ -578,7 +599,7 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
       {segOpen && createPortal(
         <>
           <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.flipUp ? undefined : segOpen.y, bottom: segOpen.flipUp ? (window.innerHeight - segOpen.y) : undefined, zIndex: 601, width: 210, maxHeight: segOpen.maxH, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Segments ({segOpen.names.length})</div>
             {segOpen.names.map((name, i) => (
               <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
@@ -594,7 +615,7 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
       {partyOpen && createPortal(
         <>
           <div onClick={() => setPartyOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(partyOpen.x, window.innerWidth - 230), top: partyOpen.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(partyOpen.x, window.innerWidth - 230), top: partyOpen.flipUp ? undefined : partyOpen.y, bottom: partyOpen.flipUp ? (window.innerHeight - partyOpen.y) : undefined, zIndex: 601, width: 210, maxHeight: partyOpen.maxH, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Applicable Party ({partyOpen.names.length})</div>
             {partyOpen.names.map((name, i) => (
               <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>

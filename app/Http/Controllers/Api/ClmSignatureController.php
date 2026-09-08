@@ -1617,6 +1617,39 @@ class ClmSignatureController extends Controller
     }
 
     /**
+     * Who a Quotation / PI would go to, without sending it.
+     *
+     * The send modal used to print a fixed sentence — "the customer's primary
+     * contact person (email from the customer record)" — and never the address
+     * itself, so the user signed off on a send without seeing where it was
+     * going. It also meant a customer with no contact email looked fine right
+     * up to the 422 on Send.
+     * This runs resolveSalesDocSigners(), the SAME resolver the send uses, so
+     * the screen and the mail can never disagree. Read-only.
+     */
+    public function salesDocSigners(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
+
+        $data = $request->validate([
+            'doc_kind' => 'required|string|in:quotation,proforma_invoice',
+            'doc_id'   => 'required|integer',
+        ]);
+
+        $record = $data['doc_kind'] === 'quotation'
+            ? \App\Models\Quotation::where('client_id', $user->client_id)->with('customer.primaryAddress')->find($data['doc_id'])
+            : \App\Models\ProformaInvoice::where('client_id', $user->client_id)->with('customer.primaryAddress')->find($data['doc_id']);
+        if (!$record) return response()->json(['status' => false, 'message' => 'Document not found.'], 404);
+
+        return response()->json([
+            'status' => true,
+            'data'   => $this->resolveSalesDocSigners($record, null),
+        ]);
+    }
+
+    /**
      * Stage 5 (Quotation vs PI) → Send for Signature.
      *
      * Renders the Quotation / Proforma Invoice PDF (the same with-signature
