@@ -100,8 +100,18 @@ class VerifyPayrollScenarios extends Command
             $nAtt  = (clone $att)->count();
             $nLate = (clone $att)->where('status', 'Late')->count();
             $nHalf = (clone $att)->where('status', 'Half Day')->count();
-            $punch = DB::table('attendance_punches')->where('employee_id', $e->id)
-                ->whereBetween('punched_at', [$first . ' 00:00:00', $last . ' 23:59:59'])->whereNull('deleted_at')->count();
+            /* Count punches by their PARENT attendance date, not by punched_at.
+             *
+             * A night shift starts at 22:00 and checks out at 06:00 the NEXT
+             * day, so the check-out for the 31st is stamped 1 September. Filtering
+             * on punched_at dropped it and reported 49 of 50 for EMP-003 — a
+             * false failure on data that was complete. The punch belongs to the
+             * day it was worked, which is the attendance row, not the wall clock. */
+            $punch = DB::table('attendance_punches as p')
+                ->join('attendances as a', 'a.id', '=', 'p.attendance_id')
+                ->where('a.employee_id', $e->id)
+                ->whereBetween('a.attendance_date', [$first, $last])
+                ->whereNull('p.deleted_at')->count();
             $lv    = DB::table('leave_requests')->where('employee_id', $e->id)
                 ->where('from_date', '<=', $last)->where('to_date', '>=', $first);
             $nLv   = (clone $lv)->count();
