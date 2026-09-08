@@ -3027,6 +3027,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         picked. modelName='Consignee' tells the backend to resolve the
         {{consignee.*}} token namespace from this consignee's data. */}
     <SalesCustomerSendForSignatureModal
+      /* Bigger signature box — a company signature is routinely wider than the
+         150pt default and Zoho prints it past the field, over the next one.
+         Opt-in, so Quotation / PI keep their tuned placements. */
+      boxSize={{ width: 240, height: 55 }}
       open={Array.isArray(sendForSignature)}
       modelName="Consignee"
       /* multiBox: the ONE resolved signer can be asked to sign the same

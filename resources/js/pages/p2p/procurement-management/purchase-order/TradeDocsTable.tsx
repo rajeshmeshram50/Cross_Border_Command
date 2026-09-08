@@ -644,6 +644,11 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
       </div>
 
       <SalesCustomerSendForSignatureModal
+        /* Bigger signature box for P2P. A supplier's company signature is
+           routinely wider than the 150pt default, and Zoho does not shrink
+           it to fit — it prints past the field and over the next one. This
+           is opt-in so Quotation / PI keep their tuned placements. */
+        boxSize={{ width: 240, height: 55 }}
         open={Array.isArray(sendDocIds)}
         customer={party}
         modelName="Vendor"
@@ -677,6 +682,11 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
       {/* Purchase Order → same modal in raw-PDF mode (supplier signs the PO PDF).
           Separate instance so PO and CLM-library sends never share state. */}
       <SalesCustomerSendForSignatureModal
+        /* Bigger signature box for P2P. A supplier's company signature is
+           routinely wider than the 150pt default, and Zoho does not shrink
+           it to fit — it prints past the field and over the next one. This
+           is opt-in so Quotation / PI keep their tuned placements. */
+        boxSize={{ width: 240, height: 55 }}
         open={poSign}
         customer={party}
         modelName="Vendor"

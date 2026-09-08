@@ -3755,6 +3755,11 @@ export default function AddVendorModal(props: {
           the {{supplier.*}} token namespace from this vendor. */}
       <SalesCustomerSendForSignatureModal
         open={Array.isArray(sendForSignature)}
+        /* Bigger signature box for P2P. A supplier's company signature is
+           routinely wider than the 150pt default, and Zoho does not shrink
+           it to fit — it prints past the field and over the next one. This
+           is opt-in so Quotation / PI keep their tuned placements. */
+        boxSize={{ width: 240, height: 55 }}
         /* multiBox: one contact person may be asked to sign the same
            document in several places (Legal Team #9 / BR-03). This is the
            single-signer path - roleMode takes precedence when a

@@ -828,6 +828,10 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
           more than once in a document). Single-signer trade-doc mode only; the
           agreement / role flows are untouched. */}
       <SalesCustomerSendForSignatureModal
+        /* Bigger signature box — a company signature is routinely wider than the
+           150pt default and Zoho prints it past the field, over the next one.
+           Opt-in, so Quotation / PI keep their tuned placements. */
+        boxSize={{ width: 240, height: 55 }}
         open={Array.isArray(sendDocIds)}
         customer={customer?.db_id ? {
           id:      customer.id,
@@ -1811,6 +1815,10 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
         document.body,
       )}
       <SalesCustomerSendForSignatureModal
+        /* Bigger signature box — a company signature is routinely wider than the
+           150pt default and Zoho prints it past the field, over the next one.
+           Opt-in, so Quotation / PI keep their tuned placements. */
+        boxSize={{ width: 240, height: 55 }}
         open={!!agr}
         customer={null}
         mode="agreement"
@@ -1819,6 +1827,10 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
         onSent={() => { setAgr(null); onSent(); }}
       />
       <SalesCustomerSendForSignatureModal
+        /* Bigger signature box — a company signature is routinely wider than the
+           150pt default and Zoho prints it past the field, over the next one.
+           Opt-in, so Quotation / PI keep their tuned placements. */
+        boxSize={{ width: 240, height: 55 }}
         open={!!td}
         mode="trade-doc"
         /* multiBox: this is the vault's OTHER trade-doc send (the shipment /

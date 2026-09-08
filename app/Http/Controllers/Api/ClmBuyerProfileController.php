@@ -651,10 +651,14 @@ class ClmBuyerProfileController extends Controller
              * them signed. Party-level ids stay in the union, so a party with
              * applicable agreements and no deal yet is unaffected. Done counts
              * the signed ones in that union, never a raw tally. */
-            $agrIds = array_unique(array_merge(
-                $applicAgrByCustomer[(int) $b['db_id']] ?? [],
-                array_keys($dealAgrByCustomer[(int) $b['db_id']] ?? []),
-            ));
+            /* DEAL agreements only — the party's own segment tags are NOT
+               merged in. An agreement belongs to a transaction, not to a
+               company: a customer with three PIs owes each deal's paperwork
+               on that deal, not the union of all three at party level.
+               Reverses the party-level half of CBC #66, deliberately, and in
+               step with SegmentDocUploadController::vault() — the two screens
+               have to answer the same question the same way. */
+            $agrIds = array_keys($dealAgrByCustomer[(int) $b['db_id']] ?? []);
             $agrSignedSet = $sigByParty['Customer#' . (int) $b['db_id']] ?? [];
             $b['agr'] = $docProgress($agrIds, $agrPartyById, $agrSignedSet, 'buyer');
 
@@ -671,13 +675,10 @@ class ClmBuyerProfileController extends Controller
         }
 
         foreach ($consOut as &$co) {
-            /* Agreements: the party's own segment set UNION what its deals
-               require — same rule as the buyer rows, so both sides of the
-               screen speak the language the Evidence Vault does. */
-            $cAgrIds = array_unique(array_merge(
-                $applicAgrByConsignee[(int) $co['db_id']] ?? [],
-                array_keys($dealAgrByConsignee[(int) $co['db_id']] ?? []),
-            ));
+            /* Agreements: what this consignee's DEALS require — same rule as
+               the buyer rows above and the Evidence Vault. Party-level
+               segment tags are not merged in; see the note there. */
+            $cAgrIds = array_keys($dealAgrByConsignee[(int) $co['db_id']] ?? []);
             /* Consignee side, always — same rule as the buyer rows and the
                vault: the party marking decides, not whether the two parties
                are one company. */

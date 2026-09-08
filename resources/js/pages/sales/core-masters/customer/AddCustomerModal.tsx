@@ -2589,6 +2589,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           The wizard's onSent flips those rows' `sent` flags so
           they show "Resend" thereafter. */}
       <SalesCustomerSendForSignatureModal
+        /* Bigger signature box — a company signature is routinely wider than the
+           150pt default and Zoho prints it past the field, over the next one.
+           Opt-in, so Quotation / PI keep their tuned placements. */
+        boxSize={{ width: 240, height: 55 }}
         open={Array.isArray(sendForSignature)}
         /* multiBox: the ONE resolved signer can be asked to sign the same
            document in several places (Legal Team #9 / BR-03). Matches the

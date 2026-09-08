@@ -2139,6 +2139,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
           trade-doc tab. Backend wiring branches to the agreement
           preview/send endpoints inside the modal. */}
       <SalesCustomerSendForSignatureModal
+        /* Bigger signature box — a company signature is routinely wider than the
+           150pt default and Zoho prints it past the field, over the next one.
+           Opt-in, so Quotation / PI keep their tuned placements. */
+        boxSize={{ width: 240, height: 55 }}
         open={ssfAgreements.length > 0}
         customer={null}
         mode="agreement"
@@ -2223,6 +2227,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
           agreement flow. Single-party tabs (Buyer / Consignee) and the flat
           buyer==consignee list keep the original single-signer behaviour. */}
       <SalesCustomerSendForSignatureModal
+        /* Bigger signature box — a company signature is routinely wider than the
+           150pt default and Zoho prints it past the field, over the next one.
+           Opt-in, so Quotation / PI keep their tuned placements. */
+        boxSize={{ width: 240, height: 55 }}
         open={Array.isArray(tdSendIds)}
         mode="trade-doc"
         modelName={tdSignRole === 'customer' ? 'Customer' : 'Consignee'}

@@ -463,24 +463,27 @@ class SegmentDocUploadController extends Controller
         // party has applicable agreements but no shipment order yet (CBC #66).
         $agreements = [];
         if (in_array($type, ['customer', 'consignee'], true)) {
-            $agreements = $this->buildEntityAgreements($cid, $type, $id, $segmentIds);
-
-            /* Plus the agreements this party's DEALS require.
+            /* DEAL agreements only — nothing resolved from the party's own
+             * segment tags.
              *
-             * buildEntityAgreements() resolves from the party's own segment
-             * tags only. C-010 is tagged foods / Travel & Luggage but trades
-             * Test Segment 30 goods, so its deal needs four agreements (two
-             * already signed) while this bucket resolved to nothing — the cell
-             * read 0/0 and the popup said "No agreements in this bucket yet"
-             * over a deal that plainly had them.
-             * Party-level rows are KEPT and listed first, so a party with
-             * applicable agreements but no deal yet still shows them (CBC #66);
-             * deal rows are appended and de-duplicated by library id, since one
-             * agreement is signed once however many deals reference it. */
+             * An agreement belongs to a TRANSACTION, not to a company. A
+             * customer with three PIs is not a customer that owes the union of
+             * three deals' paperwork; each deal carries its own, and it is the
+             * PI's products that decide which. Listing the party's segment tags
+             * here answered a question nobody asked ("what could this company
+             * ever have to sign") and read as though all of it were outstanding
+             * on every deal.
+             *
+             * This DOES reverse CBC #66, which added the party-level rows so a
+             * party with no shipment order still showed something. Deliberate:
+             * with no deal there is nothing being traded, so there is nothing to
+             * sign yet — the same rule the Case-to-Case tab and the Sales Matrix
+             * resolver already follow. ClmBuyerProfileController's agr cell is
+             * changed in step, or the two screens disagree again.
+             *
+             * De-duplicated by library id: one agreement is signed once however
+             * many deals reference it. */
             $seenAgr = [];
-            foreach ($agreements as $a) {
-                if (!empty($a['db_id'])) $seenAgr[(int) $a['db_id']] = true;
-            }
             foreach ($deals as $s) {
                 $rows = $type === 'consignee' ? ($s['agreements_consignee'] ?? []) : ($s['agreements_buyer'] ?? []);
                 foreach ($rows as $r) {
@@ -998,12 +1001,29 @@ class SegmentDocUploadController extends Controller
                     foreach ($against as $r) { $drop[$keyOf($r)] = true; }
                     return array_values(array_filter($keep, fn ($r) => !isset($drop[$keyOf($r)])));
                 };
+                /* AGREEMENTS are deliberately NOT stripped.
+                 *
+                 * partyFlags() has already separated them: $agrBuyer holds
+                 * only Buyer-marked agreements, $agrCons only
+                 * Consignee-marked ones. A consignee-ONLY agreement was
+                 * therefore never in the buyer list to begin with — the rule
+                 * "consignee's agreement must not show on the customer" is
+                 * already satisfied.
+                 *
+                 * Stripping on top of that removed the agreements marked for
+                 * BOTH parties, and it removed them from BOTH vaults: the
+                 * customer's list dropped them for appearing on the consignee
+                 * side, the consignee's list dropped them for appearing on the
+                 * buyer side. An agreement both parties must sign ended up
+                 * shown to neither (C-011 / CN-022, one lead, read 0 on both).
+                 *
+                 * Trade docs keep the strip: a both-parties trade doc really is
+                 * emitted into both lists with the same db_id, and one entity
+                 * holding both sides would otherwise count it twice. */
                 if ($type === 'consignee') {
                     $tradeCons = $strip($tradeCons, $tradeBuyer);
-                    $agrCons   = $strip($agrCons, $agrBuyer);
                 } else {
                     $tradeBuyer = $strip($tradeBuyer, $tradeCons);
-                    $agrBuyer   = $strip($agrBuyer, $agrCons);
                 }
             }
 

@@ -731,6 +731,10 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           multiBox: the ONE resolved signer can be asked to sign the same doc in
           up to 3 places (Legal Team #9). Mirrors the Customer vault. */}
       <SalesCustomerSendForSignatureModal
+        /* Bigger signature box — a company signature is routinely wider than the
+           150pt default and Zoho prints it past the field, over the next one.
+           Opt-in, so Quotation / PI keep their tuned placements. */
+        boxSize={{ width: 240, height: 55 }}
         open={Array.isArray(sendDocIds)}
         customer={consignee?.db_id ? {
           id:      consignee.id,

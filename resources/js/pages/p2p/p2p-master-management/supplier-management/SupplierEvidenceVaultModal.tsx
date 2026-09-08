@@ -985,6 +985,11 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
 
       <SalesCustomerSendForSignatureModal
         open={Array.isArray(sendDocIds)}
+        /* Bigger signature box for P2P. A supplier's company signature is
+           routinely wider than the 150pt default, and Zoho does not shrink
+           it to fit — it prints past the field and over the next one. This
+           is opt-in so Quotation / PI keep their tuned placements. */
+        boxSize={{ width: 240, height: 55 }}
         customer={supplier?.db_id ? {
           id:      supplier.id,
           db_id:   supplier.db_id,

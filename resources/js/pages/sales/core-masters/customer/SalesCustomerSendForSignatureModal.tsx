@@ -185,6 +185,16 @@ interface Props {
    *  extra row in the preview rail (positionable like any doc); on send its
    *  coords go under document_settings['po'] and `purchase_order_id` is posted. */
   bundlePo?: { id: number; code: string; name: string; previewUrl: string } | null;
+  /** Seed every signature box at this size instead of the 150x45 default,
+   *  and stack the roles one per row (three 240pt boxes do not fit an A4
+   *  row, and consignee's x=380 would run off the sheet).
+   *
+   *  Zoho renders the field at exactly the size we send but does NOT shrink
+   *  the signature to fit it, so a company signature wider than 150pt runs
+   *  past its box and over the next one. P2P opts in; Quotation / PI keep
+   *  the original size deliberately - they are single-signature surfaces
+   *  and their placements are already tuned. */
+  boxSize?: { width: number; height: number } | null;
 }
 
 /* Sentinel doc id for the bundled Purchase Order — negative so it can never
@@ -207,8 +217,23 @@ export default function SalesCustomerSendForSignatureModal({
   rawPdfContext = null,
   preselectedDocs,
   bundlePo = null,
+  boxSize = null,
 }: Props) {
   const isAgreement = mode === 'agreement';
+  /* Seeds actually used below. Without `boxSize` these ARE the exported
+     constants, so every caller that does not opt in is byte-for-byte
+     unchanged. With it, the roles stack down the left margin at the larger
+     size — see the prop's note. */
+  const SEED_ONE: DocSettings = boxSize
+    ? { ...DEFAULTS, x: 60, width: boxSize.width, height: boxSize.height }
+    : DEFAULTS;
+  const SEED_ROLE: Record<SignerRoleKey, DocSettings> = boxSize
+    ? {
+        buyer:     { x: 60, y: 720, page: 0, width: boxSize.width, height: boxSize.height },
+        consignee: { x: 60, y: 720 - (boxSize.height + 20),     page: 0, width: boxSize.width, height: boxSize.height },
+        supplier:  { x: 60, y: 720 - (boxSize.height + 20) * 2, page: 0, width: boxSize.width, height: boxSize.height },
+      }
+    : SIGNER_DEFAULTS;
   // Raw-PDF (non-CLM) mode — e.g. sending a Purchase Order PDF for signature.
   const isRaw = !!rawPdfContext;
   const toast = useToast();
@@ -493,7 +518,7 @@ export default function SalesCustomerSendForSignatureModal({
       const seededSignerSettings: Record<number, Partial<Record<SignerRoleKey, DocSettings>>> = {};
       ids.forEach(id => {
         const perRole: Partial<Record<SignerRoleKey, DocSettings>> = {};
-        ctxSigners.forEach(s => { perRole[s.role] = { ...SIGNER_DEFAULTS[s.role] }; });
+        ctxSigners.forEach(s => { perRole[s.role] = { ...SEED_ROLE[s.role] }; });
         seededSignerSettings[id] = perRole;
       });
       setSignerSettings(seededSignerSettings);
@@ -535,7 +560,7 @@ export default function SalesCustomerSendForSignatureModal({
       const seeded: Record<number, Partial<Record<SignerRoleKey, DocSettings>>> = {};
       initialIds.forEach(id => {
         const perRole: Partial<Record<SignerRoleKey, DocSettings>> = {};
-        tradeRoleSigners.forEach(s => { perRole[s.role] = { ...SIGNER_DEFAULTS[s.role] }; });
+        tradeRoleSigners.forEach(s => { perRole[s.role] = { ...SEED_ROLE[s.role] }; });
         seeded[id] = perRole;
       });
       setSignerSettings(seeded);
@@ -626,7 +651,7 @@ export default function SalesCustomerSendForSignatureModal({
   useEffect(() => {
     setSettings(prev => {
       const next: Record<number, DocSettings> = { ...prev };
-      selectedIds.forEach(id => { if (!next[id]) next[id] = { ...DEFAULTS }; });
+      selectedIds.forEach(id => { if (!next[id]) next[id] = { ...SEED_ONE }; });
       Object.keys(next).forEach(k => {
         const n = Number(k);
         if (!selectedIds.includes(n)) delete next[n];
@@ -763,7 +788,7 @@ export default function SalesCustomerSendForSignatureModal({
                 const partyToken = ROLE_TO_MARKER_TOKEN[role];
                 const found = detected[partyToken];
                 if (!found) continue;
-                const roleSeed = SIGNER_DEFAULTS[role] ?? DEFAULTS;
+                const roleSeed = SEED_ROLE[role] ?? SEED_ONE;
                 docSlice[role] = { ...roleSeed, ...(docSlice[role] ?? {}), ...found };
                 changed = true;
               }
@@ -782,7 +807,7 @@ export default function SalesCustomerSendForSignatureModal({
             if (cancelled || !found) return;
             setSettings(prev => ({
               ...prev,
-              [docId]: { ...DEFAULTS, ...prev[docId], ...found },
+              [docId]: { ...SEED_ONE, ...prev[docId], ...found },
             }));
             /* multiBox mode reads its coords from `multiBoxes`, not `settings`,
              * so the detected position has to be mirrored onto box 1 or the
@@ -793,7 +818,7 @@ export default function SalesCustomerSendForSignatureModal({
               const arr = prev[docId];
               if (!arr || !arr.length) return prev;
               const next = arr.slice();
-              next[0] = { ...DEFAULTS, ...next[0], ...found };
+              next[0] = { ...SEED_ONE, ...next[0], ...found };
               return { ...prev, [docId]: next };
             });
           }
@@ -872,7 +897,7 @@ export default function SalesCustomerSendForSignatureModal({
       }
       setSending(true);
       try {
-        const box = settings[rawPdfContext.docId] ?? { ...DEFAULTS };
+        const box = settings[rawPdfContext.docId] ?? { ...SEED_ONE };
         const r = await api.post(rawPdfContext.sendUrl, {
           signers: [{ name: signer.name.trim(), email: signer.email.trim(), order: 1 }],
           is_sequential: isSequential,
@@ -1196,7 +1221,7 @@ export default function SalesCustomerSendForSignatureModal({
         return;
       }
       setSignerSettings(prev => {
-        const roleSeed = SIGNER_DEFAULTS[role] ?? DEFAULTS;
+        const roleSeed = SEED_ROLE[role] ?? SEED_ONE;
         const docSlice = prev[docId] ?? {};
         const cur      = docSlice[role] ?? { ...roleSeed };
         return {
