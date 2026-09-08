@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { LFM_CSS } from '../sales/opportunity-pipeline/LeadFilterModal';
@@ -425,6 +425,19 @@ function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
   };
 }
 
+/* Rows per page: 10 by default, remembered per screen — the contract
+   HrEmployees set. Versioned key, because a remembered size always beats a new
+   default and a change would otherwise reach nobody who has opened this page. */
+const PER_PAGE_KEY = 'cbc.hr.leave.perPage.v1';
+const readPerPage = () => {
+  try {
+    const saved = Number(localStorage.getItem(PER_PAGE_KEY));
+    return Number.isFinite(saved) && saved > 0 && saved <= 200 ? saved : 10;
+  } catch {
+    return 10;
+  }
+};
+
 const KPI_CARDS = [
   { key: 'total',    label: 'Total Requests',   icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#0c63b0,#0ea5e9)' },
   { key: 'pending',  label: 'Pending Approval', icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
@@ -443,19 +456,78 @@ export default function HrLeave() {
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(true);
 
+  const [search,  setSearch]  = useState('');
+  const [status,  setStatus]  = useState<string>('All');
+  const [department, setDepartment] = useState<string>('All');
+  const [type,    setType]    = useState<string>('All');
+  const [payroll, setPayroll] = useState<string>('All');
+  /* Search is a network call now, so it waits for a pause in typing rather than
+     firing per keystroke. 350ms, the same delay HrEmployees and the supplier
+     list use. */
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  /* Server-side paging, filtering and counts.
+     This screen used to fetch `approvals({ status: 'All' })` — every request in
+     the tenant, 1004 rows and 1.35 MB on a two-year-old branch — and then do the
+     tabs, the filters, the search and the pagination in the browser. The page
+     size picker said 10 while the network tab said "all of them".
+     Once the rows are a page, none of that can stay on the client: filtering a
+     page filters 10 rows out of 1004 and reports "3 results" for a filter that
+     matches 300, and a tab strip counting the rows on screen counts the page.
+     So the filters, the search and the counts all moved to the endpoint. */
+  const [page, setPage] = useState(0);            // 0-based, as DataTable counts
+  const [perPage, setPerPage] = useState<number>(readPerPage);
+  const [total, setTotal] = useState(0);
+  const [serverCounts, setServerCounts] = useState<Record<string, number> | null>(null);
+  const reqRef = useRef(0);
+
+  useEffect(() => {
+    try { localStorage.setItem(PER_PAGE_KEY, String(perPage)); } catch { /* private mode */ }
+  }, [perPage]);
+
   const loadRequests = useCallback(async () => {
     setRequestsLoading(true);
+    // Newest-request token: a tab, a filter and a debounced search can each fire
+    // while the previous request is still out.
+    const token = ++reqRef.current;
     try {
-      const list = await leaveRequestsApi.approvals({ status: 'All' });
-      setRequests(list.map(apiToLeaveRequest));
+      const res = await leaveRequestsApi.approvalsPage({
+        /* Always sent, 'All' included. Omitting it does NOT mean "no filter" —
+           the endpoint defaults a missing status to 'Pending', so the All tab
+           would quietly show the Pending set. */
+        status,
+        search: debouncedSearch || undefined,
+        leave_type: type !== 'All' ? type : undefined,
+        department: department !== 'All' ? department : undefined,
+        payroll: payroll !== 'All' ? payroll : undefined,
+        page: page + 1,                            // the API counts from 1
+        per_page: perPage,
+        with_counts: true,
+      });
+      if (token !== reqRef.current) return;
+      setRequests(res.data.map(apiToLeaveRequest));
+      setTotal(res.total);
+      if (res.counts) setServerCounts(res.counts);
     } catch (err) {
+      if (token !== reqRef.current) return;
       console.warn('[HrLeave] failed to load leave requests', err);
       setRequests([]);
+      setTotal(0);
     } finally {
-      setRequestsLoading(false);
+      if (token === reqRef.current) setRequestsLoading(false);
     }
-  }, []);
+  }, [status, debouncedSearch, type, department, payroll, page, perPage]);
   useEffect(() => { loadRequests(); }, [loadRequests]);
+
+  /* Back to page 1 whenever the result set is replaced rather than moved
+     through. Staying on page 20 while switching to a filter with two pages asks
+     for a page that does not exist and renders an empty table that reads as
+     "no results" instead of "wrong page". */
+  useEffect(() => { setPage(0); }, [status, debouncedSearch, type, department, payroll, perPage]);
 
   const [confirmAction, setConfirmAction] = useState<
     { row: LeaveRequest; action: 'approve' | 'reject' } | null
@@ -495,12 +567,9 @@ export default function HrLeave() {
     }
   };
 
-  const [search,  setSearch]  = useState('');
-  const [status,  setStatus]  = useState<string>('All');
-  const [department, setDepartment] = useState<string>('All');
-  const [type,    setType]    = useState<string>('All');
-  const [payroll, setPayroll] = useState<string>('All');
-  /* Paging lives in <DataTable> now. */
+  /* search / status / department / type / payroll are declared ABOVE, with the
+     loader — they are its dependencies now, and a dependency array is evaluated
+     during render, so declaring them here would be a use-before-init. */
   // Filter modal (Department / Type / Payroll live inside it now) — same
   // two-pane shell the Customers list uses, via the shared LFM_CSS sheet.
   const [filterOpen, setFilterOpen] = useState(false);
@@ -574,50 +643,56 @@ export default function HrLeave() {
     }
   };
 
+  /* Counts come from the server (`with_counts`), which computes them across
+     every status under the search and filters in force — which is what a tab
+     strip means: "how many would I see if I clicked this one". Counting
+     `requests` would count the page: ten.
+     One deliberate behaviour change: the tabs and KPI cards now follow the
+     search and the Department/Type/Payroll filters, where before they were
+     always tenant-wide. With no filters applied the numbers are identical, and
+     under a filter the filtered count is the more useful of the two. */
   const counts = useMemo(() => {
-    const approved = requests.filter(r => r.stage === 'Approved');
-    const pending  = requests.filter(r => r.stage.startsWith('Pending'));
-    const rejected = requests.filter(r => r.stage === 'Rejected');
-    const cancelled = requests.filter(r => r.stage === 'Cancelled');
+    const c = serverCounts;
     return {
-      total:        requests.length,
-      pending:      pending.length,
-      approved:     approved.length,
-      approvedDays: approved.reduce((s, r) => s + r.durationDays, 0),
-      rejected:     rejected.length,
-      cancelled:    cancelled.length,
+      total:     c?.All       ?? 0,
+      pending:   c?.Pending   ?? 0,
+      approved:  c?.Approved  ?? 0,
+      rejected:  c?.Rejected  ?? 0,
+      cancelled: c?.Cancelled ?? 0,
       tabs: {
-        All:       requests.length,
-        Pending:   pending.length,
-        Approved:  approved.length,
-        Rejected:  rejected.length,
-        Cancelled: cancelled.length,
+        All:       c?.All       ?? 0,
+        Pending:   c?.Pending   ?? 0,
+        Approved:  c?.Approved  ?? 0,
+        Rejected:  c?.Rejected  ?? 0,
+        Cancelled: c?.Cancelled ?? 0,
       },
     };
-  }, [requests]);
+  }, [serverCounts]);
 
-  const onLeaveToday = useMemo(() => {
-    return requests.filter(r =>
-      r.stage === 'Approved' && r.fromDate <= onLeaveDate && r.toDate >= onLeaveDate
-    );
-  }, [requests, onLeaveDate]);
+  /* "On leave on <date>" is its own question and now its own request. It cannot
+     be answered from the list any more: the list is one page, and a leave that
+     straddles the chosen date may sit on any of them. Unpaged deliberately —
+     the answer is "who is out today", which is a handful of people, not a
+     table. */
+  const [onLeaveToday, setOnLeaveToday] = useState<LeaveRequest[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    leaveRequestsApi
+      .approvals({ status: 'Approved', on_leave_on: onLeaveDate })
+      .then(list => { if (!cancelled) setOnLeaveToday(list.map(apiToLeaveRequest)); })
+      .catch(err => {
+        if (cancelled) return;
+        console.warn('[HrLeave] on-leave lookup failed', err);
+        setOnLeaveToday([]);
+      });
+    return () => { cancelled = true; };
+  }, [onLeaveDate]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return requests.filter(r => {
-      if (status === 'Pending'  && !r.stage.startsWith('Pending')) return false;
-      if (status === 'Approved' && r.stage !== 'Approved')          return false;
-      if (status === 'Rejected' && r.stage !== 'Rejected')          return false;
-      if (status === 'Cancelled' && r.stage !== 'Cancelled')        return false;
-
-      if (type       !== 'All' && r.typeName   !== type)       return false;
-      if (payroll    !== 'All' && r.payroll    !== payroll)    return false;
-      if (department !== 'All' && r.department !== department) return false;
-
-      if (!q) return true;
-      return [r.empName, r.empRole, r.id, r.empCode, r.type].some(v => v.toLowerCase().includes(q));
-    });
-  }, [requests, search, status, type, payroll, department]);
+  /* `requests` IS the filtered page — status, search, type, payroll and
+     department are all applied by the endpoint now. The client-side pass that
+     used to live here would have re-filtered ten already-filtered rows, and
+     any disagreement between the two implementations would show up as rows
+     going missing from a page that the server said had them. */
 
   /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
      4+19+9+7+17+15+9+11+9. */
@@ -649,7 +724,7 @@ export default function HrLeave() {
     {
       header: 'Type',
       accessorKey: 'typeName',
-      meta: { width: '9%' },
+      meta: { width: '9%', align: 'center' },
       cell: info => {
         const t = TYPE_TONE[info.row.original.type];
         return (
@@ -659,7 +734,7 @@ export default function HrLeave() {
         );
       },
     },
-    { header: 'Duration', accessorKey: 'durationLabel', meta: { width: '7%' }, cell: info => <span className="fs-13">{String(info.getValue() ?? '')}</span> },
+    { header: 'Duration', accessorKey: 'durationLabel', meta: { width: '7%', align: 'right' }, cell: info => <span className="fs-13">{String(info.getValue() ?? '')}</span> },
     {
       /* Sorts on the ISO from-date so the column is chronological, not
          alphabetical on "05-Aug-2026 → 07-Aug-2026". */
@@ -681,13 +756,13 @@ export default function HrLeave() {
       header: 'Approval Chain',
       id: 'chain',
       enableSorting: false,
-      meta: { width: '15%', wrap: true },
+      meta: { width: '15%', wrap: true, align: 'center' },
       cell: info => <ChainDots row={info.row.original} />,
     },
     {
       header: 'Payroll',
       accessorKey: 'payroll',
-      meta: { width: '9%' },
+      meta: { width: '9%', align: 'center' },
       cell: info => {
         const t = PAYROLL_TONE[info.row.original.payroll];
         return (
@@ -701,7 +776,7 @@ export default function HrLeave() {
       header: 'Status',
       accessorKey: 'stage',
       // wrap: pending rows carry a stage note under the pill.
-      meta: { width: '11%', wrap: true },
+      meta: { width: '11%', wrap: true, align: 'center' },
       cell: info => {
         const r = info.row.original;
         const t = STAGE_TONE[r.stage];
@@ -719,7 +794,9 @@ export default function HrLeave() {
       },
     },
     {
-      header: () => <div className="text-center">Action</div>,
+      // Plain string: meta.align centres the header now, so the hand-centred
+      // wrapper that used to be here was doing the job twice.
+      header: 'Action',
       id: '__actions',
       enableSorting: false,
       meta: { width: '9%', align: 'center' },
@@ -1000,16 +1077,27 @@ export default function HrLeave() {
                 from the component; the Filter button (Department / Type /
                 Payroll modal) rides in its toolbar. */}
             <DataTable<LeaveRequest>
-              data={filtered}
+              data={requests}
               columns={columns}
               serial={{ header: 'SR.' }}
               accent="violet"
-              /* Stretches the card to the viewport so a short list doesn't
-                 collapse into a strip above an empty page — paired with
-                 autoFitRows, which then fills that height with rows. */
+              /* Stretches the card to the viewport, and fills that height with
+                 rows — but never fewer than 10. A tall screen uses the room it
+                 has; a short one still gets a full standard page rather than
+                 the four-row page an unfloored fit produces on a laptop.
+                 minAutoRows is the safeguard: DataTable's own default is 2. */
               fitToViewport
               autoFitRows
+              minAutoRows={10}
               minWidth={1320}
+              /* The rows are one page fetched by loadRequests; the table stops
+                 slicing and reports page moves back here instead. */
+              serverPagination={{
+                total,
+                pageIndex: page,
+                onPageChange: setPage,
+                onPageSizeChange: setPerPage,
+              }}
               loading={requestsLoading}
               searchValue={search}
               onSearchChange={setSearch}

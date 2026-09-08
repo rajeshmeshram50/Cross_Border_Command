@@ -34,6 +34,9 @@ class HolidayController extends Controller
     /** Allowed holiday categories. */
     private const TYPES = ['Public', 'Restricted', 'Company', 'Regional', 'Optional'];
 
+    private const DEFAULT_PER_PAGE = 25;
+    private const MAX_PER_PAGE = 200;
+
     /* ─────────────────────────────────────────────────────────────────
      *  CRUD
      * ───────────────────────────────────────────────────────────────── */
@@ -42,7 +45,9 @@ class HolidayController extends Controller
     {
         $this->authorizeAction($request, 'can_view');
 
-        $q = Holiday::query()->with(['creator:id,name', 'group:id,name']);
+        /* `creator` is not eager-loaded: no screen reads it off a holiday, and
+           it was a query plus a user object on every row for nothing. */
+        $q = Holiday::query()->with(['group:id,name']);
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
         if ($request->filled('holiday_group_id')) {
@@ -51,8 +56,8 @@ class HolidayController extends Controller
         if ($search = $request->query('search')) {
             $q->where(function ($w) use ($search) {
                 $w->where('name', 'ilike', "%{$search}%")
-                  ->orWhere('code', 'ilike', "%{$search}%")
-                  ->orWhere('description', 'ilike', "%{$search}%");
+                    ->orWhere('code', 'ilike', "%{$search}%")
+                    ->orWhere('description', 'ilike', "%{$search}%");
             });
         }
         if ($type = $request->query('type')) {
@@ -64,7 +69,100 @@ class HolidayController extends Controller
 
         // Date-wise, with id as a stable tie-breaker so same-date holidays keep
         // a deterministic order (the SPA prints a continuous Sr. No. over this).
-        return response()->json($q->orderBy('date')->orderBy('id')->get());
+        $q->orderBy('date')->orderBy('id');
+
+        /* Pagination is OPT-IN.
+         *
+         * Other screens read this endpoint as a plain array — HrLeave marks the
+         * holidays on its leave calendar from it — so returning the
+         * {data, total, …} envelope unconditionally would blank them. Only a
+         * caller that actually asks for a page gets one, the same contract
+         * EmployeeController::index uses.
+         *
+         * per_page is clamped rather than trusted: the Holiday list sizes its
+         * page to the viewport (DataTable's autoFitRows), so the value is
+         * whatever happens to fit — not one of the 10/25/50 the dropdown
+         * offers — and an unclamped one would let a caller ask for the whole
+         * table back, which is the thing paginating is here to prevent.
+         */
+        if ($request->has('per_page') || $request->has('page')) {
+            // A junk or non-positive per_page falls back to the DEFAULT, not to
+            // the floor: max(1, (int) 'abc') is 1, which would answer a mistyped
+            // parameter with 400 single-row pages rather than the sensible page
+            // the caller obviously meant.
+            $requested = $request->query('per_page');
+            $perPage = is_numeric($requested) && (int) $requested > 0
+                ? min(self::MAX_PER_PAGE, (int) $requested)
+                : self::DEFAULT_PER_PAGE;
+
+            $page = $q->paginate($perPage);
+            $this->stripGroupCounts($page->items());
+
+            /* The Year filter's options ride along with the page instead of
+               costing a request of their own. They cannot be derived from the
+               rows on screen (one page only contains its own years), and a
+               second endpoint for a seven-element list meant a second Laravel
+               boot on every visit — which on the dev server is a whole second.
+               One extra 2ms query is the cheaper half of that trade, and it
+               keeps the dropdown correct after an import or a delete without
+               a separate refresh. */
+            $payload = $page->toArray();
+            $payload['years'] = $this->yearOptions($request);
+
+            return response()->json($payload);
+        }
+
+        $rows = $q->get();
+        $this->stripGroupCounts($rows);
+
+        return response()->json($rows);
+    }
+
+    /**
+     * Distinct years present in this tenant's holidays, newest first — the
+     * options behind the list's Year filter.
+     *
+     * Deliberately ignores the request's own filters: it describes the whole
+     * calendar, not the current view. Scoped to the filters, picking 2026 would
+     * collapse the dropdown to [2026] and there would be no way back to another
+     * year.
+     *
+     * Only the distinct date column is fetched — no rows are hydrated — and the
+     * years are grouped in PHP so the query stays portable rather than
+     * depending on MySQL's or Postgres's own date functions.
+     */
+    private function yearOptions(Request $request): array
+    {
+        $q = Holiday::query();
+        $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
+
+        return $q->distinct()
+            ->pluck('date')
+            ->map(fn($d) => $d ? (int) Carbon::parse($d)->year : null)
+            ->filter()
+            ->unique()
+            ->sortDesc()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Drop the count accessors from the `group` rows riding along with a
+     * holiday list.
+     *
+     * HolidayGroup appends holidays_count and employees_count, and those
+     * accessors fall back to a COUNT query each when withCount has not run.
+     * Eager-loading the group therefore bought two COUNTs per distinct group in
+     * the result: 26 queries to render a 10-row page, and over 400 for the
+     * unpaginated list HrLeave asks for. Nothing reads either count off a
+     * holiday's group — the list only wants the name — so they are stripped
+     * before serialisation and the queries never fire.
+     */
+    private function stripGroupCounts(iterable $rows): void
+    {
+        foreach ($rows as $row) {
+            $row->group?->setAppends([]);
+        }
     }
 
     public function show(Request $request, $id)
@@ -173,10 +271,10 @@ class HolidayController extends Controller
         // per row. Duplicates are judged WITHIN a group — the same date may
         // legitimately exist in another group.
         $existing = Holiday::query()
-            ->when($clientId === null, fn ($q) => $q->whereNull('client_id'), fn ($q) => $q->where('client_id', $clientId))
-            ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($clientId === null, fn($q) => $q->whereNull('client_id'), fn($q) => $q->where('client_id', $clientId))
+            ->when($branchId !== null, fn($q) => $q->where('branch_id', $branchId))
             ->get(['holiday_group_id', 'date'])
-            ->mapWithKeys(fn ($h) => [(($h->holiday_group_id ?? 'null') . '|' . Carbon::parse($h->date)->toDateString()) => true])
+            ->mapWithKeys(fn($h) => [(($h->holiday_group_id ?? 'null') . '|' . Carbon::parse($h->date)->toDateString()) => true])
             ->all();
 
         DB::transaction(function () use ($payload, $clientId, $branchId, $groupId, $groupMap, $auth, &$created, &$skipped, &$errors, $existing, $today) {
@@ -306,7 +404,7 @@ class HolidayController extends Controller
                 }
                 return $arr;
             })
-            ->filter(fn ($h) => (int) substr((string) $h['date'], 0, 4) === $year)
+            ->filter(fn($h) => (int) substr((string) $h['date'], 0, 4) === $year)
             ->sortBy('date')
             ->values();
 
@@ -353,15 +451,15 @@ class HolidayController extends Controller
         // On update, the row being edited is excluded.
         [$clientId, $branchId] = $this->resolveOwnership($request);
         $duplicate = Holiday::query()
-            ->when($clientId === null, fn ($q) => $q->whereNull('client_id'), fn ($q) => $q->where('client_id', $clientId))
-            ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($clientId === null, fn($q) => $q->whereNull('client_id'), fn($q) => $q->where('client_id', $clientId))
+            ->when($branchId !== null, fn($q) => $q->where('branch_id', $branchId))
             ->when(
                 $data['holiday_group_id'] === null,
-                fn ($q) => $q->whereNull('holiday_group_id'),
-                fn ($q) => $q->where('holiday_group_id', $data['holiday_group_id']),
+                fn($q) => $q->whereNull('holiday_group_id'),
+                fn($q) => $q->where('holiday_group_id', $data['holiday_group_id']),
             )
             ->whereDate('date', $data['date'])
-            ->when($id !== null, fn ($q) => $q->where('id', '!=', $id))
+            ->when($id !== null, fn($q) => $q->where('id', '!=', $id))
             ->exists();
         if ($duplicate) {
             throw ValidationException::withMessages([

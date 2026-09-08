@@ -306,8 +306,35 @@ export const leaveRequestsApi = {
   hrView: (id: number) =>
     api.post<{ data: ApiLeaveRequest }>(`/leave-requests/${id}/hr-view`).then(r => r.data.data),
 
-  approvals: (params: { status?: string; search?: string; branch_id?: number } = {}) =>
+  /* Unpaged: returns every matching row. Kept for the callers that need the
+     whole set to count from (Inbox badges, the HR Leave overview). Sending no
+     per_page is what tells the server not to page. */
+  approvals: (params: {
+    status?: string; search?: string; branch_id?: number;
+    /** Approved leave spanning this YYYY-MM-DD — the "on leave today" panel. */
+    on_leave_on?: string;
+  } = {}) =>
     api.get<{ data: ApiLeaveRequest[] }>('/leave-requests/approvals', { params }).then(r => r.data.data),
+
+  /* Paged: one page plus the total, for the approvals table. Separate from
+     approvals() rather than an optional argument on it, because the two return
+     different shapes and a caller that forgot to unwrap would silently render
+     an object as an empty list. */
+  approvalsPage: (params: {
+    status?: string; search?: string; branch_id?: number;
+    /** Filters, matched on the same names the filter modal offers. */
+    leave_type?: string; department?: string; payroll?: string;
+    page: number; per_page: number;
+    /** Ask for per-status totals across every tab, under the filters in force. */
+    with_counts?: boolean;
+  }) =>
+    api.get<{ data: ApiLeaveRequest[]; total: number; counts?: Record<string, number> }>(
+      '/leave-requests/approvals', { params },
+    ).then(r => ({
+      data: r.data.data ?? [],
+      total: Number(r.data.total ?? 0),
+      counts: r.data.counts,
+    })),
 };
 
 export interface ApiEmployeeBalanceTransaction {

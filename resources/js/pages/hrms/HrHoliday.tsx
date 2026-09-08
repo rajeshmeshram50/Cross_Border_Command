@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Col, Row, Modal, ModalBody, Spinner, Input } from 'reactstrap';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Col, Row, Modal, ModalBody, Spinner } from 'reactstrap';
 import * as XLSX from 'xlsx';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
@@ -31,7 +31,6 @@ interface HolidayRow {
   description: string | null;
   holiday_group_id: number | null;
   group?: { id: number; name: string } | null;
-  created_at?: string;
 }
 
 const TYPE_OPTIONS: { value: HolidayType; label: string }[] = [
@@ -49,6 +48,7 @@ const TYPE_TONES: Record<string, { bg: string; fg: string }> = {
   Regional:   { bg: '#d8f5e6', fg: '#0f8a4d' },
   Optional:   { bg: '#f1f1f4', fg: '#5b6270' },
 };
+const PER_PAGE_KEY = 'cbc.hr.holidays.perPage.v1';
 
 const MONTH_ABBR =['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -67,15 +67,13 @@ function weekdayName(raw: any): string {
   return WEEKDAYS[d.getDay()];
 }
 
-// A holiday is "past" (frozen / read-only) once its date is before today.
-// Recurring (yearly) holidays are never frozen — their next occurrence is
-// always upcoming. Mirrors the backend guard in HolidayController.
 export default function HrHoliday() {
   const toast = useToast();
   const confirmDialog = useConfirm();
 
   const [rows, setRows] = useState<HolidayRow[]>([]);
   const [groups, setGroups] = useState<HolidayGroup[]>([]);
+  const [years, setYears] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState('');
@@ -83,7 +81,21 @@ export default function HrHoliday() {
   const [yearFilter, setYearFilter] = useState('All');
   const [groupFilter, setGroupFilter] = useState('All');
 
-  /* Paging lives in <DataTable> now. */
+  const [page, setPage] = useState(0);
+  const [perPage, setPerPage] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(PER_PAGE_KEY));
+      return Number.isFinite(saved) && saved > 0 && saved <= 200 ? saved : 10;
+    } catch {
+      return 10;
+    }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(PER_PAGE_KEY, String(perPage)); } catch { /* private mode */ }
+  }, [perPage]);
+
+  const [total, setTotal] = useState(0);
+  const reqRef = useRef(0);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<HolidayRow | null>(null);
@@ -99,28 +111,40 @@ export default function HrHoliday() {
     } catch { setGroups([]); }
   };
 
-  const fetchHolidays = async () => {
+  const fetchHolidays = useCallback(async () => {
+    const token = ++reqRef.current;
+    setLoading(true);
     try {
-      setLoading(true);
-      const res = await api.get('/holidays');
-      setRows(Array.isArray(res.data) ? res.data : []);
+      const res = await api.get('/holidays', {
+        params: {
+          page: page + 1,          // the API counts from 1, DataTable from 0
+          per_page: perPage,
+          ...(search.trim() ? { search: search.trim() } : {}),
+          ...(typeFilter !== 'All' ? { type: typeFilter } : {}),
+          ...(yearFilter !== 'All' ? { year: yearFilter } : {}),
+          ...(groupFilter !== 'All' ? { holiday_group_id: groupFilter } : {}),
+        },
+      });
+      if (token !== reqRef.current) return;
+      const body = res.data ?? {};
+      setRows(Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : []));
+      setTotal(Number(body.total ?? (Array.isArray(body) ? body.length : 0)) || 0);
+      if (Array.isArray(body.years)) setYears(body.years.map((y: any) => String(y)));
     } catch (err: any) {
+      if (token !== reqRef.current) return;
       toast.error('Could not load holidays', err?.response?.data?.message || 'Please try again.');
       setRows([]);
+      setTotal(0);
     } finally {
-      setLoading(false);
+      if (token === reqRef.current) setLoading(false);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, perPage, search, typeFilter, yearFilter, groupFilter]);
 
   const refreshAll = () => { fetchGroups(); fetchHolidays(); };
 
-  useEffect(() => { refreshAll(); }, []);
-
-  const years = useMemo(() => {
-    const set = new Set<string>();
-    rows.forEach(r => { const y = String(r.date || '').slice(0, 4); if (y) set.add(y); });
-    return Array.from(set).sort((a, b) => Number(b) - Number(a));
-  }, [rows]);
+  useEffect(() => { fetchGroups(); }, []);
+  useEffect(() => { fetchHolidays(); }, [fetchHolidays]);
 
   const groupName = (id: number | null | undefined) =>
     id ? (groups.find(g => g.id === id)?.name || '—') : '—';
@@ -132,20 +156,7 @@ export default function HrHoliday() {
     [groups],
   );
 
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return rows.filter(r => {
-      if (typeFilter !== 'All' && r.type !== typeFilter) return false;
-      if (yearFilter !== 'All' && String(r.date || '').slice(0, 4) !== yearFilter) return false;
-      if (groupFilter !== 'All' && String(r.holiday_group_id ?? '') !== groupFilter) return false;
-      if (!needle) return true;
-      return (
-        r.name.toLowerCase().includes(needle) ||
-        (r.code || '').toLowerCase().includes(needle) ||
-        (r.description || '').toLowerCase().includes(needle)
-      );
-    });
-  }, [rows, search, typeFilter, yearFilter, groupFilter]);
+  const applyFilter = (set: (v: string) => void) => (v: string) => { set(v); setPage(0); };
 
   /* Columns for the shared <DataTable>. The hand-rolled Holiday-ID sort header
      is gone — every column sorts from its own header arrow now.
@@ -519,7 +530,7 @@ export default function HrHoliday() {
                 Group/Type/Year pickers and the Template / Import / Groups / Add
                 buttons ride in its toolbar. */}
             <DataTable<HolidayRow>
-              data={filtered}
+              data={rows}
               columns={columns}
               serial
               accent="violet"
@@ -530,15 +541,24 @@ export default function HrHoliday() {
                  Employee Onboarding hub. */
               fitToViewport
               autoFitRows
+              minAutoRows={10}
               minWidth={1395}
               loading={loading}
+              serverPagination={{
+                total,
+                pageIndex: page,
+                onPageChange: setPage,
+                onPageSizeChange: setPerPage,
+              }}
               searchValue={search}
               onSearchChange={setSearch}
               searchPlaceholder="Search holidays…"
               emptyMessage={
                 <>
                   <i className="ri-calendar-2-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                  {rows.length === 0 ? 'No holidays yet — click Add Holiday or Import Excel to get started' : 'No holidays match your filters'}
+                  {(search.trim() || typeFilter !== 'All' || yearFilter !== 'All' || groupFilter !== 'All')
+                    ? 'No holidays match your filters'
+                    : 'No holidays yet — click Add Holiday or Import Excel to get started'}
                 </>
               }
               toolbarActions={
@@ -546,21 +566,21 @@ export default function HrHoliday() {
                   <div className="hol-filter d-flex align-items-center gap-2">
                     <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Group</span>
                     <div className="hol-filter-sel" style={{ minWidth: 160 }}>
-                      <MasterSelect value={groupFilter} onChange={setGroupFilter}
+                      <MasterSelect value={groupFilter} onChange={applyFilter(setGroupFilter)}
                         options={[{ value: 'All', label: 'All Groups' }, ...groups.map(g => ({ value: String(g.id), label: g.name }))]} placeholder="All Groups" />
                     </div>
                   </div>
                   <div className="hol-filter d-flex align-items-center gap-2">
                     <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Type</span>
                     <div className="hol-filter-sel" style={{ minWidth: 130 }}>
-                      <MasterSelect value={typeFilter} onChange={setTypeFilter}
+                      <MasterSelect value={typeFilter} onChange={applyFilter(setTypeFilter)}
                         options={[{ value: 'All', label: 'All Types' }, ...TYPE_OPTIONS]} placeholder="All Types" />
                     </div>
                   </div>
                   <div className="hol-filter d-flex align-items-center gap-2">
                     <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Year</span>
                     <div className="hol-filter-sel" style={{ minWidth: 95 }}>
-                      <MasterSelect value={yearFilter} onChange={setYearFilter}
+                      <MasterSelect value={yearFilter} onChange={applyFilter(setYearFilter)}
                         options={[{ value: 'All', label: 'All Years' }, ...years.map(y => ({ value: y, label: y }))]} placeholder="All Years" />
                     </div>
                   </div>
@@ -572,12 +592,7 @@ export default function HrHoliday() {
                   <button type="button" className="rec-btn-ghost" onClick={() => fileRef.current?.click()} disabled={importing}>
                     {importing ? <Spinner size="sm" /> : <i className="ri-file-excel-2-line" />}Import Excel
                   </button>
-                  {/* Groups sits beside "Add Holiday" and is highlighted so it's
-                      clear this is where you create groups first. The highlight
-                      lives in .hol-groups-btn, NOT in a style attribute — inline
-                      colours outrank the dark-theme rules, which left this button
-                      pale lilac in dark mode while Template and Import Excel
-                      beside it went dark. (#96) */}
+                
                   <Tooltip label="Create & manage holiday groups — add a group here first, then assign holidays to it">
                     <button type="button" className="rec-btn-ghost hol-groups-btn" onClick={() => setManageGroupsOpen(true)}>
                       <i className="ri-folder-add-line" />Groups
@@ -946,27 +961,8 @@ function ManageGroupsModal({
                 ) : groups.map((g, idx) => (
                   <tr key={g.id}>
                     <td className="text-center text-muted fs-13">{idx + 1}</td>
-                    <td><span className="rec-id-pill">{g.code || `HGRP-${g.id}`}</span></td>
-                    {/* whiteSpace:'normal' is load-bearing. The table carries
-                        Velzon's `table-nowrap`, which sets `white-space: nowrap`
-                        on EVERY cell — that silently defeated the wrap + clamp
-                        below, so a long description rendered as one endless
-                        line and stretched the column until the whole modal
-                        scrolled sideways (#49). Overridden here only, so the
-                        Code / Holidays / Actions cells keep their nowrap.
-
-                        Same overflow guard as the holiday list, but this table
-                        is hand-rolled (table-layout: auto), where
-                        nowrap+ellipsis would just widen the column instead of
-                        truncating. Wrap mid-word and clamp to 2 lines — that
-                        holds regardless of layout mode. `overflow-wrap: anywhere`
-                        (not `break-word`) is what lets an unbroken 200-char
-                        string shrink the column in auto layout. */}
+                    <td><span className="rec-id-pill">{g.code || `HGRP-${g.id}`}</span></td>                  
                     <td style={{ whiteSpace: 'normal' }}>
-                      {/* The NAME gets the same clamp as the description. It
-                          already wrapped, so it never broke the layout — but an
-                          unbroken 200-char name still grew the row to a dozen
-                          lines, which is the same problem one step quieter. */}
                       <Tooltip label={g.name}>
                         <div
                           className="fw-bold fs-13"
@@ -1039,9 +1035,6 @@ function ManageGroupsModal({
             <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6d28d9 0%, #8b5cf6 60%, #a78bfa 100%)' }}>
               <div className="d-flex align-items-center justify-content-between">
                 <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15 }}>{editing ? 'Edit Group' : 'Add Group'}</h5>
-                {/* Guarded like Cancel below. The backdrop and Esc are already
-                    disabled for this dialog, which left this ✕ as the only way
-                    to walk out mid-save. */}
                 <button type="button" onClick={closeForm} disabled={saving}
                   style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 30, height: 30, opacity: saving ? 0.5 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
                   <i className="ri-close-line" style={{ fontSize: 18 }} />
@@ -1050,11 +1043,6 @@ function ManageGroupsModal({
             </div>
             <div style={{ padding: '18px 20px' }}>
               <Row className="g-3">
-                {/* Frozen while the save is in flight, like the buttons below.
-                    Both stayed editable, so anything typed after clicking Save
-                    was never in the request — the field showed one value and the
-                    server stored another, with nothing on screen to say so
-                    (CBC #50). */}
                 <Col md={12}>
                   <label className="rec-form-label">Group Name<span className="req">*</span></label>
                   <input type="text" className={`rec-input${nameErr ? ' is-invalid' : ''}`} placeholder="e.g. Indian Employees"

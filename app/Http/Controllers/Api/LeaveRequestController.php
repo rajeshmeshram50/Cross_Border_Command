@@ -586,9 +586,10 @@ class LeaveRequestController extends Controller
             ])
             ->orderByDesc('created_at');
 
-        if ($status && $status !== 'All') {
-            $q->where('status', $status);
-        }
+        /* The status filter is applied LATER, just before paging — see the
+           counts block. Everything between here and there narrows the set the
+           tab strip counts across, so status has to be the last clause added or
+           the counts would each be filtered by the tab that is already open. */
 
         // Super admin sees everything. Client admin / branch user see their
         // tenant's requests so HR can act regardless of who the direct
@@ -677,7 +678,98 @@ class LeaveRequestController extends Controller
             });
         }
 
-        $rows = $q->get();
+        /* The three toolbar filters, moved server-side.
+           They used to run in the browser over the whole downloaded set. Once
+           the list is paged that stops working: filtering a page filters 10
+           rows out of 1004 and reports "3 results" for a filter that matches
+           300. A filter and a page size cannot both live on the client.
+           Matched on NAME rather than id because that is what the filter modal
+           already holds (its options are built from the rows), so this needed
+           no change on the UI side. */
+        if ($lt = trim((string) $request->input('leave_type', ''))) {
+            $q->whereHas('leaveType', fn ($t) => $t->where('name', $lt));
+        }
+        if ($dept = trim((string) $request->input('department', ''))) {
+            $q->whereHas('employee.department', fn ($d) => $d->where('name', $dept));
+        }
+        if ($pay = trim((string) $request->input('payroll', ''))) {
+            /* "Unpaid" is two conditions, not one: a type flagged paid_unpaid =
+               Unpaid, or the dedicated "Unpaid Leave" type. The client derived
+               it the same way (see apiToLeaveRequest), and the two definitions
+               have to agree or a row lands in one bucket here and the other
+               there. */
+            $isUnpaid = fn ($t) => $t->where(fn ($w) => $w
+                ->where('paid_unpaid', 'Unpaid')->orWhere('type', 'Unpaid Leave'));
+            $isPaid = fn ($t) => $t->where(fn ($w) => $w
+                ->where('paid_unpaid', '!=', 'Unpaid')->orWhereNull('paid_unpaid'))
+                ->where(fn ($w) => $w->where('type', '!=', 'Unpaid Leave')->orWhereNull('type'));
+            $q->whereHas('leaveType', $pay === 'Unpaid' ? $isUnpaid : $isPaid);
+        }
+
+        /* "On leave on <date>" — the panel at the top of the HR Leave page.
+           A date range straddles the day, so this cannot be answered from a
+           page of the list; it is its own small question and gets its own small
+           query rather than keeping the whole table in the browser to filter
+           locally. */
+        if ($onDate = trim((string) $request->input('on_leave_on', ''))) {
+            $q->whereDate('from_date', '<=', $onDate)
+              ->whereDate('to_date', '>=', $onDate);
+        }
+
+        /* Status tab counts. Taken from a copy of the query with every filter
+           applied EXCEPT status — which is what a tab strip means: "how many
+           would I see if I clicked this one", under the search and filters I
+           already have. Counting the rows on screen would report the page. */
+        $counts = null;
+        if ($request->boolean('with_counts') && $isAdminScope) {
+            /* Cloned BEFORE the status clause goes on, so this counts across
+               every status. reorder() drops the orderByDesc — Postgres rejects
+               an ORDER BY column that is not in the GROUP BY, and the ordering
+               is meaningless for a count anyway.
+               Admin scope only: for everyone else the visible set is decided by
+               canActOnLevel() in PHP, so a SQL count would report rows the
+               viewer is not allowed to see. Those counts come off the filtered
+               collection instead, below. */
+            $byStatus = (clone $q)->reorder()
+                ->select('status', DB::raw('count(*) as n'))
+                ->groupBy('status')
+                ->pluck('n', 'status');
+
+            $counts = [
+                'All'       => (int) $byStatus->sum(),
+                'Pending'   => (int) ($byStatus['Pending']   ?? 0),
+                'Approved'  => (int) ($byStatus['Approved']  ?? 0),
+                'Rejected'  => (int) ($byStatus['Rejected']  ?? 0),
+                'Cancelled' => (int) ($byStatus['Cancelled'] ?? 0),
+            ];
+        }
+
+        // Now the status clause, after the counts have seen the full spread.
+        if ($status && $status !== 'All') {
+            $q->where('status', $status);
+        }
+
+        /* PAGINATION — opt-in, by sending per_page.
+           Three other screens (Inbox, the HR Leave overview) call this endpoint
+           for aggregates and expect the whole set; defaulting to a page size
+           would silently truncate them into wrong counts, which is worse than
+           the slow response it would fix. So: no per_page, no paging, exactly
+           as before. Send per_page and you get one page plus a total. */
+        $perPage = $request->filled('per_page')
+            ? min(200, max(1, (int) $request->input('per_page')))
+            : null;
+        $page = max(1, (int) $request->input('page', 1));
+
+        if ($perPage && $isAdminScope) {
+            /* Admin scope applies no post-fetch filtering, so the database can
+               do both the count and the slice — the only arrangement where the
+               1000-row table is never materialised in PHP at all. */
+            $total = (clone $q)->count();
+            $rows  = $q->forPage($page, $perPage)->get();
+        } else {
+            $rows  = $q->get();
+            $total = null; // set below, after the permission pass has run
+        }
 
         // Per-level precision pass for non-admins. For Pending requests
         // only show ones where I can act on the current level. For
@@ -699,6 +791,36 @@ class LeaveRequestController extends Controller
                 }
                 return (int) $row->approved_by === (int) $user->id;
             })->values();
+        }
+
+        /* Non-admin paging happens HERE, after the permission pass — never
+           before it. canActOnLevel() reads each row's approval chain in PHP, so
+           it cannot be pushed into SQL, and a database LIMIT would cut the set
+           before the filter that decides what the viewer may see: page 1 would
+           return 25 rows, drop 17 of them, and show 8 with no way to reach the
+           rest. Count and slice the filtered set instead. */
+        if ($total === null) {
+            /* Non-admin counts, off the permission-filtered collection. Only the
+               tab that is currently open can be counted honestly here, because
+               $q already carries its status clause — the others would need a
+               second pass through the same permission filter. A manager's queue
+               is their own team's, not the tenant's, so the set is small and the
+               missing tabs simply report what is in hand. */
+            if ($request->boolean('with_counts') && $counts === null) {
+                $byStatus = $rows->countBy(fn (LeaveRequest $r) => (string) $r->status);
+                $counts = [
+                    'All'       => $rows->count(),
+                    'Pending'   => (int) ($byStatus['Pending']   ?? 0),
+                    'Approved'  => (int) ($byStatus['Approved']  ?? 0),
+                    'Rejected'  => (int) ($byStatus['Rejected']  ?? 0),
+                    'Cancelled' => (int) ($byStatus['Cancelled'] ?? 0),
+                ];
+            }
+
+            $total = $rows->count();
+            if ($perPage) {
+                $rows = $rows->slice(($page - 1) * $perPage, $perPage)->values();
+            }
         }
 
         // Per-row "can the viewer act on this RIGHT NOW?" flag. True only when
@@ -732,7 +854,20 @@ class LeaveRequestController extends Controller
                     || ($isHrScope && $away));
         });
 
-        return response()->json(['data' => $rows]);
+        /* `total` is always sent, paged or not, so a caller can show "1–25 of
+           275" without a second count request. The rmUnavailableMap and
+           can_act_now passes above now run over one page rather than the whole
+           table — they were the per-row work that made the old response slow as
+           well as large. */
+        return response()->json(array_filter([
+            'data'     => $rows,
+            'total'    => $total,
+            'page'     => $perPage ? $page : 1,
+            'per_page' => $perPage ?? $total,
+            // Absent unless asked for, so the existing callers' payload is
+            // byte-identical to what it was.
+            'counts'   => $counts,
+        ], fn ($v) => $v !== null));
     }
 
     // ─────────────────────────────────────────────────────────────────────

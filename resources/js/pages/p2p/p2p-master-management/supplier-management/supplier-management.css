@@ -128,10 +128,21 @@
    file and carry the same specificity, so without it the dark theme would win
    on source order and repaint the SELECTED tab with the inactive surface —
    losing the violet fill exactly where it carries the meaning. */
+/* CS-172: the unselected tab is WHITE at rest, not on hover.
+   It was #c4b5fd — a mid violet on a near-black pill, which left "Domestic
+   Supplier" looking disabled beside the white text of the selected tab, and
+   only resolved to something readable once the pointer was on it. A label the
+   user has to hover to read is a label they cannot scan, and hover does not
+   exist on touch at all.
+   The pair is still unambiguous: the SELECTED tab is white on a violet
+   gradient, the unselected one white on the strip's own surface. The fill is
+   what marks the selection — the text does not have to be dimmed as well. */
 [data-bs-theme="dark"] .sup-fig .sup-scope__tab:not(.is-active),
-[data-layout-mode="dark"] .sup-fig .sup-scope__tab:not(.is-active){color:#c4b5fd;background:rgba(255,255,255,.05);border-color:rgba(167,139,250,.30);}
+[data-layout-mode="dark"] .sup-fig .sup-scope__tab:not(.is-active){color:#fff;background:rgba(255,255,255,.05);border-color:rgba(167,139,250,.30);}
+/* Hover now moves the SURFACE, not the text — the text has nowhere brighter to
+   go, so the feedback comes from the background and border lifting. */
 [data-bs-theme="dark"] .sup-fig .sup-scope__tab:not(.is-active):hover,
-[data-layout-mode="dark"] .sup-fig .sup-scope__tab:not(.is-active):hover{color:#ddd6fe;background:rgba(167,139,250,.16);border-color:rgba(167,139,250,.45);}
+[data-layout-mode="dark"] .sup-fig .sup-scope__tab:not(.is-active):hover{color:#fff;background:rgba(167,139,250,.22);border-color:rgba(167,139,250,.55);}
 
 .sup-fig .bref-box__header-right{flex-shrink:0;display:flex;align-items:center;gap:6px;position:relative;z-index:1;}
 .sup-fig .bref-box__toggle{width:26px;height:26px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.75);border:1.5px solid rgba(124,58,237,.22);color:#7c3aed;transition:transform .24s cubic-bezier(.22,1,.36,1);box-shadow:0 1px 4px rgba(124,58,237,.10),inset 0 1px 0 rgba(255,255,255,.9);}
