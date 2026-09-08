@@ -66,11 +66,35 @@ export function MasterMultiSelect({
    * `overflow: hidden`. We track the toggle's viewport rect to position
    * the menu directly under it, and recompute on scroll/resize so the
    * popover stays anchored as the form scrolls. */
-  const [menuRect, setMenuRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [menuRect, setMenuRect] = useState<
+    { top?: number; bottom?: number; left: number; width: number; maxH: number } | null
+  >(null);
   const reposition = () => {
     if (!wrapRef.current) return;
     const r = wrapRef.current.getBoundingClientRect();
-    setMenuRect({ top: r.bottom + 4, left: r.left, width: r.width });
+    /* Keep the menu inside the viewport.
+     *
+     * It used to always open downwards at a flat 260px tall. On a field low in
+     * the form — the T&C wizard's Segment picker sits near the bottom of a
+     * vertically-centred modal — the list ran off the bottom of the screen and
+     * the options below the fold were unreachable (QA #5). Now it opens upwards
+     * when there is more room there, and in either direction it is never taller
+     * than the space it has.
+     *
+     * The floor keeps a usable list (the menu scrolls internally) rather than
+     * collapsing to a sliver when the field is wedged against an edge. */
+    const GAP = 4, EDGE = 8, DESIRED = 260, MIN_H = 150;
+    const below = window.innerHeight - r.bottom - GAP - EDGE;
+    const above = r.top - GAP - EDGE;
+    const flipUp = below < Math.min(DESIRED, MIN_H) && above > below;
+    setMenuRect({
+      top:    flipUp ? undefined : r.bottom + GAP,
+      bottom: flipUp ? window.innerHeight - r.top + GAP : undefined,
+      // Also clamp horizontally so a right-edge field doesn't push it off-screen.
+      left:   Math.max(EDGE, Math.min(r.left, window.innerWidth - r.width - EDGE)),
+      width:  r.width,
+      maxH:   Math.max(MIN_H, Math.min(DESIRED, flipUp ? above : below)),
+    });
   };
   useLayoutEffect(() => {
     if (!open) return;
@@ -185,7 +209,7 @@ export function MasterMultiSelect({
         <div
           ref={menuRef}
           className="mms-menu"
-          style={{ top: menuRect.top, left: menuRect.left, width: menuRect.width }}
+          style={{ top: menuRect.top, bottom: menuRect.bottom, left: menuRect.left, width: menuRect.width, maxHeight: menuRect.maxH }}
           onMouseDown={e => e.stopPropagation()}
         >
           <div className="mms-search-wrap">
@@ -348,6 +372,9 @@ const MMS_CSS = `
   padding: 6px;
   max-height: 260px;
   display: flex; flex-direction: column;
+  /* Clip to the rounded box. Without it the option list — which could not
+     shrink (see .mms-list) — spilled out past the border instead of scrolling. */
+  overflow: hidden;
 }
 .mms-search-wrap {
   position: relative; flex-shrink: 0;
@@ -376,7 +403,18 @@ const MMS_CSS = `
   border-color: #6366f1;
   box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
 }
-.mms-list { overflow-y: auto; flex: 1 1 auto; }
+/* min-height: 0 is what makes this scroll.
+   A flex child defaults to min-height: auto, so in this column flex menu the
+   list refused to shrink below its content and overflow-y: auto never engaged:
+   the options simply ran past the bottom of the menu and could not be reached
+   (QA #5). The scrollbar is styled slim-but-visible so it is obvious there is
+   more below. */
+.mms-list { overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+.mms-list::-webkit-scrollbar { width: 8px; }
+.mms-list::-webkit-scrollbar-track { background: transparent; }
+.mms-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+.mms-list::-webkit-scrollbar-thumb:hover { background: #94a3b8; background-clip: content-box; }
+.mms-list { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
 .mms-empty {
   padding: 14px 10px; text-align: center;
   color: #9ca3af; font-size: 12px;
@@ -468,6 +506,10 @@ const MMS_CSS = `
 }
 [data-bs-theme="dark"] .mms-item,
 [data-layout-mode="dark"] .mms-item { color: #e5e7eb; }
+[data-bs-theme="dark"] .mms-list,
+[data-layout-mode="dark"] .mms-list { scrollbar-color: rgba(255,255,255,0.22) transparent; }
+[data-bs-theme="dark"] .mms-list::-webkit-scrollbar-thumb,
+[data-layout-mode="dark"] .mms-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.22); background-clip: content-box; }
 [data-bs-theme="dark"] .mms-item:hover,
 [data-layout-mode="dark"] .mms-item:hover { background: rgba(255,255,255,0.04); }
 [data-bs-theme="dark"] .mms-search-wrap,

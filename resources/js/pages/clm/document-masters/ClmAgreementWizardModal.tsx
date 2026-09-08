@@ -16,7 +16,7 @@ import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
 } from '../../hrms/doc-templates/HeaderFooterPanel';
-import { useCtcEditor, CtcEditorContent, CtcToolbar, CTC_EDITOR_CSS, DEFAULT_MARGINS, type CtcMargins, type CtcEditor } from '../operations/CtcRichEditor';
+import { useCtcEditor, CtcEditorContent, CtcToolbar, CTC_EDITOR_CSS, DEFAULT_MARGINS, SHEET_W, type CtcMargins, type CtcEditor } from '../operations/CtcRichEditor';
 import CtcLivePreview from '../operations/CtcLivePreview';
 import { useOpsTheme } from '../operations/useOpsTheme';
 import type { Editor } from '@tiptap/react';
@@ -1247,6 +1247,10 @@ function AgrEditor({
           header={headerConfig} setHeader={setHeaderConfig}
           footer={footerConfig} setFooter={setFooterConfig}
           uploadLogoEndpoint="/clm/agreement-library/upload-header-logo"
+          /* Print-accurate header: the band becomes the A4 page and follows the
+             PDF's own two-column logo/title rule (QA #11). */
+          pageWidth={SHEET_W}
+          pageMargins={{ left: margins.left, right: margins.right }}
         >
           <div className="agw-editor" style={{ position: 'relative' }}>
             {/* Until TipTap has booted + parsed the (possibly large) document,

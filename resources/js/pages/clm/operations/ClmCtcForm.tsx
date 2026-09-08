@@ -11,7 +11,7 @@ import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../../master/m
 import ClmInsertPlaceholderModal from '../document-masters/ClmInsertPlaceholderModal';
 import ClmClauseInsertPanel from '../document-masters/ClmClauseInsertPanel';
 import HeaderFooterPanel, { DEFAULT_HEADER, DEFAULT_FOOTER, type HeaderConfig, type FooterConfig } from '../../hrms/doc-templates/HeaderFooterPanel';
-import { useCtcEditor, CtcToolbar, CtcEditorContent, CTC_EDITOR_CSS, waitForPagination, DEFAULT_MARGINS, type CtcMargins } from './CtcRichEditor';
+import { useCtcEditor, CtcToolbar, CtcEditorContent, CTC_EDITOR_CSS, waitForPagination, DEFAULT_MARGINS, SHEET_W, type CtcMargins } from './CtcRichEditor';
 import CtcLivePreview from './CtcLivePreview';
 import { ctcSignatureLabel, pad2, type CtcContract } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
@@ -1409,7 +1409,7 @@ function Stage1(p: {
                     </div>}
                 <div className="clm-editor-split">
                   <div className="ctc-mid-scroll" style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#eef0f6', padding: 14 }}>
-                    <HeaderFooterPanel header={header} setHeader={setHeader} footer={footer} setFooter={setFooter} uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo">
+                    <HeaderFooterPanel header={header} setHeader={setHeader} footer={footer} setFooter={setFooter} uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo" pageWidth={SHEET_W} pageMargins={{ left: margins.left, right: margins.right }}>
                       <CtcEditorContent
                         editor={ctcEd.editor} pageView
                         margins={margins} onMargins={p.editLock ? undefined : setMargins}

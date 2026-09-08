@@ -1514,7 +1514,7 @@ export const MARGIN_MAX = 60;
 export type CtcMargins = { left: number; right: number };
 export const DEFAULT_MARGINS: CtcMargins = { left: 25, right: 25 };
 
-const SHEET_W = 794;          // A4 at 96dpi
+export const SHEET_W = 794;   // A4 at 96dpi — the printed sheet width
 const PX_PER_CM = SHEET_W / 21;
 
 /** Word's ruler: the sheet's full width, with a draggable marker per margin. */

@@ -209,15 +209,27 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
   const [pendingDelete, setPendingDelete] = useState<Lib | null>(null);
   // All-segments popover — opened from the +N badge in the SEGMENT column
   // (same pattern as the DCP authorities popover).
-  const [segPop, setSegPop] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
+  /* flipUp/maxH keep the popover inside the viewport: a +N badge on one of the
+   * last rows has almost no room below it, and the panel used to open downwards
+   * regardless and get cut off by the bottom of the screen (QA #4). */
+  const [segPop, setSegPop] = useState<{ id: number; names: string[]; x: number; y: number; flipUp: boolean; maxH: number } | null>(null);
   // Close the fixed-positioned badge popover on scroll/resize so it can't
   // drift out of the table (capture:true catches ancestor + table scrolls).
   useEffect(() => {
     if (!segPop) return;
     const close = () => setSegPop(null);
-    window.addEventListener('scroll', close, true);
+    /* A scroll INSIDE the popover must not close it.
+       capture:true sees the popover's own scroll event too, so opening a long
+       segment list and reaching for the wheel dismissed it instantly — the list
+       was scrollable but unreachable (QA #4). Only page/table scrolls close it. */
+    const onScroll = (e: Event) => {
+      const t = e.target as Element | null;
+      if (t && typeof t.closest === 'function' && t.closest('.clm-pop')) return;
+      close();
+    };
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', close);
-    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+    return () => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', close); };
   }, [segPop]);
   // Regulatory-status filter dropdown (All / Highly / Less).
   const [statusFilter, setStatusFilter] = useState<'all' | 'highly' | 'less'>('all');
@@ -353,7 +365,16 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                               <Tooltip label="View all segments">
                                 <button
                                   type="button"
-                                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(segPop?.id === r.id ? null : { id: r.id, names: list, x: b.left, y: b.bottom + 4 }); }}
+                                  onClick={e => {
+                                    if (segPop?.id === r.id) { setSegPop(null); return; }
+                                    const b = e.currentTarget.getBoundingClientRect();
+                                    // Open upwards when the space below can't hold the list.
+                                    const estH = Math.min(280, 34 + list.length * 30);
+                                    const below = window.innerHeight - b.bottom - 12;
+                                    const above = b.top - 12;
+                                    const flipUp = below < estH && above > below;
+                                    setSegPop({ id: r.id, names: list, x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp, maxH: Math.max(120, Math.min(280, flipUp ? above : below)) });
+                                  }}
                                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
                                   +{extra}
                                 </button>
@@ -406,7 +427,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
       {segPop && createPortal(
         <>
           <div onClick={() => setSegPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 230), top: segPop.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 230), top: segPop.flipUp ? undefined : segPop.y, bottom: segPop.flipUp ? (window.innerHeight - segPop.y) : undefined, zIndex: 601, width: 210, maxHeight: segPop.maxH, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Segments ({segPop.names.length})</div>
             {segPop.names.map((name, i) => (
               <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>

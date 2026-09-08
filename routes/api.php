@@ -420,6 +420,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/clm/signature-requests/agreement-preview',   [ClmSignatureController::class, 'agreementPreview']);
     Route::post  ('/clm/signature-requests/agreement-send',      [ClmSignatureController::class, 'agreementSend']);
 
+    // Who the document will actually go to — same resolver the send uses, so
+    // the screen can never show one address and mail another.
+    Route::get   ('/clm/signature-requests/sales-doc-signers',   [ClmSignatureController::class, 'salesDocSigners']);
     Route::post  ('/clm/signature-requests/sales-doc-send',      [ClmSignatureController::class, 'salesDocSend']);
 
 

@@ -110,6 +110,8 @@ export default function HeaderFooterPanel({
   readOnly = false,
   fillHeight = false,
   uploadLogoEndpoint = '/hr-document-templates/upload-header-logo',
+  pageWidth,
+  pageMargins,
   children,
 }: {
   header: HeaderConfig;
@@ -134,6 +136,27 @@ export default function HeaderFooterPanel({
    * its own `/clm/trade-doc-library/upload-header-logo` so the file lands
    * under that module's tenant folder. */
   uploadLogoEndpoint?: string;
+  /* Print-accurate mode: render the header/footer the way the PDF actually
+   * renders them, at the printed page width (px).
+   *
+   * dompdf cannot do the free-drag percentages this panel emits, so
+   * clm-signature-document.blade.php collapses them into a fixed two-column
+   * table — logo in a 45% cell, title block in a 55% cell, side chosen by
+   * logo_pos.x <= 50. The editor meanwhile drew both at their exact
+   * percentages inside a band as wide as the window. Two different rules over
+   * the same data: on screen the logo and the company name overlapped in the
+   * middle, in the PDF they sat on opposite sides of the page (QA #11).
+   *
+   * With this set the editor follows the PDF's rule instead of its own. The
+   * logo stays draggable — dragging past the halfway mark swaps the sides,
+   * which is the only thing the PDF can honour anyway.
+   *
+   * Opt-in: the HR template editor renders through a different PDF path and
+   * keeps free positioning. */
+  pageWidth?: number;
+  /** Page margins in px, so the band's content column is inset exactly as the
+   *  PDF's @page box insets it. Defaults to the blade's own 25px. */
+  pageMargins?: { left: number; right: number };
   children: ReactNode;
 }) {
   const [openZone, setOpenZone] = useState<'header' | 'footer' | null>(null);
@@ -170,6 +193,58 @@ export default function HeaderFooterPanel({
   // values, especially older rows saved before this column existed.
   const logoPos = clampPoint(header.logo_pos);
   const titlePos = clampPoint(header.title_pos);
+  /* Print-accurate mode: size the header/footer bands to the printed page so
+     the drag percentages mean the same thing here and in the PDF. */
+  const printMode = !!pageWidth;
+  const pageML = pageMargins?.left  ?? 25;
+  const pageMR = pageMargins?.right ?? 25;
+
+  /* Settle both items onto the geometry the PDF will actually use.
+   *
+   * Drag stays completely free — you move the logo and the title anywhere, and
+   * they follow the mouse. On RELEASE they land where the document will print
+   * them, which is the whole point of the ticket: the draft and the download
+   * have to agree. Without this the editor could show them overlapping in the
+   * middle of the band while the PDF laid them out side by side (QA #11).
+   *
+   * The arithmetic is deliberately the same as clm-signature-document.blade.php:
+   * split at the midpoint between the two, alignment measured inside the cell
+   * each one landed in. Vertical goes to 50 because the PDF's cells are
+   * vertical-align: middle and have no other option.
+   *
+   * Only runs in printMode — the HR template editor prints through a different
+   * path and keeps unrestricted placement. */
+  const snapToPrintGeometry = (which: 'logo' | 'title', moved: PointPct) => {
+    const container = headerRef.current;
+    if (!container) return;
+    const contentW = Math.max(1, container.clientWidth - (pageML + 14) - (pageMR + 14));
+    const logoW  = logoElRef.current?.getBoundingClientRect().width ?? 0;
+    const titleW = titleBlockRef.current?.getBoundingClientRect().width ?? 0;
+
+    const lx = which === 'logo'  ? moved.x : logoPos.x;
+    const tx = which === 'title' ? moved.x : titlePos.x;
+    const logoFirst = lx <= tx;
+    const split = clamp((Math.min(lx, tx) + Math.max(lx, tx)) / 2, 25, 75);
+    const cellOf = (isFirst: boolean): [number, number] => isFirst ? [0, split] : [split, 100];
+    const alignIn = (x: number, [a, b]: [number, number]) => {
+      const rel = ((x - a) / Math.max(1, b - a)) * 100;
+      return rel <= 33.34 ? 'left' : rel >= 66.66 ? 'right' : 'center';
+    };
+    // Convert the item's cell + alignment back into the centre-anchored
+    // percentage this panel positions with.
+    const centreFor = (x: number, cell: [number, number], widthPx: number) => {
+      const half = (widthPx / 2 / contentW) * 100;
+      const a = alignIn(x, cell);
+      if (a === 'left')  return cell[0] + half;
+      if (a === 'right') return cell[1] - half;
+      return (cell[0] + cell[1]) / 2;
+    };
+    setHeader({
+      ...header,
+      logo_pos:  { x: clamp(centreFor(lx, cellOf(logoFirst),  logoW),  0, 100), y: 50 },
+      title_pos: { x: clamp(centreFor(tx, cellOf(!logoFirst), titleW), 0, 100), y: 50 },
+    });
+  };
 
   // Drag handlers — return a mousedown handler that pins the dragged item
   // to the cursor inside the header container. Updates are throttled by
@@ -183,6 +258,8 @@ export default function HeaderFooterPanel({
      position is used and the item simply follows the mouse; the snap re-applies
      when the button is released. */
   const [dragging, setDragging] = useState<'logo' | 'title' | null>(null);
+  // Latest position produced by the in-flight drag, read once on release.
+  const lastDragRef = useRef<PointPct | null>(null);
 
   const startDrag = (which: 'logo' | 'title') => (e: React.MouseEvent) => {
     if (readOnly) return;
@@ -218,11 +295,16 @@ export default function HeaderFooterPanel({
       const boundedX = halfWPct >= 50 ? 50 : clamp(start.x + dxPct, halfWPct, 100 - halfWPct);
       const boundedY = halfHPct >= 50 ? 50 : clamp(start.y + dyPct, halfHPct, 100 - halfHPct);
       const next: PointPct = { x: boundedX, y: boundedY };
+      lastDragRef.current = next;
       if (which === 'logo')  setHeader({ ...header, logo_pos: next });
       else                   setHeader({ ...header, title_pos: next });
     };
     const onUp = () => {
       setDragging(null);
+      // Settle onto the printed geometry (printMode only); a click with no
+      // movement leaves everything exactly as it was.
+      if (printMode && lastDragRef.current) snapToPrintGeometry(which, lastDragRef.current);
+      lastDragRef.current = null;
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       document.body.style.userSelect = '';
@@ -393,6 +475,16 @@ export default function HeaderFooterPanel({
             // Faint dotted grid so the user can see the drop zone & alignment.
             'radial-gradient(circle, rgba(99,102,241,0.10) 1px, transparent 1px)',
           backgroundSize: '14px 14px',
+          /* Print-accurate geometry: the band IS the page, inset by the real
+             @page margins plus .page-header's own 14px. Free drag is untouched —
+             logo_pos / title_pos stay percentages, they are now percentages of
+             the same box the PDF measures against, so a position set here lands
+             in the same place there. */
+          ...(printMode ? {
+            maxWidth: pageWidth, marginLeft: 'auto', marginRight: 'auto',
+            boxSizing: 'border-box' as const,
+            paddingLeft: pageML + 14, paddingRight: pageMR + 14,
+          } : null),
         }}
       >
         {header.show_logo && (
@@ -532,6 +624,7 @@ export default function HeaderFooterPanel({
         title={readOnly ? '' : 'Click to edit footer'}
         style={{
           height: FOOTER_HEIGHT, minHeight: FOOTER_HEIGHT, maxHeight: FOOTER_HEIGHT,
+          ...(printMode ? { maxWidth: pageWidth, marginLeft: 'auto', marginRight: 'auto', boxSizing: 'border-box' as const } : null),
           background: footer.background, color: footer.text_color,
           borderTop: '2px solid #f3f4f6',
           padding: '0 22px',
