@@ -1497,7 +1497,7 @@ export default function AddVendorModal(props: {
         if (typeof returnedCode === 'string' && returnedCode) setVendorCode(returnedCode);
         setFieldErrors({});
         savedSegmentRef.current = segment;
-        toast.success('Identity saved', 'Vendor identity details captured');
+        toast.success('Identity saved', 'Supplier identity details captured');
         return true;
       };
 
@@ -1519,7 +1519,7 @@ export default function AddVendorModal(props: {
       }
     } catch (err: unknown) {
       const res = (err as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } })?.response?.data;
-      const msg = res?.message || 'Could not save vendor identity';
+      const msg = res?.message || 'Could not save supplier identity';
       const apiErrs = res?.errors ?? {};
       const mapped: Record<string, string> = {};
       if (apiErrs.gst_number?.[0]) mapped.gstNumber = apiErrs.gst_number[0];
@@ -1676,7 +1676,7 @@ export default function AddVendorModal(props: {
   const saveProducts = async (): Promise<boolean> => {
     if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return false; }
     if (productMappings.length === 0) {
-      toast.error('No products mapped', 'Map at least one product before saving the vendor.');
+      toast.error('No products mapped', 'Map at least one product before saving the supplier.');
       return false;
     }
     setSaving(true);
@@ -1691,7 +1691,7 @@ export default function AddVendorModal(props: {
           total_amount: m.totalAmount,
         })),
       });
-      toast.success('Vendor saved', 'Products mapped — vendor is now Active');
+      toast.success('Supplier saved', 'Products mapped — supplier is now Active');
       return true;
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save product mappings';
@@ -2058,7 +2058,7 @@ export default function AddVendorModal(props: {
       return;
     }
     if (!vendorId) {
-      toast.info('Save vendor first', 'Save the vendor before sending documents for signature.');
+      toast.info('Save supplier first', 'Save the supplier before sending documents for signature.');
       return;
     }
     const reqId = row.signatureRequestId;
@@ -2102,7 +2102,7 @@ export default function AddVendorModal(props: {
       return;
     }
     if (!vendorId) {
-      toast.info('Save vendor first', 'Save the vendor before sending documents for signature.');
+      toast.info('Save supplier first', 'Save the supplier before sending documents for signature.');
       return;
     }
     setSendForSignature(ids.slice(0, 10));
@@ -2236,7 +2236,7 @@ export default function AddVendorModal(props: {
     const price = parseFloat(mapDraft.purchasePrice);
     if (!isFinite(price) || price < 0)   { toast.error('Invalid price', 'Purchase Price must be a non-negative number'); return; }
     if (productMappings.some(m => m.productId === Number(mapDraft.productId) && m.id !== mapEditingId)) {
-      toast.error('Already mapped', `${mapDraft.productCode} is already mapped to this vendor`);
+      toast.error('Already mapped', `${mapDraft.productCode} is already mapped to this supplier`);
       return;
     }
     if (mapEditingId) {
@@ -5065,7 +5065,7 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
       isEmpty={props.rows.length === 0}
       empty={props.readOnly
         ? 'No products mapped to this supplier yet.'
-        : 'No products mapped yet. Use “+ Add More Products” to link this vendor to one or more products.'}
+        : 'No products mapped yet. Use “+ Add More Products” to link this supplier to one or more products.'}
       wrapClassName="avm-mapped-wrap"
       tableClassName="avm-mapped-table"
       headers={[
