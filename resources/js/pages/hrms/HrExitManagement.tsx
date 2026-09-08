@@ -313,13 +313,12 @@ export default function HrExitManagement() {
                       <>
                         Exited
                         <span style={{ display: 'inline-block', marginLeft: 8 }}>
-                          <span style={{
-                            display: 'inline-block', padding: '3px 8px', borderRadius: 999,
-                            background: e.blacklisted ? '#fee2e2' : '#ecfdf5',
-                            color: e.blacklisted ? '#b91c1c' : '#0d9488',
-                            border: `1px solid ${e.blacklisted ? '#fecaca' : '#a7f3d0'}`,
-                            fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap'
-                          }}>{e.blacklisted ? 'Blacklisted' : 'Not Blacklisted'}</span>
+                          {/* Same reason as the Exit Type pill: inline colours
+                              could not be themed, so this badge stayed light on
+                              the dark roster. (#131) */}
+                          <span className={`exit-bl-pill exit-bl-pill--${e.blacklisted ? 'on' : 'off'}`}>
+                            {e.blacklisted ? 'Blacklisted' : 'Not Blacklisted'}
+                          </span>
                         </span>
                       </>
                     ) : 'Action Needed'}
@@ -403,21 +402,19 @@ export default function HrExitManagement() {
       cell: (info: any) => {
         const t = String(info.getValue() || '').trim();
         if (!t) return <span className="text-muted">—</span>;
-        const tone = t === 'Termination'
-          ? { bg: '#f5f3ff', fg: '#6d28d9', bd: '#ddd6fe' }
-          : t === 'Resignation'
-            ? { bg: '#ecfdf5', fg: '#0d9488', bd: '#a7f3d0' }
-            : { bg: '#fef2f2', fg: '#b91c1c', bd: '#fecaca' };
+        /* Tone by CLASS, not inline colours. (#131)
+           These were three hardcoded pastel triplets, and an inline style
+           outranks every stylesheet rule — including the dark-theme one — so
+           the pill stayed a light sticker on the dark table while everything
+           around it followed the theme. The palette (light + dark) now lives
+           in recruitment.css next to the rest of .exit-page. */
+        const tone = t === 'Termination' ? 'violet' : t === 'Resignation' ? 'teal' : 'red';
         // The without-notice label is long — shorten it in the cell and keep
         // the full wording in the tooltip.
         const label = t === 'Resignation without notice period' ? 'Resignation (no notice)' : t;
         return (
           <Tooltip label={t} position="bottom" themed>
-            <span style={{
-              display: 'inline-block', padding: '3px 10px', borderRadius: 999,
-              background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}`,
-              fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
-            }}>{label}</span>
+            <span className={`exit-type-pill exit-type-pill--${tone}`}>{label}</span>
           </Tooltip>
         );
       },
@@ -3956,8 +3953,12 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                             : 'No advances are outstanding.'} />
                   {/* Company advances that aren't fully reconciled block the F&F —
                       surface them so HR knows exactly what to close first. */}
+                  {/* Themed class, not inline amber (#131). This banner lives in a
+                      modal, which portals OUTSIDE .exit-page, so it carries its own
+                      unscoped class rather than a page-scoped one — a .exit-page
+                      selector would simply never match it. */}
                   {!advancesAllComplete && (
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: '#fffbeb', border: '1px solid #fde68a', color: '#a4661c', borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 600, margin: '6px 0 2px' }}>
+                    <div className="exit-adv-warn">
                       <i className="ri-error-warning-line" style={{ fontSize: 15, flexShrink: 0, marginTop: 1 }} />
                       <span>{advancesIncomplete.length} company advance{advancesIncomplete.length === 1 ? '' : 's'} not fully settled ({advancesIncomplete.map(a => a.reference || a.type).filter(Boolean).join(', ')}). Settle, return the balance (each payment approved), or raise the reimbursement before the F&F can be paid.</span>
                     </div>
