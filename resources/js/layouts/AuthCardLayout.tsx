@@ -27,7 +27,10 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
           shot reads as the hero asset, not muddy backdrop. */}
       <div
         className="fixed inset-0 bg-cover bg-center pointer-events-none"
-        style={{ backgroundImage: 'url(/images/loginbg.png)' }}
+        /* .jpg, not .png: this is an opaque decorative photo, and as a 3000px PNG it
+           was 4.7 MB — the single heaviest asset in the app. Same image at 1600px
+           JPEG q82 is 193 KB and indistinguishable behind the login card. */
+        style={{ backgroundImage: 'url(/images/loginbg.jpg)' }}
       />
       {/* Lighter scrim — preserves contrast on the right card while
           letting the photo's color and detail come through on the left. */}

@@ -49,7 +49,32 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
   const toast = useToast();
   // Stable per-signer key so each signer's field lands at its own coords.
   const keyed = signers.map((s, i) => ({ ...s, key: `signer${i + 1}` }));
-  const seed = (i: number): Box => ({ x: 60 + (i % 3) * 170, y: 720 - Math.floor(i / 3) * 70, page: 0, width: 150, height: 45 });
+  /* ── Default signature box ───────────────────────────────────────────────
+   * Zoho renders the field at EXACTLY the size we send — measured off a sent
+   * request: we sent 158x45 and the field came back 160x47. So the box drawn
+   * here is the box that prints; there is no scaling to compensate for.
+   *
+   * What Zoho does NOT do is shrink the signature to fit. The signer's saved
+   * signature is drawn at its own width, and anything wider than the field
+   * simply runs past it and over whatever sits beside it. Since we cannot see
+   * or control that signature, the only lever is to give it room.
+   *
+   * 158x45 was too small for a normal company signature, which is what put one
+   * signature on top of another. 240x55 fits a long name comfortably and still
+   * leaves two boxes side by side on A4 (240 + 240 + gaps < 595).
+   */
+  const SIG_W = 240;
+  const SIG_H = 55;
+
+  /* Seeded one per ROW. Three across at this width would start out overlapping,
+     which is the very thing being fixed. */
+  const seed = (i: number): Box => ({
+    x: 60,
+    y: 720 - i * (SIG_H + 20),
+    page: 0,
+    width: SIG_W,
+    height: SIG_H,
+  });
 
   /* Each signer owns a LIST of boxes — Legal Team #9: one counterparty must be
    * able to sign the same document in more than one place. The list travels as

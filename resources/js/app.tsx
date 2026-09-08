@@ -1,4 +1,14 @@
-import '../css/app.css';
+/* app.css is NOT imported here.
+ *
+ * It is already a Vite entry (vite.config `input`), so @vite() emits a
+ * <link> for it in the document head. Importing it from the JS entry too
+ * made Vite attach the very same stylesheet to app.tsx's chunk, and the page
+ * downloaded and parsed it TWICE — two 28.9 KB requests for one file.
+ *
+ * The <link> is the one to keep: it sits in <head> and blocks paint, so the
+ * page renders styled. Arriving through the JS chunk instead would land
+ * after the bundle starts and flash unstyled content.
+ */
 import '../scss/velzon.scss';
 import 'bootstrap/dist/js/bootstrap.bundle.min.js';
 import { createRoot } from 'react-dom/client';

@@ -177,13 +177,147 @@ class ExpenseClaimController extends Controller
             }
         }
 
+        /* ── Date window ──────────────────────────────────────────────────
+         * The SPA's "All Dates / Today / This Week / This Month / This Year"
+         * picker resolves to an explicit from/to and sends those, rather than a
+         * keyword. The window is computed in the BROWSER's timezone, so letting
+         * the server re-derive "this week" from a keyword would put the two on
+         * different days for anyone not sitting in the server's zone. Passing
+         * the resolved dates keeps both ends looking at the same rows.
+         *
+         * Applied to $base, so the KPI summary below is narrowed by the date
+         * window but NOT by the status tab or the search box — exactly how the
+         * page has always computed those figures (they come from the
+         * date-filtered set, before the status filter). */
+        $from = $request->query('date_from');
+        $to   = $request->query('date_to');
+        if ($from) $q->whereDate('expense_date', '>=', $from);
+        if ($to)   $q->whereDate('expense_date', '<=', $to);
+
+        // Snapshot for the aggregates, taken before status/search narrow it.
+        $base = clone $q;
+
         if ($status = $request->query('status')) {
             if (in_array($status, self::STATUSES, true)) {
                 $q->where('status', $status);
             }
         }
 
+        /* ── Search ───────────────────────────────────────────────────────
+         * Mirrors the eight fields the grid's search box has always matched:
+         * claim no, employee name + code, category, department, title, vendor,
+         * purpose. The first six live on the row (employee_name / category_name
+         * are denormalised); code and department come through the relation.
+         *
+         * LOWER() on both sides because this runs on PostgreSQL, where LIKE is
+         * case-sensitive — an ILIKE-shaped bug that has bitten this codebase
+         * before. % and _ in the term are escaped so a user typing "50%" is not
+         * handed every row. */
+        if ($term = trim((string) $request->query('q', ''))) {
+            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], mb_strtolower($term)) . '%';
+            $q->where(function ($w) use ($like) {
+                foreach (['claim_no', 'employee_name', 'category_name', 'title', 'vendor', 'purpose'] as $col) {
+                    $w->orWhereRaw("LOWER(COALESCE($col, '')) LIKE ?", [$like]);
+                }
+                $w->orWhereHas('employee', function ($e) use ($like) {
+                    $e->withTrashed()->where(function ($x) use ($like) {
+                        foreach (['emp_code', 'first_name', 'middle_name', 'last_name', 'display_name'] as $col) {
+                            $x->orWhereRaw("LOWER(COALESCE($col, '')) LIKE ?", [$like]);
+                        }
+                        $x->orWhereHas('department', fn ($d) => $d->whereRaw("LOWER(COALESCE(name, '')) LIKE ?", [$like]));
+                    });
+                });
+            });
+        }
+
+        /* ── Paged response, opt-in ───────────────────────────────────────
+         * WITHOUT `page` this returns the same bare array it always has, so
+         * every existing caller — the employee profile tab, My Team, the
+         * exports — is untouched.
+         *
+         * WITH `page` it returns { data, meta, summary }. The summary rides
+         * along because the KPI tiles and the Spend-by-Category chart are
+         * computed over EVERY matching claim, not the visible page: once the
+         * client stops holding the full list it can no longer add those up
+         * itself, and a second round trip for them would be a second queue slot
+         * for no reason. */
+        if ($request->filled('page') || $request->filled('per_page')) {
+            $perPage = (int) $request->query('per_page', 0);
+            $perPage = max(1, min(200, $perPage ?: 25));
+            $page    = max(1, (int) $request->query('page', 1));
+
+            $p = $q->paginate($perPage, ['*'], 'page', $page);
+
+            return response()->json([
+                'data'    => collect($p->items())->map(fn ($r) => $this->serialize($r))->values(),
+                'meta'    => [
+                    'page'      => $p->currentPage(),
+                    'per_page'  => $p->perPage(),
+                    'total'     => $p->total(),
+                    'last_page' => $p->lastPage(),
+                ],
+                'summary' => $this->claimsSummary($base),
+            ]);
+        }
+
         return response()->json($q->get()->map(fn ($r) => $this->serialize($r)));
+    }
+
+    /**
+     * KPI tiles + Spend-by-Category, computed in SQL over the whole matching
+     * set rather than in the browser over a downloaded list.
+     *
+     * Every figure here reproduces what the page used to add up client-side:
+     *   · counts        — all / pending / approved / rejected
+     *   · total_amount  — sum of everything NOT rejected. Rejected money is not
+     *                     "in play", and it was deliberately excluded from this
+     *                     tile and the chart while still being counted in the
+     *                     old total (QA #87).
+     *   · approved_amount — approved only.
+     *   · categories    — APPROVED claims only, grouped by category, zero-spend
+     *                     categories dropped (CBC #159). The chart answers
+     *                     "where did the money go"; a category no money went to
+     *                     is not an answer.
+     *
+     * Colours stay a client concern — the palette is derived from the category
+     * key there and must not drift between the two.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $base  tenant + scope + date window applied.
+     */
+    private function claimsSummary($base): array
+    {
+        $agg = (clone $base)->reorder()->selectRaw("
+            COUNT(*)                                                       AS c_all,
+            COUNT(*) FILTER (WHERE status = 'pending')                     AS c_pending,
+            COUNT(*) FILTER (WHERE status = 'approved')                    AS c_approved,
+            COUNT(*) FILTER (WHERE status = 'rejected')                    AS c_rejected,
+            COALESCE(SUM(amount) FILTER (WHERE status <> 'rejected'), 0)   AS total_amount,
+            COALESCE(SUM(amount) FILTER (WHERE status = 'approved'), 0)    AS approved_amount
+        ")->first();
+
+        $cats = (clone $base)->reorder()
+            ->where('status', 'approved')
+            ->selectRaw("category_id, COALESCE(category_name, '—') AS category_name, SUM(amount) AS spent")
+            ->groupBy('category_id', 'category_name')
+            ->havingRaw('SUM(amount) > 0')
+            ->get()
+            ->map(fn ($r) => [
+                'id'    => $r->category_id !== null ? (int) $r->category_id : null,
+                'name'  => (string) $r->category_name,
+                'spent' => (float) $r->spent,
+            ])->values();
+
+        return [
+            'counts' => [
+                'all'      => (int) ($agg->c_all ?? 0),
+                'pending'  => (int) ($agg->c_pending ?? 0),
+                'approved' => (int) ($agg->c_approved ?? 0),
+                'rejected' => (int) ($agg->c_rejected ?? 0),
+            ],
+            'total_amount'    => (float) ($agg->total_amount ?? 0),
+            'approved_amount' => (float) ($agg->approved_amount ?? 0),
+            'categories'      => $cats,
+        ];
     }
 
     /* ============================================================ */

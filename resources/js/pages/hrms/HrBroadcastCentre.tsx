@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { Col, Row, Modal, ModalBody, Spinner, Input } from 'reactstrap';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Col, Row, Modal, ModalBody, Spinner } from 'reactstrap';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -8,35 +8,21 @@ import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import '../../../css/recruitment.css';
 
-/* ── Length limits ──────────────────────────────────────────────────────────
-   Capped at the input, not at publish. TITLE_MAX matches the server's
-   `max:191` on announcements.title, so the field can never build a value the
-   API will reject. DESC_MAX is the product cap on the body — the column is
-   `text`, but an announcement is a notice, not a document, and an uncapped
-   paste of thousands of characters broke every surface that renders it (the
-   Review & Publish card scrolled sideways, the inbox row and the email body
-   ran on). Mirrored server-side in AnnouncementController::rules(). */
 const TITLE_MAX = 191;
 const DESC_MAX  = 2000;
 
-/* How much of each is shown before "Read more" in the Review & Publish card. */
 const REVIEW_TITLE_PREVIEW = 120;
 const REVIEW_DESC_PREVIEW  = 300;
 
-/* Icon buttons on the attachment row (View / Replace / Delete). */
 const attachBtn: React.CSSProperties = {
   width: 30, height: 30, borderRadius: 8, flexShrink: 0,
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  /* --vz-secondary-bg, NOT --vz-card-bg. Bootstrap scopes --vz-card-bg to
-     `.card`; these buttons sit on an attachment row outside one, so the var
-     resolved to nothing, the #fff fallback won, and they stayed white on a
-     dark page. --vz-secondary-bg is a :root var and follows the theme. */
+
   background: 'var(--vz-secondary-bg, #fff)',
   border: '1px solid var(--vz-border-color, #e5e7eb)',
   fontSize: 15, cursor: 'pointer',
 };
 
-// ── Types ────────────────────────────────────────────────────────────────────
 type AnnType    = 'General' | 'Policy' | 'Urgent';
 type AnnPriority = 'Normal' | 'High' | 'Critical';
 type AnnStatus  = 'Draft' | 'Scheduled' | 'Active' | 'Expired' | 'Archived';
@@ -57,9 +43,7 @@ interface AnnRow {
   audience_designation_ids: number[] | null;
   exclude_employee_ids: number[] | null;
   audience_count: number;
-  // Legacy lifecycle fields kept on the API row for back-compat with the
-  // list view's date columns. The wizard no longer surfaces scheduling or
-  // acknowledgement controls — every publish is immediate.
+
   publish_type: 'immediate' | 'scheduled';
   publish_at: string | null;
   expires_at: string | null;
@@ -73,10 +57,11 @@ interface AnnRow {
   creator?: { id: number; name: string };
 }
 
-interface Stats { total: number; active: number; scheduled: number; draft: number; expired: number; archived: number; }
-const ZERO_STATS: Stats = { total: 0, active: 0, scheduled: 0, draft: 0, expired: 0, archived: 0 };
+interface Stats { total: number; active: number; scheduled: number; draft: number; expired: number; archived: number; high_priority: number; }
+const ZERO_STATS: Stats = { total: 0, active: 0, scheduled: 0, draft: 0, expired: 0, archived: 0, high_priority: 0 };
 
-// ── Tone palettes ────────────────────────────────────────────────────────────
+const PER_PAGE_KEY = 'cbc.hr.broadcast.perPage.v1';
+
 const TYPE_TONES: Record<AnnType, { bg: string; fg: string }> = {
   General: { bg: '#e0e7ff', fg: '#4338ca' },
   Policy:  { bg: '#ede9fe', fg: '#6d28d9' },
@@ -86,13 +71,6 @@ const PRIORITY_TONES: Record<AnnPriority, { bg: string; fg: string }> = {
   Normal:   { bg: '#fef3c7', fg: '#92400e' },
   High:     { bg: '#fed7aa', fg: '#c2410c' },
   Critical: { bg: '#fee2e2', fg: '#b91c1c' },
-};
-const STATUS_TONES: Record<AnnStatus, { bg: string; fg: string }> = {
-  Draft:     { bg: '#f3f4f6', fg: '#4b5563' },
-  Scheduled: { bg: '#fef3c7', fg: '#92400e' },
-  Active:    { bg: '#dcfce7', fg: '#15803d' },
-  Expired:   { bg: '#fee2e2', fg: '#b91c1c' },
-  Archived:  { bg: '#e0e7ff', fg: '#4338ca' },
 };
 
 const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -113,7 +91,6 @@ function formatDateTime(raw: any): string {
   return `${dd} ${MONTH_ABBR[d.getMonth()]} ${d.getFullYear()}, ${hh}:${mm}`;
 }
 
-// ── Page ─────────────────────────────────────────────────────────────────────
 export default function HrBroadcastCentre() {
   const toast = useToast();
   const confirmDialog = useConfirm();
@@ -123,53 +100,68 @@ export default function HrBroadcastCentre() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('All');
-  const [statusFilter, setStatusFilter] = useState<string>('All');
-  /* Paging lives in <DataTable> now. */
 
-  // Modal state
+  const [page, setPage] = useState(0);
+  const [perPage, setPerPage] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(PER_PAGE_KEY));
+      return Number.isFinite(saved) && saved > 0 && saved <= 200 ? saved : 10;
+    } catch {
+      return 10;
+    }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(PER_PAGE_KEY, String(perPage)); } catch {}
+  }, [perPage]);
+  const [total, setTotal] = useState(0);
+  const reqRef = useRef(0);
+
+  const applyFilter = (set: (v: string) => void) => (v: string) => { set(v); setPage(0); };
+
   const [createOpen, setCreateOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<AnnRow | null>(null);
-  // Row currently being published — drives the inline spinner so the user gets
-  // instant feedback the moment they click Publish Now.
+
   const [publishingId, setPublishingId] = useState<number | null>(null);
 
-  const fetchAll = async () => {
+  const fetchList = useCallback(async () => {
+    const token = ++reqRef.current;
+    setLoading(true);
     try {
-      setLoading(true);
-      const [listRes, statsRes] = await Promise.all([
-        api.get('/announcements'),
-        api.get('/announcements/stats').catch(() => ({ data: ZERO_STATS })),
-      ]);
-      setRows(Array.isArray(listRes.data) ? listRes.data : []);
-      setStats({ ...ZERO_STATS, ...(statsRes.data || {}) });
+      const res = await api.get('/announcements', {
+        params: {
+          page: page + 1,
+          per_page: perPage,
+          ...(search.trim() ? { search: search.trim() } : {}),
+          ...(typeFilter !== 'All' ? { type: typeFilter } : {}),
+        },
+      });
+      if (token !== reqRef.current) return;
+      const body = res.data ?? {};
+      setRows(Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : []));
+      setTotal(Number(body.total ?? (Array.isArray(body) ? body.length : 0)) || 0);
     } catch (err: any) {
+      if (token !== reqRef.current) return;
       toast.error('Could not load announcements', err?.response?.data?.message || 'Please try again.');
       setRows([]);
-      setStats(ZERO_STATS);
+      setTotal(0);
     } finally {
-      setLoading(false);
+      if (token === reqRef.current) setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, perPage, search, typeFilter]);
+
+  const fetchStats = async () => {
+    try {
+      const res = await api.get('/announcements/stats');
+      setStats({ ...ZERO_STATS, ...(res.data || {}) });
+    } catch { setStats(ZERO_STATS); }
   };
-  useEffect(() => { fetchAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
+  const fetchAll = () => { fetchStats(); fetchList(); };
 
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return rows
-      .filter(r => typeFilter === 'All' || r.type === typeFilter)
-      .filter(r => statusFilter === 'All' || r.status === statusFilter)
-      .filter(r => {
-        if (!needle) return true;
-        return (
-          r.title.toLowerCase().includes(needle) ||
-          (r.code || '').toLowerCase().includes(needle) ||
-          (r.description || '').toLowerCase().includes(needle)
-        );
-      });
-  }, [rows, search, typeFilter, statusFilter]);
+  useEffect(() => { fetchStats(); }, []);
+  useEffect(() => { fetchList(); }, [fetchList]);
 
-  /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
-     5+10+26+9+9+16+12+13. */
   const columns = useMemo<DataTableColumn<AnnRow>[]>(() => [
     {
       header: 'ANN ID',
@@ -182,20 +174,13 @@ export default function HrBroadcastCentre() {
     {
       header: 'Announcement Title',
       accessorKey: 'title',
-      // wrap: an attachment link sits on a second line under the title.
+
       meta: { width: '26%', wrap: true },
       cell: info => {
         const r = info.row.original;
         return (
           <>
-            {/* Clamped to two lines. `wrap: true` on this column (for the
-                attachment link underneath) means the cell does NOT truncate on
-                its own, so a long title — or one unbroken pasted string, which
-                has nowhere to wrap — stretched the column and pushed Type,
-                Priority and the row actions off the right of the table.
-                The full title is in the tooltip: the same portal-based
-                <Tooltip> the row's Edit / Publish / Delete buttons use, capped
-                so a 2,000-character paste can't become a full-screen pill. */}
+
             <Tooltip label={r.title} maxWidth={420} position="bottom">
               <div
                 className="fw-bold fs-13"
@@ -217,8 +202,7 @@ export default function HrBroadcastCentre() {
                   style={{ fontSize: 11.5, color: '#0c63b0', maxWidth: '100%' }}
                 >
                   <i className="ri-attachment-line flex-shrink-0" />
-                  {/* Truncation lives on the span: text-overflow does nothing on
-                      a flex container, so the anchor itself can't ellipsis. */}
+
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {r.attachment_original_name || 'attachment'}
                   </span>
@@ -230,9 +214,7 @@ export default function HrBroadcastCentre() {
       },
     },
     {
-      /* `--pill-fg` carries the badge hue to the dark-mode CSS so it can swap
-         the harsh light-pastel fill for a translucent same-hue chip (matching
-         the ANN-ID pill). Light mode keeps the inline bg/fg untouched. */
+
       header: 'Type',
       accessorKey: 'type',
       meta: { width: '9%', align: 'center' },
@@ -258,9 +240,7 @@ export default function HrBroadcastCentre() {
       cell: info => <AudienceCell row={info.row.original} />,
     },
     {
-      /* Sorts on the real timestamp: published rows by publish_at, drafts by
-         created_at, so the column orders chronologically rather than by the
-         dd-Mon-yyyy text. */
+
       header: 'Publish Date',
       id: 'publish_at',
       accessorFn: (r: AnnRow) => {
@@ -282,9 +262,7 @@ export default function HrBroadcastCentre() {
         const r = info.row.original;
         return (
           <div className="rec-row-actions justify-content-center">
-            {/* Draft rows are meant to be finished before publishing, so they
-                show an Edit (pencil) icon; published rows show View (eye).
-                Both open the same wizard. */}
+
             <Tooltip label={r.status === 'Draft' ? 'Edit' : 'View'}>
               <button
                 type="button"
@@ -304,9 +282,7 @@ export default function HrBroadcastCentre() {
                 </button>
               </Tooltip>
             )}
-            {/* Delete is only offered for Drafts — once an announcement is
-                published it's a record of what went out and must not be
-                removed; published rows show View only. */}
+
             {r.status === 'Draft' && (
               <Tooltip label="Delete">
                 <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-label="Delete" onClick={() => handleDelete(r)}>
@@ -321,30 +297,20 @@ export default function HrBroadcastCentre() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [publishingId]);
 
-  // High-priority count isn't in the /stats payload (which is grouped by
-  // status), so derive it from the loaded list — rows holds every
-  // announcement (the table paginates client-side), so it's accurate.
-  const highPriorityCount = useMemo(() => rows.filter(r => r.priority === 'High').length, [rows]);
-
-  // Same KPI shape the recruitment page uses — gradient on the top
-  // accent strip + gradient on the icon tile + deep tone on the number.
-  // Looks consistent with the rest of the HR module.
   const KPI_CARDS = [
     { label: 'Total',         value: stats.total,       icon: 'ri-send-plane-fill',     gradient: 'linear-gradient(135deg,#299cdb 0%,#4dabf7 100%)', deep: '#1e6dd6' },
     { label: 'Draft',         value: stats.draft,       icon: 'ri-draft-line',          gradient: 'linear-gradient(135deg,#878a99 0%,#a3a6b4 100%)', deep: '#5b6478' },
     { label: 'Published',     value: stats.active,      icon: 'ri-checkbox-circle-fill',gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', deep: '#089d7a' },
-    { label: 'High Priority', value: highPriorityCount, icon: 'ri-fire-fill',           gradient: 'linear-gradient(135deg,#f06548 0%,#fb9b85 100%)', deep: '#c2410c' },
+    { label: 'High Priority', value: stats.high_priority, icon: 'ri-fire-fill',           gradient: 'linear-gradient(135deg,#f06548 0%,#fb9b85 100%)', deep: '#c2410c' },
   ];
 
-  // Merge a saved row into the list (insert new / replace existing) + refresh
-  // stats. Shared by the close-on-save (Publish) and keep-open (Save Draft) paths.
   const mergeSavedRow = (saved: AnnRow) => {
     setRows(prev => {
       const idx = prev.findIndex(r => r.id === saved.id);
       if (idx >= 0) { const next = [...prev]; next[idx] = saved; return next; }
       return [saved, ...prev];
     });
-    fetchAll(); // refresh stats too
+    fetchAll();
   };
 
   const handleSaved = (saved: AnnRow) => {
@@ -353,9 +319,6 @@ export default function HrBroadcastCentre() {
     setEditingRow(null);
   };
 
-  // Save Draft path — persist to the list/stats but KEEP the modal open so the
-  // user can keep editing. The modal tracks the saved id internally so further
-  // saves update the same record rather than creating duplicate drafts.
   const handleSilentSave = (saved: AnnRow) => {
     mergeSavedRow(saved);
   };
@@ -380,19 +343,18 @@ export default function HrBroadcastCentre() {
   };
 
   const handlePublishNow = async (row: AnnRow) => {
-    if (publishingId) return;            // ignore double-clicks while in flight
-    // Drafts can be saved with blank fields, but publishing requires the
-    // mandatory content — block here and point the user back to the editor.
+    if (publishingId) return;
+
     const missing: string[] = [];
     if (!row.title?.trim())       missing.push('Announcement Title');
     if (!row.description?.trim()) missing.push('Description');
     if (missing.length) {
       toast.error('Cannot publish', `Please fill the required field${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}.`);
-      setEditingRow(row);               // open the editor so they can complete it
+      setEditingRow(row);
       setCreateOpen(true);
       return;
     }
-    setPublishingId(row.id);             // instant feedback (spinner + disable)
+    setPublishingId(row.id);
     try {
       const { data } = await api.put(`/announcements/${row.id}`, {
         status: 'Active',
@@ -414,7 +376,7 @@ export default function HrBroadcastCentre() {
       <Row>
         <Col xs={12}>
           <div className="rec-page bcast-page">
-            {/* Header strip — same shape as the Clients / Branches headers. */}
+
             <div className="frm-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
@@ -431,9 +393,6 @@ export default function HrBroadcastCentre() {
               </div>
             </div>
 
-            {/* KPI strip — 4 even columns at md+ so the cards stretch the
-                full width (Total / Draft / Published / High Priority). Drops
-                to 2 at sm, 1 at xs. */}
             <Row className="g-1 mb-3 align-items-stretch rec-page-kpis row-cols-1 row-cols-sm-2 row-cols-md-4">
               {KPI_CARDS.map(k => (
                 <Col key={k.label}>
@@ -451,38 +410,39 @@ export default function HrBroadcastCentre() {
               ))}
             </Row>
 
-            {/* Filters + table */}
-            {/* Shared list table (components/ui/DataTable) — search, sortable
-                headers and the rows-per-page pager come from the component; the
-                Type filter and New Announcement ride in its toolbar. */}
             <DataTable<AnnRow>
-              data={filtered}
+              data={rows}
               columns={columns}
               serial
               accent="violet"
-              /* Stretches the card to the viewport instead of collapsing to the
-                 height of however many rows there are — one announcement left a
-                 short strip of table above an empty page. `autoFitRows` then
-                 fills that height with rows and pins the pager to the bottom,
-                 the same pairing every other list in the app uses. */
+
               fitToViewport
               autoFitRows
+              minAutoRows={10}
               minWidth={1250}
               loading={loading}
+              serverPagination={{
+                total,
+                pageIndex: page,
+                onPageChange: setPage,
+                onPageSizeChange: setPerPage,
+              }}
               searchValue={search}
               onSearchChange={setSearch}
               searchPlaceholder="Search announcements…"
               emptyMessage={
                 <>
                   <i className="ri-send-plane-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                  {rows.length === 0 ? 'No announcements yet — click New Announcement to add one' : 'No announcements match your filters'}
+                  {(search.trim() || typeFilter !== 'All')
+                    ? 'No announcements match your filters'
+                    : 'No announcements yet — click New Announcement to add one'}
                 </>
               }
               toolbarActions={
                 <>
                   <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Type</span>
                   <div style={{ minWidth: 130 }}>
-                    <MasterSelect value={typeFilter} onChange={setTypeFilter} options={[{ value: 'All', label: 'All Types' }, { value: 'General', label: 'General' }, { value: 'Policy', label: 'Policy' }, { value: 'Urgent', label: 'Urgent' }]} placeholder="All Types" />
+                    <MasterSelect value={typeFilter} onChange={applyFilter(setTypeFilter)} options={[{ value: 'All', label: 'All Types' }, { value: 'General', label: 'General' }, { value: 'Policy', label: 'Policy' }, { value: 'Urgent', label: 'Urgent' }]} placeholder="All Types" />
                   </div>
                   <button type="button" className="rec-btn-primary" onClick={() => { setEditingRow(null); setCreateOpen(true); }}>
                     <i className="ri-add-line" />New Announcement
@@ -505,7 +465,6 @@ export default function HrBroadcastCentre() {
   );
 }
 
-// ── Audience cell — shows a friendly description of the recipient set ───────
 function AudienceCell({ row }: { row: AnnRow }) {
   const sub = row.audience_count > 0 ? `${row.audience_count} employee${row.audience_count === 1 ? '' : 's'}` : '0 employees';
   let label = 'All Employees';
@@ -522,13 +481,6 @@ function AudienceCell({ row }: { row: AnnRow }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Create / Edit Announcement — 6-step wizard
-// ─────────────────────────────────────────────────────────────────────────────
-
-// 4-step wizard. Scheduling and Acknowledgement steps were removed —
-// announcements always publish immediately, and the Publish action triggers
-// the email blast (when Email Notification is enabled in step 3).
 const STEPS: Array<{ key: number; label: string; sub: string }> = [
   { key: 1, label: 'Basic Details',    sub: 'Title, type & priority' },
   { key: 2, label: 'Audience',         sub: 'Who receives this?' },
@@ -548,64 +500,40 @@ function CreateAnnouncementModal({
 }) {
   const toast = useToast();
   const [step, setStep] = useState(1);
-  // Tracks the persisted record id once a draft has been saved, so a NEW
-  // announcement saved via "Save Draft" (which keeps the modal open) updates
-  // the same row on the next save instead of creating duplicate drafts.
+
   const [savedId, setSavedId] = useState<number | null>(editing?.id ?? null);
 
-  // Step 1
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<AnnType>('General');
   const [priority, setPriority] = useState<AnnPriority>('High');
   const [attachment, setAttachment] = useState<File | null>(null);
-  /* Delete pressed on an attachment that is already SAVED on the row. The file
-     itself only goes when the announcement is saved, so the flag rides along
-     with the next payload; picking a replacement clears it. */
+
   const [removeAttachment, setRemoveAttachment] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-  // Step 2
   const [audienceType, setAudienceType] = useState<AudienceType>('all_employees');
   const [roleIds, setRoleIds]                 = useState<number[]>([]);
   const [designationIds, setDesignationIds]   = useState<number[]>([]);
   const [excludeIds, setExcludeIds]           = useState<number[]>([]);
 
-  // Step 3 — only Email is exposed to the user. The other channels stay
-  // in the schema (and default to false) but the form doesn't surface them.
   const [notifyEmail, setNotifyEmail] = useState(true);
 
-  // Lookups for audience picker
   const [roles, setRoles]                       = useState<Array<{ id: number; name: string }>>([]);
   const [designations, setDesignations]         = useState<Array<{ id: number; name: string }>>([]);
   const [employees, setEmployees]               = useState<Array<{ id: number; display_name: string; emp_code?: string; primary_role_id?: number | null; ancillary_role_id?: number | null; designation_id?: number | null; designation_name?: string | null; department_name?: string | null }>>([]);
 
-  // Which action is in flight, so only the clicked footer button spins. A
-  // single boolean made Save Draft AND Publish show a loader on either click.
   const [saving, setSaving] = useState<'draft' | 'publish' | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // For a brand-new announcement the Live Preview meta box starts blank ("—")
-  // for lines whose default is a silent guess (Priority), and each fills once
-  // the user actively touches that control. Audience and Notify are exceptions:
-  // they carry a concrete, meaningful default (All Employees + Email on) that
-  // also drives the recipient banner/count, so they show from the start rather
-  // than lying "—" until the user re-toggles them (QA #25 / #26). When
-  // editing/viewing an existing row every value is already real, so treat all
-  // as touched. `reachedReview` reveals the fixed Status/Publish lines once the
-  // user pages to the final Review & Publish step.
   const [touched, setTouched] = useState<{ priority: boolean; audience: boolean; notify: boolean }>(
     { priority: false, audience: true, notify: true }
   );
   const [reachedReview, setReachedReview] = useState(false);
   useEffect(() => { if (step === 4) setReachedReview(true); }, [step]);
 
-  // A published announcement is a record of what went out — the View action
-  // opens this wizard read-only: the user can page through the steps to see
-  // the details, but Save Draft / Publish are hidden so it can't be re-saved.
   const readOnly = !!editing && editing.status !== 'Draft';
 
-  // Reset when opening / when editing row changes
   useEffect(() => {
     if (!isOpen) return;
     setStep(1);
@@ -614,8 +542,7 @@ function CreateAnnouncementModal({
     setAttachment(null);
     setRemoveAttachment(false);
     setSavedId(editing?.id ?? null);
-    // Existing row → all values are real, show them. New → only Priority starts
-    // blank; Audience + Notify reflect their real defaults immediately (#25/#26).
+
     setTouched({ priority: !!editing, audience: true, notify: true });
     setReachedReview(!!editing);
 
@@ -625,10 +552,7 @@ function CreateAnnouncementModal({
       setType(editing.type || 'General');
       setPriority(editing.priority || 'Normal');
       setAudienceType(editing.audience_type || 'all_employees');
-      // IDs come back from the JSON columns as strings (FormData submits them
-      // as strings and Laravel's `integer` rule validates without casting), so
-      // coerce to numbers — the pickers compare with `selected.includes(o.id)`
-      // against numeric option ids, and "3" !== 3 would render a blank audience.
+
       setRoleIds((editing.audience_role_ids || []).map(Number));
       setDesignationIds((editing.audience_designation_ids || []).map(Number));
       setExcludeIds((editing.exclude_employee_ids || []).map(Number));
@@ -641,7 +565,6 @@ function CreateAnnouncementModal({
     }
   }, [isOpen, editing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load lookups once when modal opens
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
@@ -650,9 +573,7 @@ function CreateAnnouncementModal({
         const [rolesRes, desigRes, empRes] = await Promise.all([
           api.get('/master/roles'),
           api.get('/master/designations'),
-          // onboarded_only → server gates to status=Active + fully onboarded
-          // (onboarding_stage_completed >= 6) + not soft-deleted, so half- or
-          // pending-onboarding people never enter the broadcast audience.
+
           api.get('/employees', { params: { onboarded_only: true } }),
         ]);
         if (cancelled) return;
@@ -662,10 +583,7 @@ function CreateAnnouncementModal({
         const isActive = (r: any) => !r.status || String(r.status).toLowerCase() === 'active';
         setRoles(roleRows.filter(isActive).map(r => ({ id: r.id, name: r.name })));
         setDesignations(desigRows.filter(isActive).map(r => ({ id: r.id, name: r.name })));
-        // Only ACTIVE employees may be excluded — disabled (soft-deleted) and
-        // exited (Resigned / Terminated / Inactive) people shouldn't appear in
-        // the Exclude Employee picker. Mirrors the `enabled` rule the HR
-        // Employees list uses.
+
         const empSelectable = (e: any) => {
           if (e.deleted_at) return false;
           const s = String(e.status || 'Active').toLowerCase();
@@ -679,10 +597,7 @@ function CreateAnnouncementModal({
           ancillary_role_id: e.ancillary_role_id ?? null,
           designation_id: e.designation_id ?? null,
           department_name: e.department?.name || null,
-          // Designation label for the Exclude picker. Mirrors managers():
-          // employee's own designation first, then the linked branch/login
-          // user's designation string, finally the readable user_type — so
-          // branch users (no designation_id of their own) still show a label.
+
           designation_name: e.designation?.name
             || e.user?.designation
             || (e.user?.user_type ? String(e.user.user_type).replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) : null),
@@ -694,14 +609,9 @@ function CreateAnnouncementModal({
     return () => { cancelled = true; };
   }, [isOpen]);
 
-  // Live audience count — counts the same way the backend will for the
-  // recipient subtitle in the preview panel.
   const audienceCount = useMemo(() => {
     if (employees.length === 0) return 0;
-    // Filter the same way the backend's computeAudienceCount does so the
-    // preview matches the saved audience_count exactly. The /employees
-    // lookup carries primary_role_id / ancillary_role_id / designation_id,
-    // so role- and designation-based targeting can be resolved client-side.
+
     let pool = employees;
     if (audienceType === 'roles') {
       if (roleIds.length === 0) return 0;
@@ -727,13 +637,11 @@ function CreateAnnouncementModal({
       if (!title.trim()) e.title = 'Title is required';
       else if (title.trim().length > TITLE_MAX) e.title = `Title must be ${TITLE_MAX} characters or fewer (currently ${title.trim().length}).`;
       if (!description.trim()) e.description = 'Description is required';
-      // Same guard as the title's: the input caps typing, but an edit loaded
-      // from a row saved before the cap existed can still be over it.
+
       else if (description.trim().length > DESC_MAX) e.description = `Description must be ${DESC_MAX} characters or fewer (currently ${description.trim().length}).`;
     }
     if (s === 2) {
-      // BUG-121 / BUG-122: Role-Based / Designation-Based must pick at least
-      // one option — All Employees needs none.
+
       if (audienceType === 'roles' && roleIds.length === 0) {
         e.audience = 'Select at least one role.';
       } else if (audienceType === 'designations' && designationIds.length === 0) {
@@ -749,13 +657,6 @@ function CreateAnnouncementModal({
     return Object.keys(e).length === 0;
   };
 
-  /* Toast the same reasons the inline errors give.
-   *
-   * The inline message sits under the field it belongs to, which is right —
-   * but on this step that field is a grid of thirteen checkboxes, and the
-   * message lands below all of them, well away from the Save & Next button
-   * that was just clicked. Nothing appeared to happen. The toast says why at
-   * the moment of the click; the inline text still says which field. */
   const validateStepWithToast = (s: number): boolean => {
     const ok = validateStep(s);
     if (!ok) {
@@ -783,43 +684,22 @@ function CreateAnnouncementModal({
     if (audienceType === 'designations') designationIds.forEach(id => fd.append('audience_designation_ids[]', String(id)));
     excludeIds.forEach(id => fd.append('exclude_employee_ids[]', String(id)));
 
-    // Scheduling step was removed — every publish is immediate. Backend
-    // resolveLifecycleStatus then maps this to status='Active'.
     fd.append('publish_type', 'immediate');
 
-    // Acknowledgement step was removed — defaults preserve schema NOT NULL
-    // constraints without surfacing the controls.
     fd.append('ack_required', '0');
     fd.append('ack_mode', 'Optional');
     fd.append('ack_reminder_frequency', 'Never');
     fd.append('ack_escalation_days', '0');
 
     fd.append('notify_email',    notifyEmail ? '1' : '0');
-    // Other channels are disabled in the UI — always send false so a
-    // previously-checked value gets cleared on update.
+
     fd.append('notify_in_app',   '0');
     fd.append('notify_sms',      '0');
     fd.append('notify_whatsapp', '0');
 
-    /* Publishing has to SAY so. (#2)
-     *
-     * Only the draft case used to send a status, and the publish case sent
-     * none at all. On update the server merges the payload over the existing
-     * row, so "no status" resolved to the row's own status — Draft — and a
-     * draft that was edited and published was written straight back as a
-     * draft. It looked published (the toast fired, the row saved) and stayed
-     * in the Draft list. A new announcement was unaffected: there is no
-     * existing row to inherit from, which is why this only ever bit the
-     * draft → edit → publish path.
-     *
-     * 'Active' is an INTENT, not the final value: resolveLifecycleStatus()
-     * still decides between Active / Scheduled / Expired from publish_type,
-     * publish_at and expires_at. It only means "this is no longer a draft". */
     fd.append('status', forceStatus === 'Draft' ? 'Draft' : 'Active');
     if (attachment) fd.append('attachment', attachment);
-    /* Removing a SAVED attachment is its own instruction: leaving the file out
-       of the payload means "unchanged", not "delete it". Only sent when no
-       replacement was picked — a new file supersedes the old one anyway. */
+
     else if (removeAttachment) fd.append('remove_attachment', '1');
     return fd;
   };
@@ -829,8 +709,7 @@ function CreateAnnouncementModal({
     setSaving(asDraft ? 'draft' : 'publish');
     try {
       const fd = buildPayload(asDraft ? 'Draft' : null);
-      // Treat as an update when we already have a persisted id — either editing
-      // an existing row OR re-saving a draft created earlier in this session.
+
       const isEdit = savedId != null;
       if (isEdit) fd.append('_method', 'PUT');
       const url = isEdit ? `/announcements/${savedId}` : '/announcements';
@@ -838,14 +717,9 @@ function CreateAnnouncementModal({
       toast.success(asDraft ? 'Saved as draft' : (isEdit ? 'Announcement updated' : 'Announcement published'),
         `${data.code || data.id} saved.`);
       if (asDraft) {
-        // Keep the modal open; remember the id so the next save updates this
-        // same record instead of inserting another draft.
+
         setSavedId(data.id);
-        /* The pick is deliberately KEPT after a draft save. `editing` is the
-           row the modal opened with and isn't refreshed by a silent save, so
-           clearing it here would blank the attachment row for a file that had
-           just been uploaded. Re-sending the same file on the next Save Draft
-           is harmless — the server replaces it and unlinks the old copy. */
+
         onSilentSave(data);
       } else {
         onSaved(data);
@@ -868,7 +742,6 @@ function CreateAnnouncementModal({
     }
   };
 
-  // Live preview helpers
   const audienceLabel =
     audienceType === 'all_employees' ? 'All Employees'
     : audienceType === 'roles'        ? `Roles: ${roleIds.length === 0 ? '—' : roles.filter(r => roleIds.includes(r.id)).map(r => r.name).join(', ')}`
@@ -882,23 +755,17 @@ function CreateAnnouncementModal({
       size="xl"
       backdrop="static"
       keyboard={false}
-      // rec-form-modal sizes the dialog (≤1180 / 96vw) so the modal feels
-      // like the recruitment one instead of stretching to xl's default.
+
       modalClassName="rec-form-modal broadcast-form-modal"
-      // rec-form-content carries the 18px radius + premium shadow + clip
-      // mask so the gradient header and footer sit cleanly inside the
-      // rounded corners (matches CreateRecruitmentModal's chrome).
+
       contentClassName="rec-form-content border-0"
     >
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
-        {/* Header — sky-blue gradient on the broadcast variant. The radius
-            on .rec-form-content + overflow:hidden clips the top corners
-            for us, so we don't need to repeat the radius here. */}
+
         <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #0ea5e9 0%, #38bdf8 60%, #7dd3fc 100%)' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
-              {/* Ringed like the other module dialogs — at 18% fill with no
-                  outline the tile dissolved into the sky-blue band behind it. */}
+
               <span style={{ width: 38, height: 38, borderRadius: 11, background: 'rgba(255,255,255,0.22)', border: '2px solid rgba(255,255,255,0.55)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <i className="ri-send-plane-line" style={{ fontSize: 18, color: '#fff' }} />
               </span>
@@ -907,23 +774,13 @@ function CreateAnnouncementModal({
                 <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>Manage company-wide communications and notifications</div>
               </div>
             </div>
-            {/* The only way out of this dialog now, so it gets an outline of its
-                own rather than sitting as a faint patch on the gradient. */}
-            {/* Closing mid-publish abandons a request that is already creating
-                the announcement, with no modal left to report the result. Same
-                guard the footer's Cancel/Publish already carry. (#33) */}
+
             <button type="button" onClick={onClose} aria-label="Close" disabled={!!saving} className="brd-close-x" style={{ background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.35)', color: '#fff', borderRadius: 8, width: 32, height: 32, flexShrink: 0, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.5 : 1 }}>
               <i className="ri-close-line" style={{ fontSize: 18 }} />
             </button>
           </div>
         </div>
 
-        {/* Step indicator — steps at their natural width with a CONNECTOR line
-            between each pair taking the slack, the same shape the Add/Edit
-            Employee wizard uses (.emp-stepper-line). Spreading the buttons
-            themselves filled the row but left them floating unrelated; the line
-            is what makes it read as one track, and it doubles as the progress
-            bar — each segment turns solid once its step is behind you. */}
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--vz-border-color, #e5e7eb)', overflowX: 'auto' }}>
           <div className="d-flex align-items-center" style={{ gap: 0, flexWrap: 'nowrap', minWidth: 620 }}>
             {STEPS.map((s, idx, arr) => {
@@ -931,13 +788,7 @@ function CreateAnnouncementModal({
               const done = step > s.key;
               return (
                 <Fragment key={s.key}>
-                {/* Frozen while publishing. (#33) A completed step stays
-                    clickable by design so the author can go back and check
-                    something — but not once Publish is in flight: stepping back
-                    then swaps the form under a request that has already left,
-                    and whatever is edited there is discarded when the modal
-                    closes on success. The footer buttons were already guarded;
-                    the stepper is the other way back into the form. */}
+
                 <button
                   type="button"
                   onClick={() => { if (!saving && (done || active)) setStep(s.key); }}
@@ -948,7 +799,7 @@ function CreateAnnouncementModal({
                     color: active ? '#0ea5e9' : (done ? '#0ea5e9' : '#9ca3af'),
                     cursor: saving ? 'not-allowed' : ((done || active) ? 'pointer' : 'default'),
                     opacity: saving ? 0.6 : 1,
-                    // Natural width — the connector lines take the slack.
+
                     flexShrink: 0,
                   }}
                 >
@@ -959,8 +810,7 @@ function CreateAnnouncementModal({
                       color: (active || done) ? '#fff' : '#6b7280',
                       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: 12, fontWeight: 700,
-                      // The step now lives in a shrinkable slot, so the circle
-                      // has to hold its 26px or it squashes into an oval.
+
                       flexShrink: 0,
                     }}
                   >
@@ -971,11 +821,7 @@ function CreateAnnouncementModal({
                     <div style={{ fontSize: 10.5, opacity: 0.75 }}>{s.sub}</div>
                   </div>
                 </button>
-                {/* Connector — `flex: 1` so it absorbs whatever width is left,
-                    which is what spaces the four steps evenly. Solid once the
-                    step before it is behind you, so the rail also reads as a
-                    progress bar. Aligned to the circle's centre, not the block's,
-                    or it would sit against the two-line label. */}
+
                 {idx < arr.length - 1 && (
                   <div
                     aria-hidden
@@ -993,25 +839,9 @@ function CreateAnnouncementModal({
           </div>
         </div>
 
-        {/* Body — split: form left, live preview right.
-            The ROW owns the height cap; each column then scrolls inside that one
-            box. Both children used to carry `maxHeight: 70vh` of their own, so
-            each computed its own limit and a tall step could put a scrollbar on
-            both halves of the same dialog. `minHeight: 0` is what actually lets
-            a flex child scroll — without it the child's min-content height wins
-            and the overflow escapes the row instead. */}
         <div className="d-flex" style={{ minHeight: 360, maxHeight: '70vh' }}>
           <div style={{ flex: '1 1 0', minWidth: 0, minHeight: 0, padding: 18, overflowY: 'auto' }}>
-            {/* View mode = 100% read-only. The disabled fieldset blocks native
-                inputs/buttons/checkboxes; pointerEvents:none additionally
-                neutralises the div-based handlers (audience-type pills, the
-                MultiPicker dropdown, and the file drag-and-drop zone). Footer
-                paging (Next) lives outside this wrapper so the user can still
-                page through the steps. */}
-            {/* …and while a save/publish is in flight. (#33) A value typed after
-                the request left is not in the payload being sent and is thrown
-                away when the modal closes on success, so the form is frozen for
-                the same reason it is frozen in read-only mode. */}
+
             <fieldset
               disabled={readOnly || !!saving}
               style={{ border: 0, padding: 0, margin: 0, minInlineSize: 'auto', pointerEvents: (readOnly || saving) ? 'none' : undefined }}
@@ -1057,26 +887,14 @@ function CreateAnnouncementModal({
             </fieldset>
           </div>
 
-          {/* Live preview — sits on the right of every step */}
-          {/* 18px, matching the form side — at 16 against the form's 20 the
-              divider sat off-centre in its own gutter. */}
           <div style={{ flex: '0 0 320px', minHeight: 0, borderLeft: '1px solid var(--vz-border-color, #e5e7eb)', padding: 18, background: 'var(--vz-secondary-bg, #fafafa)', overflowY: 'auto' }}>
             <div className="text-uppercase fw-semibold mb-2" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color, #6b7280)' }}>Live Preview</div>
-            {/* Translucent sky tint instead of a solid light-blue fill so the
-                preview card + status box stay legible in dark mode (the solid
-                #e0f2fe / #f0f9ff used to render as bright blocks with washed
-                text on the dark modal). Text now uses theme variables. */}
+
             <div style={{ background: 'rgba(56,189,248,0.14)', border: '1px solid rgba(56,189,248,0.22)', borderRadius: 12, padding: 14, marginBottom: 12 }}>
               <div className="d-flex align-items-center justify-content-between mb-2">
                 <i className="ri-send-plane-line" style={{ fontSize: 22, color: '#0ea5e9' }} />
               </div>
-              {/* wordBreak + overflowWrap so a long title/description (esp. a
-                  pasted no-space string) wraps inside the preview card instead
-                  of spilling past its right edge. */}
-              {/* Line-clamped as well as wrapped: this is a PREVIEW CARD, and
-                  a 2,000-character description turned it into a page-long
-                  column that pushed the status box below the fold. The full
-                  text is one step away, in Review & Publish. */}
+
               <Tooltip label={title} disabled={!title} maxWidth={420} position="left">
                 <div
                   className="fw-bold"
@@ -1089,10 +907,7 @@ function CreateAnnouncementModal({
                   {title || 'Announcement Title'}
                 </div>
               </Tooltip>
-              {/* The description can run to DESC_MAX (2,000) characters, and a
-                  420px pill of that is taller than the viewport — the tooltip
-                  shows the opening of it. The full text is right there in the
-                  Step 1 textarea, and expandable in Review & Publish. */}
+
               <Tooltip
                 label={description.length > 400 ? `${description.slice(0, 400).trimEnd()}…` : description}
                 disabled={!description}
@@ -1124,26 +939,15 @@ function CreateAnnouncementModal({
           </div>
         </div>
 
-        {/* Footer */}
-        {/* 10px vertical (was 12) — the bar carries 36px buttons and needed no
-            more than that; the step counter sits on the same line, so the extra
-            padding only made the footer taller. */}
-        {/* "Step n of N" removed — the rail above already numbers the steps,
-            ticks the finished ones and fills its connectors as you go, so the
-            counter was a third telling of the same fact. Buttons close to the
-            right now that nothing balances them on the left. */}
         <div style={{ padding: '10px 16px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-secondary-bg, #fafafa)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
           <div className="d-flex gap-2">
-            {/* Cancel dropped — the header X already closes this, and a footer
-                full of "leave" next to "Back", "Save Draft" and "Save & Next"
-                made four buttons compete where three are real choices. */}
+
             {step > 1 && (
               <button type="button" className="rec-btn-ghost" onClick={handleBack} disabled={!!saving}>
                 <i className="ri-arrow-left-line" />Previous
               </button>
             )}
-            {/* Read-only (published) → no Save Draft / Publish; just let the
-                user page through to view, closing via the header X. */}
+
             {readOnly ? (
               step < TOTAL_STEPS && (
                 <button type="button" className="rec-btn-primary" onClick={() => setStep(s => Math.min(TOTAL_STEPS, s + 1))}>
@@ -1183,7 +987,6 @@ function CreateAnnouncementModal({
   );
 }
 
-// ── Step 1 — Basic Details ──────────────────────────────────────────────────
 function Step1Basic({
   title, setTitle, description, setDescription,
   type, setType, priority, setPriority,
@@ -1191,23 +994,12 @@ function Step1Basic({
   removeAttachment, setRemoveAttachment,
   existingName, existingUrl, readOnly, errors,
 }: any) {
-  // Client-side guard for the 20 MB attachment cap — the input only restricts
-  // file type, so without this an oversize file was silently accepted.
+
   const MAX_ATTACHMENT_MB = 20;
-  // Allowed extensions mirror the server's mimes:png,jpg,jpeg,pdf rule. The
-  // `accept` attr only filters the OS picker (and is bypassed by "All files" /
-  // drag-drop), so we re-check the extension here to surface a red inline
-  // error the instant a disallowed file (e.g. a Word .docx) is chosen, rather
-  // than letting it fail at publish with a generic wrapper.
+
   const ALLOWED_EXTS = ['png', 'jpg', 'jpeg', 'pdf'];
   const [fileError, setFileError] = useState('');
 
-  /* Preview for a file that hasn't been uploaded yet: it exists only in the
-     browser, so there is no URL to open until the announcement is saved.
-     An object URL gives View something to open right after picking, which is
-     the whole point — checking you attached the right file BEFORE publishing.
-     Revoked when the pick changes or the step unmounts, or the blob leaks for
-     the life of the tab. */
   const [pickedUrl, setPickedUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!attachment) { setPickedUrl(null); return; }
@@ -1216,9 +1008,6 @@ function Step1Basic({
     return () => URL.revokeObjectURL(url);
   }, [attachment]);
 
-  // What the file row is describing: the fresh pick wins over a saved file,
-  // and a saved file that has been marked for deletion is already gone as far
-  // as this screen is concerned.
   const showExisting = !attachment && !!existingName && !removeAttachment;
   const shownName    = attachment ? attachment.name : (showExisting ? existingName : '');
   const shownUrl     = attachment ? pickedUrl : (showExisting ? existingUrl : null);
@@ -1228,33 +1017,20 @@ function Step1Basic({
   const clearFile = () => {
     setFileError('');
     if (attachment) {
-      setAttachment(null);                 // just drop the pick
+      setAttachment(null);
     } else {
-      setRemoveAttachment(true);           // saved file — deleted on next save
+      setRemoveAttachment(true);
     }
     if (fileRef.current) fileRef.current.value = '';
   };
   return (
-    /* ONE rhythm for the whole step. Each block used to carry its own `mb-3`
-       while the Type/Priority row used Bootstrap's `g-3` gutters — margins and
-       gutters are measured differently (a `.row` pulls itself up by the gutter
-       and the columns pad it back), so the gaps never quite matched. A single
-       `gap` on the column makes every interval identical by construction, and
-       there is nothing left to keep in sync when a block is added. */
+
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      {/* line-height 1 — without it the heading inherits the body's ~1.5, and
-          that leading sits UNDER the caps as extra space the column gap knows
-          nothing about. The interval measured 18px like every other one and
-          still read as the biggest gap on the form. The field labels below
-          already run at 1.15 (.rec-form-label), which is why only this line
-          looked loose. */}
+
       <div className="text-uppercase fw-semibold" style={{ color: '#0ea5e9', lineHeight: 1 }}>
         <i className="ri-checkbox-blank-line" /> Basic Details
       </div>
-      {/* Both fields are LENGTH-CAPPED at the input, with a live counter, so a
-          pasted wall of text is stopped where it is typed rather than at the
-          review step (or, for the title, by a 422 from the server's max:191).
-          The counter turns amber near the cap so it isn't a surprise. */}
+
       <div>
         <label className="rec-form-label d-flex align-items-center justify-content-between">
           <span>Announcement Title<span className="req">*</span></span>
@@ -1289,11 +1065,7 @@ function Step1Basic({
         />
         {errors.description && <div className="rec-error"><i className="ri-error-warning-line" />{errors.description}</div>}
       </div>
-      {/* Plain flex, not <Row g-3>. Bootstrap's gutter classes pull the row up
-          by the gutter and pad the columns back down; inside a gap-based column
-          that arithmetic landed this block a few pixels off every other one.
-          A flex row with its own gap has no such offset, and it still wraps to
-          one column when the dialog is narrow. */}
+
       <div className="d-flex flex-wrap" style={{ gap: 18 }}>
         <div style={{ flex: '1 1 240px', minWidth: 0 }}>
           <label className="rec-form-label">Type</label>
@@ -1301,10 +1073,7 @@ function Step1Basic({
             {(['General','Policy','Urgent'] as AnnType[]).map(v => (
               <button key={v} type="button" onClick={() => setType(v)}
                 className={`rec-priority-pill${type === v ? ' is-active' : ''}`}
-                // Unselected → no inline style, so the .rec-priority-pill class
-                // (which has proper light AND dark backgrounds) owns the look.
-                // Selected → pastel fill for light mode + `--pill-fg` so the
-                // dark-mode CSS swaps it for a translucent same-hue chip.
+
                 style={type === v ? {
                   background: TYPE_TONES[v].bg, color: TYPE_TONES[v].fg,
                   border: `1px solid ${TYPE_TONES[v].fg}`, ['--pill-fg' as any]: TYPE_TONES[v].fg,
@@ -1326,16 +1095,10 @@ function Step1Basic({
           </div>
         </div>
       </div>
-      {/* No `mt-3` — the column's gap already sets this interval. Carrying its
-          own top margin on top of that made this the one gap that differed. */}
+
       <div>
         <label className="rec-form-label">Attachment (Optional)</label>
-        {/* Once a file is attached the drop zone becomes a FILE ROW: name plus
-            View / Replace / Delete. Before this the picked file was just a
-            filename in a dashed box — nothing to open, so the only way to check
-            you'd attached the right document was to publish it and look at the
-            list. The whole row is no longer a click-to-replace target either;
-            that would have made the icon buttons ambiguous. */}
+
         {hasFile ? (
           <div
             className="d-flex align-items-center gap-2"
@@ -1359,8 +1122,7 @@ function Step1Basic({
                 {(attachment.size / (1024 * 1024)).toFixed(2)} MB · not yet saved
               </span>
             )}
-            {/* pointerEvents:auto keeps View usable inside the read-only
-                (disabled) fieldset — viewing is not editing. */}
+
             <Tooltip label={shownUrl ? 'View' : 'Preview available once saved'} position="top">
               <button
                 type="button"
@@ -1407,7 +1169,7 @@ function Step1Basic({
           <div style={{ fontSize: 11, color: 'var(--vz-secondary-color, #6b7280)' }}>or drag and drop here</div>
         </div>
         )}
-        {/* The input lives outside both branches so Replace can reach it. */}
+
         <div style={{ display: 'contents' }}>
           <input
             ref={fileRef}
@@ -1421,19 +1183,19 @@ function Step1Basic({
                 if (!ALLOWED_EXTS.includes(ext)) {
                   setFileError(`"${f.name}" is not an allowed file type. Please upload a PNG, JPG, or PDF file.`);
                   setAttachment(null);
-                  e.currentTarget.value = '';   // allow re-selecting after fixing
+                  e.currentTarget.value = '';
                   return;
                 }
                 if (f.size > MAX_ATTACHMENT_MB * 1024 * 1024) {
                   setFileError(`File size exceeds the maximum limit of ${MAX_ATTACHMENT_MB} MB. Please upload a file smaller than ${MAX_ATTACHMENT_MB} MB.`);
                   setAttachment(null);
-                  e.currentTarget.value = '';   // allow re-selecting the same file after fixing
+                  e.currentTarget.value = '';
                   return;
                 }
               }
               setFileError('');
               setAttachment(f);
-              // A replacement supersedes the pending removal of the old file.
+
               setRemoveAttachment(false);
             }}
           />
@@ -1444,7 +1206,6 @@ function Step1Basic({
   );
 }
 
-// ── Step 2 — Audience ───────────────────────────────────────────────────────
 function Step2Audience({
   audienceType, setAudienceType,
   roles, roleIds, setRoleIds,
@@ -1452,21 +1213,16 @@ function Step2Audience({
   employees, excludeIds, setExcludeIds,
   errors = {},
 }: any) {
-  // Total tenant headcount drives the All-Employees banner — the picked
-  // role/designation case shows its own picker count instead.
+
   const totalEmps = employees.length;
-  // Actual recipients = headcount minus excluded employees. The banner must
-  // reflect this (0 when everyone is excluded), not the raw headcount.
+
   const excludeSet = new Set(excludeIds);
   const recipientCount = employees.filter((e: any) => !excludeSet.has(e.id)).length;
 
   return (
-    /* One rhythm for the step — see Step1Basic. Every gap here came from a
-       per-block `mb-3`; a single `gap` makes them equal by construction and
-       leaves nothing to forget when a block is added or reordered. */
+
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      {/* line-height 1 — see the note on Step 1's heading: the inherited ~1.5
-          leaves leading under the caps that reads as a wider gap. */}
+
       <div className="text-uppercase fw-semibold" style={{ color: '#0ea5e9', lineHeight: 1 }}>
         <i className="ri-user-line" /> Audience Selection
       </div>
@@ -1490,19 +1246,12 @@ function Step2Audience({
         </div>
       </div>
 
-      {/* All Employees → one banner with the recipient count.
-          The cyan "N employees selected" chip that used to sit under this said
-          the same number in different words, directly below a line that had
-          just said it — two blocks, one fact, and the step read as clutter.
-          The `marginBottom` both carried is gone too: the column's gap sets
-          every interval here, and inline margins stacked on top of it. */}
       {audienceType === 'all_employees' && (
         <div style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.30)', borderRadius: 10, padding: '12px 16px', color: 'var(--vz-body-color, #15803d)', fontSize: 13 }}>
           <i className="ri-checkbox-circle-line me-1" style={{ color: '#22c55e' }} /> Announcement delivered to {recipientCount === totalEmps ? 'all ' : ''}<strong>{recipientCount}</strong> employee{recipientCount === 1 ? '' : 's'}.
         </div>
       )}
 
-      {/* Role-Based → bordered card with an inline checkbox per role. */}
       {audienceType === 'roles' && (
         <div>
           <label className="rec-form-label">SELECT ROLES<span className="req">*</span></label>
@@ -1516,7 +1265,6 @@ function Step2Audience({
         </div>
       )}
 
-      {/* Designation-Based → same checkbox card, sourced from designations. */}
       {audienceType === 'designations' && (
         <div>
           <label className="rec-form-label">SELECT DESIGNATIONS<span className="req">*</span></label>
@@ -1530,14 +1278,11 @@ function Step2Audience({
         </div>
       )}
 
-      {/* Exclude is shown for every audience type — it's how the user
-          carves individuals out of the otherwise-matching set. */}
       <div>
         <label className="rec-form-label">EXCLUDE (OPTIONAL)</label>
         <MultiPicker
           options={employees.map((e: any) => {
-            // Bracketed suffix = "Department - Designation"; whichever side is
-            // missing is dropped so we never render a dangling "- Designation".
+
             const meta = [e.department_name, e.designation_name].filter(Boolean).join(' - ');
             return {
               id: e.id,
@@ -1553,9 +1298,6 @@ function Step2Audience({
   );
 }
 
-// Inline checkbox grid wrapped in a single bordered card. Used by the
-// Role-Based / Designation-Based audience pickers — short option lists
-// where seeing every choice at once beats opening a dropdown.
 function CheckboxBox({ options, selected, onChange, empty }: {
   options: { id: number; label: string }[];
   selected: number[];
@@ -1599,7 +1341,6 @@ function CheckboxBox({ options, selected, onChange, empty }: {
   );
 }
 
-// Lightweight multi-select with chips. Used by Step 2.
 function MultiPicker({ options, selected, onChange, placeholder }: {
   options: { id: number; label: string }[]; selected: number[]; onChange: (ids: number[]) => void; placeholder?: string;
 }) {
@@ -1657,20 +1398,15 @@ function MultiPicker({ options, selected, onChange, placeholder }: {
   );
 }
 
-// ── Step 3 — Notifications ──────────────────────────────────────────────────
-// Email is the only delivery channel exposed to the user. The schema still
-// carries notify_in_app / notify_sms / notify_whatsapp; buildPayload sends
-// false for all of them so a previously-checked value gets cleared on edit.
 function Step3Notify({ notifyEmail, setNotifyEmail }: { notifyEmail: boolean; setNotifyEmail: (v: boolean) => void }) {
   return (
-    /* Same single-gap column as the other steps. */
+
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       <div className="d-flex align-items-center gap-2" style={{ color: '#0ea5e9', lineHeight: 1 }}>
         <i className="ri-notification-3-line" />
         <span className="fw-semibold" style={{ fontSize: 14 }}>Notification Channels</span>
       </div>
-      {/* my-0: the rule's own margins stacked on top of the column gap and made
-          this the widest pair of gaps in the wizard. */}
+
       <hr className="my-0" style={{ borderColor: '#e5e7eb' }} />
 
       <label
@@ -1699,7 +1435,6 @@ function Step3Notify({ notifyEmail, setNotifyEmail }: { notifyEmail: boolean; se
   );
 }
 
-// ── Step 4 — Review & Publish ───────────────────────────────────────────────
 function Step4Review({
   title, description, type, priority,
   audienceLabel, audienceCount,
@@ -1712,15 +1447,7 @@ function Step4Review({
       <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>{value || <span className="text-muted">—</span>}</div>
     </div>
   );
-  /* Long text used to run off the side of this card: an unbroken paste (no
-     spaces to wrap at) forced the card wider than the modal, so the step got a
-     horizontal scrollbar and the text read as one unreadable line. Two fixes,
-     both needed —
-       · `overflowWrap: anywhere` breaks mid-"word", which is the only thing
-         that wraps a 500-character run of 'v's;
-       · a character-count truncation with Read more / Show less, so a long but
-         legitimate announcement doesn't push the Type / Priority / Audience
-         summary off the screen at the step whose job is to summarise. */
+
   const [showFullText, setShowFullText] = useState(false);
   const wrapStyle: React.CSSProperties = {
     overflowWrap: 'anywhere',
@@ -1736,10 +1463,9 @@ function Step4Review({
   const shownDesc  = showFullText || !longDesc  ? fullDesc  : `${fullDesc.slice(0, REVIEW_DESC_PREVIEW).trimEnd()}…`;
 
   return (
-    /* Same single-gap column as the other steps. */
+
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      {/* line-height 1 — see the note on Step 1's heading: the inherited ~1.5
-          leaves leading under the caps that reads as a wider gap. */}
+
       <div className="text-uppercase fw-semibold" style={{ color: '#0ea5e9', lineHeight: 1 }}>
         <i className="ri-file-text-line" /> Review & Publish
       </div>
@@ -1762,8 +1488,7 @@ function Step4Review({
               : `Read more (${(fullTitle.length + fullDesc.length).toLocaleString()} characters)`}
           </button>
         )}
-        {/* 18px, the same interval the step uses between its own blocks —
-            this spacer was a bare `mb-3` div doing the job by hand. */}
+
         <div style={{ height: 18 }} />
         <Row className="g-2">
           <Col md={3}><Field label="Type" value={type} /></Col>
