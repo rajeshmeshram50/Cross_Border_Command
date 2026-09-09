@@ -108,7 +108,7 @@ function extractTokens(html: string): string[] {
 
 // Signer{N}{Name|Designation|Date} is a positional pattern resolved at gen
 // time — treat it as known even though it's not in any static list.
-const SIGNER_TOKEN_RE = /^Signer\d+(Name|Designation|Date)$/;
+const SIGNER_TOKEN_RE = /^Signer\d+(Name|Designation|Date)$/i;
 
 // Build per-signer placeholder rows from the workflow configured in step 2.
 // Mirrors the right-hand "REQUIRED SIGNER VARIABLES" panel from the screenshot.
@@ -246,17 +246,17 @@ export default function TemplateEditor({
     const set = new Set<string>();
     const addToken = (tok: string) => {
       const m = tok.match(/^\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}$/);
-      if (m) set.add(m[1]);
+      if (m) set.add(m[1].toLowerCase());
     };
     STATIC_PLACEHOLDER_GROUPS.forEach(g => g.fields.forEach(f => addToken(f.token)));
     buildSignerGroup(signers).fields.forEach(f => addToken(f.token));
-    customFields.forEach(c => set.add(c.name));
+    customFields.forEach(c => set.add(c.name.toLowerCase()));
     return set;
   }, [signers, customFields]);
 
   const unknownTokens = useMemo(() => {
     return extractTokens(value || '')
-      .filter(t => !knownNameSet.has(t) && !SIGNER_TOKEN_RE.test(t));
+      .filter(t => !knownNameSet.has(t.toLowerCase()) && !SIGNER_TOKEN_RE.test(t));
   }, [value, knownNameSet]);
 
   const insertToken = (token: string) => {
@@ -437,11 +437,11 @@ export default function TemplateEditor({
             <i className="ri-error-warning-line tpl-unknown-icon" style={{ fontSize: 16, color: '#b45309', marginTop: 2 }} />
             <div style={{ flex: 1, minWidth: 200 }}>
               <div className="tpl-unknown-title" style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 4 }}>
-                {unknownTokens.length} unknown placeholder{unknownTokens.length === 1 ? '' : 's'} in this template
+{unknownTokens.length} placeholder{unknownTokens.length === 1 ? '' : 's'} won't fill in the generated document
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {unknownTokens.map(tok => (
-                  <Tooltip key={tok} label={`Register {{${tok}}} as a custom field`}>
+                  <Tooltip key={tok} label={`{{${tok}}} matches no field — fix the spelling, or click to register it as a Custom Field`}>
                   <button
                     type="button"
                     className="tpl-unknown-chip"
@@ -455,7 +455,7 @@ export default function TemplateEditor({
                 ))}
               </div>
               <div className="tpl-unknown-hint" style={{ fontSize: 11, color: '#92400e', opacity: 0.85, marginTop: 4 }}>
-                Click any token to register it as a Custom Field — it'll then prompt the user at generation time.
+                These tokens don’t match any field, so they print as-is in the document. Fix the spelling using a token from the left, or click one to register it as a Custom Field.
               </div>
             </div>
           </div>
@@ -495,6 +495,12 @@ export default function TemplateEditor({
 
         <div
           className="tpl-editor-surface"
+          onMouseDown={(e) => {
+            if (!editor) return;
+            if ((e.target as HTMLElement).closest('.ProseMirror')) return;
+            e.preventDefault();
+            editor.chain().focus('end').run();
+          }}
           /* flex:1 + minHeight:0 — the surface takes whatever the toolbar (and
              the unknown-token banner, when it shows) leaves, so the column ends
              flush with the sidebar however tall those are. A minHeight would
@@ -509,10 +515,13 @@ export default function TemplateEditor({
 
         <style>{`
           /* ── Light-mode base ────────────────────────────────────────────── */
-          /* No min-height: the surface is flex-sized now, and a 320px floor inside it
-             just added a second scrollbar on short screens. 100% keeps the click
-             target the full height so clicking empty space still focuses. */
-          .tpl-editor-surface .ProseMirror { outline: none; min-height: 100%; font-size: 14px; line-height: 1.6; }
+          /* Stretch the EditorContent wrapper AND the ProseMirror so the
+             editable fills the surface — otherwise .ProseMirror is only as tall
+             as its text and the empty area below is dead to clicks and to the
+             I-beam cursor. */
+          .tpl-editor-surface > div { height: 100%; }
+          .tpl-editor-surface { cursor: text; }
+          .tpl-editor-surface .ProseMirror { outline: none; min-height: 100%; height: 100%; font-size: 14px; line-height: 1.6; }
           .tpl-editor-surface .ProseMirror p { margin: 0 0 8px 0; }
           /* Page break — invisible in the output, a labelled dashed rule here so
              the author can see where the next page starts. */

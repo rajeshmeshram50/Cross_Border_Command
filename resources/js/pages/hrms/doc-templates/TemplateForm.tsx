@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody } from 'reactstrap';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import Tooltip from '../../../components/ui/Tooltip';
 import api from '../../../api';
@@ -66,9 +66,9 @@ export interface TemplateRow {
 
 // ── Static option sets ───────────────────────────────────────────────────────
 const CATEGORIES: { value: EmployeeCategory; label: string; icon: string }[] = [
-  { value: 'IT',     label: 'IT Employee Documents', icon: '💻' },
-  { value: 'Non-IT', label: 'Non-IT Operations',     icon: '🏭' },
-  { value: 'Legal',  label: 'Legal Documents',       icon: '⚖️' },
+  { value: 'IT',     label: 'IT Employee Documents', icon: 'ri-computer-line' },
+  { value: 'Non-IT', label: 'Non-IT Operations',     icon: 'ri-building-line' },
+  { value: 'Legal',  label: 'Legal Documents',       icon: 'ri-scales-3-line' },
 ];
 
 // Designation levels — mirrors master_designations.level so the chip strip
@@ -82,12 +82,12 @@ const CATEGORIES: { value: EmployeeCategory; label: string; icon: string }[] = [
    of every other tab and pushed the rail onto a second line. The short form
    matches the controller's own ROLE_SHORT map, which already codes it HOD. */
 export const ROLE_TYPES: { value: RoleType; label: string; short: string; icon: string; tone: { bg: string; fg: string; border: string } }[] = [
-  { value: 'Director / CEO',           label: 'Director / CEO',           short: 'Director / CEO',   icon: '👔', tone: { bg: '#fff7ed', fg: '#9a3412', border: '#fdba74' } },
-  { value: 'Head of Department (HOD)', label: 'Head of Department (HOD)', short: 'HOD',              icon: '🎯', tone: { bg: '#f5f3ff', fg: '#6d28d9', border: '#c4b5fd' } },
-  { value: 'Team Leader',              label: 'Team Leader',              short: 'Team Leader',      icon: '👥', tone: { bg: '#eff6ff', fg: '#1d4ed8', border: '#93c5fd' } },
-  { value: 'Executive',                label: 'Executive',                short: 'Executive',        icon: '💼', tone: { bg: '#ecfdf5', fg: '#047857', border: '#6ee7b7' } },
-  { value: 'Employee',                 label: 'Employee',                 short: 'Employee',         icon: '👤', tone: { bg: '#dcfce7', fg: '#15803d', border: '#86efac' } },
-  { value: 'Intern / Trainee',         label: 'Intern / Trainee',         short: 'Intern / Trainee', icon: '🎓', tone: { bg: '#dbeafe', fg: '#1e40af', border: '#93c5fd' } },
+  { value: 'Director / CEO',           label: 'Director / CEO',           short: 'Director / CEO',   icon: 'ri-vip-crown-line', tone: { bg: '#fff7ed', fg: '#9a3412', border: '#fdba74' } },
+  { value: 'Head of Department (HOD)', label: 'Head of Department (HOD)', short: 'HOD',              icon: 'ri-focus-2-line', tone: { bg: '#f5f3ff', fg: '#6d28d9', border: '#c4b5fd' } },
+  { value: 'Team Leader',              label: 'Team Leader',              short: 'Team Leader',      icon: 'ri-team-line', tone: { bg: '#eff6ff', fg: '#1d4ed8', border: '#93c5fd' } },
+  { value: 'Executive',                label: 'Executive',                short: 'Executive',        icon: 'ri-briefcase-line', tone: { bg: '#ecfdf5', fg: '#047857', border: '#6ee7b7' } },
+  { value: 'Employee',                 label: 'Employee',                 short: 'Employee',         icon: 'ri-user-line', tone: { bg: '#dcfce7', fg: '#15803d', border: '#86efac' } },
+  { value: 'Intern / Trainee',         label: 'Intern / Trainee',         short: 'Intern / Trainee', icon: 'ri-graduation-cap-line', tone: { bg: '#dbeafe', fg: '#1e40af', border: '#93c5fd' } },
 ];
 
 /* Inline so the button keeps its own text colour — a spinner that hard-codes a
@@ -165,11 +165,15 @@ function footerFromOrg(org: OrgIdentity): FooterConfig {
 export default function TemplateFormPage() {
   const toast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
   const { id: routeId } = useParams<{ id?: string }>();
   const editingId = routeId ? Number(routeId) : null;
 
   const [editing, setEditing] = useState<TemplateRow | null>(null);
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState<number>(() => {
+    const s = (location.state as { step?: number } | null)?.step;
+    return typeof s === 'number' && s >= 1 && s <= 3 ? s : 1;
+  });
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [bootstrapping, setBootstrapping] = useState(!!editingId);
@@ -515,7 +519,7 @@ export default function TemplateFormPage() {
       // After a successful create, swap to the edit URL so the DOCX
       // download/upload buttons (which need a saved row) light up.
       if (!editing && data?.id) {
-        navigate(`/hr/doc-templates/${data.id}/edit`, { replace: true });
+        navigate(`/hr/doc-templates/${data.id}/edit`, { replace: true, state: { step } });
         setEditing(data);
       } else if (!asDraft) {
         navigate('/hr/doc-templates');
@@ -566,7 +570,7 @@ export default function TemplateFormPage() {
       }
       const { data } = await api.post('/hr-document-templates', buildPayload('Draft'));
       setEditing(data);
-      navigate(`/hr/doc-templates/${data.id}/edit`, { replace: true });
+      navigate(`/hr/doc-templates/${data.id}/edit`, { replace: true, state: { step } });
       return data as TemplateRow;
     } catch (err: any) {
       toast.error('Could not save draft', err?.response?.data?.message || 'Please try again.');
@@ -765,31 +769,42 @@ export default function TemplateFormPage() {
 
         {/* Step indicator */}
         <div className="tpl-step-strip" style={{ padding: '14px 22px', background: '#fff' }}>
-          <div className="d-flex align-items-center" style={{ gap: 18, flexWrap: 'wrap' }}>
-            {STEPS.map(s => {
+          <div className="tpl-stepper d-flex align-items-center" style={{ gap: 0 }}>
+            {STEPS.map((s, i) => {
               const active = step === s.key;
               const done = step > s.key;
               return (
-                <button key={s.key} type="button"
-                  onClick={() => { if (done || active) setStep(s.key); }}
-                  disabled={!done && !active}
-                  className={`tpl-step-btn d-inline-flex align-items-center${active ? ' is-active' : done ? ' is-done' : ' is-todo'}`}
-                  style={{ gap: 8, padding: '4px 8px', border: 0, background: 'transparent',
-                    color: active ? '#4338ca' : (done ? '#6366f1' : '#9ca3af'),
-                    cursor: (done || active) ? 'pointer' : 'default' }}>
-                  <span className={`tpl-step-circle${active ? ' is-active' : done ? ' is-done' : ' is-todo'}`}
-                    style={{ width: 28, height: 28, borderRadius: '50%',
-                    background: active ? '#4338ca' : (done ? '#6366f1' : '#e5e7eb'),
-                    color: (active || done) ? '#fff' : '#6b7280',
-                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 12, fontWeight: 700 }}>
-                    {done ? <i className="ri-check-line" /> : s.key}
-                  </span>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.1 }}>{s.label}</div>
-                    <div style={{ fontSize: 11, opacity: 0.75 }}>{s.sub}</div>
-                  </div>
-                </button>
+                <Fragment key={s.key}>
+                  <button type="button"
+                    onClick={() => { if (done || active) setStep(s.key); }}
+                    disabled={!done && !active}
+                    className={`tpl-step-btn d-inline-flex align-items-center${active ? ' is-active' : done ? ' is-done' : ' is-todo'}`}
+                    style={{ gap: 10, padding: '4px 6px', border: 0, background: 'transparent', flexShrink: 0,
+                      color: active ? '#4338ca' : (done ? '#6366f1' : '#9ca3af'),
+                      cursor: (done || active) ? 'pointer' : 'default' }}>
+                    <span className={`tpl-step-circle${active ? ' is-active' : done ? ' is-done' : ' is-todo'}`}
+                      style={{ width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
+                      background: active ? '#4338ca' : (done ? '#6366f1' : '#eef2f7'),
+                      color: (active || done) ? '#fff' : '#94a3b8',
+                      border: active ? '3px solid #c7d2fe' : 'none',
+                      boxShadow: active ? '0 2px 6px rgba(67,56,202,.35)' : 'none',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 12.5, fontWeight: 700 }}>
+                      {done ? <i className="ri-check-line" /> : s.key}
+                    </span>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.15 }}>{s.label}</div>
+                      <div style={{ fontSize: 11, opacity: 0.75, lineHeight: 1.2 }}>{s.sub}</div>
+                    </div>
+                  </button>
+                  {i < STEPS.length - 1 && (
+                    /* Short fixed rail between steps, filled once the step it
+                       leaves is done. Fixed width keeps the strip left-aligned
+                       instead of stretching the steps across the full width. */
+                    <div aria-hidden style={{ flexShrink: 0, width: 44, height: 2, margin: '0 12px',
+                      borderRadius: 2, background: done ? '#6366f1' : '#e5e7eb' }} />
+                  )}
+                </Fragment>
               );
             })}
           </div>
@@ -932,18 +947,19 @@ function Step1(props: {
       {/* Employee category — full-width card */}
       <section className="tpl-section" style={sectionStyle}>
         <div style={sectionLabel}>1. Employee Category <span style={req}>*</span></div>
-        <div className="row g-2">
+        <div className="row g-3">
           {CATEGORIES.map(c => {
             const active = props.category === c.value;
             return (
               <div key={c.value} className="col-md-4">
                 <button type="button" onClick={() => props.setCategory(c.value)}
                   className={`tpl-pick-card${active ? ' is-active' : ''}`}
-                  style={{ width: '100%', padding: '16px 12px', borderRadius: 10,
+                  style={{ width: '100%', padding: '14px 12px', borderRadius: 10, minHeight: 92,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                     border: '2px solid ' + (active ? '#6366f1' : '#e5e7eb'),
                     background: active ? '#eef2ff' : '#fff',
                     cursor: 'pointer', textAlign: 'center', transition: 'all .15s ease' }}>
-                  <div style={{ fontSize: 22, marginBottom: 6 }}>{c.icon}</div>
+                  <div style={{ fontSize: 24, marginBottom: 6, color: active ? '#4338ca' : '#64748b', lineHeight: 1 }}><i className={c.icon} /></div>
                   <div className="tpl-pick-card-label" style={{ fontWeight: 700, fontSize: 13.5, color: active ? '#4338ca' : '#374151' }}>{c.label}</div>
                 </button>
               </div>
@@ -955,18 +971,19 @@ function Step1(props: {
       {/* Role / Designation — full-width card, six designation levels */}
       <section className="tpl-section" style={sectionStyle}>
         <div style={sectionLabel}>2. Role / Designation Type <span style={req}>*</span></div>
-        <div className="row g-2">
+        <div className="row g-3">
           {ROLE_TYPES.map(r => {
             const active = props.roleType === r.value;
             return (
               <div key={r.value} className="col-lg-2 col-md-4 col-sm-6">
                 <button type="button" onClick={() => props.setRoleType(r.value)}
                   className={`tpl-pick-card${active ? ' is-active' : ''}`}
-                  style={{ width: '100%', padding: '14px 10px', borderRadius: 10,
+                  style={{ width: '100%', padding: '14px 12px', borderRadius: 10, minHeight: 92,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                     border: '2px solid ' + (active ? '#6366f1' : '#e5e7eb'),
                     background: active ? '#eef2ff' : '#fff',
-                    cursor: 'pointer', textAlign: 'center', minHeight: 92 }}>
-                  <div style={{ fontSize: 22, marginBottom: 6 }}>{r.icon}</div>
+                    cursor: 'pointer', textAlign: 'center' }}>
+                  <div style={{ fontSize: 24, marginBottom: 6, color: active ? '#4338ca' : '#64748b', lineHeight: 1 }}><i className={r.icon} /></div>
                   <div className="tpl-pick-card-label" style={{ fontWeight: 700, fontSize: 12, color: active ? '#4338ca' : '#374151', lineHeight: 1.2 }}>{r.label}</div>
                 </button>
               </div>
@@ -982,7 +999,8 @@ function Step1(props: {
         <div className="col-lg-7">
           <section className="tpl-section" style={{ ...sectionStyle, marginBottom: 0, height: '100%' }}>
             <div style={sectionLabel}>3. Basic Information</div>
-            <div className="mb-3">
+            <div className="mb-3 d-flex gap-3 align-items-start tpl-name-code">
+              <div style={{ flex: '0 0 70%', maxWidth: '70%', minWidth: 0 }}>
               <label className="tpl-field-label" style={fieldLabel}>Template Name <span style={req}>*</span></label>
               {/* Hard-capped at 100 chars: maxLength blocks typing past it, and
                   the slice covers a paste that overshoots. */}
@@ -998,19 +1016,20 @@ function Step1(props: {
                   {props.name.length}/{TEMPLATE_NAME_MAX}
                 </div>
               </div>
-            </div>
-            <div className="mb-3">
+              </div>
+              <div style={{ flex: '1 1 30%', minWidth: 0 }}>
               <label className="tpl-field-label" style={fieldLabel}>Template Code</label>
               <input type="text" value={props.code} readOnly
                 className="tpl-code-field"
                 style={{ ...inputStyle(false), background: '#fef9c3', color: '#a16207', fontFamily: 'monospace', fontWeight: 700, border: '1px solid #fde68a' }} />
               <div className="tpl-hint" style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Auto-generated per category + role.</div>
+              </div>
             </div>
             <div>
               <label className="tpl-field-label" style={fieldLabel}>Description</label>
               <textarea value={props.description} onChange={e => props.setDescription(e.target.value)}
                 placeholder="Short note describing when this template is used…"
-                rows={3} className="tpl-input" style={{ ...inputStyle(false), resize: 'vertical' }} />
+                rows={6} className="tpl-input" style={{ ...inputStyle(false), resize: 'vertical', minHeight: 130 }} />
             </div>
           </section>
         </div>
@@ -1217,17 +1236,8 @@ function Step3(props: {
 
   return (
     <>
-      {props.brandingFromLast && !props.editingId && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 13px', marginBottom: 12, background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 10, fontSize: 12 }}>
-          <span style={{ color: '#4338ca', fontWeight: 600 }}>
-            <i className="ri-magic-line me-1" />Header &amp; footer reused from your last template — edit it below, or start over.
-          </span>
-          <button type="button" onClick={props.onResetBranding}
-            style={{ border: '1px solid #c7d2fe', background: '#fff', color: '#4338ca', borderRadius: 8, padding: '4px 11px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
-            <i className="ri-eraser-line me-1" />Start blank
-          </button>
-        </div>
-      )}
+      {/* The "Header & footer reused from your last template" strip was removed
+          per request — the reuse still happens (it just isn't announced). */}
       <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
         <div className="tpl-help" style={{ fontSize: 11.5, color: '#6b7280' }}>
           <i className="ri-information-line me-1" />
@@ -1240,7 +1250,7 @@ function Step3(props: {
               hint at where a page ends. This renders the draft through the same
               DomPDF pipeline the download uses and shows the real A4 pages. */}
           {props.editorMode === 'web' && (
-            <button type="button" style={tabBtn(props.livePreview)}
+            <button type="button" className={`tpl-editor-tab${props.livePreview ? ' is-active' : ''}`} style={tabBtn(props.livePreview)}
               title="Render the draft as a real PDF — true A4 pages, the actual header/footer, and where each page break lands"
               onClick={() => props.setLivePreview(!props.livePreview)}>
               <i className="ri-file-pdf-2-line me-1" />Live PDF
@@ -1419,7 +1429,7 @@ function Step3(props: {
    rhythm. `padding` is the breathing room INSIDE a card, around form fields —
    a different measurement with a different job, left at 18 so the fields do
    not crowd their own border. */
-const sectionStyle: React.CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, marginBottom: 8, background: '#fafaff' };
+const sectionStyle: React.CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, marginBottom: 14, background: '#fafaff' };
 const sectionLabel: React.CSSProperties = { fontSize: 11.5, fontWeight: 800, letterSpacing: 0.4, color: '#6366f1', textTransform: 'uppercase', marginBottom: 12 };
 const fieldLabel: React.CSSProperties = { fontSize: 11.5, fontWeight: 800, letterSpacing: 0.4, color: '#6b7280', textTransform: 'uppercase', marginBottom: 6, display: 'block' };
 const req: React.CSSProperties = { color: '#ef4444' };
@@ -1460,7 +1470,7 @@ function TplFormDarkStyles() {
          but drops to the height of the step pill beside it. */
       .tpl-form-page .tpl-head-back { height: 34px; padding: 0 14px; border-radius: 10px; font-size: 12px; border-color: rgba(255,255,255,.55); }
       .tpl-form-page .tpl-head-back i { font-size: 14px; }
-      [data-bs-theme="dark"] .tpl-form-page .tpl-head-back { background: #fff; color: #6d28d9; }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-head-back { background: var(--vz-card-bg); color: var(--vz-body-color); border-color: var(--vz-border-color); }
 
       [data-bs-theme="dark"] .tpl-form-page .tpl-step-strip {
         background: var(--vz-card-bg) !important;
