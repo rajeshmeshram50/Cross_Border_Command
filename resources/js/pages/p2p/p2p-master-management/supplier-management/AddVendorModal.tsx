@@ -30,6 +30,7 @@ import {
   bustVendorMasterBundle,
 } from './vendorBundleCache';
 import './add-vendor-modal.css';
+import SearchClear from '../../../../components/ui/SearchClear';
 
 /* Lazy: the product wizard is a big chunk and most mappings pick an existing
    product, so it should not be downloaded with this modal. */
@@ -4581,6 +4582,7 @@ function SupplierSegmentRefTable(props: {
       <div className="avm-kyc-search">
         <i className="ri-search-line" />
         <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Search ${title.replace(/ NAME$/i, '').toLowerCase()} name…`} />
+        <SearchClear show={q} onClear={() => { setQ(''); }} />
         {q && <button type="button" className="avm-kyc-search-clear" onClick={() => setQ('')} aria-label="Clear"><i className="ri-close-line" /></button>}
       </div>
       <div className="table-responsive table-card border rounded avm-kyc-table-wrap">

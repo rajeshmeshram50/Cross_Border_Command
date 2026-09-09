@@ -9,6 +9,7 @@ import { formatProductCode } from '../../../../utils/formatProductCode';
 import TradeDocsTable from './TradeDocsTable';
 import PoPaymentModal from './PoPaymentModal';
 import SupplierEvidenceVaultModal from '../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
+import SearchClear from '../../../../components/ui/SearchClear';
 
 
 type PoRow = {
@@ -297,6 +298,7 @@ function Dd({ label, value, options, onChange, onDisabledSelect, req, err, optMe
             <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: 8, background: 'inherit', borderBottom: '1px solid rgba(148,163,184,.18)' }} onMouseDown={e => e.stopPropagation()}>
               <input ref={searchRef} value={query} onChange={e => setQuery(e.target.value)} placeholder="Search supplier…"
                 style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid rgba(148,163,184,.3)', background: 'rgba(148,163,184,.08)', color: 'inherit', fontSize: 12.5, outline: 'none' }} />
+                <SearchClear show={query} onClear={() => { setQuery(''); }} />
             </div>
           )}
           {shown.length === 0

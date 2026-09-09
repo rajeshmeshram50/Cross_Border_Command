@@ -3,6 +3,7 @@ import api from '../../../api';
 import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from '../../p2p/p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 import ClmDocsPopup, { type DocCategory } from '../shared/ClmDocsPopup';
 import Tooltip from '../../../components/ui/Tooltip';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /*
  * CLM → Supplier Profile.
@@ -990,6 +991,7 @@ export default function ClmSupplierProfilePage() {
                 </button>
               </div>
               <SearchBox value={partySearch} onChange={setPartySearch} placeholder="Search by Supplier ID, Name, Segment or State..." />
+              <SearchClear show={partySearch} onClear={() => { setPartySearch(''); }} />
             </div>
 
             {/* With Shipment ID */}
@@ -1037,6 +1039,7 @@ export default function ClmSupplierProfilePage() {
                 </button>
               </div>
               <SearchBox value={txnSearch} onChange={setTxnSearch} placeholder="Search by Shipment ID, Procurement ID, Supplier, PO, Invoice or Status..." />
+              <SearchClear show={txnSearch} onClear={() => { setTxnSearch(''); }} />
             </div>
 
             {/* With Shipment ID */}

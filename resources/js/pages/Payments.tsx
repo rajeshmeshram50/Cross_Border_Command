@@ -14,6 +14,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
+import SearchClear from '../components/ui/SearchClear';
 
 interface Payment {
   id: number; client_id: number; plan_id: number | null;
@@ -493,6 +494,7 @@ export default function Payments() {
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                       />
+                      <SearchClear show={search} onClear={() => { setSearch(''); }} />
                       <i className="ri-search-line search-icon"></i>
                     </div>
                   </Col>

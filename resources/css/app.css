@@ -3042,3 +3042,51 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 .recharts-wrapper *:focus-visible {
   outline: none !important;
 }
+
+/* ── Search-box clear button (components/ui/SearchClear.tsx) ──────────────
+   One rule for every module's search bar. Sizes and colours are deliberately
+   neutral so it sits correctly in the cyan Sales bar, the slate CLM bar and
+   the violet P2P bar without each page restating them; a page that wants its
+   own accent sets --ui-search-clear on the search wrapper.
+   flex-shrink: 0 matters — the wrappers are flex rows with a growing input,
+   and without it the button is the first thing squeezed to nothing. */
+.ui-search-clear {
+  --_c: var(--ui-search-clear, #64748b);
+  flex-shrink: 0;
+  width: 24px; height: 24px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0; border: none; border-radius: 6px;
+  background: color-mix(in srgb, var(--_c) 12%, transparent);
+  color: var(--_c);
+  cursor: pointer;
+  transition: background .14s, color .14s;
+}
+.ui-search-clear:hover { background: var(--_c); color: #fff; }
+.ui-search-clear:focus-visible {
+  outline: 2px solid var(--_c);
+  outline-offset: 1px;
+}
+/* Older engines without color-mix still get a visible, tappable control. */
+@supports not (background: color-mix(in srgb, red 10%, transparent)) {
+  .ui-search-clear { background: rgba(100,116,139,.12); }
+}
+[data-bs-theme="dark"] .ui-search-clear {
+  --_c: var(--ui-search-clear-dark, #cbd5e1);
+  background: color-mix(in srgb, var(--_c) 22%, transparent);
+}
+[data-bs-theme="dark"] .ui-search-clear:hover { background: var(--_c); color: #0f172a; }
+
+/* Velzon's .search-box is position:relative with an absolutely-placed icon on
+   the left and a plain block input — not the flex row every custom search bar
+   in this app uses. Dropped in as a normal-flow sibling the clear button lands
+   BELOW the field, so here it is pinned to the right edge instead, and the
+   input gets room so its text never runs underneath. */
+.search-box { position: relative; }
+.search-box > .ui-search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+}
+.search-box:has(> .ui-search-clear) > .form-control { padding-right: 38px; }

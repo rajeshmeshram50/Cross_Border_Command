@@ -12,6 +12,7 @@ import BaseTooltip from '../../../../components/ui/Tooltip';
 const Tooltip = (props: ComponentProps<typeof BaseTooltip>) => <BaseTooltip themed {...props} />;
 import { resolveFileUrl, downloadClarityFile } from '../../../../utils/resolveFileUrl';
 import './bulk-sourcing.css';
+import SearchClear from '../../../../components/ui/SearchClear';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Assign Sourcing Target — two-stage wizard.
@@ -533,6 +534,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                         <div className="asrc-pick-search">
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
                           <input type="text" value={pickQuery} placeholder="Search products..." onChange={e => setPickQuery(e.target.value)} onFocus={() => setPickOpen(true)} onBlur={() => setTimeout(() => setPickOpen(false), 180)} />
+                          <SearchClear show={pickQuery} onClear={() => { setPickQuery(''); }} />
                           <button type="button" className="ast-btn ast-btn-primary asrc-pick-add" onClick={addMaster}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg> Add</button>
                           <div className={`asrc-pick-list ${pickOpen ? 'is-open' : ''}`}>
                             {pickList.length === 0 ? <div className="ast-plist-empty" style={{ border: 'none', background: 'none' }}>No matching products</div> : pickList.map(p => {
@@ -642,6 +644,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
             <div className="astp-search">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
               <input type="text" value={teamSearch} placeholder="Search by name or role..." onChange={e => setTeamSearch(e.target.value)} />
+              <SearchClear show={teamSearch} onClear={() => { setTeamSearch(''); }} />
             </div>
             <div className="astp-body">
               {teamList.length === 0 ? <div className="astp-empty">No team members match your search.</div> : teamList.map(m => (

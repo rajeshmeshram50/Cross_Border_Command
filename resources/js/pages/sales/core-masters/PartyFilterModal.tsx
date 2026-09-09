@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import { LFM_CSS } from '../opportunity-pipeline/LeadFilterModal';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Party filter modal — shared by Customers and Consignees.
@@ -405,6 +406,7 @@ export default function PartyFilterModal({ open, onClose, onApply, initial, rows
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
+              <SearchClear show={search} onClear={() => { setSearch(''); }} />
             </div>
 
             <div className="lfm-options">

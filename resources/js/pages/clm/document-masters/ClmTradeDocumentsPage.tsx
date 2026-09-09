@@ -10,6 +10,7 @@ import { ClmSkeletonRows, DeleteConf, SimpleNameModal } from '../shared/clmCommo
 import Tooltip from '../../../components/ui/Tooltip';
 import ClmTradeDocumentDraftModal from './ClmTradeDocumentDraftModal';
 import { saveApiBlob } from '../../../utils/downloadFile';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /* Central CLM → Trade Documents Master (two tabs: List + Library). */
 
@@ -166,6 +167,7 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input type="text" placeholder="Search trade document types…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
         </div>
         <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -413,6 +415,7 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input type="text" placeholder="Search trade document drafts…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
         </div>
         <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>

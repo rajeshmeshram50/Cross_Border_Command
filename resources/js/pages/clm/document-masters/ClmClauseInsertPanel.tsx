@@ -3,6 +3,7 @@ import Tooltip from '../../../components/ui/Tooltip';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Shared Clause Library insert popup.
@@ -186,6 +187,7 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
                       placeholder="Search…"
                       autoFocus
                     />
+                    <SearchClear show={ddSearch} onClear={() => { setDdSearch(''); }} />
                   </div>
                   <div className="clp-dd-list">
                     {/* Three cases, not two — "No results" would be a lie when

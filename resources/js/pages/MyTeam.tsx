@@ -15,6 +15,7 @@ import HeaderFooterPanel, {
   type HeaderConfig, type FooterConfig,
 } from './hrms/doc-templates/HeaderFooterPanel';
 import '../../css/recruitment.css';
+import SearchClear from '../components/ui/SearchClear';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface TeamScope { kind: 'all' | 'client' | 'branch' | 'reports' | 'none'; label: string }
@@ -643,6 +644,7 @@ function EmployeesPanel({
         <div className="myteam-filter-row d-flex flex-wrap gap-2 align-items-center" style={{ padding: 12, borderBottom: '1px solid #e5e7eb' }}>
           <div className="rec-req-search search-box" style={{ flex: '1 1 260px', minWidth: 260 }}>
             <Input type="text" className="form-control" placeholder="Search by name, code, email…" value={search} onChange={e => setSearch(e.target.value)} />
+            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
             <i className="ri-search-line search-icon" />
           </div>
           <span className="ms-auto" style={{ fontSize: 11.5, fontWeight: 700, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', padding: '5px 12px', borderRadius: 999 }}>

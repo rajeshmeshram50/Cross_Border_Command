@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import '../../css/documentation.css';
+import SearchClear from '../components/ui/SearchClear';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Documentation Guide.
@@ -433,6 +434,7 @@ export default function Documentation() {
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
+            <SearchClear show={search} onClear={() => { setSearch(''); }} />
           </div>
 
           <div className="doc-master-list">

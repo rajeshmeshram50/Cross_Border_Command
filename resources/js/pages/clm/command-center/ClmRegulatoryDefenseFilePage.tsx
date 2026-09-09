@@ -5,6 +5,7 @@ import api from '../../../api';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import Tooltip from '../../../components/ui/Tooltip';
 import { resolveFileUrl } from '../../../utils/resolveFileUrl';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * CLM Command Center → Regulatory Defense File (RDF)
@@ -345,6 +346,7 @@ export default function ClmRegulatoryDefenseFilePage() {
           <div className="rdf-search">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0e7490" strokeWidth="2.2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
             <input value={search} placeholder={placeholder} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
           <span className="rdf-rec-badge">{rows.length} RDF Records</span>
         </div>

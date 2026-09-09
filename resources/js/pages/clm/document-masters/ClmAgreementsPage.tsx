@@ -10,6 +10,7 @@ import { ClmSkeletonRows, DeleteConf, SimpleDescModal } from '../shared/clmCommo
 import Tooltip from '../../../components/ui/Tooltip';
 import { saveApiBlob } from '../../../utils/downloadFile';
 import ClmAgreementWizardModal from './ClmAgreementWizardModal';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /* Central CLM → Agreements Master (two tabs: Types + Library). */
 
@@ -165,6 +166,7 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input type="text" placeholder="Search agreement types…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
         </div>
         <Tooltip label="Create a new agreement type">
           <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
@@ -408,6 +410,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input type="text" placeholder="Search agreement library…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
         </div>
         <Tooltip label="Draft a new agreement template">
           <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
