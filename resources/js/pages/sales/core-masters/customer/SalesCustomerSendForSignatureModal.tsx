@@ -318,6 +318,30 @@ export default function SalesCustomerSendForSignatureModal({
   const [footerOverrides, setFooterOverrides] = useState<Record<number, FooterConfig>>({});
   const [contentOverrides, setContentOverrides] = useState<Record<number, string>>({});
 
+  /* Overrides the PREVIEW is allowed to react to.
+   *
+   * A preview is a full server-side PDF render — measured at 59 ms for a
+   * 131-character document, 1.7 s at 183k characters and 50 s at 1M. The
+   * inline editor calls syncBodyFromEditor on every onChange, so each
+   * keystroke produced a new overrides object, refired the preview effect
+   * and queued another render of the whole document. That is the "sending a
+   * document for signature takes a long time to load" report.
+   *
+   * Debouncing only the override half keeps everything else instant —
+   * switching documents, opening the modal, changing party — while an edit
+   * redraws once the typing stops. The preview still reflects every change;
+   * it just stops rendering the ones the user is typing over. */
+  const [previewOverrides, setPreviewOverrides] = useState({
+    header: headerOverrides, footer: footerOverrides, content: contentOverrides,
+  });
+  useEffect(() => {
+    const t = setTimeout(
+      () => setPreviewOverrides({ header: headerOverrides, footer: footerOverrides, content: contentOverrides }),
+      600,
+    );
+    return () => clearTimeout(t);
+  }, [headerOverrides, footerOverrides, contentOverrides]);
+
   /* Side-panel mode: when true the Signature Position pane swaps for the
    * HeaderFooterPanel editor. User-visible Save / Cancel buttons commit
    * the pending edits into the per-doc overrides and reload the preview. */
@@ -709,9 +733,9 @@ export default function SalesCustomerSendForSignatureModal({
     // whatever the user tweaked in the side panel + table inserts. The
     // backend layers these over the saved row's config; no override =
     // saved values render unchanged.
-    const headerOverride = headerOverrides[docId];
-    const footerOverride = footerOverrides[docId];
-    const contentOverride = contentOverrides[docId];
+    const headerOverride = previewOverrides.header[docId];
+    const footerOverride = previewOverrides.footer[docId];
+    const contentOverride = previewOverrides.content[docId];
     const previewRequest = (activeDocId === PO_BUNDLE_ID && bundlePo)
       ? api.get(bundlePo.previewUrl, { responseType: 'blob' })
       : isRaw
@@ -846,7 +870,7 @@ export default function SalesCustomerSendForSignatureModal({
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, activeDocId, customer?.db_id, leadId, agreementContext?.leadId, isAgreement, isRaw, rawPdfContext?.previewUrl, bundlePo?.previewUrl, headerOverrides, footerOverrides, contentOverrides]);
+  }, [step, activeDocId, customer?.db_id, leadId, agreementContext?.leadId, isAgreement, isRaw, rawPdfContext?.previewUrl, bundlePo?.previewUrl, previewOverrides]);
 
   /* ── Release blob URLs we created so we don't leak memory. */
   useEffect(() => {

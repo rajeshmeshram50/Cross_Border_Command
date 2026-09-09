@@ -887,6 +887,20 @@ const SCOPED_CSS = `
    small screens first — but the same bug was there at every size. */
 .cso-body {
   flex: 1 1 auto; min-height: 0;
+  /* max-height: 100% is the belt to the grid track's braces.
+   *
+   * min-height: 0 lets the item shrink; it does not FORCE it to. Sizing the
+   * item still leans on the 1fr track resolving against the modal's
+   * max-height, and where that does not happen the item keeps its content
+   * height, spills past its track, and — painted before the footer — slides
+   * under it. That is the symptom exactly: fields sliced in half by the
+   * footer's top edge and no scrollbar anywhere, because an element that
+   * never became shorter than its content has nothing to scroll.
+   *
+   * 100% resolves against the track, which the template already caps at
+   * minmax(0, 1fr), so the item is now bounded by its own max-height as well
+   * as by the track and the overflow has nowhere to go but this scroller. */
+  max-height: 100%;
   overflow-y: auto; padding: 16px 22px; background: #fffaf0;
   /* Don't hand the scroll to the page behind once this hits its end. */
   overscroll-behavior: contain;

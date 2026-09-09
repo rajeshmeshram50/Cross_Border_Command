@@ -14,9 +14,20 @@ import LeadDetailsModal from './LeadDetailsModal';
 import LeadActivityModal from './LeadActivityModal';
 import LeadFilterModal, { type LeadFilters, countFilterValues } from './LeadFilterModal';
 
-/* Where the worksheet's filters are parked while the user is inside a lead.
-   sessionStorage-scoped, so a new tab starts unfiltered. */
-const LEAD_FILTERS_KEY = 'cbc.leadWorksheet.filters';
+/* Filters are deliberately NOT persisted.
+ *
+ * They used to be parked in sessionStorage so a trip into a lead and back
+ * would not lose them. That outlived far too much: leave for another module,
+ * come back later, and the old filter was still applied with no clue why the
+ * list looked short (QA #18). Scoping it to a single lead round-trip was the
+ * first attempt, but QA confirmed the filter should not survive that either —
+ * a lead edited inside can stop matching the filter it was found under, and
+ * then it vanishes from the list the moment you come back to check it.
+ *
+ * So the filter now lives in component state alone: it lasts exactly as long
+ * as the worksheet is on screen, and changing tab clears it too. Anything
+ * that unmounts this page — a lead, another module, a reload — starts clean.
+ */
 
 /* Shape returned by GET /sales/leads — Laravel paginator items. Mapped to
  * the table's Lead type below via mapServerToLead(). */
@@ -256,6 +267,18 @@ export default function SalesLeadWorksheet() {
 
   const [leads, setLeads]       = useState<Lead[]>([]);
   const [loading, setLoading]   = useState(false);
+  /* When the current skeleton went up, or null while no skeleton is showing.
+   *
+   * A tab switch answers in ~10 ms on this dataset, so the skeleton was drawn
+   * and torn down inside a single frame — correct, and completely invisible,
+   * which reads as "the shimmer does not work". Holding it for a moment makes
+   * the state legible instead of flickering the table.
+   *
+   * Only set by startNewQuery, so it applies to a tab / filter change and not
+   * to pagination or a background reload — those keep the dim and stay as
+   * fast as the server is. */
+  const skeletonSinceRef = useRef<number | null>(null);
+  const SKELETON_MIN_MS = 450;
   const [total, setTotal]       = useState(0);
   const [lastPage, setLastPage] = useState(1);
   /* Bucket counts shown in the tab pills. Keyed by string (not TabKey) so it
@@ -264,6 +287,19 @@ export default function SalesLeadWorksheet() {
   const [counts, setCounts]     = useState<Record<string, number>>({
     qualified: 0, disqualified: 0, all: 0, key_opportunity: 0, key_in_progress: 0, key_won: 0,
   });
+
+  /* Have the counts ever come back from the server?
+   *
+   * They start at zero, and the tab labels printed that zero — so while the
+   * skeleton was saying "loading", the tabs beside it were asserting
+   * "Qualified Leads (0)" and the pager was saying "No leads found". The
+   * loading state read as an empty page rather than a busy one, which is what
+   * made the shimmer look broken instead of deliberate.
+   *
+   * Until the first response lands the labels drop the number entirely. It
+   * stays true afterwards: a later refresh keeps showing the last real
+   * counts rather than blinking back to nothing. */
+  const [countsLoaded, setCountsLoaded] = useState(false);
   // Only Sales Managers / admins may assign leads; the leads API returns this
   // flag (and enforces it server-side). Default true so the buttons aren't
   // flashed-then-hidden for managers on first paint.
@@ -419,28 +455,8 @@ export default function SalesLeadWorksheet() {
     countries: Array<{ value: string; label: string }>;
     customers: Array<{ value: string; label: string; code?: string | null }>;
   }>({ stages: [], platforms: [], queryTypes: [], countries: [], customers: [] });
-  /* Filters survive a trip into a lead and back.
-   *
-   * They lived only in component state, and opening a lead unmounts this page —
-   * so Back re-mounted it empty and the user landed on the full list again,
-   * with the filter they had just set silently gone. Nothing told them; the
-   * chips simply were not there.
-   *
-   * sessionStorage, not localStorage: a filter is about the task in hand, so it
-   * should outlive a navigation but not the tab. Read lazily on mount and
-   * written on every change, so the two can never fall out of step.
-   * Both sides are wrapped — a private window can throw on access, and losing
-   * the filter must never take the page down with it. */
-  const [activeFilters, setActiveFilters] = useState<LeadFilters>(() => {
-    try {
-      const raw = sessionStorage.getItem(LEAD_FILTERS_KEY);
-      return raw ? (JSON.parse(raw) as LeadFilters) : {};
-    } catch { return {}; }
-  });
-  useEffect(() => {
-    try { sessionStorage.setItem(LEAD_FILTERS_KEY, JSON.stringify(activeFilters)); }
-    catch { /* private mode — the filter just won't survive the hop */ }
-  }, [activeFilters]);
+  // Component state only — see the note on persistence at the top of the file.
+  const [activeFilters, setActiveFilters] = useState<LeadFilters>({});
 
   /* When the user picks "View Leads" on the Lead Distribution page they
    * land back here with `?sp=<id>&sp_name=<name>` in the URL. Apply the
@@ -555,13 +571,17 @@ export default function SalesLeadWorksheet() {
       setLeads((data.data ?? []).map(mapServerToLead));
       setTotal(data.pagination?.total ?? 0);
       setLastPage(data.pagination?.last_page ?? 1);
-      if (data.counts) setCounts(data.counts);
+      if (data.counts) { setCounts(data.counts); setCountsLoaded(true); }
       setCanDistribute((data as any).can_distribute !== false);
     } catch (e: any) {
       toast.error('Load failed', e?.response?.data?.message ?? 'Could not load leads');
       setLeads([]); setTotal(0); setLastPage(1);
     } finally {
-      setLoading(false);
+      const since = skeletonSinceRef.current;
+      const left  = since === null ? 0 : SKELETON_MIN_MS - (Date.now() - since);
+      skeletonSinceRef.current = null;
+      if (left > 0) setTimeout(() => setLoading(false), left);
+      else setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, dealState, debouncedQ, page, rpp, toast, activeFilters, reloadKey]);
@@ -581,18 +601,46 @@ export default function SalesLeadWorksheet() {
   const allChecked = pageIds.length > 0 && pageIds.every(id => selected.has(id));
   const someChecked = pageIds.some(id => selected.has(id));
 
+  /* Clear the rows when the QUESTION changes.
+   *
+   * The skeleton renders on `loading && rows.length === 0`. Switching a tab
+   * or applying a filter left the previous answer sitting in `rows`, so the
+   * condition was false and all the user got was the tbody dimmed to 55%
+   * opacity — read as "the shimmer is not working". Dropping the rows first
+   * is also honest: they belong to the tab you just left.
+   *
+   * Deliberately NOT called for pagination or the background reload after an
+   * action: there the table is answering the same question and a full
+   * skeleton flash would be worse than the dim.
+   *
+   * setLoading(true) goes with the clear, in the SAME batch. fetchLeads only
+   * raises it once the effect runs, which left one painted frame holding
+   * rows=[] and loading=false — and that combination renders the "No leads
+   * found" empty state, so the tab switch flashed the empty message where the
+   * skeleton should have been. */
+  const startNewQuery = () => {
+    setLeads([]);
+    setLoading(true);
+    setPage(1);
+    setSelected(new Set());
+    skeletonSinceRef.current = Date.now();
+  };
+
+  /* A filter belongs to the tab it was set on.
+     Carrying it across meant landing on a tab whose count said one thing and
+     whose table showed another, with the chips easy to miss above the fold. */
   const switchTab = (next: TabKey) => {
     setTab(next);
     // Always land on the In Progress sub-tab when (re)entering Key Opportunity.
     if (next === 'key_opportunity') setDealState('in_progress');
-    setPage(1);
-    setSelected(new Set());
+    setActiveFilters({});
+    startNewQuery();
   };
 
   const switchDealState = (next: DealState) => {
     setDealState(next);
-    setPage(1);
-    setSelected(new Set());
+    setActiveFilters({});
+    startNewQuery();
   };
 
   const toggleRow = (oppId: string) => {
@@ -1015,7 +1063,7 @@ export default function SalesLeadWorksheet() {
               className={`lwp-pill ${tab === t ? 'active' : ''}`}
               onClick={() => switchTab(t)}
             >
-              {TAB_LABELS[t]} ({counts[t] ?? 0})
+              {TAB_LABELS[t]}{countsLoaded ? ` (${counts[t] ?? 0})` : ''}
             </div>
           ))}
         </div>
@@ -1048,7 +1096,7 @@ export default function SalesLeadWorksheet() {
               className={`lwp-subtab ${dealState === s ? 'active' : ''}`}
               onClick={() => switchDealState(s)}
             >
-              {DEAL_STATE_LABELS[s]} ({counts[s === 'in_progress' ? 'key_in_progress' : 'key_won'] ?? 0})
+              {DEAL_STATE_LABELS[s]}{countsLoaded ? ` (${counts[s === 'in_progress' ? 'key_in_progress' : 'key_won'] ?? 0})` : ''}
             </div>
           ))}
         </div>
@@ -1084,7 +1132,8 @@ export default function SalesLeadWorksheet() {
                     }
                     return next;
                   });
-                  setPage(1);
+                  // Removing a chip narrows the question too — same skeleton.
+                  startNewQuery();
                 }}
               >
                 ×
@@ -1093,7 +1142,7 @@ export default function SalesLeadWorksheet() {
           ))}
           <button
             className="lwp-chip-clear-all"
-            onClick={() => { setActiveFilters({}); setPage(1); }}
+            onClick={() => { setActiveFilters({}); startNewQuery(); }}
           >
             Clear all
           </button>
@@ -1132,7 +1181,13 @@ export default function SalesLeadWorksheet() {
             </thead>
             <tbody className={loading && rows.length > 0 ? 'lwp-tbody-refetching' : undefined}>
               {loading && rows.length === 0 && (
-                Array.from({ length: Math.min(rpp, 10) }).map((_, i) => (
+                /* One skeleton row per row the page will actually hold — not a
+                   flat 10. With rows-per-page at 11 the table lost a row's
+                   height the moment the skeleton went up and got it back when
+                   the data landed, so the card visibly shrank and grew around
+                   a white gap. Capped at 25 so a large page size cannot
+                   render a pointless wall of placeholders. */
+                Array.from({ length: Math.max(1, Math.min(rpp, 25)) }).map((_, i) => (
                   <tr key={`sk-${i}`} className="lwp-skel-row">
                     <td><span className="lwp-skel lwp-skel-chk" /></td>
                     <td><span className="lwp-skel lwp-skel-md" /></td>
@@ -1310,9 +1365,14 @@ export default function SalesLeadWorksheet() {
         {/* Pagination */}
         <div className="lwp-pagination">
           <span className="lwp-pag-info">
-            {total === 0
-              ? 'No leads found'
-              : <>Showing <span className="lwp-hl">{startIdx + 1}–{Math.min(startIdx + rpp, total)}</span> of <span className="lwp-hl">{total}</span></>}
+            {/* "No leads found" is an ANSWER, and while the skeleton is up there
+                isn't one yet. Saying it under a loading table is what made the
+                whole state read as an empty page. */}
+            {loading
+              ? <span className="lwp-skel lwp-skel-lg" aria-label="Loading" />
+              : total === 0
+                ? 'No leads found'
+                : <>Showing <span className="lwp-hl">{startIdx + 1}–{Math.min(startIdx + rpp, total)}</span> of <span className="lwp-hl">{total}</span></>}
           </span>
           <div className="lwp-pag-right">
             <div className="lwp-rows-sel">
@@ -1479,7 +1539,7 @@ export default function SalesLeadWorksheet() {
         initial={activeFilters}
         options={filterOptions}
         onClose={() => setFilterOpen(false)}
-        onApply={(f) => { setActiveFilters(f); setPage(1); }}
+        onApply={(f) => { setActiveFilters(f); startNewQuery(); }}
       />
 
       <LeadDetailsModal

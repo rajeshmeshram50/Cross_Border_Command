@@ -38,6 +38,9 @@ type Row = {
   email:                 string | null;
   total_assigned_leads:  number;
   platform_counts:       Record<string, number>;
+  /* False only for a deactivated user who still holds leads. They are listed
+     so their leads can be handed on; the chip says why they are here. */
+  is_active?:            boolean;
 };
 
 type Summary = {
@@ -278,7 +281,17 @@ export default function AssignedLeadsModal() {
                       >
                         {initials(r.salesperson_name)}
                       </div>
-                      <div className="ldp-person-name">{r.salesperson_name}</div>
+                      <div className="ldp-person-name">
+                        {r.salesperson_name}
+                        {r.is_active === false && (
+                          <span
+                            className="ldp-chip ldp-chip-inactive"
+                            title="This user is deactivated — reassign their leads"
+                          >
+                            Inactive
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </td>
                   <td>
@@ -699,6 +712,12 @@ const LDP_CSS = `
 .ldp-chip-dept {
   background: #fef3c7; color: #92400e; border-color: #fde68a;
 }
+/* Slate, deliberately outside the amber/rose/peach families above — this
+   one is a status, not a category, and should not read as another tag. */
+.ldp-chip-inactive {
+  background: #e5e7eb; color: #4b5563; border-color: #d1d5db;
+  margin-left: 6px; vertical-align: middle;
+}
 .ldp-chip-primary {
   background: #ffe4e6; color: #9f1239; border-color: #fecdd3;
 }
@@ -886,6 +905,9 @@ const LDP_CSS = `
 [data-bs-theme="dark"] .ldp-chip-outline  { background: #1f1611; }
 [data-bs-theme="dark"] .ldp-chip-dept {
   background: rgba(146, 64, 14, .25); color: #fcd34d; border-color: rgba(253, 230, 138, .35);
+}
+[data-bs-theme="dark"] .ldp-chip-inactive {
+  background: rgba(75, 85, 99, .35); color: #d1d5db; border-color: rgba(209, 213, 219, .3);
 }
 [data-bs-theme="dark"] .ldp-chip-primary {
   background: rgba(159, 18, 57, .25); color: #fda4af; border-color: rgba(254, 205, 211, .35);

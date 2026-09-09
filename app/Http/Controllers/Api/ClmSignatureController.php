@@ -415,18 +415,11 @@ class ClmSignatureController extends Controller
             $submitResp = $this->zoho->submitWithFields($zohoRequestId, $zohoActions, $zohoDocumentIds, $perDocCoords);
             $submitted  = isset($submitResp['requests']);
 
-            // 6. Read back the final status. Zoho takes a tick to flip from
-            // 'draft' to 'inprogress' so we briefly sleep before re-fetching.
+            // 6. Read back the final status — polled, not slept on. See
+            //    awaitSubmittedStatus().
             $finalStatus = 'draft';
             if ($submitted) {
-                try {
-                    sleep(1);
-                    $after = $this->zoho->getRequest($zohoRequestId);
-                    $finalStatus = strtolower((string) data_get($after, 'requests.request_status', 'inprogress'));
-                } catch (\Throwable $e) {
-                    Log::warning('Zoho post-submit status fetch failed: ' . $e->getMessage());
-                    $finalStatus = 'inprogress';
-                }
+                $finalStatus = $this->awaitSubmittedStatus($zohoRequestId);
             }
 
             // 7. Persist.
@@ -803,17 +796,10 @@ class ClmSignatureController extends Controller
             $submitResp = $this->zoho->submitWithFields($zohoRequestId, $zohoActions, $zohoDocumentIds, $perDocCoords);
             $submitted  = isset($submitResp['requests']);
 
-            // 5. Read back final status.
+            // 5. Read back final status — polled. See awaitSubmittedStatus().
             $finalStatus = 'draft';
             if ($submitted) {
-                try {
-                    sleep(1);
-                    $after = $this->zoho->getRequest($zohoRequestId);
-                    $finalStatus = strtolower((string) data_get($after, 'requests.request_status', 'inprogress'));
-                } catch (\Throwable $e) {
-                    Log::warning('Zoho post-submit status fetch failed: ' . $e->getMessage());
-                    $finalStatus = 'inprogress';
-                }
+                $finalStatus = $this->awaitSubmittedStatus($zohoRequestId);
             }
 
             // 6. Persist. `trade_doc_id`/`trade_doc_ids` reuse for agreement
@@ -1034,13 +1020,7 @@ class ClmSignatureController extends Controller
 
             $finalStatus = 'inprogress';
             if ($submitted) {
-                try {
-                    sleep(1);
-                    $after = $this->zoho->getRequest($zohoRequestId);
-                    $finalStatus = strtolower((string) data_get($after, 'requests.request_status', 'inprogress'));
-                } catch (\Throwable $e) {
-                    $finalStatus = 'inprogress';
-                }
+                $finalStatus = $this->awaitSubmittedStatus($zohoRequestId);
             }
 
             $sigReq = new ClmSignatureRequest();
@@ -1831,17 +1811,10 @@ class ClmSignatureController extends Controller
             $submitResp = $this->zoho->submitWithFields($zohoRequestId, $zohoActions, $zohoDocumentIds, $perDocCoords);
             $submitted  = isset($submitResp['requests']);
 
-            // 6. Read back final status.
+            // 6. Read back final status — polled. See awaitSubmittedStatus().
             $finalStatus = 'draft';
             if ($submitted) {
-                try {
-                    sleep(1);
-                    $after = $this->zoho->getRequest($zohoRequestId);
-                    $finalStatus = strtolower((string) data_get($after, 'requests.request_status', 'inprogress'));
-                } catch (\Throwable $e) {
-                    Log::warning('Zoho post-submit status fetch failed: ' . $e->getMessage());
-                    $finalStatus = 'inprogress';
-                }
+                $finalStatus = $this->awaitSubmittedStatus($zohoRequestId);
             }
 
             // 7. Persist. trade_doc_id/_ids reuse for the quotation/PI id —
@@ -2828,6 +2801,40 @@ class ClmSignatureController extends Controller
      * the customer's data merged into placeholder tokens. Centralised so
      * preview + send go through identical rendering.
      */
+    /**
+     * Status of a just-submitted Zoho request, waiting only as long as it
+     * actually takes.
+     *
+     * Zoho needs a moment to flip a submitted request from 'draft' to
+     * 'inprogress', and all four send paths handled that with a flat
+     * sleep(1) followed by a single fetch. That second was spent on EVERY
+     * send whether Zoho had already flipped or not — dead time on top of a
+     * request already dominated by PDF rendering and four sequential Zoho
+     * round-trips.
+     *
+     * This polls instead and returns the moment the status is no longer
+     * 'draft', capped at the same one second so the worst case is never
+     * slower than before. Same status, same 'inprogress' fallback on error —
+     * only the waiting is shorter.
+     */
+    private function awaitSubmittedStatus(string $zohoRequestId): string
+    {
+        $deadline = microtime(true) + 1.0;   // never longer than the old sleep
+        $status   = 'draft';
+        do {
+            try {
+                $after  = $this->zoho->getRequest($zohoRequestId);
+                $status = strtolower((string) data_get($after, 'requests.request_status', 'inprogress'));
+            } catch (\Throwable $e) {
+                Log::warning('Zoho post-submit status fetch failed: ' . $e->getMessage());
+                return 'inprogress';
+            }
+            if ($status !== 'draft') return $status;
+            usleep(200_000);                 // 200 ms between checks
+        } while (microtime(true) < $deadline);
+
+        return $status;
+    }
     private function renderPdf(
         ClmTradeDocLibrary|ClmAgreementLibrary $doc,
         Model $party,

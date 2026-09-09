@@ -481,15 +481,17 @@ class SegmentDocUploadController extends Controller
              * resolver already follow. ClmBuyerProfileController's agr cell is
              * changed in step, or the two screens disagree again.
              *
-             * De-duplicated by library id: one agreement is signed once however
-             * many deals reference it. */
-            $seenAgr = [];
+             * NOT de-duplicated by library id. An agreement required by two
+             * shipments is two obligations, signed separately on each deal —
+             * which is exactly what the Case-to-Case tab already shows on its
+             * own rows (1/1 on one shipment, 0/1 on the other). Collapsing them
+             * here made the header read "TOTAL AGREEMENTS 1" over a tab plainly
+             * listing two, and made the Buyer Profile's cell read 1/1 instead of
+             * 1 of 2. Rows are concatenated the same way the trade-document list
+             * beside them already is. */
             foreach ($deals as $s) {
                 $rows = $type === 'consignee' ? ($s['agreements_consignee'] ?? []) : ($s['agreements_buyer'] ?? []);
                 foreach ($rows as $r) {
-                    $k = (int) ($r['db_id'] ?? 0);
-                    if ($k && isset($seenAgr[$k])) continue;
-                    if ($k) $seenAgr[$k] = true;
                     $agreements[] = $r;
                 }
             }
@@ -1162,18 +1164,44 @@ class SegmentDocUploadController extends Controller
     {
         $empty = ['trade_docs_buyer' => [], 'trade_docs_consignee' => [], 'agreements_buyer' => [], 'agreements_consignee' => []];
 
-        // Segment list = products on the latest non-cancelled PI (or, if none,
-        // the latest quotation) — same source applicableForLead() uses.
+        /* Segment list = products on the latest non-cancelled PI.
+         *
+         * The PI is what creates the obligation. Before it exists the deal
+         * has only been quoted, and a quotation is a proposal — nothing is
+         * owed yet, so nothing should be counted yet (QA #11/#12: "until PI
+         * is not created till then agreement and trade doc count should not
+         * be visible").
+         *
+         * This used to fall back to the latest quotation, which is why a
+         * PI-less lead reported agreements in the Evidence Vault while the
+         * Buyer Profile beside it — which has always read the PI alone —
+         * reported 0/0. Two screens, two sources, guaranteed to disagree.
+         * The vault now reads the same source the profile does.
+         *
+         * ClmAgreementController::applicableForLead deliberately KEEPS its
+         * quotation fallback: that drives the Sales Matrix send popup, where
+         * Segment Details are meant to populate as soon as products are
+         * quoted. That is a preview of what will be owed; this is a count of
+         * what is owed. Different questions, different sources.
+         *
+         * The one exception is the archive rule this method already honours:
+         * a document that has actually been sent must never vanish. Sending
+         * is gated on stage 6 (post-PI) so this should be unreachable, but if
+         * a lead somehow carries sends without a live PI the quotation still
+         * resolves the segments, because losing a signed agreement from the
+         * archive is far worse than showing a count a little early. */
         $source = ProformaInvoice::where('client_id', $cid)
             ->where('opp_id', $lead->id)
             ->where('status', '!=', ProformaInvoice::STATUS_CANCELLED)
             ->orderByDesc('id')
-            ->first()
-            ?: Quotation::where('client_id', $cid)
+            ->first();
+        if (!$source && $reqs->isNotEmpty()) {
+            $source = Quotation::where('client_id', $cid)
                 ->where('opp_id', $lead->id)
                 ->where('status', '!=', 'cancelled')
                 ->orderByDesc('id')
                 ->first();
+        }
         if (!$source) return $empty;
 
         $productIds = $source->items()->whereNotNull('product_id')->pluck('product_id')->filter()->unique();
