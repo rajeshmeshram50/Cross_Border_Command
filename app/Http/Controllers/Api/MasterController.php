@@ -339,6 +339,15 @@ class MasterController extends Controller
         ]);
     }
 
+    /** Clamp ?per_page (default 24, max 200) and paginate — mirrors the HR
+     *  list. A junk value falls back to the default rather than being trusted. */
+    private function paginateMaster($q, Request $request, array $cols)
+    {
+        $requested = (int) $request->query('per_page', 24);
+        $perPage = ($requested > 0 && $requested <= 200) ? $requested : 24;
+        return $q->paginate($perPage, $cols);
+    }
+
     public function list(Request $request, string $slug)
     {
         $this->authorizeMaster($request, $slug, 'can_view');
@@ -444,7 +453,28 @@ class MasterController extends Controller
                 }
             }
 
-            return response()->json($q->get(empty($select) ? ['*'] : $select));
+            $cols = empty($select) ? ['*'] : $select;
+            if ($request->has('per_page') || $request->has('page')) {
+                return response()->json($this->paginateMaster($q, $request, $cols));
+            }
+            return response()->json($q->get($cols));
+        }
+
+        /* Opt-in server-side pagination.
+         *
+         * The Master LIST view now asks for ?per_page=…&page=…; when it does,
+         * return the Laravel paginator envelope ({data,total,current_page,…})
+         * instead of the flat array. Absent those params the response is the
+         * old flat array, so every dropdown and existing caller is untouched.
+         *
+         * This is the fix for the OOM: list() used to $q->get() every row and
+         * map() each — a 1M-row master exhausted PHP's memory and 500'd. Now a
+         * page is 24 rows regardless of table size. Ownership is mapped through
+         * the paginator so the {data} items keep their *_name fields. */
+        if ($request->has('per_page') || $request->has('page')) {
+            $page = $this->paginateMaster($q, $request, ['*']);
+            $page->getCollection()->transform(fn ($r) => $this->withOwnership($r));
+            return response()->json($page);
         }
 
         return response()->json($q->get()->map(fn ($r) => $this->withOwnership($r)));

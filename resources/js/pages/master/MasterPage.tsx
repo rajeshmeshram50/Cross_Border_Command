@@ -104,6 +104,31 @@ function MasterPageInner({
   // value doesn't bleed into the next form open.
   const [apiAutogen, setApiAutogen] = useState<Record<string, string>>({});
   const [searchInput, setSearchInput] = useState('');
+
+  /* Server-side pagination — the fix for masters that grow large (a 1M-row
+     master used to $q->get() everything and OOM the request). The four masters
+     with bespoke client-side filters / KPI strips (designations, roles, kpis,
+     departments) are inherently small and stay client-side so their filters and
+     hierarchy chips keep working untouched. Everything else pages on the
+     server: one page of rows in memory regardless of table size. */
+  const CLIENT_MASTERS = ['designations', 'roles', 'kpis', 'departments'];
+  const serverPaged = !CLIENT_MASTERS.includes(cfg.slug);
+  const [page, setPage] = useState(0);          // 0-based, controlled
+  const [perPage, setPerPage] = useState(24);
+  const [totalRows, setTotalRows] = useState(0);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  /* Debounce the search box so a paged master refetches once typing settles,
+     not on every keystroke. Also resets to page 1 — a new term on page 40,000
+     would otherwise ask for a page the result no longer has. */
+  useEffect(() => {
+    if (!serverPaged) { setDebouncedSearch(searchInput.trim()); return; }
+    const t = window.setTimeout(() => { setDebouncedSearch(searchInput.trim()); setPage(0); }, 350);
+    return () => window.clearTimeout(t);
+  }, [searchInput, serverPaged]);
+
+  // A slug change resets the pager so you never open a master on a stale page.
+  useEffect(() => { setPage(0); setTotalRows(0); }, [cfg.slug]);
   // Designation-master-specific filter state. Only used when cfg.slug === 'designations'.
   const [dsnStatusFilter, setDsnStatusFilter] = useState<string>('all');
   const [dsnLevelFilter, setDsnLevelFilter] = useState<string>('all');
@@ -246,16 +271,27 @@ function MasterPageInner({
     setRecords([]);
     setApiAutogen({});
 
-    const loadRecords = api.get(masterEndpoint(cfg)).then(r => {
-      if (!aborted) setRecords(Array.isArray(r.data) ? r.data : []);
-    }).catch(() => { if (!aborted) setRecords([]); });
+    const loadRecords = serverPaged
+      ? api.get(masterEndpoint(cfg), {
+          params: { per_page: perPage, page: page + 1, q: debouncedSearch || undefined },
+        }).then(r => {
+          if (aborted) return;
+          const body: any = r.data ?? {};
+          // Paginator envelope on the server path; fall back to a flat array
+          // if the endpoint ever returns one (keeps this resilient).
+          setRecords(Array.isArray(body) ? body : (Array.isArray(body.data) ? body.data : []));
+          setTotalRows(Number(body.total ?? (Array.isArray(body) ? body.length : 0)) || 0);
+        }).catch(() => { if (!aborted) { setRecords([]); setTotalRows(0); } })
+      : api.get(masterEndpoint(cfg)).then(r => {
+          if (!aborted) setRecords(Array.isArray(r.data) ? r.data : []);
+        }).catch(() => { if (!aborted) setRecords([]); });
 
     const loadRefs = fetchRefs();
 
     Promise.all([loadRecords, loadRefs]).finally(() => { if (!aborted) setLoading(false); });
 
     return () => { aborted = true; };
-  }, [cfg.slug, refSlugs.join('|')]);
+  }, [cfg.slug, refSlugs.join('|'), serverPaged, page, perPage, debouncedSearch]);
 
   const editing = editingId != null ? records.find(r => r.id === editingId) : null;
 
@@ -2126,8 +2162,16 @@ function MasterPageInner({
           Each master's inline filters and its Add button ride in the toolbar,
           which is where the old search Row used to put them. */}
       <DataTable<any>
-        data={filteredRecords}
+        data={serverPaged ? records : filteredRecords}
         columns={columns}
+        {...(serverPaged ? {
+          serverPagination: {
+            total: totalRows,
+            pageIndex: page,
+            onPageChange: (p: number) => setPage(p),
+            onPageSizeChange: (sz: number) => { setPerPage(sz); setPage(0); },
+          },
+        } : {})}
         serial
         accent="violet"
         minWidth={1100}
