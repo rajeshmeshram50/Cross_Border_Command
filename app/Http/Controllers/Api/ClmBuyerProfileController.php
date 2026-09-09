@@ -507,6 +507,16 @@ class ClmBuyerProfileController extends Controller
          * that key is now permanently empty. */
         $tdByCustomer  = [];
         $tdByConsignee = [];
+        /* Agreements counted PER DEAL, summed — not de-duplicated by library id.
+         *
+         * A customer with two shipments that each require the same agreement
+         * owes it twice: once on each deal. Collapsing them to a distinct set
+         * of ids reported 1/1 where the Evidence Vault, which is per-shipment,
+         * showed 1/1 on one shipment and 0/1 on the other — two obligations,
+         * one signed. The correct figure is 1 of 2, and this is the same rule
+         * the trade-doc columns beside it already follow. */
+        $agrByCustomer  = [];
+        $agrByConsignee = [];
         $addTd = function (array &$acc, int $key, array $p): void {
             $acc[$key]['d'] = ($acc[$key]['d'] ?? 0) + (int) $p['d'];
             $acc[$key]['t'] = ($acc[$key]['t'] ?? 0) + (int) $p['t'];
@@ -547,6 +557,17 @@ class ClmBuyerProfileController extends Controller
                TRADE DOCS: unchanged — with no separate consignee the one party
                carries both sides, so the combined set is counted once. */
             $agrBuyer  = $docProgress($applicAgr, $agrPartyById, $agrSigByLead[$lid]['Customer'] ?? [], 'buyer');
+            /* Consignee side of the SAME deal. Computed for every lead, not just
+               the separate-consignee branch, because a same-as-customer
+               consignee still owes its own agreements. The signed set merges
+               both parties: a Sales-Matrix send is filed under the customer
+               even when the consignee signs, which is how the vault reads it. */
+            $agrConsDeal = $docProgress(
+                $applicAgr,
+                $agrPartyById,
+                ($agrSigByLead[$lid]['Customer'] ?? []) + ($agrSigByLead[$lid]['Consignee'] ?? []),
+                'consignee',
+            );
             $tdSigSet  = $separateConsignee
                 ? ($tdSigByLead[$lid]['Customer'] ?? [])
                 : (($tdSigByLead[$lid]['Customer'] ?? []) + ($tdSigByLead[$lid]['Consignee'] ?? []));
@@ -606,8 +627,10 @@ class ClmBuyerProfileController extends Controller
                 }
             }
             $addTd($tdByCustomer, (int) $cust->id, $tdBuyer);
+            $addTd($agrByCustomer, (int) $cust->id, $agrBuyer);
             if ($cons) {
                 $addTd($tdByConsignee, (int) $cons->id, $separateConsignee ? $base['c_td'] : $tdBuyer);
+                $addTd($agrByConsignee, (int) $cons->id, $agrConsDeal);
             }
 
             if ($hasShip && $separateConsignee)        { $base['sr'] = ++$n['wsNeq'];  $wsNeq[]  = $base; }
@@ -658,9 +681,11 @@ class ClmBuyerProfileController extends Controller
                Reverses the party-level half of CBC #66, deliberately, and in
                step with SegmentDocUploadController::vault() — the two screens
                have to answer the same question the same way. */
-            $agrIds = array_keys($dealAgrByCustomer[(int) $b['db_id']] ?? []);
-            $agrSignedSet = $sigByParty['Customer#' . (int) $b['db_id']] ?? [];
-            $b['agr'] = $docProgress($agrIds, $agrPartyById, $agrSignedSet, 'buyer');
+            /* Summed across the party's deals, not a distinct set of library
+               ids. Two shipments that each require the same agreement are two
+               obligations — the Evidence Vault shows them as 1/1 and 0/1 on
+               separate shipment rows, so this cell has to read 1 of 2. */
+            $b['agr'] = $agrByCustomer[(int) $b['db_id']] ?? ['d' => 0, 't' => 0];
 
             if ($partyDone > 0) {
                 $b['td']['d'] = min($b['td']['t'], max($b['td']['d'], $partyDone));
@@ -678,14 +703,8 @@ class ClmBuyerProfileController extends Controller
             /* Agreements: what this consignee's DEALS require — same rule as
                the buyer rows above and the Evidence Vault. Party-level
                segment tags are not merged in; see the note there. */
-            $cAgrIds = array_keys($dealAgrByConsignee[(int) $co['db_id']] ?? []);
-            /* Consignee side, always — same rule as the buyer rows and the
-               vault: the party marking decides, not whether the two parties
-               are one company. */
-            $cSide = 'consignee';
-            $cSigned = ($sigByParty['Consignee#' . (int) $co['db_id']] ?? [])
-                + ($dealAgrSignedByConsignee[(int) $co['db_id']] ?? []);
-            $co['agr'] = $docProgress($cAgrIds, $agrPartyById, $cSigned, $cSide);
+            // Summed per deal, same rule as the buyer column above.
+            $co['agr'] = $agrByConsignee[(int) $co['db_id']] ?? ['d' => 0, 't' => 0];
 
             $own = $tdByConsignee[(int) $co['db_id']] ?? null;
             if ($own) { $co['td'] = $own; continue; }

@@ -481,15 +481,17 @@ class SegmentDocUploadController extends Controller
              * resolver already follow. ClmBuyerProfileController's agr cell is
              * changed in step, or the two screens disagree again.
              *
-             * De-duplicated by library id: one agreement is signed once however
-             * many deals reference it. */
-            $seenAgr = [];
+             * NOT de-duplicated by library id. An agreement required by two
+             * shipments is two obligations, signed separately on each deal —
+             * which is exactly what the Case-to-Case tab already shows on its
+             * own rows (1/1 on one shipment, 0/1 on the other). Collapsing them
+             * here made the header read "TOTAL AGREEMENTS 1" over a tab plainly
+             * listing two, and made the Buyer Profile's cell read 1/1 instead of
+             * 1 of 2. Rows are concatenated the same way the trade-document list
+             * beside them already is. */
             foreach ($deals as $s) {
                 $rows = $type === 'consignee' ? ($s['agreements_consignee'] ?? []) : ($s['agreements_buyer'] ?? []);
                 foreach ($rows as $r) {
-                    $k = (int) ($r['db_id'] ?? 0);
-                    if ($k && isset($seenAgr[$k])) continue;
-                    if ($k) $seenAgr[$k] = true;
                     $agreements[] = $r;
                 }
             }

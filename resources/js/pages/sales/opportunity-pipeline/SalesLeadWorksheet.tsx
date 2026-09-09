@@ -276,6 +276,19 @@ export default function SalesLeadWorksheet() {
   const [counts, setCounts]     = useState<Record<string, number>>({
     qualified: 0, disqualified: 0, all: 0, key_opportunity: 0, key_in_progress: 0, key_won: 0,
   });
+
+  /* Have the counts ever come back from the server?
+   *
+   * They start at zero, and the tab labels printed that zero — so while the
+   * skeleton was saying "loading", the tabs beside it were asserting
+   * "Qualified Leads (0)" and the pager was saying "No leads found". The
+   * loading state read as an empty page rather than a busy one, which is what
+   * made the shimmer look broken instead of deliberate.
+   *
+   * Until the first response lands the labels drop the number entirely. It
+   * stays true afterwards: a later refresh keeps showing the last real
+   * counts rather than blinking back to nothing. */
+  const [countsLoaded, setCountsLoaded] = useState(false);
   // Only Sales Managers / admins may assign leads; the leads API returns this
   // flag (and enforces it server-side). Default true so the buttons aren't
   // flashed-then-hidden for managers on first paint.
@@ -567,7 +580,7 @@ export default function SalesLeadWorksheet() {
       setLeads((data.data ?? []).map(mapServerToLead));
       setTotal(data.pagination?.total ?? 0);
       setLastPage(data.pagination?.last_page ?? 1);
-      if (data.counts) setCounts(data.counts);
+      if (data.counts) { setCounts(data.counts); setCountsLoaded(true); }
       setCanDistribute((data as any).can_distribute !== false);
     } catch (e: any) {
       toast.error('Load failed', e?.response?.data?.message ?? 'Could not load leads');
@@ -615,7 +628,7 @@ export default function SalesLeadWorksheet() {
    * found" empty state, so the tab switch flashed the empty message where the
    * skeleton should have been. */
   const startNewQuery = () => {
-    setRows([]);
+    setLeads([]);
     setLoading(true);
     setPage(1);
     setSelected(new Set());
@@ -1054,7 +1067,7 @@ export default function SalesLeadWorksheet() {
               className={`lwp-pill ${tab === t ? 'active' : ''}`}
               onClick={() => switchTab(t)}
             >
-              {TAB_LABELS[t]} ({counts[t] ?? 0})
+              {TAB_LABELS[t]}{countsLoaded ? ` (${counts[t] ?? 0})` : ''}
             </div>
           ))}
         </div>
@@ -1087,7 +1100,7 @@ export default function SalesLeadWorksheet() {
               className={`lwp-subtab ${dealState === s ? 'active' : ''}`}
               onClick={() => switchDealState(s)}
             >
-              {DEAL_STATE_LABELS[s]} ({counts[s === 'in_progress' ? 'key_in_progress' : 'key_won'] ?? 0})
+              {DEAL_STATE_LABELS[s]}{countsLoaded ? ` (${counts[s === 'in_progress' ? 'key_in_progress' : 'key_won'] ?? 0})` : ''}
             </div>
           ))}
         </div>
@@ -1172,7 +1185,13 @@ export default function SalesLeadWorksheet() {
             </thead>
             <tbody className={loading && rows.length > 0 ? 'lwp-tbody-refetching' : undefined}>
               {loading && rows.length === 0 && (
-                Array.from({ length: Math.min(rpp, 10) }).map((_, i) => (
+                /* One skeleton row per row the page will actually hold — not a
+                   flat 10. With rows-per-page at 11 the table lost a row's
+                   height the moment the skeleton went up and got it back when
+                   the data landed, so the card visibly shrank and grew around
+                   a white gap. Capped at 25 so a large page size cannot
+                   render a pointless wall of placeholders. */
+                Array.from({ length: Math.max(1, Math.min(rpp, 25)) }).map((_, i) => (
                   <tr key={`sk-${i}`} className="lwp-skel-row">
                     <td><span className="lwp-skel lwp-skel-chk" /></td>
                     <td><span className="lwp-skel lwp-skel-md" /></td>
@@ -1350,9 +1369,14 @@ export default function SalesLeadWorksheet() {
         {/* Pagination */}
         <div className="lwp-pagination">
           <span className="lwp-pag-info">
-            {total === 0
-              ? 'No leads found'
-              : <>Showing <span className="lwp-hl">{startIdx + 1}–{Math.min(startIdx + rpp, total)}</span> of <span className="lwp-hl">{total}</span></>}
+            {/* "No leads found" is an ANSWER, and while the skeleton is up there
+                isn't one yet. Saying it under a loading table is what made the
+                whole state read as an empty page. */}
+            {loading
+              ? <span className="lwp-skel lwp-skel-lg" aria-label="Loading" />
+              : total === 0
+                ? 'No leads found'
+                : <>Showing <span className="lwp-hl">{startIdx + 1}–{Math.min(startIdx + rpp, total)}</span> of <span className="lwp-hl">{total}</span></>}
           </span>
           <div className="lwp-pag-right">
             <div className="lwp-rows-sel">
