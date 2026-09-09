@@ -280,12 +280,12 @@ const REQUEST_STATUS_COLOR: Record<RequestStatus, 'success' | 'danger' | 'warnin
   Rejected:       'danger',
 };
 
-const REQUEST_URGENCY_TONES: Record<RequestUrgency, { bg: string; fg: string }> = {
-  Low:      { bg: '#d6f4e3', fg: '#108548' },
-  Medium:   { bg: '#fde8c4', fg: '#a4661c' },
-  High:     { bg: '#fdd9d6', fg: '#b1401d' },
-  Critical: { bg: '#fdd9ea', fg: '#a02960' },
-};
+/* Urgency pill palette. The colours used to be inline styles built from a
+   {bg, fg} map, which no stylesheet can reach — so the pastel light chips came
+   through unchanged on the dark Hiring Request view and read as the one bright
+   sticker on an otherwise dark modal. They live in recruitment.css now, keyed
+   off this class suffix, with a dark variant. (CBC #6) */
+const urgencyPillClass = (u: RequestUrgency) => `rec-pill rec-urg-${u.toLowerCase()}`;
 
 const KPI_CARDS = [
   { key: 'total',          label: 'Total Recruitments',     icon: 'ri-briefcase-4-line',     gradient: 'linear-gradient(135deg,#299cdb 0%,#4dabf7 100%)', deep: '#1e6dd6' },
@@ -1486,8 +1486,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
       accessorKey: 'urgency',
       meta: { width: '8%' },
       cell: info => {
-        const u = REQUEST_URGENCY_TONES[info.row.original.urgency];
-        return <span className="rec-pill" style={{ background: u.bg, color: u.fg, ['--pill-fg' as string]: u.fg } as React.CSSProperties}>{info.row.original.urgency}</span>;
+        return <span className={urgencyPillClass(info.row.original.urgency)}>{info.row.original.urgency}</span>;
       },
     },
     {
@@ -1677,7 +1676,6 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
   const canReject = !!onReject && !recruitmentCreated && !['Rejected', 'Approved'].includes(r.status);
   const showCreate = !!onCreate && !!canCreate;
   const raw = r._raw || {};
-  const u = REQUEST_URGENCY_TONES[r.urgency];
   const statusColor = REQUEST_STATUS_COLOR[r.status];
   const Field = ({ label, value }: { label: string; value: React.ReactNode }) => (
     <div className="rec-view-field">
@@ -1777,7 +1775,7 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
               <Field label="No. of Openings"  value={r.openings} />
               <Field label="Employment Type"  value={raw.employment_type || r.positionType} />
               <Field label="Work Mode"        value={raw.work_mode || r.positionMode} />
-              <Field label="Urgency Level"    value={<span className="rec-pill" style={{ background: u.bg, color: u.fg }}>{r.urgency}</span>} />
+              <Field label="Urgency Level"    value={<span className={urgencyPillClass(r.urgency)}>{r.urgency}</span>} />
             </div>
           </div>
 

@@ -783,17 +783,26 @@ class HrDocumentSignatureController extends Controller
          * template logo, a guess and the last resort it was always meant to be. */
         $disk = Storage::disk('public');
         $row->loadMissing('branch:id,logo');
+        /* LAZY candidates. (CBC #9)
+         *
+         * This was a plain array, so every element was evaluated before the
+         * loop chose one — including latestClientLogo(), a database query, and
+         * two URL→path resolutions. That work was thrown away on the common
+         * path, where the very first candidate (the config's own logo_path) is
+         * the one that wins. Closures defer each step until the search actually
+         * reaches it, so the usual case now costs one exists() check. */
         $logoCandidates = [
-            (string) ($headerCfg['logo_path'] ?? ''),
-            $this->diskPathFromUrl((string) ($headerCfg['logo_url'] ?? '')) ?? '',
-            $this->diskPathFromUrl((string) ($row->branch?->logo ?? '')) ?? '',
-            (string) ((new HrDocumentTemplateController())->latestClientLogo($row->client_id) ?? ''),
+            fn () => (string) ($headerCfg['logo_path'] ?? ''),
+            fn () => $this->diskPathFromUrl((string) ($headerCfg['logo_url'] ?? '')) ?? '',
+            fn () => $this->diskPathFromUrl((string) ($row->branch?->logo ?? '')) ?? '',
+            fn () => (string) ((new HrDocumentTemplateController())->latestClientLogo($row->client_id) ?? ''),
         ];
-        foreach ($logoCandidates as $candidate) {
+        foreach ($logoCandidates as $resolveCandidate) {
+            $candidate = $resolveCandidate();
             // Each candidate must exist before it wins. A logo_path pointing at
             // a deleted file used to end the search and leave the header blank,
             // even though the URL beside it named a file that was still there.
-            $candidate = ltrim($candidate, '/');
+            $candidate = ltrim((string) $candidate, '/');
             if ($candidate === '' || !$disk->exists($candidate)) continue;
 
             // Inline as data URI — DomPDF can't reach the storage URL because
@@ -812,6 +821,45 @@ class HrDocumentSignatureController extends Controller
             };
             $logoUrl = 'data:' . $mime . ';base64,' . base64_encode((string) $disk->get($candidate));
             break;
+        }
+
+        /* Cached render for a FROZEN document. (CBC #9)
+         *
+         * DomPDF re-rendered the whole letter on every click — the dominant
+         * cost, and pure waste for a completed run, whose content_html and
+         * header/footer configs never change again by design (that is what
+         * "frozen" means here and why the viewer trusts it).
+         *
+         * The key is a hash of exactly the inputs the render reads, so ANY
+         * change to content, chrome or logo produces a different key and the
+         * old file is simply never asked for again. A completed run is the only
+         * thing cached: an in-flight one still gains signatures.
+         *
+         * A cache miss, an unwritable disk or a read failure all fall through
+         * to a normal render — this can slow nothing down, only skip work. */
+        $frozen   = strtolower((string) $row->status) === 'completed';
+        $cacheKey = null;
+        if ($frozen) {
+            $cacheKey = 'signed-pdf-cache/' . $row->id . '-' . md5(implode('|', [
+                (string) $row->content_html,
+                json_encode($headerCfg),
+                json_encode($footerCfg),
+                (string) $logoUrl,
+                (string) $row->updated_at,
+            ])) . '.pdf';
+
+            try {
+                if ($disk->exists($cacheKey)) {
+                    return response()->streamDownload(
+                        fn () => print($disk->get($cacheKey)),
+                        ($row->code ?: ('doc-' . $row->id)) . '-signed.pdf',
+                        ['Content-Type' => 'application/pdf']
+                    );
+                }
+            } catch (\Throwable $e) {
+                // Unreadable cache is not an error — fall through and render.
+                $cacheKey = null;
+            }
         }
 
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.signed-document', [
@@ -839,6 +887,16 @@ class HrDocumentSignatureController extends Controller
         $pdf->setPaper('A4');
 
         $filename = ($row->code ?: ('doc-' . $row->id)) . '-signed.pdf';
+
+        if ($cacheKey !== null) {
+            try {
+                $disk->put($cacheKey, $pdf->output());
+            } catch (\Throwable $e) {
+                // Caching is an optimisation; never let it fail the download.
+                Log::warning('Signed-PDF cache write failed', ['run' => $row->id, 'err' => $e->getMessage()]);
+            }
+        }
+
         return $pdf->download($filename);
     }
 
@@ -1138,9 +1196,25 @@ class HrDocumentSignatureController extends Controller
                 if (!$diskPath) return $full;
 
                 try {
-                    if (!Storage::disk('public')->exists($diskPath)) return $full;
+                    /* exists() + get() + mimeType() was THREE calls per image.
+                     * On the server the public disk is Azure Blob, so each one
+                     * is a network round-trip, and a signed document carries one
+                     * image per signer plus anything embedded in the body — the
+                     * delay before the download started. get() already fails
+                     * when the file is missing, so the existence probe is
+                     * redundant, and the MIME is derivable from the extension
+                     * (the same mapping the header logo above uses). (CBC #9) */
                     $binary = Storage::disk('public')->get($diskPath);
-                    $mime = Storage::disk('public')->mimeType($diskPath) ?: 'image/png';
+                    if ($binary === null || $binary === '') return $full;
+                    $ext  = strtolower((string) pathinfo($diskPath, PATHINFO_EXTENSION));
+                    $mime = match ($ext) {
+                        'jpg', 'jpeg' => 'image/jpeg',
+                        'svg'         => 'image/svg+xml',
+                        'gif'         => 'image/gif',
+                        'webp'        => 'image/webp',
+                        ''            => 'image/png',
+                        default       => 'image/' . $ext,
+                    };
                 } catch (\Throwable $e) {
                     return $full;
                 }

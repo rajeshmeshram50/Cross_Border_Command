@@ -4847,7 +4847,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     <input className="onb-init-input is-autofilled" readOnly value={emp.empId} />
                   </Col>
                   <Col md={4}>
-                    <label className="onb-init-label">Employee Status</label>
+                    {/* Tinted like every other read-only field, so it carries
+                        the badge that explains the tint — it was the one field
+                        wearing the "auto" green with nothing saying why. */}
+                    <label className="onb-init-label">Employee Status <span className="auto">AUTO</span></label>
                     <input className="onb-init-input is-autofilled" readOnly value={r.status || 'Inactive'} />
                   </Col>
                   <Col md={4}>

@@ -3811,6 +3811,35 @@
   border: 0; border-radius: 8px; font-size: 13px; font-weight: 700; color: #fff; cursor: pointer;
 }
 
+/* Dark theme for the signed-document viewer. (CBC #14)
+   The modal had no dark rules at all: the dialog was #fff, the content ground
+   #f9fafb and the footer a light strip with a white Close button, so the popup
+   opened as a bright slab over the dark profile page.
+
+   The DOCUMENT itself deliberately stays white. It is a rendering of a printed
+   page — the same paper the PDF download produces — and HeaderFooterPanel's own
+   dark rules already exclude .tpl-readonly-preview for that reason. What gets
+   themed here is the chrome AROUND the page: the dialog, the ground the paper
+   sits on, and the action bar. */
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-signed-dialog {
+  background: #222831;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-signed-body {
+  background: #1b2230;
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-signed-footer {
+  border-top-color: rgba(255,255,255,0.10);
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-signed-close-btn {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.18);
+  color: var(--vz-body-color, #e5e7eb);
+}
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-signed-close-btn:hover {
+  background: rgba(255,255,255,0.12);
+}
+
 /* ============================================================
    Mobile responsive (phones & small tablets, ≤ 767.98px)
    ------------------------------------------------------------

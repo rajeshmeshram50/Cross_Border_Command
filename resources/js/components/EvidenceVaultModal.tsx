@@ -327,13 +327,34 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
   const handleViewRow = async (d: VaultDoc) => {
     if (busyKey) return;
     if (d.runId) {
+      /* Open the tab NOW, before the fetch. (CBC #7)
+       *
+       * This used to await the PDF and then call window.open() with the blob
+       * URL. A popup only inherits the click's user activation while the click
+       * is still on the stack — after an await it is not, so the browser
+       * blocked the window and View appeared to do nothing at all: no tab, no
+       * error, and (because the block is silent) nothing in the console for
+       * the user to report.
+       *
+       * Opening a blank tab synchronously keeps the activation, and the blob
+       * URL is pushed into it once the bytes arrive. If the tab is blocked
+       * anyway — a blocker that stops even same-gesture popups — we say so
+       * instead of failing silently, and the row's Download button is still
+       * there as the way through. */
+      const win = window.open('', '_blank', 'noopener,noreferrer');
       setBusyKey(d.key); setBusyAction('view');
       try {
         const resp = await api.get(`/hr-document-signatures/${d.runId}/download-pdf`, { responseType: 'blob' });
         const objUrl = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
-        window.open(objUrl, '_blank', 'noopener,noreferrer');
+        if (win && !win.closed) {
+          win.location.href = objUrl;
+        } else {
+          toast.info('Pop-up blocked', 'Allow pop-ups for this site to view documents, or use Download.');
+        }
         setTimeout(() => URL.revokeObjectURL(objUrl), 60000);
       } catch (err: any) {
+        // The placeholder tab must not be left sitting on about:blank.
+        if (win && !win.closed) win.close();
         toast.error('Could not open', err?.response?.data?.message || 'Please try again.');
       } finally { setBusyKey(null); setBusyAction(null); }
       return;

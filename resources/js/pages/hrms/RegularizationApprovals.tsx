@@ -15,6 +15,21 @@ import { to12h, punchPair12h } from '../../utils/timeFormat';
    Re-exported because the employee Attendance tab imports it from here. */
 export { to12h };
 
+/* The theme is toggled at runtime on <html>, and nothing in this tree
+   re-renders when it flips — so observe the attribute instead of reading it
+   once. Without this the badges kept their light pastels until the next data
+   refresh. */
+const useIsDark = () => {
+  const [dark, setDark] = useState(isDarkTheme);
+  useEffect(() => {
+    const el = document.documentElement;
+    const obs = new MutationObserver(() => setDark(isDarkTheme()));
+    obs.observe(el, { attributes: true, attributeFilter: ['data-bs-theme', 'data-layout-mode'] });
+    return () => obs.disconnect();
+  }, []);
+  return dark;
+};
+
 const STATUS_FILTERS: { key: RegularizationStatus | 'All'; label: string }[] = [
   { key: 'Pending',  label: 'Pending' },
   { key: 'Approved', label: 'Approved' },
@@ -22,11 +37,33 @@ const STATUS_FILTERS: { key: RegularizationStatus | 'All'; label: string }[] = [
   { key: 'All',      label: 'All' },
 ];
 
+/* Light pastels read as bright chips on the dark page, so each status also
+   carries a dark variant. `useDarkTone` picks per render off the theme
+   attribute rather than a media query — the app has an explicit toggle. */
 const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
   Pending:   { bg: '#fef3c7', fg: '#92400e' },
   Approved:  { bg: '#dcfce7', fg: '#15803d' },
   Rejected:  { bg: '#fee2e2', fg: '#b91c1c' },
   Cancelled: { bg: '#f1f5f9', fg: '#475569' },
+};
+
+const STATUS_TONE_DARK: Record<string, { bg: string; fg: string }> = {
+  Pending:   { bg: 'rgba(247,184,75,0.18)',  fg: '#f7b84b' },
+  Approved:  { bg: 'rgba(10,179,156,0.18)',  fg: '#4ade9f' },
+  Rejected:  { bg: 'rgba(240,101,72,0.18)',  fg: '#fca5a5' },
+  Cancelled: { bg: 'rgba(148,163,184,0.20)', fg: '#cbd5e1' },
+};
+
+const isDarkTheme = () => {
+  if (typeof document === 'undefined') return false;
+  const el = document.documentElement;
+  return el.getAttribute('data-bs-theme') === 'dark'
+      || el.getAttribute('data-layout-mode') === 'dark';
+};
+
+const statusTone = (status: string, dark: boolean) => {
+  const map = dark ? STATUS_TONE_DARK : STATUS_TONE;
+  return map[status] || map.Cancelled;
 };
 
 const empName = (r: ApiRegularization) => {
@@ -185,6 +222,7 @@ interface Props {
  *  Attendance review screen. Approve / Reject are only enabled on rows the
  *  signed-in user can act on right now (server-computed `can_act_now`). */
 export default function RegularizationApprovals({ refreshKey = 0, onActed }: Props) {
+  const dark = useIsDark();
   const toast = useToast();
   const [rows, setRows]       = useState<ApiRegularization[]>([]);
   const [loading, setLoading] = useState(true);
@@ -360,7 +398,7 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
                       </td>
                     </tr>
                   ) : paged.map(r => {
-                    const tone = STATUS_TONE[r.status] || STATUS_TONE.Cancelled;
+                    const tone = statusTone(r.status, dark);
                     const rowBusy    = busy?.id === r.id;
                     const approving  = rowBusy && busy?.action === 'approve';
                     const rejecting  = rowBusy && busy?.action === 'reject';
@@ -402,7 +440,14 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
                           </span>
                         </td>
                         <td className="text-end">
-                          {r.can_act_now ? (
+                          {/* `can_act_now` alone was the gate, but the backend can
+                              still report it true on a row that has already been
+                              decided (multi-level chains). That row then rendered
+                              the teal Approve / red Reject pills while every other
+                              Approved row rendered a plain View button — two
+                              different Action cells for the same status. A decided
+                              row is never actionable, so require Pending too. */}
+                          {r.can_act_now && r.status === 'Pending' ? (
                             /* Round gradient icon-pills — same standard Approve /
                                Reject action buttons the Expense Claims table uses
                                (CBC #41). */
@@ -546,7 +591,7 @@ function RegularizationDetailModal({ row, onClose }: { row: ApiRegularization | 
 
   if (!row) return null;
 
-  const tone      = STATUS_TONE[row.status] || STATUS_TONE.Cancelled;
+  const tone      = statusTone(row.status, useIsDark());
   const requested = (row.punches ?? []).map(p => punchPair12h(p.in, p.out));
   const originals = to12h(row.original_display).split(',').map(t => t.trim()).filter(Boolean);
 
