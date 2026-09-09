@@ -1127,20 +1127,34 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
           anchorEl={moreMenu.anchor}
           kind={moreMenu.kind}
           busy={menuBusy}
-          // Don't let an outside-click / scroll close the menu while an action
-          // is still loading — the spinner must stay visible until it finishes.
-          onClose={() => { if (!menuBusy) setMoreMenu(null); }}
+          onClose={() => setMoreMenu(null)}
           onPick={async (action, signature) => {
             if (menuBusy) return;
             const id = moreMenu.id, kind = moreMenu.kind;
             const code = (kind === 'quotation' ? quotations : pis).find(x => x.id === id)?.code ?? null;
+            /* Close the menu the moment an action is picked.
+             *
+             * It used to stay open for the whole load so its own spinner
+             * remained visible, and an outside click could not dismiss it
+             * either. That left the Download / View options sitting on screen,
+             * apparently clickable, underneath the "Opening document…" overlay
+             * (QA #20).
+             *
+             * The spinner is not lost: menuBusy stays set until the action
+             * settles, and the full-page s5-pagelock overlay it drives already
+             * covers the whole viewport with its own spinner. The menu's copy
+             * of it was redundant, and keeping the menu open to show it was
+             * what made the popup look stuck.
+             *
+             * id / kind / code are read before this point, so closing here
+             * cannot pull the values out from under the awaits below. */
             setMenuBusy({ action, signature });
+            setMoreMenu(null);
             try {
               if (action === 'download') await onDownloadPdf(kind, id, code, signature);
               else                        await onViewPdf(kind, id, signature);
             } finally {
               setMenuBusy(null);
-              setMoreMenu(null);
             }
           }}
         />

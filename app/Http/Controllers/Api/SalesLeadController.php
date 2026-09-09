@@ -2337,9 +2337,29 @@ class SalesLeadController extends Controller
         // with the corresponding employee profile when one exists. The
         // table shows zero-lead salespeople too so the user can see the
         // whole team at a glance.
+        /* Anyone who HOLDS leads belongs on this page, active or not.
+         *
+         * The roster only ever admitted active users, so leads sitting with a
+         * deactivated employee vanished from the one screen that redistributes
+         * them. They were not released either — the rows still carry that
+         * salesperson_id — so the header card counted them under "Assigned"
+         * while no row below accounted for them: 14 assigned over rows summing
+         * to 11, and no way to hand those three leads to anyone else.
+         *
+         * Holding leads is therefore its own ticket in, independent of status.
+         * It cannot widen who may RECEIVE work: the assignment picker is a
+         * different endpoint (salespeople(), below) which keeps its own
+         * status = active filter. This page only reports and redistributes.
+         * Rows carry is_active so a deactivated holder is visibly flagged
+         * rather than passing as a serving member of the team. */
+        $holdsLeads = array_keys($perUser);
+
         $usersQ = User::query()
             ->whereIn('user_type', ['client_admin', 'client_user', 'branch_user', 'employee'])
-            ->where('status', 'active');
+            ->where(function ($w) use ($holdsLeads) {
+                $w->where('status', 'active');
+                if (!empty($holdsLeads)) $w->orWhereIn('id', $holdsLeads);
+            });
 
         if ($user->user_type !== 'super_admin') {
             $usersQ->where('client_id', $user->client_id);
@@ -2351,7 +2371,7 @@ class SalesLeadController extends Controller
             }
         }
 
-        $users = $usersQ->orderBy('name')->get(['id', 'name', 'designation', 'user_type', 'email']);
+        $users = $usersQ->orderBy('name')->get(['id', 'name', 'designation', 'user_type', 'email', 'status']);
 
         // Pull employee profiles for those users in one query (linked via
         // employees.user_id). Eager-load the four relations we need so the
@@ -2391,10 +2411,40 @@ class SalesLeadController extends Controller
                 'ancillary_role'        => $emp?->ancillaryRole?->name,
                 'reporting_manager'     => $mgrName,
                 'email'                 => $u->email,
+                // False only for a deactivated user still holding leads.
+                'is_active'             => $u->status === 'active',
                 'platform_counts'       => $counts,
                 'total_assigned_leads'  => $total,
             ];
         }
+
+        /* Narrow the roster to the people this page is actually about (QA #10).
+         *
+         * It listed every active user in the tenant — IT, Legal, Accounts,
+         * Warehouse, and users with no employee profile at all — so a page
+         * headed "Sales Members" was mostly people who will never touch a
+         * lead. Two groups belong here:
+         *
+         *   · anyone in the Sales department, whether or not they hold leads
+         *     yet — they are who you distribute TO; and
+         *   · anyone who already holds leads, whatever their department.
+         *
+         * The second is not a nicety. Leads are assigned today to people
+         * outside Sales and to users with no department recorded; dropping
+         * them would hide their leads from the only screen that redistributes
+         * them, and the assigned/unassigned totals above would stop adding up
+         * against the rows below.
+         *
+         * Matched on the department NAME, case-insensitively, and by
+         * substring so "Sales", "Sales & Marketing" and "Inside Sales" all
+         * count. The code column cannot be used: master_departments seeds
+         * DEPT-001 globally for Sales while a client's own first department
+         * is also written DEPT-001, so codes collide across tenants. */
+        $data = array_values(array_filter($data, function ($r) {
+            if (($r['total_assigned_leads'] ?? 0) > 0) return true;
+            $dept = $r['department'] ?? null;
+            return $dept !== null && str_contains(mb_strtolower($dept), 'sales');
+        }));
 
         // Stable order: most loaded first, then by name. Keeps the
         // top-performers visible above the fold.
@@ -2406,7 +2456,8 @@ class SalesLeadController extends Controller
         return response()->json([
             'status'    => true,
             'summary'   => [
-                'total_sales_persons' => $users->count(),
+                // Counts the rows actually returned, not every user considered.
+                'total_sales_persons' => count($data),
                 'total_leads'         => (int) ($totalsRow->total_all        ?? 0),
                 'assigned_leads'      => (int) ($totalsRow->total_assigned   ?? 0),
                 'unassigned_leads'    => (int) ($totalsRow->total_unassigned ?? 0),

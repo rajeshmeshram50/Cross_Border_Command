@@ -485,12 +485,28 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
     consignee: activeSegRawAgreements.filter(a => partyBucket(a.party) === 'consignee').length,
     both:      activeSegRawAgreements.filter(a => partyBucket(a.party) === 'both').length,
   };
-  // buyer == consignee → show ONLY pure buyer agreements (a single party means
-  // the Consignee and Buyer+Consignee categories are redundant). When buyer !=
-  // consignee, the three party sub-tabs (Buyer / Consignee / Buyer+Consignee)
-  // filter the list.
+  /* buyer == consignee → the single entity IS both parties, so EVERY
+   * agreement applies to it: buyer-only, consignee-only and both-party alike.
+   *
+   * This used to keep pure-buyer rows only, on the reasoning that with one
+   * party the Consignee and Buyer+Consignee categories are redundant. They
+   * are not redundant — they are differently addressed. A consignee-only
+   * agreement is still owed by the entity standing in the consignee's shoes,
+   * and dropping it meant the popup silently offered fewer documents than
+   * the deal requires (QA #19).
+   *
+   * The Evidence Vault already resolves this situation the other way —
+   * SegmentDocUploadController takes the UNION of the buyer and consignee
+   * sides when buyer_is_consignee — so the two screens disagreed about the
+   * same deal. This brings the send popup in line with the vault.
+   *
+   * No de-duplication is needed here (unlike the vault, which merges two
+   * separate arrays): these rows are already one-per-agreement, each
+   * carrying its own party CSV.
+   *
+   * When buyer != consignee the three party sub-tabs still filter the list. */
   const activeAgreements = buyerEqualsConsignee
-    ? activeSegRawAgreements.filter(a => partyBucket(a.party) === 'buyer')
+    ? activeSegRawAgreements
     : (agrPartyTab === 'all'
         ? activeSegRawAgreements
         : activeSegRawAgreements.filter(a => partyBucket(a.party) === agrPartyTab));
@@ -661,10 +677,42 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
       view === 'trade' ? s.trade_documents.length > 0 : s.agreements.length > 0),
     [payload, view],
   );
-  const tierCounts = useMemo(() => ({
-    highly: typeSegments.filter(s => s.regulatory === 'highly').length,
-    less:   typeSegments.filter(s => s.regulatory === 'less').length,
-  }), [typeSegments]);
+  /* The badge on each tier tab counts DOCUMENTS, not segments.
+   *
+   * It used to be the number of segments in that tier carrying the chosen
+   * document type, which is not what sits behind the tab: two highly-
+   * regulated segments holding six agreements between them showed "2" over a
+   * list of six rows (QA #17). Nothing on screen explained the gap, so the
+   * badge simply read as a wrong count.
+   *
+   * Counted DISTINCT, the same way the tab strip below de-duplicates. One
+   * document applicable to several segments in a tier is a single obligation
+   * and gets a single row — in the "Combined Segment Agreements" tab for
+   * agreements, or a merged row with a comma-separated Segment column for
+   * trade docs. Summing the per-segment lengths would count it once per
+   * segment and overshoot the rows on offer, trading one wrong number for
+   * another. Agreements key on `id`, trade docs on `db_id` with the same
+   * code/reference/name fallback the tradeDocs de-dup uses. */
+  const tierCounts = useMemo(() => {
+    const distinct = (tier: 'highly' | 'less') => {
+      const ids = new Set<string>();
+      typeSegments
+        .filter(s => s.regulatory === tier)
+        .forEach(seg => {
+          if (view === 'trade') {
+            seg.trade_documents.forEach(td => ids.add(
+              td.db_id != null
+                ? `id:${td.db_id}`
+                : `code:${td.doc_code}|ref:${td.reference}|name:${td.name}`,
+            ));
+          } else {
+            seg.agreements.forEach(a => ids.add(`id:${a.id}`));
+          }
+        });
+      return ids.size;
+    };
+    return { highly: distinct('highly'), less: distinct('less') };
+  }, [typeSegments, view]);
 
   /* Trade documents across every PI segment — ONE row per document. A single
    * trade doc that's applicable to multiple segments is collapsed into a single
@@ -1763,10 +1811,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                 {visibleSegments.map(seg => {
                   // Single-segment agreements for this segment — the same set
                   // its table shows (multi-segment docs live in the Combined tab).
-                  // When buyer == consignee only pure-buyer rows are shown, so the
-                  // count must apply that same filter to stay in sync with the table.
+                  // No party filter in either case now: when buyer == consignee
+                  // the table shows every row, so the count must too.
                   const segAgs = seg.agreements.filter(a => (agrSegCount.get(a.id) ?? 1) <= 1);
-                  const segCount = buyerEqualsConsignee ? segAgs.filter(a => partyBucket(a.party) === 'buyer').length : segAgs.length;
+                  const segCount = segAgs.length;
                   return (
                   <button
                     key={seg.id}
@@ -1790,7 +1838,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                     onClick={() => setActiveSegId(COMBINED_SEG_ID)}
                     title="Agreements applicable to more than one segment"
                   >
-                    Combined Segment Agreements<span className="lasm-tab-count">{buyerEqualsConsignee ? combinedAgreements.filter(a => partyBucket(a.party) === 'buyer').length : combinedAgreements.length}</span>
+                    Combined Segment Agreements<span className="lasm-tab-count">{combinedAgreements.length}</span>
                   </button>
                 )}
               </div>

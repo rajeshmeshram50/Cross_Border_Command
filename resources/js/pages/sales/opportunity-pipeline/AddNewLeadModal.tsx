@@ -368,6 +368,19 @@ export default function AddNewLeadModal(props: {
    * Name dropdown, which stays interactive to pick/switch the customer. */
   const lockCustomer = useExisting;
 
+  /* Existing-customer data still in flight — Save must wait for it.
+   *
+   * Picking an existing customer fires /customers/{id} and auto-fills the
+   * form from the response. Save stayed enabled throughout, so a click
+   * landing in that window saved the half-filled form: the fields the fetch
+   * had not written yet went in blank or stale (QA #21).
+   *
+   * Scoped to the existing-customer flow on purpose. customersLoading is set
+   * whenever the modal opens, not only when the picker is in use, so gating
+   * on it unconditionally would disable Save for a moment on every open —
+   * including manual entry, where nothing is being waited for. */
+  const customerBusy = useExisting && (customersLoading || customerFetching);
+
   return createPortal((
     /* Backdrop click intentionally does NOT call onClose — losing a
      * half-filled lead because the user clicked off-canvas was a
@@ -609,7 +622,12 @@ export default function AddNewLeadModal(props: {
           </div>
           <div className="anl-foot-actions">
             <button className="anl-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
-            <button className="anl-btn-primary" onClick={handleSave} disabled={saving}>
+            <button
+              className="anl-btn-primary"
+              onClick={handleSave}
+              disabled={saving || customerBusy}
+              title={customerBusy ? 'Loading customer details…' : undefined}
+            >
               {saving ? (
                 <>
                   <span className="anl-spinner" aria-hidden="true" />

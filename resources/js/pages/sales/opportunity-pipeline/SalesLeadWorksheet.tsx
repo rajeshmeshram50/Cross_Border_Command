@@ -14,9 +14,20 @@ import LeadDetailsModal from './LeadDetailsModal';
 import LeadActivityModal from './LeadActivityModal';
 import LeadFilterModal, { type LeadFilters, countFilterValues } from './LeadFilterModal';
 
-/* Where the worksheet's filters are parked while the user is inside a lead.
-   sessionStorage-scoped, so a new tab starts unfiltered. */
-const LEAD_FILTERS_KEY = 'cbc.leadWorksheet.filters';
+/* Filters are deliberately NOT persisted.
+ *
+ * They used to be parked in sessionStorage so a trip into a lead and back
+ * would not lose them. That outlived far too much: leave for another module,
+ * come back later, and the old filter was still applied with no clue why the
+ * list looked short (QA #18). Scoping it to a single lead round-trip was the
+ * first attempt, but QA confirmed the filter should not survive that either —
+ * a lead edited inside can stop matching the filter it was found under, and
+ * then it vanishes from the list the moment you come back to check it.
+ *
+ * So the filter now lives in component state alone: it lasts exactly as long
+ * as the worksheet is on screen, and changing tab clears it too. Anything
+ * that unmounts this page — a lead, another module, a reload — starts clean.
+ */
 
 /* Shape returned by GET /sales/leads — Laravel paginator items. Mapped to
  * the table's Lead type below via mapServerToLead(). */
@@ -444,28 +455,8 @@ export default function SalesLeadWorksheet() {
     countries: Array<{ value: string; label: string }>;
     customers: Array<{ value: string; label: string; code?: string | null }>;
   }>({ stages: [], platforms: [], queryTypes: [], countries: [], customers: [] });
-  /* Filters survive a trip into a lead and back.
-   *
-   * They lived only in component state, and opening a lead unmounts this page —
-   * so Back re-mounted it empty and the user landed on the full list again,
-   * with the filter they had just set silently gone. Nothing told them; the
-   * chips simply were not there.
-   *
-   * sessionStorage, not localStorage: a filter is about the task in hand, so it
-   * should outlive a navigation but not the tab. Read lazily on mount and
-   * written on every change, so the two can never fall out of step.
-   * Both sides are wrapped — a private window can throw on access, and losing
-   * the filter must never take the page down with it. */
-  const [activeFilters, setActiveFilters] = useState<LeadFilters>(() => {
-    try {
-      const raw = sessionStorage.getItem(LEAD_FILTERS_KEY);
-      return raw ? (JSON.parse(raw) as LeadFilters) : {};
-    } catch { return {}; }
-  });
-  useEffect(() => {
-    try { sessionStorage.setItem(LEAD_FILTERS_KEY, JSON.stringify(activeFilters)); }
-    catch { /* private mode — the filter just won't survive the hop */ }
-  }, [activeFilters]);
+  // Component state only — see the note on persistence at the top of the file.
+  const [activeFilters, setActiveFilters] = useState<LeadFilters>({});
 
   /* When the user picks "View Leads" on the Lead Distribution page they
    * land back here with `?sp=<id>&sp_name=<name>` in the URL. Apply the
@@ -635,15 +626,20 @@ export default function SalesLeadWorksheet() {
     skeletonSinceRef.current = Date.now();
   };
 
+  /* A filter belongs to the tab it was set on.
+     Carrying it across meant landing on a tab whose count said one thing and
+     whose table showed another, with the chips easy to miss above the fold. */
   const switchTab = (next: TabKey) => {
     setTab(next);
     // Always land on the In Progress sub-tab when (re)entering Key Opportunity.
     if (next === 'key_opportunity') setDealState('in_progress');
+    setActiveFilters({});
     startNewQuery();
   };
 
   const switchDealState = (next: DealState) => {
     setDealState(next);
+    setActiveFilters({});
     startNewQuery();
   };
 
