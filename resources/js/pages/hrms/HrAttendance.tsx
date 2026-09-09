@@ -11,6 +11,7 @@ import WorklistPager from '../../components/ui/WorklistPager';
 import { Shimmer, ShimmerTable } from '../../components/ui/Shimmer';
 import BusyOverlay from '../../components/ui/BusyOverlay';
 import '../../../css/recruitment.css';
+import SearchClear from '../../components/ui/SearchClear';
 
 const TODAY_ISO = new Date().toISOString().slice(0, 10);
 
@@ -866,7 +867,9 @@ export default function HrAttendance() {
 
                   <div className="att-emplist-search">
                     <div className="rec-req-search search-box">
+                      autoComplete="off"
                       <Input type="text" className="form-control form-control-sm" placeholder="Search name, EMP-ID, biometric…" value={search} onChange={e => setSearch(e.target.value)} />
+                      <SearchClear show={search} onClear={() => { setSearch(''); }} />
                       <i className="ri-search-line search-icon" />
                     </div>
                   </div>

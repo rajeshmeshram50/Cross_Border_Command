@@ -12,6 +12,7 @@ import { useIsClipped } from '../../../../components/ui/DataTable';
 import api from '../../../../api';
 import TableContainer from '../../../../velzon/Components/Common/TableContainerReactTable';
 import { readCustomerMasterBundle, writeCustomerMasterBundle } from './customerBundleCache';
+import SearchClear from '../../../../components/ui/SearchClear';
 import PartyFilterModal, {
   applyPartyFilters,
   countPartyFilterValues,
@@ -593,10 +594,12 @@ export default function SalesCustomers() {
             <i className="ri-search-line smc-search-icon" />
             <input
               type="text"
+              autoComplete="off"
               placeholder="Search by name, ID, company, email, segment..."
               value={q}
               onChange={(e) => onSearch(e.target.value)}
             />
+            <SearchClear show={q} onClear={() => { setQ(''); }} />
           </div>
         </div>
 

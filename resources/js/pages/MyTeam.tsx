@@ -15,6 +15,7 @@ import HeaderFooterPanel, {
   type HeaderConfig, type FooterConfig,
 } from './hrms/doc-templates/HeaderFooterPanel';
 import '../../css/recruitment.css';
+import SearchClear from '../components/ui/SearchClear';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface TeamScope { kind: 'all' | 'client' | 'branch' | 'reports' | 'none'; label: string }
@@ -437,7 +438,10 @@ export default function MyTeam() {
         const nm = e.display_name || `${e.first_name || ''} ${e.last_name || ''}`.trim() || '—';
         return (
           <div className="d-flex align-items-center gap-2">
-            <span style={{ width: 32, height: 32, borderRadius: '50%', background: '#eef2ff', color: '#4338ca', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12, flexShrink: 0 }}>
+            {/* Same classes the legacy table's cells carry, so one dark rule
+                covers both surfaces — these were style-only and had nothing a
+                theme could hook onto. (CBC #15) */}
+            <span className="myteam-avatar" style={{ width: 32, height: 32, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12, flexShrink: 0 }}>
               {(e.display_name || e.first_name || 'E').split(/\s+/).slice(0, 2).map(s => s[0]).join('').toUpperCase()}
             </span>
             <div className="min-w-0">
@@ -448,17 +452,17 @@ export default function MyTeam() {
         );
       },
     },
-    { header: 'Code', accessorFn: r => r.emp_code || '', meta: { width: '9%' }, cell: info => <code style={{ fontSize: 11, background: '#fef3c7', color: '#a16207', padding: '2px 6px', borderRadius: 4 }}>{info.row.original.emp_code || '—'}</code> },
+    { header: 'Code', accessorFn: r => r.emp_code || '', meta: { width: '9%' }, cell: info => <code className="myteam-code-pill" style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4 }}>{info.row.original.emp_code || '—'}</code> },
     { header: 'Designation', accessorFn: r => r.designation?.name || '', cell: info => { const e = info.row.original; return <div><div style={{ fontWeight: 600 }}>{e.designation?.name || '—'}</div>{e.designation?.level && <div style={{ fontSize: 11.5, color: '#6b7280' }}>{e.designation.level}</div>}</div>; } },
     { header: 'Department', accessorFn: r => r.department?.name || '—' },
     { header: 'Branch', accessorFn: r => r.branch?.name || '—' },
     { header: 'Reports To', accessorFn: r => r.reports_to || r.reportingManager?.display_name || '—' },
-    { header: 'Status', accessorFn: r => r.status || 'Active', meta: { align: 'center' }, cell: info => <span style={{ padding: '2px 9px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: '#dcfce7', color: '#15803d' }}>{info.row.original.status || 'Active'}</span> },
+    { header: 'Status', accessorFn: r => r.status || 'Active', meta: { align: 'center' }, cell: info => <span className="myteam-status-pill" style={{ padding: '2px 9px', borderRadius: 999, fontSize: 11.5, fontWeight: 700 }}>{info.row.original.status || 'Active'}</span> },
   ], []);
 
   const approvalColumns = useMemo<DataTableColumn<ApprovalItem>[]>(() => [
-    { header: 'Module', accessorFn: r => moduleLabel(r.module), meta: { width: '12%' }, cell: info => { const r = info.row.original; return <span style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, background: r.module === 'expense' ? '#fef3c7' : r.module === 'leave' ? '#dcfce7' : '#dbeafe', color: r.module === 'expense' ? '#a16207' : r.module === 'leave' ? '#15803d' : '#1d4ed8' }}><i className={r.module === 'expense' ? 'ri-bill-line me-1' : r.module === 'leave' ? 'ri-calendar-2-line me-1' : 'ri-quill-pen-line me-1'} />{moduleLabel(r.module)}</span>; } },
-    { header: 'Document / Request', accessorFn: r => `${r.title} ${r.code || ''}`, cell: info => { const r = info.row.original; return <div><div style={{ fontWeight: 700 }}>{r.title}</div>{r.code && <code style={{ fontSize: 10.5, background: '#fef3c7', color: '#a16207', padding: '1px 6px', borderRadius: 4 }}>{r.code}</code>}</div>; } },
+    { header: 'Module', accessorFn: r => moduleLabel(r.module), meta: { width: '12%' }, cell: info => { const r = info.row.original; return <span className={`myteam-mod-pill myteam-mod-${r.module === 'expense' ? 'expense' : r.module === 'leave' ? 'leave' : 'other'}`} style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700 }}><i className={r.module === 'expense' ? 'ri-bill-line me-1' : r.module === 'leave' ? 'ri-calendar-2-line me-1' : 'ri-quill-pen-line me-1'} />{moduleLabel(r.module)}</span>; } },
+    { header: 'Document / Request', accessorFn: r => `${r.title} ${r.code || ''}`, cell: info => { const r = info.row.original; return <div><div style={{ fontWeight: 700 }}>{r.title}</div>{r.code && <code className="myteam-code-pill" style={{ fontSize: 10.5, padding: '1px 6px', borderRadius: 4 }}>{r.code}</code>}</div>; } },
     { header: 'Subject', accessorFn: r => `${r.subject_name} ${r.subject_dept}`, cell: info => { const r = info.row.original; return <div><div>{r.subject_name}</div><div style={{ fontSize: 11.5, color: '#6b7280' }}>{r.subject_dept}</div></div>; } },
     /* Reporting manager of the SUBJECT — the Employee List tab has carried a
        "Reports To" column all along, but the Approval List showed only the
@@ -466,7 +470,7 @@ export default function MyTeam() {
        line a request had come up. Same resolver server-side, so a Branch-User
        manager reads the same here as it does there. */
     { header: 'Reporting Manager', accessorFn: r => r.subject_manager || '', meta: { width: '12%' }, cell: info => { const v = info.row.original.subject_manager; return v ? <span style={{ fontSize: 12.5 }}>{v}</span> : <span style={{ fontSize: 12.5, color: '#9ca3af' }}>—</span>; } },
-    { header: 'Action', accessorFn: r => r.action, meta: { align: 'center' }, cell: info => { const r = info.row.original; return <span style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, background: r.action === 'Sign' ? '#fef3c7' : r.action === 'Approve' ? '#dcfce7' : '#e0e7ff', color: r.action === 'Sign' ? '#92400e' : r.action === 'Approve' ? '#15803d' : '#4338ca' }}>{r.action}</span>; } },
+    { header: 'Action', accessorFn: r => r.action, meta: { align: 'center' }, cell: info => { const r = info.row.original; return <span className={`myteam-action-pill myteam-action-${r.action}`} style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700 }}>{r.action}</span>; } },
     { header: 'Sent', accessorFn: r => r.created_at, cell: info => <span style={{ fontSize: 12, color: '#6b7280' }}>{new Date(info.row.original.created_at).toLocaleString()}</span> },
     {
       header: () => <div className="text-center">Take Action</div>, id: '__take', enableSorting: false, meta: { align: 'center', width: '18%' },
@@ -476,7 +480,7 @@ export default function MyTeam() {
           <div className="d-flex gap-1 flex-wrap justify-content-center">
             {r.module === 'document_signature' && (
               <Tooltip label="Preview the document before taking action">
-                <button type="button" onClick={() => setViewItem(r)} aria-label="Preview document" style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}><i className="ri-eye-line me-1" />View</button>
+                <button type="button" onClick={() => setViewItem(r)} aria-label="Preview document" className="myteam-view-btn" style={{ padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}><i className="ri-eye-line me-1" />View</button>
               </Tooltip>
             )}
             <Tooltip label="Open the decision dialog to Approve or Reject">
@@ -639,7 +643,9 @@ function EmployeesPanel({
       <CardBody style={{ padding: 0 }}>
         <div className="myteam-filter-row d-flex flex-wrap gap-2 align-items-center" style={{ padding: 12, borderBottom: '1px solid #e5e7eb' }}>
           <div className="rec-req-search search-box" style={{ flex: '1 1 260px', minWidth: 260 }}>
+            autoComplete="off"
             <Input type="text" className="form-control" placeholder="Search by name, code, email…" value={search} onChange={e => setSearch(e.target.value)} />
+            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
             <i className="ri-search-line search-icon" />
           </div>
           <span className="ms-auto" style={{ fontSize: 11.5, fontWeight: 700, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', padding: '5px 12px', borderRadius: 999 }}>
@@ -674,7 +680,7 @@ function EmployeesPanel({
                     <td>{sliceFrom + i + 1}</td>
                     <td>
                       <div className="d-flex align-items-center gap-2">
-                        <span className="myteam-avatar" style={{ width: 32, height: 32, borderRadius: '50%', background: '#eef2ff', color: '#4338ca', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>
+                        <span className="myteam-avatar" style={{ width: 32, height: 32, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>
                           {(e.display_name || e.first_name || 'E').split(/\s+/).slice(0,2).map(s => s[0]).join('').toUpperCase()}
                         </span>
                         <div>
@@ -683,7 +689,7 @@ function EmployeesPanel({
                         </div>
                       </div>
                     </td>
-                    <td><code className="myteam-code-pill" style={{ fontSize: 11, background: '#fef3c7', color: '#a16207', padding: '2px 6px', borderRadius: 4 }}>{e.emp_code || '—'}</code></td>
+                    <td><code className="myteam-code-pill" style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4 }}>{e.emp_code || '—'}</code></td>
                     <td>
                       <div style={{ fontWeight: 600 }}>{e.designation?.name || '—'}</div>
                       {e.designation?.level && <div className="myteam-muted" style={{ fontSize: 11.5, color: '#6b7280' }}>{e.designation.level}</div>}
@@ -692,7 +698,7 @@ function EmployeesPanel({
                     <td>{e.branch?.name || '—'}</td>
                     <td>{e.reportingManager?.display_name || '—'}</td>
                     <td>
-                      <span className="myteam-status-pill" style={{ padding: '2px 9px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: '#dcfce7', color: '#15803d' }}>
+                      <span className="myteam-status-pill" style={{ padding: '2px 9px', borderRadius: 999, fontSize: 11.5, fontWeight: 700 }}>
                         {e.status || 'Active'}
                       </span>
                     </td>
@@ -799,7 +805,7 @@ function ApprovalsPanel({
                       </td>
                       <td>
                         <div className="myteam-emp-name" style={{ fontWeight: 700 }}>{r.title}</div>
-                        {r.code && <code className="myteam-code-pill" style={{ fontSize: 10.5, background: '#fef3c7', color: '#a16207', padding: '1px 6px', borderRadius: 4 }}>{r.code}</code>}
+                        {r.code && <code className="myteam-code-pill" style={{ fontSize: 10.5, padding: '1px 6px', borderRadius: 4 }}>{r.code}</code>}
                       </td>
                       <td>
                         <div>{r.subject_name}</div>
@@ -1206,109 +1212,136 @@ function MyTeamDarkStyles() {
         letter-spacing: 0.05em !important;
         text-transform: uppercase;
       }
-      [data-bs-theme="dark"] .myteam-page .myteam-table tbody tr:hover td {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-table tbody tr:hover td {
         background: rgba(124,92,252,0.10);
       }
-      [data-bs-theme="dark"] .myteam-page .myteam-kpi-tile {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-kpi-tile {
         background-image: linear-gradient(180deg, rgba(124,92,252,0.10) 0%, rgba(124,92,252,0) 70%);
         box-shadow:
           0 8px 20px -4px rgba(0, 0, 0, 0.55),
           0 2px 6px rgba(0, 0, 0, 0.35);
       }
-      [data-bs-theme="dark"] .myteam-page .myteam-kpi-tile:hover {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-kpi-tile:hover {
         box-shadow:
           0 18px 36px -8px rgba(0, 0, 0, 0.65),
           0 4px 12px rgba(124, 92, 252, 0.25);
       }
 
-      [data-bs-theme="dark"] .myteam-page .myteam-header-icon {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-header-icon {
         background: linear-gradient(135deg, rgba(99,102,241,0.25), rgba(139,92,246,0.25)) !important;
       }
-      [data-bs-theme="dark"] .myteam-page .myteam-tab:not(.is-active) {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-tab:not(.is-active) {
         background: var(--vz-secondary-bg) !important;
         border-color: var(--vz-border-color) !important;
         color: var(--vz-body-color) !important;
       }
-      [data-bs-theme="dark"] .myteam-page .myteam-tab-count:not(.is-active) {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-tab-count:not(.is-active) {
         background: rgba(255,255,255,0.08) !important;
         color: rgba(255,255,255,0.65) !important;
       }
-      [data-bs-theme="dark"] .myteam-page .myteam-filter-row {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-filter-row {
         border-bottom-color: var(--vz-border-color) !important;
       }
-      [data-bs-theme="dark"] .myteam-page .myteam-kpi-tile {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-kpi-tile {
         background: var(--vz-card-bg) !important;
         border-color: var(--vz-border-color) !important;
       }
-      [data-bs-theme="dark"] .myteam-page .myteam-kpi-num { color: rgba(255,255,255,0.95) !important; }
-      [data-bs-theme="dark"] .myteam-page .myteam-kpi-label { color: rgba(255,255,255,0.55) !important; }
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-kpi-num { color: rgba(255,255,255,0.95) !important; }
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-kpi-label { color: rgba(255,255,255,0.55) !important; }
 
-      [data-bs-theme="dark"] .myteam-page .myteam-thead {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-thead {
         background: rgba(124,92,252,0.14) !important;
       }
-      [data-bs-theme="dark"] .myteam-page .myteam-thead-green {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-thead-green {
         background: rgba(34,197,94,0.10) !important;
       }
-      [data-bs-theme="dark"] .myteam-page .myteam-thead tr,
-      [data-bs-theme="dark"] .myteam-page .myteam-thead th,
-      [data-bs-theme="dark"] .myteam-page .myteam-thead-green tr,
-      [data-bs-theme="dark"] .myteam-page .myteam-thead-green th {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-thead tr,
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-thead th,
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-thead-green tr,
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-thead-green th {
         color: rgba(255,255,255,0.65) !important;
       }
-      [data-bs-theme="dark"] .myteam-page .myteam-table tbody td {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-table tbody td {
         border-bottom-color: var(--vz-border-color) !important;
         color: var(--vz-body-color);
       }
-      [data-bs-theme="dark"] .myteam-page .myteam-emp-name { color: rgba(255,255,255,0.95) !important; }
-      [data-bs-theme="dark"] .myteam-page .myteam-muted { color: rgba(255,255,255,0.55) !important; }
-      [data-bs-theme="dark"] .myteam-page .myteam-empty { color: rgba(255,255,255,0.5) !important; }
-      [data-bs-theme="dark"] .myteam-page .myteam-avatar {
-        background: rgba(124,92,252,0.20) !important; color: #c4b5fd !important;
-      }
-      [data-bs-theme="dark"] .myteam-page .myteam-code-pill {
-        background: rgba(251,191,36,0.18) !important; color: #fbbf24 !important;
-      }
-      [data-bs-theme="dark"] .myteam-page .myteam-status-pill {
-        background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important;
-      }
-      [data-bs-theme="dark"] .myteam-page .myteam-module-pill {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-emp-name { color: rgba(255,255,255,0.95) !important; }
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-muted { color: rgba(255,255,255,0.55) !important; }
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-empty { color: rgba(255,255,255,0.5) !important; }
+      /* Light-mode palette for the cells whose colours used to be inline.
+         They are on classes now so the dark rules below can actually reach
+         them — in the DataTable-driven lists the chips carried no class at
+         all, which is why the avatars, EMP codes and status pills stayed
+         pastel on the dark page. (CBC #15) */
+      .myteam-page .myteam-avatar      { background: #eef2ff; color: #4338ca; }
+      .myteam-page .myteam-code-pill   { background: #fef3c7; color: #a16207; }
+      .myteam-page .myteam-status-pill { background: #dcfce7; color: #15803d; }
+      .myteam-page .myteam-mod-expense { background: #fef3c7; color: #a16207; }
+      .myteam-page .myteam-mod-leave   { background: #dcfce7; color: #15803d; }
+      .myteam-page .myteam-mod-other   { background: #dbeafe; color: #1d4ed8; }
+      .myteam-page .myteam-action-Sign    { background: #fef3c7; color: #92400e; }
+      .myteam-page .myteam-action-Approve { background: #dcfce7; color: #15803d; }
+      .myteam-page .myteam-action-pill:not(.myteam-action-Sign):not(.myteam-action-Approve) { background: #e0e7ff; color: #4338ca; }
+      .myteam-page .myteam-view-btn    { background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; }
+      /* The module pill in the DataTable list uses the same tints as the
+         legacy .myteam-module-pill, so it answers to that dark rule too. */
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-mod-pill {
         background: rgba(96,165,250,0.18) !important; color: #93c5fd !important;
       }
-      [data-bs-theme="dark"] .myteam-page .myteam-action-Sign    { background: rgba(245,158,11,0.18) !important; color: #fbbf24 !important; }
-      [data-bs-theme="dark"] .myteam-page .myteam-action-Approve { background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important; }
-      [data-bs-theme="dark"] .myteam-page .myteam-action-Review\\ \\&\\ Acknowledge,
-      [data-bs-theme="dark"] .myteam-page [class*="myteam-action-"]:not(.myteam-action-Sign):not(.myteam-action-Approve) {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-mod-expense {
+        background: rgba(251,191,36,0.18) !important; color: #fbbf24 !important;
+      }
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-mod-leave {
+        background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important;
+      }
+
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-avatar {
+        background: rgba(124,92,252,0.20) !important; color: #c4b5fd !important;
+      }
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-code-pill {
+        background: rgba(251,191,36,0.18) !important; color: #fbbf24 !important;
+      }
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-status-pill {
+        background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important;
+      }
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-module-pill {
+        background: rgba(96,165,250,0.18) !important; color: #93c5fd !important;
+      }
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-action-Sign    { background: rgba(245,158,11,0.18) !important; color: #fbbf24 !important; }
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-action-Approve { background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important; }
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-action-Review\\ \\&\\ Acknowledge,
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page [class*="myteam-action-"]:not(.myteam-action-Sign):not(.myteam-action-Approve) {
         background: rgba(124,92,252,0.18) !important; color: #c4b5fd !important;
       }
-      [data-bs-theme="dark"] .myteam-page .myteam-view-btn {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-page .myteam-view-btn {
         background: rgba(99,102,241,0.18) !important; color: #c4b5fd !important;
         border-color: rgba(124,92,252,0.35) !important;
       }
 
       /* Modals — un-scoped because they render as siblings of the page. */
-      [data-bs-theme="dark"] .myteam-modal-card {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-modal-card {
         background: var(--vz-card-bg) !important;
         color: var(--vz-body-color);
       }
-      [data-bs-theme="dark"] .myteam-modal-body {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-modal-body {
         background: var(--vz-secondary-bg) !important;
       }
-      [data-bs-theme="dark"] .myteam-modal-footer {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-modal-footer {
         border-top-color: var(--vz-border-color) !important;
       }
-      [data-bs-theme="dark"] .myteam-form-card {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-form-card {
         background: var(--vz-card-bg) !important;
         border-color: var(--vz-border-color) !important;
       }
-      [data-bs-theme="dark"] .myteam-input {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-input {
         background: var(--vz-card-bg) !important;
         border-color: var(--vz-border-color) !important;
         color: var(--vz-body-color) !important;
       }
-      [data-bs-theme="dark"] .myteam-input::placeholder { color: rgba(255,255,255,0.45) !important; }
-      [data-bs-theme="dark"] .myteam-input-label { color: rgba(255,255,255,0.55) !important; }
-      [data-bs-theme="dark"] .myteam-hint { color: rgba(255,255,255,0.45) !important; }
-      [data-bs-theme="dark"] .myteam-btn-ghost {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-input::placeholder { color: rgba(255,255,255,0.45) !important; }
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-input-label { color: rgba(255,255,255,0.55) !important; }
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-hint { color: rgba(255,255,255,0.45) !important; }
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .myteam-btn-ghost {
         background: var(--vz-secondary-bg) !important;
         border-color: var(--vz-border-color) !important;
         color: var(--vz-body-color) !important;

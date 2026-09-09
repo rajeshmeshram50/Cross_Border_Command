@@ -16,6 +16,7 @@ import WorklistPager from '../../../components/ui/WorklistPager';
 import { VersionHistoryModal, AgreementTimelineModal, type CtcVersion, type CtcSigner } from './clmCtcModals';
 import { ShimmerTable } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /* Sent rows from GET /clm/ctc-contracts/sent — the AwsContract list shape
  * enriched with the clarification thread + approver so the Clarifications
@@ -330,8 +331,10 @@ export default function ClmAgreementsSentPage() {
               where the tab rail ends. */}
           <div className="aws-searchbox" style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 15px', borderRadius: 22, background: t.searchBg, border: `1.5px solid ${t.searchBorder}` }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2.4" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+            autoComplete="off"
             <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search agreements…"
               style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 11, fontWeight: 500, color: t.searchText, background: 'transparent', width: 190 }} />
+              <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
         </div>
 

@@ -9,6 +9,7 @@ import { useToast } from '../contexts/ToastContext';
 import Swal from 'sweetalert2';
 import { MasterSelect, MasterFormStyles } from './master/masterFormKit';
 import { bustClientFormBundle } from './client/clientFormBundleCache';
+import SearchClear from '../components/ui/SearchClear';
 
 interface OrgType {
   id: number;
@@ -200,10 +201,12 @@ export default function OrganizationTypes() {
                   <div className="search-box">
                     <Input
                       type="text"
+                      autoComplete="off"
                       placeholder="Search by name…"
                       value={search}
                       onChange={e => setSearch(e.target.value)}
                     />
+                    <SearchClear show={search} onClear={() => { setSearch(''); }} />
                   </div>
                 </Col>
                 <Col md={3} className="text-md-end">

@@ -8,6 +8,7 @@ import Tooltip from '../../../components/ui/Tooltip';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { MasterTimePicker } from '../../../components/ui/MasterTimePicker';
+import SearchClear from '../../../components/ui/SearchClear';
 import {
   remindersApi, meetingsApi,
   isoToDisplay, displayToIso, hmsToHm,
@@ -1044,10 +1045,12 @@ export default function SalesTodo() {
             </svg>
             <input
               type="text"
+              autoComplete="off"
               placeholder="Search by subject, opportunity ID, date…"
               value={q}
               onChange={e => { setQ(e.target.value); setPage(1); }}
             />
+            <SearchClear show={q} onClear={() => { setQ(''); setPage(1); }} />
           </div>
           <div className="td-toolbar-right">
             {canAdd && (
@@ -2297,11 +2300,13 @@ function TdSelect(props: {
               <input
                 ref={searchInputRef}
                 type="text"
+                autoComplete="off"
                 placeholder="Search…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 onKeyDown={e => { if (e.key !== 'Escape') e.stopPropagation(); }}
               />
+              <SearchClear show={search} onClear={() => { setSearch(''); }} />
             </div>
           )}
           <div className="td-cs-list">

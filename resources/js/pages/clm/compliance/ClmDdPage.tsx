@@ -11,6 +11,7 @@ import Tooltip from '../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 import { MasterMultiSelect } from '../../../components/ui/MasterMultiSelect';
 import { ClmSkeletonRows, SimpleDescModal, useScrollLock } from '../shared/clmCommon';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /* Central CLM → Due Diligence Master. 3-card faithful port. */
 
@@ -153,7 +154,9 @@ export default function ClmDdPage() {
         <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
           <div className="clm-search clm-search-fixed">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            autoComplete="off"
             <input type="text" placeholder="Search DD documents…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
           <div className="clm-total">
             <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>

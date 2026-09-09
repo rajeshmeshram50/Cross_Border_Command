@@ -6,6 +6,7 @@ import { leaveRequestsApi, ApiLeaveRequest, ApiLeaveApprover, ApiSandwichMeta } 
 import { useTheme } from '../../contexts/ThemeContext';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
+import SearchClear from '../../components/ui/SearchClear';
 
 type StatusFilter = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | 'All';
 
@@ -310,10 +311,12 @@ export default function HrLeaveApprovals() {
               <i className="ri-search-line" />
               <input
                 type="text"
+                autoComplete="off"
                 placeholder="Search by employee name or code..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
+              <SearchClear show={search} onClear={() => { setSearch(''); }} />
             </div>
             <button type="button" className="lp-icon-btn" aria-label="Refresh" onClick={refetch} title="Refresh">
               <i className="ri-refresh-line" />

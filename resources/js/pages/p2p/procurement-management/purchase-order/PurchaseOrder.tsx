@@ -8,6 +8,7 @@ import WorklistPager from '../../../../components/ui/WorklistPager';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { formatDmy } from '../../../../utils/formatDmy';
 import './purchase-order.css';
+import SearchClear from '../../../../components/ui/SearchClear';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Purchase Order (PO) — Procure to Pay (P2P) → Procurement Management.
@@ -628,7 +629,9 @@ export default function PurchaseOrder() {
             />
             <div className="polist-search">
               {Ico.search(16)}
+              autoComplete="off"
               <input type="text" placeholder="Search PO, supplier, ID or status..." value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} />
+              <SearchClear show={typeFilter} onClear={() => { setTypeFilter(''); setPage(1); }} />
             </div>
           </div>
         </div>

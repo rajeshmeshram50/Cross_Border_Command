@@ -10,6 +10,7 @@ import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { formatDmy } from '../../../../utils/formatDmy';
 import { useToast } from '../../../../contexts/ToastContext';
 import api from '../../../../api';
+import SearchClear from '../../../../components/ui/SearchClear';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Supplier Purchase Invoice (SPI) list — server-driven (teal theme).
@@ -382,7 +383,9 @@ export default function SupplierPurchaseInvoice() {
           </div>
           <div className="spi-search">
             <IcoSearch />
+            autoComplete="off"
             <input value={q} onChange={e => onSearch(e.target.value)} placeholder="Search SPI, supplier, PO or status..." />
+            <SearchClear show={q} onClear={() => { setQ(''); }} />
           </div>
         </div>
 

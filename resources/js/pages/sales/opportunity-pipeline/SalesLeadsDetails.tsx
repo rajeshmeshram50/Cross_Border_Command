@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import { useNavigateContext } from '../../../components/App';
+import SearchClear from '../../../components/ui/SearchClear';
 
 type ServerLead = {
   id:                number;
@@ -189,10 +190,12 @@ export default function SalesLeadsDetails() {
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             <input
               type="text"
+              autoComplete="off"
               placeholder="Search lead..."
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
+            <SearchClear show={search} onClear={() => { setSearch(''); }} />
           </div>
           <button className="ldd-back-btn" onClick={onBack}>
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>

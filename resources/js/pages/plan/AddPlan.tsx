@@ -5,6 +5,7 @@ import { Shimmer } from '../../components/ui/Shimmer';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { bustClientFormBundle } from '../client/clientFormBundleCache';
+import SearchClear from '../../components/ui/SearchClear';
 
 interface Props { onBack: () => void; editId?: number; }
 interface ModuleOption { id: number; name: string; slug: string; icon: string; }
@@ -1492,10 +1493,12 @@ export default function AddPlan({ onBack, editId }: Props) {
                       className="stylish-input"
                       value={modSearch}
                       onChange={e => setModSearch(e.target.value)}
+                      autoComplete="off"
                       placeholder="Search modules..."
                       style={{ paddingLeft: 34, fontSize: 13 }}
                       bsSize="sm"
                     />
+                    <SearchClear show={modSearch} onClear={() => { setModSearch(''); }} />
                   </div>
                 </div>
 

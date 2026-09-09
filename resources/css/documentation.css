@@ -308,3 +308,80 @@
 }
 [data-layout-mode="dark"] .doc-sheet .doc-inline-code,
 [data-bs-theme="dark"] .doc-sheet .doc-inline-code { color: #f783ac; }
+
+
+/* ── Dark mode ──────────────────────────────────────────────────────────────
+ * The page was written entirely against --vz-* tokens on the assumption that
+ * they flip with the theme. Where they do not resolve, every fallback in this
+ * file is a LIGHT value (#fff, #f3f3f9), so the shell, the left navigation
+ * panel and the document sheet all rendered white on the dark page — the
+ * reported inconsistency. HeaderFooterPanel hit the same thing and solved it
+ * the same way: pin explicit hexes for the dark surfaces instead of trusting
+ * the token to resolve, and answer to both theme attributes. (CBC #16)
+ * ========================================================================= */
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-page {
+  background: #1b2230;
+  border-color: rgba(255, 255, 255, .10);
+}
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-sidebar,
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-doc-head,
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-sheet {
+  background: #222831;
+  border-color: rgba(255, 255, 255, .10);
+  color: #e5e7eb;
+}
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-sheet {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .30);
+}
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-search,
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-group-count,
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-master-ico,
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-master-count {
+  background: rgba(255, 255, 255, .06);
+  border-color: rgba(255, 255, 255, .12);
+  color: #cbd5e1;
+}
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-group-head:hover,
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-master-item:hover {
+  background: rgba(255, 255, 255, .06);
+}
+/* Active item keeps its violet identity — just tuned for a dark ground. */
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-master-item.active {
+  background: rgba(124, 92, 252, .22);
+  color: #c4b5fd;
+}
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-master-item.active .doc-master-ico,
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-master-item.active .doc-master-count {
+  background: rgba(124, 92, 252, .28);
+  color: #ddd6fe;
+}
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-search input,
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-sheet .doc-h,
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-doc-title {
+  color: #f1f5f9;
+}
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-sheet .doc-h1,
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-sheet .doc-h2,
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-sheet .doc-hr,
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-sheet .doc-table th,
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-sheet .doc-table td {
+  border-color: rgba(255, 255, 255, .12);
+}
+/* Ghost / edit buttons in the doc head — light chips otherwise. */
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-edit-btn,
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-btn-ghost {
+  background: rgba(255, 255, 255, .06);
+  border-color: rgba(255, 255, 255, .16);
+  color: #e5e7eb;
+}
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-edit-btn:hover,
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-btn-ghost:hover {
+  background: rgba(255, 255, 255, .12);
+}
+/* Code blocks and quotes: the light wash reads as a bright slab on dark. */
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-sheet .doc-code,
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .doc-sheet .doc-quote {
+  background: rgba(255, 255, 255, .05);
+  border-color: rgba(255, 255, 255, .12);
+  color: #e5e7eb;
+}

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Col, Row, Input } from 'reactstrap';
 import api from '../../api';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
+import SearchClear from '../../components/ui/SearchClear';
 
 interface Props {
   clientId: number;
@@ -164,10 +165,12 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
                   <Input
                     type="text"
                     className="form-control"
+                    autoComplete="off"
                     placeholder="Search by name, code, city..."
                     value={searchInput}
                     onChange={e => setSearchInput(e.target.value)}
                   />
+                  <SearchClear show={searchInput} onClear={() => { setSearchInput(''); }} />
                   <i className="ri-search-line search-icon"></i>
                 </div>
               </Col>

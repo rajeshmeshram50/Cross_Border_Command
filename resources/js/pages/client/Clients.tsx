@@ -11,6 +11,7 @@ import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import type { Client, PaginatedResponse } from '../../types';
 import { readClientFormBundle, writeClientFormBundle } from './clientFormBundleCache';
+import SearchClear from '../../components/ui/SearchClear';
 
 interface Props {
   onNavigate: (page: string, data?: any) => void;
@@ -777,10 +778,12 @@ export default function Clients({ onNavigate }: Props) {
                   <Input
                     type="text"
                     className="form-control"
+                    autoComplete="off"
                     placeholder="Search by name or ID..."
                     value={searchInput}
                     onChange={e => setSearchInput(e.target.value)}
                   />
+                  <SearchClear show={searchInput} onClear={() => { setSearchInput(''); }} />
                   <i className="ri-search-line search-icon"></i>
                 </div>
               </div>

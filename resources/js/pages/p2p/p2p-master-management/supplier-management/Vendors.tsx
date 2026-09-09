@@ -16,6 +16,7 @@ import {
   writeVendorMasterBundle,
 } from './vendorBundleCache';
 import './supplier-management.css';
+import SearchClear from '../../../../components/ui/SearchClear';
 
 /* LAZY, not static. These three are only ever rendered behind a click, but a
    static import pulls them into the module graph the moment the list route
@@ -1101,10 +1102,12 @@ useEffect(() => {
                   : <svg className="sl-search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>}
                 <input
                   type="text"
+                  autoComplete="off"
                   placeholder="Search suppliers by name, code or contact…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
+                <SearchClear show={search} onClear={() => { setSearch(''); }} />
                 {search && (
                   <button type="button" className="sl-search-clear" title="Clear search" onClick={() => setSearch('')}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>

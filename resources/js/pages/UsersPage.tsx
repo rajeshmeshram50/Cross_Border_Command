@@ -3,6 +3,7 @@ import { Card, CardBody, Input } from 'reactstrap';
 import api from '../api';
 import { ShimmerTableRows } from '../components/ui/Shimmer';
 import WorklistPager from '../components/ui/WorklistPager';
+import SearchClear from '../components/ui/SearchClear';
 
 interface UserRow {
   id: number;
@@ -253,10 +254,12 @@ export default function UsersPage({ branchId, branchName, onBack }: Props) {
             <Input
               type="text"
               className="form-control"
+              autoComplete="off"
               placeholder={branchId ? 'Search employees by name, email or role...' : 'Search by name, email or role...'}
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
+            <SearchClear show={search} onClear={() => { setSearch(''); }} />
             <i className="ri-search-line search-icon"></i>
           </div>
 

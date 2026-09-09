@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from 'react';
 import type { AuthUser } from '../types';
 import api from '../api';
 
@@ -124,6 +124,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const token = localStorage.getItem('cbc_token');
     if (!token) return;
+    // Counts against the focus throttle too — a mount followed by the window
+    // taking focus is one arrival, not two reasons to re-read the user.
+    lastFocusRefreshAt.current = Date.now();
     refresh();
   }, []);
 
@@ -132,15 +135,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // /me, and on a flaky live server even a transient 401 would clear the
   // session and bounce the user to /login. With throttling, brief tab
   // hops don't fire /me at all; only after a real away period.
+  /* The throttle timestamp lives in a ref, not in the effect.
+   *
+   * It used to be a plain `let` inside an effect keyed on [user] — and
+   * refresh() calls setUser() with a freshly parsed object, so every /me
+   * changed the user reference, re-ran the effect and reset the timestamp to
+   * zero. The throttle could therefore never fire twice: each focus hit /me,
+   * each /me rearmed it. What the comment describes as "once per 60s" was in
+   * practice once per alt-tab, five 20 kB reads in a single visit to one
+   * screen.
+   *
+   * A ref survives the re-run, so the window is real. */
+  const lastFocusRefreshAt = useRef(0);
+
   useEffect(() => {
-    let lastFocusRefreshAt = 0;
     const FOCUS_REFRESH_THROTTLE_MS = 60 * 1000;
     const onFocus = () => {
       const token = localStorage.getItem('cbc_token');
       if (!token || !user) return;
       const now = Date.now();
-      if (now - lastFocusRefreshAt < FOCUS_REFRESH_THROTTLE_MS) return;
-      lastFocusRefreshAt = now;
+      if (now - lastFocusRefreshAt.current < FOCUS_REFRESH_THROTTLE_MS) return;
+      lastFocusRefreshAt.current = now;
       refresh();
     };
     window.addEventListener('focus', onFocus);

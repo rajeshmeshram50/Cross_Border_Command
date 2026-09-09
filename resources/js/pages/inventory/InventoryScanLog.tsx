@@ -5,6 +5,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import InventoryTabs from './InventoryTabs';
 import { listLogs, listAllocations, resetSimulation, type ScanLogRow } from './putAwayStore';
 import '../../../css/inventory-scan.css';
+import SearchClear from '../../components/ui/SearchClear';
 
 const time = (iso: string) => {
   const d = new Date(iso);
@@ -95,10 +96,12 @@ export default function InventoryScanLog() {
             <Input
               bsSize="sm"
               style={{ width: 200 }}
+              autoComplete="off"
               placeholder="Search code or payload…"
               value={q}
               onChange={e => setQ(e.target.value)}
             />
+            <SearchClear show={q} onClear={() => { setQ(''); }} />
           </div>
         </CardHeader>
         <CardBody className="p-0">

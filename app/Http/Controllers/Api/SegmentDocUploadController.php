@@ -983,8 +983,23 @@ class SegmentDocUploadController extends Controller
                     'pi_id'       => (int) $pi->id,
                     'pi_code'     => (string) ($pi->code ?: ('PI-' . $pi->id)),
                 ];
-                if ($type === 'consignee') array_unshift($tradeCons, $piRow);
-                else                       array_unshift($tradeBuyer, $piRow);
+                /* The PI is a BUYER-side document, so it goes on the buyer
+                   side and the party rules below decide who sees it.
+                 *
+                   It used to be pushed onto whichever side the vault was
+                   opened for, which put the customer's Proforma Invoice in a
+                   separate consignee's vault. A consignee is not a party to
+                   the PI — it is raised to the buyer, carries the buyer's
+                   commercial terms, and is signed by the buyer. Its own
+                   vault should hold the documents addressed to IT.
+                 *
+                   Filed on the buyer side, the existing selection does the
+                   rest without a special case: a separate consignee reads
+                   $tradeCons and no longer sees it, while a consignee that IS
+                   the customer reads the merged set and still does — because
+                   there the buyer and the consignee are one company and the
+                   PI genuinely is theirs. */
+                array_unshift($tradeBuyer, $piRow);
             }
 
             $cons = $lead->consignee_id ? $consById->get($lead->consignee_id) : null;

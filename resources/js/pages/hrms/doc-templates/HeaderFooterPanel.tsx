@@ -1119,22 +1119,22 @@ function chipStyle(active: boolean): React.CSSProperties {
 function HfpDarkStyles() {
   return (
     <style>{`
-      [data-bs-theme="dark"] .tpl-page-shell {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell {
         border-color: var(--vz-border-color) !important;
       }
       /* Pills sit on the (always-white) header/footer band — solid colors
          render the same in both themes, so we don't override them in dark
          mode anymore. Previous translucent-white overrides made the hint
          labels nearly invisible on the white preview band. */
-      [data-bs-theme="dark"] .tpl-page-shell .tpl-edit-hint {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell .tpl-edit-hint {
         background: #4b5563 !important;
         color: #ffffff !important;
       }
-      [data-bs-theme="dark"] .tpl-page-shell .tpl-drag-hint {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell .tpl-drag-hint {
         background: #4f46e5 !important;
         color: #ffffff !important;
       }
-      [data-bs-theme="dark"] .tpl-page-shell .tpl-page-body {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell .tpl-page-body {
         background: var(--vz-secondary-bg) !important;
       }
       /* Read-only DOCUMENT preview (Inbox sign/view, vault) — DARK "paper" in
@@ -1144,29 +1144,29 @@ function HfpDarkStyles() {
          Scoped to :has(.tpl-readonly-preview) so the live template EDITOR is
          unaffected. NOTE: the generated DOCX/PDF is still white — this is a
          dark-mode viewing surface only, not the printed output. */
-      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview),
-      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-body,
-      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-header,
-      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-footer {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:has(.tpl-readonly-preview),
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-body,
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-header,
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-footer {
         background: #1b2230 !important;
       }
-      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:has(.tpl-readonly-preview) {
         border-color: rgba(255,255,255,0.12) !important;
       }
-      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-header {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-header {
         border-bottom-color: rgba(255,255,255,0.10) !important;
       }
-      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-footer {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-footer {
         border-top-color: rgba(255,255,255,0.10) !important;
       }
       /* Force every preview text node (content + header title/subtitle +
          footer) light so nothing stays dark-on-dark. */
-      [data-bs-theme="dark"] .tpl-readonly-preview,
-      [data-bs-theme="dark"] .tpl-readonly-preview *,
-      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-header,
-      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-header *,
-      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-footer,
-      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-footer * {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-readonly-preview,
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-readonly-preview *,
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-header,
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-header *,
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-footer,
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-footer * {
         color: #e5e7eb !important;
       }
 
@@ -1177,28 +1177,35 @@ function HfpDarkStyles() {
          dark header/footer text doesn't vanish. Scoped with
          :not(:has(.tpl-readonly-preview)) so the read-only preview rules above
          keep owning the Inbox/vault surface. */
-      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-header,
-      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-footer {
+      /* Every dark rule in this block is written against BOTH theme
+         attributes. They were bound to [data-bs-theme="dark"] alone, so under
+         the [data-layout-mode="dark"] variant not one of them matched and the
+         header / footer design surface — page shell, logo placeholder, popover
+         chrome, the lot — kept the light palette its inline styles carry.
+         :is() keeps the specificity identical to a single attribute selector,
+         so the !importants below still land exactly where they did. (CBC #47) */
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-header,
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-footer {
         background: #1b2230 !important;
       }
-      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-header {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-header {
         border-bottom-color: rgba(255,255,255,0.10) !important;
       }
-      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-footer {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-footer {
         border-top-color: rgba(255,255,255,0.10) !important;
       }
-      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-header,
-      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-header *,
-      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-footer,
-      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-footer * {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-header,
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-header *,
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-footer,
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-footer * {
         color: #e5e7eb !important;
       }
-      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-body {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-body {
         color: #e5e7eb !important;
       }
       /* "LOGO" placeholder box (shown until a logo is uploaded) — inline
          #f8fafc + dashed light border stayed bright on the dark header band. */
-      [data-bs-theme="dark"] .tpl-page-shell .tpl-logo-placeholder {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell .tpl-logo-placeholder {
         background: rgba(255,255,255,0.04) !important;
         border-color: rgba(255,255,255,0.22) !important;
         color: rgba(255,255,255,0.50) !important;
@@ -1240,65 +1247,64 @@ function HfpDarkStyles() {
         box-shadow: 0 3px 10px rgba(99,102,241,0.35); transition: all .15s;
       }
       .tpl-popover-update:hover { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 6px 16px rgba(99,102,241,0.45); }
-      [data-bs-theme="dark"] .tpl-popover-foot,
-      [data-layout-mode="dark"] .tpl-popover-foot { background: #111827 !important; border-top-color: rgba(255,255,255,0.08) !important; }
-      [data-bs-theme="dark"] .tpl-popover {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-popover-foot { background: #111827 !important; border-top-color: rgba(255,255,255,0.08) !important; }
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-popover {
         background: #1e293b !important;
         border-bottom-color: #8b5cf6 !important;
       }
-      [data-bs-theme="dark"] .tpl-popover-label {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-popover-label {
         color: #94a3b8 !important;
       }
       /* The inline "(multi-line)" sub-span uses color: '#9ca3af' which
          is the same gray in both themes — readable but dim. Brighten
          slightly for dark mode. */
-      [data-bs-theme="dark"] .tpl-popover-label span { color: #cbd5e1 !important; }
-      [data-bs-theme="dark"] .tpl-popover-hint {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-popover-label span { color: #cbd5e1 !important; }
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-popover-hint {
         color: #94a3b8 !important;
       }
-      [data-bs-theme="dark"] .tpl-popover-warn {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-popover-warn {
         color: #fbbf24 !important;
       }
-      [data-bs-theme="dark"] .tpl-popover-input {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-popover-input {
         background: #0f172a !important;
         border-color: rgba(99,102,241,0.30) !important;
         color: #e2e8f0 !important;
       }
-      [data-bs-theme="dark"] .tpl-popover-input::placeholder {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-popover-input::placeholder {
         color: rgba(255,255,255,0.40) !important;
       }
-      [data-bs-theme="dark"] .tpl-popover-divider {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-popover-divider {
         border-top-color: rgba(99,102,241,0.30) !important;
       }
       /* The font-size / page-number-format range slider has no class —
          target the bare input[type=range] inside the popover. */
-      [data-bs-theme="dark"] .tpl-popover input[type="range"] {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-popover input[type="range"] {
         accent-color: #8b5cf6;
       }
 
       /* Inline chips (alignment selector, page-number alignment) */
-      [data-bs-theme="dark"] .tpl-chip:not(.is-active) {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-chip:not(.is-active) {
         background: #0f172a !important;
         border-color: rgba(99,102,241,0.30) !important;
         color: #e2e8f0 !important;
       }
-      [data-bs-theme="dark"] .tpl-chip.tpl-chip-reset {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-chip.tpl-chip-reset {
         background: rgba(245,158,11,0.18) !important;
         border-color: rgba(245,158,11,0.40) !important;
         color: #fbbf24 !important;
       }
 
-      [data-bs-theme="dark"] .tpl-toggle-chip:not(.is-on) {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-toggle-chip:not(.is-on) {
         background: #0f172a !important;
         border-color: rgba(99,102,241,0.30) !important;
         color: #e2e8f0 !important;
       }
 
-      [data-bs-theme="dark"] .tpl-color-swatch {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-color-swatch {
         background: #0f172a !important;
         border-color: rgba(99,102,241,0.30) !important;
       }
-      [data-bs-theme="dark"] .tpl-logo-remove {
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-logo-remove {
         background: rgba(248,113,113,0.18) !important;
         color: #fca5a5 !important;
       }
@@ -1311,7 +1317,7 @@ function HfpDarkStyles() {
         content: attr(data-placeholder);
         opacity: 0.45; pointer-events: none;
       }
-      [data-bs-theme="dark"] .tpl-editable:focus { background: rgba(99,102,241,0.10); }
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-editable:focus { background: rgba(99,102,241,0.10); }
     `}</style>
   );
 }

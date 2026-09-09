@@ -10,6 +10,7 @@ import Tooltip from '../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { ClmSkeletonRows, SimpleDescModal, useScrollLock } from '../shared/clmCommon';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /* Central CLM → Quality & Compliance Documents Master. 3-card faithful port. */
 
@@ -146,7 +147,9 @@ export default function ClmQcPage() {
         <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
           <div className="clm-search clm-search-fixed">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            autoComplete="off"
             <input type="text" placeholder="Search QC documents…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
           <div className="clm-total">
             <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>

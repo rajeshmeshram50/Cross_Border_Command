@@ -321,6 +321,25 @@
    weight + soft inset highlight + hover lift + border in the same hue
    as the text. Matches the Customer Type / Risk Level pill family so
    the visual language stays consistent across HR / Sales tables. */
+
+/* Urgency pills. Were inline {bg, fg} pairs in HrRecruitment.tsx — unreachable
+   by any stylesheet, so the light pastels came through on the dark Hiring
+   Request view as the one bright chip in the modal. Tints + readable text per
+   theme now. (CBC #6) */
+.rec-pill.rec-urg-low      { background: #d6f4e3; color: #108548; }
+.rec-pill.rec-urg-medium   { background: #fde8c4; color: #a4661c; }
+.rec-pill.rec-urg-high     { background: #fdd9d6; color: #b1401d; }
+.rec-pill.rec-urg-critical { background: #fdd9ea; color: #a02960; }
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .rec-pill.rec-urg-low      { background: rgba(16,133,72,0.20);  color: #6ee7b7; }
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .rec-pill.rec-urg-medium   { background: rgba(164,102,28,0.22); color: #fcd34d; }
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .rec-pill.rec-urg-high     { background: rgba(177,64,29,0.22);  color: #fca5a5; }
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .rec-pill.rec-urg-critical { background: rgba(160,41,96,0.24);  color: #f9a8d4; }
+/* The base pill's inset white highlight is a light-mode gloss; on a dark tint
+   it reads as a bright rim. */
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .rec-pill[class*="rec-urg-"] {
+  box-shadow: none;
+}
+
 .rec-pill {
   display: inline-flex; align-items: center;
   padding: 4px 12px;
@@ -4390,6 +4409,40 @@
    Exit Management Hub — page header, role chips, readiness bar, actions
    Modern SaaS polish: soft depth, smooth transitions, consistent radii.
    ════════════════════════════════════════════════════════════════════════ */
+
+/* Missing Exit Details tile — the one KPI card that filters the table, so it
+   is the one that gets affordances: a pointer, a lift on hover, and a ring
+   while its filter is on. The others are read-outs and deliberately stay
+   inert. (CBC #133) */
+.exit-page .rec-kpi-card.is-drillable { cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+.exit-page .rec-kpi-card.is-drillable:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(190,18,60,0.22); }
+.exit-page .rec-kpi-card.is-drillable:focus-visible { outline: 2px solid #fb7185; outline-offset: 2px; }
+.exit-page .rec-kpi-card.is-drillable.is-on { border-color: #fb7185; box-shadow: 0 0 0 2px rgba(251,113,133,0.45); }
+
+/* Banner under the tiles while the drill-in is active — the tab strip still
+   says "Active Employees", so the shortened list needs saying out loud. */
+.exit-drill-note {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border-radius: 10px;
+  font-size: 12.5px; font-weight: 600;
+  background: rgba(190, 18, 60, 0.08);
+  border: 1px solid rgba(251, 113, 133, 0.45);
+  color: #be123c;
+}
+.exit-drill-note button {
+  margin-left: auto; border: none; background: none; padding: 0;
+  font-size: 12.5px; font-weight: 700; color: #be123c;
+  text-decoration: underline; cursor: pointer;
+}
+[data-bs-theme="dark"] .exit-drill-note,
+[data-layout-mode="dark"] .exit-drill-note {
+  background: rgba(251, 113, 133, 0.14);
+  border-color: rgba(251, 113, 133, 0.40);
+  color: #fda4af;
+}
+[data-bs-theme="dark"] .exit-drill-note button,
+[data-layout-mode="dark"] .exit-drill-note button { color: #fda4af; }
+
 .exit-page-head {
   position: relative;
   display: flex; align-items: center; justify-content: space-between;
@@ -4447,24 +4500,27 @@
 .exit-page .exit-type-pill { padding: 3px 10px; font-size: 11px; }
 .exit-page .exit-bl-pill   { padding: 3px 8px;  font-size: 10.5px; }
 
-.exit-page .exit-type-pill--violet { background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; }
-.exit-page .exit-type-pill--teal   { background: #ecfdf5; color: #0d9488; border: 1px solid #a7f3d0; }
-.exit-page .exit-type-pill--red    { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+/* Tone classes are NOT scoped to .exit-page any more: the stage modal's locked
+   Exit Type badge lives outside that wrapper and now shares this palette
+   instead of carrying its own inline one. (CBC #5) */
+.exit-type-pill--violet { background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; }
+.exit-type-pill--teal   { background: #ecfdf5; color: #0d9488; border: 1px solid #a7f3d0; }
+.exit-type-pill--red    { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
 .exit-page .exit-bl-pill--on       { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
 .exit-page .exit-bl-pill--off      { background: #ecfdf5; color: #0d9488; border: 1px solid #a7f3d0; }
 
-[data-bs-theme="dark"] .exit-page .exit-type-pill--violet,
-[data-layout-mode="dark"] .exit-page .exit-type-pill--violet {
+[data-bs-theme="dark"] .exit-type-pill--violet,
+[data-layout-mode="dark"] .exit-type-pill--violet {
   background: rgba(124, 92, 252, 0.18); color: #c4b5fd; border-color: rgba(167, 139, 250, 0.45);
 }
-[data-bs-theme="dark"] .exit-page .exit-type-pill--teal,
-[data-layout-mode="dark"] .exit-page .exit-type-pill--teal,
+[data-bs-theme="dark"] .exit-type-pill--teal,
+[data-layout-mode="dark"] .exit-type-pill--teal,
 [data-bs-theme="dark"] .exit-page .exit-bl-pill--off,
 [data-layout-mode="dark"] .exit-page .exit-bl-pill--off {
   background: rgba(13, 148, 136, 0.20); color: #5eead4; border-color: rgba(45, 212, 191, 0.42);
 }
-[data-bs-theme="dark"] .exit-page .exit-type-pill--red,
-[data-layout-mode="dark"] .exit-page .exit-type-pill--red,
+[data-bs-theme="dark"] .exit-type-pill--red,
+[data-layout-mode="dark"] .exit-type-pill--red,
 [data-bs-theme="dark"] .exit-page .exit-bl-pill--on,
 [data-layout-mode="dark"] .exit-page .exit-bl-pill--on {
   background: rgba(239, 68, 68, 0.20); color: #fca5a5; border-color: rgba(248, 113, 113, 0.42);
@@ -6543,10 +6599,12 @@
   padding: 6px 14px; border-radius: 999px;
   font-size: 12.5px; font-weight: 700; letter-spacing: .01em;
 }
-/* Dark mode: the pastel fills wash out, so drop the tint and keep the outline
-   — the inline background/border are overridden, the text colour is not. */
-[data-bs-theme="dark"] .ep-type-badge,
-[data-layout-mode="dark"] .ep-type-badge {
+/* Dark mode fallback for a badge with NO tone class. One carrying
+   .exit-type-pill--* is excluded so it keeps the same coloured tint the Exit
+   Type column uses — this neutral grey chip beside a coloured pill was the
+   inconsistency. (CBC #5) */
+[data-bs-theme="dark"] .ep-type-badge:not([class*="exit-type-pill--"]),
+[data-layout-mode="dark"] .ep-type-badge:not([class*="exit-type-pill--"]) {
   background: rgba(255, 255, 255, 0.06) !important;
   border-color: rgba(255, 255, 255, 0.16) !important;
   filter: brightness(1.5);
@@ -12110,6 +12168,22 @@
   letter-spacing: 0.01em;
 }
 
+/* Template / Import Excel in dark mode. (#61)
+   .rec-btn-ghost fills with var(--vz-secondary-bg), which on this theme is a
+   lighter grey than the toolbar card these two sit on — so they read as two
+   pale chips beside Groups (translucent violet) and Add Holiday (gradient),
+   both of which sit ON the surface rather than above it. Match them: a barely
+   there white wash over the same surface, with the toolbar's own border
+   colour. Hover still comes from the base .rec-btn-ghost violet rule.
+   Scoped to this toolbar — the ghost button is used across a dozen other
+   screens where the lighter fill is correct against a card background. */
+[data-bs-theme="dark"] .holiday-page .dt-toolbar-actions .rec-btn-ghost,
+[data-layout-mode="dark"] .holiday-page .dt-toolbar-actions .rec-btn-ghost {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--vz-border-color);
+  color: var(--vz-body-color);
+}
+
 /* Groups button — the emphasised sibling of Template / Import Excel. (#96)
    These colours used to be an inline style attribute on the button, which
    beats every stylesheet rule including the dark-mode one. So in dark theme
@@ -12121,6 +12195,24 @@
    sits on the same surface as its neighbours: same violet accent the ghost
    button already uses on hover, so Groups still stands out as the "do this
    first" action without breaking out of the theme. */
+
+/* "Add Group" in the Holiday Groups modal header. Sits on the violet gradient
+   beside the × chip and now matches it: translucent white on the gradient,
+   white text, subtle border. (CBC #4) */
+.hol-grp-add-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; border-radius: 8px;
+  font-size: 11.5px; font-weight: 700; cursor: pointer;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.30);
+  color: #fff;
+  transition: background .15s ease, border-color .15s ease;
+}
+.hol-grp-add-btn:hover {
+  background: rgba(255, 255, 255, 0.30);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
 .holiday-page .hol-groups-btn {
   background: linear-gradient(135deg, #ede9fe, #ddd6fe);
   border: 1px solid #c4b5fd;
@@ -12752,6 +12844,51 @@
           .onb-input::placeholder { color: #9ca3af; font-weight: 400; }
           .onb-input:focus { outline: none; border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(124,92,252,0.15); }
           .onb-input.is-invalid { border-color: #f06548 !important; box-shadow: 0 0 0 3px rgba(240,101,72,0.15) !important; }
+          /* Department (MasterSelect) and Expected Joining Date
+             (MasterDatePicker) are custom controls with their own default
+             chrome, so next to the plain .onb-input fields they rendered a
+             different background, border radius and height — the form read as
+             two mismatched pairs. Scope the input skin onto their triggers so
+             all four fields in this modal look identical. */
+          .onb-modal-content .master-select-toggle,
+          .onb-modal-content .master-datepicker-toggle {
+            background: #fff !important;
+            border: 1px solid #e5e7eb !important;
+            border-radius: 12px !important;
+            padding: 14px 16px !important;
+            height: 50px !important;
+            min-height: 50px !important;
+            font-size: 14px !important;
+            color: #1f2937 !important;
+          }
+          .onb-modal-content .master-select-placeholder,
+          .onb-modal-content .master-datepicker-placeholder {
+            color: #9ca3af !important; font-weight: 400 !important; font-size: 14px !important;
+          }
+          .onb-modal-content .master-select-wrap.show .master-select-toggle,
+          .onb-modal-content .master-datepicker-toggle.open {
+            border-color: #a78bfa !important;
+            box-shadow: 0 0 0 3px rgba(124,92,252,0.15) !important;
+          }
+          .onb-modal-content .master-select-wrap.invalid .master-select-toggle,
+          .onb-modal-content .master-datepicker-wrap.invalid .master-datepicker-toggle {
+            border-color: #f06548 !important;
+            box-shadow: 0 0 0 3px rgba(240,101,72,0.15) !important;
+          }
+          [data-bs-theme="dark"] .onb-modal-content .master-select-toggle,
+          [data-bs-theme="dark"] .onb-modal-content .master-datepicker-toggle,
+          [data-layout-mode="dark"] .onb-modal-content .master-select-toggle,
+          [data-layout-mode="dark"] .onb-modal-content .master-datepicker-toggle {
+            background: #1c2531 !important;
+            border-color: var(--vz-border-color) !important;
+            color: var(--vz-body-color) !important;
+          }
+          [data-bs-theme="dark"] .onb-modal-content .master-select-placeholder,
+          [data-bs-theme="dark"] .onb-modal-content .master-datepicker-placeholder,
+          [data-layout-mode="dark"] .onb-modal-content .master-select-placeholder,
+          [data-layout-mode="dark"] .onb-modal-content .master-datepicker-placeholder {
+            color: var(--vz-secondary-color) !important;
+          }
           .onb-error { display: flex; align-items: center; gap: 4px; color: #f06548; font-size: 12px; margin-top: 6px; }
           .onb-error i { font-size: 13px; }
           [data-bs-theme="dark"] .onb-input { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
@@ -12991,8 +13128,72 @@
              Location) keep the same background and border as regular inputs
              so the form reads as one uniform grid. Only cursor: not-allowed
              signals that the field is not editable. */
+          /* One font-weight for every field VALUE in this form. (CBC #21)
+             Three different weights were meeting in the same row:
+               .emp-input                 → 400 (browser default)
+               .emp-input.is-readonly     → 500 (set below)
+               .master-datepicker-value   → 500 (MasterDatePicker.css)
+               .master-select-value       → 400
+             so in Organisational Details and Employment Terms a typed value sat
+             next to a bolder auto-filled one and a bolder date, which reads as
+             some fields being emphasised for a reason. 400 wins because it is
+             what the plain inputs — the majority of the form — already use.
+             Scoped to the employee modal: the date picker's 500 is deliberate
+             on other screens, and this is a fix for this form. */
+          .emp-modal-wide .emp-input,
+          .emp-modal-wide .emp-input.is-readonly,
+          .emp-modal-wide .master-select-value,
+          .emp-modal-wide .master-select-value-text,
+          .emp-modal-wide .master-datepicker-value {
+            font-weight: 400;
+          }
+
           .emp-input.is-readonly { background: #fff; border-color: #e5e7eb; color: #1f2937; font-weight: 500; cursor: not-allowed; }
           .emp-input.is-invalid { border-color: #f06548; box-shadow: 0 0 0 3px rgba(240,101,72,0.12); }
+          /* Selects and date pickers in this form are the custom MasterSelect /
+             MasterDatePicker controls, which ship their own chrome. Next to the
+             plain .emp-input fields (Work Country beside First/Middle/Last Name)
+             they rendered a different background, radius, padding and text size,
+             so the grid looked patchy. Give their triggers the .emp-input skin.
+             Scoped to the Add/Edit Employee modal only. */
+          .emp-modal-wide .master-select-toggle,
+          .emp-modal-wide .master-datepicker-toggle {
+            background: #fff !important;
+            border: 1px solid #e5e7eb !important;
+            border-radius: 8px !important;
+            padding: 9px 11px !important;
+            font-size: 13px !important;
+            min-height: 37px !important;
+            color: #1f2937 !important;
+          }
+          .emp-modal-wide .master-select-placeholder,
+          .emp-modal-wide .master-datepicker-placeholder {
+            color: #9ca3af !important; font-size: 13px !important; font-weight: 400 !important;
+          }
+          .emp-modal-wide .master-select-wrap.show .master-select-toggle,
+          .emp-modal-wide .master-datepicker-toggle.open {
+            border-color: #10b981 !important;
+            box-shadow: 0 0 0 3px rgba(16,185,129,0.15) !important;
+          }
+          .emp-modal-wide .master-select-wrap.invalid .master-select-toggle,
+          .emp-modal-wide .master-datepicker-wrap.invalid .master-datepicker-toggle {
+            border-color: #f06548 !important;
+            box-shadow: 0 0 0 3px rgba(240,101,72,0.12) !important;
+          }
+          [data-bs-theme="dark"] .emp-modal-wide .master-select-toggle,
+          [data-bs-theme="dark"] .emp-modal-wide .master-datepicker-toggle,
+          [data-layout-mode="dark"] .emp-modal-wide .master-select-toggle,
+          [data-layout-mode="dark"] .emp-modal-wide .master-datepicker-toggle {
+            background: #1c2531 !important;
+            border-color: var(--vz-border-color) !important;
+            color: var(--vz-body-color) !important;
+          }
+          [data-bs-theme="dark"] .emp-modal-wide .master-select-placeholder,
+          [data-bs-theme="dark"] .emp-modal-wide .master-datepicker-placeholder,
+          [data-layout-mode="dark"] .emp-modal-wide .master-select-placeholder,
+          [data-layout-mode="dark"] .emp-modal-wide .master-datepicker-placeholder {
+            color: var(--vz-secondary-color) !important;
+          }
           .emp-err { display: block; color: #c43d20; font-size: 11px; font-weight: 500; margin-top: 4px; }
           [data-bs-theme="dark"] .emp-input { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
           [data-bs-theme="dark"] .emp-input::placeholder { color: var(--vz-secondary-color); }
@@ -13107,6 +13308,57 @@
           [data-bs-theme="dark"] .emp-stepper-label.is-active { color: #c4b5fd; }
           [data-bs-theme="dark"] .emp-stepper-line { background: rgba(255,255,255,0.10); }
           [data-bs-theme="dark"] .emp-stepper-btn:hover .emp-stepper-circle:not(.is-active):not(.is-done) { background: rgba(124,92,252,0.18); border-color: rgba(124,92,252,0.45); color: #c4b5fd; }
+          /* Chrome paints its own background on any field it autofills
+             (:-webkit-autofill) and that beats our background declaration, so
+             Display Name / Employee Actual Name came up green-tinted while
+             First / Last Name — same CSS, same data — stayed on the normal
+             dark ground. background:none is ignored for autofilled inputs, so
+             the fill has to be repainted with a large inset shadow and the
+             text recoloured with -webkit-text-fill-color. */
+          .emp-input:-webkit-autofill,
+          .emp-input:-webkit-autofill:hover,
+          .emp-input:-webkit-autofill:focus,
+          .emp-input:-webkit-autofill:active,
+          .onb-input:-webkit-autofill,
+          .onb-input:-webkit-autofill:hover,
+          .onb-input:-webkit-autofill:focus,
+          .onb-input:-webkit-autofill:active {
+            -webkit-box-shadow: 0 0 0 1000px #fff inset !important;
+            box-shadow: 0 0 0 1000px #fff inset !important;
+            -webkit-text-fill-color: #1f2937 !important;
+            caret-color: #1f2937;
+            transition: background-color 5000s ease-in-out 0s;
+          }
+          [data-bs-theme="dark"] .emp-input:-webkit-autofill,
+          [data-bs-theme="dark"] .emp-input:-webkit-autofill:hover,
+          [data-bs-theme="dark"] .emp-input:-webkit-autofill:focus,
+          [data-bs-theme="dark"] .emp-input:-webkit-autofill:active,
+          [data-layout-mode="dark"] .emp-input:-webkit-autofill,
+          [data-layout-mode="dark"] .emp-input:-webkit-autofill:hover,
+          [data-layout-mode="dark"] .emp-input:-webkit-autofill:focus,
+          [data-layout-mode="dark"] .emp-input:-webkit-autofill:active,
+          [data-bs-theme="dark"] .onb-input:-webkit-autofill,
+          [data-bs-theme="dark"] .onb-input:-webkit-autofill:hover,
+          [data-bs-theme="dark"] .onb-input:-webkit-autofill:focus,
+          [data-bs-theme="dark"] .onb-input:-webkit-autofill:active,
+          [data-layout-mode="dark"] .onb-input:-webkit-autofill,
+          [data-layout-mode="dark"] .onb-input:-webkit-autofill:hover,
+          [data-layout-mode="dark"] .onb-input:-webkit-autofill:focus,
+          [data-layout-mode="dark"] .onb-input:-webkit-autofill:active {
+            -webkit-box-shadow: 0 0 0 1000px #1c2531 inset !important;
+            box-shadow: 0 0 0 1000px #1c2531 inset !important;
+            -webkit-text-fill-color: var(--vz-body-color) !important;
+            caret-color: var(--vz-body-color);
+          }
+          /* The dark skin was only bound to [data-bs-theme]; under the
+             [data-layout-mode="dark"] variant these fell back to the light
+             values while their neighbours went dark. */
+          [data-layout-mode="dark"] .emp-input { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
+          [data-layout-mode="dark"] .emp-input::placeholder { color: var(--vz-secondary-color); }
+          [data-layout-mode="dark"] .emp-input.is-readonly { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
+          [data-layout-mode="dark"] .onb-input { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
+          [data-layout-mode="dark"] .onb-input::placeholder { color: var(--vz-secondary-color); }
+
           [data-bs-theme="dark"] .emp-input.is-readonly { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
           .emp-footer-bar { background: #fff; border-top: 1px solid var(--vz-border-color); }
           [data-bs-theme="dark"] .emp-footer-bar { background: var(--vz-card-bg); border-top-color: var(--vz-border-color); }
@@ -13128,6 +13380,13 @@
           [data-bs-theme="dark"] .emp-payroll-banner { background: linear-gradient(135deg, rgba(124,92,252,0.18), rgba(124,92,252,0.10)); border-color: rgba(124,92,252,0.35); }
           .emp-payroll-banner-text { color: #5a3fd1; }
           [data-bs-theme="dark"] .emp-payroll-banner-text { color: #c4b5fd; }
+          .emp-payroll-banner-text { flex: 1 1 auto; min-width: 0; }
+          /* Was a hard-coded #6b7280, which is near-black on the dark card. */
+          .emp-payroll-banner-note { color: #6b7280; }
+          [data-bs-theme="dark"] .emp-payroll-banner-note,
+          [data-layout-mode="dark"] .emp-payroll-banner-note { color: var(--vz-secondary-color); }
+          [data-layout-mode="dark"] .emp-payroll-banner { background: linear-gradient(135deg, rgba(124,92,252,0.18), rgba(124,92,252,0.10)); border-color: rgba(124,92,252,0.35); }
+          [data-layout-mode="dark"] .emp-payroll-banner-text { color: #c4b5fd; }
           .emp-attn-text { color: #374151; }
           [data-bs-theme="dark"] .emp-attn-text { color: var(--vz-body-color); }
           .emp-dashed-btn-violet { background: #fff; color: #7c5cfc; border: 1px dashed #a78bfa; }

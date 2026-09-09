@@ -6,6 +6,7 @@ import WorklistPager from '../../components/ui/WorklistPager';
 import Tooltip from '../../components/ui/Tooltip';
 import { useToast } from '../../contexts/ToastContext';
 import './shipment-360.css';
+import SearchClear from '../../components/ui/SearchClear';
 
 type ShipmentRow = {
   id: number;
@@ -374,8 +375,10 @@ export default function DeveloperShipments() {
               type="text"
               value={q}
               onChange={e => { setQ(e.target.value); setPage(1); }}
+              autoComplete="off"
               placeholder="Search shipment ID, customer, route, status..."
             />
+            <SearchClear show={q} onClear={() => { setQ(''); setPage(1); }} />
           </div>
         </div>
 

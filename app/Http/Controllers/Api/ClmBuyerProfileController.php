@@ -598,10 +598,12 @@ class ClmBuyerProfileController extends Controller
                 $base['c_dd']  = $cp2 ? $cp2['dd']  : ['d' => 0, 't' => 0];
                 $base['c_tl']  = $cp2 ? $cp2['tl']  : ['d' => 0, 't' => 0];
                 $base['c_td']  = $docProgress($applicTd,  $tdPartyById,  $tdSigByLead[$lid]['Consignee']  ?? [], 'consignee');
-                /* The PI is the deal's first trade document for the consignee
-                   too — the Evidence Vault lists it on both sides, so leaving
-                   it out here made the consignee's total one short. */
-                if ($pi) { $base['c_td']['t'] += 1; if (isset($piSignedIds[(int) $pi->id])) $base['c_td']['d'] += 1; }
+                /* No PI in a SEPARATE consignee's count.
+                   It is a buyer-side document and the Evidence Vault no longer
+                   lists it on the consignee side, so counting it here would put
+                   this cell one ahead of the panel it summarises. A consignee
+                   that is also the customer still counts it: that row reads
+                   $tdBuyer, which carries the PI. */
                 $base['c_agr'] = $docProgress($applicAgr, $agrPartyById, $agrSigByLead[$lid]['Consignee'] ?? [], 'consignee');
 
             }

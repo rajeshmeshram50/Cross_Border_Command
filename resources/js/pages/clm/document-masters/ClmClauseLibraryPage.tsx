@@ -9,6 +9,7 @@ import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import { ClmSkeletonRows, DeleteConf } from '../shared/clmCommon';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import Tooltip from '../../../components/ui/Tooltip';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /* Locks <body> scroll while a modal is mounted, so the page behind the
  * overlay can't scroll-chain. Captures the prior overflow and restores it on
@@ -188,7 +189,9 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          autoComplete="off"
           <input type="text" placeholder="Search clause types…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
         </div>
         <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -347,7 +350,9 @@ function LibraryPane({ rows, types, loading, reload }: { rows: ClLib[]; types: C
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          autoComplete="off"
           <input type="text" placeholder="Search clause library…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
         </div>
         <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>

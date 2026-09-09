@@ -163,6 +163,29 @@ class ProformaInvoiceController extends Controller
 
         $data = $this->validatePayload($request);
 
+        /* A disqualified lead is a dead deal — nothing further may be raised
+         * against it.
+         *
+         * `disqualified` was only ever a display flag: nothing on either side
+         * enforced it, so a lead qualified at Stage 2, advanced to Stage 3 and
+         * then disqualified on the way back still ran every remaining stage and
+         * produced a Quotation and a PI (QA). Documents against a rejected
+         * opportunity are worse than a blocked click — they reach customers.
+         *
+         * Enforced here rather than only in the UI because this is the
+         * authoritative path; a stale tab or a direct call must fail too. */
+        if (!empty($data['opp_id'])) {
+            $leadRow = \App\Models\Lead::where('client_id', $user->client_id)
+                ->whereKey($data['opp_id'])
+                ->first(['id', 'opp_code', 'disqualified']);
+            if ($leadRow && $leadRow->disqualified) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'This opportunity (' . ($leadRow->opp_code ?: $leadRow->id) . ') is disqualified. Re-qualify it before raising documents against it.',
+                ], 422);
+            }
+        }
+
         // DCP gate: the customer (and consignee, if mapped) must have uploaded
         // every mandatory document for their segment before a PI can be made.
         if ($block = $this->partyDocsBlockResponse($user, $data['customer_id'] ?? null, $data['consignee_id'] ?? null)) {

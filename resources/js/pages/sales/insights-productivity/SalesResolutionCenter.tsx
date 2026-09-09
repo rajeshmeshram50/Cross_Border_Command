@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Resolution Center
@@ -167,10 +168,12 @@ export default function SalesResolutionCenter() {
           <input
             className="rc-search"
             type="text"
+            autoComplete="off"
             placeholder="Search opportunities…"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
+          <SearchClear show={search} onClear={() => { setSearch(''); }} />
         </div>
         <div className="rc-table-wrap">
           <table className="rc-table">

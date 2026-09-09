@@ -4,6 +4,7 @@ import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap
 // so the dropdown CSS must load whenever this module is imported — even when
 // the consumer only pulls in MasterMultiSelect / MasterFileInput / MasterFormStyles.
 import '../../components/ui/MasterSelect.css';
+import SearchClear from '../../components/ui/SearchClear';
 
 // MasterSelect and MasterDatePicker live in components/ui as standalone,
 // reusable UI primitives. They are re-exported here so existing
@@ -294,12 +295,14 @@ export function MasterMultiSelect({
               <input
                 type="text"
                 className="master-select-search-input"
+                autoComplete="off"
                 placeholder="Search…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 onKeyDown={e => e.stopPropagation()}
                 autoFocus
               />
+              <SearchClear show={search} onClear={() => { setSearch(''); }} />
             </div>
           )}
           {/* 203 = 5.5 rows at 37px each. Deliberately a half row: the sliced

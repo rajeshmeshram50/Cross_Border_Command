@@ -3,6 +3,7 @@ import { Col, Row, Progress, Modal, ModalBody } from 'reactstrap';
 import ComingSoonShell from '../../components/ComingSoonShell';
 import '../../../css/recruitment.css';
 import '../../../css/pip.css';
+import SearchClear from '../../components/ui/SearchClear';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types — backend will replace with /api/pip endpoints
@@ -1665,7 +1666,9 @@ function ScoreEngineView() {
         <div className="d-flex align-items-center flex-wrap gap-2 mb-3">
           <div className="lp-search-box flex-grow-1" style={{ minWidth: 220 }}>
             <i className="ri-search-line" />
+            autoComplete="off"
             <input type="text" placeholder="Search employee or role…" value={search} onChange={e => setSearch(e.target.value)} />
+            <SearchClear show={search} onClear={() => { setSearch(''); }} />
           </div>
           {(['all', 'PIP Trigger', 'Risk Zone', 'Watchlist', 'Healthy'] as ScoreFilter[]).map(f => (
             <button
@@ -1999,7 +2002,9 @@ function WatchlistView() {
       <div className="d-flex align-items-center flex-wrap gap-2 mb-3">
         <div className="lp-search-box flex-grow-1" style={{ minWidth: 260 }}>
           <i className="ri-search-line" />
+          autoComplete="off"
           <input type="text" placeholder="Search employee or role…" value={search} onChange={e => setSearch(e.target.value)} />
+          <SearchClear show={search} onClear={() => { setSearch(''); }} />
         </div>
         {(['all', 'PIP Trigger', 'Risk Zone', 'Watchlist'] as const).map(f => (
           <button
@@ -2329,7 +2334,9 @@ function PipStatusView() {
         </button>
         <div className="lp-search-box flex-grow-1" style={{ minWidth: 220 }}>
           <i className="ri-search-line" />
+          autoComplete="off"
           <input type="text" placeholder="Search employee or department…" value={search} onChange={e => setSearch(e.target.value)} />
+          <SearchClear show={search} onClear={() => { setSearch(''); }} />
         </div>
         <select className="lp-field-input" style={{ width: 130 }} value={risk} onChange={e => setRisk(e.target.value)}>
           <option value="All">All Risk</option>

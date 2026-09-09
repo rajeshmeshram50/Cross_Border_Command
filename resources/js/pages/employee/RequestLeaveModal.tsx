@@ -11,6 +11,7 @@ import {
   ApiEmployeeBalanceType,
 } from '../hrms/leavePlansApi';
 import '../../../css/request-leave-drawer.css';
+import SearchClear from '../../components/ui/SearchClear';
 
 interface NotifyEmployee {
   id: number;
@@ -563,6 +564,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                 <input
                   type="text"
                   className="lvr-input lvr-search-input"
+                  autoComplete="off"
                   placeholder="Search employees by name or code…"
                   value={notifySearch}
                   onChange={e => { setNotifySearch(e.target.value); setNotifyOpen(true); }}
@@ -571,6 +573,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                   aria-expanded={notifyOpen}
                   aria-controls="lvr-notify-panel"
                 />
+                <SearchClear show={notifySearch} onClear={() => { setNotifySearch(''); }} />
                 {/* Feedback sits in the field, where the user is looking. */}
                 {searchLoading
                   ? <i className="ri-loader-4-line lvr-search-spinner" aria-hidden="true" />

@@ -31,6 +31,7 @@ import PartyFilterModal, {
 const AddConsigneeModal = lazy(() => import('./AddConsigneeModal'));
 const ConsigneeEvidenceVaultModal = lazy(() => import('./ConsigneeEvidenceVaultModal'));
 import { readCustomerMasterBundle, writeCustomerMasterBundle } from '../customer/customerBundleCache';
+import SearchClear from '../../../../components/ui/SearchClear';
 const RISK_COLORS: Record<string, { bg: string; color: string; dot: string }> = {
   'Low':    { bg:'rgba(34,197,94,0.12)',  color:'#16a34a', dot:'#10b981' },
   'Medium': { bg:'rgba(245,158,11,0.14)', color:'#d97706', dot:'#f59e0b' },
@@ -673,10 +674,12 @@ export default function SalesConsignee() {
             <i className="ri-search-line smcg-search-icon" />
             <input
               type="text"
+              autoComplete="off"
               placeholder="Search by consignee ID, customer, company, country, risk..."
               value={q}
               onChange={(e) => onSearch(e.target.value)}
             />
+            <SearchClear show={q} onClear={() => { setQ(''); }} />
           </div>
           {/* Filter — opens the same two-pane modal the Lead Worksheet and the
               Customer list use. The badge shows how many values are active, so
@@ -922,9 +925,11 @@ export default function SalesConsignee() {
                   type="search"
                   value={mappedSearch}
                   onChange={e => setMappedSearch(e.target.value)}
+                  autoComplete="off"
                   placeholder="Search customers…"
                   style={{ width: '100%', padding: '9px 14px 9px 36px', borderRadius: 10, border: `1px solid ${mc.border}`, background: mc.card, color: mc.textStrong, fontSize: 13, outline: 'none' }}
                 />
+                <SearchClear show={mappedSearch} onClear={() => { setMappedSearch(''); }} />
               </div>
             </div>
             {/* Table — ~5 rows visible, the rest scroll (header ~44px + 5×~46px). */}

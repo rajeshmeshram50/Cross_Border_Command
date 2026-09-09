@@ -4,6 +4,7 @@ import { Row, Col } from 'reactstrap';
 import { useAuth } from '../../contexts/AuthContext';
 import { HR_GROUPS } from '../../constants';
 import type { MenuChild, MenuGroup } from '../../types';
+import SearchClear from '../../components/ui/SearchClear';
 
 // Maps HR leaf ids to the route they should open. Mirrors `hrLeafLink` in
 // LayoutMenuData.tsx — kept in sync here so the overview cards and the
@@ -216,9 +217,11 @@ export default function HrDashboard() {
           type="text"
           value={search}
           onChange={e => setSearch(e.target.value)}
+          autoComplete="off"
           placeholder="Search HR modules — e.g. Payroll, Attendance, Leave, Recruitment…"
           style={{ flexGrow: 1, border: 'none', outline: 'none', fontSize: 13, color: 'var(--vz-body-color)', background: 'transparent' }}
         />
+        <SearchClear show={search} onClear={() => { setSearch(''); }} />
         {hasSearch && (
           <>
             <span style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600, background: 'var(--vz-secondary-bg)', borderRadius: 20, padding: '2px 10px', border: '1px solid var(--vz-border-color)' }}>

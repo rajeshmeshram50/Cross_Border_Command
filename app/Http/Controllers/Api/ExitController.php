@@ -2232,6 +2232,29 @@ class ExitController extends Controller
     }
 
     /**
+     * The salary structure in force today, as PAYROLL resolves it. (CBC #132)
+     *
+     * This used to be a hand-rolled copy of PayrollService::activeStructure()'s
+     * query — same statuses, same effective_from filter, same effective_from +
+     * version ordering — but WITHOUT its tie-break. That omission is the bug:
+     * effective_from + version is not unique in this database (re-run seeders
+     * and any insert path that does not bump the version leave several rows at
+     * version 1 on the same date, some employees carrying seven). With both
+     * sort keys tied the database returned whichever row it liked, in practice
+     * the OLDEST duplicate, so Stage 2 quoted a Monthly Gross off a stale row
+     * while Salary Setup, the Employee form and every payslip used the row
+     * flagged 'active'.
+     *
+     * Calling the service instead of re-copying the query means the next
+     * ordering fix lands here too, which is the failure mode this bug was.
+     */
+    private function inForceStructure(Employee $employee): ?\App\Models\SalaryStructure
+    {
+        return app(\App\Services\PayrollService::class)
+            ->activeStructure($employee, \Carbon\Carbon::now(self::DISPLAY_TZ));
+    }
+
+    /**
      * Monthly basic for the exit settlement, using the SAME precedence as
      * PayrollService::resolveCompensation() so the exit and a payroll run price
      * a day off the same figure:
@@ -2239,20 +2262,13 @@ class ExitController extends Controller
      *   2. annual_salary ÷ 12 × 50%  (the engine's fallback split)
      *   3. 0 — nothing on file; HR types the figure in, as before.
      *
-     * The structure lookup mirrors PayrollService::structureFor(): statuses are
-     * stored LOWER-case and 'superseded' still counts (a newer draft must not
-     * hide the version actually in force), ordered by effective date then
-     * version. Matching that query is the whole point — a different one here
-     * would quietly price the exit off a different structure than payroll used.
+     * The structure comes from inForceStructure(), which defers to
+     * PayrollService::activeStructure() — see the note there on why this must
+     * not be a hand-rolled copy of that query.
      */
     private function resolveMonthlyBasic(Employee $employee): float
     {
-        $structure = \App\Models\SalaryStructure::where('employee_id', $employee->id)
-            ->whereIn('status', ['active', 'superseded'])
-            ->whereDate('effective_from', '<=', \Carbon\Carbon::now(self::DISPLAY_TZ))
-            ->orderByDesc('effective_from')
-            ->orderByDesc('version')
-            ->first();
+        $structure = $this->inForceStructure($employee);
         if ($structure) {
             $basic = (float) $structure->basicAmount();
             if ($basic > 0) return round($basic, 2);
@@ -2273,22 +2289,15 @@ class ExitController extends Controller
      * earned during the notice they did not serve, not against the basic
      * component alone, so it is quoted on gross.
      *
-     * Same structure lookup as resolveMonthlyBasic() — deliberately duplicated
-     * rather than parameterised so the two read identically at a glance; the
-     * point of matching PayrollService::structureFor() is that the exit and
-     * payroll price off the same in-force structure.
+     * Same structure lookup as resolveMonthlyBasic(): both go through
+     * inForceStructure() so the exit and payroll price off the same row.
      *
      * Precedence: the structure's gross, then a structure that only carries a
      * basic (doubled back out of the engine's 50% split), then annual ÷ 12.
      */
     private function resolveMonthlyGross(Employee $employee): float
     {
-        $structure = \App\Models\SalaryStructure::where('employee_id', $employee->id)
-            ->whereIn('status', ['active', 'superseded'])
-            ->whereDate('effective_from', '<=', \Carbon\Carbon::now(self::DISPLAY_TZ))
-            ->orderByDesc('effective_from')
-            ->orderByDesc('version')
-            ->first();
+        $structure = $this->inForceStructure($employee);
         if ($structure) {
             $gross = (float) $structure->monthly_gross;
             if ($gross > 0) return round($gross, 2);

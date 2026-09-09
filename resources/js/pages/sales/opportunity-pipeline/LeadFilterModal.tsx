@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Lead Filter modal.
@@ -356,10 +357,12 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
               </svg>
               <input
                 className="lfm-search"
+                autoComplete="off"
                 placeholder={`Search ${(activeMenu?.label ?? '').toLowerCase()}…`}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
+              <SearchClear show={search} onClear={() => { setSearch(''); }} />
             </div>
 
             <div className="lfm-options">

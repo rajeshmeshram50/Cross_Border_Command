@@ -3,6 +3,7 @@ import api from '../../../api';
 import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from '../../p2p/p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 import ClmDocsPopup, { type DocCategory } from '../shared/ClmDocsPopup';
 import Tooltip from '../../../components/ui/Tooltip';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /*
  * CLM → Supplier Profile.
@@ -753,7 +754,10 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
   return (
     <div className="sp-search" style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '36px', padding: '0 14px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)', flex: 1, maxWidth: '680px' }}>
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round" style={{ flexShrink: 0, opacity: 0.7 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-      <input type="text" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', flex: 1, background: 'transparent', minWidth: 0 }} />
+      <input type="text" autoComplete="off" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', flex: 1, background: 'transparent', minWidth: 0 }} />
+      {/* Inside the box, not beside it: SearchBox owns its own flex row, so a
+          sibling would sit outside the border with the ⌘K chip between them. */}
+      <SearchClear show={value} onClear={() => onChange('')} />
       <span style={{ fontSize: '9px', fontWeight: 600, color: '#94a3b8', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '5px', padding: '2px 6px', whiteSpace: 'nowrap', flexShrink: 0 }}>⌘ K</span>
     </div>
   );

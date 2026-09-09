@@ -7,6 +7,7 @@ import { truncSegment } from '../../../../utils/segmentLabel';
 import AddConsigneeModal, { type ConsigneeRow } from '../consignee/AddConsigneeModal';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import { useTheme } from '../../../../contexts/ThemeContext';
+import SearchClear from '../../../../components/ui/SearchClear';
 
 
 export interface CustomerLite {
@@ -193,10 +194,12 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
               <input
                 type="search"
+                autoComplete="off"
                 placeholder="Search consignees…"
                 value={q}
                 onChange={e => setQ(e.target.value)}
               />
+              <SearchClear show={q} onClear={() => { setQ(''); }} />
             </div>
             <div className="ccm-toolbar-right">
               <span className="ccm-count">{filtered.length} {filtered.length === 1 ? 'consignee' : 'consignees'}</span>
@@ -232,12 +235,21 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr className="ccm-empty"><td colSpan={11}>
-                      <div className="ccm-empty-state">
-                        <span className="ccm-empty-spinner" />
-                        <span>Loading consignees…</span>
-                      </div>
-                    </td></tr>
+                    /* Skeleton rows, not a spinner in a merged cell (QA #10).
+                       A single centred spinner collapses the eleven columns into
+                       one and the table visibly reflows when the rows arrive;
+                       shimmer in the real cells keeps the grid still and shows
+                       what is coming. Five rows because that is this modal's page
+                       size, so nothing jumps when the data lands. */
+                    Array.from({ length: 5 }).map((_, r) => (
+                      <tr key={`skel-${r}`} className="ccm-skel-row">
+                        {Array.from({ length: 11 }).map((__, c) => (
+                          <td key={c}>
+                            <span className={`ccm-skel ${c === 2 ? 'ccm-skel-lg' : c === 0 ? 'ccm-skel-xs' : 'ccm-skel-md'}`} />
+                          </td>
+                        ))}
+                      </tr>
+                    ))
                   ) : filtered.length === 0 ? (
                     <tr className="ccm-empty">
                       <td colSpan={11}>
@@ -675,6 +687,26 @@ const SCOPED_CSS = `
 }
 .ccm-empty td strong { color: #047857; }
 .ccm-empty-state { display: inline-flex; align-items: center; gap: 10px; color: #047857; font-weight: 600; }
+/* Loading skeleton for the consignee table. Emerald-tinted to match this
+   modal's accent, and the same 1.1s sweep the worksheet and the agreement
+   popup use so loading reads the same everywhere in the app. */
+.ccm-skel-row td { padding-top: 14px; padding-bottom: 14px; }
+.ccm-skel-row:hover td { background: transparent !important; }
+.ccm-skel {
+  display: inline-block; height: 10px; border-radius: 4px; vertical-align: middle;
+  background: linear-gradient(90deg, #d1fae5 0%, #ecfdf5 50%, #d1fae5 100%);
+  background-size: 200% 100%;
+  animation: ccm-shimmer 1.1s ease-in-out infinite;
+}
+.ccm-skel-xs { width: 24px; }
+.ccm-skel-md { width: 70px; }
+.ccm-skel-lg { width: 130px; }
+@keyframes ccm-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .ccm-skel { animation: none; } }
+[data-bs-theme="dark"] .ccm-skel {
+  background: linear-gradient(90deg, #0f3b2e 0%, #14523d 50%, #0f3b2e 100%);
+  background-size: 200% 100%;
+}
 .ccm-empty-spinner {
   width: 16px; height: 16px; border-radius: 50%;
   border: 2.5px solid rgba(5,150,105,0.22);
