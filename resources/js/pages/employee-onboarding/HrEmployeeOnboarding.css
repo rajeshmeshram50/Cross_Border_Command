@@ -158,6 +158,10 @@
         /* Status & badge pills — match HrEmployees */
         .onb-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
         .onb-pill .d { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+        /* Payroll's Status chip sits in a cell that no longer clips (meta.wrap),
+           so the label must refuse to break instead — otherwise "Pending Review"
+           would fold onto two lines in a narrow column. (CBC #3) */
+        .onb-pill.pay-status-pill { white-space: nowrap; }
         .onb-id-pill { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: #ece6ff; color: #5a3fd1; font-family: var(--vz-font-monospace, monospace); font-weight: 700; font-size: 12px; letter-spacing: 0.02em; }
         .onb-role-pill {
           /* inline-block, not inline-flex: the pill renders through ChipCell,
@@ -522,6 +526,24 @@
            line with the rest of the module's interactive feel. The
            inline `style` props above each button still set the base
            paint; these rules only kick in on hover/active. */
+        /* Signed-document preview: footer + Close button. (CBC #6)
+           Both were inline `var(--vz-card-bg, #fff)`. Unlike --vz-secondary-bg
+           (which the scrolling body above uses, and which is global and did go
+           dark) --vz-card-bg is not defined outside a .card in this theme, so
+           the fallback applied and the action bar rendered white under a dark
+           document — the reported white strip.
+           Explicit hexes here, and !important because the values they replace
+           are inline declarations on the elements themselves. */
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-prev-foot {
+          background: #222831 !important;
+          border-top-color: rgba(255,255,255,0.10) !important;
+        }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-prev-btn--ghost {
+          background: rgba(255,255,255,0.06) !important;
+          border-color: rgba(255,255,255,0.18) !important;
+          color: #e5e7eb !important;
+        }
+
         .tpl-prev-btn { transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease, box-shadow .18s ease; }
         .tpl-prev-btn:hover { transform: translateY(-1px); }
         .tpl-prev-btn:active { transform: translateY(0); }
@@ -920,7 +942,22 @@
            before "Payroll Configuration" is unchanged. */
         .onb-init-toggle-sticky .onb-init-toggle-row { margin-top: 0; }
         .onb-init-toggle-sticky .onb-init-toggle-hint { margin-bottom: 0; }
-        [data-bs-theme="dark"] .onb-init-toggle-sticky { background: var(--vz-card-bg); }
+        /* The pinned row MUST be opaque — it is what stops the fields scrolling
+           underneath from showing through it. Two ways it was failing: (CBC #5)
+             1. `var(--vz-card-bg)` carried NO fallback. Where that token does
+                not resolve the declaration is invalid at computed-value time,
+                which makes the background TRANSPARENT rather than falling back
+                to the light #fff above — so the Compensation rows slid straight
+                through the toggle and its label, which is the reported overlap.
+             2. It answered to [data-bs-theme] only, so under the
+                [data-layout-mode="dark"] variant the wrapper kept the light
+                #fff while everything scrolling under it was dark.
+           An explicit hex fixes both. isolation:isolate keeps the pinned row in
+           its own stacking context so a positioned control inside a field below
+           cannot paint over it regardless of z-index. */
+        [data-bs-theme="dark"] .onb-init-toggle-sticky,
+        [data-layout-mode="dark"] .onb-init-toggle-sticky { background: #222831; }
+        .onb-init-toggle-sticky { isolation: isolate; }
 
         .onb-init-info-banner { background: #d3f0ee; border: 1px solid #a8e0d6; border-radius: 9px; padding: 9px 14px; font-size: 11px; color: #0a716a; margin: 10px 0; display: flex; align-items: center; gap: 8px; }
         [data-bs-theme="dark"] .onb-init-info-banner { background: rgba(10,113,106,0.16); border-color: rgba(10,179,156,0.36); color: #4dd4be; }
@@ -1426,7 +1463,45 @@
            `.is-required` is a marker; it stays visually neutral so empty
            required fields don't look like errors before validation runs. */
         [data-bs-theme="dark"] .onb-init-input.is-autofilled,
-        [data-bs-theme="dark"] .onb-prov-input.is-autofetched { background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.40); }
+        [data-layout-mode="dark"] .onb-init-input.is-autofilled,
+        [data-bs-theme="dark"] .onb-prov-input.is-autofetched,
+        [data-layout-mode="dark"] .onb-prov-input.is-autofetched { background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.40); }
+
+        /* The green tint is this form's signal for "auto-filled / locked", so
+           nothing ELSE may paint a field. Chrome does exactly that on any field
+           it autofills (:-webkit-autofill), and its wash is close enough to the
+           tint that First Name coming back highlighted read as the same "auto"
+           treatment applied at random. background is ignored on an autofilled
+           input, so the fill has to be repainted with a large inset shadow and
+           the text recoloured with -webkit-text-fill-color. (CBC #4) */
+        .onb-init-input:-webkit-autofill,
+        .onb-init-input:-webkit-autofill:hover,
+        .onb-init-input:-webkit-autofill:focus,
+        .onb-ee-input:-webkit-autofill,
+        .onb-ee-input:-webkit-autofill:hover,
+        .onb-ee-input:-webkit-autofill:focus {
+          -webkit-box-shadow: 0 0 0 1000px #fff inset !important;
+          box-shadow: 0 0 0 1000px #fff inset !important;
+          -webkit-text-fill-color: #1f2937 !important;
+          caret-color: #1f2937;
+          transition: background-color 5000s ease-in-out 0s;
+        }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .onb-init-input:-webkit-autofill,
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .onb-init-input:-webkit-autofill:hover,
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .onb-init-input:-webkit-autofill:focus,
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .onb-ee-input:-webkit-autofill,
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .onb-ee-input:-webkit-autofill:hover,
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .onb-ee-input:-webkit-autofill:focus {
+          -webkit-box-shadow: 0 0 0 1000px #1c2531 inset !important;
+          box-shadow: 0 0 0 1000px #1c2531 inset !important;
+          -webkit-text-fill-color: var(--vz-body-color) !important;
+          caret-color: var(--vz-body-color);
+        }
+        /* An autofilled field that IS auto-filled by us keeps the green. */
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .onb-init-input.is-autofilled:-webkit-autofill {
+          -webkit-box-shadow: 0 0 0 1000px rgba(16,185,129,0.10) inset !important;
+          box-shadow: 0 0 0 1000px rgba(16,185,129,0.10) inset !important;
+        }
 
         /* Profile completion banner — help text */
         [data-bs-theme="dark"] .onb-init-profile-help { color: #c4b5fd; }

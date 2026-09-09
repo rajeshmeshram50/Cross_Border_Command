@@ -897,18 +897,19 @@ export default function TemplateFormPage() {
         <div className="tpl-form-footer" style={{ padding: 14, borderTop: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, borderRadius: '0 0 14px 14px' }}>
           <button type="button" onClick={() => handleSubmit(true)} disabled={saving}
             className="tpl-btn-ghost"
-            style={{ padding: '8px 16px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+            style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             {saving ? <><Spin /> Saving…</> : <><i className="ri-draft-line me-1" /> Save as Draft</>}
           </button>
           <div className="d-flex gap-2">
             <button type="button" onClick={() => navigate('/hr/doc-templates')} disabled={saving}
               className="tpl-btn-ghost"
-              style={{ padding: '8px 16px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+              /* Palette lives in .tpl-btn-ghost — see the dark-mode note there. */
+              style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
               Cancel
             </button>
             <button type="button" onClick={handleBack} disabled={step === 1 || saving}
               className="tpl-btn-ghost"
-              style={{ padding: '8px 16px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: step === 1 ? '#9ca3af' : '#374151', cursor: step === 1 ? 'default' : 'pointer' }}>
+              style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: step === 1 ? 'default' : 'pointer' }}>
               ← Back
             </button>
             {step < STEPS.length ? (
@@ -1637,10 +1638,29 @@ function TplFormDarkStyles() {
         background: var(--vz-secondary-bg) !important;
         border-top-color: var(--vz-border-color) !important;
       }
-      [data-bs-theme="dark"] .tpl-form-page .tpl-btn-ghost {
+      /* Both dark attributes. The rule was bound to [data-bs-theme] alone, so
+         under the [data-layout-mode="dark"] variant nothing matched and the
+         buttons kept the inline light palette they used to carry — Cancel and
+         Back sat as two white chips on the dark footer. (CBC #46)
+         The fill/border/text are now on the class rather than inline, so a
+         stylesheet can actually reach them without needing !important to beat
+         an inline declaration. */
+      .tpl-form-page .tpl-btn-ghost {
+        background: #fff;
+        border: 1px solid #d1d5db;
+        color: #374151;
+      }
+      .tpl-form-page .tpl-btn-ghost:disabled { color: #9ca3af; cursor: default; }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-btn-ghost,
+      [data-layout-mode="dark"] .tpl-form-page .tpl-btn-ghost {
         background: var(--vz-card-bg) !important;
         border-color: var(--vz-border-color) !important;
         color: var(--vz-body-color) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-btn-ghost:disabled,
+      [data-layout-mode="dark"] .tpl-form-page .tpl-btn-ghost:disabled {
+        color: var(--vz-secondary-color) !important;
+        opacity: 0.65;
       }
     `}</style>
   );

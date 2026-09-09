@@ -833,10 +833,16 @@ function ManageGroupsModal({
               </div>
             </div>
             <div className="d-flex align-items-center gap-2">
+              {/* Translucent white chip, like the × beside it — this was a
+                  near-solid white fill (rgba(255,255,255,0.92)) with violet
+                  text, which on the dark page read as a light slab pasted onto
+                  the header rather than a control belonging to it. The header
+                  is the same violet gradient in both themes, so one treatment
+                  serves both. (CBC #4) */}
               <button
                 type="button"
                 onClick={openAdd}
-                style={{ background: 'rgba(255,255,255,0.92)', border: 0, color: '#6d28d9', borderRadius: 8, padding: '5px 11px', fontWeight: 700, fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+                className="hol-grp-add-btn"
               >
                 <i className="ri-add-line" style={{ fontSize: 14 }} /> Add Group
               </button>

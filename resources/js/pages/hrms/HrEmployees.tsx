@@ -4978,8 +4978,13 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
               {empStep === 3 && (
                 <>
                   <div className="emp-section">
-                    <div className="emp-section-title" style={{ color: '#0a8a78' }}>
-                      <i className="ri-calendar-2-line" style={{ color: '#0ab39c' }} /> Leave, Expense &amp; Attendance
+                    {/* No inline colour. Every other section heading in this
+                        form takes its text from .emp-section-title and its icon
+                        from that class's violet, so a teal heading here and a
+                        blue one below read as three different kinds of section
+                        when they are all just sections. (CBC #20) */}
+                    <div className="emp-section-title">
+                      <i className="ri-calendar-2-line" /> Leave, Expense &amp; Attendance
                     </div>
                     <Row className="g-3">
                       <Col md={4}>
@@ -5046,8 +5051,8 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                   </div>
 
                   <div className="emp-section">
-                    <div className="emp-section-title" style={{ color: '#0c63b0' }}>
-                      <i className="ri-computer-line" style={{ color: '#299cdb' }} /> Assets &amp; Security
+                    <div className="emp-section-title">
+                      <i className="ri-computer-line" /> Assets &amp; Security
                     </div>
                     <Row className="g-3">
                       <Col md={4}>
@@ -5283,6 +5288,9 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                       style={{
                         padding: '10px 14px',
                         borderRadius: 10,
+                        /* The label is free to wrap now, so the row grows in
+                           height rather than the pill and the text colliding. */
+                        flexWrap: 'wrap',
                         opacity: eSalaryLocked ? 0.55 : 1,
                       }}
                     >
@@ -5294,7 +5302,13 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                         onClick={() => { if (!eSalaryLocked) setEEnablePayroll(v => !v); }}
                         className="btn p-0 border-0 d-inline-flex align-items-center"
                         style={{
-                          width: 36, height: 20, borderRadius: 999,
+                          /* flexShrink:0 — the pill is a flex item next to a long
+                             label, so on a narrow modal flex squeezed it below
+                             36px while the knob stayed absolutely positioned at
+                             left:19, pushing it out over the text. The track now
+                             holds its size and the label wraps instead. */
+                          width: 36, minWidth: 36, height: 20, flexShrink: 0,
+                          borderRadius: 999,
                           background: eEnablePayroll ? '#7c5cfc' : '#e5e7eb',
                           position: 'relative',
                           transition: 'background .15s ease',
@@ -5321,7 +5335,11 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                         PF Applicable for this Employee
                       </span>
                     </div>
-                    <div style={{ fontSize: 11.5, color: '#6b7280', margin: '-6px 0 12px 2px', lineHeight: 1.45 }}>
+                    {/* The -6px top margin pulled this note up into the banner
+                        above it, which overlapped once the banner's label
+                        wrapped to a second line. The banner already carries
+                        mb-3; this just sits under it. */}
+                    <div className="emp-payroll-banner-note" style={{ fontSize: 11.5, margin: '0 0 12px 2px', lineHeight: 1.45 }}>
                       Turning this off also removes <strong>CTC, salary effective date and the salary breakup</strong> for this employee, not just PF.
                     </div>
                     <Row className="g-3">
@@ -5451,7 +5469,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                   <div className="emp-section">
                     <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
                       <div className="emp-section-title mb-0">
-                        <i className="ri-calculator-line" style={{ color: '#0c63b0' }} /> Salary Breakup
+                        <i className="ri-calculator-line" /> Salary Breakup
                       </div>
                       <span className="d-inline-flex align-items-center gap-2 mb-0" style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>
                         <button

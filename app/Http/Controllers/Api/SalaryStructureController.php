@@ -470,13 +470,29 @@ class SalaryStructureController extends Controller
              * slack — an increment is now made by raising the Annual CTC on this
              * form (#101), and the two still cannot drift apart.
              *
-             * The breakup remains what is written, not the typed CTC: the two
-             * agree to within SALARY_ROUNDING_SLACK by the time we get here, and
-             * the components are the figures payroll will actually pay. */
+             * WHICH of the two equal-to-within-slack figures gets stored used to
+             * be the breakup — and that is the ₹4 bug. (CBC #19)
+             *
+             * The form seeds the split from CTC / 12 rounded to the rupee, so
+             * ₹4,00,000 becomes ₹33,333/mo and annualises back to ₹3,99,996.
+             * Storing the derived figure meant HR typed 4,00,000, saved, and the
+             * record came back 4 rupees lighter — every save shaving the rounding
+             * remainder off again.
+             *
+             * So when this revision carries an explicit annual_ctc, THAT is the
+             * agreed salary and it is what gets stored. It has already passed the
+             * match check above, so it cannot differ from the components by more
+             * than SALARY_ROUNDING_SLACK — this only decides which side of that
+             * few-rupee gap is the number of record, and the number HR typed is
+             * the one they will be held to.
+             *
+             * Without a submitted CTC (an older client, or a re-split that does
+             * not restate the salary) the breakup remains the source, as before.
+             * The components are still what payroll pays either way. */
             $employeeChanges = [
                 'pf_eligible'    => (bool) $created->pf_applicable,
                 'esi_applicable' => $created->esi_applicable ? 'Yes' : 'No',
-                'annual_salary'  => round($monthlyGross * 12, 2),
+                'annual_salary'  => $submittedCtc ?? round($monthlyGross * 12, 2),
             ];
 
             /* PF Type rides along with pf_eligible — same column the Employee

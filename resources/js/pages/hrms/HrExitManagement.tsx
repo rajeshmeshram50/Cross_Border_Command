@@ -17,6 +17,7 @@ import { isOnProbation, probationEndLabel, isEarlyResignation, tenureDays, EARLY
 
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import '../../../css/recruitment.css';
+import { downloadFile } from '../../utils/downloadFile';
 
 type ExitStatus = 'Active' | 'Exit In Progress' | 'Exited' | 'Missing Details';
 type DesigLevel = 'all' | 'hod' | 'lead' | 'exec' | 'employee' | 'intern';
@@ -101,6 +102,11 @@ export default function HrExitManagement() {
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [tab, setTab]             = useState<'active' | 'in-progress' | 'exited'>('active');
+  /* Drill-in from the Missing Exit Details tile. It is NOT a fourth tab: those
+     records live inside Active and stay counted there, so this narrows the
+     Active tab rather than replacing it, and the tab strip keeps 'active'
+     highlighted. Any tab click clears it. (CBC #133) */
+  const [missingOnly, setMissingOnly] = useState(false);
   const [search, setSearch]       = useState('');
 
   /* Paging, tabs and search are the SERVER's job now. The page used to fetch
@@ -196,7 +202,7 @@ export default function HrExitManagement() {
         view: 'exit',
         page: page + 1,              // the API counts from 1, DataTable from 0
         per_page: perPage,
-        exit_status: tab,
+        exit_status: missingOnly && tab === 'active' ? 'missing' : tab,
         ...(debouncedSearch ? { search: debouncedSearch } : {}),
       },
     })
@@ -211,7 +217,7 @@ export default function HrExitManagement() {
       })
       .catch(() => { if (token === listReqRef.current) { setEmployees([]); setTotal(0); } })
       .finally(() => { if (token === listReqRef.current) setListLoading(false); });
-  }, [page, perPage, tab, debouncedSearch]);
+  }, [page, perPage, tab, missingOnly, debouncedSearch]);
   useEffect(() => { loadEmployees(); }, [loadEmployees]);
 
   /* Counts follow the search but NOT the tab — these tiles are the breakdown
@@ -408,7 +414,7 @@ export default function HrExitManagement() {
            the pill stayed a light sticker on the dark table while everything
            around it followed the theme. The palette (light + dark) now lives
            in recruitment.css next to the rest of .exit-page. */
-        const tone = t === 'Termination' ? 'violet' : t === 'Resignation' ? 'teal' : 'red';
+        const tone = exitTypeToneKey(t);
         // The without-notice label is long — shorten it in the cell and keep
         // the full wording in the tooltip.
         const label = t === 'Resignation without notice period' ? 'Resignation (no notice)' : t;
@@ -654,9 +660,31 @@ export default function HrExitManagement() {
             </div>
 
             <Row className="g-1 mb-3 align-items-stretch rec-page-kpis row-cols-xl-5 row-cols-md-3 row-cols-sm-2 row-cols-1">
-              {KPI_CARDS.map(k => (
+              {KPI_CARDS.map(k => {
+                /* Only the Missing tile drills in — the others describe splits
+                   that either are already a tab or (Total) have no filter to
+                   apply, and a card that looks clickable but is not is the
+                   complaint this fixed. */
+                const drillable = k.key === 'missing';
+                const on = drillable && missingOnly;
+                return (
                 <Col key={k.key}>
-                  <div className="rec-kpi-card h-100">
+                  <div
+                    className={`rec-kpi-card h-100${drillable ? ' is-drillable' : ''}${on ? ' is-on' : ''}`}
+                    role={drillable ? 'button' : undefined}
+                    tabIndex={drillable ? 0 : undefined}
+                    aria-pressed={drillable ? on : undefined}
+                    title={drillable
+                      ? (on ? 'Showing only records with missing details — click to clear'
+                            : 'Show only employees with missing details')
+                      : undefined}
+                    onClick={drillable ? () => { setTab('active'); setPage(0); setMissingOnly(v => !v); } : undefined}
+                    onKeyDown={drillable ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault(); setTab('active'); setPage(0); setMissingOnly(v => !v);
+                      }
+                    } : undefined}
+                  >
                     <span className="rec-kpi-strip" style={{ background: k.gradient }} />
                     <div className="rec-kpi-text">
                       <span className="rec-kpi-label">{k.label}</span>
@@ -669,8 +697,21 @@ export default function HrExitManagement() {
                     </span>
                   </div>
                 </Col>
-              ))}
+                );
+              })}
             </Row>
+
+            {missingOnly && (
+              /* The tab strip still reads "Active Employees", so without this
+                 the filtered row count looks like data loss. */
+              <div className="exit-drill-note mb-2">
+                <i className="ri-filter-3-line" />
+                Showing only <strong>Active</strong> employees with missing exit details.
+                <button type="button" onClick={() => { setMissingOnly(false); setPage(0); }}>
+                  Clear filter
+                </button>
+              </div>
+            )}
 
             {/* Shared list table (components/ui/DataTable) — tabs, search,
                 sortable headers, the rows-per-page pager and the fit-to-viewport
@@ -712,7 +753,7 @@ export default function HrExitManagement() {
                 { key: 'exited',      label: 'Exited Employees', icon: 'ri-checkbox-circle-line', count: counts.exited },
               ]}
               activeTab={tab}
-              onTabChange={k => setTab(k as typeof tab)}
+              onTabChange={k => { setMissingOnly(false); setPage(0); setTab(k as typeof tab); }}
               emptyMessage={
                 <>
                   <i className="ri-user-search-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
@@ -1051,13 +1092,18 @@ function rehireBlockedReason(e: EmployeeRow): string | null {
   return null;
 }
 
-/** Badge tint per exit type — same palette as the Exit Type column in the list
- *  so a case reads identically in the table and inside the stage modal. */
-function exitTypeTone(exitType: string): { bg: string; fg: string; bd: string } {
+/** Tone CLASS per exit type — the single source for both the Exit Type column
+ *  and the stage modal's locked badge, so a case reads identically wherever it
+ *  is shown. It returns a class suffix rather than a {bg, fg, bd} triplet on
+ *  purpose: the triplet had to be applied inline, an inline style outranks the
+ *  dark-theme rule, and the modal badge therefore fell back to a neutral
+ *  grey-outlined chip while the table showed a coloured tint — the same type
+ *  rendered two different ways on one screen. (CBC #5) */
+function exitTypeToneKey(exitType: string): 'violet' | 'teal' | 'red' {
   const t = String(exitType || '').trim();
-  if (t === 'Termination') return { bg: '#f5f3ff', fg: '#6d28d9', bd: '#ddd6fe' };
-  if (t === 'Resignation')  return { bg: '#ecfdf5', fg: '#0d9488', bd: '#a7f3d0' };
-  return { bg: '#fef2f2', fg: '#b91c1c', bd: '#fecaca' };
+  if (t === 'Termination') return 'violet';
+  if (t === 'Resignation') return 'teal';
+  return 'red';
 }
 
 type Stage = { key: StageKey; num: number; title: string; short: string; sub: string; icon: string };
@@ -3268,14 +3314,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                           // Type column) rather than plain text — the type is
                           // the one field on this form that can never change,
                           // so it reads as a state, not an editable value.
-                          <span
-                            className="ep-type-value ep-type-badge"
-                            style={{
-                              background: exitTypeTone(exitType).bg,
-                              color: exitTypeTone(exitType).fg,
-                              border: `1px solid ${exitTypeTone(exitType).bd}`,
-                            }}
-                          >
+                          <span className={`ep-type-value ep-type-badge exit-type-pill--${exitTypeToneKey(exitType)}`}>
                             {exitType}
                           </span>
                         ) : (
@@ -4124,13 +4163,17 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       </a>
                     )}
                     {fnfDoc?.url && (
-                      <a className="ep-fnf-drop-view" href={fnfDoc.url}
-                         download={fnfDoc.name || true}
+                      /* Same fix as the Evidence Vault's download: the
+                         `download` attribute is ignored cross-origin, so this
+                         navigated to the file and a PDF simply opened in a new
+                         tab. downloadUrlAsFile() fetches the bytes and clicks a
+                         same-origin blob: URL instead. (CBC #18) */
+                      <button type="button" className="ep-fnf-drop-view"
                          title={`Download ${fnfDoc.name || 'document'}`}
                          aria-label={`Download ${fnfDoc.name || 'document'}`}
-                         onClick={e => e.stopPropagation()}>
+                         onClick={e => { e.stopPropagation(); e.preventDefault(); downloadFile(fnfDoc.url!, fnfDoc.name || ''); }}>
                         <i className="ri-download-2-line" style={{ fontSize: 15 }} />
-                      </a>
+                      </button>
                     )}
                   </label>
 

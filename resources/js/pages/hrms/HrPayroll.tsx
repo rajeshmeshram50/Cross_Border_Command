@@ -1403,11 +1403,19 @@ export default function HrPayroll() {
     {
       header: 'Status',
       accessorKey: 'status',
-      meta: { width: '9%', align: 'center' },
+      /* `wrap` opts the cell out of the table's default
+         overflow:hidden + text-overflow:ellipsis. The pill is an inline-flex
+         chip whose padding and dot push it a few pixels past a 9% column, and
+         the cell duly drew a "…" — beside a label that was fully legible, so
+         it read as a truncated status that was not truncated. The pill itself
+         never wraps (white-space:nowrap below), so opting out cannot cost a
+         second line; 12% is simply enough room for "Pending Review", the
+         longest value in RowStatus. (CBC #3) */
+      meta: { width: '12%', align: 'center', wrap: true },
       cell: info => {
         const tone = toneFor(info.row.original.status);
         return (
-          <span className="onb-pill" style={{ background: tone.bg, color: tone.fg }}>
+          <span className="onb-pill pay-status-pill" style={{ background: tone.bg, color: tone.fg }}>
             <span className="d" style={{ background: tone.dot }} />
             {info.row.original.status}
           </span>

@@ -6,6 +6,7 @@ import { Card, Col, Row } from 'reactstrap';
 import { Shimmer } from '../../../components/ui/Shimmer';
 import DataTable, { type DataTableColumn } from '../../../components/ui/DataTable';
 import { resolveFileUrl } from '../../../utils/resolveFileUrl';
+import { downloadFile } from '../../../utils/downloadFile';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
 
 const VAULT_STATUS_TONE: Record<string, { bg: string; fg: string; dot: string }> = {
@@ -53,6 +54,29 @@ export default function VaultTab() {
     if (mime === 'application/pdf' || /\.pdf$/.test(name)) return 'pdf';
     return 'other';
   })();
+
+  /* Download the previewed file. (CBC #18)
+   *
+   * This was a plain <a href download="…">. The `download` attribute is only
+   * honoured for SAME-ORIGIN URLs, and documents are served off the storage
+   * origin (Azure on the server), so the browser ignored it and navigated to
+   * the file instead — for a PDF that means the built-in viewer opens in a new
+   * tab and nothing is saved.
+   *
+   * utils/downloadFile already exists for exactly this and handles the cases
+   * this component should not be reinventing: streaming our own uploads back
+   * through the API, normalising a stale host, and detecting the SPA's
+   * index.html being returned in place of a missing file. */
+  const [downloadingPreview, setDownloadingPreview] = useState(false);
+  const downloadPreview = async () => {
+    if (!previewUrl) return;
+    setDownloadingPreview(true);
+    try {
+      await downloadFile(previewUrl, previewDoc?.original_name || '');
+    } finally {
+      setDownloadingPreview(false);
+    }
+  };
 
   /* Esc closes, and the page behind must not scroll while the overlay is up —
      otherwise the wheel scrolls the vault table under the preview. */
@@ -584,9 +608,15 @@ export default function VaultTab() {
                   <a href={previewUrl} target="_blank" rel="noopener noreferrer" className="vt-preview-btn" title="Open in new tab">
                     <i className="ri-external-link-line" />
                   </a>
-                  <a href={previewUrl} download={previewDoc.original_name || undefined} className="vt-preview-btn" title="Download">
-                    <i className="ri-download-2-line" />
-                  </a>
+                  <button
+                    type="button"
+                    onClick={downloadPreview}
+                    disabled={downloadingPreview}
+                    className="vt-preview-btn"
+                    title="Download"
+                  >
+                    <i className={downloadingPreview ? 'ri-loader-4-line' : 'ri-download-2-line'} />
+                  </button>
                   <button type="button" className="vt-preview-btn" title="Close" onClick={() => setPreviewDoc(null)}>
                     <i className="ri-close-line" />
                   </button>

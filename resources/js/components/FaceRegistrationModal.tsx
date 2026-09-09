@@ -153,7 +153,7 @@ export default function FaceRegistrationModal({ open, onClose, employeeId, onReg
         // falls back to white when the variable doesn't propagate into
         // the portal early enough and the modal renders bright on the
         // dark page.
-        className="ep-modal-card"
+        className="ep-modal-card frm-card"
         onClick={e => e.stopPropagation()}
         style={{
           background: 'var(--vz-card-bg, #fff)', borderRadius: 16,
@@ -214,6 +214,41 @@ export default function FaceRegistrationModal({ open, onClose, employeeId, onReg
             transition: background .15s ease, border-color .15s ease;
           }
           .frm-consent:hover { background: rgba(124,92,252,0.14); border-color: rgba(124,92,252,0.70); }
+          /* Dark mode. This used to lean on the [data-bs-theme="dark"]
+             .ep-modal-card rule in EmployeeProfile.css, but that file is only
+             imported by the profile page — opened from the employee LIST the
+             stylesheet is never loaded, the inline var(--vz-card-bg, #fff)
+             fell back to white and the whole dialog rendered as a light slab
+             on the dark page. The rule lives here now so the modal is
+             self-contained wherever it is mounted. !important beats the
+             inline background on the card element. */
+          .frm-code-chip { background: rgba(15,23,42,0.08); color: #475569; }
+          [data-bs-theme="dark"] .frm-code-chip,
+          [data-layout-mode="dark"] .frm-code-chip {
+            background: rgba(255,255,255,0.12); color: #cbd5e1;
+          }
+
+          [data-bs-theme="dark"] .frm-card,
+          [data-layout-mode="dark"] .frm-card {
+            background: #222831 !important;
+            color: var(--vz-body-color);
+          }
+          [data-bs-theme="dark"] .frm-consent,
+          [data-layout-mode="dark"] .frm-consent {
+            background: rgba(124,92,252,0.14);
+            border-color: rgba(167,139,250,0.55);
+          }
+          [data-bs-theme="dark"] .frm-consent:hover,
+          [data-layout-mode="dark"] .frm-consent:hover {
+            background: rgba(124,92,252,0.22);
+            border-color: rgba(167,139,250,0.80);
+          }
+          [data-bs-theme="dark"] .frm-point i,
+          [data-layout-mode="dark"] .frm-point i {
+            background: rgba(124,92,252,0.22);
+            color: #c4b5fd;
+          }
+
           .frm-consent input { margin-top: 1px; width: 16px; height: 16px; cursor: pointer; flex-shrink: 0; }
         `}</style>
         {/* Gradient header, matching Assign Assets and the Add/Edit Employee
@@ -316,11 +351,11 @@ export default function FaceRegistrationModal({ open, onClose, employeeId, onReg
                     </div>
                     {status.employee_code && (
                       <span
-                        className="font-monospace"
-                        style={{
-                          background: 'rgba(15,23,42,0.08)', color: '#475569',
-                          fontSize: 11, padding: '1px 6px', borderRadius: 4,
-                        }}
+                        /* Palette moved to CSS (.frm-code-chip) — the slate
+                           fill/text was hard-coded, so in dark mode it read as
+                           dark grey on dark grey. */
+                        className="font-monospace frm-code-chip"
+                        style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4 }}
                       >
                         {status.employee_code}
                       </span>

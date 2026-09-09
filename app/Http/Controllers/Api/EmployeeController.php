@@ -705,7 +705,8 @@ class EmployeeController extends Controller
      * Narrow to one tab. Written as an if/else CHAIN like the frontend's: a
      * closed case can still carry a last_working_day, so "in progress" has to
      * mean in-progress AND NOT exited. The Active tab covers Active AND
-     * Missing Details — one tab on screen, split only by a badge.
+     * Missing Details — one tab on screen, split only by a badge — and
+     * 'missing' narrows that same tab to just the incomplete records.
      *
      * @param  \Illuminate\Database\Eloquent\Builder  $q
      */
@@ -714,10 +715,18 @@ class EmployeeController extends Controller
         $exited = $this->sqlExited();
         $prog   = $this->sqlInProgress();
 
+        // 'missing' is not a tab — it is the Missing Exit Details KPI tile
+        // drilling into the Active tab it is counted inside, so it carries the
+        // Active predicate plus sqlMissingDetails(). Same expression the tile's
+        // count is summed from in exitStats(), so the drill-in can never show a
+        // different number of rows than the tile advertises. (CBC #133)
+        $missing = $this->sqlMissingDetails();
+
         match ($tab) {
             'exited'      => $q->whereRaw($exited),
             'in-progress' => $q->whereRaw("NOT {$exited} AND {$prog}"),
             'active'      => $q->whereRaw("NOT {$exited} AND NOT {$prog}"),
+            'missing'     => $q->whereRaw("NOT {$exited} AND NOT {$prog} AND {$missing}"),
             default       => null,
         };
     }
