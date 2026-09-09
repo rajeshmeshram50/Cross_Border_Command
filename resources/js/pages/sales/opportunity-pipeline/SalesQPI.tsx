@@ -1919,6 +1919,7 @@ export default function SalesQPI() {
             <IconSearch />
             <input
               type="text"
+              autoComplete="off"
               placeholder="Search by name, ID, company, email, segment..."
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -4053,6 +4054,7 @@ function OpportunitySelect({
             <input
               type="text"
               className="master-select-search-input"
+              autoComplete="off"
               placeholder="Search opportunities…"
               value={search}
               onChange={e => setSearch(e.target.value)}

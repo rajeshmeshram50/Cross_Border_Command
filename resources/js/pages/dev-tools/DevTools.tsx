@@ -240,6 +240,7 @@ export default function DevTools() {
           </div>
           <div className="s360-search">
             <IcoSearch />
+            autoComplete="off"
             <input value={q} onChange={e => { setQ(e.target.value); setPage(1); }} placeholder={`Search ${tab.label.toLowerCase()}…`} />
             <SearchClear show={q} onClear={() => { setQ(''); setPage(1); }} />
           </div>

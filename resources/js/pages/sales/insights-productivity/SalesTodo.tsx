@@ -1045,6 +1045,7 @@ export default function SalesTodo() {
             </svg>
             <input
               type="text"
+              autoComplete="off"
               placeholder="Search by subject, opportunity ID, date…"
               value={q}
               onChange={e => { setQ(e.target.value); setPage(1); }}
@@ -2299,6 +2300,7 @@ function TdSelect(props: {
               <input
                 ref={searchInputRef}
                 type="text"
+                autoComplete="off"
                 placeholder="Search…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}

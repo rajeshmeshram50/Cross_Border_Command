@@ -564,6 +564,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                 <input
                   type="text"
                   className="lvr-input lvr-search-input"
+                  autoComplete="off"
                   placeholder="Search employees by name or code…"
                   value={notifySearch}
                   onChange={e => { setNotifySearch(e.target.value); setNotifyOpen(true); }}

@@ -168,6 +168,7 @@ export default function SalesResolutionCenter() {
           <input
             className="rc-search"
             type="text"
+            autoComplete="off"
             placeholder="Search opportunities…"
             value={search}
             onChange={e => setSearch(e.target.value)}

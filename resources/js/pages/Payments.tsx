@@ -490,6 +490,7 @@ export default function Payments() {
                       <Input
                         type="text"
                         className="form-control"
+                        autoComplete="off"
                         placeholder="Search by txn ID, invoice, client..."
                         value={search}
                         onChange={e => setSearch(e.target.value)}

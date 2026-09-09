@@ -304,6 +304,7 @@ export default function Gmail() {
           </button>
           <div className="gm-search">
             <i className="ri-search-line" />
+            autoComplete="off"
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search mail" />
             <SearchClear show={search} onClear={() => { setSearch(''); }} />
             {search && <i className="ri-close-line gm-search-clear" onClick={() => setSearch('')} />}

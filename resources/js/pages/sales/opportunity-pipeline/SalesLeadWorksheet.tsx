@@ -1081,6 +1081,7 @@ export default function SalesLeadWorksheet() {
              * email / company, product, country, remark, assigned
              * salesperson, etc.) so "anything you can see, you can
              * search". */
+            autoComplete="off"
             placeholder="Search anything — ID, name, phone, email, product, country…"
             value={q}
             onChange={e => { setQ(e.target.value); setPage(1); }}

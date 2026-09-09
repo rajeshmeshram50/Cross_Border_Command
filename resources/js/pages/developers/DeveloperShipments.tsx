@@ -375,6 +375,7 @@ export default function DeveloperShipments() {
               type="text"
               value={q}
               onChange={e => { setQ(e.target.value); setPage(1); }}
+              autoComplete="off"
               placeholder="Search shipment ID, customer, route, status..."
             />
             <SearchClear show={q} onClear={() => { setQ(''); setPage(1); }} />

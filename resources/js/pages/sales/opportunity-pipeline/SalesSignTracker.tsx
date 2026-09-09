@@ -233,6 +233,7 @@ export default function SalesSignTracker() {
           <input
             value={q}
             onChange={e => setQ(e.target.value)}
+            autoComplete="off"
             placeholder="Search by name, recipient, status…"
           />
           <SearchClear show={q} onClear={() => { setQ(''); }} />

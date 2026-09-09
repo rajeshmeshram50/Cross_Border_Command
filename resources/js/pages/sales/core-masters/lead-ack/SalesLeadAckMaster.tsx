@@ -409,6 +409,7 @@ export default function SalesLeadAckMaster() {
           <i className="ri-search-line lam-search-icon" />
           <input
             type="text"
+            autoComplete="off"
             placeholder="Search by reason…"
             value={q}
             onChange={e => { setQ(e.target.value); setPage(1); }}

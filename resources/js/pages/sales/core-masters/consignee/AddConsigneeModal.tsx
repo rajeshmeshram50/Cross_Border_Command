@@ -2288,6 +2288,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               <IconSearch />
               <input
                 type="text"
+                autoComplete="off"
                 placeholder={pickedCount > 0 ? `${pickedCount} customer${pickedCount > 1 ? 's' : ''} selected — search to add more` : 'Search by name, ID, or segment...'}
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setSearchOpen(true); }}
@@ -2722,9 +2723,18 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                      * fields but KEEP the customer's segment instead of wiping
                      * it to []. */
                     const inheritedSegs = String(customer?.segment ?? '').split(',').map(s => s.trim()).filter(Boolean);
+                    /* Country survives the wipe for a DOMESTIC customer.
+                       Such a customer trades only within India, so the field
+                       is locked to India and disabled — the user cannot put it
+                       back. Blanking it here left a disabled, empty, required
+                       field: Save & Next then failed with "Select country" and
+                       "Select state" over a control nothing could edit (QA #6).
+                       The India-forcing effect does not rescue it either — it
+                       is keyed on the customer's country, which has not changed. */
+                    const lockedCountry = isDomesticCountry(customer?.country) ? 'India' : '';
                     setForm1({
                       companyName: '', legalName: '', website: '', segment: inheritedSegs, classification: '', risk: '',
-                      addressType: 'Registered Office', address: '', country: '', state: '', city: '', pin: '',
+                      addressType: 'Registered Office', address: '', country: lockedCountry, state: '', city: '', pin: '',
                       contactName: '', designation: '', contactNo: '', email: '', whatsapp: 'Yes',
                     });
                     setLocations([]);
@@ -2755,6 +2765,14 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 // Editing a consignee already SAVED as Same-as-Customer → lock
                 // it ON so it can't be unticked here.
                 (sameAsCustomer && consignee?.same_as_customer === true) ||
+                /* Saved as a mirror in THIS session — Save & Next has run, so
+                   the row exists on the server as Same-as-Customer and its KYC
+                   docs and owners have been cloned from the customer. Coming
+                   back from Stage 2 and unticking left the form and the saved
+                   row disagreeing about what this consignee is (QA #6). Same
+                   rule as the edit-mode lock above, just recognised from the id
+                   this session created rather than the one it was opened with. */
+                (sameAsCustomer && savedDbId !== null) ||
                 // OR self-entered consignee with completed basic details → lock
                 // it OFF so a later tick can't overwrite the typed details.
                 (!sameAsCustomer &&

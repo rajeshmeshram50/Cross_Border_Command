@@ -295,6 +295,7 @@ export function MasterMultiSelect({
               <input
                 type="text"
                 className="master-select-search-input"
+                autoComplete="off"
                 placeholder="Search…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}

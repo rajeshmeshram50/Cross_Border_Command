@@ -778,6 +778,7 @@ export default function Clients({ onNavigate }: Props) {
                   <Input
                     type="text"
                     className="form-control"
+                    autoComplete="off"
                     placeholder="Search by name or ID..."
                     value={searchInput}
                     onChange={e => setSearchInput(e.target.value)}

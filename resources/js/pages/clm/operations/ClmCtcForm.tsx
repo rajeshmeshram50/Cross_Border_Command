@@ -3024,6 +3024,7 @@ function ApproverPickerModal({ t, existing, onClose, onAdd }: { t: OpsTokens; ex
         <div style={{ background: t.surface, padding: 14, flexShrink: 0 }}>
           <div style={{ position: 'relative' }}>
             <svg style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.4" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+            autoComplete="off"
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or role…" autoFocus style={{ width: '100%', padding: '10px 12px 10px 34px', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD'}`, borderRadius: 10, fontSize: 12, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box' }} />
             <SearchClear show={search} onClear={() => { setSearch(''); }} />
           </div>
@@ -3156,6 +3157,7 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
             </div>
             <div style={{ position: 'relative', marginBottom: 8 }}>
               <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.4" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+              autoComplete="off"
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" style={{ width: '100%', padding: '10px 12px 10px 32px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 9, fontSize: 12.5, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box' }} />
               <SearchClear show={search} onClear={() => { setSearch(''); }} />
             </div>

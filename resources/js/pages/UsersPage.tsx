@@ -254,6 +254,7 @@ export default function UsersPage({ branchId, branchName, onBack }: Props) {
             <Input
               type="text"
               className="form-control"
+              autoComplete="off"
               placeholder={branchId ? 'Search employees by name, email or role...' : 'Search by name, email or role...'}
               value={search}
               onChange={e => setSearch(e.target.value)}

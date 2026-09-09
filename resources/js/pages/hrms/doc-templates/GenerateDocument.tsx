@@ -702,6 +702,7 @@ function Step1(props: {
 
       <div style={{ position: 'relative', marginBottom: 12, maxWidth: 360 }}>
         <i className="ri-search-line" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+        autoComplete="off"
         <Input type="text" placeholder="Search by name, code, email…" value={search}
           onChange={e => { setSearch(e.target.value); setPage(1); }} style={{ paddingLeft: 32, height: 36 }} className="gd-search" />
           <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />

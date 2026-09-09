@@ -4581,6 +4581,7 @@ function SupplierSegmentRefTable(props: {
       {/* Search bar (Figma) */}
       <div className="avm-kyc-search">
         <i className="ri-search-line" />
+        autoComplete="off"
         <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Search ${title.replace(/ NAME$/i, '').toLowerCase()} name…`} />
         <SearchClear show={q} onClear={() => { setQ(''); }} />
         {q && <button type="button" className="avm-kyc-search-clear" onClick={() => setQ('')} aria-label="Clear"><i className="ri-close-line" /></button>}

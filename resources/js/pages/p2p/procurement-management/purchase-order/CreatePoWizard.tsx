@@ -296,6 +296,7 @@ function Dd({ label, value, options, onChange, onDisabledSelect, req, err, optMe
         <div className="pof-dd-pop pof-dd-pop--portal" style={{ left: pos.left, top: pos.top, width: pos.width, maxHeight: 300, overflowY: 'auto' }}>
           {searchable && (
             <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: 8, background: 'inherit', borderBottom: '1px solid rgba(148,163,184,.18)' }} onMouseDown={e => e.stopPropagation()}>
+              autoComplete="off"
               <input ref={searchRef} value={query} onChange={e => setQuery(e.target.value)} placeholder="Search supplier…"
                 style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid rgba(148,163,184,.3)', background: 'rgba(148,163,184,.08)', color: 'inherit', fontSize: 12.5, outline: 'none' }} />
                 <SearchClear show={query} onClear={() => { setQuery(''); }} />

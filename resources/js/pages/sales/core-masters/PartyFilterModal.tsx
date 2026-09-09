@@ -402,6 +402,7 @@ export default function PartyFilterModal({ open, onClose, onApply, initial, rows
               </svg>
               <input
                 className="lfm-search"
+                autoComplete="off"
                 placeholder={`Search ${labelFor(active).toLowerCase()}…`}
                 value={search}
                 onChange={e => setSearch(e.target.value)}

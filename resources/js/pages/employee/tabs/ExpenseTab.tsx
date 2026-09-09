@@ -429,6 +429,7 @@ export default function ExpenseTab() {
                           <input
                             type="text"
                             className="form-control form-control-sm ext-search-input"
+                            autoComplete="off"
                             placeholder="Search…"
                             value={expenseSearch}
                             onChange={e => setExpenseSearch(e.target.value)}
@@ -517,6 +518,7 @@ export default function ExpenseTab() {
                         <input
                           type="text"
                           className="form-control form-control-sm ext-search-input"
+                          autoComplete="off"
                           placeholder="Search…"
                           value={expenseSearch}
                           onChange={e => setExpenseSearch(e.target.value)}

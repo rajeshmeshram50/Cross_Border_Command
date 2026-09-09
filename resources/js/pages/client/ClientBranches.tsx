@@ -165,6 +165,7 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
                   <Input
                     type="text"
                     className="form-control"
+                    autoComplete="off"
                     placeholder="Search by name, code, city..."
                     value={searchInput}
                     onChange={e => setSearchInput(e.target.value)}

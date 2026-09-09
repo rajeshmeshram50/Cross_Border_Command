@@ -217,6 +217,7 @@ export default function HrDashboard() {
           type="text"
           value={search}
           onChange={e => setSearch(e.target.value)}
+          autoComplete="off"
           placeholder="Search HR modules — e.g. Payroll, Attendance, Leave, Recruitment…"
           style={{ flexGrow: 1, border: 'none', outline: 'none', fontSize: 13, color: 'var(--vz-body-color)', background: 'transparent' }}
         />

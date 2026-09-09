@@ -673,6 +673,7 @@ export default function Products() {
           <svg className="prd-search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
           <input
             type="text"
+            autoComplete="off"
             placeholder="Search products by code, name, HSN or segment…"
             value={q}
             onChange={(e) => setQ(e.target.value)}

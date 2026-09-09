@@ -458,6 +458,7 @@ export default function MasterDashboard() {
           type="text"
           value={search}
           onChange={e => setSearch(e.target.value)}
+          autoComplete="off"
           placeholder="Search masters — e.g. Company, GST, Bank, Warehouse…"
           style={{ flexGrow: 1, border: 'none', outline: 'none', fontSize: 13, color: 'var(--vz-body-color)', background: 'transparent' }}
         />

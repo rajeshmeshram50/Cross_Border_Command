@@ -1378,6 +1378,7 @@ function MultiPicker({ options, selected, onChange, placeholder }: {
       {open && (
         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: 'var(--vz-secondary-bg, #fff)', border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.10)', zIndex: 10, maxHeight: 240, overflowY: 'auto' }}>
           <div style={{ padding: 8, borderBottom: '1px solid var(--vz-border-color, #e5e7eb)' }}>
+            autoComplete="off"
             <input className="rec-input" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} autoFocus />
             <SearchClear show={search} onClear={() => { setSearch(''); }} />
           </div>

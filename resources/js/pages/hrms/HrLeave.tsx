@@ -1296,6 +1296,7 @@ function LeaveFilterModal({
               </svg>
               <input
                 className="lfm-search"
+                autoComplete="off"
                 placeholder={`Search ${FACETS.find(f => f.key === active)?.label.toLowerCase()}…`}
                 value={search}
                 onChange={e => setSearch(e.target.value)}

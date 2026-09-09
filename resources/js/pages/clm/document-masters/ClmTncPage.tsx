@@ -154,6 +154,7 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          autoComplete="off"
           <input type="text" placeholder="Search categories…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
           <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
         </div>
@@ -303,6 +304,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          autoComplete="off"
           <input type="text" placeholder="Search T&C library…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
           <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
         </div>

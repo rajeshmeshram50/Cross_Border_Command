@@ -357,6 +357,7 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
               </svg>
               <input
                 className="lfm-search"
+                autoComplete="off"
                 placeholder={`Search ${(activeMenu?.label ?? '').toLowerCase()}…`}
                 value={search}
                 onChange={e => setSearch(e.target.value)}

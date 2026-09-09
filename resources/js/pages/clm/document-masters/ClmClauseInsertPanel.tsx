@@ -184,6 +184,7 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
                       type="text"
                       value={ddSearch}
                       onChange={e => setDdSearch(e.target.value)}
+                      autoComplete="off"
                       placeholder="Search…"
                       autoFocus
                     />

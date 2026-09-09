@@ -736,6 +736,7 @@ export default function HrLeavePlans() {
                     <i className="ri-search-line" />
                     <input
                       type="text"
+                      autoComplete="off"
                       placeholder="Search plans..."
                       value={planSearch}
                       onChange={e => setPlanSearch(e.target.value)}
@@ -1156,6 +1157,7 @@ function LeaveTypesTab({
         <i className="ri-search-line" />
         <input
           type="text"
+          autoComplete="off"
           placeholder="Search leave types..."
           value={search}
           onChange={e => setSearch(e.target.value)}

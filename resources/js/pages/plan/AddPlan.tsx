@@ -1493,6 +1493,7 @@ export default function AddPlan({ onBack, editId }: Props) {
                       className="stylish-input"
                       value={modSearch}
                       onChange={e => setModSearch(e.target.value)}
+                      autoComplete="off"
                       placeholder="Search modules..."
                       style={{ paddingLeft: 34, fontSize: 13 }}
                       bsSize="sm"

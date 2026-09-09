@@ -1666,6 +1666,7 @@ function ScoreEngineView() {
         <div className="d-flex align-items-center flex-wrap gap-2 mb-3">
           <div className="lp-search-box flex-grow-1" style={{ minWidth: 220 }}>
             <i className="ri-search-line" />
+            autoComplete="off"
             <input type="text" placeholder="Search employee or role…" value={search} onChange={e => setSearch(e.target.value)} />
             <SearchClear show={search} onClear={() => { setSearch(''); }} />
           </div>
@@ -2001,6 +2002,7 @@ function WatchlistView() {
       <div className="d-flex align-items-center flex-wrap gap-2 mb-3">
         <div className="lp-search-box flex-grow-1" style={{ minWidth: 260 }}>
           <i className="ri-search-line" />
+          autoComplete="off"
           <input type="text" placeholder="Search employee or role…" value={search} onChange={e => setSearch(e.target.value)} />
           <SearchClear show={search} onClear={() => { setSearch(''); }} />
         </div>
@@ -2332,6 +2334,7 @@ function PipStatusView() {
         </button>
         <div className="lp-search-box flex-grow-1" style={{ minWidth: 220 }}>
           <i className="ri-search-line" />
+          autoComplete="off"
           <input type="text" placeholder="Search employee or department…" value={search} onChange={e => setSearch(e.target.value)} />
           <SearchClear show={search} onClear={() => { setSearch(''); }} />
         </div>

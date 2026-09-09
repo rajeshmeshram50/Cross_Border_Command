@@ -311,6 +311,7 @@ export default function HrLeaveApprovals() {
               <i className="ri-search-line" />
               <input
                 type="text"
+                autoComplete="off"
                 placeholder="Search by employee name or code..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}

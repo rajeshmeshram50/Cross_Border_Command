@@ -430,6 +430,7 @@ export default function Documentation() {
             <IcSearch />
             <input
               type="text"
+              autoComplete="off"
               placeholder="Search all docs…"
               value={search}
               onChange={e => setSearch(e.target.value)}

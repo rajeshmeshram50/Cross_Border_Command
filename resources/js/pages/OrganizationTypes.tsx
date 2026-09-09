@@ -201,6 +201,7 @@ export default function OrganizationTypes() {
                   <div className="search-box">
                     <Input
                       type="text"
+                      autoComplete="off"
                       placeholder="Search by name…"
                       value={search}
                       onChange={e => setSearch(e.target.value)}

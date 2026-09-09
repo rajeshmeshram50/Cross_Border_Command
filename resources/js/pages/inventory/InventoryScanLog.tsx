@@ -96,6 +96,7 @@ export default function InventoryScanLog() {
             <Input
               bsSize="sm"
               style={{ width: 200 }}
+              autoComplete="off"
               placeholder="Search code or payload…"
               value={q}
               onChange={e => setQ(e.target.value)}

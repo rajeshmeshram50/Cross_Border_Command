@@ -674,6 +674,7 @@ export default function SalesConsignee() {
             <i className="ri-search-line smcg-search-icon" />
             <input
               type="text"
+              autoComplete="off"
               placeholder="Search by consignee ID, customer, company, country, risk..."
               value={q}
               onChange={(e) => onSearch(e.target.value)}
@@ -924,6 +925,7 @@ export default function SalesConsignee() {
                   type="search"
                   value={mappedSearch}
                   onChange={e => setMappedSearch(e.target.value)}
+                  autoComplete="off"
                   placeholder="Search customers…"
                   style={{ width: '100%', padding: '9px 14px 9px 36px', borderRadius: 10, border: `1px solid ${mc.border}`, background: mc.card, color: mc.textStrong, fontSize: 13, outline: 'none' }}
                 />

@@ -350,6 +350,7 @@ export default function TemplateEditor({
             className="tpl-search"
             value={search}
             onChange={e => setSearch(e.target.value)}
+            autoComplete="off"
             placeholder="Search placeholders…"
             style={{ width: '100%', padding: '6px 8px 6px 26px', fontSize: 12.5, border: '1px solid #e5e7eb', borderRadius: 6 }}
           />

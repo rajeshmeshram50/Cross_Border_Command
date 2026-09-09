@@ -594,6 +594,7 @@ export default function SalesCustomers() {
             <i className="ri-search-line smc-search-icon" />
             <input
               type="text"
+              autoComplete="off"
               placeholder="Search by name, ID, company, email, segment..."
               value={q}
               onChange={(e) => onSearch(e.target.value)}
