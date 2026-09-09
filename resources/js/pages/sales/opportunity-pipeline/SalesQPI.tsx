@@ -17,6 +17,7 @@ import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 import SalesDocSendForSignatureModal from './matrix/stages/SalesDocSendForSignatureModal';
 import ConvertToPiModal, { ConversionBlockedModal } from './ConvertToPiModal';
 import { ShimmerTable } from '../../../components/ui/Shimmer';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Quotations V/S Proforma Invoice (QPI)
@@ -1922,6 +1923,7 @@ export default function SalesQPI() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
+            <SearchClear show={q} onClear={() => { setQ(''); }} />
           </div>
 
           {/* Document Type filter — the "Doc Type" label lives INSIDE the
@@ -4057,6 +4059,7 @@ function OpportunitySelect({
               onKeyDown={e => e.stopPropagation()}
               autoFocus
             />
+            <SearchClear show={search} onClear={() => { setSearch(''); }} />
           </div>
           <div className="master-select-list" ref={listRef} onScroll={onScroll} style={{ maxHeight: 220, overflowY: 'auto' }}>
             {items.length === 0 && !loading ? (

@@ -5,6 +5,7 @@ import WorklistPager from '../../components/ui/WorklistPager';
 import { useAuth } from '../../contexts/AuthContext';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import '../developers/shipment-360.css';
+import SearchClear from '../../components/ui/SearchClear';
 
 /**
  * Dev Tools — a read-only inspector for the Zoho Books data we STORE in our DB
@@ -240,6 +241,7 @@ export default function DevTools() {
           <div className="s360-search">
             <IcoSearch />
             <input value={q} onChange={e => { setQ(e.target.value); setPage(1); }} placeholder={`Search ${tab.label.toLowerCase()}…`} />
+            <SearchClear show={q} onClear={() => { setQ(''); setPage(1); }} />
           </div>
         </div>
 

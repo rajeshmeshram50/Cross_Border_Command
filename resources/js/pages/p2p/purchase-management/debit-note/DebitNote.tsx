@@ -7,6 +7,7 @@ import api from '../../../../api';
 import DebitNoteDetail from './DebitNoteDetail';
 // Reuse the SPI list styling so Debit Note matches the SPI / PO design 1:1.
 import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import SearchClear from '../../../../components/ui/SearchClear';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Debit Note — list view (server-driven). Mirrors the Supplier Purchase
@@ -416,6 +417,7 @@ export default function DebitNote() {
           <div className="spi-search dnlh-search">
             <IcoSearch />
             <input value={q} onChange={e => { setQ(e.target.value); setPage(1); }} placeholder="Search debit note, supplier, status..." />
+            <SearchClear show={q} onClear={() => { setQ(''); setPage(1); }} />
           </div>
         </div>
 

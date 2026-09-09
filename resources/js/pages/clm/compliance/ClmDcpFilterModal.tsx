@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import { LFM_CSS } from '../../sales/opportunity-pipeline/LeadFilterModal';
+import SearchClear from '../../../components/ui/SearchClear';
 
 
 export type DcpFilters = {
@@ -200,6 +201,7 @@ export default function ClmDcpFilterModal({ open, onClose, onApply, initial, opt
               </svg>
               <input className="lfm-search" placeholder={`Search ${(activeMenu?.label ?? '').toLowerCase()}…`}
                 value={search} onChange={e => setSearch(e.target.value)} />
+                <SearchClear show={search} onClear={() => { setSearch(''); }} />
             </div>
 
             <div className="lfm-options">

@@ -7,6 +7,7 @@ import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import '../../../css/recruitment.css';
+import SearchClear from '../../components/ui/SearchClear';
 
 const TITLE_MAX = 191;
 const DESC_MAX  = 2000;
@@ -1378,6 +1379,7 @@ function MultiPicker({ options, selected, onChange, placeholder }: {
         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: 'var(--vz-secondary-bg, #fff)', border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.10)', zIndex: 10, maxHeight: 240, overflowY: 'auto' }}>
           <div style={{ padding: 8, borderBottom: '1px solid var(--vz-border-color, #e5e7eb)' }}>
             <input className="rec-input" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} autoFocus />
+            <SearchClear show={search} onClear={() => { setSearch(''); }} />
           </div>
           {filtered.length === 0 ? (
             <div className="text-muted text-center py-3" style={{ fontSize: 12 }}>No matches</div>

@@ -13,6 +13,7 @@ import {
   writeVendorMasterBundle,
 } from './vendorBundleCache';
 import '../../../css/supplier-management.css';
+import SearchClear from '../../components/ui/SearchClear';
 
 
 
@@ -453,6 +454,7 @@ useEffect(() => {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
+                <SearchClear show={search} onClear={() => { setSearch(''); }} />
                 {search && (
                   <button type="button" className="sl-search-clear" title="Clear search" onClick={() => setSearch('')}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>

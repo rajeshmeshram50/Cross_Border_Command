@@ -15,6 +15,7 @@ import { leaveRequestsApi, ApiLeaveRequest } from './leavePlansApi';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
+import SearchClear from '../../components/ui/SearchClear';
 
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function formatDate(raw: any): string {
@@ -1299,6 +1300,7 @@ function LeaveFilterModal({
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
+              <SearchClear show={search} onClear={() => { setSearch(''); }} />
             </div>
 
             <div className="lfm-options">

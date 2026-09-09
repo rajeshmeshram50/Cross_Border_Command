@@ -10,6 +10,7 @@ import { ClmSkeletonRows, DeleteConf } from '../shared/clmCommon';
 import ClmTncWizardModal from './ClmTncWizardModal';
 import Tooltip from '../../../components/ui/Tooltip';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /* Central CLM → Terms & Conditions Master (two tabs: Categories + Library). */
 
@@ -154,6 +155,7 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input type="text" placeholder="Search categories…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
         </div>
         {/* Document categories are read-only — they're tied to the
             Quotation & Proforma Invoice documents, so they aren't added
@@ -302,6 +304,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input type="text" placeholder="Search T&C library…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
         </div>
         <div style={{ width: 190, flex: '0 0 auto' }}>
           <MasterSelect

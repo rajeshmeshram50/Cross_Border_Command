@@ -612,7 +612,14 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
     let cancelled = false;
     if (data) setPayload(data);
     else setLoading(true);
-    api.get(`/clm/leads/${leadId}/agreement-applicable`)
+    /* light=1 — the LIST does not need the agreement bodies.
+       Every row here shows a code, a title, a party and a status; `content`
+       is the one field nothing on this screen renders, and it is by far the
+       largest — 373 kB against 11 kB for the same payload without it. The
+       popup is opened and reopened all through a deal, so that weight was
+       being paid over and over for bytes nobody looked at. The bodies are
+       fetched once, in handleSend, for the handful actually being sent. */
+    api.get(`/clm/leads/${leadId}/agreement-applicable`, { params: { light: 1 } })
       .then(r => { if (!cancelled) setPayload((r.data?.data ?? null) as ApplicablePayload | null); })
       // A failed refresh keeps the seeded copy rather than blanking the popup —
       // stale beats empty when the user already has it open.
@@ -859,7 +866,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
    * draggable signature box + the eventual POST to /agreement-send,
    * so this side just supplies the picked agreements and waits for
    * its `onSent` callback to refresh our row statuses. */
-  const handleSend = (agreements: AgreementRow[]) => {
+  const handleSend = async (agreements: AgreementRow[]) => {
     /* One gate for the row button and the bulk footer alike. Filtering the list
        here rather than disabling each control keeps the two paths honest with
        each other — a rule enforced in only one of them is a rule that leaks. */
@@ -874,7 +881,28 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
       toast.info(`${skipped.length} skipped`, 'Only agreements marked Needed were sent.');
     }
     if (!leadId || agreements.length === 0) return;
-    setSsfAgreements(agreements);
+
+    /* Pull the bodies now — the list was loaded light, and the send modal
+       renders and submits the actual document.
+     *
+       One request for the whole set rather than one per agreement, and only
+       on the way to a send. If it fails we still open the modal: the server
+       falls back to each agreement's saved content when no override is sent,
+       so the send remains correct, and refusing to open on a failed
+       optimisation would be worse than the weight it saves. */
+    let withContent = agreements;
+    try {
+      const full = await api.get(`/clm/leads/${leadId}/agreement-applicable`);
+      const byId = new Map<number, string | null>();
+      ((full.data?.data?.segments ?? []) as Array<{ agreements?: AgreementRow[] }>)
+        .forEach(seg => (seg.agreements ?? []).forEach(a => {
+          if (!byId.has(a.id)) byId.set(a.id, a.content ?? null);
+        }));
+      withContent = agreements.map(a => ({ ...a, content: byId.get(a.id) ?? a.content ?? null }));
+    } catch {
+      // keep the light rows; the server has the saved bodies
+    }
+    setSsfAgreements(withContent);
   };
 
   /* Refresh the applicable payload after a successful Send so the
@@ -2016,7 +2044,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                     type="button"
                                     disabled={a.needed !== true}
                                     className={`lasm-btn-send${agResend ? ' lasm-td-resend' : ''}`}
-                                    onClick={() => handleSend([a])}
+                                    onClick={() => void handleSend([a])}
                                   >
                                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                                     {agResend ? 'Resend' : 'Send'}
@@ -2141,7 +2169,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                   <button
                     type="button"
                     className="lasm-bulk-send"
-                    onClick={() => handleSend(selectedAgreementRows)}
+                    onClick={() => void handleSend(selectedAgreementRows)}
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                     {`Send Selected (${selectedAgreementRows.filter(a => a.needed === true).length})`}

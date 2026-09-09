@@ -5,6 +5,7 @@ import { useAuth } from '../../../../contexts/AuthContext';
 import Tooltip from '../../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
+import SearchClear from '../../../../components/ui/SearchClear';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Lead Acknowledgement Master
@@ -412,6 +413,7 @@ export default function SalesLeadAckMaster() {
             value={q}
             onChange={e => { setQ(e.target.value); setPage(1); }}
           />
+          <SearchClear show={q} onClear={() => { setQ(''); setPage(1); }} />
           {q && (
             <button type="button" className="lam-search-clear" onClick={() => { setQ(''); setPage(1); }} aria-label="Clear search">
               <i className="ri-close-line" />

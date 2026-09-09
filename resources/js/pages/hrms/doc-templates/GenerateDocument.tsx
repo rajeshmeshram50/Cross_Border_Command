@@ -6,6 +6,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { Shimmer } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /**
  * Generate Document — 3-step wizard launched from a template row.
@@ -703,6 +704,7 @@ function Step1(props: {
         <i className="ri-search-line" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
         <Input type="text" placeholder="Search by name, code, email…" value={search}
           onChange={e => { setSearch(e.target.value); setPage(1); }} style={{ paddingLeft: 32, height: 36 }} className="gd-search" />
+          <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
       </div>
 
       <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }} className="gd-table-wrap">

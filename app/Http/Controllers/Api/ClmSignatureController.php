@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Model;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -89,7 +90,7 @@ class ClmSignatureController extends Controller
             ? Lead::where('client_id', $user->client_id)->find($data['lead_id'])
             : null;
 
-        $pdf = $this->renderPdf(
+        $bytes = $this->renderPdf(
             $doc,
             $party,
             $modelName,
@@ -101,7 +102,7 @@ class ClmSignatureController extends Controller
             $lead,
         );
 
-        return response($pdf->output(), 200, [
+        return response($bytes, 200, [
             'Content-Type'        => 'application/pdf',
             'Content-Disposition' => 'inline; filename="preview-' . ($doc->code ?: $doc->id) . '.pdf"',
             'Cache-Control'       => 'no-store',
@@ -296,7 +297,7 @@ class ClmSignatureController extends Controller
                 $headerOverride = is_array($headerByDoc[$docKey]  ?? null) ? $headerByDoc[$docKey]  : null;
                 $footerOverride = is_array($footerByDoc[$docKey]  ?? null) ? $footerByDoc[$docKey]  : null;
                 $contentOver    = is_string($contentByDoc[$docKey] ?? null) ? $contentByDoc[$docKey] : null;
-                $pdf  = $this->renderPdf(
+                $bytes = $this->renderPdf(
                     $doc,
                     $party,
                     $modelName,
@@ -308,7 +309,7 @@ class ClmSignatureController extends Controller
                     $lead,
                 );
                 $tmp  = storage_path('app/temp/' . Str::uuid()->toString() . '.pdf');
-                file_put_contents($tmp, $pdf->output());
+                file_put_contents($tmp, $bytes);
                 $tempPaths[]     = $tmp;
                 $localDocMeta[]  = [
                     'id'            => $doc->id,
@@ -375,9 +376,7 @@ class ClmSignatureController extends Controller
             }
 
             // 4. Fetch the created request so we know its action_ids + document_ids.
-            $details          = $this->zoho->getRequest($zohoRequestId);
-            $zohoActions      = data_get($details, 'requests.actions',       []);
-            $zohoDocumentIds  = data_get($details, 'requests.document_ids',  []);
+            [$zohoActions, $zohoDocumentIds] = $this->zohoRequestShape($createResp, (string) $zohoRequestId);
 
             // Tag each Zoho action with its CBC signer role (buyer / consignee)
             // by matching its recipient_email against the resolved signers. On a
@@ -555,7 +554,7 @@ class ClmSignatureController extends Controller
             'body_has_tokens' => str_contains((string) $agreement->content, '{{'),
         ]);
 
-        $pdf = $this->renderAgreementPdf(
+        $bytes = $this->renderAgreementPdf(
             $agreement,
             $primary,
             $primaryModel,
@@ -568,7 +567,7 @@ class ClmSignatureController extends Controller
             $lead,
         );
 
-        return response($pdf->output(), 200, [
+        return response($bytes, 200, [
             'Content-Type'        => 'application/pdf',
             'Content-Disposition' => 'inline; filename="preview-' . ($agreement->code ?: $agreement->id) . '.pdf"',
             'Cache-Control'       => 'no-store',
@@ -705,7 +704,7 @@ class ClmSignatureController extends Controller
                 $headerOverride  = $pickOverride($headerOverrides,  $a->id);
                 $footerOverride  = $pickOverride($footerOverrides,  $a->id);
                 $contentOverride = $pickOverride($contentOverrides, $a->id);
-                $pdf = $this->renderAgreementPdf(
+                $bytes = $this->renderAgreementPdf(
                     $a,
                     $primary,
                     $primaryModel,
@@ -718,7 +717,7 @@ class ClmSignatureController extends Controller
                     $lead,
                 );
                 $tmp = storage_path('app/temp/' . Str::uuid()->toString() . '.pdf');
-                file_put_contents($tmp, $pdf->output());
+                file_put_contents($tmp, $bytes);
                 $tempPaths[]    = $tmp;
                 $localDocMeta[] = [
                     'id'            => $a->id,
@@ -764,9 +763,7 @@ class ClmSignatureController extends Controller
             }
 
             // 4. Fetch the created request and submit with signature fields.
-            $details         = $this->zoho->getRequest($zohoRequestId);
-            $zohoActions     = data_get($details, 'requests.actions',      []);
-            $zohoDocumentIds = data_get($details, 'requests.document_ids', []);
+            [$zohoActions, $zohoDocumentIds] = $this->zohoRequestShape($createResp, (string) $zohoRequestId);
 
             // Tag each Zoho action with the CBC signer role (buyer /
             // consignee) by matching its recipient_email against our
@@ -905,7 +902,7 @@ class ClmSignatureController extends Controller
             'content_override'       => 'nullable|string',
         ]);
         $c = CtcContract::where('client_id', $user->client_id)->findOrFail($data['contract_id']);
-        $pdf = $this->renderCtcPdf(
+        $bytes = $this->renderCtcPdf(
             $c,
             [],
             $data['header_config_override'] ?? null,
@@ -913,7 +910,7 @@ class ClmSignatureController extends Controller
             array_key_exists('content_override', $data) ? (string) $data['content_override'] : null,
             Str::uuid()->toString(),
         );
-        return response($pdf->output(), 200, [
+        return response($bytes, 200, [
             'Content-Type'        => 'application/pdf',
             'Content-Disposition' => 'inline; filename="ctc-preview-' . ($c->code ?: $c->id) . '.pdf"',
             'Cache-Control'       => 'no-store',
@@ -962,7 +959,7 @@ class ClmSignatureController extends Controller
         $requestUuid = (string) Str::uuid();
         $tempPaths   = [];
         try {
-            $pdf = $this->renderCtcPdf(
+            $bytes = $this->renderCtcPdf(
                 $c,
                 $signers,
                 $data['header_config_override'] ?? null,
@@ -971,7 +968,7 @@ class ClmSignatureController extends Controller
                 $requestUuid,
             );
             $tmp = storage_path('app/temp/' . Str::uuid()->toString() . '.pdf');
-            file_put_contents($tmp, $pdf->output());
+            file_put_contents($tmp, $bytes);
             $tempPaths[] = $tmp;
 
             // Clamp to Zoho's accepted range — its expiration_days field rejects
@@ -1002,9 +999,7 @@ class ClmSignatureController extends Controller
             $zohoRequestId = data_get($createResp, 'requests.request_id');
             if (!$zohoRequestId) throw new RuntimeException('Zoho create-request did not return a request_id: ' . json_encode($createResp));
 
-            $details         = $this->zoho->getRequest($zohoRequestId);
-            $zohoActions     = data_get($details, 'requests.actions',      []);
-            $zohoDocumentIds = data_get($details, 'requests.document_ids', []);
+            [$zohoActions, $zohoDocumentIds] = $this->zohoRequestShape($createResp, (string) $zohoRequestId);
 
             $signersByEmail = collect($signers)->keyBy(fn($s) => strtolower((string) ($s['email'] ?? '')));
             foreach ($zohoActions as &$za) {
@@ -1324,7 +1319,36 @@ class ClmSignatureController extends Controller
             $client?->logo,
         );
 
-        return Pdf::loadView('pdf.clm-signature-document', [
+        /* Same render cache as the agreement and trade-doc paths. The CTC
+           draft editor previews on open and after every edit, and the send
+           renders the identical contract once more; a large contract paid
+           full dompdf time for each. The key is taken after token
+           resolution, so it already covers the body, the resolved
+           organisation fields and the signature substitution. page_config
+           joins it because, unlike the other two paths, a CTC carries its
+           own margins. */
+        $cacheKey = 'clm:ctcpdf:' . sha1(implode('|', [
+            (int) $c->client_id,
+            (int) $c->id,
+            (string) $c->updated_at,
+            md5($processedHtml),
+            md5((string) json_encode($headerConfig)),
+            md5((string) json_encode($footerConfig)),
+            md5((string) json_encode($c->page_config ?? [])),
+            md5((string) $headerLogoBase64),
+            md5((string) json_encode($signers)),
+            (string) ($client->updated_at ?? ''),
+        ]));
+
+        try {
+            if ($hit = Cache::get($cacheKey)) {
+                return base64_decode($hit);
+            }
+        } catch (\Throwable $e) {
+            // fall through and render
+        }
+
+        $bytes = Pdf::loadView('pdf.clm-signature-document', [
             'document'         => $c,
             'party'            => null,
             'modelName'        => '',
@@ -1339,7 +1363,17 @@ class ClmSignatureController extends Controller
             'pageConfig'       => is_array($c->page_config ?? null) ? $c->page_config : [],
             'footerConfig'     => $footerConfig,
             'headerLogoBase64' => $headerLogoBase64,
-        ])->setPaper('a4')->setOption('isPhpEnabled', true);
+        ])->setPaper('a4')->setOption('isPhpEnabled', true)->output();
+
+        if (strlen($bytes) <= 5 * 1024 * 1024) {
+            try {
+                Cache::put($cacheKey, base64_encode($bytes), now()->addMinutes(30));
+            } catch (\Throwable $e) {
+                // caching is an optimisation, never a requirement
+            }
+        }
+
+        return $bytes;
     }
 
     /**
@@ -1786,9 +1820,7 @@ class ClmSignatureController extends Controller
 
             // 5. Fetch the created request, tag actions with cbc_role, submit
             //    with the per-signer signature-field coordinates.
-            $details         = $this->zoho->getRequest($zohoRequestId);
-            $zohoActions     = data_get($details, 'requests.actions',      []);
-            $zohoDocumentIds = data_get($details, 'requests.document_ids', []);
+            [$zohoActions, $zohoDocumentIds] = $this->zohoRequestShape($createResp, (string) $zohoRequestId);
 
             $signersByEmail = collect($signers)->keyBy(fn($s) => strtolower((string) ($s['email'] ?? '')));
             foreach ($zohoActions as &$zohoAction) {
@@ -2068,7 +2100,56 @@ class ClmSignatureController extends Controller
         // `enable_php = false` for safety, so we opt-in per render.
         // Without this, {PAGE_NUM}/{PAGE_COUNT} never get substituted
         // and the footer page number is silently dropped.
-        return Pdf::loadView('pdf.clm-signature-document', [
+        /* One render, reused by preview AND send.
+         *
+         * dompdf is the whole cost here and it degrades faster than the
+         * document grows: a 26-table agreement takes ~1.5 s, a 286-table one
+         * 52 s. Meanwhile the Send-for-Signature modal renders on open and
+         * again on every adjustment, then the send renders the very same
+         * document one final time — the same seconds paid over and over for
+         * bytes that were already produced.
+         *
+         * The key is taken AFTER token resolution, so it already reflects the
+         * agreement body, the resolved party fields and the product table.
+         * Header/footer config, the logo, the signer list and the party's own
+         * identity go in beside it, plus updated_at for the agreement, party
+         * and client so an edit anywhere in that chain misses rather than
+         * serving a stale document. Nothing outside this list reaches the
+         * blade.
+         *
+         * Safe to reuse: two renders of identical input differ only in the
+         * PDF's own CreationDate/ModDate/ID metadata — strip those three and
+         * the bytes are equal, verified on a 73 KB agreement. requestId and
+         * generatedDate are handed to the blade but the template never prints
+         * them, so they cannot vary the output either.
+         *
+         * Best-effort on both sides: a cache that is down, unmigrated or set
+         * to 'array' must never take a send down with it. The worst case is
+         * exactly the behaviour before this existed — render it. */
+        $cacheKey = 'clm:agrpdf:' . sha1(implode('|', [
+            (int) $agreement->client_id,
+            (int) $agreement->id,
+            (string) $agreement->updated_at,
+            md5($processedHtml),
+            md5((string) json_encode($headerConfig)),
+            md5((string) json_encode($footerConfig)),
+            md5((string) $headerLogoBase64),
+            md5((string) json_encode($signers ?? [])),
+            $modelName,
+            (string) ($party->id ?? ''),
+            (string) ($party->updated_at ?? ''),
+            (string) ($client->updated_at ?? ''),
+        ]));
+
+        try {
+            if ($hit = Cache::get($cacheKey)) {
+                return base64_decode($hit);
+            }
+        } catch (\Throwable $e) {
+            // fall through and render
+        }
+
+        $bytes = Pdf::loadView('pdf.clm-signature-document', [
             'document'         => $agreement,
             'party'            => $party,
             'modelName'        => $modelName,
@@ -2085,7 +2166,20 @@ class ClmSignatureController extends Controller
             'headerLogoBase64' => $headerLogoBase64,
         ])
             ->setPaper('a4')
-            ->setOption('isPhpEnabled', true);
+            ->setOption('isPhpEnabled', true)
+            ->output();
+
+        /* Skip absurd blobs: the store is a database text column and a
+           multi-megabyte base64 row per render is not worth the write. */
+        if (strlen($bytes) <= 5 * 1024 * 1024) {
+            try {
+                Cache::put($cacheKey, base64_encode($bytes), now()->addMinutes(30));
+            } catch (\Throwable $e) {
+                // caching is an optimisation, never a requirement
+            }
+        }
+
+        return $bytes;
     }
 
     /* ─────────────────────── LIST / SHOW ─────────────────────── */
@@ -2817,6 +2911,39 @@ class ClmSignatureController extends Controller
      * slower than before. Same status, same 'inprogress' fallback on error —
      * only the waiting is shorter.
      */
+    /**
+     * The recipient actions and document ids of a just-created Zoho request,
+     * without paying for a second round trip when the first already carried
+     * them.
+     *
+     * All four send paths created the request and then immediately fetched it
+     * back to read `actions` and `document_ids`. Zoho returns both on the
+     * create call itself, so that fetch was a whole network round trip spent
+     * re-reading what had just been handed over — on a request already paying
+     * for PDF rendering and two more Zoho calls.
+     *
+     * Both fields must be present and non-empty before the create response is
+     * trusted; anything less falls through to exactly the fetch that ran
+     * before. So a Zoho account or API version that omits them behaves as it
+     * always did, and nothing here can send a request with an empty action or
+     * document list.
+     *
+     * @return array{0:array,1:array} [actions, documentIds]
+     */
+    private function zohoRequestShape($createResp, string $zohoRequestId): array
+    {
+        $actions = data_get($createResp, 'requests.actions',      []);
+        $docIds  = data_get($createResp, 'requests.document_ids', []);
+        if (!empty($actions) && !empty($docIds)) {
+            return [$actions, $docIds];
+        }
+
+        $details = $this->zoho->getRequest($zohoRequestId);
+        return [
+            data_get($details, 'requests.actions',      []),
+            data_get($details, 'requests.document_ids', []),
+        ];
+    }
     private function awaitSubmittedStatus(string $zohoRequestId): string
     {
         $deadline = microtime(true) + 1.0;   // never longer than the old sleep
@@ -2906,7 +3033,35 @@ class ClmSignatureController extends Controller
         // Opt-in to inline PHP so the blade's footer page-number
         // <script type="text/php"> can stamp {PAGE_NUM}/{PAGE_COUNT}.
         // See the agreement render path for the same toggle + rationale.
-        return Pdf::loadView('pdf.clm-signature-document', [
+        /* Same render cache as the agreement path above, same reasoning: the
+           preview renders on open and again on every adjustment, then the send
+           renders the identical document once more. See renderAgreementPdf()
+           for why the key is taken after token resolution and why reusing the
+           bytes is safe. */
+        $cacheKey = 'clm:tdpdf:' . sha1(implode('|', [
+            (int) $doc->client_id,
+            (int) $doc->id,
+            (string) $doc->updated_at,
+            md5($processedHtml),
+            md5((string) json_encode($headerConfig)),
+            md5((string) json_encode($footerConfig)),
+            md5((string) $headerLogoBase64),
+            md5((string) json_encode($signers ?? [])),
+            $modelName,
+            (string) ($party->id ?? ''),
+            (string) ($party->updated_at ?? ''),
+            (string) ($client->updated_at ?? ''),
+        ]));
+
+        try {
+            if ($hit = Cache::get($cacheKey)) {
+                return base64_decode($hit);
+            }
+        } catch (\Throwable $e) {
+            // fall through and render
+        }
+
+        $bytes = Pdf::loadView('pdf.clm-signature-document', [
             'document'         => $doc,
             'party'            => $party,
             'modelName'        => $modelName,
@@ -2923,7 +3078,18 @@ class ClmSignatureController extends Controller
             'headerLogoBase64' => $headerLogoBase64,
         ])
             ->setPaper('a4')
-            ->setOption('isPhpEnabled', true);
+            ->setOption('isPhpEnabled', true)
+            ->output();
+
+        if (strlen($bytes) <= 5 * 1024 * 1024) {
+            try {
+                Cache::put($cacheKey, base64_encode($bytes), now()->addMinutes(30));
+            } catch (\Throwable $e) {
+                // caching is an optimisation, never a requirement
+            }
+        }
+
+        return $bytes;
     }
 
     /**

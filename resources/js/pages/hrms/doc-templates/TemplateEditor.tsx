@@ -18,6 +18,7 @@ import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import CustomFieldModal, { CustomFieldFormPayload } from './CustomFieldModal';
 import Tooltip from '../../../components/ui/Tooltip';
+import SearchClear from '../../../components/ui/SearchClear';
 
 // ── Placeholder catalogue ─────────────────────────────────────────────────────
 // Grouped exactly the way the Keka reference UI does it. The labels are the
@@ -352,6 +353,7 @@ export default function TemplateEditor({
             placeholder="Search placeholders…"
             style={{ width: '100%', padding: '6px 8px 6px 26px', fontSize: 12.5, border: '1px solid #e5e7eb', borderRadius: 6 }}
           />
+          <SearchClear show={search} onClear={() => { setSearch(''); }} />
         </div>
         {filteredGroups.map(g => {
           const open = openGroups[g.id] !== false;

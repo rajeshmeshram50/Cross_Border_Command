@@ -15,6 +15,7 @@ import { ClmSkeletonRows, useScrollLock } from '../shared/clmCommon';
 import { bustCustomerMasterBundle } from '../../sales/core-masters/customer/customerBundleCache';
 import { bustProductMasterBundle } from '../../p2p/p2p-master-management/product-management/productBundleCache';
 import { bustVendorMasterBundle } from '../../p2p/p2p-master-management/supplier-management/vendorBundleCache';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /* Segments feed the cached Supplier / Customer / Product form bundles
  * (sessionStorage, 5-min TTL). Without dropping them here, a segment renamed or
@@ -338,6 +339,7 @@ export default function ClmSegmentPage() {
                 <div className="clm-search seg-search">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                   <input type="text" placeholder="Search segments…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+                  <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
                 </div>
               </div>
           </div>

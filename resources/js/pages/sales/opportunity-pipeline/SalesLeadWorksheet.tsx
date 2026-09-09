@@ -13,6 +13,7 @@ import AssignLeadsModal from './AssignLeadsModal';
 import LeadDetailsModal from './LeadDetailsModal';
 import LeadActivityModal from './LeadActivityModal';
 import LeadFilterModal, { type LeadFilters, countFilterValues } from './LeadFilterModal';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /* Filters are deliberately NOT persisted.
  *
@@ -1084,6 +1085,7 @@ export default function SalesLeadWorksheet() {
             value={q}
             onChange={e => { setQ(e.target.value); setPage(1); }}
           />
+          <SearchClear show={q} onClear={() => { setQ(''); setPage(1); }} />
         </div>
       </div>
 
@@ -2013,6 +2015,9 @@ const SCOPED_CSS = `
   background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%); color: #fff;
 }
 .lwp-root .lwp-search {
+  /* Clear button picks up this page's cyan instead of the neutral default. */
+  --ui-search-clear: #0891b2;
+  --ui-search-clear-dark: #67e8f9;
   display: flex; align-items: center;
   background: #ffffff;
   border: 1.5px solid #a5f3fc;

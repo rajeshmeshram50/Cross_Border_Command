@@ -7,6 +7,7 @@ import { truncSegment } from '../../../../utils/segmentLabel';
 import AddConsigneeModal, { type ConsigneeRow } from '../consignee/AddConsigneeModal';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import { useTheme } from '../../../../contexts/ThemeContext';
+import SearchClear from '../../../../components/ui/SearchClear';
 
 
 export interface CustomerLite {
@@ -197,6 +198,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                 value={q}
                 onChange={e => setQ(e.target.value)}
               />
+              <SearchClear show={q} onClear={() => { setQ(''); }} />
             </div>
             <div className="ccm-toolbar-right">
               <span className="ccm-count">{filtered.length} {filtered.length === 1 ? 'consignee' : 'consignees'}</span>

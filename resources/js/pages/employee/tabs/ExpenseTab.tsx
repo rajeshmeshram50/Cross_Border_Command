@@ -9,6 +9,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
 import { ShimmerStatCards, ShimmerTable } from '../../../components/ui/Shimmer';
 import { draftFilesKey, deleteDraftFiles } from '../../../utils/draftFileStore';
+import SearchClear from '../../../components/ui/SearchClear';
 
 type ExpenseFilter = 'all' | 'approved' | 'rejected' | 'pending' | 'draft';
 
@@ -432,6 +433,7 @@ export default function ExpenseTab() {
                             value={expenseSearch}
                             onChange={e => setExpenseSearch(e.target.value)}
                           />
+                          <SearchClear show={expenseSearch} onClear={() => { setExpenseSearch(''); }} />
                           <i className="ri-search-line search-icon ext-search-icon" />
                         </div>
                         {/* Export — opens a format picker (Excel / PDF / CSV) and
@@ -519,6 +521,7 @@ export default function ExpenseTab() {
                           value={expenseSearch}
                           onChange={e => setExpenseSearch(e.target.value)}
                         />
+                        <SearchClear show={expenseSearch} onClear={() => { setExpenseSearch(''); }} />
                         <i className="ri-search-line search-icon ext-search-icon" />
                       </div>
                       {/* Export — opens a format picker (Excel / PDF / CSV) and

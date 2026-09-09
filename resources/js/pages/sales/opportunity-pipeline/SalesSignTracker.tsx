@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import { SigningTrackerModal } from './SigningTrackerModal';
+import SearchClear from '../../../components/ui/SearchClear';
 
 /* ───────────────────────────────────────────────────────────────────────
  * Sales Matrix → Sign Document Tracker
@@ -234,6 +235,7 @@ export default function SalesSignTracker() {
             onChange={e => setQ(e.target.value)}
             placeholder="Search by name, recipient, status…"
           />
+          <SearchClear show={q} onClear={() => { setQ(''); }} />
         </div>
       </div>
 

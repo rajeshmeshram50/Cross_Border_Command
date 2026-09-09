@@ -13,6 +13,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../api';
+import SearchClear from '../../components/ui/SearchClear';
 
 type CalendarStart = 'fixed_month' | 'joining_date';
 
@@ -739,6 +740,7 @@ export default function HrLeavePlans() {
                       value={planSearch}
                       onChange={e => setPlanSearch(e.target.value)}
                     />
+                    <SearchClear show={planSearch} onClear={() => { setPlanSearch(''); }} />
                   </div>
                   <div className="lp-section-label">LEAVE PLANS</div>
                   <div className="lp-plan-list">
@@ -1158,6 +1160,7 @@ function LeaveTypesTab({
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
+        <SearchClear show={search} onClear={() => { setSearch(''); }} />
       </div>
 
       <div className="lp-config-table-wrap">
