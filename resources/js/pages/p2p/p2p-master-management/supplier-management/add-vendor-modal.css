@@ -1546,6 +1546,25 @@
 [data-bs-theme="dark"] .avm-field-label { color: #c4b5fd; }
 [data-bs-theme="dark"] .avm-input { background: #110c25; border-color: #3b2a6b; color: #ede9fe; }
 [data-bs-theme="dark"] .avm-input:focus { background: #1a1430; border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,.18); }
+/* Disabled inputs in dark (CS-172).
+   `.avm-input:disabled` near the top of this file sets `background:#eef2f6`
+   with !important and had no dark counterpart, so a LOCKED field rendered
+   near-white on a dark form while every editable field beside it stayed dark.
+   In practice that is State Code and GST Number, which lock once a Purchase
+   Order exists against the supplier — the two fields the ticket names. The
+   Country/State pickers were never affected: MasterSelect's disabled state uses
+   --vz-secondary-bg, which already follows the theme.
+   !important is here only to outrank that base rule, not as emphasis.
+   Toned between the editable input (#110c25) and the read-only one (#1a1430):
+   dark enough to belong to the form, muted enough to read as "not editable". */
+[data-bs-theme="dark"] .avm-input:disabled,
+[data-bs-theme="dark"] .avm-input[disabled],
+[data-layout-mode="dark"] .avm-input:disabled,
+[data-layout-mode="dark"] .avm-input[disabled] {
+  background: #17112e !important;
+  color: #8b7fb0 !important;
+  border-color: rgba(167,139,250,.16) !important;
+}
 [data-bs-theme="dark"] .avm-master-select .master-select-wrap .master-select-toggle {
   background: color-mix(in srgb, #a78bfa 12%, #110c25) !important;
   border-color: #3b2a6b !important; color: #ede9fe !important;

@@ -627,12 +627,10 @@ export default function TemplateFormPage() {
       const { data } = await api.post(`/hr-document-templates/${row.id}/upload-docx`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
+      // Upload replaces the BODY CONTENT only. Header / footer / logo are
+      // managed in-app and are intentionally not touched by the Word round-trip,
+      // so we deliberately do NOT read header_config / footer_config back here.
       setContentHtml(data.content_html || '');
-      // If the user edited the logo / title / footer inside Word, the backend
-      // lifts those back into header_config / footer_config — refresh the
-      // preview so the revised header & footer show without a reload.
-      if (data.header_config) setHeaderConfig({ ...DEFAULT_HEADER, ...data.header_config } as HeaderConfig);
-      if (data.footer_config) setFooterConfig({ ...DEFAULT_FOOTER, ...data.footer_config } as FooterConfig);
       setEditorMode('word');
       setEditing(data);
       toast.success('Revised DOCX uploaded', `Imported ${data.docx_original_name}.`);
@@ -1354,9 +1352,9 @@ function Step3(props: {
             )}
             <div className="tpl-word-title" style={{ fontSize: 13, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>MS Word Workflow</div>
             <ol className="tpl-word-list" style={{ paddingLeft: 18, fontSize: 13, color: '#374151', lineHeight: 1.7, marginBottom: 16 }}>
-              <li>Download → the generated DOCX comes pre-baked with the fixed header (logo + title) and footer</li>
+              <li>Download → the generated DOCX contains the body content only (the header, logo &amp; footer stay managed here)</li>
               <li>Add tables, formatting, signature blocks in Word</li>
-              <li>Upload revised version below — it replaces the saved DOCX and refreshes the web preview</li>
+              <li>Upload revised version below — it updates the body content only; the header &amp; footer are untouched</li>
             </ol>
             <div className="d-flex gap-2 flex-wrap">
               <button type="button" onClick={props.onDownloadDocx}
@@ -1364,7 +1362,7 @@ function Step3(props: {
                 style={{ padding: '8px 16px', background: '#1f2937', color: '#fff', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: (props.downloadingDocx || props.uploadingDocx) ? 'wait' : 'pointer', opacity: (props.downloadingDocx || props.uploadingDocx) ? 0.7 : 1 }}>
                 {props.downloadingDocx
                   ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" /> Generating DOCX…</>
-                  : <><i className="ri-download-2-line me-1" /> Download DOCX (with header/footer)</>}
+                  : <><i className="ri-download-2-line me-1" /> Download DOCX</>}
               </button>
               <input ref={props.docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
                 disabled={props.uploadingDocx}

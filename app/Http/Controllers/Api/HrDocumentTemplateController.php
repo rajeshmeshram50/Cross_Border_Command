@@ -448,31 +448,15 @@ class HrDocumentTemplateController extends Controller
         $this->authorize($request, 'can_view');
         $row = $this->resolveRow($request, (int) $id);
 
-        // Prefer the user's uploaded .docx so a re-download returns their EXACT
-        // Word file — every table, font, image and layout they edited is kept
-        // byte-for-byte. The file they edited was itself produced by our
-        // renderer (header logo + footer already baked in), so the logo
-        // round-trips INSIDE the uploaded file; re-rendering here would discard
-        // all their hand formatting just to re-stamp a logo that's already
-        // present. Verify the real file is on disk with is_file() (a DB row can
-        // reference a docx_path whose file is absent in this environment;
-        // download()-ing a missing path throws) and only fall back to a fresh
-        // render when there's no usable upload.
-        if ($row->docx_path) {
-            // localFile() resolves to the real local file (local disk) OR a temp
-            // copy streamed down from Azure (server). Either way native
-            // download() gets a path it can open. Clean up the temp after send.
-            $abs = $this->localFile($row->docx_path, $isTemp);
-            if ($abs) {
-                $name = $row->docx_original_name ?: ($row->code ?: 'template') . '.docx';
-                $resp = response()->download($abs, $name);
-                return $isTemp ? $resp->deleteFileAfterSend(true) : $resp;
-            }
-        }
-
-        // No uploaded file yet → render fresh from content_html with the header
-        // logo (from header_config OR the latest logo uploaded for this client)
-        // and footer embedded, so the first download already carries the logo.
+        // Always render fresh from content_html so the download is content-only
+        // (no header/footer/logo — see buildDocxFile). We deliberately do NOT
+        // return the stored docx_path byte-for-byte: a stored file can carry a
+        // baked-in header/footer — every file produced by the old renderer does,
+        // and so does any Word doc a user uploaded with its own header — and
+        // returning it verbatim would re-introduce exactly the chrome this
+        // workflow removes, with no way to bootstrap out of it. content_html is
+        // the canonical body (an uploaded DOCX is parsed into it on upload), so
+        // rendering from it keeps the body while guaranteeing the chrome is gone.
         return $this->renderDocx($row, ($row->code ?: 'template') . '.docx');
     }
 
@@ -517,45 +501,18 @@ class HrDocumentTemplateController extends Controller
 
         [$path, $orig] = $this->storeDocx($uploaded, $row->client_id, $row->id);
 
+        // Upload updates the BODY CONTENT ONLY. The header/footer/logo are
+        // managed in-app (HeaderFooterPanel) and are intentionally NOT lifted
+        // out of the uploaded Word file: the user's own header/logo in the
+        // file they revised must not overwrite the template's configured
+        // header/footer. Only content_html (+ the stored docx for re-download)
+        // changes here.
         $update = [
             'docx_path'          => $path,
             'docx_original_name' => $orig,
             'editor_mode'        => 'word',
             'content_html'       => $html,
         ];
-
-        // Lift the header/footer the user edited INSIDE Word back into the
-        // template (logo + title/subtitle + footer text) so the preview and
-        // future renders reflect it — otherwise only the downloaded file would
-        // carry the changes. Each piece is applied only when present, so an
-        // upload missing a logo/title/footer never wipes the existing value.
-        // (Parsed from $abs, the local upload temp file resolved above.)
-        $headerCfg = is_array($row->header_config) ? $row->header_config : [];
-        $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
-        $headerChanged = false;
-        $footerChanged = false;
-
-        $logo = $this->extractHeaderLogo($abs, $row->client_id);
-        if ($logo) {
-            $headerCfg['logo_path'] = $logo['path'];
-            $headerCfg['logo_url']  = $logo['url'];
-            $headerCfg['show_logo'] = true;
-            $headerChanged = true;
-        }
-
-        $hf = $this->extractHeaderFooterText($abs);
-        if (!empty($hf['header'])) {
-            $headerCfg['title']    = $hf['header']['title'];
-            $headerCfg['subtitle'] = $hf['header']['subtitle'];
-            $headerChanged = true;
-        }
-        if (!empty($hf['footer'])) {
-            $footerCfg['text'] = $hf['footer']['text'];
-            $footerChanged = true;
-        }
-
-        if ($headerChanged) $update['header_config'] = $headerCfg;
-        if ($footerChanged) $update['footer_config'] = $footerCfg;
 
         $row->update($update);
         $row->load(self::WITH);
@@ -1245,116 +1202,13 @@ class HrDocumentTemplateController extends Controller
             'footerHeight' => 50 * 20,
         ]);
 
-        $headerCfg = is_array($row->header_config) ? $row->header_config : [];
-        // Prefer the path saved in header_config; if it's missing (the frontend
-        // didn't persist it), fall back to the latest logo uploaded for this
-        // client via uploadHeaderLogo() so the logo still lands in the DOCX.
-        $logoPath  = $headerCfg['logo_path'] ?: $this->latestClientLogo($row->client_id);
-        $title     = (string) ($headerCfg['title'] ?? '');
-        $subtitle  = (string) ($headerCfg['subtitle'] ?? '');
-        $hAlign    = (string) ($headerCfg['align']    ?? 'right');
-        // Logo size — pixels in the SPA, clamped 24-200. DOCX uses the same
-        // pixel scale so the exported Word doc matches the on-screen preview.
-        // Width is left to PhpWord's auto-scale (passed as 0) so non-2:1
-        // logos aren't squished; ratio is preserved from the source image.
-        $logoH     = (int) max(24, min(200, $headerCfg['logo_height'] ?? 60));
-
-        $header = $section->addHeader();
-        $table = $header->addTable([
-            'borderSize' => 0,
-            'cellMargin' => 0,
-            'unit'  => \PhpOffice\PhpWord\SimpleType\TblWidth::PERCENT,
-            'width' => 100 * 50,
-        ]);
-        $row1 = $table->addRow();
-        $logoCell  = $row1->addCell(3200, ['valign' => 'center']);
-        $titleCell = $row1->addCell(6800, ['valign' => 'center']);
-        $absLogo = $this->resolveDocxLogo($logoPath);
-        if ($absLogo) {
-            try {
-                // Scale to fit the logo cell: cap by height (logo_height) AND by
-                // a max width so a wide logo isn't clipped by the cell. Aspect
-                // ratio is preserved by deriving the missing dimension from the
-                // source image's real pixel size.
-                $maxW = 200; // px — fits comfortably inside the ~32% logo cell
-                $dim  = @getimagesize($absLogo);
-                $iw   = $dim[0] ?? 0;
-                $ih   = $dim[1] ?? 0;
-                $h    = $logoH;
-                $w    = ($ih > 0) ? (int) round($iw * $h / $ih) : 0;
-                if ($w > $maxW && $iw > 0) {            // too wide → cap width, recompute height
-                    $w = $maxW;
-                    $h = (int) round($ih * $w / $iw);
-                }
-                $opts = ['height' => $h];
-                if ($w > 0) $opts['width'] = $w;
-                $logoCell->addImage($absLogo, $opts);
-            } catch (\Throwable $e) {
-                $logoCell->addText('[Logo]', ['italic' => true, 'color' => '808080']);
-            }
-        }
-        $align = $hAlign === 'left' ? 'left' : ($hAlign === 'center' ? 'center' : 'right');
-        // Split on CR/LF so multi-line titles entered in the SPA preview
-        // (Enter → \n) render as separate Word paragraphs instead of a
-        // single run with literal newline glyphs.
-        $addMultiline = function ($cell, string $text, array $font, array $para) {
-            $lines = preg_split('/\r\n|\r|\n/', $text) ?: [];
-            $first = true;
-            foreach ($lines as $line) {
-                if (!$first) $cell->addTextBreak(1, $font);
-                $cell->addText($line, $font, $para);
-                $first = false;
-            }
-        };
-        if ($title !== '')    $addMultiline($titleCell, $title,    ['bold' => true, 'size' => 14], ['alignment' => $align]);
-        if ($subtitle !== '') $addMultiline($titleCell, $subtitle, ['size' => 10, 'color' => '6B7280'], ['alignment' => $align]);
-
-        $footerCfg  = is_array($row->footer_config) ? $row->footer_config : [];
-        $footerText = (string) ($footerCfg['text']  ?? '');
-        $fAlign     = (string) ($footerCfg['align'] ?? 'center');
-        $showPage   = !empty($footerCfg['show_page_number']);
-        $pnAlign    = (string) ($footerCfg['page_number_align']  ?? 'right');
-        $pnFormat   = (string) ($footerCfg['page_number_format'] ?? 'Page N of M');
-        $footer = $section->addFooter();
-        $fTable = $footer->addTable([
-            'borderSize' => 0,
-            'cellMargin' => 0,
-            'unit'  => \PhpOffice\PhpWord\SimpleType\TblWidth::PERCENT,
-            'width' => 100 * 50,
-        ]);
-        $fRow = $fTable->addRow();
-        $cells = [
-            'left'   => $fRow->addCell(3333, ['valign' => 'center']),
-            'center' => $fRow->addCell(3333, ['valign' => 'center']),
-            'right'  => $fRow->addCell(3333, ['valign' => 'center']),
-        ];
-        if ($footerText !== '' && isset($cells[$fAlign])) {
-            $cells[$fAlign]->addText($footerText, ['size' => 9, 'color' => '6B7280'], ['alignment' => $fAlign]);
-        }
-        if ($showPage && isset($cells[$pnAlign])) {
-            $run = $cells[$pnAlign]->addTextRun(['alignment' => $pnAlign]);
-            $style = ['size' => 9, 'color' => '6B7280'];
-            switch ($pnFormat) {
-                case 'N':
-                    $run->addField('PAGE', [], [], '', false);
-                    break;
-                case 'Page N':
-                    $run->addText('Page ', $style);
-                    $run->addField('PAGE', [], [], '', false);
-                    break;
-                case 'N / M':
-                    $run->addField('PAGE', [], [], '', false);
-                    $run->addText(' / ', $style);
-                    $run->addField('NUMPAGES', [], [], '', false);
-                    break;
-                case 'Page N of M':
-                default:
-                    $run->addText('Page ', $style);
-                    $run->addField('PAGE', [], [], '', false);
-                    $run->addText(' of ', $style);
-                    $run->addField('NUMPAGES', [], [], '', false);
-            }
-        }
+        // Header & footer are deliberately NOT added here. They are managed
+        // in-app (HeaderFooterPanel / Live PDF) and are no longer part of the
+        // Word round-trip: a downloaded DOCX carries the BODY CONTENT ONLY, so
+        // the user edits body text in Word without our header/footer/logo being
+        // baked into the file (and, on re-upload, duplicated). The
+        // headerHeight/footerHeight on the section above are harmless when no
+        // header/footer is attached.
 
         $html = (string) ($row->content_html ?: '<p>(empty template)</p>');
         // PhpWord's Html::addHtml uses loadXML (not loadHTML) so the body
@@ -1731,149 +1585,10 @@ class HrDocumentTemplateController extends Controller
         return [$path, $file->getClientOriginalName()];
     }
 
-    /**
-     * Pull the logo image out of an uploaded DOCX's header so a logo the user
-     * swapped INSIDE Word is reflected back into the template (preview + future
-     * renders), not just left as the old panel logo.
-     *
-     * A .docx is a zip: header parts live at word/header*.xml and the images
-     * they reference are wired through word/_rels/header*.xml.rels (Type ending
-     * in /image) → word/media/*. We grab the first image referenced by any
-     * header and copy it into the client's logos folder. Returns ['path','url']
-     * or null when the header carries no usable image (logo removed, never
-     * present, or a vector/metafile a browser can't show).
-     */
-    private function extractHeaderLogo(string $docxAbsPath, $clientId): ?array
-    {
-        if (!class_exists('ZipArchive') || !is_file($docxAbsPath)) return null;
-
-        $zip = new \ZipArchive();
-        if ($zip->open($docxAbsPath) !== true) return null;
-
-        try {
-            $target = null; // e.g. "media/image1.png" (relative to word/)
-            for ($i = 0; $i < $zip->numFiles; $i++) {
-                $name = $zip->getNameIndex($i);
-                if (!is_string($name) || !preg_match('#^word/_rels/header\d*\.xml\.rels$#i', $name)) continue;
-                $xml = $zip->getFromIndex($i);
-                if ($xml === false) continue;
-                // Match an image relationship regardless of attribute order.
-                if (preg_match('#Type="[^"]*/image"[^>]*?Target="([^"]+)"#i', $xml, $m)
-                 || preg_match('#Target="([^"]+)"[^>]*?Type="[^"]*/image"#i', $xml, $m)) {
-                    $target = $m[1];
-                    break;
-                }
-            }
-            if (!$target) return null;
-
-            // Resolve the relationship Target to an entry inside the zip. Header
-            // rels are relative to word/, so "media/imageN.png" → word/media/...
-            $target = str_replace('\\', '/', $target);
-            $entry  = str_starts_with($target, '/')
-                ? ltrim($target, '/')
-                : 'word/' . ltrim($target, './');
-            $data = $zip->getFromName($entry);
-            if ($data === false) {
-                $entry = 'word/media/' . basename($target);
-                $data  = $zip->getFromName($entry);
-                if ($data === false) return null;
-            }
-
-            // Only keep raster formats the web preview <img> and PhpWord both
-            // understand. EMF/WMF/SVG inside a Word header can't render in a
-            // browser, so skip rather than store a broken preview logo.
-            $ext = strtolower(pathinfo($entry, PATHINFO_EXTENSION) ?: '');
-            if (!in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'bmp'], true)) return null;
-
-            $clientSlug = $clientId ? 'c' . $clientId : 'public';
-            $path = "doc_templates/{$clientSlug}/logos/" . Str::random(16) . '.' . $ext;
-            Storage::disk('public')->put($path, $data);
-
-            return ['path' => $path, 'url' => file_url($path)];
-        } finally {
-            $zip->close();
-        }
-    }
-
-    /**
-     * Read the header TITLE/SUBTITLE and footer TEXT a user typed inside Word
-     * back out of an uploaded DOCX, so edits to those strings reflect into the
-     * template (preview + future renders), same as the logo. Header/footer
-     * parts live at word/header*.xml and word/footer*.xml.
-     *
-     * Returns ['header' => ['title','subtitle'], 'footer' => ['text']] with
-     * only the keys we could read; missing/empty parts are omitted so the
-     * caller never wipes an existing value with a blank.
-     */
-    private function extractHeaderFooterText(string $docxAbsPath): array
-    {
-        $result = [];
-        if (!class_exists('ZipArchive') || !is_file($docxAbsPath)) return $result;
-
-        $zip = new \ZipArchive();
-        if ($zip->open($docxAbsPath) !== true) return $result;
-
-        try {
-            $headerParts = [];
-            $footerParts = [];
-            for ($i = 0; $i < $zip->numFiles; $i++) {
-                $n = $zip->getNameIndex($i);
-                if (!is_string($n)) continue;
-                if (preg_match('#^word/header\d*\.xml$#i', $n)) $headerParts[] = $n;
-                if (preg_match('#^word/footer\d*\.xml$#i', $n)) $footerParts[] = $n;
-            }
-            sort($headerParts);
-            sort($footerParts);
-
-            // HEADER: first part that carries visible (non page-number) text.
-            // Our generated header puts the title on the first text paragraph
-            // and the subtitle on the second, so map them positionally.
-            foreach ($headerParts as $hp) {
-                $lines = array_values(array_filter(
-                    array_map(fn ($p) => $p['field'] ? null : $p['text'], $this->docxPartParagraphs($zip, $hp))
-                ));
-                if ($lines) {
-                    $result['header'] = ['title' => $lines[0] ?? '', 'subtitle' => $lines[1] ?? ''];
-                    break;
-                }
-            }
-
-            // FOOTER: first non page-number text paragraph is the footer line.
-            foreach ($footerParts as $fp) {
-                foreach ($this->docxPartParagraphs($zip, $fp) as $pa) {
-                    if (!$pa['field']) { $result['footer'] = ['text' => $pa['text']]; break 2; }
-                }
-            }
-        } finally {
-            $zip->close();
-        }
-
-        return $result;
-    }
-
-    /**
-     * Extract per-paragraph visible text from a header/footer XML part inside an
-     * open DOCX zip. Each item is ['text' => string, 'field' => bool] where
-     * `field` flags a paragraph that holds a PAGE/NUMPAGES field (page numbers),
-     * so callers can skip those when looking for hand-typed header/footer text.
-     */
-    private function docxPartParagraphs(\ZipArchive $zip, string $entry): array
-    {
-        $xml = $zip->getFromName($entry);
-        if ($xml === false) return [];
-
-        $out = [];
-        // Split on paragraph boundaries; each chunk is one <w:p>.
-        foreach (preg_split('#<w:p[ >]#', $xml) as $chunk) {
-            $isField = preg_match('#\b(PAGE|NUMPAGES)\b#', $chunk)
-                    && preg_match('#w:(instrText|fldSimple|fldChar)#', $chunk);
-            if (preg_match_all('#<w:t[^>]*>(.*?)</w:t>#s', $chunk, $m)) {
-                $text = trim(html_entity_decode(implode('', $m[1]), ENT_QUOTES | ENT_XML1, 'UTF-8'));
-                if ($text !== '') $out[] = ['text' => $text, 'field' => (bool) $isField];
-            }
-        }
-        return $out;
-    }
+    /* extractHeaderLogo() / extractHeaderFooterText() / docxPartParagraphs()
+       were removed with the Word header/footer round-trip: uploads now update
+       body content only and never lift a logo/title/footer out of the file
+       (see uploadDocx). Recover from git history if that decision reverses. */
 
     /**
      * Lightweight DOCX → HTML extractor. PhpWord doesn't ship a stock HTML
