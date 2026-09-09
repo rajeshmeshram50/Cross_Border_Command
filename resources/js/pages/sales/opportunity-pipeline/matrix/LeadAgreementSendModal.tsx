@@ -1266,7 +1266,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
         {/* ── BODY ── */}
         <div className="lasm-body">
           {loading ? (
-            <div className="lasm-empty">Loading {view === 'trade' ? 'trade documents' : 'agreements'}…</div>
+            <LasmSkeleton view={view} />
           ) : !payload ? (
             <div className="lasm-empty">Could not load applicable {view === 'trade' ? 'trade documents' : 'agreements'}.</div>
           ) : !payload.pi ? (
@@ -2409,6 +2409,57 @@ function StatusPill({ status, cpSigned, cpTotal }: { status: string; cpSigned?: 
 }
 
 /* ── Scoped CSS ────────────────────────────────────────────────────── */
+/* Loading state for the popup body.
+ *
+ * It used to be the line "Loading agreements…" on an otherwise blank panel
+ * (QA #23 / #24). On a slow fetch that reads as a popup that opened empty —
+ * there is nothing to say a table is on its way, and the eye has no shape to
+ * settle on. This lays out the shape it is about to get: the tab strip, the
+ * real column headers, and rows of shimmer where the documents will land.
+ *
+ * Headers are the REAL ones, not placeholders. They cost nothing to render
+ * and they tell the user what is coming while it comes.
+ *
+ * Row count is fixed at five — the popup's own page size — so the table does
+ * not visibly resize the moment the data replaces it. */
+function LasmSkeleton({ view }: { view: 'agreements' | 'trade' }) {
+  const cols = view === 'trade'
+    ? ['Sr No.', 'Document', 'Segment', 'Necessary', 'Status', 'Actions']
+    : ['Sr No.', 'Document', 'Applicable Party', 'Necessary', 'Updated On', 'Status', 'Actions'];
+  return (
+    <div className="lasm-skel-wrap" role="status" aria-live="polite"
+         aria-label={`Loading ${view === 'trade' ? 'trade documents' : 'agreements'}`}>
+      {/* Tier / segment tab strip */}
+      <div className="lasm-skel-tabs">
+        <span className="lasm-skel lasm-skel-pill" />
+        <span className="lasm-skel lasm-skel-pill" />
+        <span className="lasm-skel lasm-skel-pill lasm-skel-pill-wide" />
+      </div>
+      <div className="lasm-skel-table-wrap">
+        <table className="lasm-table">
+          <thead>
+            <tr>
+              <th style={{ width: 38 }} />
+              {cols.map(c => <th key={c}>{c}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: 5 }).map((_, r) => (
+              <tr key={r}>
+                <td><span className="lasm-skel lasm-skel-chk" /></td>
+                {cols.map((c, i) => (
+                  <td key={c}>
+                    <span className={`lasm-skel ${i === 1 ? 'lasm-skel-lg' : 'lasm-skel-md'}`} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 const LASM_CSS = `
 .lasm-overlay { position: fixed; inset: 0; z-index: 11500;
   background: rgba(15,23,42,.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
@@ -2431,6 +2482,32 @@ const LASM_CSS = `
 .lasm-close:hover { background: rgba(255,255,255,.28); }
 .lasm-body { padding: 0; display: flex; flex-direction: column; overflow: hidden; flex: 1; min-height: 0; }
 .lasm-empty { padding: 32px; text-align: center; color: #94a3b8; font-size: 13px; }
+/* Skeleton — violet-tinted to sit inside this popup rather than the slate
+   used on the worksheet, but the same 1.1s sweep so the two read as one
+   loading language across the app. */
+.lasm-skel-wrap { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }
+.lasm-skel-tabs { display: flex; gap: 10px; padding: 16px 22px; border-bottom: 1px solid #e2e8f0; }
+.lasm-skel-table-wrap { margin: 16px 22px 18px; flex: 1 1 0; min-height: 0; overflow: hidden;
+  border: 1px solid #ede9fe; border-radius: 14px; }
+.lasm-skel {
+  display: inline-block; height: 10px; border-radius: 4px; vertical-align: middle;
+  background: linear-gradient(90deg, #ede9fe 0%, #f5f3ff 50%, #ede9fe 100%);
+  background-size: 200% 100%;
+  animation: lasm-shimmer 1.1s ease-in-out infinite;
+}
+.lasm-skel-md { width: 80px; }
+.lasm-skel-lg { width: 140px; }
+.lasm-skel-chk { width: 14px; height: 14px; border-radius: 3px; }
+.lasm-skel-pill { width: 96px; height: 26px; border-radius: 999px; }
+.lasm-skel-pill-wide { width: 150px; }
+@keyframes lasm-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .lasm-skel { animation: none; } }
+[data-bs-theme="dark"] .lasm-skel {
+  background: linear-gradient(90deg, #2b2450 0%, #3b3268 50%, #2b2450 100%);
+  background-size: 200% 100%;
+}
+[data-bs-theme="dark"] .lasm-skel-table-wrap { border-color: #2b2450; }
+[data-bs-theme="dark"] .lasm-skel-tabs { border-bottom-color: #2b2450; }
 .lasm-empty-warn { color: #92400e; background: linear-gradient(110deg,rgba(251,191,36,.08),rgba(254,243,199,.40)); border-radius: 0; }
 .lasm-tabs { display: flex; align-items: stretch; gap: 0; padding: 0 22px; flex-shrink: 0;
   border-bottom: 1px solid #e2e8f0; background: #fff; overflow-x: auto; }
