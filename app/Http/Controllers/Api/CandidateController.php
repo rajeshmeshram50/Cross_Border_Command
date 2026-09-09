@@ -629,6 +629,33 @@ class CandidateController extends Controller
             ->whereIn('status', ['Selected', 'Offered'])
             ->count();
 
+        /* Every email already on this recruitment, fetched ONCE.
+           The duplicate check used to be a query per row:
+               where('recruitment_id', …)->whereRaw('LOWER(email) = ?')->exists()
+           — so a 500-row sheet asked the database 500 times, and none of those
+           asks could use an index. `candidates_email_index` is a plain btree on
+           `email`, and Postgres cannot answer a question about lower(email)
+           from it; EXPLAIN confirms a scan. One recruitment's candidate list is
+           small enough to hold in memory, and comparing there costs nothing.
+           Lower-cased on the way in so the comparison matches the old SQL. */
+        $existingEmails = Candidate::query()
+            ->where('recruitment_id', $parent->id)
+            ->whereNotNull('email')
+            ->pluck('email')
+            ->map(fn ($e) => mb_strtolower(trim((string) $e)))
+            ->filter()
+            ->flip();          // flip → O(1) isset() lookups instead of in_array()
+
+        /* One transaction for the whole sheet instead of one per row.
+           Every Candidate::create() was committing on its own — N commits, each
+           with its own write and flush. Wrapping the loop makes it one.
+           It also makes the import atomic: a failure part-way through no longer
+           leaves half a spreadsheet imported with no way to tell which half.
+           Rows REJECTED by validation are not failures — they are counted and
+           reported, and the transaction still commits the good ones. */
+        DB::beginTransaction();
+        try {
+
         foreach ($dataRows as $i => $row) {
             $rowNum = $i + 2; // +1 for 0-index, +1 for header
             // Drop completely-empty rows silently — Excel often leaves them
@@ -681,10 +708,12 @@ class CandidateController extends Controller
             // count as an error; spreadsheets often contain re-imports of
             // already-applied candidates.
             if (!empty($payload['email'])) {
-                $exists = Candidate::query()
-                    ->where('recruitment_id', $parent->id)
-                    ->whereRaw('LOWER(email) = ?', [mb_strtolower($payload['email'])])
-                    ->exists();
+                /* In-memory against the set built before the loop. Also catches
+                   a duplicate WITHIN the same file — the old per-row query
+                   could not, because the earlier row had not been committed
+                   yet when the later one was checked. */
+                $emailKey = mb_strtolower(trim((string) $payload['email']));
+                $exists   = isset($existingEmails[$emailKey]);
                 if ($exists) {
                     $skipped++;
                     $errors[] = ['row' => $rowNum, 'message' => "Duplicate email — already linked to this recruitment."];
@@ -712,7 +741,22 @@ class CandidateController extends Controller
                 // ('Final Interview' or 'Selected') from the status gate above.
             ]));
             $created++;
+            // Keep the set current so a later row carrying the same address is
+            // caught as a duplicate too.
+            if (!empty($payload['email'])) {
+                $existingEmails[mb_strtolower(trim((string) $payload['email']))] = true;
+            }
             if ($mappedStatus === 'Selected') $selectedCount++;
+        }
+
+        DB::commit();
+
+        } catch (\Throwable $e) {
+            /* A manual beginTransaction has no safety net of its own — without
+               this, a database error mid-sheet would leave the transaction open
+               and the connection holding locks until the request ended. */
+            DB::rollBack();
+            throw $e;
         }
 
         return response()->json([
