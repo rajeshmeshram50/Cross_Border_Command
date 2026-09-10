@@ -10,7 +10,6 @@ import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } from '../../../../utils/vaultSignatureRows';
 import { downloadFile } from '../../../../utils/downloadFile';
 import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
-import { CEV_CSS } from '../../../sales/core-masters/customer/CustomerEvidenceVaultModal';
 
 import { SegmentRefUploadPopup } from './AddVendorModal';
 import { SigningTrackerModal } from '../../../sales/opportunity-pipeline/SigningTrackerModal';
@@ -251,6 +250,7 @@ const demoDoc = (
   attachment_url: null,
   db_id: null,
   signature_request_id: null,
+  id: 0
 });
 
 function demoCaseToCase(supplierName: string): {
@@ -743,7 +743,6 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   return createPortal(
     <VaultViewOnlyCtx.Provider value={viewOnly}>
     <div className="cev-overlay sev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <style>{CEV_CSS}</style>
       <div className="cev-card sev" onMouseDown={(e) => e.stopPropagation()}>
 
         <div className="cev-header">

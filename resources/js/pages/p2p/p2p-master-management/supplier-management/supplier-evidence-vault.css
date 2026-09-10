@@ -1,3 +1,2470 @@
+.cev-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 51, 68, 0.45);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  z-index: 11200;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  animation: cevFade .18s ease both;
+}
+
+@keyframes cevFade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.cev-card {
+  position: relative;
+  width: min(1280px, 90vw);
+  height: 100vh;
+  /* fallback for old browsers */
+  height: 100dvh;
+  /* dynamic viewport — mobile address bar no longer hides the footer */
+  background: #f0fdff;
+  /* No curve — straight edges so the drawer feels like a flush
+     extension of the page rather than a floating card. */
+  border-radius: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -32px 0 80px rgba(8, 51, 68, .40), -12px 0 30px rgba(8, 51, 68, .18);
+  animation: cevSlide .26s cubic-bezier(.22, 1, .36, 1) both;
+}
+
+@keyframes cevSlide {
+  from {
+    transform: translateX(40px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* ─── HEADER ─── */
+.cev-header {
+  position: relative;
+  flex-shrink: 0;
+  padding: 14px 22px;
+  background: linear-gradient(125deg, #083344 0%, #0c4a6e 25%, #0e7490 50%, #0891b2 75%, #06b6d4 100%);
+  color: #fff;
+  overflow: hidden;
+}
+
+/* Decorative bubble cluster — mirrors the green Figma reference. Pure
+   CSS circles sized + positioned so they read as soft floating orbs on
+   the right side of the gradient. pointer-events: none keeps them
+   purely cosmetic. */
+.cev-header-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(165, 243, 252, 0.10), transparent 45%),
+    radial-gradient(circle at 0% 100%, rgba(34, 211, 238, 0.10), transparent 55%);
+}
+
+.cev-header-bg::before,
+.cev-header-bg::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.06) 60%, transparent 75%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.cev-header-bg::before {
+  width: 220px;
+  height: 220px;
+  top: -80px;
+  right: -40px;
+}
+
+.cev-header-bg::after {
+  width: 130px;
+  height: 130px;
+  bottom: -45px;
+  right: 130px;
+  background: radial-gradient(circle at 30% 30%, rgba(103, 232, 249, 0.30), rgba(103, 232, 249, 0.06) 60%, transparent 75%);
+}
+
+/* Extra orb via a span on the JSX side too — gives a third bubble
+   without nesting another wrapper. */
+.cev-header-orb {
+  position: absolute;
+  width: 90px;
+  height: 90px;
+  top: 8px;
+  right: 220px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04) 60%, transparent 75%);
+  pointer-events: none;
+}
+
+.cev-header-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.cev-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cev-vault-icon {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .18);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  flex-shrink: 0;
+}
+
+.cev-vault-icon-tick {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #22d3ee;
+  color: #083344;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #0891b2;
+}
+
+.cev-header-text {
+  min-width: 0;
+}
+
+.cev-header-eyebrow {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  color: rgba(255, 255, 255, .78);
+  margin-bottom: 2px;
+}
+
+.cev-header-title {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  margin-bottom: 6px;
+  color: #fff;
+}
+
+.cev-header-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.cev-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  color: #ecfeff;
+}
+
+.cev-chip-risk[data-risk="low"] {
+  background: rgba(16, 185, 129, 0.30);
+  color: #ecfdf5;
+}
+
+.cev-chip-risk[data-risk="medium"] {
+  background: rgba(245, 158, 11, 0.30);
+  color: #fef3c7;
+}
+
+.cev-chip-risk[data-risk="high"] {
+  background: rgba(239, 68, 68, 0.30);
+  color: #fee2e2;
+}
+
+.cev-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* "+N more" segment list popover — white card with a titled list of segment
+ * pills (matches the CLM authority/segment popovers). */
+.cev-seg-pop {
+  background: #fff;
+  border: 1.5px solid #a5f3fc;
+  border-radius: 12px;
+  padding: 8px;
+  box-shadow: 0 18px 44px rgba(8, 47, 73, .28);
+}
+
+.cev-seg-pop-title {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #0e7490;
+  padding: 4px 8px 7px;
+}
+
+.cev-seg-pop-row {
+  display: flex;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: 8px;
+}
+
+.cev-seg-pop-row.alt {
+  background: #ecfeff;
+}
+
+.cev-seg-pop-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #0e7490;
+  background: #cffafe;
+  border: 1px solid rgba(8, 145, 178, .30);
+  border-radius: 999px;
+  padding: 2px 11px;
+}
+
+.cev-seg-pop-pill::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+[data-bs-theme="dark"] .cev-seg-pop {
+  background: #0f2a30;
+  border-color: rgba(34, 211, 238, .30);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .55);
+}
+
+[data-bs-theme="dark"] .cev-seg-pop-title {
+  color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .cev-seg-pop-row.alt {
+  background: rgba(255, 255, 255, .04);
+}
+
+[data-bs-theme="dark"] .cev-seg-pop-pill {
+  background: rgba(8, 145, 178, .18);
+  color: #67e8f9;
+  border-color: rgba(34, 211, 238, .30);
+}
+
+.cev-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  cursor: pointer;
+  transition: all .15s;
+  flex-shrink: 0;
+}
+
+.cev-close:hover {
+  background: rgba(255, 255, 255, 0.30);
+  transform: rotate(90deg);
+}
+
+@keyframes cevStatsAccent {
+  0% {
+    background-position: 0% 0%;
+  }
+
+  100% {
+    background-position: 200% 0%;
+  }
+}
+
+/* ─── TABS — pill ribbon. Inactive tabs read as soft chips,
+   active tab gets a violet gradient + lifted shadow. Animated icon
+   square and pill count badge keep the row visually rich. */
+/* ─── GROUP CARDS — two big selectors that split the sub-tabs into
+   Standard Documents (one-time) and Case to Case Agreements (per-deal). */
+.cev-groups-wrap {
+  flex-shrink: 0;
+  background: linear-gradient(180deg, #f0fdff 0%, #ecfeff 100%);
+  padding: 13px 18px;
+}
+
+.cev-groups {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.cev-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 16px;
+  background: #ffffff;
+  border: 1.5px solid #cffafe;
+  border-radius: 13px;
+  text-align: left;
+  transition: all .2s ease;
+}
+
+.cev-group:hover {
+  border-color: #67e8f9;
+  background: #f0fdff;
+}
+
+/* The icon+text selector (picks the active group). */
+.cev-group-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+/* "Document Overview" button on the right of each group card. */
+/* INACTIVE card → ghost button (secondary). */
+.cev-group-overview {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
+  color: #fff;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .01em;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(8, 145, 178, .3);
+  transition: all .18s ease;
+}
+
+.cev-group-overview:hover {
+  background: linear-gradient(135deg, #0891b2, #0e7490);
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(8, 145, 178, .42);
+}
+
+.cev-group-overview i {
+  font-size: 13px;
+}
+
+/* ACTIVE (selected) card → SOLID WHITE button (the prominent one). */
+.cev-group.is-active .cev-group-overview {
+  background: #fff;
+  color: #0891b2;
+  border-color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .14);
+}
+
+.cev-group.is-active .cev-group-overview:hover {
+  background: #f0fdff;
+  color: #0891b2;
+  border-color: #fff;
+}
+
+/* ─── Document Overview popup ─── */
+.cev-ov-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 11400;
+  background: rgba(8, 51, 68, .45);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: cevFade .16s ease both;
+}
+
+.cev-ov-card {
+  width: min(760px, 96vw);
+  max-height: 86vh;
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 30px 80px rgba(8, 51, 68, .45);
+}
+
+.cev-ov-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  background: linear-gradient(120deg, #083344 0%, #0c4a6e 30%, #0e7490 65%, #0891b2 100%);
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.cev-ov-head-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, .16);
+  border: 1px solid rgba(255, 255, 255, .22);
+  font-size: 19px;
+}
+
+.cev-ov-head-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.cev-ov-title {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+}
+
+.cev-ov-sub {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, .82);
+  margin-top: 2px;
+}
+
+.cev-ov-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, .25);
+  background: rgba(255, 255, 255, .12);
+  color: #fff;
+  cursor: pointer;
+  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .15s ease;
+}
+
+.cev-ov-close:hover {
+  background: rgba(255, 255, 255, .25);
+}
+
+/* Fixed height for ~5 rows so the popup size stays constant regardless of how
+   many documents the selected shipment/page has (paginated at 5/page). */
+/* Top spacing is a non-scrolling BORDER, not padding: padding-top is inside
+   the scrollport, so a sticky (top:0) thead sticks below it and earlier rows
+   peek into the gap above the header. A border sits outside the scrollport and
+   clips the content, so the sticky header stays flush and nothing shows above it. */
+.cev-ov-body {
+  overflow: auto;
+  padding: 0 18px 18px;
+  border-top: 14px solid #fff;
+  min-height: 312px;
+  max-height: 312px;
+}
+
+/* Case-to-case shipment tabs (horizontal, scrollable) */
+.cev-ov-shiptabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 12px 18px 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(8, 145, 178, .3) transparent;
+}
+
+.cev-ov-shiptabs::-webkit-scrollbar {
+  height: 6px;
+}
+
+.cev-ov-shiptabs::-webkit-scrollbar-thumb {
+  background: rgba(8, 145, 178, .3);
+  border-radius: 99px;
+}
+
+.cev-ov-shiptab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  border: 1.5px solid rgba(6, 182, 212, .22);
+  background: #fff;
+  color: #0e7490;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: all .15s;
+}
+
+.cev-ov-shiptab:hover {
+  background: #ecfeff;
+}
+
+.cev-ov-shiptab.is-active {
+  background: linear-gradient(135deg, #0e7490, #06b6d4);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 3px 10px rgba(8, 145, 178, .3);
+}
+
+.cev-ov-shiptab-opp {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 20px;
+  background: rgba(8, 145, 178, .1);
+  color: #0891b2;
+}
+
+.cev-ov-shiptab.is-active .cev-ov-shiptab-opp {
+  background: rgba(255, 255, 255, .22);
+  color: #fff;
+}
+
+[data-bs-theme="dark"] .cev-ov-shiptab {
+  background: rgba(8, 145, 178, .12);
+  color: #67e8f9;
+  border-color: rgba(8, 145, 178, .34);
+}
+
+[data-bs-theme="dark"] .cev-ov-shiptab.is-active {
+  background: linear-gradient(135deg, #06b6d4, #22d3ee);
+  color: #fff;
+  border-color: transparent;
+}
+
+.cev-ov-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+.cev-ov-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #083344;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 10px 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.cev-ov-table thead th:first-child {
+  border-radius: 8px 0 0 8px;
+}
+
+.cev-ov-table thead th:last-child {
+  border-radius: 0 8px 8px 0;
+}
+
+.cev-ov-table tbody td {
+  padding: 11px 12px;
+  border-bottom: 1px solid #e6f7fb;
+  vertical-align: middle;
+}
+
+.cev-ov-table tbody tr:hover td {
+  background: #f0fdff;
+}
+
+.cev-ov-num {
+  color: #5e94a1;
+  font-weight: 700;
+}
+
+.cev-ov-name {
+  font-weight: 700;
+  color: #0a2630;
+}
+
+/* Align the # / STATUS / ACTION columns centered (header AND cells) so the
+   status pills and download buttons sit directly under their headings.
+   DOCUMENT NAME stays left-aligned. */
+.cev-ov-table thead th:first-child,
+.cev-ov-table tbody td:first-child,
+.cev-ov-table thead th:nth-child(3),
+.cev-ov-table tbody td:nth-child(3),
+.cev-ov-table thead th:nth-child(4),
+.cev-ov-table tbody td:nth-child(4) {
+  text-align: center;
+}
+
+.cev-ov-empty {
+  text-align: center;
+  color: #5e94a1;
+  padding: 28px 12px !important;
+  font-weight: 600;
+}
+
+/* Shipment group header row inside the Case-to-Case overview. */
+.cev-ov-ship-head td {
+  background: #ecfeff !important;
+  border-bottom: 1px solid #a5f3fc !important;
+  padding: 9px 12px !important;
+  font-weight: 800;
+  font-size: 12px;
+  color: #0e7490;
+  letter-spacing: .02em;
+}
+
+.cev-ov-ship-head td i {
+  margin-right: 6px;
+}
+
+.cev-ov-ship-opp {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .03em;
+}
+
+[data-bs-theme="dark"] .cev-ov-ship-head td {
+  background: rgba(8, 145, 178, .16) !important;
+  color: #67e8f9;
+  border-bottom-color: rgba(8, 145, 178, .3) !important;
+}
+
+[data-bs-theme="dark"] .cev-ov-ship-opp {
+  background: rgba(194, 65, 12, .18);
+  color: #fdba74;
+  border-color: rgba(194, 65, 12, .4);
+}
+
+.cev-ov-dl {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 7px;
+  background: #ecfeff;
+  color: #0e7490;
+  border: 1.5px solid #a5f3fc;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+
+.cev-ov-dl:hover:not(:disabled) {
+  background: #fff;
+  border-color: #06b6d4;
+  color: #0891b2;
+}
+
+.cev-ov-dl:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+[data-bs-theme="dark"] .cev-ov-card {
+  background: #0a2630;
+}
+
+[data-bs-theme="dark"] .cev-ov-body {
+  border-top-color: #0a2630;
+}
+
+[data-bs-theme="dark"] .cev-ov-table tbody td {
+  border-bottom-color: rgba(8, 145, 178, .18);
+  color: #cffafe;
+}
+
+[data-bs-theme="dark"] .cev-ov-name {
+  color: #e6f7fb;
+}
+
+[data-bs-theme="dark"] .cev-ov-table tbody tr:hover td {
+  background: rgba(8, 145, 178, .10);
+}
+
+.cev-group.is-active {
+  background: linear-gradient(120deg, #0c4a6e 0%, #0891b2 55%, #06b6d4 100%);
+  border-color: #0891b2;
+  box-shadow: 0 6px 18px rgba(14, 116, 144, .35);
+}
+
+.cev-group-icon {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: #ecfeff;
+  color: #0891b2;
+  border: 1px solid #a5f3fc;
+  font-size: 16px;
+}
+
+.cev-group.is-active .cev-group-icon {
+  background: rgba(255, 255, 255, .18);
+  color: #fff;
+  border-color: rgba(255, 255, 255, .25);
+}
+
+.cev-group-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cev-group-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0a2630;
+  letter-spacing: -.01em;
+}
+
+.cev-group.is-active .cev-group-title {
+  color: #ffffff;
+}
+
+.cev-group-sub {
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  color: #5e94a1;
+}
+
+.cev-group.is-active .cev-group-sub {
+  color: rgba(255, 255, 255, .8);
+}
+
+.cev-tabs-wrap {
+  flex-shrink: 0;
+  background: #fff;
+  border-bottom: 2px solid #d6eef5;
+  padding: 0 18px;
+}
+
+.cev-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.cev-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* Underline sub-tabs — matches the CLM prototype's .ev-tab: a flat row of
+ * tabs with a glowing cyan underline on the active one, an icon chip and a
+ * pill count badge. */
+.cev-tab {
+  flex: 0 0 auto;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  margin-bottom: -2px;
+  color: #94a3b8;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color .18s ease, border-color .18s ease;
+  white-space: nowrap;
+}
+
+.cev-tab-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(148, 163, 184, .08);
+  color: #94a3b8;
+  font-size: 13px;
+  flex-shrink: 0;
+  transition: all .18s ease;
+}
+
+.cev-tab-label {
+  white-space: nowrap;
+}
+
+.cev-tab:hover {
+  color: #0891b2;
+}
+
+.cev-tab:hover .cev-tab-icon {
+  background: rgba(6, 182, 212, .1);
+  color: #0891b2;
+}
+
+.cev-tab.is-active {
+  color: #0e7490;
+  font-weight: 700;
+  border-bottom-color: #0891b2;
+}
+
+.cev-tab.is-active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 10px;
+  right: 10px;
+  height: 2.5px;
+  background: linear-gradient(90deg, #06b6d4, #22d3ee);
+  border-radius: 2px 2px 0 0;
+  box-shadow: 0 0 8px rgba(6, 182, 212, .6);
+}
+
+.cev-tab.is-active .cev-tab-icon {
+  background: linear-gradient(135deg, #ecfeff, #cffafe);
+  color: #0891b2;
+}
+
+.cev-tab-count {
+  background: #f0fdff;
+  color: #22d3ee;
+  border: 1px solid #a5f3fc;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .18s ease;
+}
+
+.cev-tab.is-active .cev-tab-count {
+  background: linear-gradient(135deg, #06b6d4, #22d3ee);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 2px 6px rgba(6, 182, 212, .38);
+}
+
+/* ─── BODY ─── */
+.cev-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px 18px;
+  background: #f7f8fc;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  /* Match the visible scrollbar pattern used by [[AddVendorModal]]'s
+     .avm-body so the rail is obvious when a tab's table grows past
+     the body. Solid violet replaces the prior near-invisible rgba(.30). */
+  scrollbar-width: thin;
+  scrollbar-color: #67e8f9 transparent;
+}
+
+.cev-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.cev-body::-webkit-scrollbar-thumb {
+  background: #67e8f9;
+  border-radius: 99px;
+}
+
+.cev-body::-webkit-scrollbar-thumb:hover {
+  background: #06b6d4;
+}
+
+/* Unified scroller — KPIs + group cards + toggle + tabs + table scroll together
+   between the fixed header and footer, so a short/zoomed viewport (or a long
+   table) can reach ALL the content instead of clipping the strip above the
+   table. Only present in the Supplier vault; the customer modal has no
+   .cev-scroll element so its layout is unchanged. */
+.cev-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: #67e8f9 transparent;
+}
+
+.cev-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.cev-scroll::-webkit-scrollbar-thumb {
+  background: #67e8f9;
+  border-radius: 99px;
+}
+
+.cev-scroll::-webkit-scrollbar-thumb:hover {
+  background: #06b6d4;
+}
+
+/* Inside the unified scroller the table area flows naturally (the scroller owns
+   the overflow) but still grows to fill when the content is short. */
+.cev-scroll .cev-body {
+  flex: 1 0 auto;
+  overflow: visible;
+}
+
+/* Shipment tabs: ONE combined card like Standard Docs — section header fused to
+   a Customer=/≠Consignee toggle band, fused to the table (no gaps). */
+.cev-body-ship {
+  gap: 0;
+}
+
+.cev-body-ship .cev-ship-filter,
+.cev-body-ship .cev-ship-filter-2 {
+  align-self: stretch;
+  width: auto;
+  margin: 0;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  background: #fbfdff;
+  border-radius: 0;
+  border-left: 1px solid #e4e7f5;
+  border-right: 1px solid #e4e7f5;
+  border-bottom: 1px solid #e4e7f5;
+}
+
+[data-bs-theme="dark"] .cev-body-ship .cev-ship-filter,
+[data-bs-theme="dark"] .cev-body-ship .cev-ship-filter-2 {
+  background: #0a2630 !important;
+  border-color: rgba(8, 145, 178, .28) !important;
+}
+
+.cev-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 16px;
+  background: linear-gradient(110deg, #fafbff 0%, #f3f5ff 100%);
+  border: 1px solid #e4e7f5;
+  border-radius: 10px 10px 0 0;
+}
+
+.cev-section-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cev-section-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #ecfeff, #a5f3fc);
+  color: #0891b2;
+  border: 1px solid rgba(6, 182, 212, .22);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  box-shadow: 0 2px 6px rgba(6, 182, 212, .12);
+}
+
+.cev-section-title {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #083344;
+}
+
+.cev-section-sub {
+  font-size: 9.5px;
+  color: #94a3b8;
+  margin-top: 1px;
+}
+
+.cev-section-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.cev-section-count {
+  font-size: 26px;
+  font-weight: 800;
+  color: #0c4a6e;
+  line-height: 1;
+}
+
+.cev-section-count-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  color: #0891b2;
+  margin-top: 2px;
+}
+
+/* Figma-style status count pills on the section header band. */
+.cev-sec-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.cev-sec-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.cev-sec-pill-ok {
+  background: #ecfdf5;
+  color: #059669;
+  border-color: #a7f3d0;
+}
+
+.cev-sec-pill-ok .cev-sec-dot {
+  background: #10b981;
+}
+
+.cev-sec-pill-warn {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
+}
+
+.cev-sec-pill-warn .cev-sec-dot {
+  background: #f59e0b;
+}
+
+.cev-sec-pill-bad {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fecaca;
+}
+
+.cev-sec-pill-bad .cev-sec-dot {
+  background: #ef4444;
+}
+
+.cev-sec-pill-docs {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
+
+/* ─── Loading skeleton (shimmer) ─── */
+.cev-skel {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 16px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cev-sk {
+  position: relative;
+  overflow: hidden;
+  background: #cffafe;
+  border-radius: 12px;
+}
+
+.cev-sk::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .7), transparent);
+  animation: cevShimmer 1.3s ease-in-out infinite;
+}
+
+@keyframes cevShimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.cev-skel-kpis {
+  display: flex;
+  gap: 12px;
+}
+
+.cev-skel-kpi {
+  flex: 1;
+  height: 74px;
+}
+
+.cev-skel-groups {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.cev-skel-group {
+  height: 60px;
+}
+
+.cev-skel-tabs {
+  display: flex;
+  gap: 10px;
+}
+
+.cev-skel-tab {
+  width: 190px;
+  height: 40px;
+  border-radius: 999px;
+}
+
+.cev-skel-section {
+  height: 66px;
+}
+
+.cev-skel-table {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cev-skel-thead {
+  height: 38px;
+}
+
+.cev-skel-row {
+  height: 46px;
+  border-radius: 10px;
+}
+
+[data-bs-theme="dark"] .cev-sk {
+  background: rgba(34, 211, 238, .12);
+}
+
+[data-bs-theme="dark"] .cev-sk::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .10), transparent);
+}
+
+.cev-filter-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cev-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.cev-filter-verified {
+  background: #d1fae5;
+  color: #047857;
+  border-color: rgba(5, 150, 105, .30);
+}
+
+.cev-filter-expiring {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: rgba(217, 119, 6, .30);
+}
+
+.cev-filter-pending {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: rgba(239, 68, 68, .30);
+}
+
+.cev-table-wrap {
+  background: #fff;
+  border: 1px solid #e4e7f5;
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  overflow: hidden;
+  /* keep the rounded edge crisp over the
+                                 sticky header band — w/o this the band
+                                 paints over the corner radius */
+  scrollbar-width: thin;
+  position: relative;
+  /* Don't let the flex column body squash this wrap below its
+     intrinsic height — without this, extra rows can be clipped at
+     the bottom and .cev-body's overflow-y never trips, so the user
+     has no scrollbar to reach hidden documents. */
+  flex-shrink: 0;
+}
+
+.cev-section {
+  flex-shrink: 0;
+}
+
+/* Inner scroll context for the table — own scrolling ancestor so
+   the sticky thead pins inside the table, not against the outer
+   body. Viewport-relative max-height so the table fills the
+   available vertical space on any laptop screen while still
+   leaving a hard ceiling that keeps the sticky band working. */
+/* Cap the table at ~5 rows and scroll inside it after that (instead of
+ * letting the whole vault grow). The sticky thead pins to the top of THIS
+ * scroll box, so the header stays visible while the extra rows scroll under
+ * it. max-height (not a fixed height) means 2-4 row buckets still shrink to
+ * their content with no empty space. overflow-x stays auto so wide tables
+ * (min-width 980px) can still scroll sideways on narrow screens. */
+.cev-table-scroll {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 550px;
+  scrollbar-width: thin;
+}
+
+.cev-table-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.cev-table-scroll::-webkit-scrollbar-thumb {
+  background: rgba(8, 145, 178, .30);
+  border-radius: 999px;
+}
+
+.cev-table-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(8, 145, 178, .55);
+}
+
+.cev-table-scroll::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.cev-table-scroll::-webkit-scrollbar-thumb {
+  background: rgba(8, 145, 178, .30);
+  border-radius: 999px;
+}
+
+.cev-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+/* ONE continuous gradient across the whole header row (not per-column).
+   The gradient + sticky both live on the <tr> so it spans left→right as a
+   single band AND stays pinned on scroll; the <th> cells are transparent
+   so they don't restart the gradient per column. */
+.cev-table thead tr {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: linear-gradient(110deg, #083344 0%, #0c4a6e 60%, #0e7490 100%);
+}
+
+.cev-table thead th {
+  padding: 9px 14px;
+  /* tighter than 12px — visually slim band */
+  text-align: left;
+  background: transparent;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: rgba(255, 255, 255, .75);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cev-table tbody td {
+  padding: 13px 14px;
+  border-bottom: 1px solid #f0f2fa;
+  vertical-align: middle;
+  color: #334155;
+  background: #fff;
+}
+
+.cev-table tbody tr:nth-child(even) td {
+  background: #fafbff;
+}
+
+.cev-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.cev-table tbody tr:hover td {
+  background: #f0fdff;
+}
+
+.cev-doc-name {
+  font-weight: 700;
+  color: #083344;
+}
+
+.cev-mono {
+  font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  font-size: 12px;
+  color: #1f2937;
+}
+
+.cev-date {
+  font-size: 12px;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.cev-attach {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0891b2;
+  text-decoration: none;
+  padding: 4px 10px;
+  border: 1px solid #a5f3fc;
+  border-radius: 8px;
+  background: #f0fdff;
+  white-space: nowrap;
+  transition: all .15s;
+}
+
+.cev-attach:hover {
+  background: #cffafe;
+  border-color: #67e8f9;
+  color: #0e7490;
+}
+
+.cev-attach i {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* Keep long filenames from stretching the Attachment column — cap the label
+ * and ellipsize; the full name stays available via the cell's title tooltip. */
+.cev-attach-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cev-attach-muted {
+  color: #94a3b8;
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  cursor: default;
+}
+
+.cev-empty {
+  padding: 30px !important;
+  text-align: center;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+[data-bs-theme="dark"] .cev-date {
+  color: #94a3b8;
+}
+
+[data-bs-theme="dark"] .cev-attach {
+  color: #67e8f9;
+  background: rgba(8, 145, 178, .12);
+  border-color: rgba(34, 211, 238, .30);
+}
+
+[data-bs-theme="dark"] .cev-attach:hover {
+  background: rgba(8, 145, 178, .22);
+  color: #cffafe;
+}
+
+[data-bs-theme="dark"] .cev-attach-muted {
+  color: #64748b;
+  background: rgba(255, 255, 255, .03);
+  border-color: rgba(255, 255, 255, .08);
+}
+
+.cev-muted {
+  color: #94a3b8;
+  font-style: italic;
+  font-size: 12px;
+}
+
+.cev-date {
+  display: inline-block;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: #ecfeff;
+  color: #0e7490;
+}
+
+.cev-date-expiry[data-status="expiring"] {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.cev-date-expiry[data-status="pending"] {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.cev-attach {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: #cffafe;
+  color: #0e7490;
+  font-size: 11.5px;
+  font-weight: 600;
+  border: 1px solid rgba(8, 145, 178, .30);
+}
+
+/* Row Actions — View / Download / Re-upload icons. Shared baseline
+ * with a per-action tint so users can scan the column without reading
+ * the icons. Disabled state stays visible but loses its hover affordance. */
+.cev-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cev-row-act {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease;
+}
+
+.cev-row-act-view {
+  color: #2563eb;
+  background: rgba(37, 99, 235, .08);
+  border-color: rgba(37, 99, 235, .20);
+}
+
+.cev-row-act-view:hover:not(.is-disabled) {
+  background: rgba(37, 99, 235, .18);
+  transform: translateY(-1px);
+}
+
+.cev-row-act-download {
+  color: #0891b2;
+  background: rgba(8, 145, 178, .08);
+  border-color: rgba(8, 145, 178, .20);
+}
+
+.cev-row-act-download:hover:not(.is-disabled) {
+  background: rgba(8, 145, 178, .18);
+  transform: translateY(-1px);
+}
+
+.cev-row-act-upload {
+  color: #06b6d4;
+  background: rgba(8, 145, 178, .08);
+  border-color: rgba(8, 145, 178, .20);
+}
+
+.cev-row-act-upload:hover:not(.is-disabled) {
+  background: rgba(8, 145, 178, .18);
+  transform: translateY(-1px);
+}
+
+.cev-row-act.is-disabled,
+.cev-row-act:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Dark mode — lift the action-button fills + icon colours so they read on the
+ * dark row. Send / Reminder / Certificate set their colours inline, so those
+ * need !important to win over the inline style attribute. */
+[data-bs-theme="dark"] .cev-row-act-view {
+  color: #93c5fd;
+  background: rgba(59, 130, 246, .16);
+  border-color: rgba(59, 130, 246, .34);
+}
+
+[data-bs-theme="dark"] .cev-row-act-view:hover:not(.is-disabled) {
+  background: rgba(59, 130, 246, .28);
+}
+
+[data-bs-theme="dark"] .cev-row-act-download {
+  color: #67e8f9;
+  background: rgba(8, 145, 178, .18);
+  border-color: rgba(8, 145, 178, .36);
+}
+
+[data-bs-theme="dark"] .cev-row-act-download:hover:not(.is-disabled) {
+  background: rgba(8, 145, 178, .30);
+}
+
+[data-bs-theme="dark"] .cev-row-act-upload {
+  color: #67e8f9;
+  background: rgba(8, 145, 178, .20);
+  border-color: rgba(8, 145, 178, .40);
+}
+
+[data-bs-theme="dark"] .cev-row-act-upload:hover:not(.is-disabled) {
+  background: rgba(8, 145, 178, .32);
+}
+
+[data-bs-theme="dark"] .cev-row-act-send {
+  background: rgba(8, 145, 178, .24) !important;
+  color: #67e8f9 !important;
+  border-color: rgba(8, 145, 178, .42) !important;
+}
+
+[data-bs-theme="dark"] .cev-row-act-remind {
+  background: rgba(245, 158, 11, .20) !important;
+  color: #fcd34d !important;
+  border-color: rgba(245, 158, 11, .42) !important;
+}
+
+[data-bs-theme="dark"] .cev-row-act-cert {
+  background: rgba(8, 145, 178, .22) !important;
+  color: #67e8f9 !important;
+  border-color: rgba(8, 145, 178, .42) !important;
+}
+
+.cev-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cev-risk-compliant {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.cev-risk-medium {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.cev-risk-high {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+/* Chip pills used in shipment matrix */
+.cev-chip-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: #cffafe;
+  color: #0e7490;
+  font-size: 11.5px;
+  font-weight: 700;
+  border: 1px solid rgba(8, 145, 178, .30);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.cev-chip-pill-warm {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: rgba(217, 119, 6, .30);
+}
+
+.cev-cust-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cev-cust-mono {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+/* Coloured-number compliance cell — bold ratio + % beneath, no circle. */
+.cev-ratio-num {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.cev-ratio-num-main {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.cev-ratio-num-pct {
+  font-size: 9.5px;
+  font-weight: 700;
+  margin-top: 1px;
+  opacity: .9;
+}
+
+.cev-ratio-num[data-tone="good"] {
+  color: #16a34a;
+}
+
+.cev-ratio-num[data-tone="mid"] {
+  color: #f59e0b;
+}
+
+.cev-ratio-num[data-tone="bad"] {
+  color: #dc2626;
+}
+
+.cev-ship-filter {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 2-tab toggle (Buyer = / ≠ Consignee) — compact pills in a tray, not
+   full-width, matching the Figma. */
+.cev-ship-filter-2 {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  background: #eef2f7;
+  border-radius: 12px;
+  align-self: flex-start;
+}
+
+.cev-ship-filter-2 .cev-ship-fbtn {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 8px 18px;
+  border: 1px solid rgba(8, 145, 178, .22);
+  background: #fff;
+  border-radius: 9px;
+}
+
+.cev-ship-filter-2 .cev-ship-fbtn:not(.is-active):hover {
+  background: #f0fdff;
+  border-color: rgba(8, 145, 178, .40);
+  color: #0891b2;
+}
+
+.cev-ship-fbtn {
+  flex: 1;
+  min-width: 160px;
+  padding: 10px 18px;
+  background: #fff;
+  border: 1px solid rgba(8, 145, 178, .20);
+  border-radius: 10px;
+  color: #475569;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .15s;
+}
+
+.cev-ship-fbtn:hover {
+  background: #f0fdff;
+  color: #0891b2;
+}
+
+.cev-ship-fbtn.is-active {
+  background: linear-gradient(135deg, #0891b2, #06b6d4);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(8, 145, 178, .30);
+}
+
+/* ─── FOOTER ─── */
+.cev-footer {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 24px;
+  background: linear-gradient(110deg, #f0fdff 0%, #e6fafd 50%, #f0fdff 100%);
+  border-top: 1.5px solid #bdf1fb;
+  overflow: hidden;
+}
+
+.cev-footer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1.5px;
+  background: linear-gradient(90deg, transparent 0%, #67e8f9 30%, #06b6d4 50%, #67e8f9 70%, transparent 100%);
+}
+
+.cev-footer-meta {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.cev-footer-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.cev-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 18px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all .15s;
+}
+
+.cev-btn-light {
+  background: linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%);
+  color: #0e7490;
+  border: 1.5px solid rgba(6, 182, 212, .30);
+  box-shadow: 0 2px 8px rgba(6, 182, 212, .15), inset 0 1px 0 rgba(255, 255, 255, .6);
+  letter-spacing: .01em;
+}
+
+.cev-btn-light:hover {
+  background: linear-gradient(135deg, #a5f3fc 0%, #67e8f9 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(6, 182, 212, .28), inset 0 1px 0 rgba(255, 255, 255, .6);
+}
+
+.cev-btn-dark {
+  background: linear-gradient(135deg, #0c4a6e, #06b6d4);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(12, 74, 110, .30);
+}
+
+.cev-btn-dark:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgba(12, 74, 110, .45);
+}
+
+/* Spinner used by the Export All button while the XLSX workbook is
+ * being built. Class-scoped to .cev-spin so it doesn't collide with
+ * any global ri-spin rule the project may add later. */
+.cev-spin {
+  display: inline-block;
+  animation: cevSpin .8s linear infinite;
+}
+
+@keyframes cevSpin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ─── DARK MODE — violet palette mapped to lavender-on-deep-purple ─── */
+[data-bs-theme="dark"] .cev-card {
+  background: #08222b;
+}
+
+[data-bs-theme="dark"] .cev-groups-wrap {
+  background: linear-gradient(180deg, #08222b 0%, #0a2a33 100%);
+}
+
+[data-bs-theme="dark"] .cev-group {
+  background: #0a2a33;
+  border-color: rgba(34, 211, 238, .30);
+}
+
+[data-bs-theme="dark"] .cev-group:hover {
+  background: #0c3540;
+  border-color: rgba(34, 211, 238, .5);
+}
+
+[data-bs-theme="dark"] .cev-group.is-active {
+  background: linear-gradient(120deg, #0c4a6e, #0891b2);
+  border-color: #06b6d4;
+}
+
+/* Inactive ghost button readable on the dark card; active stays solid white. */
+[data-bs-theme="dark"] .cev-group-overview {
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
+  color: #fff;
+  border: none;
+}
+
+[data-bs-theme="dark"] .cev-group-overview:hover {
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+  color: #fff;
+}
+
+[data-bs-theme="dark"] .cev-group.is-active .cev-group-overview {
+  background: #fff;
+  color: #0891b2;
+  border-color: #fff;
+}
+
+[data-bs-theme="dark"] .cev-group.is-active .cev-group-overview:hover {
+  background: #f0fdff;
+  color: #0891b2;
+}
+
+[data-bs-theme="dark"] .cev-group-icon {
+  background: rgba(8, 145, 178, .22);
+  color: #67e8f9;
+  border-color: rgba(34, 211, 238, .3);
+}
+
+[data-bs-theme="dark"] .cev-group.is-active .cev-group-icon {
+  background: rgba(255, 255, 255, .18);
+  color: #fff;
+}
+
+[data-bs-theme="dark"] .cev-group-title {
+  color: #cffafe;
+}
+
+[data-bs-theme="dark"] .cev-group-sub {
+  color: #7bb5c2;
+}
+
+[data-bs-theme="dark"] .cev-tabs-wrap {
+  background: #0a2a33;
+  border-bottom-color: rgba(8, 145, 178, .30);
+}
+
+[data-bs-theme="dark"] .cev-tab {
+  color: #7bb5c2;
+}
+
+[data-bs-theme="dark"] .cev-tab-icon {
+  background: rgba(255, 255, 255, .05);
+  color: #7bb5c2;
+}
+
+[data-bs-theme="dark"] .cev-tab:hover {
+  color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .cev-tab:hover .cev-tab-icon {
+  background: rgba(34, 211, 238, 0.12);
+  color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .cev-tab.is-active {
+  color: #67e8f9;
+  border-bottom-color: #22d3ee;
+}
+
+[data-bs-theme="dark"] .cev-tab.is-active .cev-tab-icon {
+  background: rgba(34, 211, 238, 0.18);
+  color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .cev-tab-count {
+  background: rgba(8, 145, 178, .18);
+  color: #67e8f9;
+  border-color: rgba(8, 145, 178, .35);
+}
+
+[data-bs-theme="dark"] .cev-tab.is-active .cev-tab-count {
+  background: linear-gradient(135deg, #06b6d4, #22d3ee);
+  color: #fff;
+  border-color: transparent;
+}
+
+[data-bs-theme="dark"] .cev-body {
+  background: #08222b;
+  scrollbar-color: #0891b2 transparent;
+}
+
+[data-bs-theme="dark"] .cev-body::-webkit-scrollbar-thumb {
+  background: #0891b2;
+}
+
+[data-bs-theme="dark"] .cev-body::-webkit-scrollbar-thumb:hover {
+  background: #22d3ee;
+}
+
+[data-bs-theme="dark"] .cev-section {
+  background: linear-gradient(110deg, rgba(8, 145, 178, .14), rgba(34, 211, 238, .10));
+  border-color: rgba(8, 145, 178, .30);
+}
+
+[data-bs-theme="dark"] .cev-section-title {
+  color: #cffafe;
+}
+
+[data-bs-theme="dark"] .cev-section-sub {
+  color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .cev-section-count {
+  color: #cffafe;
+}
+
+[data-bs-theme="dark"] .cev-section-count-label {
+  color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .cev-table-wrap {
+  background: #0a2a33;
+  border-color: rgba(8, 145, 178, .28);
+}
+
+[data-bs-theme="dark"] .cev-table thead th {
+  background:
+    linear-gradient(180deg, rgba(8, 145, 178, .22) 0%, rgba(8, 145, 178, .16) 55%, rgba(12, 74, 110, .18) 100%);
+  color: #67e8f9;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(8, 145, 178, 0.40),
+    0 4px 10px -8px rgba(0, 0, 0, 0.40);
+}
+
+[data-bs-theme="dark"] .cev-table tbody td {
+  color: #e2e8f0;
+  border-bottom-color: rgba(8, 145, 178, .10);
+  background: transparent;
+}
+
+[data-bs-theme="dark"] .cev-table tbody tr:nth-child(even) td {
+  background: rgba(8, 145, 178, .05);
+}
+
+[data-bs-theme="dark"] .cev-table tbody tr:hover td {
+  background: rgba(8, 145, 178, .12);
+}
+
+[data-bs-theme="dark"] .cev-doc-name {
+  color: #cffafe;
+}
+
+[data-bs-theme="dark"] .cev-mono {
+  color: #e2e8f0;
+}
+
+[data-bs-theme="dark"] .cev-date {
+  background: rgba(8, 145, 178, .16);
+  color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .cev-date-expiry[data-status="expiring"] {
+  background: rgba(245, 158, 11, .18);
+  color: #fcd34d;
+}
+
+[data-bs-theme="dark"] .cev-date-expiry[data-status="pending"] {
+  background: rgba(239, 68, 68, .18);
+  color: #fca5a5;
+}
+
+[data-bs-theme="dark"] .cev-attach {
+  background: rgba(8, 145, 178, .16);
+  color: #67e8f9;
+  border-color: rgba(8, 145, 178, .30);
+}
+
+[data-bs-theme="dark"] .cev-ratio-num[data-tone="good"] {
+  color: #4ade80;
+}
+
+[data-bs-theme="dark"] .cev-ratio-num[data-tone="mid"] {
+  color: #fcd34d;
+}
+
+[data-bs-theme="dark"] .cev-ratio-num[data-tone="bad"] {
+  color: #fca5a5;
+}
+
+[data-bs-theme="dark"] .cev-chip-pill {
+  background: rgba(8, 145, 178, .16);
+  color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .cev-chip-pill-warm {
+  background: rgba(217, 119, 6, .18);
+  color: #fcd34d;
+  border-color: rgba(217, 119, 6, .30);
+}
+
+[data-bs-theme="dark"] .cev-footer {
+  background: #08222b;
+  border-top-color: rgba(8, 145, 178, .22);
+}
+
+[data-bs-theme="dark"] .cev-footer-meta {
+  color: #cbd5e1;
+}
+
+[data-bs-theme="dark"] .cev-btn-light {
+  background: rgba(8, 145, 178, .12);
+  color: #67e8f9;
+  border-color: rgba(8, 145, 178, .30);
+}
+
+[data-bs-theme="dark"] .cev-btn-light:hover {
+  background: rgba(8, 145, 178, .18);
+}
+
+[data-bs-theme="dark"] .cev-ship-fbtn {
+  background: #0a2a33;
+  color: #94a3b8;
+  border-color: rgba(8, 145, 178, .28);
+}
+
+[data-bs-theme="dark"] .cev-ship-fbtn:hover {
+  color: #67e8f9;
+  background: rgba(8, 145, 178, .10);
+}
+
+[data-bs-theme="dark"] .cev-ship-filter-2 {
+  background: rgba(8, 145, 178, .12);
+}
+
+[data-bs-theme="dark"] .cev-ship-filter-2 .cev-ship-fbtn:not(.is-active) {
+  background: #0a2a33;
+  border-color: rgba(8, 145, 178, .28);
+}
+
+[data-bs-theme="dark"] .cev-ship-fbtn.is-active {
+  background: linear-gradient(135deg, #0891b2, #22d3ee);
+  color: #06283a;
+  border-color: transparent;
+  box-shadow: 0 4px 14px rgba(34, 211, 238, .4);
+}
+
+/* All badges — translucent colour fills on dark (match the segment chips). */
+[data-bs-theme="dark"] .cev-req-m {
+  background: rgba(16, 185, 129, .18) !important;
+  color: #6ee7b7 !important;
+  border-color: rgba(16, 185, 129, .4) !important;
+}
+
+[data-bs-theme="dark"] .cev-req-o {
+  background: rgba(148, 163, 184, .16) !important;
+  color: #cbd5e1 !important;
+  border-color: rgba(148, 163, 184, .32) !important;
+}
+
+[data-bs-theme="dark"] .cev-sec-pill-ok {
+  background: rgba(16, 185, 129, .18) !important;
+  color: #6ee7b7 !important;
+  border-color: rgba(16, 185, 129, .4) !important;
+}
+
+[data-bs-theme="dark"] .cev-sec-pill-warn {
+  background: rgba(245, 158, 11, .18) !important;
+  color: #fcd34d !important;
+  border-color: rgba(245, 158, 11, .4) !important;
+}
+
+[data-bs-theme="dark"] .cev-sec-pill-bad {
+  background: rgba(239, 68, 68, .18) !important;
+  color: #fca5a5 !important;
+  border-color: rgba(239, 68, 68, .4) !important;
+}
+
+[data-bs-theme="dark"] .cev-sec-pill-docs {
+  background: rgba(59, 130, 246, .18) !important;
+  color: #93c5fd !important;
+  border-color: rgba(59, 130, 246, .4) !important;
+}
+
+[data-bs-theme="dark"] .cev-pill[data-status="Verified"] {
+  background: rgba(16, 185, 129, .18) !important;
+  color: #6ee7b7 !important;
+}
+
+[data-bs-theme="dark"] .cev-pill[data-status="Signed"] {
+  background: rgba(59, 130, 246, .18) !important;
+  color: #93c5fd !important;
+}
+
+[data-bs-theme="dark"] .cev-pill[data-status="Expiring"] {
+  background: rgba(245, 158, 11, .18) !important;
+  color: #fcd34d !important;
+}
+
+[data-bs-theme="dark"] .cev-pill[data-status="Pending"] {
+  background: rgba(239, 68, 68, .18) !important;
+  color: #fca5a5 !important;
+}
+
+[data-bs-theme="dark"] .cev-pill[data-status="Draft"] {
+  background: rgba(245, 158, 11, .18) !important;
+  color: #fcd34d !important;
+}
+
+[data-bs-theme="dark"] .cev-pill[data-status="Declined"],
+[data-bs-theme="dark"] .cev-pill[data-status="Expired"] {
+  background: rgba(239, 68, 68, .18) !important;
+  color: #fca5a5 !important;
+}
+
+[data-bs-theme="dark"] .cev-pill[data-status="Recalled"] {
+  background: rgba(148, 163, 184, .18) !important;
+  color: #cbd5e1 !important;
+}
+
+/* Expanded shipment detail panel (ShipmentDocPanel) — all inline light styles. */
+[data-bs-theme="dark"] .cev-ship-expand>td {
+  background: #08222b !important;
+}
+
+[data-bs-theme="dark"] .cev-sdp [style*="background: rgb(255, 255, 255)"],
+[data-bs-theme="dark"] .cev-sdp [style*="background:rgb(255, 255, 255)"] {
+  background: #0a2630 !important;
+  border-color: rgba(8, 145, 178, .28) !important;
+}
+
+[data-bs-theme="dark"] .cev-sdp [style*="rgb(15, 23, 42)"] {
+  color: #e2e8f0 !important;
+}
+
+[data-bs-theme="dark"] .cev-sdp [style*="rgb(71, 85, 105)"] {
+  color: #cbd5e1 !important;
+}
+
+[data-bs-theme="dark"] .cev-sdp [style*="rgb(100, 116, 139)"] {
+  color: #94a3b8 !important;
+}
+
+[data-bs-theme="dark"] .cev-sdp tbody tr {
+  border-bottom-color: rgba(8, 145, 178, .12) !important;
+}
+
+[data-bs-theme="dark"] .cev-sdp [style*="rgb(241, 245, 249)"] {
+  background: rgba(148, 163, 184, .18) !important;
+  border-color: rgba(148, 163, 184, .32) !important;
+}
+
+[data-bs-theme="dark"] .cev-sdp [style*="rgb(254, 243, 199)"] {
+  background: rgba(245, 158, 11, .18) !important;
+  border-color: rgba(245, 158, 11, .4) !important;
+}
+
+[data-bs-theme="dark"] .cev-filter-verified {
+  background: rgba(16, 185, 129, .18);
+  color: #6ee7b7;
+  border-color: rgba(16, 185, 129, .30);
+}
+
+[data-bs-theme="dark"] .cev-filter-expiring {
+  background: rgba(245, 158, 11, .18);
+  color: #fcd34d;
+  border-color: rgba(217, 119, 6, .30);
+}
+
+[data-bs-theme="dark"] .cev-filter-pending {
+  background: rgba(239, 68, 68, .18);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, .30);
+}
+
+/* ─── RESPONSIVE ─── */
+@media (max-width: 1440px) {
+  .cev-card {
+    width: min(1100px, 92vw);
+  }
+}
+
+@media (max-width: 1280px) {
+  .cev-card {
+    width: 92vw;
+  }
+}
+
+@media (max-width: 960px) {
+  .cev-card {
+    width: 96vw;
+  }
+
+  .cev-header {
+    padding: 12px 14px;
+  }
+
+  .cev-header-title {
+    font-size: 16px;
+  }
+
+  .cev-vault-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+  }
+
+  .cev-header-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .cev-header-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .cev-groups-wrap {
+    padding: 12px 14px 0;
+  }
+
+  .cev-groups {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .cev-tabs-wrap {
+    padding: 10px 14px;
+  }
+
+  .cev-tab {
+    padding: 7px 14px;
+    font-size: 12px;
+    gap: 7px;
+  }
+
+  .cev-tab-icon {
+    width: 16px;
+    height: 16px;
+    font-size: 13px;
+  }
+
+  .cev-body {
+    padding: 14px 16px 18px;
+    gap: 12px;
+  }
+
+  .cev-section {
+    padding: 12px 14px;
+  }
+
+  .cev-section-count {
+    font-size: 22px;
+  }
+
+  .cev-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .cev-footer-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .cev-footer-actions .cev-btn {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .cev-header-orb {
+    display: none;
+  }
+
+  .cev-header-bg::after {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .cev-card {
+    width: 100vw;
+  }
+
+  .cev-tab {
+    padding: 6px 12px;
+    font-size: 11.5px;
+  }
+
+  .cev-tab-icon {
+    width: 14px;
+    height: 14px;
+    font-size: 12px;
+  }
+
+  .cev-tab-count {
+    font-size: 9.5px;
+    padding: 1px 6px;
+  }
+
+  /* Tabs scroll sideways instead of squashing when they don't fit. */
+  .cev-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .cev-tab {
+    flex: 0 0 auto;
+  }
+
+  /* Section header (title + status pills) stacks so pills don't overflow. */
+  .cev-section {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .cev-section-right {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .cev-header {
+    padding: 10px 12px;
+  }
+
+  .cev-header-title {
+    font-size: 15px;
+    margin-bottom: 5px;
+  }
+
+  .cev-header-eyebrow {
+    font-size: 9px;
+  }
+
+  .cev-vault-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+  }
+
+  .cev-groups-wrap {
+    padding: 10px 12px 0;
+  }
+
+  .cev-tabs-wrap {
+    padding: 8px 10px;
+  }
+
+  .cev-body {
+    padding: 12px 12px 16px;
+  }
+
+  .cev-footer {
+    padding: 10px 12px;
+  }
+
+  .cev-footer-meta {
+    font-size: 11px;
+  }
+}
+
+/* ══ End of the shared base layer — the supplier .sev skin follows ══ */
+
 .cev-shp-toggle {
   display: inline-flex;
   align-self: flex-start;
@@ -281,6 +2748,7 @@
 }
 
 @media (max-width: 900px) {
+
   /* The base sheet switches to `10px 14px` here; keep its vertical rhythm and
      zero only the sides, so the tab's own 14px lands on the 14px gutter the
      rest of the column uses at this width. */
@@ -626,7 +3094,11 @@
   overflow: hidden;
   cursor: pointer;
   box-shadow: 0 1px 2px rgba(30, 27, 75, .04);
-  transition: transform .2s cubic-bezier(.22, 1, .36, 1), box-shadow .2s, border-color .2s, background .2s;
+  /* No `background` here on purpose: the active card's gradient cannot
+     interpolate to the inactive card's flat #fff, so the browser snaps it
+     in a single frame. Only the properties that genuinely tween are
+     listed, and the colours below flip in that same frame. */
+  transition: transform .2s cubic-bezier(.22, 1, .36, 1), box-shadow .2s, border-color .2s;
 }
 
 .sev .cev-group::before {
@@ -677,7 +3149,7 @@
   background: linear-gradient(135deg, #eef0fb, #e4e7f7);
   color: #8b93c4;
   border: 1px solid #e2e6f5;
-  transition: background .2s, color .2s, border-color .2s, box-shadow .2s, transform .25s;
+  transition: border-color .2s, box-shadow .2s, transform .25s;
 }
 
 /* The title is nowrap (wrapping it beside the icon reads badly), so a long one
@@ -704,7 +3176,6 @@
   letter-spacing: -.2px;
   line-height: 1.15;
   white-space: nowrap;
-  transition: color .2s;
 }
 
 .sev .cev-group-sub {
@@ -714,7 +3185,6 @@
   color: #a0a8c4;
   text-transform: uppercase;
   white-space: nowrap;
-  transition: color .2s;
 }
 
 /* ACTIVE — the open group wears the header's gradient. */
