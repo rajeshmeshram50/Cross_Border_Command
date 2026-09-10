@@ -1,6 +1,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
-import { ShipmentDocPanel, ShipmentDocSendForSignature, type VaultShipmentDoc } from '../customer/CustomerEvidenceVaultModal';
+import { ShipmentDocPanel, ShipmentDocSendForSignature, SevStat, type VaultShipmentDoc } from '../customer/CustomerEvidenceVaultModal';
+/* Shared Evidence Vault stylesheet — the same one the Customer and Supplier
+   vaults load. Brings in the `.sev-stat*` ring cards used below (and the
+   `.cev-*` shell the next step moves onto). Consignee markup is `.cev-*`
+   today, so nothing here collides with what this file already styles. */
+import '../../../p2p/p2p-master-management/supplier-management/supplier-evidence-vault.css';
 import SalesDocSendForSignatureModal from '../../opportunity-pipeline/matrix/stages/SalesDocSendForSignatureModal';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -143,9 +148,16 @@ export type TabKey = 'company-dd' | 'owner-kyc' | 'trade-licenses' | 'trade-docu
  *   • case-to-case  — Trade Documents, Agreements (per-deal records) */
 type GroupKey = 'standard' | 'case-to-case';
 
-const GROUPS: { key: GroupKey; title: string; sub: string; icon: string }[] = [
-  { key: 'standard',     title: 'Standard Documents',      sub: 'ONE TIME · KYC, DD & LICENSES',     icon: 'ri-shield-check-line' },
-  { key: 'case-to-case', title: 'Case to Case Agreements', sub: 'PER DEAL · TRADE DOCS & AGREEMENTS', icon: 'ri-todo-line' },
+/* `overview` is the action button's label. Both buttons open the same
+ * document-overview panel, but what that panel is FOR differs by group:
+ * the standard one is a read-through of every KYC / DD / licence, while the
+ * case-to-case one is where trade documents and agreements get sent for
+ * signature (each row carries its own Send action). Naming them after the
+ * job — as the Customer and Supplier vaults do — beats printing
+ * "Document Overview" twice and leaving the user to guess. */
+const GROUPS: { key: GroupKey; title: string; sub: string; icon: string; overview: string }[] = [
+  { key: 'standard',     title: 'Standard Documents',                  sub: 'ONE TIME · KYC, DD & LICENSES',      icon: 'ri-shield-check-line', overview: 'All Standard Document Overview' },
+  { key: 'case-to-case', title: 'Case to Case Documents & Agreements', sub: 'PER DEAL · TRADE DOCS & AGREEMENTS', icon: 'ri-todo-line',         overview: 'Send Documents & Agreements for Signature' },
 ];
 
 const TABS: { key: TabKey; label: string; icon: string; countKey: keyof VaultData; group: GroupKey }[] = [
@@ -237,6 +249,33 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
    * wizard opens with these clm_trade_doc_library ids pre-checked. Driven
    * by the Trade Documents tab's per-row Send button. */
   const [sendDocIds, setSendDocIds] = useState<number[] | null>(null);
+  /* Ticked rows in the Case-to-Case overview, held as the row keys built by
+     `ovDocKey` rather than array indexes — the list re-orders when a different
+     shipment is chosen, and indexes would then point at the wrong documents. */
+  const [ovPicked, setOvPicked] = useState<string[]>([]);
+  /* Signing tracker launched from an overview row. Held here rather than in
+     the row because the overview table is rebuilt on every shipment switch. */
+  const [ovTrack, setOvTrack] = useState<{ id: number; code: string } | null>(null);
+
+  /* Multi-select on the main Case-to-Case table. Held here, not in the deal
+   * panels, for two reasons: a panel unmounts when its row is collapsed, and
+   * the count in the bar is deliberately across transactions.
+   *
+   * Keyed the same way the panel keys its rows, so a Buyer+Consignee document
+   * — emitted into both party lists under one id — is one tick, not two. */
+  const shipDocKey = (d: VaultShipmentDoc) =>
+    d.db_id != null ? `${d.doc_type ?? ''}#${d.db_id}` : `n#${d.name}#${d.sig_req_id}`;
+  const [mainPicked, setMainPicked] = useState<{ key: string; id: number; lead: number }[]>([]);
+  /* Only trade documents can go out together. The bulk path is the trade-doc
+     signature modal, which resolves ids against that library alone; agreements
+     have their own single-document flow (the paper-plane on the row) and no
+     bulk equivalent, so they are not tickable. Signed and in-flight rows are
+     excluded for the same reason the row actions exclude them. */
+  const shipDocSendable = (d: VaultShipmentDoc) =>
+    !!d.db_id
+    && (d.doc_type ?? 'trade') !== 'agreement'
+    && d.status !== 'Signed'
+    && d.status !== 'Pending';
   /* Shipment Send-for-Signature — launches the preview + signature-box wizard
    * for one not-yet-sent shipment document. */
   const [shipSend, setShipSend] = useState<{ leadId: number; doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null>(null);
@@ -483,15 +522,24 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
 
   if (!open || !consignee || !vault) return null;
 
+  /* Status badge for the overview list.
+   *
+   * Text only — no leading glyph and no dot. The ✓ / ⚠ / ⌛ marks it started
+   * with are emoji-class characters that render at a different weight and
+   * baseline on every platform, so the badges sat unevenly beside each other;
+   * the badge's own fill already carries the state.
+   *
+   * Signed is green, not blue. It is the settled, nothing-left-to-do state in
+   * this list, exactly like Verified, and colouring it separately implied a
+   * distinction that does not exist. */
   const StatusPill = ({ s }: { s: VaultStatus }) => {
     const tone =
-      s === 'Verified' ? { bg: '#ecfdf5', fg: '#059669', mark: '✓' }
-      : s === 'Signed'   ? { bg: '#dbeafe', fg: '#1e40af', mark: '✓' }
-      : s === 'Expiring' ? { bg: '#fef3c7', fg: '#92400e', mark: '⚠' }
-      :                    { bg: '#fef2f2', fg: '#dc2626', mark: '⌛' };
+      s === 'Verified' || s === 'Signed' ? { bg: '#dcfce7', fg: '#15803d', bd: '#bbf7d0' }
+      : s === 'Expiring' ? { bg: '#fef3c7', fg: '#b45309', bd: '#fde68a' }
+      :                    { bg: '#fef2f2', fg: '#dc2626', bd: '#fecaca' };
     return (
-      <span className="cnev-pill" data-status={s} style={{ background: tone.bg, color: tone.fg }}>
-        {tone.mark} {s}
+      <span className="cev-pill" data-status={s} style={{ background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}` }}>
+        {s}
       </span>
     );
   };
@@ -508,6 +556,18 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
     Uploaded: docsForTab.filter(isUploaded).length,
     Pending:  docsForTab.filter(d => !isUploaded(d)).length,
   };
+  /* Section-banner tally, by real document STATUS rather than just whether a
+   * file is attached. An uploaded-but-expired licence is still a problem, and
+   * "Uploaded 9" hid that — it counted the attachment and said nothing about
+   * whether the document is still good. Same breakdown the Supplier vault
+   * shows. */
+  const statusTally = {
+    Verified: docsForTab.filter(d => evEffectiveStatus(d) === 'Verified').length,
+    Signed:   docsForTab.filter(d => evEffectiveStatus(d) === 'Signed').length,
+    Expiring: docsForTab.filter(d => evEffectiveStatus(d) === 'Expiring').length,
+    Expired:  docsForTab.filter(d => evEffectiveStatus(d) === 'Expired').length,
+    Pending:  docsForTab.filter(d => evEffectiveStatus(d) === 'Pending').length,
+  };
 
   const tabMeta = TABS.find(t => t.key === tab)!;
 
@@ -522,80 +582,130 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
     : t.key === 'shipment-agreements' ? shipmentDocCount('agreement')
     : (vault[t.countKey] as number);
 
+  /* Stat-row figures, matching the Customer and Supplier vaults.
+   *
+   * These are derived from the SAME `vault` payload the old KPI tiles read —
+   * nothing new is fetched. The difference is that they are split by GROUP:
+   * the Standard row counts uploaded-vs-pending across DD + KYC + Licences,
+   * the Case-to-Case row counts signed-vs-pending across the shipment
+   * matrix. The old strip showed all nine numbers at once regardless of
+   * which group was selected, so half of them never applied to what was on
+   * screen below. */
+  const stdAll   = [...vault.company_dd, ...vault.owner_kyc, ...vault.trade_licenses];
+  const stdTotal = stdAll.length;
+  const stdUp    = stdAll.filter(isUploaded).length;
+  const stdPend  = stdTotal - stdUp;
+  const splitOf  = (rows: VaultDoc[]) => {
+    const up = rows.filter(isUploaded).length;
+    return { up, pend: rows.length - up };
+  };
+
+  /* Case-to-case rows carry "signed/total" ratios per shipment, so the
+     signed half comes from the ratio's numerator rather than an attachment. */
+  const ratioDone = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[0], 10) || 0; };
+  const shipmentDocDone = (key: 'trade_docs' | 'agreement') =>
+    vault.shipment_agreements.reduce((acc, r) => acc + ratioDone(r[key].ratio), 0);
+  const tdTotal  = shipmentDocCount('trade_docs');
+  const tdDone   = shipmentDocDone('trade_docs');
+  const agrTotal = shipmentDocCount('agreement');
+  const agrDone  = shipmentDocDone('agreement');
+  const c2cTotal = tdTotal + agrTotal;
+  const c2cDone  = tdDone + agrDone;
+  const c2cPend  = c2cTotal - c2cDone;
+
   /* Show the skeleton only on the FIRST load (live data not in yet, no
    * explicit data prop). Re-fetches keep the current content visible. */
   const showSkeleton = loading && !vaultLive && !data;
 
   return createPortal(
-    <div className="cnev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget && !uploading) onClose(); }}>
+    <div className="cev-overlay sev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget && !uploading) onClose(); }}>
       <style>{CNEV_CSS}</style>
-      <div className="cnev-card" onMouseDown={(e) => e.stopPropagation()}>
+      {/* `sev` is the scope hook the shared stylesheet needs: every ring-card
+          rule in supplier-evidence-vault.css is written as `.sev .sev-stat…`,
+          so without it the stat SVGs render unstyled — an uncapped circle at
+          its natural size. It carries no styles of its own, and the rest of
+          this markup is `.cev-*`, so nothing else in that sheet can reach it. */}
+      {/* `cnev-vault` is this vault's own hook. The shared stylesheet is used
+          by the customer and supplier vaults too, so every consignee-only
+          correction in CNEV_CSS hangs off this class and cannot reach them. */}
+      <div className="cev-card sev cnev-vault" onMouseDown={(e) => e.stopPropagation()}>
         {/* ─── HEADER ─── */}
-        <div className="cnev-header">
-          <div className="cnev-header-bg" aria-hidden />
-          <span className="cnev-header-orb" aria-hidden />
-          <div className="cnev-header-content">
-            <div className="cnev-header-left">
-              <div className="cnev-vault-icon">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <div className="cev-header">
+          <div className="cev-header-bg" aria-hidden />
+          <span className="cev-header-orb" aria-hidden />
+          <div className="cev-header-content">
+            <div className="cev-header-left">
+              <div className="cev-vault-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="2" y="3" width="20" height="5" rx="1.5" />
                   <path d="M4 8v12a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8" />
                   <line x1="10" y1="13" x2="14" y2="13" />
                   <line x1="10" y1="17" x2="14" y2="17" />
                 </svg>
-                <span className="cnev-vault-icon-tick" aria-hidden>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><polyline points="20 6 9 17 4 12" /></svg>
+                <span className="cev-vault-icon-tick" aria-hidden>
+                  <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
                 </span>
               </div>
-              <div className="cnev-header-text">
-                <div className="cnev-header-eyebrow">— PARTY WISE CLM: CONSIGNEE EVIDENCE VAULT</div>
-                <div className="cnev-header-title">{consignee.company}</div>
-                <div className="cnev-header-chips">
+              <div className="cev-header-text">
+                {/* The leading em-dash is drawn by the stylesheet, so it is not
+                    written here — the Customer and Supplier vaults do the same. */}
+                <div className="cev-header-eyebrow">PARTY WISE CLM: CONSIGNEE EVIDENCE VAULT</div>
+                {/* Code and name split into their own spans: the code renders
+                    mono and tinted, the name in plain white, matching the
+                    "S-001 — Raipur Agro Supplies Pvt Ltd" treatment. */}
+                <div className="cev-header-title">
+                  <span className="sev-hd-code">{consignee.id}</span>
+                  <span className="sev-hd-dash" aria-hidden>—</span>
+                  <span className="sev-hd-nm">{consignee.company}</span>
+                </div>
+                {/* One chip per fact, all on a single row. Contact, city,
+                    segment, country and risk used to be split between the
+                    left chip row and a plain-text meta block on the right;
+                    they are one row now, as on the other two vaults. */}
+                <div className="cev-header-chips">
                   {consignee.contact && (
-                    <span className="cnev-chip cnev-chip-contact">
+                    <span className="cev-chip cev-chip-contact">
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                      {consignee.contact}{consignee.contactCity ? ` · ${consignee.contactCity}` : ''}
+                      {consignee.contact}
                     </span>
                   )}
-                  <span className="cnev-chip cnev-chip-id">● {consignee.id}</span>
-                  {consignee.customerId && <span className="cnev-chip cnev-chip-link">↳ {consignee.customerId}</span>}
-                  <span className="cnev-chip cnev-chip-risk" data-risk={(consignee.risk ?? 'Low').toLowerCase()}>● {consignee.risk ?? 'Low'} Risk</span>
+                  {consignee.contactCity && <span className="cev-chip cev-chip-city">{consignee.contactCity}</span>}
+                  {/* Consignee-only chip — the customer this consignee hangs
+                      off. No equivalent on the other two vaults, kept here
+                      because it is the fastest way back to the parent. */}
+                  {consignee.customerId && <span className="cev-chip cev-chip-link">↳ {consignee.customerId}</span>}
+                  {consignee.segment && (() => {
+                    /* One segment inline; the rest collapse into a "+N more"
+                     * chip whose popover lists every segment. Five used to be
+                     * shown, which overflowed a header this size. */
+                    const segs = String(consignee.segment).split(',').map(s => s.trim()).filter(Boolean);
+                    if (segs.length === 0) return null;
+                    const shown = segs.slice(0, 1);
+                    const extra = segs.length - shown.length;
+                    return (
+                      <>
+                        {shown.map((s, i) => (
+                          <Tooltip key={`${s}-${i}`} label={s}>
+                            <span className="cev-chip cev-chip-seg">{s.length > 20 ? s.slice(0, 20) + '…' : s}</span>
+                          </Tooltip>
+                        ))}
+                        {extra > 0 && (
+                          <button
+                            type="button"
+                            className="cev-chip cev-chip-seg sev-chip-more"
+                            onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { names: segs, x: b.left, y: b.bottom + 6 }); }}
+                          >+{extra} more</button>
+                        )}
+                      </>
+                    );
+                  })()}
+                  {consignee.country && <span className="cev-chip cev-chip-country">{consignee.country}</span>}
+                  <span className="cev-chip cev-chip-risk" data-risk={(consignee.risk ?? 'Low').replace(/\s*risk$/i, '').toLowerCase()}>{(consignee.risk ?? 'Low').replace(/\s*risk$/i, '')} Risk</span>
                 </div>
               </div>
             </div>
-            <div className="cnev-header-right">
-              <div className="cnev-header-meta">
-                {consignee.segment && (() => {
-                  /* Cap the inline segment list at 5; the rest collapse into a
-                   * "+N more" chip whose tooltip lists every segment, so a
-                   * consignee with many segments no longer overflows the header. */
-                  const segs = String(consignee.segment).split(',').map(s => s.trim()).filter(Boolean);
-                  if (segs.length === 0) return null;
-                  const shown = segs.slice(0, 5);
-                  const extra = segs.length - shown.length;
-                  /* Truncate each individual segment name (long free-text
-                   * segments blow out the header) with a tooltip carrying the
-                   * full value — mirrors the Supplier Evidence Vault header. */
-                  return (
-                    <span>
-                      {shown.map((s, i) => (
-                        <Tooltip key={`${s}-${i}`} label={s}>
-                          <span>{i > 0 ? ', ' : ''}{s.length > 20 ? s.slice(0, 20) + '…' : s}</span>
-                        </Tooltip>
-                      ))}
-                      {extra > 0 && (
-                        <button
-                          type="button"
-                          className="cnev-seg-more"
-                          onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { names: segs, x: b.left, y: b.bottom + 6 }); }}
-                        >+{extra} more</button>
-                      )}
-                    </span>
-                  );
-                })()}
-                {consignee.country && <span>· {consignee.country}</span>}
-              </div>
-              <button type="button" className="cnev-close" onClick={() => { if (!uploading) onClose(); }} disabled={uploading} title={uploading ? 'Please wait — an upload is in progress' : 'Close vault'} style={uploading ? { opacity: .5, cursor: 'not-allowed' } : undefined} aria-label="Close vault">
+            <div className="cev-header-right">
+              <button type="button" className="cev-close" onClick={() => { if (!uploading) onClose(); }} disabled={uploading} title={uploading ? 'Please wait — an upload is in progress' : 'Close vault'} style={uploading ? { opacity: .5, cursor: 'not-allowed' } : undefined} aria-label="Close vault">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
@@ -603,67 +713,79 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
         </div>
 
         {showSkeleton ? <VaultSkeleton /> : (<>
-        {/* ─── KPI STRIP ─── */}
-        <div className="cnev-kpi-outer">
-          {/* Static full-width stat row — all columns fit without scrolling. */}
-          <div className="cnev-kpi-strip">
-            <KpiTile label="Total Documents"        value={vault.total_documents}        accent="#0e7490" />
-            <KpiTile label="Verified / Signed"      value={vault.verified_signed}        accent="#16a34a" subtitle="✓ COMPLIANT" subTone="good" />
-            <KpiTile label="Pending"                value={vault.pending}                accent="#dc2626" subtitle="⚠ ACTION"    subTone="bad" />
-            <KpiTile label="Company Due Diligence"  value={vault.company_dd_count}       accent="#0891b2" />
-            <KpiTile label="Owner KYC"              value={vault.owner_kyc_count}        accent="#0e7490" />
-            <KpiTile label="Trade License"          value={vault.trade_license_count}    accent="#0891b2" />
-            <KpiTile label="Trade Documents"        value={vault.trade_documents_count}  accent="#0d9488" />
-            <KpiTile label="Total Agreements"       value={vault.agreements_count}       accent="#0891b2" />
-            <KpiTile label="Total Shipments"        value={vault.total_shipments}        accent="#0c4a6e" />
-          </div>
-        </div>
-
-        {/* ─── GROUP CARDS — Standard Documents vs Case to Case. */}
-        <div className="cnev-groups-wrap">
-          <div className="cnev-groups">
+        {/* ─── GROUP CARDS — Standard Documents vs Case to Case.
+             Now FIRST, ahead of the stats. The group is what the stats are
+             about, so it has to be chosen before they mean anything — the
+             Customer and Supplier vaults are ordered the same way. */}
+        <div className="cev-groups-wrap">
+          <div className="cev-groups">
             {GROUPS.map(g => (
-              <div key={g.key} className={`cnev-group ${group === g.key ? 'is-active' : ''}`}>
+              <div key={g.key} className={`cev-group ${group === g.key ? 'is-active' : ''}`}>
+                {/* Titles are truncated by the card, so the full title + sub
+                    goes in a tooltip — same as the customer vault. */}
+                <Tooltip label={`${g.title} — ${g.sub}`}>
+                  <button
+                    type="button"
+                    className="cev-group-main"
+                    onClick={() => selectGroup(g.key)}
+                  >
+                    <span className="cev-group-icon"><i className={g.icon} aria-hidden /></span>
+                    <span className="cev-group-text">
+                      <span className="cev-group-title">{g.title}</span>
+                      <span className="cev-group-sub">{g.sub}</span>
+                    </span>
+                  </button>
+                </Tooltip>
                 <button
                   type="button"
-                  className="cnev-group-main"
-                  onClick={() => selectGroup(g.key)}
-                >
-                  <span className="cnev-group-icon"><i className={g.icon} aria-hidden /></span>
-                  <span className="cnev-group-text">
-                    <span className="cnev-group-title">{g.title}</span>
-                    <span className="cnev-group-sub">{g.sub}</span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="cnev-group-overview"
-                  onClick={() => { setOverview(g.key); setOverviewPage(1); setOvShip(null); }}
+                  className="cev-group-overview"
+                  onClick={() => { setOverview(g.key); setOverviewPage(1); setOvShip(null); setOvPicked([]); }}
                   title="View all documents in one list"
                 >
-                  <i className="ri-list-check-2" aria-hidden /> Document Overview
+                  <i className="ri-list-check-2" aria-hidden /> {g.overview}
                 </button>
               </div>
             ))}
           </div>
         </div>
 
+        {/* ─── STAT ROW — ring cards, identical to the Customer and Supplier
+             vaults. Swaps with the selected group so every figure on it
+             describes the documents listed underneath. */}
+        <div className="sev-stats">
+          {group === 'standard' ? (<>
+            <SevStat tone="slate" icon="ri-file-list-3-line"     label="Total Standard Documents" value={stdTotal} part={stdTotal} whole={stdTotal} split={{ up: stdUp, pend: stdPend }} />
+            <SevStat tone="green" icon="ri-checkbox-circle-line" label="Verified / Uploaded"      value={stdUp}    part={stdUp}    whole={stdTotal} tag="Compliant" />
+            <SevStat tone="red"   icon="ri-error-warning-line"   label="Pending"                  value={stdPend}  part={stdPend}  whole={stdTotal} tag="Action needed" />
+            <SevStat tone="teal"  icon="ri-building-2-line"      label="Company Due Diligence"    value={vault.company_dd.length}     part={vault.company_dd.length}     whole={stdTotal} split={splitOf(vault.company_dd)} />
+            <SevStat tone="teal"  icon="ri-user-3-line"          label="Owner KYC"                value={vault.owner_kyc.length}      part={vault.owner_kyc.length}      whole={stdTotal} split={splitOf(vault.owner_kyc)} />
+            <SevStat tone="teal"  icon="ri-file-shield-2-line"   label="Trade License"            value={vault.trade_licenses.length} part={vault.trade_licenses.length} whole={stdTotal} split={splitOf(vault.trade_licenses)} />
+          </>) : (<>
+            <SevStat tone="slate" icon="ri-file-list-3-line"     label="Total Case to Case Documents" value={c2cTotal} part={c2cTotal} whole={c2cTotal} split={{ up: c2cDone, pend: c2cPend, upLabel: 'signed', pendLabel: 'pending' }} />
+            <SevStat tone="green" icon="ri-checkbox-circle-line" label="Total Signed"                 value={c2cDone}  part={c2cDone}  whole={c2cTotal} tag="Complete" />
+            <SevStat tone="red"   icon="ri-error-warning-line"   label="Pending for Sign"             value={c2cPend}  part={c2cPend}  whole={c2cTotal} tag="Action needed" />
+            <SevStat tone="teal"  icon="ri-article-line"         label="Trade Documents"              value={tdTotal}  part={tdTotal}  whole={c2cTotal} split={{ up: tdDone,  pend: tdTotal - tdDone,   upLabel: 'signed', pendLabel: 'pending' }} />
+            <SevStat tone="amber" icon="ri-draft-line"           label="Total Agreements"             value={agrTotal} part={agrTotal} whole={c2cTotal} split={{ up: agrDone, pend: agrTotal - agrDone, upLabel: 'signed', pendLabel: 'pending' }} />
+            <SevStat tone="slate" icon="ri-truck-line"           label="Total Shipments"              value={vault.total_shipments} part={vault.total_shipments} whole={vault.total_shipments} />
+          </>)}
+        </div>
+
         {/* ─── SUB-TABS — for the active group. */}
-        <div className="cnev-tabs-wrap">
-          <div className="cnev-tabs">
+        <div className="cev-tabs-wrap">
+          <div className="cev-tabs">
             {TABS.filter(t => t.group === group).map(t => (
               <button
                 key={t.key}
                 type="button"
-                className={`cnev-tab ${tab === t.key ? 'is-active' : ''}`}
+                className={`cev-tab ${tab === t.key ? 'is-active' : ''}`}
                 onClick={() => { if (!uploading) setTab(t.key); }}
                 disabled={uploading}
                 title={uploading ? 'Please wait — an upload is in progress' : undefined}
                 style={uploading && tab !== t.key ? { opacity: .5, cursor: 'not-allowed' } : undefined}
               >
-                <span className="cnev-tab-icon"><i className={t.icon} aria-hidden /></span>
-                <span className="cnev-tab-label">{t.label}</span>
-                <span className="cnev-tab-count">{tabCount(t)}</span>
+                <span className="cev-tab-icon"><i className={t.icon} aria-hidden /></span>
+                <span className="cev-tab-label">{t.label}</span>
+                <span className="cev-tab-count">{tabCount(t)}</span>
               </button>
             ))}
           </div>
@@ -672,22 +794,26 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
         {/* ─── BODY ─── */}
         {/* Shipment tabs add a Buyer=/≠Consignee toggle between the section and
             the table → separated-cards layout; flat tabs keep section fused. */}
-        <div className={`cnev-body ${(tab === 'shipment-agreements' || tab === 'trade-documents') ? 'cnev-body-ship' : ''}`}>
-          <div className="cnev-section">
-            <div className="cnev-section-left">
-              <div className="cnev-section-icon"><i className={tabMeta.icon} /></div>
+        <div className={`cev-body ${(tab === 'shipment-agreements' || tab === 'trade-documents') ? 'cev-body-ship' : ''}`}>
+          <div className="cev-section">
+            <div className="cev-section-left">
+              <div className="cev-section-icon"><i className={tabMeta.icon} /></div>
               <div>
-                <div className="cnev-section-title">{tabMeta.label}</div>
-                <div className="cnev-section-sub">{sectionSub(tab)}</div>
+                <div className="cev-section-title">{tabMeta.label}</div>
+                <div className="cev-section-sub">{sectionSub(tab)}</div>
               </div>
             </div>
-            <div className="cnev-section-right">
+            <div className="cev-section-right">
               {(tab === 'shipment-agreements' || tab === 'trade-documents') ? (
-                <span className="cnev-sec-pill cnev-sec-pill-docs">{vault.total_shipments} Shipments</span>
+                <span className="cev-sec-pill cev-sec-pill-docs">{vault.total_shipments} Shipments</span>
               ) : (
                 <>
-                  {counts.Uploaded > 0 && <span className="cnev-sec-pill cnev-sec-pill-ok"><span className="cnev-sec-dot" />Uploaded {counts.Uploaded}</span>}
-                  {counts.Pending > 0 && <span className="cnev-sec-pill cnev-sec-pill-bad"><span className="cnev-sec-dot" />Pending {counts.Pending}</span>}
+                  {statusTally.Verified > 0 && <span className="cev-sec-pill cev-sec-pill-ok"><span className="cev-sec-dot" />Verified {statusTally.Verified}</span>}
+                  {statusTally.Signed > 0 && <span className="cev-sec-pill cev-sec-pill-ok"><span className="cev-sec-dot" />Signed {statusTally.Signed}</span>}
+                  {statusTally.Expiring > 0 && <span className="cev-sec-pill sev-sec-pill-warn"><span className="cev-sec-dot" />Expiring {statusTally.Expiring}</span>}
+                  {statusTally.Expired > 0 && <span className="cev-sec-pill cev-sec-pill-bad"><span className="cev-sec-dot" />Expired {statusTally.Expired}</span>}
+                  {statusTally.Pending > 0 && <span className="cev-sec-pill cev-sec-pill-bad"><span className="cev-sec-dot" />Pending {statusTally.Pending}</span>}
+                  <span className="cev-sec-pill cev-sec-pill-docs">{docsForTab.length} Documents</span>
                 </>
               )}
             </div>
@@ -696,30 +822,80 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           {(tab === 'shipment-agreements' || tab === 'trade-documents')
             ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'}
                              onSend={(leadId, doc, party) => { if (doc.pi_id) setPiSend({ leadId, doc }); else setShipSend({ leadId, doc, party }); }}
-                             activeSend={shipSend ?? (piSend ? { ...piSend, party: 'consignee' as const } : null)} />
+                             activeSend={shipSend ?? (piSend ? { ...piSend, party: 'consignee' as const } : null)}
+                             select={{
+                               isSelected: (d) => mainPicked.some(p => p.key === shipDocKey(d)),
+                               canSelect: shipDocSendable,
+                               toggle: (leadId, d, on) => setMainPicked(prev => {
+                                 const key = shipDocKey(d);
+                                 if (!on) return prev.filter(p => p.key !== key);
+                                 return prev.some(p => p.key === key) || !d.db_id
+                                   ? prev
+                                   : [...prev, { key, id: d.db_id, lead: leadId }];
+                               }),
+                               toggleAll: (leadId, ds, on) => setMainPicked(prev => {
+                                 const keys = new Set(ds.map(shipDocKey));
+                                 const rest = prev.filter(p => !keys.has(p.key));
+                                 return on
+                                   ? [...rest, ...ds.filter(d => !!d.db_id).map(d => ({ key: shipDocKey(d), id: d.db_id as number, lead: leadId }))]
+                                   : rest;
+                               }),
+                             }} />
             : <DocsTable rows={docsForTab} tab={tab} ownerType="consignee" ownerId={consignee?.db_id ?? null} onReload={reloadVault}
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
                          onRemindTradeDoc={handleRemind} onRowBusyChange={onRowBusyChange} />}
         </div>
+
+        {/* ─── SELECTION BAR ───
+            Sits between the body and the footer, so it never scrolls away from
+            the ticks that fill it. Only on the Case-to-Case tabs, and only once
+            something is ticked. The transaction count comes from the deal each
+            tick was made under, which is why the selection carries its lead id
+            rather than just the document id. */}
+        {mainPicked.length > 0 && (tab === 'trade-documents' || tab === 'shipment-agreements') && (
+          <div className="cnev-selbar">
+            <span className="cnev-selbar-ico" aria-hidden><i className="ri-check-line" /></span>
+            <span className="cnev-selbar-text">
+              <strong>{mainPicked.length} document{mainPicked.length > 1 ? 's' : ''} selected</strong>
+              <span>across {new Set(mainPicked.map(p => p.lead)).size} transaction{new Set(mainPicked.map(p => p.lead)).size > 1 ? 's' : ''}</span>
+            </span>
+            <button type="button" className="cnev-selbar-clear" onClick={() => setMainPicked([])}>Clear</button>
+            <button
+              type="button"
+              className="cnev-selbar-send"
+              onClick={() => setSendDocIds(mainPicked.map(p => p.id))}
+            >
+              <i className="ri-send-plane-line" aria-hidden /> Send For Signature
+            </button>
+          </div>
+        )}
         </>)}
 
         {/* ─── FOOTER ─── */}
-        <div className="cnev-footer">
-          <div className="cnev-footer-meta" />
-          <div className="cnev-footer-actions">
+        <div className="cev-footer">
+          {/* Was an empty spacer, which left the footer bar looking unfinished
+              next to the other two vaults. `last_updated` was already in the
+              payload and already goes into the Export All workbook — it just
+              was not shown. */}
+          <div className="cev-footer-meta">
+            <span className="sev-foot-upd">Last updated:&nbsp;<strong>{vault.last_updated || '—'}</strong></span>
+            <span className="sev-foot-div" aria-hidden />
+            <span className="sev-foot-managed"><i className="ri-shield-check-line" aria-hidden /> Vault managed by Compliance Team</span>
+          </div>
+          <div className="cev-footer-actions">
             <Tooltip label="Download every tab (Company DD, Owner KYC, Trade Licenses, Trade Documents, Shipments) as a single .xlsx workbook">
               <button
                 type="button"
-                className="cnev-btn cnev-btn-light"
+                className="cev-btn cev-btn-light"
                 onClick={handleExportAll}
                 disabled={exporting}
                 style={exporting ? { opacity: 0.7, cursor: 'wait' } : undefined}
               >
-                <i className={exporting ? 'ri-loader-4-line cnev-spin' : 'ri-download-cloud-2-line'} />
+                <i className={exporting ? 'ri-loader-4-line cev-spin' : 'ri-download-cloud-2-line'} />
                 {exporting ? 'Exporting…' : 'Export All'}
               </button>
             </Tooltip>
-            <button type="button" className="cnev-btn cnev-btn-dark" onClick={() => { if (!uploading) onClose(); }} disabled={uploading} title={uploading ? 'Please wait — an upload is in progress' : undefined} style={uploading ? { opacity: .6, cursor: 'not-allowed' } : undefined}>
+            <button type="button" className="cev-btn cev-btn-dark" onClick={() => { if (!uploading) onClose(); }} disabled={uploading} title={uploading ? 'Please wait — an upload is in progress' : undefined} style={uploading ? { opacity: .6, cursor: 'not-allowed' } : undefined}>
               {uploading ? 'Uploading…' : 'Close Vault'}
             </button>
           </div>
@@ -789,62 +965,174 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           const seen = new Set<string>();
           return list.filter((d) => { const k = ovDocKey(d); if (seen.has(k)) return false; seen.add(k); return true; });
         };
+        /* Which side's documents this consignee may see, per deal.
+         *
+         * This was inverted — copied from the customer vault with only the
+         * `buyer_is_consignee` branch swapped, so a deal with a SEPARATE
+         * consignee merged in `trade_docs_buyer` and put the buyer's Proforma
+         * Invoice in a consignee's list. The ratio built server-side already
+         * applied the right rule, so the tile and the list disagreed.
+         *
+         * The rule, matching SegmentDocUploadController's $tradeAll:
+         *   buyer_is_consignee  → the deal's consignee IS the buyer, one
+         *                         company, so it sees both sides.
+         *   otherwise           → two separate companies; the consignee sees
+         *                         only its own side.
+         *
+         * The PI is excluded either way. It is raised to the buyer, carries
+         * the buyer's commercial terms and is signed by the buyer; a consignee
+         * is not a party to it under either arrangement, and the customer's
+         * own vault already carries it. `pi_id` is what marks that row. */
+        const withoutPi = (list: VaultShipmentDoc[]) => list.filter((d) => !d.pi_id);
         const shipDocsOf = (r: VaultShipmentRow): VaultShipmentDoc[] => r.buyer_is_consignee
-          ? [
+          ? dedupeDocs([
+              ...withoutPi(r.trade_docs_buyer ?? []),
+              ...(r.trade_docs_consignee ?? []),
+              ...withoutPi(r.agreements_buyer ?? []),
+              ...(r.agreements_consignee ?? []),
+            ])
+          : [
               ...(r.trade_docs_consignee ?? []),
               ...(r.agreements_consignee ?? []),
-            ]
-          : dedupeDocs([
-              ...(r.trade_docs_buyer ?? []),
-              ...(r.trade_docs_consignee ?? []),
-              ...(r.agreements_buyer ?? []),
-              ...(r.agreements_consignee ?? []),
-            ]);
+            ];
         const shipments     = isStd ? [] : vault.shipment_agreements;
         const shipsWithDocs = isStd ? [] : shipments.filter((r) => shipDocsOf(r).length > 0);
-        const activeShip    = isStd ? null : (shipsWithDocs.find((r) => r.id === ovShip) ?? shipsWithDocs[0] ?? null);
+        /* No auto-select of the first shipment any more. The panel opens on a
+           chooser and only shows a document list once a shipment is picked —
+           the two-step flow the customer and supplier vaults use. Falling
+           straight into shipment #1 was misleading: the header named the
+           bucket, not the deal, so a list of one shipment's documents read as
+           if it were the whole case-to-case set. */
+        const activeShip    = isStd ? null : (shipsWithDocs.find((r) => r.id === ovShip) ?? null);
+        const picking       = !isStd && !activeShip;
         const docs: (VaultDoc | VaultShipmentDoc)[] = isStd
           ? [...vault.company_dd, ...vault.owner_kyc, ...vault.trade_licenses]
           : (activeShip ? shipDocsOf(activeShip) : []);
-        const title = isStd ? 'Standard Documents — Overview' : 'Case to Case Agreements — Overview';
+        const shipLabel = (r: VaultShipmentRow) => (r.has_shipment === false ? 'Not shipped' : r.shipment_id);
+
+        /* Multi-select. Only case-to-case rows are tickable — standard DD / KYC
+         * rows are uploads, not signature envelopes, so there is nothing to
+         * send them to.
+         *
+         * A row is sendable only once it has a db_id: without one it was never
+         * saved against this deal and the signature request has nothing to
+         * point at. And one envelope carries one library, so a mixed tick list
+         * (a trade document AND an agreement) has no single destination. Both
+         * cases keep the button on screen but disabled, with the reason on the
+         * tooltip, rather than quietly dropping rows from the send. */
+        /* Which rows this panel can actually send.
+         *
+         * The send modal here runs in its default 'trade-doc' mode, so it
+         * resolves ids against the TRADE DOCUMENT library only. An agreement
+         * needs the same modal opened with mode="agreement" plus an
+         * agreementContext (lead + signers), which this vault does not wire
+         * up — the main Case-to-Case table gates its Send on category 'td'
+         * for exactly that reason. Offering Resend on an agreement row would
+         * hand the modal an id it cannot find.
+         *
+         * Already-signed and in-flight rows are excluded too, matching the
+         * main table: there is nothing to resend on a completed envelope, and
+         * a pending one wants a reminder, not a second send. */
+        const sendableDoc = (d: VaultShipmentDoc) =>
+          !!d.db_id
+          && (d.doc_type ?? 'trade') !== 'agreement'
+          && d.status !== 'Signed'
+          && d.status !== 'Pending';
+        const sendReason = (d: VaultShipmentDoc) =>
+          !d.db_id ? 'Not saved against this deal yet'
+          : (d.doc_type ?? 'trade') === 'agreement' ? 'Agreements are sent from the Case to Case tab, not here'
+          : d.status === 'Signed' ? 'Already signed — nothing to resend'
+          : d.status === 'Pending' ? 'Already out for signature — use Reminder instead'
+          : 'Send this document for signature again';
+
+        const keyed    = isStd ? [] : (docs as VaultShipmentDoc[]).map((doc) => ({ key: ovDocKey(doc), doc }));
+        const sendable = keyed.filter((r) => sendableDoc(r.doc));
+        const picked   = keyed.filter((r) => ovPicked.includes(r.key));
+        const pickedIds = picked.map((r) => r.doc.db_id).filter((n): n is number => !!n);
+        /* Every ticked row is sendable by construction — only sendable rows
+           can be ticked — so this is a guard against stale ticks, not a
+           second rule the user has to satisfy. */
+        const canBulk  = picked.length > 0 && picked.every((r) => sendableDoc(r.doc));
+        const allTicked = sendable.length > 0 && sendable.every((r) => ovPicked.includes(r.key));
+        /* Header follows the step: the bucket name while choosing, the chosen
+           deal once inside it. */
+        const title = isStd
+          ? 'Standard Documents — Overview'
+          : (activeShip ? `Case to Case — ${shipLabel(activeShip)}` : 'Case to Case Documents & Agreements — Overview');
         const sub = isStd
           ? 'All Company Due Diligence, Owner KYC & Trade Licenses documents in one list'
-          : 'Consignee Trade Documents & Agreements — pick a shipment';
+          : (activeShip
+            ? `Trade Documents & Agreements for ${activeShip.customer}`
+            : 'Select a shipment to view its Trade Documents & Agreements');
         // No pagination — the full list scrolls inside the fixed-height body
-        // after ~5 rows (see .cnev-ov-body max-height + sticky header).
+        // after ~5 rows (see .cev-ov-body max-height + sticky header).
         return (
-          <div className="cnev-ov-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) setOverview(null); }}>
-            <div className="cnev-ov-card">
-              <div className="cnev-ov-head">
-                <span className="cnev-ov-head-icon"><i className="ri-list-check-2" aria-hidden /></span>
-                <div className="cnev-ov-head-text">
-                  <div className="cnev-ov-title">{title}</div>
-                  <div className="cnev-ov-sub">{sub}</div>
+          <div className="cev-ov-overlay sev-ov cnev-ov" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) { setOverview(null); setOvPicked([]); } }}>
+            <div className="cev-ov-card">
+              <div className="cev-ov-head">
+                <span className="cev-ov-head-icon"><i className="ri-list-check-2" aria-hidden /></span>
+                <div className="cev-ov-head-text">
+                  <div className="cev-ov-title">{title}</div>
+                  <div className="cev-ov-sub">{sub}</div>
                 </div>
-                <button type="button" className="cnev-ov-close" onClick={() => setOverview(null)} aria-label="Close"><i className="ri-close-line" /></button>
+                {activeShip && (
+                  <button type="button" className="sev-ov-back" onClick={() => { setOvShip(null); setOverviewPage(1); setOvPicked([]); }}>
+                    <i className="ri-arrow-left-s-line" aria-hidden /> Back to shipments
+                  </button>
+                )}
+                <button type="button" className="cev-ov-close" onClick={() => { setOverview(null); setOvPicked([]); }} aria-label="Close"><i className="ri-close-line" /></button>
               </div>
-              {/* Case-to-Case: horizontal, scrollable shipment tabs. */}
-              {!isStd && shipsWithDocs.length > 0 && (
-                <div className="cnev-ov-shiptabs">
-                  {shipsWithDocs.map((r) => (
-                    <button
-                      type="button"
-                      key={r.id}
-                      className={`cnev-ov-shiptab ${activeShip?.id === r.id ? 'is-active' : ''}`}
-                      onClick={() => { setOvShip(r.id); setOverviewPage(1); }}
-                    >
-                      <i className="ri-truck-line" aria-hidden /> {r.has_shipment === false ? 'Not shipped' : r.shipment_id}
-                      <span className="cnev-ov-shiptab-opp">{r.opportunity_id}</span>
-                    </button>
-                  ))}
+              {picking ? (
+                /* Step 1 — the shipment / procurement chooser. Replaces the old
+                   horizontal tab strip, which hid the deal's parties behind a
+                   code and could not show more than a few before scrolling. */
+                <div className="cev-ov-body">
+                  <div className="sev-ov-pick-cap">Select a Shipment / Procurement to view its Trade Documents &amp; Agreements</div>
+                  {shipsWithDocs.length === 0 ? (
+                    <div className="sev-ov-pick-empty">No transactions with documents for this consignee yet.</div>
+                  ) : (
+                    <ul className="sev-ov-picks">
+                      {shipsWithDocs.map((r) => (
+                        <li key={r.id}>
+                          <button type="button" className="sev-ov-pick" onClick={() => { setOvShip(r.id); setOverviewPage(1); setOvPicked([]); }}>
+                            <span className="sev-ov-pick-code">{shipLabel(r)}</span>
+                            <span className="sev-ov-pick-text">
+                              <span className="sev-ov-pick-title">{r.customer}</span>
+                              <span className="sev-ov-pick-sub">{r.consignee || '—'} · {r.opportunity_id}</span>
+                            </span>
+                            <span className="sev-ov-pick-go" aria-hidden><i className="ri-arrow-right-s-line" /></span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
-              )}
-              <div className="cnev-ov-body">
-                <table className="cnev-ov-table">
-                  <thead><tr><th style={{ width: 64 }}>SR NO</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
+              ) : (
+              <div className="cev-ov-body">
+                <table className="cev-ov-table">
+                  <thead>
+                    <tr>
+                      {/* Tick column only on Case-to-Case — see `sendable`. */}
+                      {!isStd && (
+                        <th style={{ width: 40 }}>
+                          <input
+                            type="checkbox"
+                            aria-label="Select all sendable documents"
+                            disabled={sendable.length === 0}
+                            checked={allTicked}
+                            onChange={(e) => setOvPicked(e.target.checked ? sendable.map((r) => r.key) : [])}
+                          />
+                        </th>
+                      )}
+                      <th style={{ width: 64 }}>SR NO</th>
+                      <th>DOCUMENT NAME</th>
+                      <th style={{ width: 130 }}>STATUS</th>
+                      <th style={{ width: isStd ? 130 : 230 }}>ACTION</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {docs.length === 0 ? (
-                      <tr><td colSpan={4} className="cnev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
+                      <tr><td colSpan={isStd ? 4 : 5} className="cev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
                     ) : docs.map((d, i) => {
                       const absIdx = i;
                       const raw = isStd ? (d as VaultDoc).attachment_url : (d as VaultShipmentDoc).signed_url;
@@ -852,23 +1140,80 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                       const fname = isStd ? ((d as VaultDoc).attachment || `${d.name}.pdf`) : `${d.name}.pdf`;
                       return (
                         <tr key={`${activeShip?.id ?? 'std'}-${absIdx}`}>
-                          <td className="cnev-ov-num">{absIdx + 1}</td>
+                          {!isStd && (() => {
+                            const rowKey = ovDocKey(d as VaultShipmentDoc);
+                            const canTick = sendableDoc(d as VaultShipmentDoc);
+                            return (
+                              <td>
+                                <Tooltip label={canTick ? 'Select for signature' : sendReason(d as VaultShipmentDoc)}>
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`Select ${d.name}`}
+                                    disabled={!canTick}
+                                    checked={ovPicked.includes(rowKey)}
+                                    onChange={(e) => setOvPicked((prev) => e.target.checked ? [...prev, rowKey] : prev.filter((k) => k !== rowKey))}
+                                  />
+                                </Tooltip>
+                              </td>
+                            );
+                          })()}
+                          <td className="cev-ov-num">{absIdx + 1}</td>
                           {/* 35 to match the shipment doc panel — the Document
                               Name column is the widest here too, and a full PI
                               name ("Proforma Invoice (PI/2026-27/29)") is 32
                               characters, so 25 hid the PI number itself. */}
                           <Tooltip label={d.name} disabled={(d.name || '').length <= 35}>
-                            <td className="cnev-ov-name">{(d.name || '').length > 35 ? (d.name || '').slice(0, 35) + '…' : d.name}</td>
+                            <td className="cev-ov-name">{(d.name || '').length > 35 ? (d.name || '').slice(0, 35) + '…' : d.name}</td>
                           </Tooltip>
                           <td><StatusPill s={d.status as VaultStatus} /></td>
                           <td>
+                            <div className="sev-ov-acts">
+                            {/* Resend / Track — case-to-case only. Standard rows
+                                are uploads, so neither applies to them. */}
+                            {!isStd && (() => {
+                              const sd = d as VaultShipmentDoc;
+                              const canSend  = sendableDoc(sd);
+                              const canTrack = !!sd.signature_request_id;
+                              return (
+                                <>
+                                  <Tooltip label={sendReason(sd)}>
+                                    <button
+                                      type="button"
+                                      className="sev-ov-act sev-ov-act-send"
+                                      disabled={!canSend}
+                                      onClick={() => { if (sd.db_id) setSendDocIds([sd.db_id]); }}
+                                    >
+                                      <i className="ri-send-plane-line" aria-hidden /> Resend
+                                    </button>
+                                  </Tooltip>
+                                  <Tooltip label={canTrack ? 'Signing activity tracker' : 'Nothing has been sent for signature yet'}>
+                                    <button
+                                      type="button"
+                                      className="sev-ov-act sev-ov-act-track"
+                                      disabled={!canTrack}
+                                      onClick={() => setOvTrack({ id: sd.signature_request_id as number, code: sd.name || shipLabel(activeShip!) })}
+                                    >
+                                      <i className="ri-time-line" aria-hidden /> Track
+                                    </button>
+                                  </Tooltip>
+                                </>
+                              );
+                            })()}
                             {(() => {
                               const dlKey = `${activeShip?.id ?? 'std'}-${absIdx}`;
                               const dling = ovDownloadingKey === dlKey;
                               return (
+                                <Tooltip label={!url ? 'No signed file yet' : (dling ? 'Downloading…' : `Download ${d.name}`)}>
                                 <button
                                   type="button"
-                                  className="cnev-ov-dl"
+                                  /* Icon-only on Case-to-Case. Resend and Track
+                                     already carry labels there, and a third
+                                     labelled pill pushed the table wider than
+                                     the dialog — which put the tick column off
+                                     the left edge behind a horizontal scrollbar
+                                     and left a white strip past the header. */
+                                  className={isStd ? 'cev-ov-dl' : 'sev-ov-act'}
+                                  aria-label="Download"
                                   disabled={!url || dling}
                                   onClick={async () => {
                                     if (!url) return;
@@ -895,11 +1240,13 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                                   }}
                                 >
                                   {dling
-                                    ? <><i className="ri-loader-4-line cnev-spin" aria-hidden /> Downloading…</>
-                                    : <><i className="ri-download-2-line" aria-hidden /> Download</>}
+                                    ? <><i className="ri-loader-4-line cev-spin" aria-hidden />{isStd ? ' Downloading…' : ''}</>
+                                    : <><i className="ri-download-2-line" aria-hidden />{isStd ? ' Download' : ''}</>}
                                 </button>
+                                </Tooltip>
                               );
                             })()}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -907,20 +1254,61 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                   </tbody>
                 </table>
               </div>
+              )}
+              {/* Selection action bar.
+                *
+                * The bulk send used to sit in the panel header, next to Back
+                * and Close — beside the two controls that LEAVE the panel, and
+                * far from the ticks that arm it. It belongs under the list it
+                * acts on, appearing only once something is selected, so the
+                * count and the action read as one sentence.
+                *
+                * The button stays visible but disabled when the selection
+                * cannot be sent, with the reason on its tooltip; hiding it
+                * would leave the user with a tick they cannot explain. */}
+              {!picking && picked.length > 0 && (
+                <div className="cnev-ovbar">
+                  <span className="cnev-ovbar-count">
+                    {picked.length} document{picked.length > 1 ? 's' : ''} selected
+                  </span>
+                  <Tooltip label={canBulk
+                    ? `Send ${picked.length} document${picked.length > 1 ? 's' : ''} for signature`
+                    : 'One of the ticked rows can no longer be sent'}>
+                    <button
+                      type="button"
+                      className="cnev-ovbar-send"
+                      disabled={!canBulk}
+                      onClick={() => { if (canBulk) setSendDocIds(pickedIds); }}
+                    >
+                      <i className="ri-send-plane-line" aria-hidden /> Send for Signature
+                    </button>
+                  </Tooltip>
+                </div>
+              )}
             </div>
           </div>
         );
       })()}
 
+      {/* Signing tracker for an overview row. Sits outside the overview block
+          so it survives that panel's re-render when a row is ticked. */}
+      {ovTrack && (
+        <SigningTrackerModal
+          sigId={ovTrack.id}
+          code={ovTrack.code}
+          onClose={() => setOvTrack(null)}
+        />
+      )}
+
       {segPop && createPortal(
         <>
           <div onClick={() => setSegPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 13000 }} />
-          <div className="cnev-seg-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 250), top: segPop.y, zIndex: 13001, width: 232, maxHeight: 320, overflowY: 'auto' }}>
-            <div className="cnev-seg-pop-title">Segments ({segPop.names.length})</div>
+          <div className="cev-seg-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 250), top: segPop.y, zIndex: 13001, width: 232, maxHeight: 320, overflowY: 'auto' }}>
+            <div className="cev-seg-pop-title">Segments ({segPop.names.length})</div>
             {segPop.names.map((name, i) => (
-              <div key={i} className={`cnev-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
+              <div key={i} className={`cev-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
                 <Tooltip label={name}>
-                  <span className="cnev-seg-pop-pill">{name.length > 20 ? name.slice(0, 20) + '…' : name}</span>
+                  <span className="cev-seg-pop-pill">{name.length > 20 ? name.slice(0, 20) + '…' : name}</span>
                 </Tooltip>
               </div>
             ))}
@@ -933,40 +1321,85 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   );
 }
 
-function KpiTile({ label, value, accent, subtitle, subTone }: { label: string; value: number; accent?: string; subtitle?: string; subTone?: 'good' | 'bad' }) {
-  /* Flat stat column (matches the CLM prototype): small uppercase label, a
-     large tone-coloured number, and an optional status sub-line. */
-  return (
-    <div className="cnev-kpi-tile">
-      <div className="cnev-kpi-label">{label.toUpperCase()}</div>
-      <div className="cnev-kpi-value" style={accent ? { color: accent } : undefined}>{value.toLocaleString()}</div>
-      {subtitle && <div className={`cnev-kpi-sub ${subTone === 'bad' ? 'is-bad' : 'is-good'}`}>{subtitle}</div>}
-    </div>
-  );
-}
-
 /* ─── Loading skeleton — shimmer placeholders for the whole vault body
    (KPI ribbon, group cards, tabs, section banner, table). Shown on first
    load; once it clears, whatever the API returned is what renders. */
 function VaultSkeleton() {
   return (
-    <div className="cnev-skel">
-      <div className="cnev-skel-kpis">
-        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="cnev-skel-kpi cnev-sk" />)}
+    <div className="cev-skel">
+      <div className="cev-skel-kpis">
+        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="cev-skel-kpi cev-sk" />)}
       </div>
-      <div className="cnev-skel-groups">
-        <div className="cnev-skel-group cnev-sk" />
-        <div className="cnev-skel-group cnev-sk" />
+      <div className="cev-skel-groups">
+        <div className="cev-skel-group cev-sk" />
+        <div className="cev-skel-group cev-sk" />
       </div>
-      <div className="cnev-skel-tabs">
-        {Array.from({ length: 3 }).map((_, i) => <div key={i} className="cnev-skel-tab cnev-sk" />)}
+      <div className="cev-skel-tabs">
+        {Array.from({ length: 3 }).map((_, i) => <div key={i} className="cev-skel-tab cev-sk" />)}
       </div>
-      <div className="cnev-skel-section cnev-sk" />
-      <div className="cnev-skel-table">
-        <div className="cnev-skel-thead cnev-sk" />
-        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="cnev-skel-row cnev-sk" />)}
+      <div className="cev-skel-section cev-sk" />
+      <div className="cev-skel-table">
+        <div className="cev-skel-thead cev-sk" />
+        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="cev-skel-row cev-sk" />)}
       </div>
     </div>
+  );
+}
+
+/* ── Expiry / status helpers ────────────────────────────────────────────────
+ * Ported from the Supplier vault so the Expiry and Status columns read the
+ * same way in both. Kept local rather than imported: SupplierEvidenceVaultModal
+ * is a large P2P module and pulling it in for four small functions would drag
+ * it into this lazy chunk.
+ *
+ * Expiry arrives as free text — the API hands back whatever the upload or the
+ * segment-rule master carried ('01-Jan-2028', '2028-01-01', 'Lifetime', '—'),
+ * so it is parsed leniently and left as-is when it is clearly not a date. */
+const EV_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function evParseExpiry(s?: string | null): Date | null {
+  if (!s) return null;
+  const t = s.trim();
+  if (/^(n\/a|—|-|lifetime|varies|)$/i.test(t)) return null;
+  let m: RegExpMatchArray | null;
+  if ((m = t.match(/^(\d{4})-(\d{2})-(\d{2})/)))          return new Date(+m[1], +m[2] - 1, +m[3]);
+  if ((m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)))   return new Date(+m[3], +m[2] - 1, +m[1]);
+  if ((m = t.match(/^(\d{1,2})\/(\d{4})$/)))              return new Date(+m[2], +m[1] - 1, 1);
+  const d = new Date(t);
+  return isNaN(d.getTime()) ? null : d;
+}
+function evFmtExpiry(s?: string | null): string {
+  const d = evParseExpiry(s);
+  if (!d) return s && s.trim() && s.trim() !== '-' ? s.trim() : '—';
+  return `${String(d.getDate()).padStart(2, '0')}-${EV_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+}
+/* A document the API calls "Verified" is still expired if its date has passed —
+   the API does not re-check that on read, so the table does it here. */
+function evEffectiveStatus(d: VaultDoc): VaultStatus | 'Expired' {
+  const exp = evParseExpiry(d.expiry);
+  if (exp) { const today = new Date(); today.setHours(0, 0, 0, 0); if (exp < today) return 'Expired'; }
+  return d.status;
+}
+/* Status pill for the Expiry/Status columns.
+ *
+ * Rendered as `.cev-pill[data-status]`, the vault's own pill, rather than a
+ * private span with its own colours. That class is shape-only — the light
+ * colours still come from the inline style below — but the stylesheet carries
+ * `[data-bs-theme="dark"] .cev-pill[data-status="…"]` rules marked !important,
+ * which is the one thing that can override an inline declaration. Built as a
+ * standalone span it stayed hard-coded light green / light red on a dark page. */
+function VaultStatusPill({ status }: { status: VaultStatus | 'Expired' }) {
+  const map: Record<VaultStatus | 'Expired', { bg: string; color: string; bd: string }> = {
+    Verified: { bg: '#dcfce7', color: '#15803d', bd: '#bbf7d0' },
+    Expiring: { bg: '#fef3c7', color: '#b45309', bd: '#fde68a' },
+    Pending:  { bg: '#fee2e2', color: '#dc2626', bd: '#fecaca' },
+    Signed:   { bg: '#dcfce7', color: '#15803d', bd: '#bbf7d0' },
+    Expired:  { bg: '#fee2e2', color: '#b91c1c', bd: '#fca5a5' },
+  };
+  const s = map[status] ?? map.Pending;
+  return (
+    <span className="cev-pill" data-status={status} style={{ background: s.bg, color: s.color, border: `1px solid ${s.bd}`, whiteSpace: 'nowrap' }}>
+      {status}
+    </span>
   );
 }
 
@@ -988,9 +1421,9 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
      spinner a large file reads as a dead click and gets clicked again. */
   const [chipBusy, setChipBusy] = useState<string | null>(null);
   return (
-    <div className="cnev-table-wrap">
-      <div className="cnev-table-scroll">
-      <table className="cnev-table">
+    <div className="cev-table-wrap">
+      <div className="cev-table-scroll">
+      <table className="cev-table">
         <thead>
           <tr>
             <th style={{ width: 56 }}>SR</th>
@@ -998,13 +1431,21 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
             <th>{numberHeader}</th>
             <th>{authorityLbl}</th>
             <th>Requirement</th>
+            {/* Issue Date is only ever filled for SIGNED documents — the API
+                sets it to the signing date on the case-to-case buckets and
+                leaves it null on standard DD / KYC / Licence rows, which have
+                no issue date stored anywhere. It therefore reads "—" on the
+                standard tabs by design, not by fault. */}
+            <th>Issue Date</th>
+            <th>Expiry</th>
             <th>Attachment</th>
-            <th style={{ width: 140 }}>Actions</th>
+            <th>Status</th>
+            <th style={{ width: 190 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr><td colSpan={7} className="cnev-empty">No documents in this bucket yet.</td></tr>
+            <tr><td colSpan={10} className="cev-empty">No documents in this bucket yet.</td></tr>
           ) : rows.map((d, i) => (
             <tr key={d.id}>
               <td>{i + 1}</td>
@@ -1013,17 +1454,27 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                   slice(0, 25) cut mid-word at a fixed character count regardless
                   of the column's actual width. Full text stays on hover. */}
               <Tooltip label={d.name}>
-                <td className="cnev-doc-name"><span className="cnev-trunc">{d.name}</span></td>
+                <td className="cev-doc-name"><span className="cev-trunc">{d.name}</span></td>
               </Tooltip>
-              <td className="cnev-mono">{d.reference || '—'}</td>
-              <td>{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
+              <td className="cev-mono cev-mono-ref">{d.reference || '—'}</td>
+              <td className="cev-cell-dim">{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
               <td>
+                {/* The inline styles carry the light-mode pill and are left
+                    exactly as they were; the classes are what the shared sheet
+                    needs to recolour them under [data-bs-theme="dark"]. Without
+                    them these two pills stayed hard-coded light green / light
+                    grey in dark mode while the customer vault's adapted. */}
                 {d.requirement === 'M' ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>
+                  <span className="cev-req cev-req-m" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>
                 ) : (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
+                  <span className="cev-req cev-req-o" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
                 )}
               </td>
+              <td className="cev-cell-dim">{d.issue_date || '—'}</td>
+              {/* Plain text, not the .cev-date teal pill — the reference design
+                  shows both date columns as quiet grey so the eye lands on the
+                  Status pill instead. */}
+              <td className="cev-cell-dim">{evFmtExpiry(d.expiry)}</td>
               <td>
                 {d.attachment ? (
                   d.attachment_url ? (
@@ -1042,7 +1493,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                           <a
                             href={d.attachment_url}
                             rel="noreferrer"
-                            className="cnev-attach"
+                            className="cev-attach"
                             style={{ textDecoration: 'none' }}
                             aria-busy={busy}
                             onClick={async (e) => {
@@ -1054,27 +1505,31 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                             }}
                           >
                             {busy
-                              ? <i className="ri-loader-4-line cnev-spin" style={{ fontSize: 11 }} aria-hidden />
+                              ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 11 }} aria-hidden />
                               : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
                             {/* Uploaded file names can be very long (browser
                                 screen-capture names, exported ticket names…). The
                                 chip caps its width and ellipsises the text so the
                                 row stays one line; hover shows the full name. */}
-                            <span className="cnev-trunc">{d.attachment}</span>
+                            <span className="cev-attach-name cev-trunc">{d.attachment}</span>
                           </a>
                         </Tooltip>
                       );
                     })()
                   ) : (
+                  /* No URL to fetch — the name is shown but not actionable, so
+                     it gets the muted chip the customer vault uses for the
+                     same case rather than looking like a live download. */
                   <Tooltip label={d.attachment}>
-                    <span className="cnev-attach">
+                    <span className="cev-attach cev-attach-muted">
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                      <span className="cnev-trunc">{d.attachment}</span>
+                      <span className="cev-attach-name cev-trunc">{d.attachment}</span>
                     </span>
                   </Tooltip>
                   )
-                ) : <span className="cnev-muted">Not uploaded</span>}
+                ) : <span className="cev-muted">Not uploaded</span>}
               </td>
+              <td><VaultStatusPill status={evEffectiveStatus(d)} /></td>
               <td>
                 <VaultRowActions doc={d} ownerType={ownerType} ownerId={ownerId} category={category} onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} onBusyChange={onRowBusyChange} />
               </td>
@@ -1171,7 +1626,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   };
 
   return (
-    <div className="cnev-row-actions">
+    <div className="cev-row-actions">
       <input
         ref={fileRef}
         type="file"
@@ -1184,7 +1639,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           <button
             type="button"
             onClick={() => onSendTradeDoc!(doc)}
-            className="cnev-row-act cnev-row-act-send"
+            className="cev-row-act cev-row-act-send"
             aria-label="Send for signature"
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -1203,7 +1658,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
             type="button"
             onClick={remind}
             disabled={reminding}
-            className="cnev-row-act cnev-row-act-remind"
+            className="cev-row-act cev-row-act-remind"
             aria-label="Send reminder"
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -1221,7 +1676,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           <button
             type="button"
             onClick={() => setTrackerOpen(true)}
-            className="cnev-row-act cnev-row-act-track"
+            className="cev-row-act cev-row-act-track"
             aria-label="Signing activity tracker"
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -1247,13 +1702,14 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           target={canViewOrDownload ? '_blank' : undefined}
           rel="noreferrer"
           aria-disabled={!canViewOrDownload}
-          className={`cnev-row-act cnev-row-act-view ${!canViewOrDownload ? 'is-disabled' : ''}`}
+          className={`cev-row-act cev-row-act-view sev-row-act-txt ${!canViewOrDownload ? 'is-disabled' : ''}`}
           onClick={e => { if (!canViewOrDownload) { e.preventDefault(); return; } setViewing(true); window.setTimeout(() => setViewing(false), 1200); }}
           aria-label="View"
         >
           {viewing
-            ? <i className="ri-loader-4-line cnev-spin" style={{ fontSize: 14 }} aria-hidden />
+            ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 14 }} aria-hidden />
             : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>}
+          <span>View</span>
         </a>
       </Tooltip>
       <Tooltip label={canViewOrDownload ? (downloading ? 'Downloading…' : `Download ${doc.attachment}`) : 'No attachment yet'}>
@@ -1261,11 +1717,11 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           type="button"
           aria-disabled={!canViewOrDownload || downloading}
           onClick={() => { if (canViewOrDownload) void download(); }}
-          className={`cnev-row-act cnev-row-act-download ${!canViewOrDownload ? 'is-disabled' : ''}`}
+          className={`cev-row-act cev-row-act-download ${!canViewOrDownload ? 'is-disabled' : ''}`}
           aria-label="Download"
         >
           {downloading
-            ? <i className="ri-loader-4-line cnev-spin" style={{ fontSize: 14 }} aria-hidden />
+            ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 14 }} aria-hidden />
             : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
         </button>
       </Tooltip>
@@ -1279,7 +1735,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           type="button"
           aria-disabled={!canReupload || busy}
           onClick={() => { if (canReupload && !busy) fileRef.current?.click(); }}
-          className={`cnev-row-act cnev-row-act-upload ${(!canReupload || busy) ? 'is-disabled' : ''}`}
+          className={`cev-row-act cev-row-act-upload sev-row-act-txt ${(!canReupload || busy) ? 'is-disabled' : ''}`}
           aria-label={doc.attachment ? 'Re-upload' : 'Upload'}
         >
           {busy
@@ -1287,6 +1743,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
             : doc.attachment
               ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
               : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>}
+          <span>{doc.attachment ? 'Re-upload' : 'Upload'}</span>
         </button>
       </Tooltip>
       )}
@@ -1299,7 +1756,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
             href={doc.certificate_url}
             target="_blank"
             rel="noreferrer"
-            className="cnev-row-act cnev-row-act-cert"
+            className="cev-row-act cev-row-act-cert"
             aria-label="Certificate of Completion"
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -1320,9 +1777,18 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   );
 }
 
-function ShipmentTable({ rows, kind, onSend, activeSend }: {
+function ShipmentTable({ rows, kind, onSend, activeSend, select }: {
   rows: VaultShipmentRow[];
   kind: 'trade' | 'agreement';
+  /** Multi-select wiring, passed straight through to each deal's panel. The
+   *  selection lives in the modal because it spans deals and must survive a
+   *  row being collapsed. Omitted → the panels render without tick columns. */
+  select?: {
+    isSelected: (d: VaultShipmentDoc) => boolean;
+    canSelect: (d: VaultShipmentDoc) => boolean;
+    toggle: (leadId: number, d: VaultShipmentDoc, checked: boolean) => void;
+    toggleAll: (leadId: number, docs: VaultShipmentDoc[], checked: boolean) => void;
+  };
   /** Launches Send-for-Signature for one shipment doc (lead + doc + party). */
   onSend?: (leadId: number, doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
   /** The send currently being prepared, so its row's button can spin. This was
@@ -1342,9 +1808,9 @@ function ShipmentTable({ rows, kind, onSend, activeSend }: {
     <>
       {/* No Customer = / ≠ Consignee tabs in the consignee vault — it always
           shows this consignee's shipments. */}
-      <div className="cnev-table-wrap">
-        <div className="cnev-table-scroll">
-        <table className="cnev-table">
+      <div className="cev-table-wrap">
+        <div className="cev-table-scroll">
+        <table className="cev-table">
           <thead>
             <tr>
               <th style={{ width: 34 }} />
@@ -1362,7 +1828,7 @@ function ShipmentTable({ rows, kind, onSend, activeSend }: {
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={COLS} className="cnev-empty">No deals for this consignee.</td></tr>
+              <tr><td colSpan={COLS} className="cev-empty">No deals for this consignee.</td></tr>
             ) : filtered.map((r, i) => {
               const open = openId === r.id;
               return (
@@ -1371,18 +1837,18 @@ function ShipmentTable({ rows, kind, onSend, activeSend }: {
                     <td style={{ textAlign: 'center' }}><span style={{ display: 'inline-block', transition: 'transform .18s', transform: open ? 'rotate(90deg)' : 'none', color: '#0891b2', fontWeight: 800 }}>▸</span></td>
                     <td>{i + 1}</td>
                     <td>{r.has_shipment === false
-                      ? <span className="cnev-chip-pill" style={{ opacity: .55 }} title="No shipment order raised for this deal yet">● Not shipped</span>
-                      : <span className="cnev-chip-pill">● {r.shipment_id}</span>}</td>
-                    <td><span className="cnev-chip-pill cnev-chip-pill-warm">● {r.opportunity_id}</span></td>
+                      ? <span className="cev-chip-pill" style={{ opacity: .55 }} title="No shipment order raised for this deal yet">● Not shipped</span>
+                      : <span className="cev-chip-pill">● {r.shipment_id}</span>}</td>
+                    <td><span className="cev-chip-pill cev-chip-pill-warm">● {r.opportunity_id}</span></td>
                     <td>
-                      <span className="cnev-cust-cell">
-                        <span className="cnev-cust-mono">{r.customer.charAt(0)}</span>
+                      <span className="cev-cust-cell">
+                        <span className="cev-cust-mono">{r.customer.charAt(0)}</span>
                         {r.customer}
                       </span>
                     </td>
                     <td>
-                      <span className="cnev-cust-cell">
-                        <span className="cnev-cust-mono" style={{ background: 'linear-gradient(135deg,#0891b2,#06b6d4)' }}>{(r.consignee || '—').charAt(0)}</span>
+                      <span className="cev-cust-cell">
+                        <span className="cev-cust-mono" style={{ background: 'linear-gradient(135deg,#0891b2,#06b6d4)' }}>{(r.consignee || '—').charAt(0)}</span>
                         {r.consignee || '—'}
                       </span>
                     </td>
@@ -1393,7 +1859,7 @@ function ShipmentTable({ rows, kind, onSend, activeSend }: {
                     {isAgreement && <td><Ratio r={r.agreement} /></td>}
                   </tr>
                   {open && (
-                    <tr className="cnev-ship-expand">
+                    <tr className="cev-ship-expand">
                       <td colSpan={COLS} style={{ padding: 0, background: '#f0fdff' }}>
                         <ShipmentDocPanel
                           buyer={kind === 'trade' ? (r.trade_docs_buyer ?? []) : (r.agreements_buyer ?? [])}
@@ -1409,6 +1875,11 @@ function ShipmentTable({ rows, kind, onSend, activeSend }: {
                              party; the shared documents this consignee actually
                              co-signs are still one tab away under Both. */
                           hideBuyerTab
+                          selectable={!!select}
+                          isSelected={select?.isSelected}
+                          canSelect={select?.canSelect}
+                          onToggleDoc={select ? (d, on) => select.toggle(r.id, d, on) : undefined}
+                          onToggleAll={select ? (ds, on) => select.toggleAll(r.id, ds, on) : undefined}
                         />
                       </td>
                     </tr>
@@ -1431,9 +1902,9 @@ function Ratio({ r }: { r: { ratio: string; pct: number } }) {
   const tone = r.pct >= 100 ? 'good' : r.pct >= 50 ? 'mid' : 'bad';
   const status = tone === 'good' ? 'Complete' : tone === 'mid' ? 'Partial' : 'Missing';
   return (
-    <span className="cnev-ratio-num" data-tone={tone} title={`${r.ratio} · ${status}`}>
-      <span className="cnev-ratio-num-main">{r.ratio}</span>
-      <span className="cnev-ratio-num-pct">{r.pct}%</span>
+    <span className="cev-ratio-num" data-tone={tone} title={`${r.ratio} · ${status}`}>
+      <span className="cev-ratio-num-main">{r.ratio}</span>
+      <span className="cev-ratio-num-pct">{r.pct}%</span>
     </span>
   );
 }
@@ -1448,888 +1919,226 @@ function sectionSub(tab: TabKey): string {
   }
 }
 
-/* ─── Scoped CSS — emerald palette to match the Sales → Consignee
-   page (mint hero strip, emerald Add Consignee button, mint table
-   header). Sibling Customer module owns the violet identity. */
 const CNEV_CSS = `
-.cnev-overlay {
-  position: fixed; inset: 0;
-  background: rgba(12,74,110,0.45);
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
-  z-index: 11200;
-  display: flex; align-items: stretch; justify-content: flex-end;
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-  animation: cnevFade .18s ease both;
-}
-@keyframes cnevFade { from { opacity: 0; } to { opacity: 1; } }
-.cnev-card {
-  position: relative;
-  width: min(1280px, 90vw);
-  height: 100vh;
-  background: #f0fdff;
-  border-radius: 0;
-  overflow: hidden;
-  display: flex; flex-direction: column;
-  box-shadow: -32px 0 80px rgba(12,74,110,.40), -12px 0 30px rgba(12,74,110,.18);
-  animation: cnevSlide .26s cubic-bezier(.22,1,.36,1) both;
-}
-@keyframes cnevSlide { from { transform: translateX(40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-
-/* ─── HEADER ─── */
-.cnev-header {
-  position: relative;
-  flex-shrink: 0;
-  padding: 14px 22px;
-  background: linear-gradient(125deg, #083344 0%, #0c4a6e 25%, #0e7490 50%, #0891b2 75%, #06b6d4 100%);
-  color: #fff;
-  overflow: hidden;
-}
-.cnev-header-bg {
-  position: absolute; inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 100% 0%, rgba(165,243,252,0.10), transparent 45%),
-    radial-gradient(circle at 0% 100%, rgba(103,232,249,0.10), transparent 55%);
-}
-.cnev-header-bg::before,
-.cnev-header-bg::after {
-  content: '';
-  position: absolute;
-  border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.22), rgba(255,255,255,0.06) 60%, transparent 75%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
-}
-.cnev-header-bg::before { width: 220px; height: 220px; top: -80px; right: -40px; }
-.cnev-header-bg::after  { width: 130px; height: 130px; bottom: -45px; right: 130px;
-  background: radial-gradient(circle at 30% 30%, rgba(103,232,249,0.30), rgba(103,232,249,0.06) 60%, transparent 75%); }
-.cnev-header-orb {
-  position: absolute;
-  width: 90px; height: 90px;
-  top: 8px; right: 220px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.18), rgba(255,255,255,0.04) 60%, transparent 75%);
-  pointer-events: none;
-}
-.cnev-header-content {
-  position: relative;
-  display: flex; align-items: center; justify-content: space-between; gap: 20px;
-}
-.cnev-header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.cnev-vault-icon {
-  position: relative;
-  width: 42px; height: 42px; border-radius: 12px;
-  background: rgba(255,255,255,0.18);
-  border: 1.5px solid rgba(255,255,255,0.35);
-  display: inline-flex; align-items: center; justify-content: center;
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(0,0,0,.18);
-  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-  flex-shrink: 0;
-}
-.cnev-vault-icon-tick {
-  position: absolute; top: -3px; right: -3px;
-  width: 18px; height: 18px; border-radius: 50%;
-  background: #67e8f9; color: #0c4a6e;
-  display: inline-flex; align-items: center; justify-content: center;
-  border: 2px solid #0e7490;
-}
-.cnev-header-text { min-width: 0; }
-.cnev-header-eyebrow { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: rgba(255,255,255,.78); margin-bottom: 2px; }
-.cnev-header-title { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.15; margin-bottom: 6px; color: #fff; }
-.cnev-header-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.cnev-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.24); color: #ecfeff; }
-.cnev-chip-id { background: rgba(255,255,255,0.20); }
-.cnev-chip-link { background: rgba(255,255,255,0.14); color: #cffafe; }
-.cnev-chip-risk[data-risk="low"]      { background: rgba(8,145,178,0.30); color: #ecfeff; }
-.cnev-chip-risk[data-risk="medium"]   { background: rgba(245,158,11,0.30); color: #fef3c7; }
-.cnev-chip-risk[data-risk="high"]     { background: rgba(239,68,68,0.30);  color: #fee2e2; }
-.cnev-chip-risk[data-risk="critical"] { background: rgba(220,38,38,0.40);  color: #fee2e2; }
-
-.cnev-header-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-.cnev-header-meta { font-size: 11px; color: rgba(255,255,255,.84); display: inline-flex; gap: 4px; align-items: center; }
-.cnev-header-meta span { white-space: nowrap; }
-.cnev-seg-more {
-  display: inline-flex; align-items: center; margin-left: 5px;
-  padding: 1px 8px; border-radius: 999px; cursor: default;
-  font-size: 10px; font-weight: 800;
-  background: rgba(255,255,255,.20); border: 1px solid rgba(255,255,255,.28); color: #ecfeff;
-}
-.cnev-seg-more:hover { background: rgba(255,255,255,.30); }
-/* "+N more" segment list popover — white card with a titled list of segment
- * pills (matches the CLM authority/segment popovers). */
-.cnev-seg-pop { background: #fff; border: 1.5px solid #a5f3fc; border-radius: 12px; padding: 8px; box-shadow: 0 18px 44px rgba(8,47,73,.28); }
-.cnev-seg-pop-title { font-size: 8px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #0e7490; padding: 4px 8px 7px; }
-.cnev-seg-pop-row { display: flex; align-items: center; padding: 5px 8px; border-radius: 8px; }
-.cnev-seg-pop-row.alt { background: #ecfeff; }
-.cnev-seg-pop-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: #0e7490; background: #cffafe; border: 1px solid rgba(8,145,178,.30); border-radius: 999px; padding: 2px 11px; }
-.cnev-seg-pop-pill::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
-[data-bs-theme="dark"] .cnev-seg-pop { background: #0f2a30; border-color: rgba(34,211,238,.30); box-shadow: 0 18px 44px rgba(0,0,0,.55); }
-[data-bs-theme="dark"] .cnev-seg-pop-title { color: #67e8f9; }
-[data-bs-theme="dark"] .cnev-seg-pop-row.alt { background: rgba(255,255,255,.04); }
-[data-bs-theme="dark"] .cnev-seg-pop-pill { background: rgba(8,145,178,.18); color: #67e8f9; border-color: rgba(34,211,238,.30); }
-.cnev-close {
-  width: 28px; height: 28px; border-radius: 50%;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: rgba(255,255,255,0.18); color: #fff; border: 1px solid rgba(255,255,255,0.28);
-  cursor: pointer; transition: all .15s;
-  flex-shrink: 0;
-}
-.cnev-close:hover { background: rgba(255,255,255,0.30); transform: rotate(90deg); }
-
-/* ─── KPI STRIP ─── */
-.cnev-kpi-outer {
-  position: relative;
-  flex-shrink: 0;
-  background: #fff;
-  border-bottom: 1.5px solid #e0f2f7;
-}
-/* Animated top accent line (matches the prototype .ev-stats::before). */
-.cnev-kpi-outer::before {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2.5px; z-index: 2;
-  background: linear-gradient(90deg, #0e7490, #0891b2, #06b6d4, #67e8f9, #06b6d4, #0891b2, #0e7490);
-  background-size: 200% 100%;
-  animation: cnevStatsAccent 4s linear infinite;
-}
-@keyframes cnevStatsAccent { 0% { background-position: 0% 0%; } 100% { background-position: 200% 0%; } }
-/* Full-width static row — all stat columns fit; NO horizontal scroll. */
-.cnev-kpi-strip {
-  display: flex; gap: 0; align-items: stretch;
-  padding: 0;
-  overflow: visible;
-}
-.cnev-kpi-fade {
-  position: absolute;
-  top: 0; bottom: 0;
-  width: 70px;
-  pointer-events: none;
-  z-index: 3;
-}
-.cnev-kpi-fade-l { left: 0;  background: linear-gradient(90deg,  #f0fdff 0%, #f0fdff 25%, rgba(240,253,255,0) 100%); }
-.cnev-kpi-fade-r { right: 0; background: linear-gradient(270deg, #ecfeff 0%, #ecfeff 25%, rgba(236,254,255,0) 100%); }
-.cnev-kpi-nav {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 5;
-  width: 34px; height: 34px;
-  border-radius: 50%;
-  border: none;
-  background: linear-gradient(135deg, #ffffff 0%, #ecfeff 100%);
-  color: #0e7490;
-  display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer;
-  box-shadow:
-    0 2px 6px rgba(8,145,178,0.18),
-    0 8px 22px rgba(12,74,110,0.18),
-    inset 0 0 0 1px rgba(8,145,178,0.20);
-  transition: all .18s ease;
-  font-size: 18px;
-}
-.cnev-kpi-nav:hover {
-  background: linear-gradient(135deg, #0e7490, #06b6d4);
-  color: #fff;
-  transform: translateY(-50%) scale(1.10);
-  box-shadow:
-    0 4px 10px rgba(8,145,178,0.30),
-    0 10px 26px rgba(8,145,178,0.45);
-}
-.cnev-kpi-nav:active { transform: translateY(-50%) scale(0.96); }
-.cnev-kpi-nav-prev { left: 14px; }
-.cnev-kpi-nav-next { right: 14px; }
-.cnev-kpi-tile {
-  position: relative;
-  flex: 1 1 0;                /* equal-width columns — fill the row, no scroll */
-  min-width: 0;
-  padding: 12px 8px 10px;
-  border-right: 1px solid rgba(8,145,178,0.16);   /* thin column divider */
-  text-align: center;        /* centre label, value & status sub-line */
-}
-.cnev-kpi-tile:last-child { border-right: none; }
-.cnev-kpi-strip-top { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
-.cnev-kpi-body { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.cnev-kpi-text { min-width: 0; }
-.cnev-kpi-label {
-  font-size: 6.5px; font-weight: 700; letter-spacing: .1em;
-  color: #94a3b8;
-  text-transform: uppercase;
-  margin-bottom: 2px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.cnev-kpi-value {
-  font-size: 22px; font-weight: 800; line-height: 1;
-  color: #083344;
-  font-variant-numeric: tabular-nums;
-}
-.cnev-kpi-sub {
-  margin-top: 3px;
-  font-size: 7px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
-}
-.cnev-kpi-sub.is-good { color: #16a34a; }
-.cnev-kpi-sub.is-bad  { color: #dc2626; }
-.cnev-kpi-icon {
-  width: 38px; height: 38px; border-radius: 10px;
-  display: inline-flex; align-items: center; justify-content: center;
-  color: #fff;
-  font-size: 18px;
-  flex-shrink: 0;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.10);
-}
-
-/* ─── TABS ─── */
-/* ─── GROUP CARDS — Standard Documents vs Case to Case (green variant). */
-.cnev-groups-wrap {
-  flex-shrink: 0;
-  background: linear-gradient(180deg, #f0fdff 0%, #ecfeff 100%);
-  padding: 13px 18px;
-}
-.cnev-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.cnev-group {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 11px 16px;
-  background: #ffffff;
-  border: 1.5px solid #cffafe;
-  border-radius: 13px;
-  text-align: left;
-  transition: all .2s ease;
-}
-.cnev-group:hover { border-color: #67e8f9; background: #f0fdff; }
-.cnev-group-main {
-  flex: 1; min-width: 0;
-  display: flex; align-items: center; gap: 14px;
-  background: transparent; border: 0; padding: 0; cursor: pointer;
-  text-align: left; font-family: inherit;
-}
-.cnev-group-overview {
-  flex-shrink: 0;
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 13px; border-radius: 9px;
-  background: #ecfeff; color: #0e7490; border: 1.5px solid #a5f3fc;
-  font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
-  white-space: nowrap; transition: all .18s ease;
-}
-.cnev-group-overview:hover { background: #fff; border-color: #06b6d4; color: #0891b2; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8,145,178,.22); }
-.cnev-group-overview i { font-size: 14px; }
-.cnev-group.is-active .cnev-group-overview { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.35); }
-.cnev-group.is-active .cnev-group-overview:hover { background: #fff; color: #0891b2; border-color: #fff; }
-
-/* ─── Document Overview popup ─── */
-.cnev-ov-overlay {
-  position: fixed; inset: 0; z-index: 11400;
-  background: rgba(8,51,68,.45); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
-  display: flex; align-items: center; justify-content: center; padding: 24px;
-}
-.cnev-ov-card {
-  width: min(760px, 96vw); max-height: 86vh;
-  background: #fff; border-radius: 16px; overflow: hidden;
-  display: flex; flex-direction: column;
-  box-shadow: 0 30px 80px rgba(8,51,68,.45);
-}
-.cnev-ov-head {
-  display: flex; align-items: center; gap: 14px; padding: 16px 20px;
-  background: linear-gradient(120deg, #083344 0%, #0c4a6e 30%, #0e7490 65%, #0891b2 100%);
-  color: #fff; flex-shrink: 0;
-}
-.cnev-ov-head-icon {
-  width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.22); font-size: 19px;
-}
-.cnev-ov-head-text { flex: 1; min-width: 0; }
-.cnev-ov-title { font-size: 16px; font-weight: 800; letter-spacing: -.01em; }
-.cnev-ov-sub { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.82); margin-top: 2px; }
-.cnev-ov-close {
-  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
-  border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.12); color: #fff;
-  cursor: pointer; font-size: 18px; display: inline-flex; align-items: center; justify-content: center;
-  transition: all .15s ease;
-}
-.cnev-ov-close:hover { background: rgba(255,255,255,.25); }
-/* Fixed height for ~5 rows so the popup size stays constant regardless of how
-   many documents the selected shipment/page has (paginated at 5/page). */
-/* border-top, NOT padding-top — and that is the whole fix.
-   A sticky top:0 header sticks to the SCROLLPORT, which is the padding box.
-   With padding-top: 14px there was a 14px strip above where the header parks,
-   inside the scroller, and rows scrolling up showed through it: the first row
-   floated above the header instead of disappearing under it. A border sits
-   OUTSIDE the padding box, so it reserves the same 14px of white while the
-   scrollport — and the parked header with it — starts flush at the top.
-   The customer vault already carries this rule (.cev-ov-body); the consignee
-   copy never got it. */
-.cnev-ov-body { overflow: auto; padding: 0 18px 18px; border-top: 14px solid #fff; min-height: 312px; max-height: 312px; }
-.cnev-ov-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px 16px; flex-wrap: wrap; }
-.cnev-ov-pager-info { font-size: 11px; font-weight: 600; color: #0891b2; }
-.cnev-ov-pager-btns { display: flex; align-items: center; gap: 5px; }
-.cnev-ov-pager-nav, .cnev-ov-pager-num {
-  min-width: 28px; height: 28px; border-radius: 7px; cursor: pointer;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-family: inherit; font-size: 11px; font-weight: 700;
-  border: 1.5px solid rgba(6,182,212,.22); background: #fff; color: #0891b2; transition: all .15s;
-}
-.cnev-ov-pager-nav:disabled { opacity: .4; cursor: default; }
-.cnev-ov-pager-nav:not(:disabled):hover, .cnev-ov-pager-num:hover { background: #ecfeff; }
-.cnev-ov-pager-num.is-active { background: linear-gradient(135deg, #06b6d4, #0891b2); color: #fff; border-color: transparent; font-weight: 800; }
-[data-bs-theme="dark"] .cnev-ov-pager-nav, [data-bs-theme="dark"] .cnev-ov-pager-num { background: rgba(8,145,178,.14); color: #67e8f9; border-color: rgba(8,145,178,.34); }
-[data-bs-theme="dark"] .cnev-ov-pager-num.is-active { background: linear-gradient(135deg,#06b6d4,#22d3ee); color: #fff; border-color: transparent; }
-/* Shipment picker tabs in the Document Overview popup.
-   The markup already used cnev-ov-shiptab / cnev-ov-shiptab-opp, but the
-   rules were never written for the cnev- prefix — only the customer vault's
-   cev- copies exist. Unstyled, the button collapsed to bare text and the opp
-   code ran straight into the shipment id: "SHP-001OPP-0001". Mirrors
-   CustomerEvidenceVaultModal's .cev-ov-shiptab* block. */
-.cnev-ov-shiptabs { display: flex; gap: 8px; overflow-x: auto; padding: 12px 18px 0; scrollbar-width: thin; scrollbar-color: rgba(8,145,178,.3) transparent; }
-.cnev-ov-shiptabs::-webkit-scrollbar-thumb { background: rgba(8,145,178,.3); border-radius: 99px; }
-.cnev-ov-shiptab { display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0; padding: 8px 14px; border-radius: 10px; cursor: pointer; border: 1.5px solid rgba(6,182,212,.22); background: #fff; color: #0e7490; font-family: inherit; font-size: 12px; font-weight: 700; white-space: nowrap; transition: all .15s; }
-.cnev-ov-shiptab:hover { background: #ecfeff; }
-.cnev-ov-shiptab.is-active { background: linear-gradient(135deg,#0e7490,#06b6d4); color: #fff; border-color: transparent; box-shadow: 0 3px 10px rgba(8,145,178,.3); }
-.cnev-ov-shiptab-opp { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 20px; background: rgba(8,145,178,.1); color: #0891b2; }
-.cnev-ov-shiptab.is-active .cnev-ov-shiptab-opp { background: rgba(255,255,255,.22); color: #fff; }
-[data-bs-theme="dark"] .cnev-ov-shiptab { background: rgba(8,145,178,.12); color: #67e8f9; border-color: rgba(8,145,178,.34); }
-[data-bs-theme="dark"] .cnev-ov-shiptab.is-active { background: linear-gradient(135deg,#06b6d4,#22d3ee); color: #fff; border-color: transparent; }
-
-.cnev-ov-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
-.cnev-ov-table thead th {
-  position: sticky; top: 0; z-index: 5; background: #083344; color: #fff;
-  font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
-  padding: 10px 12px; text-align: left; white-space: nowrap;
-}
-.cnev-ov-table thead th:first-child { border-radius: 8px 0 0 8px; }
-.cnev-ov-table thead th:last-child  { border-radius: 0 8px 8px 0; }
-.cnev-ov-table tbody td { padding: 11px 12px; border-bottom: 1px solid #e6f7fb; vertical-align: middle; }
-.cnev-ov-table tbody tr:hover td { background: #f0fdff; }
-.cnev-ov-num { color: #5e94a1; font-weight: 700; }
-.cnev-ov-name { font-weight: 700; color: #0a2630; }
-.cnev-ov-empty { text-align: center; color: #5e94a1; padding: 28px 12px !important; font-weight: 600; }
-.cnev-ov-dl {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 5px 12px; border-radius: 7px;
-  background: #ecfeff; color: #0e7490; border: 1.5px solid #a5f3fc;
-  font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all .15s ease;
-}
-.cnev-ov-dl:hover:not(:disabled) { background: #fff; border-color: #06b6d4; color: #0891b2; }
-.cnev-ov-dl:disabled { opacity: .45; cursor: not-allowed; }
-[data-bs-theme="dark"] .cnev-ov-card { background: #0a2630; }
-/* The border-top above is the card colour, so it has to follow the theme —
-   left white it would read as a bright bar across a dark popup. */
-[data-bs-theme="dark"] .cnev-ov-body { border-top-color: #0a2630; }
-[data-bs-theme="dark"] .cnev-ov-table tbody td { border-bottom-color: rgba(8,145,178,.18); color: #cffafe; }
-[data-bs-theme="dark"] .cnev-ov-name { color: #e6f7fb; }
-[data-bs-theme="dark"] .cnev-ov-table tbody tr:hover td { background: rgba(8,145,178,.10); }
-.cnev-group.is-active {
-  background: linear-gradient(120deg, #0c4a6e 0%, #0e7490 55%, #06b6d4 100%);
-  border-color: #0e7490;
-  box-shadow: 0 6px 18px rgba(8,145,178,.35);
-}
-.cnev-group-icon {
-  width: 34px; height: 34px; flex-shrink: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 10px;
-  background: #cffafe; color: #0e7490; border: 1px solid #a5f3fc;
-  font-size: 16px;
-}
-.cnev-group.is-active .cnev-group-icon { background: rgba(255,255,255,.18); color: #fff; border-color: rgba(255,255,255,.25); }
-.cnev-group-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.cnev-group-title { font-size: 13px; font-weight: 800; color: #0c4a6e; letter-spacing: -.01em; }
-.cnev-group.is-active .cnev-group-title { color: #ffffff; }
-.cnev-group-sub { font-size: 8.5px; font-weight: 600; letter-spacing: .06em; color: #6b9e85; }
-.cnev-group.is-active .cnev-group-sub { color: rgba(255,255,255,.8); }
-
-.cnev-tabs-wrap {
-  flex-shrink: 0;
-  background: #fff;
-  border-bottom: 2px solid #d6eef5;
-  padding: 0 18px;
-}
-.cnev-tabs {
-  display: flex; align-items: center; gap: 2px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.cnev-tabs::-webkit-scrollbar { display: none; }
-/* Underline sub-tabs — matches the CLM prototype's .ev-tab. */
-.cnev-tab {
-  flex: 0 0 auto;
-  position: relative;
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 12px 14px;
-  background: transparent;
-  border: none;
-  border-bottom: 2.5px solid transparent;
-  margin-bottom: -2px;
-  color: #94a3b8;
-  font-size: 11.5px; font-weight: 600;
-  cursor: pointer;
-  transition: color .18s ease, border-color .18s ease;
-  white-space: nowrap;
-}
-.cnev-tab-icon {
-  width: 22px; height: 22px; border-radius: 6px;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: rgba(148,163,184,.08);
-  color: #94a3b8;
-  font-size: 13px;
-  flex-shrink: 0;
-  transition: all .18s ease;
-}
-.cnev-tab-label { white-space: nowrap; }
-.cnev-tab:hover { color: #0891b2; }
-.cnev-tab:hover .cnev-tab-icon { background: rgba(6,182,212,.1); color: #0891b2; }
-.cnev-tab.is-active {
-  color: #0e7490; font-weight: 700;
-  border-bottom-color: #0891b2;
-}
-.cnev-tab.is-active::after {
-  content: ''; position: absolute; bottom: -2px; left: 10px; right: 10px; height: 2.5px;
-  background: linear-gradient(90deg, #06b6d4, #22d3ee);
-  border-radius: 2px 2px 0 0;
-  box-shadow: 0 0 8px rgba(6,182,212,.6);
-}
-.cnev-tab.is-active .cnev-tab-icon {
-  background: linear-gradient(135deg, #ecfeff, #cffafe);
-  color: #0891b2;
-}
-.cnev-tab-count {
-  background: #f0fdff; color: #22d3ee; border: 1px solid #a5f3fc;
-  font-size: 9px; font-weight: 800; letter-spacing: 0;
-  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 20px;
-  display: inline-flex; align-items: center; justify-content: center;
-  transition: all .18s ease;
-}
-.cnev-tab.is-active .cnev-tab-count {
-  background: linear-gradient(135deg, #06b6d4, #22d3ee);
-  color: #fff; border-color: transparent;
-  box-shadow: 0 2px 6px rgba(6,182,212,.38);
-}
-
-/* ─── BODY ─── */
-.cnev-body {
-  flex: 1; min-height: 0; overflow-y: auto;
-  padding: 14px 16px 18px;
-  background: #f7f8fc;
-  display: flex; flex-direction: column; gap: 0;
-  /* Match the visible scrollbar pattern used by [[AddVendorModal]]'s
-     .avm-body so the rail is obvious when a tab's table grows past
-     the body. Solid emerald replaces the prior near-invisible rgba(.30). */
-  scrollbar-width: thin; scrollbar-color: #67e8f9 transparent;
-}
-.cnev-body::-webkit-scrollbar { width: 8px; }
-.cnev-body::-webkit-scrollbar-thumb { background: #67e8f9; border-radius: 99px; }
-.cnev-body::-webkit-scrollbar-thumb:hover { background: #06b6d4; }
-/* Shipment tabs: ONE combined card like Standard Docs — section header fused to
-   a Customer=/≠Consignee toggle band, fused to the table (no gaps). */
-.cnev-body-ship { gap: 0; }
-.cnev-body-ship .cnev-ship-filter,
-.cnev-body-ship .cnev-ship-filter-2 {
-  align-self: stretch; width: auto; margin: 0; box-sizing: border-box;
-  padding: 12px 14px; background: #fbfdff; border-radius: 0;
-  border-left: 1px solid #e4e7f5; border-right: 1px solid #e4e7f5; border-bottom: 1px solid #e4e7f5;
-}
-[data-bs-theme="dark"] .cnev-body-ship .cnev-ship-filter,
-[data-bs-theme="dark"] .cnev-body-ship .cnev-ship-filter-2 { background: #0a2630 !important; border-color: rgba(8,145,178,.28) !important; }
-
-.cnev-section {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  background: linear-gradient(110deg, #fafbff 0%, #f3f5ff 100%);
-  border: 1px solid #e4e7f5;
-  border-radius: 10px 10px 0 0;
-  padding: 13px 16px;
-}
-.cnev-section-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.cnev-section-icon {
-  width: 34px; height: 34px; border-radius: 10px;
-  background: linear-gradient(135deg, #ecfeff, #a5f3fc);
-  color: #0e7490;
-  border: 1px solid rgba(6,182,212,.22);
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 16px;
-  box-shadow: 0 2px 6px rgba(6,182,212,.12);
-}
-.cnev-section-title { font-size: 12.5px; font-weight: 800; color: #083344; }
-.cnev-section-sub   { font-size: 9.5px; color: #94a3b8; margin-top: 1px; }
-.cnev-section-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-.cnev-section-count { font-size: 26px; font-weight: 800; color: #0c4a6e; line-height: 1; }
-.cnev-section-count-label { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: #0e7490; margin-top: 2px; }
-/* Figma-style status count pills on the section header band. */
-.cnev-sec-pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 11px; border-radius: 999px;
-  font-size: 11.5px; font-weight: 700; white-space: nowrap;
-  border: 1px solid transparent;
-}
-.cnev-sec-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.cnev-sec-pill-ok   { background: #ecfdf5; color: #059669; border-color: #a7f3d0; }
-.cnev-sec-pill-ok   .cnev-sec-dot { background: #10b981; }
-.cnev-sec-pill-warn { background: #fffbeb; color: #b45309; border-color: #fde68a; }
-.cnev-sec-pill-warn .cnev-sec-dot { background: #f59e0b; }
-.cnev-sec-pill-bad  { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
-.cnev-sec-pill-bad  .cnev-sec-dot { background: #ef4444; }
-.cnev-sec-pill-docs { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
-
-.cnev-filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.cnev-filter { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; font-size: 11.5px; font-weight: 700; border: 1px solid transparent; }
-.cnev-filter-verified { background: #dcfce7; color: #15803d; border-color: rgba(21,128,61,.30); }
-.cnev-filter-expiring { background: #fef3c7; color: #92400e; border-color: rgba(217,119,6,.30); }
-.cnev-filter-pending  { background: #fee2e2; color: #b91c1c; border-color: rgba(239,68,68,.30); }
-
-.cnev-table-wrap {
-  background: #fff;
-  border: 1px solid #e4e7f5;
-  border-top: none;
-  border-radius: 0 0 10px 10px;
-  overflow: hidden;
-  scrollbar-width: thin;
-  position: relative;
-  /* Don't let the flex column body squash this wrap below its
-     intrinsic height — without this, extra rows can be clipped at
-     the bottom and .cnev-body's overflow-y never trips, so the user
-     has no scrollbar to reach hidden documents. */
-  flex-shrink: 0;
-}
-.cnev-section { flex-shrink: 0; }
-.cnev-table-scroll {
-  overflow-x: auto;
-  overflow-y: visible;
-  scrollbar-width: thin;
-}
-.cnev-table-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
-.cnev-table-scroll::-webkit-scrollbar-thumb { background: rgba(8,145,178,.30); border-radius: 999px; }
-.cnev-table-scroll::-webkit-scrollbar-thumb:hover { background: rgba(8,145,178,.55); }
-.cnev-table { width: 100%; min-width: 980px; border-collapse: separate; border-spacing: 0; font-size: 13px; }
-/* ONE continuous gradient across the whole header row (not per-column).
-   The gradient + sticky both live on the <tr> so it spans left→right as a
-   single band AND stays pinned on scroll; the <th> cells are transparent
-   so they don't restart the gradient per column. */
-.cnev-table thead tr {
-  position: sticky; top: 0; z-index: 3;
-  background: linear-gradient(110deg, #083344 0%, #0c4a6e 60%, #0e7490 100%);
-}
-.cnev-table thead th {
-  padding: 9px 14px;
-  text-align: left;
-  background: transparent;
-  font-size: 10.5px; font-weight: 700; letter-spacing: .08em;
-  color: rgba(255,255,255,.75); text-transform: uppercase;
-  white-space: nowrap;
-}
-.cnev-table tbody td { padding: 13px 14px; border-bottom: 1px solid #f0f2fa; vertical-align: middle; color: #334155; background: #fff; }
-.cnev-table tbody tr:nth-child(even) td { background: #fafbff; }
-.cnev-table tbody tr:last-child td { border-bottom: none; }
-.cnev-table tbody tr:hover td { background: #f0fdff; }
-.cnev-doc-name { font-weight: 700; color: #083344; max-width: 300px; }
-/* Single-line ellipsis. Applied to an inner span (not the td / chip itself)
-   because text-overflow needs a block-ish box with a resolved width — a table
-   cell in the default auto layout just grows to fit its content instead.
-   min-width:0 lets it shrink inside the flex attachment chip. */
-.cnev-trunc {
+/* Consignee Evidence Vault — residual styles.
+ *
+ * The vault shell now renders with the shared design in
+ * supplier-evidence-vault.css (imported at the top of this file), the same
+ * sheet the Customer and Supplier vaults use, so the ~700 lines of emerald
+ * \`.cnev-*\` rules that used to live here are gone. What remains is the one
+ * helper that sheet has no equivalent for. */
+.cev-trunc {
   display: block; min-width: 0; max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.cnev-mono { font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace; font-size: 12px; color: #1f2937; }
-.cnev-empty { padding: 30px !important; text-align: center; color: #94a3b8; font-style: italic; }
-/* ─── Loading skeleton (shimmer) — emerald-tinted to match the consignee theme. */
-.cnev-skel { flex: 1; min-height: 0; overflow: hidden; padding: 16px 22px; display: flex; flex-direction: column; gap: 16px; }
-.cnev-sk { position: relative; overflow: hidden; background: #cffafe; border-radius: 12px; }
-.cnev-sk::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,.7), transparent); animation: cnevShimmer 1.3s ease-in-out infinite; }
-@keyframes cnevShimmer { 100% { transform: translateX(100%); } }
-.cnev-skel-kpis { display: flex; gap: 12px; }
-.cnev-skel-kpi { flex: 1; height: 74px; }
-.cnev-skel-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.cnev-skel-group { height: 60px; }
-.cnev-skel-tabs { display: flex; gap: 10px; }
-.cnev-skel-tab { width: 190px; height: 40px; border-radius: 999px; }
-.cnev-skel-section { height: 66px; }
-.cnev-skel-table { display: flex; flex-direction: column; gap: 10px; }
-.cnev-skel-thead { height: 38px; }
-.cnev-skel-row { height: 46px; border-radius: 10px; }
-[data-bs-theme="dark"] .cnev-sk { background: rgba(8,145,178,.14); }
-[data-bs-theme="dark"] .cnev-sk::after { background: linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent); }
-.cnev-muted { color: #94a3b8; font-style: italic; font-size: 12px; }
 
-.cnev-date {
-  display: inline-block;
-  font-size: 11.5px; font-weight: 600;
-  padding: 3px 9px; border-radius: 6px;
-  background: #ecfeff; color: #0e7490;
+/* Reference design tints the licence / document number and quietens the
+   columns either side of it, so the row reads: bold name, teal number,
+   everything supporting in grey, then the Status pill. The shared sheet
+   renders .cev-mono in near-black, which flattens all of that out. */
+/* The sticky overview header paints its background on the TH cells, so if the
+   table is ever wider than the dialog the strip past the last column showed
+   through white. Painting the row itself keeps the bar solid at any scroll
+   position — same ink as the cells, so nothing changes when it fits. */
+.cev-ov-table thead tr { background: #083344; }
+
+/* Overview table sizing. Scoped to .cnev-ov — this consignee panel — so the
+   customer and supplier overviews, which share .sev-ov, are untouched.
+ *
+   Auto layout let the ACTION cell win: Resend / Track / Download are all
+   nowrap, so the column grew past its declared width, pushed the table wider
+   than the dialog and produced a horizontal scrollbar — which slid the tick
+   column off the left edge and clipped the download icon on the right. Fixed
+   layout makes the declared widths authoritative; Document Name takes what is
+   left and ellipsises, which is the one column that can afford to. */
+.cnev-ov .cev-ov-table { table-layout: fixed; }
+.cnev-ov .cev-ov-name {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.cnev-date-expiry[data-status="expiring"] { background: #fef3c7; color: #92400e; }
-.cnev-date-expiry[data-status="pending"]  { background: #fee2e2; color: #b91c1c; }
 
-.cnev-attach {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 3px 9px; border-radius: 6px;
-  background: #cffafe; color: #0e7490;
-  font-size: 11.5px; font-weight: 600;
-  border: 1px solid rgba(8,145,178,.30);
-  /* Cap the chip so a long file name ellipsises instead of stretching the
-     column (and wrapping the row onto several lines). */
-  max-width: 240px;
-}
-/* Keep the paper-clip icon at full size while the file name absorbs the
-   truncation — without this the flex item would shrink the icon first. */
-.cnev-attach > svg { flex: 0 0 auto; }
+.cev-mono-ref { color: #0e7490; font-weight: 600; }
+.cev-cell-dim { color: #64748b; white-space: nowrap; }
+[data-bs-theme="dark"] .cev-mono-ref { color: #67e8f9; }
+[data-bs-theme="dark"] .cev-cell-dim { color: #94a3b8; }
 
-/* Row Actions — View / Download / Re-upload icons. */
-.cnev-row-actions { display: inline-flex; align-items: center; gap: 6px; }
-.cnev-row-act {
-  width: 28px; height: 28px; border-radius: 7px;
-  display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid transparent; background: transparent;
-  cursor: pointer; text-decoration: none;
-  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease;
-}
-.cnev-row-act-view     { color: #2563eb; background: rgba(37,99,235,.08);  border-color: rgba(37,99,235,.20); }
-.cnev-row-act-view:hover:not(.is-disabled)     { background: rgba(37,99,235,.18); transform: translateY(-1px); }
-.cnev-row-act-download { color: #0891b2; background: rgba(8,145,178,.08);  border-color: rgba(8,145,178,.20); }
-.cnev-row-act-download:hover:not(.is-disabled) { background: rgba(8,145,178,.18); transform: translateY(-1px); }
-.cnev-row-act-upload   { color: #0e7490; background: rgba(8,145,178,.10); border-color: rgba(8,145,178,.30); }
-.cnev-row-act-upload:hover:not(.is-disabled)   { background: rgba(8,145,178,.20); transform: translateY(-1px); }
-.cnev-row-act.is-disabled, .cnev-row-act:disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
-/* Dark mode — lift the action-button fills + icon colours. Send / Reminder /
- * Certificate set colours inline, so those need !important. */
-[data-bs-theme="dark"] .cnev-row-act-view     { color: #93c5fd; background: rgba(59,130,246,.16); border-color: rgba(59,130,246,.34); }
-[data-bs-theme="dark"] .cnev-row-act-view:hover:not(.is-disabled)     { background: rgba(59,130,246,.28); }
-[data-bs-theme="dark"] .cnev-row-act-download { color: #67e8f9; background: rgba(8,145,178,.18); border-color: rgba(8,145,178,.36); }
-[data-bs-theme="dark"] .cnev-row-act-download:hover:not(.is-disabled) { background: rgba(8,145,178,.30); }
-[data-bs-theme="dark"] .cnev-row-act-upload   { color: #67e8f9; background: rgba(8,145,178,.18); border-color: rgba(8,145,178,.38); }
-[data-bs-theme="dark"] .cnev-row-act-upload:hover:not(.is-disabled)   { background: rgba(8,145,178,.30); }
-[data-bs-theme="dark"] .cnev-row-act-send   { background: rgba(8,145,178,.22) !important; color: #67e8f9 !important; border-color: rgba(8,145,178,.42) !important; }
-[data-bs-theme="dark"] .cnev-row-act-remind { background: rgba(245,158,11,.20) !important; color: #fcd34d !important; border-color: rgba(245,158,11,.42) !important; }
-[data-bs-theme="dark"] .cnev-row-act-cert   { background: rgba(8,145,178,.22) !important; color: #67e8f9 !important; border-color: rgba(8,145,178,.42) !important; }
-
-.cnev-pill {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 10px; border-radius: 999px;
-  font-size: 11px; font-weight: 700;
-}
-.cnev-risk-compliant { background: #dcfce7; color: #15803d; }
-.cnev-risk-medium    { background: #fef3c7; color: #92400e; }
-.cnev-risk-high      { background: #fee2e2; color: #b91c1c; }
-
-.cnev-chip-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 6px; background: #cffafe; color: #0e7490; font-size: 11.5px; font-weight: 700; border: 1px solid rgba(8,145,178,.30); font-family: 'JetBrains Mono', ui-monospace, monospace; }
-.cnev-chip-pill-warm { background: #fef3c7; color: #92400e; border-color: rgba(217,119,6,.30); }
-.cnev-cust-cell { display: inline-flex; align-items: center; gap: 8px; }
-.cnev-cust-mono {
-  width: 26px; height: 26px; border-radius: 50%;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #06b6d4, #0e7490); color: #fff;
-  font-size: 11.5px; font-weight: 800;
+/* Selection bar for the main Case-to-Case table. Dark, so it reads as a layer
+   over the sheet rather than another row of it. */
+.cnev-vault .cnev-selbar {
   flex-shrink: 0;
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 18px;
+  background: linear-gradient(90deg, #0e3a4a, #0e7490);
+  color: #fff;
 }
+.cnev-vault .cnev-selbar-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 7px;
+  background: rgba(255, 255, 255, .18); font-size: 15px; flex-shrink: 0;
+}
+.cnev-vault .cnev-selbar-text { display: flex; flex-direction: column; line-height: 1.25; margin-right: auto; }
+.cnev-vault .cnev-selbar-text strong { font-size: 12.5px; font-weight: 800; }
+.cnev-vault .cnev-selbar-text span { font-size: 10.5px; color: rgba(255, 255, 255, .72); }
+.cnev-vault .cnev-selbar-clear,
+.cnev-vault .cnev-selbar-send {
+  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+  height: 32px; padding: 0 14px; border-radius: 8px;
+  font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.cnev-vault .cnev-selbar-clear {
+  background: rgba(255, 255, 255, .14); color: #fff; border: 1px solid rgba(255, 255, 255, .28);
+}
+.cnev-vault .cnev-selbar-clear:hover { background: rgba(255, 255, 255, .24); }
+.cnev-vault .cnev-selbar-send { background: #fff; color: #0e7490; border: 0; }
+.cnev-vault .cnev-selbar-send:hover { background: #ecfeff; }
 
-/* Coloured-number compliance cell — bold ratio + % beneath, no circle. */
-.cnev-ratio-num {
-  display: inline-flex; flex-direction: column; align-items: center;
-  line-height: 1.1; font-variant-numeric: tabular-nums;
-}
-.cnev-ratio-num-main { font-size: 14px; font-weight: 800; letter-spacing: -0.01em; }
-.cnev-ratio-num-pct  { font-size: 9.5px; font-weight: 700; margin-top: 1px; opacity: .9; }
-.cnev-ratio-num[data-tone="good"] { color: #16a34a; }
-.cnev-ratio-num[data-tone="mid"]  { color: #f59e0b; }
-.cnev-ratio-num[data-tone="bad"]  { color: #dc2626; }
-/* Spinner used by the Export All button while the XLSX workbook is
- * being built. Class-scoped to .cnev-spin so it does not collide
- * with any global ri-spin rule the project may add later. */
-/* ShipmentDocPanel is imported from CustomerEvidenceVaultModal and its Send
-   buttons spin via .cev-spin — a class that lives in CEV_CSS, which THIS
-   modal never mounts. Without it the loader icon rendered frozen: the button
-   said Sending and nothing moved. Re-declared here rather than pulling in the
-   whole customer stylesheet (different prefix, so nothing collides). */
-.cev-spin { display: inline-block; animation: cnevSpin .8s linear infinite; }
-.cnev-spin { display: inline-block; animation: cnevSpin .8s linear infinite; }
-@keyframes cnevSpin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-.cnev-ship-filter { display: flex; gap: 8px; flex-wrap: wrap; }
-/* 2-tab toggle (Buyer = / ≠ Consignee) — compact pills in a tray. */
-.cnev-ship-filter-2 {
-  display: inline-flex; gap: 6px; padding: 4px;
-  background: #eef2f7; border-radius: 12px; align-self: flex-start;
-}
-.cnev-ship-filter-2 .cnev-ship-fbtn {
-  flex: 0 0 auto; min-width: 0;
-  padding: 8px 18px; border: none; background: transparent; border-radius: 9px;
-}
-.cnev-ship-filter-2 .cnev-ship-fbtn:not(.is-active):hover { background: rgba(8,145,178,.08); color: #0891b2; }
-.cnev-ship-fbtn {
-  flex: 1; min-width: 160px;
-  padding: 10px 18px;
-  background: #fff;
-  border: 1px solid rgba(8,145,178,.20);
-  border-radius: 10px;
-  color: #475569;
-  font-size: 12.5px; font-weight: 700;
-  cursor: pointer; transition: all .15s;
-}
-.cnev-ship-fbtn:hover { background: #f0fdff; color: #0e7490; }
-.cnev-ship-fbtn.is-active {
-  background: linear-gradient(135deg, #0e7490, #06b6d4);
-  color: #fff; border-color: transparent;
-  box-shadow: 0 4px 12px rgba(8,145,178,.30);
-}
-
-/* ─── FOOTER ─── */
-.cnev-footer {
-  position: relative;
+/* Selection action bar under the overview list. Sits outside the scrolling
+   body so it stays put while the rows scroll under it. */
+.cnev-ov .cnev-ovbar {
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 14px 24px;
-  background: linear-gradient(110deg, #f0fdff 0%, #e6fafd 50%, #f0fdff 100%);
-  border-top: 1.5px solid #bdf1fb;
-  overflow: hidden;
+  padding: 12px 18px;
+  background: #ecfbfe;
+  border-top: 1px solid #cdeff7;
 }
-.cnev-footer::before {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1.5px;
-  background: linear-gradient(90deg, transparent 0%, #67e8f9 30%, #06b6d4 50%, #67e8f9 70%, transparent 100%);
+.cnev-ov .cnev-ovbar-count {
+  font-size: 12px; font-weight: 700; color: #0e7490;
 }
-.cnev-footer-meta { font-size: 12px; color: #64748b; }
-.cnev-footer-actions { display: flex; gap: 10px; }
-.cnev-btn {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 9px 18px;
-  border-radius: 10px;
-  font-size: 12.5px; font-weight: 700;
-  cursor: pointer; border: 1px solid transparent;
-  transition: all .15s;
+.cnev-ov .cnev-ovbar-send {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 34px; padding: 0 16px;
+  border: 0; border-radius: 8px;
+  background: linear-gradient(135deg, #0891b2, #22d3ee);
+  color: #fff; font-family: inherit; font-size: 12px; font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(8, 145, 178, .32);
+  transition: filter .18s ease;
 }
-.cnev-btn-light { background: #fff; color: #0e7490; border-color: rgba(8,145,178,.30); }
-.cnev-btn-light:hover { background: #ecfeff; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8,145,178,.20); }
-.cnev-btn-dark  { background: linear-gradient(135deg, #0c4a6e, #0e7490); color: #fff; box-shadow: 0 4px 14px rgba(12,74,110,.30); }
-.cnev-btn-dark:hover  { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(12,74,110,.45); }
+.cnev-ov .cnev-ovbar-send:hover:not(:disabled) { filter: brightness(1.08); }
+.cnev-ov .cnev-ovbar-send:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+.cnev-ov .cnev-ovbar-send i { font-size: 14px; line-height: 1; }
 
-/* ─── DARK MODE ─── */
-[data-bs-theme="dark"] .cnev-card { background: #08222b; }
-[data-bs-theme="dark"] .cnev-groups-wrap { background: linear-gradient(180deg, #08222b 0%, #0a2a33 100%); }
-[data-bs-theme="dark"] .cnev-group { background: #0a2a33; border-color: rgba(8,145,178,.30); }
-[data-bs-theme="dark"] .cnev-group:hover { background: #14352a; border-color: rgba(8,145,178,.5); }
-[data-bs-theme="dark"] .cnev-group.is-active { background: linear-gradient(120deg,#0c4a6e,#0e7490); border-color: #06b6d4; }
-[data-bs-theme="dark"] .cnev-group-icon { background: rgba(8,145,178,.20); color: #67e8f9; border-color: rgba(8,145,178,.3); }
-[data-bs-theme="dark"] .cnev-group.is-active .cnev-group-icon { background: rgba(255,255,255,.18); color: #fff; }
-[data-bs-theme="dark"] .cnev-group-title { color: #cffafe; }
-[data-bs-theme="dark"] .cnev-group-sub { color: #8fbfa6; }
-[data-bs-theme="dark"] .cnev-tabs-wrap { background: #0a2a33; border-bottom-color: rgba(8,145,178,.30); }
-[data-bs-theme="dark"] .cnev-tab { color: #7bb5c2; }
-[data-bs-theme="dark"] .cnev-tab-icon { background: rgba(255,255,255,.05); color: #7bb5c2; }
-[data-bs-theme="dark"] .cnev-tab:hover { color: #67e8f9; }
-[data-bs-theme="dark"] .cnev-tab:hover .cnev-tab-icon { background: rgba(8,145,178,0.12); color: #67e8f9; }
-[data-bs-theme="dark"] .cnev-tab.is-active { color: #67e8f9; border-bottom-color: #22d3ee; }
-[data-bs-theme="dark"] .cnev-tab.is-active .cnev-tab-icon { background: rgba(34,211,238,0.18); color: #67e8f9; }
-[data-bs-theme="dark"] .cnev-tab-count { background: rgba(8,145,178,.18); color: #67e8f9; border-color: rgba(8,145,178,.35); }
-[data-bs-theme="dark"] .cnev-tab.is-active .cnev-tab-count { background: linear-gradient(135deg,#06b6d4,#22d3ee); color: #fff; border-color: transparent; }
-[data-bs-theme="dark"] .cnev-kpi-outer { background: linear-gradient(180deg, #08222b 0%, #0a2a33 100%); border-bottom-color: rgba(8,145,178,.22); }
-[data-bs-theme="dark"] .cnev-kpi-fade-l { background: linear-gradient(90deg,  #08222b 0%, #08222b 25%, rgba(8,34,43,0) 100%); }
-[data-bs-theme="dark"] .cnev-kpi-fade-r { background: linear-gradient(270deg, #0a2a33 0%, #0a2a33 25%, rgba(10,42,51,0) 100%); }
-[data-bs-theme="dark"] .cnev-kpi-nav { background: linear-gradient(135deg, #143829 0%, #08222b 100%); color: #67e8f9; box-shadow: 0 2px 6px rgba(0,0,0,.40), 0 8px 22px rgba(0,0,0,.50), inset 0 0 0 1px rgba(8,145,178,.30); }
-[data-bs-theme="dark"] .cnev-kpi-nav:hover { background: linear-gradient(135deg, #0e7490, #06b6d4); color: #fff; }
-[data-bs-theme="dark"] .cnev-kpi-tile { background: #0a2a33; border-color: rgba(8,145,178,.28); box-shadow: 0 2px 10px rgba(0,0,0,0.30); }
-[data-bs-theme="dark"] .cnev-kpi-tile:hover { border-color: rgba(8,145,178,.45); box-shadow: 0 6px 18px rgba(0,0,0,0.40); }
-[data-bs-theme="dark"] .cnev-kpi-label { color: #94a3b8; }
-[data-bs-theme="dark"] .cnev-kpi-value { color: #cffafe; }
-[data-bs-theme="dark"] .cnev-body { background: #08222b; scrollbar-color: #0e7490 transparent; }
-[data-bs-theme="dark"] .cnev-body::-webkit-scrollbar-thumb { background: #0e7490; }
-[data-bs-theme="dark"] .cnev-body::-webkit-scrollbar-thumb:hover { background: #06b6d4; }
-[data-bs-theme="dark"] .cnev-section { background: linear-gradient(110deg, rgba(8,145,178,.14), rgba(103,232,249,.10)); border-color: rgba(8,145,178,.30); }
-[data-bs-theme="dark"] .cnev-section-title { color: #cffafe; }
-[data-bs-theme="dark"] .cnev-section-sub { color: #67e8f9; }
-[data-bs-theme="dark"] .cnev-section-count { color: #cffafe; }
-[data-bs-theme="dark"] .cnev-section-count-label { color: #67e8f9; }
-[data-bs-theme="dark"] .cnev-table-wrap { background: #0a2a33; border-color: rgba(8,145,178,.28); }
-[data-bs-theme="dark"] .cnev-table thead th {
-  background:
-    linear-gradient(180deg, rgba(8,145,178,.22) 0%, rgba(8,145,178,.16) 55%, rgba(12,74,110,.18) 100%);
-  color: #67e8f9;
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.08),
-    inset 0 -1px 0 rgba(8,145,178,0.40),
-    0 4px 10px -8px rgba(0,0,0,0.40);
+[data-bs-theme="dark"] .cnev-ov .cnev-ovbar {
+  background: #08222b; border-top-color: rgba(8, 145, 178, .28);
 }
-[data-bs-theme="dark"] .cnev-table tbody td { color: #e2e8f0; border-bottom-color: rgba(8,145,178,.10); background: transparent; }
-[data-bs-theme="dark"] .cnev-table tbody tr:nth-child(even) td { background: rgba(8,145,178,.05); }
-[data-bs-theme="dark"] .cnev-table tbody tr:hover td { background: rgba(8,145,178,.12); }
-[data-bs-theme="dark"] .cnev-doc-name { color: #cffafe; }
-[data-bs-theme="dark"] .cnev-mono { color: #e2e8f0; }
-[data-bs-theme="dark"] .cnev-date { background: rgba(8,145,178,.16); color: #67e8f9; }
-[data-bs-theme="dark"] .cnev-date-expiry[data-status="expiring"] { background: rgba(245,158,11,.18); color: #fcd34d; }
-[data-bs-theme="dark"] .cnev-date-expiry[data-status="pending"]  { background: rgba(239,68,68,.18); color: #fca5a5; }
-[data-bs-theme="dark"] .cnev-attach { background: rgba(8,145,178,.16); color: #67e8f9; border-color: rgba(8,145,178,.30); }
-[data-bs-theme="dark"] .cnev-chip-pill { background: rgba(8,145,178,.16); color: #67e8f9; }
-[data-bs-theme="dark"] .cnev-chip-pill-warm { background: rgba(217,119,6,.18); color: #fcd34d; border-color: rgba(217,119,6,.30); }
-[data-bs-theme="dark"] .cnev-ratio-num[data-tone="good"] { color: #4ade80; }
-[data-bs-theme="dark"] .cnev-ratio-num[data-tone="mid"]  { color: #fcd34d; }
-[data-bs-theme="dark"] .cnev-ratio-num[data-tone="bad"]  { color: #fca5a5; }
-[data-bs-theme="dark"] .cnev-footer { background: #08222b; border-top-color: rgba(8,145,178,.22); }
-[data-bs-theme="dark"] .cnev-footer-meta { color: #cbd5e1; }
-[data-bs-theme="dark"] .cnev-btn-light { background: rgba(8,145,178,.12); color: #67e8f9; border-color: rgba(8,145,178,.30); }
-[data-bs-theme="dark"] .cnev-btn-light:hover { background: rgba(8,145,178,.18); }
-[data-bs-theme="dark"] .cnev-ship-fbtn { background: #0a2a33; color: #94a3b8; border-color: rgba(8,145,178,.28); }
-[data-bs-theme="dark"] .cnev-ship-fbtn:hover { color: #67e8f9; background: rgba(8,145,178,.10); }
-[data-bs-theme="dark"] .cnev-ship-filter-2 { background: rgba(8,145,178,.12); }
-[data-bs-theme="dark"] .cnev-ship-filter-2 .cnev-ship-fbtn:not(.is-active) { background: transparent; border-color: transparent; }
-[data-bs-theme="dark"] .cnev-ship-fbtn.is-active { background: linear-gradient(135deg,#0891b2,#22d3ee); color: #06283a; border-color: transparent; box-shadow: 0 4px 14px rgba(34,211,238,.4); }
-/* All badges — translucent colour fills on dark. */
-[data-bs-theme="dark"] .cnev-sec-pill-ok   { background: rgba(16,185,129,.18) !important; color: #6ee7b7 !important; border-color: rgba(16,185,129,.4) !important; }
-[data-bs-theme="dark"] .cnev-sec-pill-warn { background: rgba(245,158,11,.18) !important; color: #fcd34d !important; border-color: rgba(245,158,11,.4) !important; }
-[data-bs-theme="dark"] .cnev-sec-pill-bad  { background: rgba(239,68,68,.18) !important; color: #fca5a5 !important; border-color: rgba(239,68,68,.4) !important; }
-[data-bs-theme="dark"] .cnev-sec-pill-docs { background: rgba(59,130,246,.18) !important; color: #93c5fd !important; border-color: rgba(59,130,246,.4) !important; }
-[data-bs-theme="dark"] .cnev-pill[data-status="Verified"] { background: rgba(16,185,129,.18) !important; color: #6ee7b7 !important; }
-[data-bs-theme="dark"] .cnev-pill[data-status="Signed"]   { background: rgba(59,130,246,.18) !important; color: #93c5fd !important; }
-[data-bs-theme="dark"] .cnev-pill[data-status="Expiring"] { background: rgba(245,158,11,.18) !important; color: #fcd34d !important; }
-[data-bs-theme="dark"] .cnev-pill[data-status="Pending"]  { background: rgba(239,68,68,.18) !important; color: #fca5a5 !important; }
-[data-bs-theme="dark"] .cnev-pill[data-status="Draft"]    { background: rgba(245,158,11,.18) !important; color: #fcd34d !important; }
-[data-bs-theme="dark"] .cnev-pill[data-status="Declined"],
-[data-bs-theme="dark"] .cnev-pill[data-status="Expired"]  { background: rgba(239,68,68,.18) !important; color: #fca5a5 !important; }
-[data-bs-theme="dark"] .cnev-pill[data-status="Recalled"] { background: rgba(148,163,184,.18) !important; color: #cbd5e1 !important; }
-/* Expanded shipment detail panel (shared ShipmentDocPanel, class .cev-sdp) —
-   duplicated here so it's styled when the consignee vault is the open modal. */
-[data-bs-theme="dark"] .cnev-ship-expand > td { background: #08222b !important; }
-[data-bs-theme="dark"] .cev-sdp [style*="background: rgb(255, 255, 255)"],
-[data-bs-theme="dark"] .cev-sdp [style*="background:rgb(255, 255, 255)"] { background: #0a2630 !important; border-color: rgba(8,145,178,.28) !important; }
-[data-bs-theme="dark"] .cev-sdp [style*="rgb(15, 23, 42)"] { color: #e2e8f0 !important; }
-[data-bs-theme="dark"] .cev-sdp [style*="rgb(71, 85, 105)"] { color: #cbd5e1 !important; }
-[data-bs-theme="dark"] .cev-sdp [style*="rgb(100, 116, 139)"] { color: #94a3b8 !important; }
-[data-bs-theme="dark"] .cev-sdp tbody tr { border-bottom-color: rgba(8,145,178,.12) !important; }
-[data-bs-theme="dark"] .cev-sdp [style*="rgb(241, 245, 249)"] { background: rgba(148,163,184,.18) !important; border-color: rgba(148,163,184,.32) !important; }
-[data-bs-theme="dark"] .cev-sdp [style*="rgb(254, 243, 199)"] { background: rgba(245,158,11,.18) !important; border-color: rgba(245,158,11,.4) !important; }
-[data-bs-theme="dark"] .cnev-filter-verified { background: rgba(8,145,178,.18); color: #67e8f9; border-color: rgba(8,145,178,.30); }
-[data-bs-theme="dark"] .cnev-filter-expiring { background: rgba(245,158,11,.18); color: #fcd34d; border-color: rgba(217,119,6,.30); }
-[data-bs-theme="dark"] .cnev-filter-pending  { background: rgba(239,68,68,.18);  color: #fca5a5; border-color: rgba(239,68,68,.30); }
+[data-bs-theme="dark"] .cnev-ov .cnev-ovbar-count { color: #67e8f9; }
 
-/* ─── RESPONSIVE ─── */
-@media (max-width: 1440px) { .cnev-card { width: min(1100px, 92vw); } }
-@media (max-width: 1280px) { .cnev-card { width: 92vw; } }
-@media (max-width: 960px) {
-  .cnev-card { width: 96vw; }
-  .cnev-header { padding: 12px 14px; }
-  .cnev-header-title { font-size: 16px; }
-  .cnev-vault-icon { width: 38px; height: 38px; border-radius: 10px; }
-  .cnev-header-content { flex-direction: column; align-items: flex-start; gap: 10px; }
-  .cnev-header-right { width: 100%; justify-content: space-between; }
-  /* Narrow screens: wrap the columns instead of scrolling. */
-  .cnev-kpi-strip { padding: 10px 12px; gap: 4px 0; flex-wrap: wrap; }
-  .cnev-kpi-tile { flex: 1 1 140px; padding: 8px 12px; }
-  .cnev-kpi-value { font-size: 22px; }
-  .cnev-groups-wrap { padding: 12px 14px 0; }
-  .cnev-groups { grid-template-columns: 1fr; gap: 10px; }
-  .cnev-tabs-wrap { padding: 10px 14px; }
-  .cnev-tab { padding: 7px 14px; font-size: 12px; gap: 7px; }
-  .cnev-tab-icon { width: 16px; height: 16px; font-size: 13px; }
-  .cnev-body { padding: 14px 16px 18px; gap: 12px; }
-  .cnev-section { padding: 12px 14px; }
-  .cnev-section-count { font-size: 22px; }
-  .cnev-footer { flex-direction: column; align-items: stretch; gap: 10px; }
-  .cnev-footer-actions { display: flex; gap: 8px; }
-  .cnev-footer-actions .cnev-btn { flex: 1; justify-content: center; }
-  .cnev-header-orb { display: none; }
-  .cnev-header-bg::after { display: none; }
+/* ── Active tab, to the reference design ───────────────────────────────────
+ * Scoped to .cnev-vault so the customer and supplier vaults keep what they
+ * have. Everything else in the tab strip already matched: grey inactive
+ * label, tinted icon tile, outlined count that fills solid cyan when active.
+ * Two things did not.
+ *
+ * The label. Selected read as teal (#0e7490) — the same family as the
+ * underline and the count, so the whole tab became one cyan smear and the
+ * word itself stopped being the thing that stood out. The reference keeps the
+ * label near-black and lets the cyan furniture around it signal the state.
+ *
+ * The bar. Thin, inset 10px each side and carrying a glow, so it read as a
+ * soft highlight under the middle of the tab rather than the solid rule the
+ * reference draws across it. */
+.cnev-vault .cev-tab.is-active { color: #155e75; }
+.cnev-vault .cev-tab.is-active::after {
+  left: 4px; right: 4px;
+  height: 3px;
+  box-shadow: none;
 }
-@media (max-width: 640px) {
-  .cnev-card { width: 100vw; }
-  .cnev-kpi-tile { flex: 1 1 130px; }
-  .cnev-tab { padding: 6px 12px; font-size: 11.5px; }
-  .cnev-tab-icon { width: 14px; height: 14px; font-size: 12px; }
-  .cnev-tab-count { font-size: 9.5px; padding: 1px 6px; }
+[data-bs-theme="dark"] .cnev-vault .cev-tab.is-active { color: #e6f7fb; }
+
+/* Count badge is a CIRCLE, not a lozenge.
+ *
+ * The shared rule is min-width 18 / height 18 with 5px of side padding, and a
+ * narrower breakpoint swaps in 1px 6px of padding — so as soon as the padding
+ * outgrew the 18px floor the badge stretched sideways and sat as a flattened
+ * oval next to a round one. Equal width and height with no side padding keeps
+ * every single- and double-digit count perfectly round; three digits widen it
+ * into a capsule, which is the right way for it to give up. */
+.cnev-vault .cev-tab-count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  font-size: 10px;
+  border-radius: 999px;
+}
+
+/* No size changes here on purpose. Enlarging the icon tile and the label was
+   guesswork off two screenshots taken at different zooms, and it made the tab
+   taller than the strip that holds it — the strip's own bottom border then
+   showed as a second line under the active one. The tab keeps the shared
+   sizing; only the badge shape and the active colour differ. */
+
+/* ── Dark mode ─────────────────────────────────────────────────────────────
+ * Everything below is scoped to .cnev-vault / .cnev-ov — this vault's own
+ * roots — so it cannot reach the Customer or Supplier vaults, which share the
+ * same stylesheet and are not being worked on.
+ *
+ * Each rule outranks the light one it corrects on SPECIFICITY, not source
+ * order. The shared sheet declares its dark values before its .sev overrides,
+ * so an equally-specific rule there loses to whatever comes later — which is
+ * exactly how the body ended up white in dark mode. */
+
+/* Body sheet. The shared sheet's own dark rule for .cev-body is (0,2) and is
+   followed by a .sev .cev-body rule painting it #ffffff, also (0,2), which
+   therefore wins. Most of the sheet hides behind .cev-table-wrap; the strip
+   that showed was under .cev-section, whose dark background is a translucent
+   teal and so composited over white into a near-flat band — taking the pale
+   cyan section title with it. */
+[data-bs-theme="dark"] .cnev-vault .cev-body { background: #08222b; }
+
+/* Shipment chooser — step one of the Case-to-Case overview. The per-deal
+   table it leads into has dark rules in the shared sheet; this step never
+   did, so it opened as a white panel under a dark header. */
+[data-bs-theme="dark"] .cnev-ov .sev-ov-pick-cap {
+  background: #08222b; color: #cffafe; border-bottom-color: rgba(8,145,178,.28);
+}
+[data-bs-theme="dark"] .cnev-ov .sev-ov-pick-empty { color: #8fb2c2; }
+[data-bs-theme="dark"] .cnev-ov .sev-ov-pick {
+  background: #0a2630; border-bottom-color: rgba(8,145,178,.18);
+}
+[data-bs-theme="dark"] .cnev-ov .sev-ov-picks li:nth-child(even) .sev-ov-pick { background: #0c2c37; }
+[data-bs-theme="dark"] .cnev-ov .sev-ov-pick:hover { background: rgba(8,145,178,.20); }
+[data-bs-theme="dark"] .cnev-ov .sev-ov-pick-code {
+  background: rgba(8,145,178,.22); border-color: rgba(34,211,238,.34); color: #67e8f9;
+}
+[data-bs-theme="dark"] .cnev-ov .sev-ov-pick-title { color: #e6f7fb; }
+[data-bs-theme="dark"] .cnev-ov .sev-ov-pick-sub   { color: #8fb2c2; }
+[data-bs-theme="dark"] .cnev-ov .sev-ov-pick-go    { color: #5b7d90; }
+[data-bs-theme="dark"] .cnev-ov .sev-ov-pick:hover .sev-ov-pick-go { color: #22d3ee; }
+
+/* Row actions in the overview. Legible as light gradients on a dark row, but
+   they read as two bright chips stamped onto it; a translucent tint of the
+   same hue is what the main table's row actions use. */
+[data-bs-theme="dark"] .cnev-ov .sev-ov-act-send {
+  background: rgba(8,145,178,.20); border-color: rgba(34,211,238,.34); color: #67e8f9;
+}
+[data-bs-theme="dark"] .cnev-ov .sev-ov-act-send:hover:not(:disabled) { background: rgba(8,145,178,.32); }
+[data-bs-theme="dark"] .cnev-ov .sev-ov-act-track {
+  background: rgba(124,58,237,.22); border-color: rgba(167,139,250,.38); color: #c4b5fd;
+}
+[data-bs-theme="dark"] .cnev-ov .sev-ov-act-track:hover:not(:disabled) { background: rgba(124,58,237,.34); }
+
+/* Status badges are rounded RECTANGLES, not lozenges. The shared .cev-pill is
+   999px, which turns a short word like "Draft" into a capsule and makes the
+   column read as a row of tablets rather than badges. 6px matches the
+   Requirement badge beside it and the reference design. Scoped, so the
+   customer and supplier vaults keep their capsules. */
+.cnev-vault .cev-pill,
+.cnev-ov .cev-pill { border-radius: 6px; }
+
+/* Status pills carry an inline border so each one is outlined in its own hue.
+   That border is a light-mode colour, and the shared dark rules only repaint
+   background and text — so in dark mode it stayed a bright ring around a dim
+   pill. One neutral translucent edge reads correctly against every tone. */
+[data-bs-theme="dark"] .cnev-vault .cev-pill,
+[data-bs-theme="dark"] .cnev-ov .cev-pill {
+  border-color: rgba(255, 255, 255, .16) !important;
+}
+
+/* Signed is green here, so its dark counterpart has to be green too. The
+   shared sheet turns Signed blue in dark mode and marks it !important, which
+   an inline style cannot beat — only a more specific rule can, hence the
+   .cnev-ov scope and the matching !important. */
+[data-bs-theme="dark"] .cnev-ov .cev-pill[data-status="Signed"] {
+  background: rgba(16, 185, 129, .18) !important;
+  color: #6ee7b7 !important;
 }
 `;

@@ -903,7 +903,10 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
   );
 }
 
-function SevStat(props: {
+/* Exported for the Consignee vault, which shares this design. Kept here
+   rather than in a component file because this is where the vault design
+   lives and the consignee vault already imports from this module. */
+export function SevStat(props: {
   tone: 'slate' | 'teal' | 'green' | 'amber' | 'red';
   icon: string;
   label: string;
@@ -1365,7 +1368,7 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend, activeSend }: {
   );
 }
 
-export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, buyerIsConsignee, onSend, primaryParty = 'buyer', hideBuyerTab = false, pendingSend, showType = false }: {
+export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, buyerIsConsignee, onSend, primaryParty = 'buyer', hideBuyerTab = false, pendingSend, showType = false, selectable = false, isSelected, canSelect, onToggleDoc, onToggleAll }: {
   buyer: VaultShipmentDoc[]; consignee: VaultShipmentDoc[]; buyerName: string; consigneeName: string; buyerIsConsignee: boolean;
   onSend?: (doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
 
@@ -1373,6 +1376,15 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
   hideBuyerTab?: boolean;
   pendingSend?: { doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null;
   showType?: boolean;
+  /* Multi-select, opt-in. Off unless a caller passes `selectable`, so the
+   * customer and supplier vaults render exactly the table they always have.
+   * The selection itself is owned by the caller — it spans several deal
+   * panels, and each panel is unmounted the moment its row collapses. */
+  selectable?: boolean;
+  isSelected?: (doc: VaultShipmentDoc) => boolean;
+  canSelect?: (doc: VaultShipmentDoc) => boolean;
+  onToggleDoc?: (doc: VaultShipmentDoc, checked: boolean) => void;
+  onToggleAll?: (docs: VaultShipmentDoc[], checked: boolean) => void;
 }) {
   const toast = useToast();
   const [party, setParty] = useState<'buyer' | 'consignee' | 'both'>(primaryParty);
@@ -1424,6 +1436,23 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
             <thead>
               <tr style={{ background: 'linear-gradient(90deg,#0e7490,#0891b2)', color: '#fff' }}>
+                {selectable && (() => {
+                  /* Select-all covers only the rows this panel is showing and
+                     that the caller says are sendable — never the whole deal. */
+                  const pickable = docs.filter(d => !canSelect || canSelect(d));
+                  const allOn = pickable.length > 0 && pickable.every(d => isSelected?.(d));
+                  return (
+                    <th style={{ padding: '8px 10px', width: 34, textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        aria-label="Select all sendable documents on this shipment"
+                        disabled={pickable.length === 0}
+                        checked={allOn}
+                        onChange={(e) => onToggleAll?.(pickable, e.target.checked)}
+                      />
+                    </th>
+                  );
+                })()}
                 {['Sr No', 'Document Name', 'Required', 'Signed On', 'Status', 'Actions'].map((h) => (
                   <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Document Name' ? 'left' : 'center', fontSize: 9, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
@@ -1432,6 +1461,20 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
             <tbody>
               {docs.map((d, i) => (
                 <tr key={d.sig_req_id + '-' + i} style={{ borderBottom: '1px solid #ecfeff' }}>
+                  {selectable && (() => {
+                    const ok = !canSelect || canSelect(d);
+                    return (
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${d.name}`}
+                          disabled={!ok}
+                          checked={!!isSelected?.(d)}
+                          onChange={(e) => onToggleDoc?.(d, e.target.checked)}
+                        />
+                      </td>
+                    );
+                  })()}
                   <td style={{ padding: '8px 10px', textAlign: 'center', color: '#94a3b8', fontWeight: 700 }}>{i + 1}</td>
                   <Tooltip label={d.name} disabled={(d.name || '').length <= 35}>
                     <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0f172a' }}>
