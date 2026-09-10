@@ -880,8 +880,14 @@ class HrDocumentSignatureController extends Controller
             // images) as base64 data URIs. DomPDF runs headless and can't
             // fetch /storage/... over HTTP — same workaround as the header
             // logo above.
+            /* htmlRendersNothing(), not a truthiness check: "<p></p>" and
+               "   " are truthy and printed a blank page. (CBC #23) */
             'bodyHtml'   => $this->inlineLocalImagesAsDataUris(
-                (string) ($row->content_html ?: '<p>(empty)</p>')
+                $this->htmlRendersNothing($row->content_html)
+                    ? '<p style="color:#9ca3af;font-style:italic;">This document has no stored content. '
+                        . 'It was generated before any content was saved against its template, '
+                        . 'or the template itself was empty when it was sent.</p>'
+                    : (string) $row->content_html
             ),
         ]);
         $pdf->setPaper('A4');
@@ -1184,6 +1190,38 @@ class HrDocumentSignatureController extends Controller
      * /storage/... over HTTP, so without this signatures render as broken
      * images (or, depending on DomPDF settings, as nothing at all).
      */
+    /**
+     * Is this stored HTML actually going to PRINT anything? (CBC #23)
+     *
+     * `$row->content_html ?: '<p>(empty)</p>'` only catches null and the empty
+     * string. A run whose content is "   ", "<p></p>" or an HTML comment is a
+     * TRUTHY string, so it sailed past that guard and DomPDF rendered it
+     * faithfully: a valid, well-formed, completely blank page. The viewer then
+     * showed a blank document with no error anywhere — the file was fine, it
+     * simply had nothing in it, and nothing said so.
+     *
+     * Images count as content: a signature block can legitimately be the only
+     * visible thing on the page, and stripping tags would call that empty.
+     */
+    private function htmlRendersNothing(?string $html): bool
+    {
+        $html = (string) $html;
+        if (trim($html) === '') {
+            return true;
+        }
+        // Anything that paints on its own, regardless of surrounding text.
+        if (preg_match('/<(img|svg|hr|table|canvas)\b/i', $html)) {
+            return false;
+        }
+        $text = preg_replace('/<!--.*?-->/s', '', $html);
+        $text = strip_tags((string) $text);
+        $text = html_entity_decode((string) $text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        // A non-breaking space is whitespace to a reader, not to trim().
+        $text = str_replace("\xc2\xa0", ' ', (string) $text);
+
+        return trim($text) === '';
+    }
+
     private function inlineLocalImagesAsDataUris(string $html): string
     {
         return preg_replace_callback(

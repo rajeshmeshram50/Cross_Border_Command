@@ -91,17 +91,35 @@ export async function saveApiBlob(
   filename: string,
   expect: keyof typeof MAGIC,
 ): Promise<void> {
+  await assertApiBlob(blob, expect);
+  saveBlob(blob, filename);
+}
+
+/**
+ * The magic-byte check on its own, for callers that VIEW a file rather than
+ * save it. (CBC #23)
+ *
+ * Opening is where a wrong response hurts most quietly. `new Blob([data], {
+ * type: 'application/pdf' })` asserts the MIME regardless of the bytes inside,
+ * so an HTML page or JSON error body returned with HTTP 200 becomes a "PDF"
+ * the browser dutifully opens — and renders as a BLANK document, with nothing
+ * naming the real problem. Checking the header first turns that silent blank
+ * page into a message that says the endpoint was not reached.
+ */
+export async function assertApiBlob(
+  blob: Blob,
+  expect: keyof typeof MAGIC,
+): Promise<void> {
   const sig = MAGIC[expect];
   const head = await blob.slice(0, 8).text();
   if (!head.startsWith(sig.bytes)) {
     throw new Error(
       `The server did not return a ${sig.label}. ` +
       (head.trimStart().startsWith('<')
-        ? 'It returned a web page — the download endpoint was not reached.'
+        ? 'It returned a web page — the endpoint was not reached.'
         : 'The response was not a file.'),
     );
   }
-  saveBlob(blob, filename);
 }
 
 /** Trigger a browser save for an in-memory Blob via a same-origin blob: URL. */

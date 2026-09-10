@@ -48,6 +48,84 @@ export const seedBreakup = (monthlyGross: number): SalBreakComp[] => {
   ];
 };
 
+/**
+ * Remove an EARNING without changing the monthly gross. (CBC #22)
+ *
+ * The deleted amount is folded into Basic Salary rather than vanishing. The
+ * gross is the employee's agreed pay — restructuring how it is split between
+ * Basic / HRA / Special is not meant to change what they earn — so dropping
+ * Special Allowance used to leave the breakup short by its amount, failing the
+ * breakup-vs-CTC check with no indication of what to do about it.
+ *
+ * `absorbIntoSpecial` already funded HR's own rows out of Special, but it has
+ * nothing to work with once Special itself is the row being removed. This is
+ * the other direction, and it is the rule the Revise Salary modal has always
+ * applied — stated once here so the three screens that edit a breakup cannot
+ * drift apart.
+ *
+ * Basic is the target because it is the component every structure has and the
+ * one statutory heads are priced off. If Basic itself is being removed (or
+ * there is no Basic), the amount goes to the first remaining earning so the
+ * total still holds.
+ *
+ * Returns the merge target as well, so the caller can name it in the
+ * confirmation before anything is changed.
+ */
+export interface EarningRemovalPlan {
+  /** The list after removal, with the amount folded in. */
+  next: SalBreakComp[];
+  /** Label of the row that absorbed the amount, or null if nothing did. */
+  mergeLabel: string | null;
+  /** The amount that moved. */
+  amount: number;
+}
+
+export const planEarningRemoval = (
+  earnings: SalBreakComp[],
+  index: number,
+): EarningRemovalPlan => {
+  const comp = earnings[index];
+  const amount = Number(comp?.amount) || 0;
+
+  let mergeIdx = -1;
+  if (amount > 0) {
+    mergeIdx = earnings.findIndex((c, i) => i !== index && c.code === 'basic');
+    if (mergeIdx === -1) mergeIdx = earnings.findIndex((_, i) => i !== index);
+  }
+
+  const next = earnings
+    .map((c, i) => (i === mergeIdx ? { ...c, amount: (Number(c.amount) || 0) + amount } : c))
+    .filter((_, i) => i !== index);
+
+  return {
+    next,
+    mergeLabel: mergeIdx !== -1 ? (earnings[mergeIdx].label.trim() || 'the first earning') : null,
+    amount,
+  };
+};
+
+/**
+ * Rebuild the auto-split rows against a new CTC, WITHOUT resurrecting one HR
+ * deleted. (CBC #9)
+ *
+ * Every screen re-seeded by dropping all three split codes and appending a
+ * fresh Basic/HRA/Special. That silently undid a deletion: remove Special
+ * Allowance, then change the CTC, and it reappeared, got saved with the
+ * structure, and payroll paid a component the breakup was never meant to have.
+ * The deletion was real — `absorbIntoSpecial` already has a branch for "HR
+ * deleted the row" — it just could not survive the next salary edit.
+ *
+ * Only the split rows still PRESENT are rebuilt. A missing one stays missing,
+ * and the breakup-vs-CTC check (which is not bypassed here) is what tells HR
+ * the components no longer add up to the package.
+ */
+export const reseedSplit = (existing: SalBreakComp[], monthlyGross: number): SalBreakComp[] => {
+  const present = new Set(existing.map(c => c.code));
+  const custom  = existing.filter(c => !SPLIT_CODES.includes(c.code));
+  const seeded  = seedBreakup(monthlyGross).filter(c => present.has(c.code));
+  return absorbIntoSpecial([...seeded, ...custom], monthlyGross);
+};
+
 /** Special Allowance is the residual of the package, so a component HR adds is
  *  funded OUT of it rather than piled on top of the gross.
  *  Without this a ₹102 custom row pushed the gross ₹102/mo past the CTC and, worse,

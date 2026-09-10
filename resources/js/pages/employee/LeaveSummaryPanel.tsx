@@ -221,7 +221,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
   };
 
   return (
-    <div className="leave-summary-panel mb-4" style={{ background: 'var(--vz-card-bg, #ffffff)', border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: 18, boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 4px 14px rgba(15,23,42,0.05)' }}>
+    <div className="leave-summary-panel lsp-surface mb-4" style={{ border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: 18, boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 4px 14px rgba(15,23,42,0.05)' }}>
       {/* Status pill tints. Light mode keeps the original pastel chips; the
           dark-mode overrides (which out-rank the inline-free class colours via
           !important) swap to deep tints so the badges don't wash out to bright
@@ -247,6 +247,19 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
         [data-layout-mode="dark"] .leave-status-badge--neutral  { background: rgba(255,255,255,0.08) !important; color: #cbd5e1 !important; }
 
         /* Paid / Unpaid chip on each balance card. */
+        /* THE PANEL SURFACE. (CBC #13, second attempt)
+           These were inline var(--vz-card-bg, #ffffff). That token is a
+           BOOTSTRAP COMPONENT variable — the built CSS defines it inside
+           .card and nowhere else, never on :root — and the employee profile
+           is a fullscreen overlay with no card ancestor, so every one of these
+           surfaces resolved to the #ffffff FALLBACK and the tab stayed white in
+           dark mode. The give-away was in the report itself: the one box that
+           did go dark uses var(--vz-secondary-bg), which IS global.
+           Explicit values, keyed to both theme attributes, same as the
+           signed-document viewer and the Documentation page. */
+        .lsp-surface { background: #ffffff; }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .lsp-surface { background: #222831; }
+
         .lsp-chip { font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
         .lsp-chip--unpaid { background: #fdf3d6; color: #a06f00; border: 1px solid #f0d990; }
         .lsp-chip--paid   { background: #d6f4e3; color: #108548; border: 1px solid #a7e3c4; }
@@ -258,6 +271,8 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
         /* Violet accent used by the tab's icon and its inline links. #5a3fd1
            is a deep violet — fine on white, near-invisible on the dark card. */
         .lsp-accent { color: #5a3fd1; }
+        .lsp-danger { color: #dc2626; }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .lsp-danger { color: #fca5a5; }
         :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .lsp-accent { color: #c4b5fd; }
 
         .lsp-avatar { background: #ece6ff; }
@@ -294,7 +309,8 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
               <div
                 key={i}
                 className="d-flex align-items-center gap-3 p-3"
-                style={{ background: 'var(--vz-card-bg, #ffffff)', border: '1px solid var(--vz-border-color)', borderRadius: 12 }}
+                className="lsp-surface"
+                style={{ border: '1px solid var(--vz-border-color)', borderRadius: 12 }}
               >
                 <Shimmer width={44} height={44} radius={999} />
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, flex: 1, minWidth: 0 }}>
@@ -316,8 +332,8 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
         ) : pending.map(r => (
           <div
             key={r.id}
-            className="lsp-request-card p-3 mb-2"
-            style={{ background: 'var(--vz-card-bg, #ffffff)', border: '1px solid var(--vz-border-color)', borderRadius: 12, cursor: 'pointer' }}
+            className="lsp-request-card lsp-surface p-3 mb-2"
+            style={{ border: '1px solid var(--vz-border-color)', borderRadius: 12, cursor: 'pointer' }}
             onClick={() => setDetailsRequestId(r.id)}
           >
             <div className="d-flex align-items-center gap-3">
@@ -355,8 +371,10 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
               </div>
               <button
                 type="button"
-                className="btn btn-link p-0"
-                style={{ fontSize: 12, color: '#dc2626' }}
+                /* Palette on a class — #dc2626 is a mid red that goes muddy
+                   against the dark card. (CBC #13) */
+                className="btn btn-link p-0 lsp-danger"
+                style={{ fontSize: 12 }}
                 onClick={(e) => { e.stopPropagation(); cancel(r.id); }}
                 disabled={cancellingId === r.id}
                 title={cancellingId === r.id ? 'Cancelling…' : 'Cancel request'}
@@ -394,7 +412,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
         {loading ? (
           <div className="d-flex gap-3 flex-wrap">
             {[0, 1, 2].map(i => (
-              <div key={i} className="flex-grow-1" style={{ minWidth: 240, background: 'var(--vz-card-bg, #ffffff)', border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: 18, boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 6px 18px rgba(15,23,42,0.08)' }}>
+              <div key={i} className="flex-grow-1 lsp-surface" style={{ minWidth: 240, border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: 18, boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 6px 18px rgba(15,23,42,0.08)' }}>
                 <div className="d-flex justify-content-between align-items-start mb-2">
                   <Shimmer height={14} width={90} />
                   <Shimmer height={10} width={60} />
@@ -430,7 +448,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
               const totalAllowance = t.unlimited ? null : roundDays(t.quota + (t.extra ?? 0));
               const pct = !t.unlimited && t.quota > 0 ? Math.min(100, ((t.used / t.quota) * 100)) : 0;
               return (
-                <div key={t.leave_type_id} className="lsp-balance-card flex-grow-1" style={{ minWidth: 240, background: 'var(--vz-card-bg, #ffffff)', border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: 18, boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 6px 18px rgba(15,23,42,0.08)' }}>
+                <div key={t.leave_type_id} className="lsp-balance-card lsp-surface flex-grow-1" style={{ minWidth: 240, border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: 18, boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 6px 18px rgba(15,23,42,0.08)' }}>
                   <div className="d-flex justify-content-between align-items-start mb-2">
                     {/* Paid / Unpaid sits with the name. (#129)
                         The card showed the type and the day counts but never
@@ -580,7 +598,8 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
         }
         .lrd-modal-close:hover { background: rgba(255,255,255,0.30); }
         .lrd-modal-close i { font-size: 16px; line-height: 1; }
-        .lrd-modal-body { background: var(--vz-card-bg); }
+        .lrd-modal-body { background: #fff; }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .lrd-modal-body { background: #222831; }
       `}</style>
 
       <Modal

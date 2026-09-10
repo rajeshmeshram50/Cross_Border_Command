@@ -3140,3 +3140,47 @@ button.ui-search-clear svg {
    keeps the browser's. */
 input[type="search"]:has(~ .ui-search-clear)::-webkit-search-cancel-button { display: none; }
 input[type="search"]:has(~ .ui-search-clear) { appearance: none; -webkit-appearance: none; }
+
+/* ── Document HTML: give lists their markers back ─────────────────────────────
+ * The app's global stylesheet resets `ul { list-style: none }` (twice — the
+ * admin theme and a plugin both do it). That is right for navigation menus,
+ * which is what those resets are for, and wrong for RENDERED DOCUMENT CONTENT:
+ * an exit letter or agreement authored with bullet points arrived in the
+ * preview as flat, unmarked lines, so the reader could not tell a list from a
+ * paragraph — and the PDF, which DomPDF renders outside this stylesheet,
+ * disagreed with what was on screen. (CBC #7)
+ *
+ * Applied to every surface that renders authored HTML: the shared
+ * .tpl-readonly-preview (signed documents, Inbox, My Team, onboarding, the
+ * template editor) and .doc-html (the exit-document preview).
+ * ========================================================================== */
+.tpl-readonly-preview ul,
+.doc-html ul {
+  /* Longhands, not the `list-style` shorthand: a minifier drops `disc` from
+     `disc outside` as redundant, which is correct per spec but leaves the
+     built CSS reading `list-style: outside` and looking like the marker was
+     lost. Explicit is easier to trust when this regresses. */
+  list-style-type: disc;
+  list-style-position: outside;
+  margin-left: 0;
+  padding-left: 1.6em;
+}
+.tpl-readonly-preview ol,
+.doc-html ol {
+  list-style-type: decimal;
+  list-style-position: outside;
+  margin-left: 0;
+  padding-left: 1.6em;
+}
+/* Nested levels read the way a word processor renders them. */
+.tpl-readonly-preview ul ul,
+.doc-html ul ul { list-style-type: circle; }
+.tpl-readonly-preview ul ul ul,
+.doc-html ul ul ul { list-style-type: square; }
+.tpl-readonly-preview li,
+.doc-html li { display: list-item; }
+/* An author who explicitly asked for no markers still gets none. */
+.tpl-readonly-preview ul[style*="list-style: none"],
+.tpl-readonly-preview ul[style*="list-style:none"],
+.doc-html ul[style*="list-style: none"],
+.doc-html ul[style*="list-style:none"] { list-style-type: none; padding-left: 0; }

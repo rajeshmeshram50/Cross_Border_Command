@@ -6,11 +6,12 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useModulePermission } from '../../hooks/useModulePermission';
 import api from '../../api';
+import { rankForDesignationName, rankOutranks } from '../../utils/positionHierarchy';
 /* Same rules as the Add/Edit Employee wizard — imported, not re-implemented,
    so a fix to the split or the slabs lands on both screens at once. */
 import {
   type SalBreakComp, SPLIT_CODES,
-  seedBreakup, absorbIntoSpecial, statutoryPt, pfDeduction, breakupSignature, validateBreakup,
+  seedBreakup, absorbIntoSpecial, reseedSplit, planEarningRemoval, statutoryPt, pfDeduction, breakupSignature, validateBreakup,
   CTC_ROUNDING_SLACK,
 } from '../../utils/salaryBreakup';
 import ComingSoonShell from '../../components/ComingSoonShell';
@@ -2267,7 +2268,7 @@ function InitiateOnboardingModal({
      (city + country) is composed server-side so every form that offers this
      picker fills the Location field identically. */
   const [mLegalEntities, setMLegalEntities] = useState<{ id: number; name: string; city?: string | null; country?: string | null; location?: string }[]>([]);
-  const [managerOpts, setManagerOpts]       = useState<{ value: string; label: string; deptId?: string; isHod?: boolean }[]>([]);
+  const [managerOpts, setManagerOpts]       = useState<{ value: string; label: string; deptId?: string; isHod?: boolean; rank?: number | null }[]>([]);
   // Leave plans need to come from the API (admin-defined per branch) — the
   // Add Employee form stores the plan id as the saved value, so a hardcoded
   // ["Leave Policy"] list would leave the onboarding dropdown blank for
@@ -2408,6 +2409,9 @@ function InitiateOnboardingModal({
         label: m.label,
         deptId: m.department_id != null ? String(m.department_id) : undefined,
         isHod: !!m.is_hod,
+        // The server already ranks every candidate; carrying it is what lets
+        // this screen apply the SAME eligibility rule as the Employee form.
+        rank: m.rank ?? null,
       })));
 
       /* Leave plans are Leave-module data — the server omits the key entirely
@@ -2708,10 +2712,8 @@ function InitiateOnboardingModal({
     if (obSeededForRef.current === obSettledSalary) return; // salary unchanged
     obSeededForRef.current = obSettledSalary;
     const monthly = obMonthlyOf(obSettledSalary);
-    setObEarnings(prev => {
-      const custom = prev.filter(c => !SPLIT_CODES.includes(c.code));
-      return absorbIntoSpecial([...seedBreakup(monthly), ...custom], monthly);
-    });
+    // Same rule as the Employee form: a deleted split row stays deleted. (CBC #9)
+    setObEarnings(prev => reseedSplit(prev, monthly));
     // PT is a function of the gross, same as Basic / HRA.
     setObDeductions(prev => prev.map(d => (
       d.code === 'pt' ? { ...d, amount: statutoryPt(monthly, s1.gender) } : d
@@ -2816,11 +2818,13 @@ function InitiateOnboardingModal({
   const removeObRow = (which: 'earn' | 'ded', i: number) => {
     if (which === 'earn') {
       const removed = obEarnings[i];
-      const rest = obEarnings.filter((_, idx) => idx !== i);
-      // Removing one of HR's own rows hands its money back to Special.
+      /* The removed amount folds into Basic so the monthly gross is unchanged —
+         same rule as the Employee form and Revise Salary. Dropping a split row
+         outright left the breakup short by its amount. (CBC #22) */
+      const plan = planEarningRemoval(obEarnings, i);
       setObEarnings(SPLIT_CODES.includes(removed?.code)
-        ? rest
-        : absorbIntoSpecial(rest, obMonthlyOf(s1.annual_salary)));
+        ? plan.next
+        : absorbIntoSpecial(plan.next, obMonthlyOf(s1.annual_salary)));
     } else {
       const removed = obDeductions[i];
       setObDeductions(obDeductions.filter((_, idx) => idx !== i));
@@ -3109,17 +3113,28 @@ const [nextLoading, setNextLoading] = useState(false);
   // An HOD reports to a Branch User (the branch Director / CEO).
   const isHodSelected = !!hodDesignationId && String(s1.designation_id) === hodDesignationId;
   const selectedDeptId = String(s1.department_id || '');
-  const branchUserMgrOpts = managerOpts.filter(m => m.value.startsWith('branch_user:'));
+  // (branchUserMgrOpts removed with the department rule — a Branch User is
+  //  TOP_RANK and therefore already eligible for every hire. CBC #10)
   const deptHodOpt = managerOpts.find(m => m.isHod && m.deptId && m.deptId === selectedDeptId) || null;
   // Non-HOD hire: Branch User(s) are always eligible; employees are scoped to the
   // SELECTED department, so the list reacts to the chosen department instead of
   // listing the whole company. The department's HOD is one of those employees
   // and is auto-selected below. HOD hire → Branch User(s) only.
-  let reportingMgrOpts = isHodSelected
-    ? branchUserMgrOpts
-    : selectedDeptId
-      ? managerOpts.filter(m => m.value.startsWith('branch_user:') || (m.deptId && m.deptId === selectedDeptId))
-      : managerOpts;
+  /* Eligibility is POSITION, not department. (CBC #10)
+   *
+   * This screen used to offer Branch Users plus employees from the hire's own
+   * department. The Employee form dropped department scoping in favour of
+   * "any department, must rank strictly higher" — and this copy was never
+   * updated, so onboarding showed a lone Branch User whenever the chosen
+   * department had no other fully-onboarded staff, while the Employee form
+   * offered every Team Leader and HOD in the company for the same person.
+   *
+   * The rank rule subsumes the old one: a Branch User is TOP_RANK so it stays
+   * eligible for everybody, and an HOD hire still cannot pick another HOD. */
+  const hireRank = rankForDesignationName(
+    mDesignations.find(d => String(d.id) === String(s1.designation_id))?.name,
+  );
+  let reportingMgrOpts = managerOpts.filter(m => rankOutranks(m.rank, hireRank));
   // Preserve an already-saved manager that falls outside the rule (e.g. an
   // existing employee reporting to a Team Lead) so edit mode never blanks it.
   const savedMgrOpt = managerOpts.find(m => m.value === s1.reporting_manager);

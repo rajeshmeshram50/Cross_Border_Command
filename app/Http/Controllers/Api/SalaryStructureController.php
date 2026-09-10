@@ -420,7 +420,15 @@ class SalaryStructureController extends Controller
             }
         }
 
-        $structure = DB::transaction(function () use ($data, $employee, $user, $monthlyGross, $monthlyDeductions) {
+        /* $submittedCtc MUST be in this use() list. (CBC #19)
+         *
+         * It was not, so inside the closure it was an UNDEFINED variable —
+         * which PHP evaluates as null with only a warning — and the write-back
+         * below silently took its `?? round($monthlyGross * 12, 2)` branch.
+         * The typed CTC was therefore discarded exactly as before the fix:
+         * ₹4,00,000 came back ₹3,99,996. The bug looked fixed in the source
+         * and was not fixed in the running code. */
+        $structure = DB::transaction(function () use ($data, $employee, $user, $monthlyGross, $monthlyDeductions, $submittedCtc) {
             // Supersede the current active structure (Rule 19 — never overwrite).
             $prev = SalaryStructure::where('employee_id', $employee->id)
                 ->where('status', 'active')

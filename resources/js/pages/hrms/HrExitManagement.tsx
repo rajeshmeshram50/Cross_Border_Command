@@ -4948,7 +4948,12 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   </div>
                 </div>
               )}
+              {/* doc-html restores list markers inside rendered document
+                  content — the app's global reset sets ul { list-style: none },
+                  so a document's bullet points arrived here as flat lines of
+                  text. (CBC #7) */}
               <div
+                className="doc-html"
                 style={{ background: '#fff', color: '#1f2937', padding: 24, borderRadius: 10, border: '1px solid var(--vz-border-color)', minHeight: 320, boxShadow: '0 6px 24px rgba(0,0,0,0.22)' }}
                 dangerouslySetInnerHTML={{ __html: previewHtml }}
               />

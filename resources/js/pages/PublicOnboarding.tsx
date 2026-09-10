@@ -8,6 +8,10 @@ interface InvitePreview {
   invitee_name: string;
   invitee_email: string;
   department_id: number | null;
+  /* Set by HR on the invite. The candidate sees them; they do not choose
+     them. (CBC #24) */
+  designation_id: number | null;
+  primary_role_id: number | null;
   expected_join_date: string | null;
   expires_at: string | null;
   org_name: string;
@@ -129,6 +133,14 @@ export default function PublicOnboarding() {
         setRoles(data.masters?.roles ?? []);
         setLegalEntities(data.masters?.legal_entities ?? []);
 
+        /* Designation and Primary Role come from the invite and are shown
+           read-only — HR decides what someone is hired as, so these are set
+           when the link is generated rather than picked here. Set BEFORE the
+           draft is restored below, so a draft saved while they were still
+           editable cannot put a candidate's old choice back. (CBC #24) */
+        setDesignationId(inv.designation_id != null ? String(inv.designation_id) : '');
+        setPrimaryRoleId(inv.primary_role_id != null ? String(inv.primary_role_id) : '');
+
         // Pre-fill name from invite (only used as default — draft overrides
         // below if the candidate already started filling).
         const parts = (inv.invitee_name || '').trim().split(/\s+/);
@@ -187,8 +199,9 @@ export default function PublicOnboarding() {
     if (typeof d.permCountry === 'string') setPermCountry(d.permCountry);
     if (typeof d.permPin   === 'string') setPermPin(d.permPin);
     if (typeof d.departmentId  === 'string') setDepartmentId(d.departmentId);
-    if (typeof d.designationId === 'string') setDesignationId(d.designationId);
-    if (typeof d.primaryRoleId === 'string') setPrimaryRoleId(d.primaryRoleId);
+    /* Deliberately NOT restored from the draft: both are the invite's values
+       now, and a draft saved while they were still pickers would otherwise
+       reinstate a choice the candidate is no longer allowed to make. (CBC #24) */
     if (typeof d.legalEntityId === 'string') setLegalEntityId(d.legalEntityId);
     if (typeof d.location === 'string') setLocation(d.location);
     if (typeof d.joiningDate === 'string') setJoiningDate(d.joiningDate);
@@ -242,17 +255,21 @@ export default function PublicOnboarding() {
 
   const countryOpts     = countries.map(c => ({ value: String(c.id), label: c.name }));
   const departmentOpts  = departments.map(d => ({ value: String(d.id), label: d.name }));
-  // 'Director / CEO' is the Branch User's role, not an assignable designation.
-  const designationOpts = designations
-    .filter(d => d?.name !== 'Director / CEO')
-    .map(d => ({ value: String(d.id), label: d.name }));
-  const roleOpts        = roles.map(r => ({ value: String(r.id), label: r.name }));
+  /* The designation / role option lists went with the pickers they fed: both
+     fields are set by HR on the invite now and render read-only, so the form
+     only needs their NAMES (designationLabel / primaryRoleLabel below), not a
+     list to choose from. (CBC #24) */
   /* The bundle returns the inviting branch (just that one when the invite names
      a branch), so the candidate never picks a legal entity — it's shown
      read-only and its city + country fill Location. */
   const autoLegalEntity = legalEntities.length === 1 ? legalEntities[0] : null;
   const legalEntityLabel =
     legalEntities.find(l => String(l.id) === String(legalEntityId))?.entity_name || '';
+  // Display names for the two invite-fixed job fields. (CBC #24)
+  const designationLabel =
+    designations.find(d => String(d.id) === String(designationId))?.name || '';
+  const primaryRoleLabel =
+    roles.find(r => String(r.id) === String(primaryRoleId))?.name || '';
   useEffect(() => {
     if (!autoLegalEntity || legalEntityId) return;
     setLegalEntityId(String(autoLegalEntity.id));
@@ -1953,16 +1970,32 @@ export default function PublicOnboarding() {
                   <MasterSelect value={departmentId} onChange={setDepartmentId} options={departmentOpts} placeholder="Select department" />
                 </div>
               </div>
+              {/* Designation and Primary Role are the employer's decision and
+                  are fixed by the invite, exactly like Legal Entity and
+                  Location below. They were pickers here, which let a candidate
+                  choose their own job title off the master list. (CBC #24) */}
               <div className="onb-hrow">
                 <label className="emp-label">Designation</label>
                 <div className="onb-hrow-input">
-                  <MasterSelect value={designationId} onChange={setDesignationId} options={designationOpts} placeholder="Select designation" />
+                  <input
+                    className="emp-input is-readonly"
+                    value={designationLabel}
+                    placeholder="Set by your employer"
+                    readOnly
+                    disabled
+                  />
                 </div>
               </div>
               <div className="onb-hrow">
                 <label className="emp-label">Primary Role</label>
                 <div className="onb-hrow-input">
-                  <MasterSelect value={primaryRoleId} onChange={setPrimaryRoleId} options={roleOpts} placeholder="Select role" />
+                  <input
+                    className="emp-input is-readonly"
+                    value={primaryRoleLabel}
+                    placeholder="Set by your employer"
+                    readOnly
+                    disabled
+                  />
                 </div>
               </div>
               {/* Legal Entity + Location are fixed by the invite — the hiring

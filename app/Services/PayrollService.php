@@ -449,6 +449,27 @@ class PayrollService
      * too low and their LOP too high. Holidays are NOT deducted here — they are
      * paid days handled separately by holidayAggregates().
      */
+    /**
+     * Calendar days in [start, end], inclusive — 0 when the window is INVERTED.
+     *
+     * Counted in a loop rather than with diffInDays()+1 on purpose. Carbon's
+     * diff is signed, and an employee whose active window closes before it
+     * opens (joined after the period ended, or exited before it began) then
+     * yields a NEGATIVE day count. That propagates straight through: negative
+     * working days produce negative loss-of-pay days, and a negative deduction
+     * is a payment — one such row computed a net pay of ₹13.2 lakh against a
+     * gross of ₹0. The loop simply never runs for an inverted window, which is
+     * the same guard employeeWorkingDays() has always had.
+     */
+    private function calendarDaysInWindow(Carbon $start, Carbon $end): int
+    {
+        $days = 0;
+        for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
+            $days++;
+        }
+        return $days;
+    }
+
     private function employeeWorkingDays(Employee $employee, Carbon $start, Carbon $end): int
     {
         $label = (string) ($employee->weekly_off ?? '');
@@ -1515,9 +1536,24 @@ class PayrollService
          * The MONEY is untouched: gross is still pro-rated on calendar days
          * ($proration above). Only the day denominator that LOP is measured
          * against changes. */
-        $effectiveWorkingDays = $proration < 1
-            ? $this->employeeWorkingDays($employee, $winStart->copy(), $winEnd->copy())
-            : $empWorkingDays;
+        /* CALENDAR-DAY BASIS. (CBC #11)
+         *
+         * A monthly-salaried employee is paid for the whole month, weekly offs
+         * included, so the day denominator is every day in the active window —
+         * not just the working ones. Both models pay the same full month; what
+         * changes is the per-day rate a LOSS OF PAY is charged at, and the
+         * calendar basis is the one the company policy states: on a ₹25,000
+         * salary in a 31-day August, a day missed costs ₹806.45 (÷31) rather
+         * than ₹961.54 (÷26).
+         *
+         * The numerator moves with it — the day loop below credits a weekly off
+         * as a paid day. Widening the denominator WITHOUT that would turn every
+         * Sunday into loss of pay, which is the opposite of the policy.
+         *
+         * Still COUNTED over the active window rather than scaled by the
+         * proration, for the reason above: a mid-month joiner must face a whole
+         * number of days that attendance can actually reach. */
+        $effectiveWorkingDays = (float) $this->calendarDaysInWindow($winStart, $winEnd);
 
         // ── Rules 2 & 3 — attendance + leave ───────────────────────────────
         // Short-hours policy comes from the employee's own branch; an employee
@@ -1625,17 +1661,27 @@ class PayrollService
          * check further down. */
         $workedOnWorkingDays = 0.0;
         for ($d = $winStart->copy(); $d->lte($winEnd); $d->addDay()) {
-            if (\App\Support\WeekOff::isOff($weeklyOffLbl, $d)) {
-                continue;
-            }
+            $isWeekOff = \App\Support\WeekOff::isOff($weeklyOffLbl, $d);
             $ds       = $d->toDateString();
             $worked   = (float) ($workedDates[$ds] ?? 0);
-            $workedOnWorkingDays += $worked;
+            // Only real working dates answer "did this person attend?" — the
+            // zero-attendance check below must not be satisfied by week-offs.
+            if (!$isWeekOff) {
+                $workedOnWorkingDays += $worked;
+            }
             $paidLv   = (float) ($paidDates[$ds] ?? 0);
             $unpaidLv = (float) ($unpaidDates[$ds] ?? 0);
             $holiday  = isset($holidaySet[$ds]) ? 1.0 : 0.0;
+            /* A weekly off is a PAID non-working day, so it credits a full day
+               on its own. (CBC #11) It is capped with everything else at
+               1 − unpaid leave, which is what keeps the sandwich rule working:
+               leave that deliberately covers a Sunday still docks it. Because
+               the day is already fully credited, a shift worked on a week-off
+               adds nothing here and cannot cancel a weekday absence — those
+               hours are paid through overtime, exactly as before. */
+            $weekOff  = $isWeekOff ? 1.0 : 0.0;
 
-            $credited = $worked + $paidLv + $holiday;
+            $credited = $worked + $paidLv + $holiday + $weekOff;
             $paidDays += max(0.0, min(1.0 - $unpaidLv, $credited));
 
             /* Two sources claiming the same day is a data-quality problem even
@@ -2200,8 +2246,22 @@ class PayrollService
              * for an employee carrying late-mark LOP, and using the attendance
              * figure here would have raised their PF as a side effect of the
              * #114 display fix. */
-            $pfDayBasis = $empWorkingDays > 0
-                ? min(1, max(0, $paidDaysForPay) / $empWorkingDays)
+            /* Denominator follows the numerator onto CALENDAR days. (CBC #11)
+             *
+             * The rule stated above still holds — numerator and denominator
+             * must count the same kind of day — but paid days are now counted
+             * across the calendar (weekly offs credited as paid), so dividing
+             * them by WORKING days would push the ratio past 1 on any normal
+             * month and the cap would swallow it: an employee with 2 days of
+             * loss of pay came out at 29/26 → 1.0 and paid full PF as though
+             * they had worked the month. Against the month's calendar days the
+             * arithmetic behaves again:
+             *
+             *   31/31 = 1.0000  → a full month is unaffected, exactly as before
+             *   29/31 = 0.9355  → 2 days of LOP pro-rate PF, as they always did
+             *    6/31 = 0.1935  → an exit window charges its own share */
+            $pfDayBasis = $calDays > 0
+                ? min(1, max(0, $paidDaysForPay) / $calDays)
                 : null;
             $pfEarnedBasic = $pfDayBasis === null
                 ? $earnedBasic
@@ -2985,6 +3045,22 @@ class PayrollService
      * holiday that lands on an off-day. Recurring holidays are matched by
      * month/day against the window's year. Returns a whole-day count.
      */
+    /**
+     * Paid holidays falling in [start, end] for this employee — the same figure
+     * the engine credits, exposed so a READER can subtract it. (CBC #8)
+     *
+     * Payroll credits holidays into paid days, but `holiday_days` is computed
+     * and then dropped on save (there is no such column, so mass assignment
+     * discards it). Anything outside the engine that needs the number has to
+     * recompute it, and it must recompute it the SAME way — holidays that land
+     * on the employee's own weekly off are already non-working days and are
+     * excluded here, so a caller cannot accidentally count them twice.
+     */
+    public function holidayDaysFor(Employee $employee, Carbon $start, Carbon $end): float
+    {
+        return $this->holidayAggregates($employee, $start, $end);
+    }
+
     private function holidayAggregates($employee, Carbon $start, Carbon $end): float
     {
         if (!$this->hasTable('holidays')) {

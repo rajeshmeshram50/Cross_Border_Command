@@ -317,6 +317,14 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
   const segmentName    = (product.segment?.title as string) ?? '—';
   const hazClassName   = (product.haz_class?.name as string) ?? '—';
   const uomName        = (product.uom?.short_code as string) ?? (product.uom?.title as string) ?? '—';
+  // Full UOM label — "Metric Ton (MT)" — mirroring the edit form's
+  // `title (short_code)` composition, for the UOM detail card. (`uomName` stays
+  // the short code for the compact "per MT" pricing line.)
+  const uomTitle       = (product.uom?.title as string) ?? '';
+  const uomShort       = (product.uom?.short_code as string) ?? '';
+  const uomFull        = uomTitle
+    ? (uomShort && !uomTitle.includes(uomShort) ? `${uomTitle} (${uomShort})` : uomTitle)
+    : (uomShort || '—');
   const hsnCode        = (product.hsn?.hsn_code as string) ?? '—';
   const conditionName  = (product.condition?.title as string) ?? '—';
   const packagingName  = (product.packaging_material?.title as string) ?? '—';
@@ -509,7 +517,7 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
                 </div>
                 <div className="pv2pd-hl pv2pd-hl--c">
                   <span className="pv2pd-hl__ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg></span>
-                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">UOM</span><Tooltip label={uomName}><span className="pv2pd-hl__v">{uomName}</span></Tooltip></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">UOM</span><Tooltip label={uomFull}><span className="pv2pd-hl__v">{uomFull}</span></Tooltip></span>
                 </div>
                 <div className="pv2pd-hl pv2pd-hl--a">
                   <span className="pv2pd-hl__ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg></span>

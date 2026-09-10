@@ -257,28 +257,9 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
      the row because the overview table is rebuilt on every shipment switch. */
   const [ovTrack, setOvTrack] = useState<{ id: number; code: string } | null>(null);
 
-  /* Multi-select on the main Case-to-Case table. Held here, not in the deal
-   * panels, for two reasons: a panel unmounts when its row is collapsed, and
-   * the count in the bar is deliberately across transactions.
-   *
-   * Keyed the same way the panel keys its rows, so a Buyer+Consignee document
-   * — emitted into both party lists under one id — is one tick, not two. */
-  const shipDocKey = (d: VaultShipmentDoc) =>
-    d.db_id != null ? `${d.doc_type ?? ''}#${d.db_id}` : `n#${d.name}#${d.sig_req_id}`;
-  const [mainPicked, setMainPicked] = useState<{ key: string; id: number; lead: number }[]>([]);
-  /* Only trade documents can go out together. The bulk path is the trade-doc
-     signature modal, which resolves ids against that library alone; agreements
-     have their own single-document flow (the paper-plane on the row) and no
-     bulk equivalent, so they are not tickable. Signed and in-flight rows are
-     excluded for the same reason the row actions exclude them. */
-  const shipDocSendable = (d: VaultShipmentDoc) =>
-    !!d.db_id
-    && (d.doc_type ?? 'trade') !== 'agreement'
-    && d.status !== 'Signed'
-    && d.status !== 'Pending';
   /* Shipment Send-for-Signature — launches the preview + signature-box wizard
    * for one not-yet-sent shipment document. */
-  const [shipSend, setShipSend] = useState<{ leadId: number; doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null>(null);
+  const [shipSend, setShipSend] = useState<{ leadId: number; doc: VaultShipmentDoc; docs?: VaultShipmentDoc[]; party: 'buyer' | 'consignee' } | null>(null);
   // PI row → Sales-Matrix Q/PI Send-for-Signature modal (routed by doc.pi_id).
   const [piSend, setPiSend] = useState<{ leadId: number; doc: VaultShipmentDoc } | null>(null);
 
@@ -823,52 +804,12 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
             ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'}
                              onSend={(leadId, doc, party) => { if (doc.pi_id) setPiSend({ leadId, doc }); else setShipSend({ leadId, doc, party }); }}
                              activeSend={shipSend ?? (piSend ? { ...piSend, party: 'consignee' as const } : null)}
-                             select={{
-                               isSelected: (d) => mainPicked.some(p => p.key === shipDocKey(d)),
-                               canSelect: shipDocSendable,
-                               toggle: (leadId, d, on) => setMainPicked(prev => {
-                                 const key = shipDocKey(d);
-                                 if (!on) return prev.filter(p => p.key !== key);
-                                 return prev.some(p => p.key === key) || !d.db_id
-                                   ? prev
-                                   : [...prev, { key, id: d.db_id, lead: leadId }];
-                               }),
-                               toggleAll: (leadId, ds, on) => setMainPicked(prev => {
-                                 const keys = new Set(ds.map(shipDocKey));
-                                 const rest = prev.filter(p => !keys.has(p.key));
-                                 return on
-                                   ? [...rest, ...ds.filter(d => !!d.db_id).map(d => ({ key: shipDocKey(d), id: d.db_id as number, lead: leadId }))]
-                                   : rest;
-                               }),
-                             }} />
+                             onBulkSend={(leadId, docs, party) => { if (docs.length) setShipSend({ leadId, doc: docs[0], docs, party }); }} />
             : <DocsTable rows={docsForTab} tab={tab} ownerType="consignee" ownerId={consignee?.db_id ?? null} onReload={reloadVault}
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
                          onRemindTradeDoc={handleRemind} onRowBusyChange={onRowBusyChange} />}
         </div>
 
-        {/* ─── SELECTION BAR ───
-            Sits between the body and the footer, so it never scrolls away from
-            the ticks that fill it. Only on the Case-to-Case tabs, and only once
-            something is ticked. The transaction count comes from the deal each
-            tick was made under, which is why the selection carries its lead id
-            rather than just the document id. */}
-        {mainPicked.length > 0 && (tab === 'trade-documents' || tab === 'shipment-agreements') && (
-          <div className="cnev-selbar">
-            <span className="cnev-selbar-ico" aria-hidden><i className="ri-check-line" /></span>
-            <span className="cnev-selbar-text">
-              <strong>{mainPicked.length} document{mainPicked.length > 1 ? 's' : ''} selected</strong>
-              <span>across {new Set(mainPicked.map(p => p.lead)).size} transaction{new Set(mainPicked.map(p => p.lead)).size > 1 ? 's' : ''}</span>
-            </span>
-            <button type="button" className="cnev-selbar-clear" onClick={() => setMainPicked([])}>Clear</button>
-            <button
-              type="button"
-              className="cnev-selbar-send"
-              onClick={() => setSendDocIds(mainPicked.map(p => p.id))}
-            >
-              <i className="ri-send-plane-line" aria-hidden /> Send For Signature
-            </button>
-          </div>
-        )}
         </>)}
 
         {/* ─── FOOTER ─── */}
@@ -1777,18 +1718,12 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   );
 }
 
-function ShipmentTable({ rows, kind, onSend, activeSend, select }: {
+function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend }: {
   rows: VaultShipmentRow[];
   kind: 'trade' | 'agreement';
-  /** Multi-select wiring, passed straight through to each deal's panel. The
-   *  selection lives in the modal because it spans deals and must survive a
-   *  row being collapsed. Omitted → the panels render without tick columns. */
-  select?: {
-    isSelected: (d: VaultShipmentDoc) => boolean;
-    canSelect: (d: VaultShipmentDoc) => boolean;
-    toggle: (leadId: number, d: VaultShipmentDoc, checked: boolean) => void;
-    toggleAll: (leadId: number, docs: VaultShipmentDoc[], checked: boolean) => void;
-  };
+  /** Sends every ticked document on one deal in a single action. Passing it is
+   *  what turns the panel's tick column on — the panel owns the selection. */
+  onBulkSend?: (leadId: number, docs: VaultShipmentDoc[], party: 'buyer' | 'consignee') => void;
   /** Launches Send-for-Signature for one shipment doc (lead + doc + party). */
   onSend?: (leadId: number, doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
   /** The send currently being prepared, so its row's button can spin. This was
@@ -1864,8 +1799,6 @@ function ShipmentTable({ rows, kind, onSend, activeSend, select }: {
                         <ShipmentDocPanel
                           buyer={kind === 'trade' ? (r.trade_docs_buyer ?? []) : (r.agreements_buyer ?? [])}
                           consignee={kind === 'trade' ? (r.trade_docs_consignee ?? []) : (r.agreements_consignee ?? [])}
-                          buyerName={r.customer}
-                          consigneeName={r.consignee || '—'}
                           buyerIsConsignee={r.buyer_is_consignee}
                           onSend={onSend ? (doc, party) => onSend(r.id, doc, party) : undefined}
                           pendingSend={activeSend && activeSend.leadId === r.id ? { doc: activeSend.doc, party: activeSend.party } : null}
@@ -1875,11 +1808,7 @@ function ShipmentTable({ rows, kind, onSend, activeSend, select }: {
                              party; the shared documents this consignee actually
                              co-signs are still one tab away under Both. */
                           hideBuyerTab
-                          selectable={!!select}
-                          isSelected={select?.isSelected}
-                          canSelect={select?.canSelect}
-                          onToggleDoc={select ? (d, on) => select.toggle(r.id, d, on) : undefined}
-                          onToggleAll={select ? (ds, on) => select.toggleAll(r.id, ds, on) : undefined}
+                          onBulkSend={onBulkSend ? (docs, party) => onBulkSend(r.id, docs, party) : undefined}
                         />
                       </td>
                     </tr>
@@ -1960,36 +1889,6 @@ const CNEV_CSS = `
 .cev-cell-dim { color: #64748b; white-space: nowrap; }
 [data-bs-theme="dark"] .cev-mono-ref { color: #67e8f9; }
 [data-bs-theme="dark"] .cev-cell-dim { color: #94a3b8; }
-
-/* Selection bar for the main Case-to-Case table. Dark, so it reads as a layer
-   over the sheet rather than another row of it. */
-.cnev-vault .cnev-selbar {
-  flex-shrink: 0;
-  display: flex; align-items: center; gap: 12px;
-  padding: 12px 18px;
-  background: linear-gradient(90deg, #0e3a4a, #0e7490);
-  color: #fff;
-}
-.cnev-vault .cnev-selbar-ico {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; border-radius: 7px;
-  background: rgba(255, 255, 255, .18); font-size: 15px; flex-shrink: 0;
-}
-.cnev-vault .cnev-selbar-text { display: flex; flex-direction: column; line-height: 1.25; margin-right: auto; }
-.cnev-vault .cnev-selbar-text strong { font-size: 12.5px; font-weight: 800; }
-.cnev-vault .cnev-selbar-text span { font-size: 10.5px; color: rgba(255, 255, 255, .72); }
-.cnev-vault .cnev-selbar-clear,
-.cnev-vault .cnev-selbar-send {
-  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
-  height: 32px; padding: 0 14px; border-radius: 8px;
-  font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
-}
-.cnev-vault .cnev-selbar-clear {
-  background: rgba(255, 255, 255, .14); color: #fff; border: 1px solid rgba(255, 255, 255, .28);
-}
-.cnev-vault .cnev-selbar-clear:hover { background: rgba(255, 255, 255, .24); }
-.cnev-vault .cnev-selbar-send { background: #fff; color: #0e7490; border: 0; }
-.cnev-vault .cnev-selbar-send:hover { background: #ecfeff; }
 
 /* Selection action bar under the overview list. Sits outside the scrolling
    body so it stays put while the rows scroll under it. */

@@ -69,13 +69,33 @@ class Announcement extends Model
     }
 
     /**
-     * Public URL for the optional attachment file. Returns null when no
-     * file was uploaded so the table renders an em-dash. Streamed through
-     * a Laravel route in a follow-up if Apache DocumentRoot ≠ public/
-     * causes 404s — same pattern as candidate CVs.
+     * URL for the optional attachment — the STREAMING route, not a raw
+     * /storage path. (CBC #3)
+     *
+     * This used to return file_url(), i.e. "/storage/announcements/...". That
+     * only resolves when public/storage is symlinked AND the bytes are on the
+     * local disk. Neither holds reliably: the symlink is missing on a fresh
+     * checkout, and on the server the public disk is Azure Blob, where no
+     * /storage path exists at all. Clicking View therefore opened a blank tab
+     * on a 404 while the file sat perfectly intact on the disk.
+     *
+     * announcements.attachment streams the bytes THROUGH the disk, so local and
+     * Azure behave identically — which is exactly why the emailed announcement
+     * already links here. The UI was the odd one out; both use it now.
+     *
+     * `signed` because the route's middleware requires it, and because that is
+     * what lets the same link work for a recipient who is not logged in. The
+     * signature covers the id, so it cannot be edited to reach another
+     * announcement's file.
      */
     public function getAttachmentUrlAttribute(): ?string
     {
-        return file_url($this->attachment_path);
+        if (!$this->attachment_path) {
+            return null;
+        }
+        // An unsaved model has no id to sign — fall back rather than throw.
+        return $this->getKey()
+            ? \Illuminate\Support\Facades\URL::signedRoute('announcements.attachment', ['id' => $this->getKey()])
+            : file_url($this->attachment_path);
     }
 }
