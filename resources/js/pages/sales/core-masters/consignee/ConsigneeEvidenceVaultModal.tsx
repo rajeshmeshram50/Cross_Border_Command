@@ -1398,8 +1398,6 @@ function ShipmentTable({ rows, kind, onSend, activeSend }: {
                         <ShipmentDocPanel
                           buyer={kind === 'trade' ? (r.trade_docs_buyer ?? []) : (r.agreements_buyer ?? [])}
                           consignee={kind === 'trade' ? (r.trade_docs_consignee ?? []) : (r.agreements_consignee ?? [])}
-                          buyerName={r.customer}
-                          consigneeName={r.consignee || '—'}
                           buyerIsConsignee={r.buyer_is_consignee}
                           onSend={onSend ? (doc, party) => onSend(r.id, doc, party) : undefined}
                           pendingSend={activeSend && activeSend.leadId === r.id ? { doc: activeSend.doc, party: activeSend.party } : null}

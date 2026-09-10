@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -177,14 +177,12 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
     const first = TABS.find(t => t.group === g);
     if (first) setTab(first.key);
   };
-  const kpiStripRef = useRef<HTMLDivElement | null>(null);
-  const [kpiPaused, setKpiPaused] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [vaultLive, setVaultLive] = useState<VaultData | null>(null);
   const [loading, setLoading] = useState(false);
   const [signatureRows, setSignatureRows] = useState<SigReqRow[]>([]);
   const [sendDocIds, setSendDocIds] = useState<number[] | null>(null);
-  const [shipSend, setShipSend] = useState<{ leadId: number; doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null>(null);
+  const [shipSend, setShipSend] = useState<{ leadId: number; doc: VaultShipmentDoc; docs?: VaultShipmentDoc[]; party: 'buyer' | 'consignee' } | null>(null);
   const [piSend, setPiSend] = useState<{ leadId: number; doc: VaultShipmentDoc } | null>(null);
 
   useEffect(() => {
@@ -305,25 +303,6 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
       .catch(() => { if (!cancelled) setSignatureRows([]); });
     return () => { cancelled = true; };
   }, [open, customer?.db_id]);
-
-  useEffect(() => {
-    if (!open || kpiPaused) return;
-    const strip = kpiStripRef.current;
-    if (!strip) return;
-    let raf = 0;
-    const tick = () => {
-      if (!strip) return;
-      const half = strip.scrollWidth / 2;
-      if (half <= 4) return;
-      strip.scrollLeft += 0.6;
-      if (strip.scrollLeft >= half) {
-        strip.scrollLeft -= half;
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [open, kpiPaused, tab]);
 
   const vault: VaultData | null = useMemo(() => {
     if (!customer) return null;
@@ -457,9 +436,18 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
 
   const tabMeta = TABS.find(t => t.key === tab) ?? TABS[0];
 
+  /* Case-to-Case is about shipments, so an opportunity that has not raised one
+     yet does not belong in it. Those rows rendered as "Not shipped" with every
+     ratio at 0/x and nothing to expand, while the section pill — which reads
+     the server's total_shipments — already excluded them, so the list and the
+     count contradicted each other. One filtered list now feeds the table, the
+     overview picker and every count derived from them. has_shipment is
+     optional, so undefined still counts as shipped. */
+  const shippedRows = vault.shipment_agreements.filter(r => r.has_shipment !== false);
+
   const ratioTotal = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[1] ?? p[0], 10) || 0; };
   const shipmentDocCount = (key: 'trade_docs' | 'agreement') =>
-    vault.shipment_agreements.reduce((acc, r) => acc + ratioTotal(r[key].ratio), 0);
+    shippedRows.reduce((acc, r) => acc + ratioTotal(r[key].ratio), 0);
   const tabCount = (t: typeof TABS[number]): number =>
     t.key === 'trade-documents'     ? shipmentDocCount('trade_docs') + shipmentDocCount('agreement')
     : t.key === 'shipment-agreements' ? shipmentDocCount('agreement')
@@ -476,7 +464,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
 
   const ratioDone = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[0], 10) || 0; };
   const shipmentDocDone = (key: 'trade_docs' | 'agreement') =>
-    vault.shipment_agreements.reduce((acc, r) => acc + ratioDone(r[key].ratio), 0);
+    shippedRows.reduce((acc, r) => acc + ratioDone(r[key].ratio), 0);
   const tdTotal  = shipmentDocCount('trade_docs');
   const tdDone   = shipmentDocDone('trade_docs');
   const agrTotal = shipmentDocCount('agreement');
@@ -607,6 +595,21 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
           </>)}
         </div>
 
+        {/* Customer =/≠ Consignee — the same pill toggle the Supplier vault uses
+            for its transaction switch, now above the tab row rather than buried
+            in the table. Shown only where it applies: the shipment table is the
+            one view it filters. */}
+        {tab === 'trade-documents' && (
+          <div className="cev-shp-toggle">
+            <button type="button" className={shipmentFilter === 'buyer-eq-consignee' ? 'is-active' : ''} onClick={() => setShipmentFilter('buyer-eq-consignee')}>
+              <i className="ri-user-shared-line" aria-hidden />Customer = Consignee
+            </button>
+            <button type="button" className={shipmentFilter === 'buyer-neq-consignee' ? 'is-active' : ''} onClick={() => setShipmentFilter('buyer-neq-consignee')}>
+              <i className="ri-user-received-line" aria-hidden />Customer &ne; Consignee
+            </button>
+          </div>
+        )}
+
         <div className="cev-tabs-wrap">
           <div className="cev-tabs">
             {TABS.filter(t => t.group === group).map(t => (
@@ -649,8 +652,10 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
           </div>
 
           {tab === 'trade-documents'
-            ? <ShipmentTable rows={vault.shipment_agreements} kind="both" filter={shipmentFilter} setFilter={setShipmentFilter}
-                             onSend={(leadId, doc, party) => { if (doc.pi_id) setPiSend({ leadId, doc }); else setShipSend({ leadId, doc, party }); }} activeSend={shipSend ?? (piSend ? { ...piSend, party: 'buyer' } : null)} />
+            ? <ShipmentTable rows={shippedRows} kind="both" filter={shipmentFilter}
+                             onSend={(leadId, doc, party) => { if (doc.pi_id) setPiSend({ leadId, doc }); else setShipSend({ leadId, doc, party }); }}
+                             onBulkSend={(leadId, docs, party) => { if (docs.length) setShipSend({ leadId, doc: docs[0], docs, party }); }}
+                             activeSend={shipSend ?? (piSend ? { ...piSend, party: 'buyer' } : null)} />
             : <DocsTable rows={docsForTab} tab={tab} ownerType="customer" ownerId={customer?.db_id ?? null} onReload={reloadVault}
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
                          onRemindTradeDoc={handleRemind} onRowBusyChange={onRowBusyChange} />}
@@ -736,7 +741,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
               ...(r.agreements_buyer ?? []),
               ...(r.agreements_consignee ?? []),
             ]);
-        const shipments = isStd ? [] : vault.shipment_agreements;
+        const shipments = isStd ? [] : shippedRows;
         const shipsWithDocs = isStd ? [] : shipments.filter((r) => shipDocsOf(r).length > 0);
         const activeShip = isStd ? null : (shipsWithDocs.find((r) => r.id === ovShip) ?? null);
         const picking = !isStd && !activeShip;
@@ -1263,25 +1268,28 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   );
 }
 
-function ShipmentTable({ rows, kind, filter, setFilter, onSend, activeSend }: {
+function ShipmentTable({ rows, kind, filter, onSend, onBulkSend, activeSend }: {
   rows: VaultShipmentRow[];
   kind: 'trade' | 'agreement' | 'both';
+  /* The Customer =/≠ Consignee switch now lives above the tab row, next to the
+     other vault-level controls, so this only reads the value. */
   filter: 'buyer-eq-consignee' | 'buyer-neq-consignee';
-  setFilter: (f: 'buyer-eq-consignee' | 'buyer-neq-consignee') => void;
   onSend?: (leadId: number, doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
+  onBulkSend?: (leadId: number, docs: VaultShipmentDoc[], party: 'buyer' | 'consignee') => void;
   activeSend?: { leadId: number; doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null;
 }) {
   const [openId, setOpenId] = useState<number | null>(null);
+  /* Flipping the switch swaps the whole row set, so a row left expanded from
+     the other side would hang open over unrelated shipments. */
+  useEffect(() => { setOpenId(null); }, [filter]);
   const buyerNeq = filter === 'buyer-neq-consignee';
+  /* `rows` arrives already limited to opportunities that raised a shipment —
+     see shippedRows in the vault — so this only splits by the consignee switch. */
   const filtered = rows.filter(r => buyerNeq ? !r.buyer_is_consignee : r.buyer_is_consignee);
   const showAgreement = kind === 'agreement' || kind === 'both';
   const COLS = showAgreement ? 11 : 10;
   return (
     <>
-      <div className="cev-ship-filter cev-ship-filter-2">
-        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-eq-consignee'); setOpenId(null); }}>Customer = Consignee</button>
-        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-neq-consignee'); setOpenId(null); }}>Customer &ne; Consignee</button>
-      </div>
       <div className="cev-table-wrap">
         <div className="cev-table-scroll">
         <table className="cev-table">
@@ -1345,10 +1353,9 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend, activeSend }: {
                             ? [...(r.trade_docs_consignee ?? []), ...(r.agreements_consignee ?? [])]
                             : kind === 'trade' ? (r.trade_docs_consignee ?? []) : (r.agreements_consignee ?? [])}
                           showType={kind === 'both'}
-                          buyerName={r.customer}
-                          consigneeName={r.consignee || '—'}
                           buyerIsConsignee={r.buyer_is_consignee}
                           onSend={onSend ? (doc, party) => onSend(r.id, doc, party) : undefined}
+                          onBulkSend={onBulkSend ? (docs, party) => onBulkSend(r.id, docs, party) : undefined}
                           pendingSend={activeSend && activeSend.leadId === r.id ? { doc: activeSend.doc, party: activeSend.party } : null}
                         />
                       </td>
@@ -1365,9 +1372,15 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend, activeSend }: {
   );
 }
 
-export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, buyerIsConsignee, onSend, primaryParty = 'buyer', hideBuyerTab = false, pendingSend, showType = false }: {
-  buyer: VaultShipmentDoc[]; consignee: VaultShipmentDoc[]; buyerName: string; consigneeName: string; buyerIsConsignee: boolean;
+export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, onBulkSend, primaryParty = 'buyer', hideBuyerTab = false, pendingSend, showType = false }: {
+  /* No party name here: the shipment row this panel expands from already names
+     the customer and the consignee, and the tabs below say whose documents are
+     on screen, so repeating it was noise. */
+  buyer: VaultShipmentDoc[]; consignee: VaultShipmentDoc[]; buyerIsConsignee: boolean;
   onSend?: (doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
+  /* Opt-in. Supplying it turns on the select column and the bulk bar; the
+     Consignee vault shares this panel and passes nothing, so it is unchanged. */
+  onBulkSend?: (docs: VaultShipmentDoc[], party: 'buyer' | 'consignee') => void;
 
   primaryParty?: 'buyer' | 'consignee';
   hideBuyerTab?: boolean;
@@ -1378,6 +1391,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
   const [party, setParty] = useState<'buyer' | 'consignee' | 'both'>(primaryParty);
   const [busy, setBusy] = useState<number | null>(null);
   const [trackSig, setTrackSig] = useState<{ id: number; code: string } | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
   const docKey = (d: VaultShipmentDoc) => (d.db_id != null ? `${d.doc_type ?? ''}#${d.db_id}` : `n#${d.name}#${d.sig_req_id}`);
   const buyerKeys = new Set(buyer.map(docKey));
   const consKeys = new Set(consignee.map(docKey));
@@ -1388,6 +1402,34 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
   const docs = buyerIsConsignee
     ? (primaryParty === 'consignee' ? consignee : buyer)
     : activeParty === 'both' ? bothDocs : activeParty === 'buyer' ? buyerOnly : consOnly;
+
+  /* A row can be picked only when a first send is actually possible for it —
+     the same gate the per-row Send button uses (db_id + status Draft), so the
+     checkbox never offers something the button would refuse. Anything that has
+     been sent before is locked: Signed, Pending, Declined, Recalled and Expired
+     all mean a signature request already exists for that document. The PI row
+     is excluded too — it sends through its own kind='pi' flow, not this one. */
+  const bulkOn      = !!onBulkSend;
+  const sentAlready = (d: VaultShipmentDoc) => d.status !== 'Draft';
+  const selectable  = (d: VaultShipmentDoc) => !!d.db_id && !d.pi_id && !sentAlready(d);
+  const lockReason  = (d: VaultShipmentDoc) =>
+      d.pi_id            ? 'The Proforma Invoice is sent from its own action'
+    : sentAlready(d)     ? `Already sent for signature — currently ${d.status}`
+    :                      'This document cannot be sent for signature yet';
+
+  const pickable  = docs.filter(selectable);
+  const chosen    = docs.filter(d => picked.includes(docKey(d)) && selectable(d));
+  const allPicked = pickable.length > 0 && chosen.length === pickable.length;
+  /* Trade documents and agreements travel through different send flows, so one
+     batch has to be all of one kind. */
+  const oneKind   = new Set(chosen.map(d => (d.doc_type === 'agreement' ? 'agreement' : 'trade'))).size <= 1;
+  const bulkParty = (d: VaultShipmentDoc): 'buyer' | 'consignee' => (buyer.includes(d) ? 'buyer' : 'consignee');
+  const toggle    = (d: VaultShipmentDoc) =>
+    setPicked(prev => prev.includes(docKey(d)) ? prev.filter(k => k !== docKey(d)) : [...prev, docKey(d)]);
+
+  /* Switching the Customer / Consignee / Both tab swaps the whole list, so a
+     carried-over selection would send documents the user can no longer see. */
+  useEffect(() => { setPicked([]); }, [activeParty]);
 
   const remind = async (d: VaultShipmentDoc) => {
     setBusy(d.sig_req_id);
@@ -1412,11 +1454,6 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
           <button type="button" onClick={() => setParty('both')} style={partyTabStyle(activeParty === 'both')}>Both <b>{bothDocs.length}</b></button>
         </div>
       )}
-      <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>
-        {buyerIsConsignee
-          ? (primaryParty === 'consignee' ? consigneeName : buyerName)
-          : activeParty === 'both' ? `${buyerName} + ${consigneeName}` : activeParty === 'buyer' ? buyerName : consigneeName}
-      </div>
       {docs.length === 0 ? (
         <div style={{ padding: '18px', textAlign: 'center', color: '#64748b', fontSize: 12, background: '#fff', border: '1px dashed #a5f3fc', borderRadius: 8 }}>No {activeParty === 'both' ? '' : activeParty === 'buyer' ? 'buyer ' : 'consignee '}documents on this shipment.</div>
       ) : (
@@ -1424,6 +1461,20 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
             <thead>
               <tr style={{ background: 'linear-gradient(90deg,#0e7490,#0891b2)', color: '#fff' }}>
+                {bulkOn && (
+                  <th style={{ padding: '8px 10px', width: 34, textAlign: 'center' }}>
+                    <Tooltip label={pickable.length === 0 ? 'Nothing on this shipment is awaiting a first send' : allPicked ? 'Clear selection' : 'Select every document that has not been sent yet'}>
+                      <input
+                        type="checkbox"
+                        className="cev-sdp-check"
+                        aria-label="Select all documents awaiting signature"
+                        disabled={pickable.length === 0}
+                        checked={allPicked}
+                        onChange={(e) => setPicked(e.target.checked ? pickable.map(docKey) : [])}
+                      />
+                    </Tooltip>
+                  </th>
+                )}
                 {['Sr No', 'Document Name', 'Required', 'Signed On', 'Status', 'Actions'].map((h) => (
                   <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Document Name' ? 'left' : 'center', fontSize: 9, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
@@ -1432,6 +1483,24 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
             <tbody>
               {docs.map((d, i) => (
                 <tr key={d.sig_req_id + '-' + i} style={{ borderBottom: '1px solid #ecfeff' }}>
+                  {bulkOn && (
+                    <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                      <Tooltip label={selectable(d) ? 'Select for bulk send' : lockReason(d)}>
+                        {/* The span keeps the tooltip alive over a disabled input —
+                            a disabled control fires no pointer events of its own. */}
+                        <span style={{ display: 'inline-flex' }}>
+                          <input
+                            type="checkbox"
+                            className="cev-sdp-check"
+                            aria-label={`Select ${d.name}`}
+                            disabled={!selectable(d)}
+                            checked={picked.includes(docKey(d)) && selectable(d)}
+                            onChange={() => toggle(d)}
+                          />
+                        </span>
+                      </Tooltip>
+                    </td>
+                  )}
                   <td style={{ padding: '8px 10px', textAlign: 'center', color: '#94a3b8', fontWeight: 700 }}>{i + 1}</td>
                   <Tooltip label={d.name} disabled={(d.name || '').length <= 35}>
                     <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0f172a' }}>
@@ -1458,7 +1527,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
                   <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                     {d.signed_url && (
                       <Tooltip label="View signed document">
-                        <button type="button" aria-label="View" onClick={() => window.open(resolveFileUrl(d.signed_url!), '_blank', 'noopener')} style={{ ...docActStyle('#0891b2'), padding: '4px 8px' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></button>
+                        <button type="button" aria-label="View" onClick={() => window.open(resolveFileUrl(d.signed_url!), '_blank', 'noopener')} style={{ ...docActStyle('#0891b2'), padding: '4px 8px' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg> View</button>
                       </Tooltip>
                     )}
                     {d.status === 'Draft' && onSend && d.db_id && (() => {
@@ -1467,10 +1536,10 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
                         <Tooltip label={isSending ? 'Sending…' : 'Send for signature'}>
                         <button type="button" aria-label="Send" disabled={isSending}
                           onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')}
-                          style={{ ...docActStyle('#7c3aed'), padding: '4px 8px', ...(isSending ? { cursor: 'wait' } : null) }}>
+                          style={{ ...docActPrimary(), padding: '4px 8px', ...(isSending ? { cursor: 'wait' } : null) }}>
                           {isSending
                             ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 12, display: 'inline-block' }} aria-hidden />
-                            : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}
+                            : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}{isSending ? ' Sending…' : ' Send'}
                         </button>
                         </Tooltip>
                       );
@@ -1481,10 +1550,10 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
                         <Tooltip label={isSending ? 'Sending…' : 'Send the Proforma Invoice for signature'}>
                         <button type="button" aria-label="Send for Signature" disabled={isSending}
                           onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')}
-                          style={{ ...docActStyle('#7c3aed'), padding: '4px 8px', ...(isSending ? { cursor: 'wait' } : null) }}>
+                          style={{ ...docActPrimary(), padding: '4px 8px', ...(isSending ? { cursor: 'wait' } : null) }}>
                           {isSending
                             ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 12, display: 'inline-block' }} aria-hidden />
-                            : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}
+                            : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}{isSending ? ' Sending…' : ' Send'}
                         </button>
                         </Tooltip>
                       );
@@ -1495,21 +1564,21 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
                         <Tooltip label={isSending ? 'Sending…' : `Re-send for signature (${d.status.toLowerCase()})`}>
                         <button type="button" aria-label="Resend for Signature" disabled={isSending}
                           onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')}
-                          style={{ ...docActStyle('#dc2626'), padding: '4px 8px', ...(isSending ? { cursor: 'wait' } : null) }}>
+                          style={{ ...docActPrimary(), padding: '4px 8px', ...(isSending ? { cursor: 'wait' } : null) }}>
                           {isSending
                             ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 12, display: 'inline-block' }} aria-hidden />
-                            : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg>}
+                            : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg>}{isSending ? ' Sending…' : ' Resend'}
                         </button>
                         </Tooltip>
                       );
                     })()}
-                    {d.status === 'Pending' && d.sig_req_id > 0 && <Tooltip label={busy === d.sig_req_id ? 'Sending reminder…' : 'Send reminder to the signer'}><button type="button" aria-label="Send Reminder" disabled={busy === d.sig_req_id} onClick={() => remind(d)} style={{ ...docActStyle('#06b6d4'), padding: '4px 8px' }}>{busy === d.sig_req_id ? '…' : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>}</button></Tooltip>}
+                    {d.status === 'Pending' && d.sig_req_id > 0 && <Tooltip label={busy === d.sig_req_id ? 'Sending reminder…' : 'Send reminder to the signer'}><button type="button" aria-label="Send Reminder" disabled={busy === d.sig_req_id} onClick={() => remind(d)} style={{ ...docActStyle('#06b6d4'), padding: '4px 8px' }}>{busy === d.sig_req_id ? '…' : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>}{busy === d.sig_req_id ? ' Sending…' : ' Remind'}</button></Tooltip>}
                     {(d.signature_request_id ?? (d.sig_req_id > 0 ? d.sig_req_id : null)) && (
                       <Tooltip label="View signing timeline">
                         <button type="button" aria-label="Signing activity tracker"
                           onClick={() => setTrackSig({ id: (d.signature_request_id ?? d.sig_req_id) as number, code: d.pi_code || d.name })}
-                          style={{ ...docActStyle('#7c3aed'), padding: '4px 8px' }}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5" /><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" /><path d="M12 7v5l4 2" /></svg>
+                          style={{ ...docActStyle('#0891b2'), padding: '4px 8px' }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5" /><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" /><path d="M12 7v5l4 2" /></svg> Track
                         </button>
                       </Tooltip>
                     )}
@@ -1520,6 +1589,27 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
           </table>
         </div>
       )}
+      {/* Bulk action bar — under the table, so the row you tick last is the one
+          nearest the button and the table never shifts down as the bar appears. */}
+      {bulkOn && chosen.length > 0 && (
+        <div className="cev-sdp-bulk">
+          <span className="cev-sdp-bulk-count">{chosen.length} of {pickable.length} selected</span>
+          <button type="button" className="cev-sdp-bulk-clear" onClick={() => setPicked([])}>Clear</button>
+          <Tooltip label={oneKind
+            ? `Send the ${chosen.length} selected document${chosen.length > 1 ? 's' : ''} for signature in one go`
+            : 'Trade documents and agreements are sent through different flows — select one kind at a time'}>
+            <button
+              type="button"
+              className="cev-sdp-bulk-send"
+              disabled={!oneKind}
+              onClick={() => { onBulkSend!(chosen, bulkParty(chosen[0])); setPicked([]); }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
+              Send {chosen.length} for Signature
+            </button>
+          </Tooltip>
+        </div>
+      )}
       {trackSig && (
         <SigningTrackerModal sigId={trackSig.id} code={trackSig.code} onClose={() => setTrackSig(null)} />
       )}
@@ -1528,7 +1618,12 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
 }
 
 export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
-  target: { leadId: number; doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null;
+  /* `doc` is the single/representative document and stays required, so the
+     Consignee vault's existing single-send call site is unchanged. `docs`, when
+     present, is the whole batch a bulk send picked — both underlying flows take
+     a list already (trade docs by id, agreements as rows), so a batch needs no
+     new endpoint. */
+  target: { leadId: number; doc: VaultShipmentDoc; docs?: VaultShipmentDoc[]; party: 'buyer' | 'consignee' } | null;
   onClose: () => void;
   onSent: () => void;
 }) {
@@ -1547,30 +1642,53 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
         const cust = data?.lead?.customer;
         const cons = data?.lead?.consignee;
 
+        /* One document or many — the batch is the unit from here down. */
+        const batch = (target.docs?.length ? target.docs : [target.doc]).filter(d => d.db_id);
+
         if (target.doc.doc_type === 'agreement') {
-          let a: any = null;
-          for (const seg of (data?.segments ?? [])) {
-            const f = (seg.agreements ?? []).find((x: any) => x.id === target.doc.db_id);
-            if (f) { a = f; break; }
+          const found: any[] = [];
+          for (const d of batch) {
+            let a: any = null;
+            for (const seg of (data?.segments ?? [])) {
+              const f = (seg.agreements ?? []).find((x: any) => x.id === d.db_id);
+              if (f) { a = f; break; }
+            }
+            if (!a) {
+              toast.error('Cannot send', batch.length > 1
+                ? `“${d.name}” is no longer applicable to the shipment, so the batch was not sent.`
+                : 'This agreement is no longer applicable to the shipment.');
+              onClose(); return;
+            }
+            found.push(a);
           }
-          if (!a) { toast.error('Cannot send', 'This agreement is no longer applicable to the shipment.'); onClose(); return; }
-          const tokens = String(a.party ?? '').toLowerCase().split(',').map((s: string) => s.trim()).filter(Boolean);
+          const tokensOf = (a: any) => String(a.party ?? '').toLowerCase().split(',').map((s: string) => s.trim()).filter(Boolean).sort();
+          /* One envelope carries ONE signer set. Agreements that name different
+             parties would otherwise ask a signer to sign a document that was
+             never addressed to them, so a mixed batch is refused rather than
+             silently over-sent. */
+          const sig = tokensOf(found[0]).join('|');
+          const odd = found.find(a => tokensOf(a).join('|') !== sig);
+          if (odd) {
+            toast.error('Cannot send together', `“${odd.title ?? odd.code}” is addressed to a different party than the others. Send it on its own.`);
+            onClose(); return;
+          }
+          const tokens = tokensOf(found[0]);
           const signers: AgreementSigner[] = [];
           if (tokens.includes('buyer'))     signers.push({ role: 'buyer',     name: cust?.name ?? '⚠ Customer not mapped',  email: cust?.email ?? null });
           if (tokens.includes('consignee')) signers.push({ role: 'consignee', name: cons?.name ?? '⚠ Consignee not mapped', email: cons?.email ?? null });
           setAgr({
             leadId: target.leadId,
-            agreements: [{
+            agreements: found.map(a => ({
               id: a.id, code: a.code, title: a.title, agreement_type: a.agreement_type,
               party: a.party, content: a.content ?? null,
               header_config: a.header_config ?? null, footer_config: a.footer_config ?? null,
-            } as AgreementSendRow],
+            }) as AgreementSendRow),
             signers,
           });
         } else {
           const p = target.party === 'consignee' ? cons : cust;
           setTd({
-            ids: [target.doc.db_id!],
+            ids: batch.map(d => d.db_id!),
             leadId: target.leadId,
             modelName: target.party === 'consignee' ? 'Consignee' : 'Customer',
             customer: p ? { id: String(p.code ?? p.id), db_id: p.id, company: p.name, email: p.email } : null,
@@ -1627,8 +1745,18 @@ const partyTabStyle = (on: boolean): CSSProperties => ({
   background: on ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : '#e0f7fa',
 });
 const docActStyle = (c: string): CSSProperties => ({
-  display: 'inline-flex', alignItems: 'center', margin: '0 3px', padding: '4px 10px', borderRadius: 7, border: `1.5px solid ${c}`,
+  display: 'inline-flex', alignItems: 'center', gap: 5, margin: '0 3px', padding: '4px 10px', borderRadius: 7, border: `1.5px solid ${c}`,
   background: '#fff', color: c, fontFamily: 'inherit', fontSize: 10, fontWeight: 700, cursor: 'pointer',
+});
+
+/* Filled counterpart for the send-type actions. Send / Resend are the primary
+   thing you do to a row, so they carry the solid cyan pill while the secondary
+   actions — View, Reminder, Track — stay pale outlines beside them. */
+const docActPrimary = (): CSSProperties => ({
+  display: 'inline-flex', alignItems: 'center', gap: 5, margin: '0 3px', padding: '4px 10px', borderRadius: 7,
+  border: '1.5px solid transparent', background: 'linear-gradient(135deg, #22d3ee, #0891b2)', color: '#fff',
+  fontFamily: 'inherit', fontSize: 10, fontWeight: 700, cursor: 'pointer',
+  boxShadow: '0 2px 8px rgba(8,145,178,.30)',
 });
 
 function Ratio({ r }: { r: { ratio: string; pct: number } }) {

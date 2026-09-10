@@ -997,25 +997,7 @@
   gap: 0;
 }
 
-.cev-body-ship .cev-ship-filter,
-.cev-body-ship .cev-ship-filter-2 {
-  align-self: stretch;
-  width: auto;
-  margin: 0;
-  box-sizing: border-box;
-  padding: 12px 14px;
-  background: #fbfdff;
-  border-radius: 0;
-  border-left: 1px solid #e4e7f5;
-  border-right: 1px solid #e4e7f5;
-  border-bottom: 1px solid #e4e7f5;
-}
 
-[data-bs-theme="dark"] .cev-body-ship .cev-ship-filter,
-[data-bs-theme="dark"] .cev-body-ship .cev-ship-filter-2 {
-  background: #0a2630 !important;
-  border-color: rgba(8, 145, 178, .28) !important;
-}
 
 .cev-section {
   display: flex;
@@ -1723,63 +1705,7 @@
   color: #dc2626;
 }
 
-.cev-ship-filter {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
 
-/* 2-tab toggle (Buyer = / ≠ Consignee) — compact pills in a tray, not
-   full-width, matching the Figma. */
-.cev-ship-filter-2 {
-  display: inline-flex;
-  gap: 6px;
-  padding: 4px;
-  background: #eef2f7;
-  border-radius: 12px;
-  align-self: flex-start;
-}
-
-.cev-ship-filter-2 .cev-ship-fbtn {
-  flex: 0 0 auto;
-  min-width: 0;
-  padding: 8px 18px;
-  border: 1px solid rgba(8, 145, 178, .22);
-  background: #fff;
-  border-radius: 9px;
-}
-
-.cev-ship-filter-2 .cev-ship-fbtn:not(.is-active):hover {
-  background: #f0fdff;
-  border-color: rgba(8, 145, 178, .40);
-  color: #0891b2;
-}
-
-.cev-ship-fbtn {
-  flex: 1;
-  min-width: 160px;
-  padding: 10px 18px;
-  background: #fff;
-  border: 1px solid rgba(8, 145, 178, .20);
-  border-radius: 10px;
-  color: #475569;
-  font-size: 12.5px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all .15s;
-}
-
-.cev-ship-fbtn:hover {
-  background: #f0fdff;
-  color: #0891b2;
-}
-
-.cev-ship-fbtn.is-active {
-  background: linear-gradient(135deg, #0891b2, #06b6d4);
-  color: #fff;
-  border-color: transparent;
-  box-shadow: 0 4px 12px rgba(8, 145, 178, .30);
-}
 
 /* ─── FOOTER ─── */
 .cev-footer {
@@ -2116,32 +2042,7 @@
   background: rgba(8, 145, 178, .18);
 }
 
-[data-bs-theme="dark"] .cev-ship-fbtn {
-  background: #0a2a33;
-  color: #94a3b8;
-  border-color: rgba(8, 145, 178, .28);
-}
 
-[data-bs-theme="dark"] .cev-ship-fbtn:hover {
-  color: #67e8f9;
-  background: rgba(8, 145, 178, .10);
-}
-
-[data-bs-theme="dark"] .cev-ship-filter-2 {
-  background: rgba(8, 145, 178, .12);
-}
-
-[data-bs-theme="dark"] .cev-ship-filter-2 .cev-ship-fbtn:not(.is-active) {
-  background: #0a2a33;
-  border-color: rgba(8, 145, 178, .28);
-}
-
-[data-bs-theme="dark"] .cev-ship-fbtn.is-active {
-  background: linear-gradient(135deg, #0891b2, #22d3ee);
-  color: #06283a;
-  border-color: transparent;
-  box-shadow: 0 4px 14px rgba(34, 211, 238, .4);
-}
 
 /* All badges — translucent colour fills on dark (match the segment chips). */
 [data-bs-theme="dark"] .cev-req-m {
@@ -3906,27 +3807,136 @@
   white-space: nowrap;
 }
 
+/* Send / Resend is the primary action on the row, so it carries the filled
+   cyan pill; Track is secondary and stays pale beside it. Both were pale
+   before, which left the row with no clear primary — and Track's violet was
+   the only non-cyan accent in the vault. */
 .sev-ov .sev-ov-act-send {
-  background: linear-gradient(135deg, #f0fdff, #e0f9ff);
-  color: #0891b2;
-  border: 1px solid rgba(6, 182, 212, .25);
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+  color: #fff;
+  border: 1px solid transparent;
+  box-shadow: 0 2px 8px rgba(8, 145, 178, .30);
 }
 
 .sev-ov .sev-ov-act-send:hover:not(:disabled) {
-  background: linear-gradient(135deg, #e0f9ff, #cffafe);
+  background: linear-gradient(135deg, #06b6d4, #0e7490);
+  box-shadow: 0 4px 12px rgba(8, 145, 178, .42);
 }
 
 .sev-ov .sev-ov-act-track {
-  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
-  color: #6d28d9;
-  border: 1px solid #ddd6fe;
+  background: #f0fdff;
+  color: #0891b2;
+  border: 1px solid rgba(6, 182, 212, .30);
 }
 
 .sev-ov .sev-ov-act-track:hover:not(:disabled) {
-  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  background: #e0f9ff;
+  border-color: rgba(6, 182, 212, .55);
 }
 
 .sev-ov .sev-ov-act:disabled {
   opacity: .45;
   cursor: not-allowed;
+  box-shadow: none;
 }
+
+[data-bs-theme="dark"] .sev-ov .sev-ov-act-track {
+  background: rgba(8, 145, 178, .16);
+  color: #67e8f9;
+  border-color: rgba(8, 145, 178, .38);
+}
+
+[data-bs-theme="dark"] .sev-ov .sev-ov-act-track:hover:not(:disabled) {
+  background: rgba(8, 145, 178, .28);
+  border-color: rgba(103, 232, 249, .55);
+}
+
+/* ══ Shipment doc panel — bulk send ═════════════════════════════════════
+   Select column + action bar inside .cev-sdp (Customer vault, Case-to-Case).
+   Only rendered when the panel is given an onBulkSend handler. */
+.cev-sdp-check {
+  width: 14px;
+  height: 14px;
+  accent-color: #0891b2;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.cev-sdp-check:disabled {
+  cursor: not-allowed;
+  opacity: .4;
+}
+
+.cev-sdp-bulk {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 7px 12px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #ecfeff, #f0fdff);
+  border: 1.5px solid #a5f3fc;
+}
+
+.cev-sdp-bulk-count {
+  font-size: 11px;
+  font-weight: 800;
+  color: #0e7490;
+}
+
+.cev-sdp-bulk-clear {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #64748b;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.cev-sdp-bulk-clear:hover {
+  color: #0e7490;
+}
+
+.cev-sdp-bulk-send {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #fff;
+  white-space: nowrap;
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
+  box-shadow: 0 2px 8px rgba(8, 145, 178, .32);
+  transition: transform .16s, box-shadow .16s, filter .16s;
+}
+
+.cev-sdp-bulk-send:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(8, 145, 178, .42);
+}
+
+.cev-sdp-bulk-send:disabled {
+  cursor: not-allowed;
+  filter: grayscale(.75);
+  opacity: .55;
+  box-shadow: none;
+}
+
+[data-bs-theme="dark"] .cev-sdp-bulk {
+  background: rgba(8, 145, 178, .12);
+  border-color: rgba(8, 145, 178, .34);
+}
+
+[data-bs-theme="dark"] .cev-sdp-bulk-count { color: #67e8f9; }
+[data-bs-theme="dark"] .cev-sdp-bulk-clear { color: #94a3b8; }
+[data-bs-theme="dark"] .cev-sdp-bulk-clear:hover { color: #67e8f9; }

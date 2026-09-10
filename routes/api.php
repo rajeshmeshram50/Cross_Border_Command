@@ -1063,6 +1063,13 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post('/subscription/verify-payment', [SubscriptionController::class, 'verifyPayment']);
     Route::post('/subscription/cancel-order', [SubscriptionController::class, 'cancelOrder']);
 
+    // [Integration Subscriptions] Parked pending R&D on usage/health tracking.
+    // Endpoints disabled while the feature is redesigned; controller/model/command
+    // all remain. Re-enable these two lines (+ menu, route, schedule) when ready.
+    // Route::post('/integration-subscriptions/{integrationSubscription}/send-test', [\App\Http\Controllers\Api\IntegrationSubscriptionController::class, 'sendTest'])->whereNumber('integrationSubscription');
+    // Route::apiResource('integration-subscriptions', \App\Http\Controllers\Api\IntegrationSubscriptionController::class)
+    //     ->except(['show']);
+
 
     Route::get('/payments/stats', [PaymentController::class, 'stats']);
     Route::post('/payments/{payment}/send-reminder', [PaymentController::class, 'sendReminder']);

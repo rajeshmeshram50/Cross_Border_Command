@@ -34,6 +34,8 @@ const Branches = lazy(() => import('../pages/branch/Branches'));
 const UsersPage = lazy(() => import('../pages/UsersPage'));
 const Plans = lazy(() => import('../pages/plan/Plans'));
 const Payments = lazy(() => import('../pages/Payments'));
+// [Integration Subscriptions] Parked pending R&D — re-enable with the route below.
+// const IntegrationSubscriptions = lazy(() => import('../pages/IntegrationSubscriptions'));
 const Permissions = lazy(() => import('../pages/permission/Permissions'));
 const Settings = lazy(() => import('../pages/Settings'));
 const Profile = lazy(() => import('../pages/Profile'));
@@ -240,6 +242,8 @@ const getPagePath = (page: string, data?: any): string => {
     case 'my-plan': return '/my-plan';
     case 'plan-blocked': return '/plan-blocked';
     case 'payments': return '/payments';
+    // [Integration Subscriptions] Parked pending R&D.
+    // case 'integrations': return '/integrations';
     case 'clock-in': return '/clock-in';
     // New top-level header modules. P2P reuses the existing Sales P2P
     // Summary page; the other three render the shared permission-gated stub
@@ -869,6 +873,16 @@ function DashboardRoutes({ user }: { user: any }) {
                     : <Navigate to="/dashboard" replace />
                 }
               />
+              {/* [Integration Subscriptions] Parked pending R&D — re-enable this
+                  route + its lazy import + the menu item + the schedule/api routes.
+              <Route
+                path="/integrations"
+                element={
+                  user.user_type === 'super_admin'
+                    ? <IntegrationSubscriptions />
+                    : <Navigate to="/dashboard" replace />
+                }
+              /> */}
               <Route path="/permissions" element={<Permissions />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/profile" element={<ProfileRouter />} />
