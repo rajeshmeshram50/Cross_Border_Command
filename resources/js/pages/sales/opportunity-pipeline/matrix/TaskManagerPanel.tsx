@@ -223,6 +223,7 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
           </Field>
           <Field label="CHOOSE FILE">
             <input
+              disabled={saving}
               ref={fileRef}
               type="file"
               accept=".jpg,.jpeg,.png,.webp,.pdf"
@@ -236,6 +237,7 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
                 </svg>
                 <span className="tm-file-chip-name">{fileLabel}</span>
                 <button
+                  disabled={saving}
                   type="button"
                   className="tm-file-chip-btn tm-file-chip-view tm-tip"
                   onClick={onViewFile}
@@ -248,6 +250,7 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
                   </svg>
                 </button>
                 <button
+                  disabled={saving}
                   type="button"
                   className="tm-file-chip-btn tm-file-chip-del tm-tip"
                   onClick={onDeleteFile}
@@ -264,6 +267,7 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
               </div>
             ) : (
               <button
+                disabled={saving}
                 type="button"
                 className="smd-input smd-input-file tm-file-btn"
                 onClick={onPickFile}
@@ -284,6 +288,7 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
                 allowed — only today or later. minDate is a local ISO date so it
                 compares cleanly with the picker's value. */}
             <MasterDatePicker
+              disabled={saving}
               value={buyingPlan}
               onChange={setBuyingPlan}
               placeholder="dd-mm-yyyy"
@@ -292,6 +297,7 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
           </Field>
           <Field label="ORDER VALUE">
             <input
+              disabled={saving}
               type="number"
               min="0"
               step="any"
@@ -308,6 +314,7 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
         <div className="smd-deal-row">
           <Field label={<>NAME <span className="smd-req">*</span></>} error={errors.name}>
             <input
+              disabled={saving}
               className={`smd-input ${errors.name ? 'tm-input-err' : ''}`}
               placeholder="Enter name"
               value={name}
@@ -316,6 +323,7 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
           </Field>
           <Field label={<>MOBILE NUMBER <span className="smd-req">*</span></>} error={errors.mobile}>
             <input
+              disabled={saving}
               className={`smd-input ${errors.mobile ? 'tm-input-err' : ''}`}
               placeholder="Enter mobile"
               value={mobile}
@@ -327,6 +335,7 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
         <div className="smd-deal-row" style={{ gridTemplateColumns: '1fr' }}>
           <Field label={<>EMAIL <span className="smd-req">*</span></>} error={errors.email}>
             <input
+              disabled={saving}
               type="email"
               className={`smd-input ${errors.email ? 'tm-input-err' : ''}`}
               placeholder="Enter email address"
@@ -344,7 +353,12 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
             disabled={saving || !leadId || locked}
             title={locked ? 'Locked — the Proforma Invoice has been signed' : undefined}
           >
-            {locked ? 'Locked' : (saving ? 'Saving…' : 'Save')}
+            {/* A word is not a loader (QA #254). While the POST is in flight the
+                button carries a spinner, so the pause is visibly the app working
+                rather than a click that did nothing. */}
+            {locked ? 'Locked' : saving ? (
+              <><span className="tm-save-spin" aria-hidden />Saving…</>
+            ) : 'Save'}
           </button>
         </div>
       </div>

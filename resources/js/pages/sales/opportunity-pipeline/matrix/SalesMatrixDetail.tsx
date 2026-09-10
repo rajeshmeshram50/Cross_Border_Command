@@ -569,7 +569,10 @@ export default function SalesMatrixDetail() {
      * (8s) was cutting it off mid-flight (axios aborts → DevTools "(canceled)"),
      * leaving the card in error state. We rely on the request completing; the
      * catch still handles a genuine network/server failure. */
-    api.get<VaultResponse>(`/segment-uploads/customer/${cid}/vault`)
+    /* tally=1 — this card wants four numbers, not the whole vault. Without
+       the flag the server builds every deal's documents and agreements for a
+       caller that reads only the core counts. */
+    api.get<VaultResponse>(`/segment-uploads/customer/${cid}/vault`, { params: { tally: 1 } })
       .then(res => {
         if (cancelled) return;
         const d = res.data?.data;
@@ -600,8 +603,9 @@ export default function SalesMatrixDetail() {
       total: number; verified: number; catalog: number; catalogVerified: number;
     };
     const fetchVault = (consigneeDbId: number): Promise<VaultTally> =>
+      // Same tally-only read as the customer card above.
       api.get<VaultResponse>(`/segment-uploads/consignee/${consigneeDbId}/vault`,
-        custId ? { params: { scope_customer_id: custId } } : undefined)
+        { params: { tally: 1, ...(custId ? { scope_customer_id: custId } : {}) } })
         .then(res => {
           const d = res.data?.data;
           return {
@@ -1883,11 +1887,21 @@ export default function SalesMatrixDetail() {
         open={agreementModalOpen}
         leadId={resolvedLeadId}
         view={agreementModalView}
-        /* Not seeded from the panel's copy any more — that one is `light` and
-           has no document bodies, and the modal seeds its editor from them.
-           It fetches the full payload on open regardless, so this only costs
-           the loading state it already has for the un-seeded case. */
-        data={null}
+        /* Seeded from the panel's copy so the popup opens with rows already
+           in it.
+         *
+           Seeding was dropped when the modal needed document BODIES the
+           panel's `light` payload does not carry. It no longer does: the
+           modal loads light too and pulls the bodies only for the handful
+           actually being sent. So this is the same payload it was about to
+           request — and on the server that request costs about three seconds,
+           spent staring at a skeleton for data the page was already holding.
+         *
+           It still re-fetches behind the seed: statuses and Necessary marks
+           can have changed since the panel loaded, and the fresh read
+           replaces this copy when it lands. The skeleton is not wasted
+           either — it still covers the case where the panel has nothing yet. */
+        data={agreementApplicable}
         onClose={() => {
           setAgreementModalOpen(false);
           // Re-pull so the Segment Details card reflects any status that

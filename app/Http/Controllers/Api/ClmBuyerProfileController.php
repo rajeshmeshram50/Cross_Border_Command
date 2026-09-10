@@ -109,10 +109,20 @@ class ClmBuyerProfileController extends Controller
         /* ── 5. Completed agreement signature requests, keyed by party + lead. ── */
         $sigByParty   = [];   // "Model#id" → set of completed agreement ids (party-wise list)
         $agrSigByLead = [];   // lead_id    → ['Customer'|'Consignee' → set of agreement ids]
-        foreach (ClmSignatureRequest::where('client_id', $cid)
-            ->where('document_type', ClmSignatureRequest::DOC_AGREEMENT)
+        /* Agreement and trade-doc signatures come back in ONE read.
+         *
+           They were two queries against the same table with the same client
+           and the same status, differing only in document_type — and on a
+           deployment where the database is a network hop away every query
+           costs far more than the work it does. Fetched together and split
+           here; the two loops below are unchanged apart from reading from
+           their own slice. */
+        $sigRowsAll = ClmSignatureRequest::where('client_id', $cid)
+            ->whereIn('document_type', [ClmSignatureRequest::DOC_AGREEMENT, ClmSignatureRequest::DOC_TRADE])
             ->where('status', 'completed')
-            ->get(['model_name', 'party_id', 'lead_id', 'trade_doc_ids']) as $sr) {
+            ->get(['model_name', 'party_id', 'lead_id', 'trade_doc_ids', 'trade_doc_id', 'document_type']);
+
+        foreach ($sigRowsAll->where('document_type', ClmSignatureRequest::DOC_AGREEMENT) as $sr) {
             $ids = is_array($sr->trade_doc_ids) ? $sr->trade_doc_ids : [];
             $party = $sr->model_name === 'Consignee' ? 'Consignee' : 'Customer';
             foreach ($ids as $aid) {
@@ -135,10 +145,7 @@ class ClmBuyerProfileController extends Controller
            customer list further down; the per-lead map stays lead-only, because
            the transaction rows below are genuinely per-deal. */
         $tdSigByParty = [];  // 'Customer'|'Consignee' → party_id → set of trade_doc ids
-        foreach (ClmSignatureRequest::where('client_id', $cid)
-            ->where('document_type', ClmSignatureRequest::DOC_TRADE)
-            ->where('status', 'completed')
-            ->get(['model_name', 'party_id', 'lead_id', 'trade_doc_ids', 'trade_doc_id']) as $sr) {
+        foreach ($sigRowsAll->where('document_type', ClmSignatureRequest::DOC_TRADE) as $sr) {
             $party = $sr->model_name === 'Consignee' ? 'Consignee' : 'Customer';
             $ids = is_array($sr->trade_doc_ids) && $sr->trade_doc_ids ? $sr->trade_doc_ids : [$sr->trade_doc_id];
             foreach ((array) $ids as $mid) {

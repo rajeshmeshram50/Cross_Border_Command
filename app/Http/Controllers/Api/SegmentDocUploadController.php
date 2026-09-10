@@ -415,6 +415,38 @@ class SegmentDocUploadController extends Controller
         $coreCatalog         = collect(array_merge($company_dd, $owner_kyc, $trade_licenses));
         $coreCatalogVerified = $coreCatalog->where('status', 'Verified')->count();
 
+        /* tally=1 — the four numbers the CLM Details card needs, and nothing
+         * else.
+         *
+         * The Sales Matrix detail page opens two vaults on load purely to
+         * print "4 of 4 documents · 100%" on two cards. Everything below this
+         * line — every deal, its trade documents, its agreements, the shipment
+         * matrix — is built and then thrown away by that caller. Locally that
+         * waste is 30-43 queries against 4.5 ms of database time and nobody
+         * notices; on a deployment where each query is a network hop it was
+         * 5.3 s and 6.2 s, the two slowest requests on the page.
+         *
+         * The counts are already complete here: they come from the company
+         * DD, owner KYC and trade licence buckets alone, which is exactly what
+         * the card means by "core". Returning now skips the rest.
+         *
+         * Only the core_* keys are sent. The caller reads
+         * `core_total_documents ?? total_documents`, so with the core keys
+         * present the all-inclusive pair it falls back to is never consulted —
+         * and that pair cannot be produced without doing the very work this
+         * mode exists to avoid. Any caller that needs the full picture simply
+         * does not pass the flag. */
+        if ($request->boolean('tally')) {
+            return response()->json([
+                'data' => [
+                    'core_total_documents'   => $coreMandatory->count(),
+                    'core_verified_signed'   => $coreVerified,
+                    'core_catalog_documents' => $coreCatalog->count(),
+                    'core_catalog_verified'  => $coreCatalogVerified,
+                ],
+            ]);
+        }
+
         // Per-shipment matrix — each of the party's shipments with its buyer +
         // consignee Trade Documents and Agreements (split by signature party).
         // Pass the ORIGINAL route id ($id) for the shipment lookup. For a
