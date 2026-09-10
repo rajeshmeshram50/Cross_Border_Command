@@ -533,9 +533,9 @@ class SegmentDocUploadController extends Controller
                    · two entities → this party's own side only. The other party
                      has its own vault; listing its documents here inflated the
                      customer's figure with the consignee's obligations. */
-                $sideRows = !empty($s['buyer_is_consignee'])
-                    ? array_merge($buyerRows, $consRows)
-                    : ($type === 'consignee' ? $consRows : $buyerRows);
+                // This vault's own side only — see the note in
+                // buildShipmentAgreements() on why one entity is still two roles.
+                $sideRows = $type === 'consignee' ? $consRows : $buyerRows;
                 $seenInDeal = [];
                 foreach ($sideRows as $r) {
                     $k = ($r['db_id'] ?? 'x') . '|' . ($r['name'] ?? '');
@@ -1005,52 +1005,26 @@ class SegmentDocUploadController extends Controller
             $cons = $lead->consignee_id ? $consById->get($lead->consignee_id) : null;
             $buyerIsConsignee = !$cons || (bool) ($cons->same_as_customer ?? false);
 
-            /* Customer = Consignee → one entity, so the panel hides the
-               Customer / Consignee / Both tabs and shows a single list: the
-               PRIMARY side of whichever vault is open (buyer for the customer
-               vault, consignee for the consignee vault). That list must hold
-               documents applicable to that side ALONE, so drop the ones that
-               also appear on the other side — a Buyer+Consignee document is
-               emitted into both lists with the same db_id, and it belongs to the
-               hidden shared view. Keyed the same way dedupe() keys rows.
-
-               The consignee vault used to be excluded from this block because it
-               never rendered tabs at all; now that it splits by party like the
-               customer vault, it needs the mirror-image strip. */
-            if ($buyerIsConsignee) {
-                $keyOf = fn (array $r) => !empty($r['db_id'])
-                    ? (($r['doc_type'] ?? '') . '#' . $r['db_id'])
-                    : ('n#' . ($r['name'] ?? ''));
-                $strip = function (array $keep, array $against) use ($keyOf) {
-                    $drop = [];
-                    foreach ($against as $r) { $drop[$keyOf($r)] = true; }
-                    return array_values(array_filter($keep, fn ($r) => !isset($drop[$keyOf($r)])));
-                };
-                /* AGREEMENTS are deliberately NOT stripped.
-                 *
-                 * partyFlags() has already separated them: $agrBuyer holds
-                 * only Buyer-marked agreements, $agrCons only
-                 * Consignee-marked ones. A consignee-ONLY agreement was
-                 * therefore never in the buyer list to begin with — the rule
-                 * "consignee's agreement must not show on the customer" is
-                 * already satisfied.
-                 *
-                 * Stripping on top of that removed the agreements marked for
-                 * BOTH parties, and it removed them from BOTH vaults: the
-                 * customer's list dropped them for appearing on the consignee
-                 * side, the consignee's list dropped them for appearing on the
-                 * buyer side. An agreement both parties must sign ended up
-                 * shown to neither (C-011 / CN-022, one lead, read 0 on both).
-                 *
-                 * Trade docs keep the strip: a both-parties trade doc really is
-                 * emitted into both lists with the same db_id, and one entity
-                 * holding both sides would otherwise count it twice. */
-                if ($type === 'consignee') {
-                    $tradeCons = $strip($tradeCons, $tradeBuyer);
-                } else {
-                    $tradeBuyer = $strip($tradeBuyer, $tradeCons);
-                }
-            }
+            /* Party marking decides who sees a document — NOT whether the two
+               parties happen to be one company.
+             *
+               A same-entity vault used to merge the buyer and consignee sides
+               into one list, with a strip to stop both-party documents being
+               counted twice. That put the customer's own papers — the Proforma
+               Invoice and every Buyer-only trade document — into the CONSIGNEE's
+               Evidence Vault (QA #7). The consignee is not a party to them, and
+               it being the same company does not make it one: the vault answers
+               "what does this party owe in THIS role", and the customer vault
+               already carries the buyer role.
+             *
+               So each side is now read on its own, exactly as AGREEMENTS have
+               been since the same problem was fixed for them. partyFlags() has
+               already done the separation: $tradeCons holds Consignee-marked and
+               Buyer+Consignee documents, $tradeBuyer the Buyer-marked and
+               Buyer+Consignee ones. Reading one side needs no de-duplication,
+               and the strip has to go with the merge — it existed only to stop
+               double counting, and on its own it would delete every both-party
+               document from the very list that must show it. */
 
             /* The ratio must count exactly what the expanded panel displays.
                Both vaults now show the same three tabs, so both count the same
@@ -1082,7 +1056,7 @@ class SegmentDocUploadController extends Controller
                is the consignee's to sign, so it stays out of the customer's
                vault even when the two are the same company (and the other way
                round). Only agreements were reported; trade docs are untouched. */
-            $tradeAll = $buyerIsConsignee ? $dedupe(array_merge($tradeBuyer, $tradeCons)) : $primary['trade'];
+            $tradeAll = $primary['trade'];
             $agrAll   = $primary['agr'];
             $signed   = fn (array $d) => collect($d)->where('status', 'Signed')->count();
 

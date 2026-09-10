@@ -568,6 +568,21 @@ class ClmBuyerProfileController extends Controller
                 ($agrSigByLead[$lid]['Customer'] ?? []) + ($agrSigByLead[$lid]['Consignee'] ?? []),
                 'consignee',
             );
+            /* Trade docs, consignee side — computed for EVERY lead, exactly as
+               the agreement figure above is.
+             *
+               A consignee that IS the customer used to be counted with the
+               BUYER's tally, which carried the PI and every Buyer-only document.
+               The Evidence Vault no longer shows those on the consignee side
+               (QA #7), so counting them here would leave this cell reading more
+               than the panel it summarises. One entity is still two roles, and
+               each role is counted on its own. */
+            $tdConsDeal = $docProgress(
+                $applicTd,
+                $tdPartyById,
+                ($tdSigByLead[$lid]['Customer'] ?? []) + ($tdSigByLead[$lid]['Consignee'] ?? []),
+                'consignee',
+            );
             $tdSigSet  = $separateConsignee
                 ? ($tdSigByLead[$lid]['Customer'] ?? [])
                 : (($tdSigByLead[$lid]['Customer'] ?? []) + ($tdSigByLead[$lid]['Consignee'] ?? []));
@@ -631,7 +646,7 @@ class ClmBuyerProfileController extends Controller
             $addTd($tdByCustomer, (int) $cust->id, $tdBuyer);
             $addTd($agrByCustomer, (int) $cust->id, $agrBuyer);
             if ($cons) {
-                $addTd($tdByConsignee, (int) $cons->id, $separateConsignee ? $base['c_td'] : $tdBuyer);
+                $addTd($tdByConsignee, (int) $cons->id, $tdConsDeal);
                 $addTd($agrByConsignee, (int) $cons->id, $agrConsDeal);
             }
 
