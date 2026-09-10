@@ -3367,7 +3367,10 @@
    Matches the reference: the header gradient runs on into the table's head
    band, and the list scrolls rather than being pinned to five rows. */
 .sev-ov .cev-ov-card {
-  width: 760px;
+  /* Wide enough for the full document panel the Case-to-Case view now shows —
+     select column, name, requirement, signed-on, status and the labelled row
+     actions. At 760px the document name and the date both wrapped. */
+  width: 940px;
   max-width: 92%;
   max-height: 84%;
   border-radius: 16px;
@@ -3937,6 +3940,38 @@
   border-color: rgba(8, 145, 178, .34);
 }
 
-[data-bs-theme="dark"] .cev-sdp-bulk-count { color: #67e8f9; }
-[data-bs-theme="dark"] .cev-sdp-bulk-clear { color: #94a3b8; }
-[data-bs-theme="dark"] .cev-sdp-bulk-clear:hover { color: #67e8f9; }
+[data-bs-theme="dark"] .cev-sdp-bulk-count {
+  color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .cev-sdp-bulk-clear {
+  color: #94a3b8;
+}
+
+[data-bs-theme="dark"] .cev-sdp-bulk-clear:hover {
+  color: #67e8f9;
+}
+
+.sev-ov .cev-shp-toggle.cev-ov-shp-toggle {
+  margin: 12px 22px 10px;
+}
+
+/* Segment badge — the named segment and its overflow count are ONE chip, so
+   the count rides inside it as a small inset pill instead of standing alone
+   as a separate "+N more" button beside it. */
+.sev .cev-chip-seg-count {
+  display: inline-block;
+  margin-left: 3px;
+  padding: 0 5px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, .24);
+  border: 1px solid rgba(255, 255, 255, .18);
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0;
+  vertical-align: baseline;
+}
+
+.sev .sev-chip-more:hover .cev-chip-seg-count {
+  background: rgba(255, 255, 255, .34);
+}

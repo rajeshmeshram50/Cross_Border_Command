@@ -166,6 +166,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
   const [segPop, setSegPop] = useState<{ names: string[]; x: number; y: number } | null>(null);
   const [overview, setOverview] = useState<GroupKey | null>(null);
   const [ovShip, setOvShip] = useState<number | null>(null);
+  const [ovShipFilter, setOvShipFilter] = useState<'buyer-eq-consignee' | 'buyer-neq-consignee'>('buyer-eq-consignee');
   const [ovDownloadingKey, setOvDownloadingKey] = useState<string | null>(null);
   const [ovUploadingKey, setOvUploadingKey] = useState<string | null>(null);
   const ovFileRef = useRef<HTMLInputElement | null>(null);
@@ -514,23 +515,23 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                   {customer.segment && (() => {
                     const segs = String(customer.segment).split(',').map(s => s.trim()).filter(Boolean);
                     if (segs.length === 0) return null;
-                    const shown = segs.slice(0, 1);
-                    const extra = segs.length - shown.length;
+                    const first = segs[0];
+                    const extra = segs.length - 1;
+                    const short = first.length > 20 ? first.slice(0, 20) + '…' : first;
+                    /* One badge rather than a chip plus a separate "+N more"
+                       button: the named segment carries the count inline and the
+                       whole thing opens the full list. */
+                    if (extra === 0) {
+                      return <Tooltip label={first}><span className="cev-chip cev-chip-seg">{short}</span></Tooltip>;
+                    }
                     return (
-                      <>
-                        {shown.map((s, i) => (
-                          <Tooltip key={`${s}-${i}`} label={s}>
-                            <span className="cev-chip cev-chip-seg">{s.length > 20 ? s.slice(0, 20) + '…' : s}</span>
-                          </Tooltip>
-                        ))}
-                        {extra > 0 && (
-                          <button
-                            type="button"
-                            className="cev-chip cev-chip-seg sev-chip-more"
-                            onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { names: segs, x: b.left, y: b.bottom + 6 }); }}
-                          >+{extra} more</button>
-                        )}
-                      </>
+                      <Tooltip label={`${segs.length} segments — click to see all`}>
+                        <button
+                          type="button"
+                          className="cev-chip cev-chip-seg sev-chip-more"
+                          onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { names: segs, x: b.left, y: b.bottom + 6 }); }}
+                        >{short}<span className="cev-chip-seg-count">+{extra}</span></button>
+                      </Tooltip>
                     );
                   })()}
                   {customer.country && <span className="cev-chip cev-chip-country">{customer.country}</span>}
@@ -741,7 +742,8 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
               ...(r.agreements_buyer ?? []),
               ...(r.agreements_consignee ?? []),
             ]);
-        const shipments = isStd ? [] : shippedRows;
+        const shipments = isStd ? [] : shippedRows.filter(r =>
+          ovShipFilter === 'buyer-neq-consignee' ? !r.buyer_is_consignee : r.buyer_is_consignee);
         const shipsWithDocs = isStd ? [] : shipments.filter((r) => shipDocsOf(r).length > 0);
         const activeShip = isStd ? null : (shipsWithDocs.find((r) => r.id === ovShip) ?? null);
         const picking = !isStd && !activeShip;
@@ -786,9 +788,18 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
               </div>
               {picking ? (
                 <div className="cev-ov-body">
-                  <div className="sev-ov-pick-cap">Select a Shipment to view its Trade Documents &amp; Agreements</div>
+                  <div className="cev-shp-toggle cev-ov-shp-toggle">
+                    <button type="button" className={ovShipFilter === 'buyer-eq-consignee' ? 'is-active' : ''} onClick={() => { setOvShipFilter('buyer-eq-consignee'); setOvShip(null); }}>
+                      <i className="ri-user-shared-line" aria-hidden />Customer = Consignee
+                    </button>
+                    <button type="button" className={ovShipFilter === 'buyer-neq-consignee' ? 'is-active' : ''} onClick={() => { setOvShipFilter('buyer-neq-consignee'); setOvShip(null); }}>
+                      <i className="ri-user-received-line" aria-hidden />Customer &ne; Consignee
+                    </button>
+                  </div>
                   {shipsWithDocs.length === 0 ? (
-                    <div className="sev-ov-pick-empty">No transactions with documents for this customer yet.</div>
+                    <div className="sev-ov-pick-empty">
+                      No {ovShipFilter === 'buyer-neq-consignee' ? 'separate-consignee' : 'customer-as-consignee'} transactions with documents for this customer yet.
+                    </div>
                   ) : (
                     <ul className="sev-ov-picks">
                       {shipsWithDocs.map((r) => (
@@ -806,6 +817,22 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                     </ul>
                   )}
                 </div>
+              ) : (!isStd && activeShip) ? (
+              /* A picked shipment shows the SAME panel the main table expands
+                 to — same columns, same select column and bulk bar, same row
+                 actions — rather than a reduced list that could only download.
+                 One component, so the two can't drift apart. */
+              <div className="cev-ov-body">
+                <ShipmentDocPanel
+                  buyer={[...(activeShip.trade_docs_buyer ?? []), ...(activeShip.agreements_buyer ?? [])]}
+                  consignee={[...(activeShip.trade_docs_consignee ?? []), ...(activeShip.agreements_consignee ?? [])]}
+                  showType
+                  buyerIsConsignee={activeShip.buyer_is_consignee}
+                  onSend={(doc, party) => { if (doc.pi_id) setPiSend({ leadId: activeShip.id, doc }); else setShipSend({ leadId: activeShip.id, doc, party }); }}
+                  onBulkSend={(docs, party) => { if (docs.length) setShipSend({ leadId: activeShip.id, doc: docs[0], docs, party }); }}
+                  pendingSend={shipSend && shipSend.leadId === activeShip.id ? { doc: shipSend.doc, party: shipSend.party } : null}
+                />
+              </div>
               ) : (
               <div className="cev-ov-body">
                 <table className="cev-ov-table">
@@ -1422,7 +1449,11 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
   const allPicked = pickable.length > 0 && chosen.length === pickable.length;
   /* Trade documents and agreements travel through different send flows, so one
      batch has to be all of one kind. */
-  const oneKind   = new Set(chosen.map(d => (d.doc_type === 'agreement' ? 'agreement' : 'trade'))).size <= 1;
+  /* A batch may mix trade documents and agreements. They still travel on
+     separate signature requests — the two live in different libraries and the
+     backend keeps one request to one kind — so a mixed pick is sent as two
+     rounds, back to back, from the one click. */
+  const mixedKinds = new Set(chosen.map(d => (d.doc_type === 'agreement' ? 'agreement' : 'trade'))).size > 1;
   const bulkParty = (d: VaultShipmentDoc): 'buyer' | 'consignee' => (buyer.includes(d) ? 'buyer' : 'consignee');
   const toggle    = (d: VaultShipmentDoc) =>
     setPicked(prev => prev.includes(docKey(d)) ? prev.filter(k => k !== docKey(d)) : [...prev, docKey(d)]);
@@ -1595,13 +1626,12 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
         <div className="cev-sdp-bulk">
           <span className="cev-sdp-bulk-count">{chosen.length} of {pickable.length} selected</span>
           <button type="button" className="cev-sdp-bulk-clear" onClick={() => setPicked([])}>Clear</button>
-          <Tooltip label={oneKind
-            ? `Send the ${chosen.length} selected document${chosen.length > 1 ? 's' : ''} for signature in one go`
-            : 'Trade documents and agreements are sent through different flows — select one kind at a time'}>
+          <Tooltip label={mixedKinds
+            ? `Send the ${chosen.length} selected documents for signature — trade documents and agreements go out as two requests, one after the other`
+            : `Send the ${chosen.length} selected document${chosen.length > 1 ? 's' : ''} for signature in one go`}>
             <button
               type="button"
               className="cev-sdp-bulk-send"
-              disabled={!oneKind}
               onClick={() => { onBulkSend!(chosen, bulkParty(chosen[0])); setPicked([]); }}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
@@ -1630,9 +1660,23 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
   const toast = useToast();
   const [agr, setAgr] = useState<AgreementContext | null>(null);
   const [td,  setTd]  = useState<{ ids: number[]; leadId: number; modelName: 'Customer' | 'Consignee'; customer: SendForSignatureCustomer | null } | null>(null);
+  /* A batch that mixes both kinds runs in two rounds: the trade documents go
+     first and the agreements wait here until that round finishes. They cannot
+     share one request — the two live in different libraries and the server
+     keeps one signature request to one kind — so the signer receives two. */
+  const [queuedAgr, setQueuedAgr] = useState<AgreementContext | null>(null);
+  const sentAny = useRef(false);
+
+  /* Only refresh-and-close once the whole chain is done; calling the parent's
+     onSent between rounds would clear `target` and drop the second round. */
+  const finish = () => {
+    setAgr(null); setTd(null); setQueuedAgr(null);
+    if (sentAny.current) onSent(); else onClose();
+  };
 
   useEffect(() => {
-    if (!target?.doc.db_id) { setAgr(null); setTd(null); return; }
+    sentAny.current = false;
+    if (!target?.doc.db_id) { setAgr(null); setTd(null); setQueuedAgr(null); return; }
     let cancelled = false;
     (async () => {
       try {
@@ -1645,9 +1689,13 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
         /* One document or many — the batch is the unit from here down. */
         const batch = (target.docs?.length ? target.docs : [target.doc]).filter(d => d.db_id);
 
-        if (target.doc.doc_type === 'agreement') {
+        const agrBatch = batch.filter(d => d.doc_type === 'agreement');
+        const tdBatch  = batch.filter(d => d.doc_type !== 'agreement');
+
+        let agrCtx: AgreementContext | null = null;
+        if (agrBatch.length) {
           const found: any[] = [];
-          for (const d of batch) {
+          for (const d of agrBatch) {
             let a: any = null;
             for (const seg of (data?.segments ?? [])) {
               const f = (seg.agreements ?? []).find((x: any) => x.id === d.db_id);
@@ -1676,7 +1724,7 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
           const signers: AgreementSigner[] = [];
           if (tokens.includes('buyer'))     signers.push({ role: 'buyer',     name: cust?.name ?? '⚠ Customer not mapped',  email: cust?.email ?? null });
           if (tokens.includes('consignee')) signers.push({ role: 'consignee', name: cons?.name ?? '⚠ Consignee not mapped', email: cons?.email ?? null });
-          setAgr({
+          agrCtx = {
             leadId: target.leadId,
             agreements: found.map(a => ({
               id: a.id, code: a.code, title: a.title, agreement_type: a.agreement_type,
@@ -1684,15 +1732,23 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
               header_config: a.header_config ?? null, footer_config: a.footer_config ?? null,
             }) as AgreementSendRow),
             signers,
-          });
-        } else {
+          };
+        }
+
+        if (tdBatch.length) {
           const p = target.party === 'consignee' ? cons : cust;
+          if (agrCtx) {
+            toast.info('Two steps', `${tdBatch.length} trade document${tdBatch.length > 1 ? 's' : ''} first — the ${agrBatch.length} agreement${agrBatch.length > 1 ? 's' : ''} follow in a second step.`);
+          }
+          setQueuedAgr(agrCtx);
           setTd({
-            ids: batch.map(d => d.db_id!),
+            ids: tdBatch.map(d => d.db_id!),
             leadId: target.leadId,
             modelName: target.party === 'consignee' ? 'Consignee' : 'Customer',
             customer: p ? { id: String(p.code ?? p.id), db_id: p.id, company: p.name, email: p.email } : null,
           });
+        } else if (agrCtx) {
+          setAgr(agrCtx);
         }
       } catch {
         if (!cancelled) { toast.error('Cannot send', 'Could not load the document. Please try again.'); onClose(); }
@@ -1720,8 +1776,8 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
         customer={null}
         mode="agreement"
         agreementContext={agr}
-        onClose={() => { setAgr(null); onClose(); }}
-        onSent={() => { setAgr(null); onSent(); }}
+        onClose={() => { setAgr(null); finish(); }}
+        onSent={() => { sentAny.current = true; setAgr(null); onSent(); }}
       />
       <SalesCustomerSendForSignatureModal
         boxSize={{ width: 240, height: 55 }}
@@ -1732,8 +1788,13 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
         customer={td?.customer ?? null}
         leadId={td?.leadId ?? null}
         preselectedDocIds={td?.ids}
-        onClose={() => { setTd(null); onClose(); }}
-        onSent={() => { setTd(null); onSent(); }}
+        onClose={() => { setTd(null); setQueuedAgr(null); finish(); }}
+        onSent={() => {
+          sentAny.current = true;
+          setTd(null);
+          /* Hand straight over to the agreement round when one is queued. */
+          if (queuedAgr) { setAgr(queuedAgr); setQueuedAgr(null); } else { onSent(); }
+        }}
       />
     </>
   );
