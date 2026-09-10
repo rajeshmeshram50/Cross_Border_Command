@@ -385,6 +385,34 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
             </div>
           )}
 
+          {/* ── "SAME AS CUSTOMER" NOTE ──
+              Sits above the tabs, so it is read once and stays put whichever
+              document tab is open.
+
+              The header already carries a "Same as Customer" chip, but a chip
+              only labels the party — it does not tell the user what to DO. The
+              documents listed below belong to the linked customer (this
+              consignee IS that company), so every edit and every upload has to
+              happen on the customer. Without this line the user tries it here,
+              is refused by the upload guard, and has no idea where to go.
+
+              Placed AFTER the consignee strip on purpose: with several
+              consignees under one customer, only ONE of them can be flagged
+              same-as-customer (ConsigneeController::assertSingleMirrorPerCustomer
+              enforces that), so the note follows the selected tab and appears
+              on that consignee alone. The others show nothing. */}
+          {sameAsCustomer && (
+            <div className="lev-mirror-note" role="note">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+              <span>
+                <strong>Customer = Consignee.</strong> If you want to make any changes or view
+                the documents, refer to <strong>Customer Details</strong>.
+              </span>
+            </div>
+          )}
+
           {/* ── TABS ── */}
           <div className="lev-tabs">
             {TABS.map(t => (
@@ -723,6 +751,18 @@ const LEV_CSS = `
 /* Inactive-but-mapped tab gets an emerald ring so it stands out even when
    another consignee tab is the one being viewed. */
 .lev-cons-tab.mapped:not(.active) { border-color: #10b981; box-shadow: 0 0 0 1px rgba(16,185,129,.35); }
+/* "Same as Customer" note. Amber, not red — nothing is wrong here, the user
+   is simply being pointed at the party that owns these documents. */
+.lev-mirror-note {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 10px 18px; background: #FFFBEB; border-bottom: 1px solid #FDE68A;
+  font-size: 12.5px; line-height: 1.45; color: #92400E;
+}
+.lev-mirror-note svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; color: #D97706; }
+.lev-mirror-note strong { font-weight: 800; color: #78350F; }
+[data-bs-theme="dark"] .lev-mirror-note { background: rgba(245,158,11,.12); border-bottom-color: rgba(251,191,36,.30); color: #FCD34D; }
+[data-bs-theme="dark"] .lev-mirror-note strong { color: #FDE68A; }
+[data-bs-theme="dark"] .lev-mirror-note svg { color: #FBBF24; }
 [data-bs-theme="dark"] .lev-cons-strip { background: rgba(124,58,237,.10); border-bottom-color: rgba(167,139,250,.30); }
 [data-bs-theme="dark"] .lev-cons-tab.mapped:not(.active) { border-color: #34d399; box-shadow: 0 0 0 1px rgba(52,211,153,.40); }
 [data-bs-theme="dark"] .lev-cons-strip-lbl { color: #c4b5fd; }

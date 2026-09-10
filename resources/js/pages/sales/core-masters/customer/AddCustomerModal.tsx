@@ -13,6 +13,7 @@ import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { useRuledSegments, type SegDocType } from '../../../../hooks/useRuledSegments';
+import { useScrollLock } from '../../../../hooks/useScrollLock';
 import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
 import SearchClear from '../../../../components/ui/SearchClear';
 import {
@@ -1488,15 +1489,20 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     document.head.appendChild(link);
   }, []);
 
-  // Scroll lock — lock BOTH <html> and <body> so the page behind can't scroll.
-  useEffect(() => {
-    if (!open) return;
-    const b = document.body.style.overflow;
-    const h = document.documentElement.style.overflow;
-    document.body.style.overflow = 'hidden';
-    document.documentElement.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
-  }, [open]);
+  /* Scroll lock — QA #71.
+   *
+   * <html> + <body> alone did not hold. The customer list behind this modal
+   * does not scroll the page: it scrolls inside its OWN overflowY:auto rows
+   * container (SalesCustomers.tsx), and Velzon's `.main-content` scrolls too.
+   * Freezing the document left both of those free, so the page kept moving
+   * under the overlay.
+   *
+   * The shared hook asks the DOM which elements are actually scrolling at the
+   * moment the modal opens and freezes those as well, so it does not need to
+   * know any of their names. `.acm-root` is this modal's own portal root —
+   * passing it as the exception keeps `.acm-body` (and every sub-modal, which
+   * renders inside the same portal) scrollable. */
+  useScrollLock(open, '.acm-root');
 
   // Close wrapper — if any intermediate Save & Next persisted edits
   // during this session, fire onSaved on the way out so the parent
