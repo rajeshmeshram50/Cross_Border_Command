@@ -567,7 +567,17 @@ class SegmentDocUploadController extends Controller
                      customer's figure with the consignee's obligations. */
                 // This vault's own side only — see the note in
                 // buildShipmentAgreements() on why one entity is still two roles.
-                $sideRows = $type === 'consignee' ? $consRows : $buyerRows;
+                /* Same rule as the ratio in buildShipmentAgreements(): a
+                   same-as-customer consignee shows the customer's documents
+                   too, minus the PI. The list and the count must agree. */
+                $sideRows = $type === 'consignee'
+                    ? (!empty($s['buyer_is_consignee'])
+                        ? array_merge(
+                            array_values(array_filter($buyerRows, fn ($r) => empty($r['pi_id']))),
+                            $consRows,
+                          )
+                        : $consRows)
+                    : $buyerRows;
                 $seenInDeal = [];
                 foreach ($sideRows as $r) {
                     $k = ($r['db_id'] ?? 'x') . '|' . ($r['name'] ?? '');
@@ -1088,7 +1098,30 @@ class SegmentDocUploadController extends Controller
                is the consignee's to sign, so it stays out of the customer's
                vault even when the two are the same company (and the other way
                round). Only agreements were reported; trade docs are untouched. */
-            $tradeAll = $primary['trade'];
+        /* A consignee created AS the customer holds the customer's documents.
+         *
+           Choosing "same as customer" on the consignee form is a statement
+           that the two are one company — its KYC and owners are cloned from
+           the customer at save time — so its vault shows what the customer's
+           shows. A SEPARATE consignee still sees only its own side: there the
+           two are different companies and the buyer's papers are not its
+           business.
+         *
+           The PI is the one exception, in both cases. It is raised to the
+           buyer, carries the buyer's commercial terms and is signed by the
+           buyer; the consignee is not a party to it in either arrangement,
+           and the customer's own vault already carries it. It lives on the
+           buyer side, so it is filtered out of the merge rather than being
+           moved back.
+         *
+           De-duplicated because a Buyer+Consignee document is emitted into
+           both lists under the same id and must be counted once. */
+            $tradeAll = ($type === 'consignee' && $buyerIsConsignee)
+                ? $dedupe(array_merge(
+                    array_values(array_filter($tradeBuyer, fn ($r) => empty($r['pi_id']))),
+                    $tradeCons,
+                  ))
+                : $primary['trade'];
             $agrAll   = $primary['agr'];
             $signed   = fn (array $d) => collect($d)->where('status', 'Signed')->count();
 

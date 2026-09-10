@@ -584,11 +584,18 @@ class ClmBuyerProfileController extends Controller
                (QA #7), so counting them here would leave this cell reading more
                than the panel it summarises. One entity is still two roles, and
                each role is counted on its own. */
+            /* 'any' when the consignee IS the customer.
+             *
+               Its vault shows the customer's documents as well as its own in
+               that case, so the cell has to count the same set — every
+               document applicable to either party, each once. A separate
+               consignee keeps 'consignee': two companies, two sets. The PI is
+               not in $applicTd at all, so it stays out of both. */
             $tdConsDeal = $docProgress(
                 $applicTd,
                 $tdPartyById,
                 ($tdSigByLead[$lid]['Customer'] ?? []) + ($tdSigByLead[$lid]['Consignee'] ?? []),
-                'consignee',
+                $separateConsignee ? 'consignee' : 'any',
             );
             $tdSigSet  = $separateConsignee
                 ? ($tdSigByLead[$lid]['Customer'] ?? [])

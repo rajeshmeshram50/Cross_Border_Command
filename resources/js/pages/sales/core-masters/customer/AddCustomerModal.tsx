@@ -1924,6 +1924,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
             'primary_address.city': 'city', 'primary_address.pin': 'pin',
             'primary_address.cp_name': 'cpName', 'primary_address.cp_designation': 'cpDesig',
             'primary_address.cp_contact': 'cpTel', 'primary_address.cp_email': 'cpEmail',
+            /* The model-level guard reports on the DATABASE COLUMN, not the request
+               field: EnforcesUniqueEmail throws withMessages([$col => …]) from
+               Customer's saving hook, and $col is `primary_email`. Without this line
+               the duplicate-email message landed on a key no input renders and
+               vanished (QA #72) — same address, two names, depending on which layer
+               rejected it. */
+            'primary_email': 'cpEmail',
             'primary_address.cp_whatsapp': 'cpWa',
           };
           next[map[key] ?? key] = msg;
@@ -1933,8 +1940,16 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         const firstKey = Object.keys(next)[0];
         const el = document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`);
         el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        // Toast suppressed — inline red errors + scroll already
-        // communicate the rejection.
+        /* The toast is suppressed only when an inline error is actually on
+           screen. A key the map does not know lands on a field nothing
+           renders, so the red text exists in state and appears nowhere — and
+           the suppression then hides the last thing that would have told the
+           user anything. Checking that at least one error reached a rendered
+           input keeps that from happening again, whatever key a new server
+           rule introduces. */
+        if (!Object.keys(next).some(k => document.querySelector(`[data-field="${k}"]`))) {
+          toast.error('Save failed', err?.response?.data?.message ?? 'Please try again.');
+        }
       } else {
         toast.error('Save failed', err?.response?.data?.message ?? 'Please try again.');
       }
@@ -2009,6 +2024,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           'primary_address.city': 'city', 'primary_address.pin': 'pin',
           'primary_address.cp_name': 'cpName', 'primary_address.cp_designation': 'cpDesig',
           'primary_address.cp_contact': 'cpTel', 'primary_address.cp_email': 'cpEmail',
+          /* The model-level guard reports on the DATABASE COLUMN, not the request
+             field: EnforcesUniqueEmail throws withMessages([$col => …]) from
+             Customer's saving hook, and $col is `primary_email`. Without this line
+             the duplicate-email message landed on a key no input renders and
+             vanished (QA #72) — same address, two names, depending on which layer
+             rejected it. */
+          'primary_email': 'cpEmail',
           'primary_address.cp_whatsapp': 'cpWa',
         };
         for (const [key, msgs] of Object.entries(apiErrors)) {
@@ -2020,6 +2042,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         setTab('identification');
         const firstKey = Object.keys(next)[0];
         document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Same guard as Stage 1 — never let a mapped-nowhere error go unseen.
+        if (!Object.keys(next).some(k => document.querySelector(`[data-field="${k}"]`))) {
+          toast.error('Save failed', err?.response?.data?.message ?? 'Please try again.');
+        }
         // Toast suppressed — inline red errors + scroll handle this.
       } else {
         toast.error('Save failed', err?.response?.data?.message ?? 'Please try again.');
