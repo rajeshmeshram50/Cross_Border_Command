@@ -1487,7 +1487,7 @@ export default function AddPlan({ onBack, editId }: Props) {
 
                 {/* Search bar */}
                 <div className="mb-3">
-                  <div className="position-relative">
+                  <div className="position-relative ui-search-abs">
                     <i className="ri-search-line position-absolute text-muted" style={{ left: 11, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 14 }}></i>
                     <Input
                       className="stylish-input"

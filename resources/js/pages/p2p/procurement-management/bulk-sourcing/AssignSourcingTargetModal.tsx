@@ -533,9 +533,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                         </div>
                         <div className="asrc-pick-search">
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                          autoComplete="off"
-                          <input type="text" value={pickQuery} placeholder="Search products..." onChange={e => setPickQuery(e.target.value)} onFocus={() => setPickOpen(true)} onBlur={() => setTimeout(() => setPickOpen(false), 180)} />
-                          <SearchClear show={pickQuery} onClear={() => { setPickQuery(''); }} />
+                          <input autoComplete="off" type="text" value={pickQuery} placeholder="Search products..." onChange={e => setPickQuery(e.target.value)} onFocus={() => setPickOpen(true)} onBlur={() => setTimeout(() => setPickOpen(false), 180)} />
                           <button type="button" className="ast-btn ast-btn-primary asrc-pick-add" onClick={addMaster}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg> Add</button>
                           <div className={`asrc-pick-list ${pickOpen ? 'is-open' : ''}`}>
                             {pickList.length === 0 ? <div className="ast-plist-empty" style={{ border: 'none', background: 'none' }}>No matching products</div> : pickList.map(p => {
@@ -642,10 +640,9 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
               <div style={{ flex: 1 }}><div className="astp-title">Assign to Team Member</div><div className="astp-sub">Select one team member for this sourcing</div></div>
               <button className="astp-close" onClick={() => setTeamOpen(false)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
             </div>
-            <div className="astp-search">
+            <div className="astp-search ui-search-abs">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-              autoComplete="off"
-              <input type="text" value={teamSearch} placeholder="Search by name or role..." onChange={e => setTeamSearch(e.target.value)} />
+              <input autoComplete="off" type="text" value={teamSearch} placeholder="Search by name or role..." onChange={e => setTeamSearch(e.target.value)} />
               <SearchClear show={teamSearch} onClear={() => { setTeamSearch(''); }} />
             </div>
             <div className="astp-body">

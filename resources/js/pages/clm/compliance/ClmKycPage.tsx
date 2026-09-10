@@ -141,8 +141,7 @@ export default function ClmKycPage() {
         <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
           <div className="clm-search clm-search-fixed">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            autoComplete="off"
-            <input type="text" placeholder="Search KYC documents…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+            <input autoComplete="off" type="text" placeholder="Search KYC documents…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
             <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
           <div className="clm-total">

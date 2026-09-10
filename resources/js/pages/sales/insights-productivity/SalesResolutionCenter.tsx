@@ -162,7 +162,7 @@ export default function SalesResolutionCenter() {
           <div className="rc-section-title-wrap">
             <div>
               <div className="rc-section-title">Opportunity Control List</div>
-              <div className="rc-section-sub">{PRIORITIES.length} scenarios · Click any row to diagnose</div>
+              <div className="rc-section-sub ui-search-abs">{PRIORITIES.length} scenarios · Click any row to diagnose</div>
             </div>
           </div>
           <input

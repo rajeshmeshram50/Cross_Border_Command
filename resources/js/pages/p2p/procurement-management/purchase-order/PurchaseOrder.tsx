@@ -627,11 +627,10 @@ export default function PurchaseOrder() {
               options={[{ v: 'all', label: 'All PO Types' }, ...PO_TYPES.map(t => ({ v: t, label: t }))]}
               onChange={v => { setTypeFilter(v); setPage(1); }}
             />
-            <div className="polist-search">
+            <div className="polist-search ui-search-abs">
               {Ico.search(16)}
-              autoComplete="off"
-              <input type="text" placeholder="Search PO, supplier, ID or status..." value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} />
-              <SearchClear show={typeFilter} onClear={() => { setTypeFilter(''); setPage(1); }} />
+              <input autoComplete="off" type="text" placeholder="Search PO, supplier, ID or status..." value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} />
+              <SearchClear show={query} onClear={() => { setQuery(''); setPage(1); }} />
             </div>
           </div>
         </div>

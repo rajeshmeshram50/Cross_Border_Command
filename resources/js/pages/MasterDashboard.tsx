@@ -10,7 +10,6 @@ import './MasterDashboard.css';
 // Shared master card-strip styling (.dsn-page-strip) — reused so the
 // overview header matches the per-master page headers (Legal Entities, etc.).
 import '../../css/master.css';
-import SearchClear from '../components/ui/SearchClear';
 
 type CountEntry = { active: number; inactive: number; total: number };
 
@@ -462,7 +461,6 @@ export default function MasterDashboard() {
           placeholder="Search masters — e.g. Company, GST, Bank, Warehouse…"
           style={{ flexGrow: 1, border: 'none', outline: 'none', fontSize: 13, color: 'var(--vz-body-color)', background: 'transparent' }}
         />
-        <SearchClear show={search} onClear={() => { setSearch(''); }} />
         {hasSearch && (
           <>
             <span style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600, background: 'var(--vz-secondary-bg)', borderRadius: 20, padding: '2px 10px', border: '1px solid var(--vz-border-color)' }}>

@@ -643,8 +643,7 @@ function EmployeesPanel({
       <CardBody style={{ padding: 0 }}>
         <div className="myteam-filter-row d-flex flex-wrap gap-2 align-items-center" style={{ padding: 12, borderBottom: '1px solid #e5e7eb' }}>
           <div className="rec-req-search search-box" style={{ flex: '1 1 260px', minWidth: 260 }}>
-            autoComplete="off"
-            <Input type="text" className="form-control" placeholder="Search by name, code, email…" value={search} onChange={e => setSearch(e.target.value)} />
+            <Input autoComplete="off" type="text" className="form-control" placeholder="Search by name, code, email…" value={search} onChange={e => setSearch(e.target.value)} />
             <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
             <i className="ri-search-line search-icon" />
           </div>

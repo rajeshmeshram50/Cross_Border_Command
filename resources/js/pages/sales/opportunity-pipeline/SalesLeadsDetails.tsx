@@ -186,7 +186,7 @@ export default function SalesLeadsDetails() {
 
         {/* Search + Back */}
         <div className="ldd-header-right">
-          <div className="ldd-search">
+          <div className="ldd-search ui-search-abs">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             <input
               type="text"

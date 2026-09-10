@@ -240,10 +240,9 @@ export default function ClmDiagnosisResolutionPage() {
       {/* ── List card ───────────────────────────────────────────────────── */}
       <div className="dr-list-card">
         <div className="dr-list-head">
-          <div className="dr-search">
+          <div className="dr-search ui-search-abs">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0e7490" strokeWidth="2.2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
-            autoComplete="off"
-            <input value={search} placeholder={`Search ${tab === 'ctc' ? 'contracts' : tab === 'supplier' ? 'suppliers' : 'customers'}...`} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+            <input autoComplete="off" value={search} placeholder={`Search ${tab === 'ctc' ? 'contracts' : tab === 'supplier' ? 'suppliers' : 'customers'}...`} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
             <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
           <span className="dr-rec-badge">{rowsForPage.length} records</span>

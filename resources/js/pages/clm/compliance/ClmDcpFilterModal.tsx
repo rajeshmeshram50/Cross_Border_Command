@@ -195,12 +195,11 @@ export default function ClmDcpFilterModal({ open, onClose, onApply, initial, opt
           </div>
 
           <div className="lfm-right">
-            <div className="lfm-search-wrap">
+            <div className="lfm-search-wrap ui-search-abs">
               <svg className="lfm-search-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
-              autoComplete="off"
-              <input className="lfm-search" placeholder={`Search ${(activeMenu?.label ?? '').toLowerCase()}…`}
+              <input autoComplete="off" className="lfm-search" placeholder={`Search ${(activeMenu?.label ?? '').toLowerCase()}…`}
                 value={search} onChange={e => setSearch(e.target.value)} />
                 <SearchClear show={search} onClear={() => { setSearch(''); }} />
             </div>

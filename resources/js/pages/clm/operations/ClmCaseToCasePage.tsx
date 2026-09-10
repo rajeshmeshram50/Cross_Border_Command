@@ -373,8 +373,7 @@ export default function ClmCaseToCasePage() {
           <div className="ctc-hspacer" style={{ flex: 1 }} />
           <div className="ctc-searchbox" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 30, background: t.searchBg, border: `1.5px solid ${t.searchBorder}` }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.4" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            autoComplete="off"
-            <input value={search} disabled={lifecycleBusy !== null} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name, ID, company, type…"
+            <input autoComplete="off" value={search} disabled={lifecycleBusy !== null} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name, ID, company, type…"
               style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: 500, color: t.searchText, background: 'transparent', width: 230 }} />
               <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>

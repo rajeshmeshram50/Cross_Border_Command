@@ -343,7 +343,7 @@ export default function TemplateEditor({
           <i className="ri-braces-line" style={{ fontSize: 14, color: '#6366f1' }} />
           <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.02em', color: '#312e81', textTransform: 'uppercase' }}>Placeholders</span>
         </div>
-        <div style={{ position: 'relative', marginBottom: 10 }}>
+        <div className="ui-search-abs" style={{ position: 'relative', marginBottom: 10 }}>
           <i className="ri-search-line tpl-search-icon" style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', fontSize: 13 }} />
           <input
             type="text"

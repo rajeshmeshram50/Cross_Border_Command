@@ -559,7 +559,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
             )}
 
             <div className="lvr-notify-dd" ref={notifyBoxRef}>
-              <div className="lvr-search-wrap">
+              <div className="lvr-search-wrap ui-search-abs">
                 <i className="ri-search-line lvr-search-icon" />
                 <input
                   type="text"

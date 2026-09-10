@@ -3062,6 +3062,28 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   transition: background .14s, color .14s;
 }
 .ui-search-clear:hover { background: var(--_c); color: #fff; }
+/* The icon stays put whatever the host search bar does to its svgs.
+   Several wrappers position THEIR magnifier with a broad descendant rule —
+   `.spi-search svg { position:absolute; left:13px; … }` and friends — which
+   also catches the × inside this button: the icon flew to the left edge and
+   sat on top of the magnifier, leaving an empty box on the right. Written
+   with the element qualifier so it outranks those one-class rules whichever
+   stylesheet loads last, and it only undoes positioning — colour still comes
+   from the button. */
+button.ui-search-clear svg {
+  /* !important because the rules being undone are scoped deeper than any
+     selector this one can reach: `.pom .polist-search svg` is two classes,
+     and specificity counts classes before elements, so it beats even
+     button.ui-search-clear svg. Nothing weaker wins, and the declaration
+     touches only the icon inside our own button — it cannot reach a host
+     page's magnifier. */
+  position: static !important;
+  left: auto !important; right: auto !important;
+  top: auto !important; bottom: auto !important;
+  transform: none !important;
+  color: currentColor;
+  flex-shrink: 0;
+}
 .ui-search-clear:focus-visible {
   outline: 2px solid var(--_c);
   outline-offset: 1px;
@@ -3090,3 +3112,31 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   z-index: 2;
 }
 .search-box:has(> .ui-search-clear) > .form-control { padding-right: 38px; }
+
+/* Wrappers that are neither a flex row nor a Velzon .search-box: a plain
+   positioned box holding one full-width input. Dropped in as a normal-flow
+   sibling the button lands BELOW the field, outside the box — so those
+   wrappers carry ui-search-abs and the button is pinned to the right edge
+   instead. position: relative is the fallback; a wrapper that is already
+   sticky or absolute keeps its own (inline wins) and is a positioned
+   ancestor either way. padding-right needs !important only because these
+   inputs set their padding inline, and nothing weaker can reach it —
+   without it a long query slides under the button. */
+.ui-search-abs { position: relative; }
+.ui-search-abs > .ui-search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+}
+.ui-search-abs:has(> .ui-search-clear) > input { padding-right: 36px !important; }
+
+/* An input[type=search] draws Chrome's OWN clear button, so where ours
+   follows one the user saw two crosses side by side. Hide the native one
+   and keep ours — ours is the same control on every screen, styled and
+   themed, and it appears in the same place whether the field is type=text
+   or type=search. Scoped by the sibling test so an input WITHOUT our button
+   keeps the browser's. */
+input[type="search"]:has(~ .ui-search-clear)::-webkit-search-cancel-button { display: none; }
+input[type="search"]:has(~ .ui-search-clear) { appearance: none; -webkit-appearance: none; }

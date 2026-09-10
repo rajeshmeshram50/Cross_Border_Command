@@ -1915,7 +1915,7 @@ export default function SalesQPI() {
               Quotation List
             </div>
           )}
-          <div className="qpi-search">
+          <div className="qpi-search ui-search-abs">
             <IconSearch />
             <input
               type="text"
@@ -4049,7 +4049,7 @@ function OpportunitySelect({
           strategy="fixed"
           style={menuWidth ? { width: menuWidth, minWidth: menuWidth } : undefined}
         >
-          <div className="master-select-search" onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
+          <div className="master-select-search ui-search-abs" onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
             <i className="ri-search-line master-select-search-icon" />
             <input
               type="text"

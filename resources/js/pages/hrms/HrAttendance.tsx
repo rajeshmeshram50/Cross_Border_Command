@@ -867,8 +867,7 @@ export default function HrAttendance() {
 
                   <div className="att-emplist-search">
                     <div className="rec-req-search search-box">
-                      autoComplete="off"
-                      <Input type="text" className="form-control form-control-sm" placeholder="Search name, EMP-ID, biometric…" value={search} onChange={e => setSearch(e.target.value)} />
+                      <Input autoComplete="off" type="text" className="form-control form-control-sm" placeholder="Search name, EMP-ID, biometric…" value={search} onChange={e => setSearch(e.target.value)} />
                       <SearchClear show={search} onClear={() => { setSearch(''); }} />
                       <i className="ri-search-line search-icon" />
                     </div>

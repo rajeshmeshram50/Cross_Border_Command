@@ -15,7 +15,6 @@ import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { truncSegment } from '../../../../utils/segmentLabel';
 import { useRuledSegments, type SegDocType } from '../../../../hooks/useRuledSegments';
 import SalesCustomerSendForSignatureModal from '../customer/SalesCustomerSendForSignatureModal';
-import SearchClear from '../../../../components/ui/SearchClear';
 import {
   readCustomerMasterBundle,
   writeCustomerMasterBundle,
@@ -2294,7 +2293,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 onChange={(e) => { setSearch(e.target.value); setSearchOpen(true); }}
                 onFocus={() => setSearchOpen(true)}
               />
-              <SearchClear show={search} onClear={() => { setSearch(''); }} />
               <span role="button" onClick={(e) => { e.stopPropagation(); setSearchOpen(o => !o); }} style={{ cursor: 'pointer', display: 'inline-flex' }}><IconChevronDown /></span>
             </div>
 

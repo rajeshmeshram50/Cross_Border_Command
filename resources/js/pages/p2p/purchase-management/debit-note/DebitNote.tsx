@@ -414,10 +414,9 @@ export default function DebitNote() {
               <div className="dnlh-sub">Track returns, rate &amp; quantity adjustments, and payment recovery</div>
             </div>
           </div>
-          <div className="spi-search dnlh-search">
+          <div className="spi-search dnlh-search ui-search-abs">
             <IcoSearch />
-            autoComplete="off"
-            <input value={q} onChange={e => { setQ(e.target.value); setPage(1); }} placeholder="Search debit note, supplier, status..." />
+            <input autoComplete="off" value={q} onChange={e => { setQ(e.target.value); setPage(1); }} placeholder="Search debit note, supplier, status..." />
             <SearchClear show={q} onClear={() => { setQ(''); setPage(1); }} />
           </div>
         </div>

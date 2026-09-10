@@ -141,8 +141,7 @@ export default function MasterPlaceholder() {
                 <Col md={5}>
                   <InputGroup>
                     <InputGroupText className="bg-body"><i className="ri-search-line"></i></InputGroupText>
-                    autoComplete="off"
-                    <Input placeholder={`Search in ${leafLabel}…`} disabled />
+                    <Input autoComplete="off" placeholder={`Search in ${leafLabel}…`} disabled />
                   </InputGroup>
                 </Col>
                 <Col md={3}>

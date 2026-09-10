@@ -1666,8 +1666,7 @@ function ScoreEngineView() {
         <div className="d-flex align-items-center flex-wrap gap-2 mb-3">
           <div className="lp-search-box flex-grow-1" style={{ minWidth: 220 }}>
             <i className="ri-search-line" />
-            autoComplete="off"
-            <input type="text" placeholder="Search employee or role…" value={search} onChange={e => setSearch(e.target.value)} />
+            <input autoComplete="off" type="text" placeholder="Search employee or role…" value={search} onChange={e => setSearch(e.target.value)} />
             <SearchClear show={search} onClear={() => { setSearch(''); }} />
           </div>
           {(['all', 'PIP Trigger', 'Risk Zone', 'Watchlist', 'Healthy'] as ScoreFilter[]).map(f => (
@@ -2002,8 +2001,7 @@ function WatchlistView() {
       <div className="d-flex align-items-center flex-wrap gap-2 mb-3">
         <div className="lp-search-box flex-grow-1" style={{ minWidth: 260 }}>
           <i className="ri-search-line" />
-          autoComplete="off"
-          <input type="text" placeholder="Search employee or role…" value={search} onChange={e => setSearch(e.target.value)} />
+          <input autoComplete="off" type="text" placeholder="Search employee or role…" value={search} onChange={e => setSearch(e.target.value)} />
           <SearchClear show={search} onClear={() => { setSearch(''); }} />
         </div>
         {(['all', 'PIP Trigger', 'Risk Zone', 'Watchlist'] as const).map(f => (
@@ -2334,8 +2332,7 @@ function PipStatusView() {
         </button>
         <div className="lp-search-box flex-grow-1" style={{ minWidth: 220 }}>
           <i className="ri-search-line" />
-          autoComplete="off"
-          <input type="text" placeholder="Search employee or department…" value={search} onChange={e => setSearch(e.target.value)} />
+          <input autoComplete="off" type="text" placeholder="Search employee or department…" value={search} onChange={e => setSearch(e.target.value)} />
           <SearchClear show={search} onClear={() => { setSearch(''); }} />
         </div>
         <select className="lp-field-input" style={{ width: 130 }} value={risk} onChange={e => setRisk(e.target.value)}>

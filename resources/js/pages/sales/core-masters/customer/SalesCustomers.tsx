@@ -590,7 +590,7 @@ export default function SalesCustomers() {
             Filter
             {activeFilterCount > 0 && <span className="smc-filter-badge">{activeFilterCount}</span>}
           </button>
-          <div className="smc-search">
+          <div className="smc-search ui-search-abs">
             <i className="ri-search-line smc-search-icon" />
             <input
               type="text"

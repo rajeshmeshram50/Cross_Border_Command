@@ -6,7 +6,6 @@ import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { Shimmer } from '../components/ui/Shimmer';
 import { resolveFileUrl, downloadFile } from '../utils/resolveFileUrl';
-import SearchClear from '../components/ui/SearchClear';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface EmailRow {
@@ -304,9 +303,7 @@ export default function Gmail() {
           </button>
           <div className="gm-search">
             <i className="ri-search-line" />
-            autoComplete="off"
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search mail" />
-            <SearchClear show={search} onClear={() => { setSearch(''); }} />
+            <input autoComplete="off" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search mail" />
             {search && <i className="ri-close-line gm-search-clear" onClick={() => setSearch('')} />}
           </div>
           <div className="gm-brand"><i className="ri-mail-send-fill" /> Gmail</div>

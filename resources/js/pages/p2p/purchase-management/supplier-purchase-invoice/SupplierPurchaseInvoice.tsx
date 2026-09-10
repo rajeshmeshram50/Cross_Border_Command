@@ -383,8 +383,7 @@ export default function SupplierPurchaseInvoice() {
           </div>
           <div className="spi-search">
             <IcoSearch />
-            autoComplete="off"
-            <input value={q} onChange={e => onSearch(e.target.value)} placeholder="Search SPI, supplier, PO or status..." />
+            <input autoComplete="off" value={q} onChange={e => onSearch(e.target.value)} placeholder="Search SPI, supplier, PO or status..." />
             <SearchClear show={q} onClear={() => { setQ(''); }} />
           </div>
         </div>

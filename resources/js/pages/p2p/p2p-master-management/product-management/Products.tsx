@@ -11,7 +11,6 @@ import AddProductModal from './AddProductModal';
 import ProductView from './ProductView';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../../../components/ui/Tooltip';
-import SearchClear from '../../../../components/ui/SearchClear';
 
 
 export type Product = {
@@ -678,7 +677,6 @@ export default function Products() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          <SearchClear show={q} onClear={() => { setQ(''); }} />
           {q && (
             <Tooltip label="Clear search">
               <button type="button" className="prd-search-clear" onClick={() => setQ('')}>

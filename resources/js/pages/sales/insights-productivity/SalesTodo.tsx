@@ -1039,7 +1039,7 @@ export default function SalesTodo() {
               toggle for the Meeting tab) so it lands next to the
               List/Calendar control. The Add button is the only thing in
               the right corner of the row. */}
-          <div className="td-search-wrap">
+          <div className="td-search-wrap ui-search-abs">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#99c9c4" strokeWidth="2.3">
               <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
             </svg>
@@ -2293,7 +2293,7 @@ function TdSelect(props: {
       {open && (
         <div className="td-cs-menu" role="listbox">
           {showSearch && (
-            <div className="td-cs-search" onMouseDown={e => e.stopPropagation()}>
+            <div className="td-cs-search ui-search-abs" onMouseDown={e => e.stopPropagation()}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.3">
                 <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
               </svg>

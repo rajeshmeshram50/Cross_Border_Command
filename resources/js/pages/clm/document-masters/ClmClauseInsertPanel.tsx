@@ -178,7 +178,7 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
               </button>
               {ddOpen && !loading && (
                 <div className="clp-dd-menu">
-                  <div className="clp-dd-search" onMouseDown={e => e.stopPropagation()}>
+                  <div className="clp-dd-search ui-search-abs" onMouseDown={e => e.stopPropagation()}>
                     <i className="ri-search-line clp-dd-search-ico" />
                     <input
                       type="text"

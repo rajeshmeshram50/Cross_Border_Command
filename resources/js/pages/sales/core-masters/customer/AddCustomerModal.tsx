@@ -3912,10 +3912,9 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
         </div>
 
         <div className="acm-doc-toolbar">
-          <div className="acm-doc-search">
+          <div className="acm-doc-search ui-search-abs">
             <svg className="acm-doc-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            autoComplete="off"
-            <input type="search" placeholder={meta.placeholder} value={search} onChange={e => setSearch(e.target.value)} />
+            <input autoComplete="off" type="search" placeholder={meta.placeholder} value={search} onChange={e => setSearch(e.target.value)} />
             <SearchClear show={search} onClear={() => { setSearch(''); }} />
           </div>
           <div className="acm-doc-count">{totalRows} {(!showSegmentRef && isOwners) ? `owner${totalRows === 1 ? '' : 's'}` : `document${totalRows === 1 ? '' : 's'}`}</div>

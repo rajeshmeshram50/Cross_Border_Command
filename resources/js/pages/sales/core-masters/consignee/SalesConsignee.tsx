@@ -670,7 +670,7 @@ export default function SalesConsignee() {
       <div className="smcg-table-card" ref={tableCardRef}>
 
         <div className="smcg-toolbar">
-          <div className="smcg-search">
+          <div className="smcg-search ui-search-abs">
             <i className="ri-search-line smcg-search-icon" />
             <input
               type="text"
@@ -919,7 +919,7 @@ export default function SalesConsignee() {
             {/* Search toolbar — filter the mapped customers (matches the
                 Consignees modal search). */}
             <div style={{ padding: '14px 18px 0' }}>
-              <div style={{ position: 'relative', maxWidth: 420 }}>
+              <div className="ui-search-abs" style={{ position: 'relative', maxWidth: 420 }}>
                 <i className="ri-search-line" style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: mc.textMuted, fontSize: 15 }} />
                 <input
                   type="search"

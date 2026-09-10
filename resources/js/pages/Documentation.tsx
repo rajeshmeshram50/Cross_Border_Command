@@ -426,7 +426,7 @@ export default function Documentation() {
       <div className="doc-body">
         {/* ── Sidebar ── */}
         <aside className={`doc-sidebar ${navOpen ? 'open' : ''}`}>
-          <div className="doc-search">
+          <div className="doc-search ui-search-abs">
             <IcSearch />
             <input
               type="text"
