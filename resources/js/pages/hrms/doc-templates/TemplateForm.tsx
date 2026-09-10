@@ -655,11 +655,12 @@ export default function TemplateFormPage() {
   if (bootstrapping) {
     return (
       <div className="rec-page tpl-form-page">
-        {/* Header bar shimmer — mirrors the gradient strip + step indicators. */}
+        {/* Header bar shimmer. On a NEUTRAL surface, not the purple gradient —
+            the shimmer's own light sheen washed out over the gradient and read
+            as a broken header rather than a loading state. */}
         <Card className="mb-3" style={{ borderRadius: 14, overflow: 'hidden' }}>
-          <div style={{ padding: '16px 22px', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%)' }}>
+          <div style={{ padding: '16px 22px', background: 'var(--vz-card-bg, #fff)', borderBottom: '1px solid #eef0f6' }}>
             <div className="d-flex align-items-center gap-3">
-              <Shimmer width={36} height={36} radius={10} />
               <Shimmer width={44} height={44} radius={12} />
               <div className="flex-grow-1">
                 <Shimmer height={18} width="38%" />
@@ -1233,6 +1234,23 @@ function Step3(props: {
     borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer',
   });
 
+  // Full-screen Web Editor — lifts the editor into a fixed overlay so there's
+  // far more room to type. Esc exits. This is the ONLY addition to Step 3; the
+  // rest of the UI is unchanged.
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
+  // Frosted-glass action button for the full-screen purple header bar.
+  const frostBtn: React.CSSProperties = {
+    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+    background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.35)',
+    color: '#fff', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer',
+  };
+
   return (
     <>
       {/* The "Header & footer reused from your last template" strip was removed
@@ -1255,6 +1273,13 @@ function Step3(props: {
               <i className="ri-file-pdf-2-line me-1" />Live PDF
             </button>
           )}
+          {props.editorMode === 'web' && (
+            <button type="button" className="tpl-editor-tab" style={tabBtn(false)}
+              title="Open the editor full screen for more room to type (Esc to exit)"
+              onClick={() => setFullscreen(true)}>
+              <i className="ri-fullscreen-line me-1" />Full Screen
+            </button>
+          )}
         </div>
       </div>
 
@@ -1266,7 +1291,38 @@ function Step3(props: {
       )}
 
       {props.editorMode === 'web' && (
-        /* The preview is positioned OUT OF FLOW on purpose.
+        // When fullscreen, the Web Editor is lifted into a fixed overlay with a
+        // purple header bar; the .tpl-editor-root height is overridden there so
+        // it fills the screen. Otherwise this wrapper is an inert plain div.
+        <div className={fullscreen ? 'tpl-fs-overlay' : undefined}>
+          {fullscreen && (
+            <div className="tpl-fs-bar" style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap',
+              padding: '12px 14px', flexShrink: 0,
+              background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#4C1D95 0%,#6D28D9 40%,#7C3AED 75%,#8B5CF6 100%)',
+              backgroundSize: '14px 14px, auto',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <i className="ri-layout-2-line" style={{ color: '#fff', fontSize: 15 }} />
+                </span>
+                <div>
+                  <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,.6)' }}>Stage 03</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>Template Design</div>
+                  <div style={{ fontSize: 9, fontWeight: 500, color: 'rgba(255,255,255,.65)' }}>Write or paste your document content below</div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <button type="button" style={frostBtn} onClick={() => props.setLivePreview(!props.livePreview)}>
+                  <i className="ri-file-pdf-2-line" />{props.livePreview ? 'Hide Preview' : 'Live Preview'}
+                </button>
+                <button type="button" style={frostBtn} onClick={() => setFullscreen(false)}>
+                  <i className="ri-fullscreen-exit-line" />Exit Full Screen
+                </button>
+              </div>
+            </div>
+          )}
+        {/* The preview is positioned OUT OF FLOW on purpose.
            As a normal flex item it sized itself to its own content — the
            rendered page stack, which is as long as the document — and since a
            flex line is as tall as its tallest item, the preview grew the row
@@ -1275,8 +1331,8 @@ function Step3(props: {
            item to the LINE, but the line is already the item's own content
            height. Taking it out of flow leaves the left column as the only
            thing setting the row height, and top/bottom: 0 pins the preview to
-           exactly that — ending level with the footer strip. */
-        <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', position: 'relative' }}>
+           exactly that — ending level with the footer strip. */}
+        <div className={fullscreen ? 'tpl-fs-body' : undefined} style={{ display: 'flex', gap: 12, alignItems: 'stretch', position: 'relative', flex: fullscreen ? 1 : undefined, minHeight: fullscreen ? 0 : undefined }}>
           <div style={{
             flex: '1 1 auto', minWidth: 0,
             /* Reserve the column the out-of-flow preview sits in.
@@ -1332,6 +1388,7 @@ function Step3(props: {
               </div>
             </div>
           )}
+        </div>
         </div>
       )}
 
@@ -1583,6 +1640,25 @@ function TplFormDarkStyles() {
         background: var(--vz-card-bg) !important;
         border-color: var(--vz-border-color) !important;
         color: var(--vz-body-color) !important;
+      }
+
+      /* ── Full-screen Web Editor overlay ──────────────────────────────────
+         Fixed over the whole viewport (above the fixed topbar); the editor
+         row's capped height is overridden so it fills the screen. */
+      .tpl-fs-overlay {
+        position: fixed; inset: 0; z-index: 1080;
+        display: flex; flex-direction: column;
+        padding: 12px 16px 16px;
+        background: #f1f5f9;
+      }
+      [data-bs-theme="dark"] .tpl-fs-overlay { background: var(--vz-body-bg, #16191c); }
+      .tpl-fs-overlay .tpl-fs-bar { border-radius: 12px; margin-bottom: 10px; }
+      .tpl-fs-overlay .tpl-fs-body { flex: 1; min-height: 0; }
+      /* Beat the inline height on .tpl-editor-root so the editor fills the
+         overlay (purple bar + padding ≈ 90px). */
+      .tpl-fs-overlay .tpl-editor-root {
+        height: calc(100vh - 92px) !important;
+        min-height: 0 !important;
       }
 
       [data-bs-theme="dark"] .tpl-form-page .tpl-word-card {

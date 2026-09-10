@@ -457,7 +457,7 @@ class HrDocumentTemplateController extends Controller
         // workflow removes, with no way to bootstrap out of it. content_html is
         // the canonical body (an uploaded DOCX is parsed into it on upload), so
         // rendering from it keeps the body while guaranteeing the chrome is gone.
-        return $this->renderDocx($row, ($row->code ?: 'template') . '.docx');
+        return $this->renderDocx($row, ($row->code ?: 'template') . '.docx', false);
     }
 
     /**
@@ -657,8 +657,10 @@ class HrDocumentTemplateController extends Controller
      * GET /api/hr-document-templates/{id}/generate?employee_id=N
      *
      * Resolves the template's {{Tokens}} against the employee's data and
-     * streams the filled DOCX back to the client. Same header/footer baked
-     * in as the plain download endpoint — just with placeholders replaced.
+     * streams the filled DOCX back to the client. This is the FINAL letterhead
+     * document, so it keeps the header/footer/logo (renderDocx defaults to
+     * withHeaderFooter=true) — unlike the template author's content-only
+     * "Download DOCX" — just with placeholders replaced.
      */
     public function generateForEmployee(Request $request, $id)
     {
@@ -1187,7 +1189,7 @@ class HrDocumentTemplateController extends Controller
         return null;
     }
 
-    public function buildDocxFile($row): string
+    public function buildDocxFile($row, bool $withHeaderFooter = true): string
     {
         $phpWord = new PhpWord();
         // A4 in twips as INTEGERS — PhpWord's default computes these from
@@ -1202,13 +1204,127 @@ class HrDocumentTemplateController extends Controller
             'footerHeight' => 50 * 20,
         ]);
 
-        // Header & footer are deliberately NOT added here. They are managed
-        // in-app (HeaderFooterPanel / Live PDF) and are no longer part of the
-        // Word round-trip: a downloaded DOCX carries the BODY CONTENT ONLY, so
-        // the user edits body text in Word without our header/footer/logo being
-        // baked into the file (and, on re-upload, duplicated). The
-        // headerHeight/footerHeight on the section above are harmless when no
-        // header/footer is attached.
+        // Header/footer (logo + title/subtitle + footer text + page numbers).
+        // Added ONLY when $withHeaderFooter is true:
+        //   • Generated employee documents (generateForEmployee) → true, so the
+        //     final letterhead document carries the company header/footer.
+        //   • The template author's "Download DOCX" on the MS Word tab → false,
+        //     so that round-trip file is BODY CONTENT ONLY and the in-app
+        //     header/footer is never baked in or duplicated on re-upload.
+        // The headerHeight/footerHeight on the section above are harmless when
+        // no header/footer is attached.
+        if ($withHeaderFooter) {
+            $headerCfg = is_array($row->header_config) ? $row->header_config : [];
+            // Prefer the path saved in header_config; if it's missing (the frontend
+            // didn't persist it), fall back to the latest logo uploaded for this
+            // client via uploadHeaderLogo() so the logo still lands in the DOCX.
+            $logoPath  = $headerCfg['logo_path'] ?: $this->latestClientLogo($row->client_id);
+            $title     = (string) ($headerCfg['title'] ?? '');
+            $subtitle  = (string) ($headerCfg['subtitle'] ?? '');
+            $hAlign    = (string) ($headerCfg['align']    ?? 'right');
+            // Logo size — pixels in the SPA, clamped 24-200. DOCX uses the same
+            // pixel scale so the exported Word doc matches the on-screen preview.
+            // Width is left to PhpWord's auto-scale (passed as 0) so non-2:1
+            // logos aren't squished; ratio is preserved from the source image.
+            $logoH     = (int) max(24, min(200, $headerCfg['logo_height'] ?? 60));
+
+            $header = $section->addHeader();
+            $table = $header->addTable([
+                'borderSize' => 0,
+                'cellMargin' => 0,
+                'unit'  => \PhpOffice\PhpWord\SimpleType\TblWidth::PERCENT,
+                'width' => 100 * 50,
+            ]);
+            $row1 = $table->addRow();
+            $logoCell  = $row1->addCell(3200, ['valign' => 'center']);
+            $titleCell = $row1->addCell(6800, ['valign' => 'center']);
+            $absLogo = $this->resolveDocxLogo($logoPath);
+            if ($absLogo) {
+                try {
+                    // Scale to fit the logo cell: cap by height (logo_height) AND by
+                    // a max width so a wide logo isn't clipped by the cell. Aspect
+                    // ratio is preserved by deriving the missing dimension from the
+                    // source image's real pixel size.
+                    $maxW = 200; // px — fits comfortably inside the ~32% logo cell
+                    $dim  = @getimagesize($absLogo);
+                    $iw   = $dim[0] ?? 0;
+                    $ih   = $dim[1] ?? 0;
+                    $h    = $logoH;
+                    $w    = ($ih > 0) ? (int) round($iw * $h / $ih) : 0;
+                    if ($w > $maxW && $iw > 0) {            // too wide → cap width, recompute height
+                        $w = $maxW;
+                        $h = (int) round($ih * $w / $iw);
+                    }
+                    $opts = ['height' => $h];
+                    if ($w > 0) $opts['width'] = $w;
+                    $logoCell->addImage($absLogo, $opts);
+                } catch (\Throwable $e) {
+                    $logoCell->addText('[Logo]', ['italic' => true, 'color' => '808080']);
+                }
+            }
+            $align = $hAlign === 'left' ? 'left' : ($hAlign === 'center' ? 'center' : 'right');
+            // Split on CR/LF so multi-line titles entered in the SPA preview
+            // (Enter → \n) render as separate Word paragraphs instead of a
+            // single run with literal newline glyphs.
+            $addMultiline = function ($cell, string $text, array $font, array $para) {
+                $lines = preg_split('/\r\n|\r|\n/', $text) ?: [];
+                $first = true;
+                foreach ($lines as $line) {
+                    if (!$first) $cell->addTextBreak(1, $font);
+                    $cell->addText($line, $font, $para);
+                    $first = false;
+                }
+            };
+            if ($title !== '')    $addMultiline($titleCell, $title,    ['bold' => true, 'size' => 14], ['alignment' => $align]);
+            if ($subtitle !== '') $addMultiline($titleCell, $subtitle, ['size' => 10, 'color' => '6B7280'], ['alignment' => $align]);
+
+            $footerCfg  = is_array($row->footer_config) ? $row->footer_config : [];
+            $footerText = (string) ($footerCfg['text']  ?? '');
+            $fAlign     = (string) ($footerCfg['align'] ?? 'center');
+            $showPage   = !empty($footerCfg['show_page_number']);
+            $pnAlign    = (string) ($footerCfg['page_number_align']  ?? 'right');
+            $pnFormat   = (string) ($footerCfg['page_number_format'] ?? 'Page N of M');
+            $footer = $section->addFooter();
+            $fTable = $footer->addTable([
+                'borderSize' => 0,
+                'cellMargin' => 0,
+                'unit'  => \PhpOffice\PhpWord\SimpleType\TblWidth::PERCENT,
+                'width' => 100 * 50,
+            ]);
+            $fRow = $fTable->addRow();
+            $cells = [
+                'left'   => $fRow->addCell(3333, ['valign' => 'center']),
+                'center' => $fRow->addCell(3333, ['valign' => 'center']),
+                'right'  => $fRow->addCell(3333, ['valign' => 'center']),
+            ];
+            if ($footerText !== '' && isset($cells[$fAlign])) {
+                $cells[$fAlign]->addText($footerText, ['size' => 9, 'color' => '6B7280'], ['alignment' => $fAlign]);
+            }
+            if ($showPage && isset($cells[$pnAlign])) {
+                $run = $cells[$pnAlign]->addTextRun(['alignment' => $pnAlign]);
+                $style = ['size' => 9, 'color' => '6B7280'];
+                switch ($pnFormat) {
+                    case 'N':
+                        $run->addField('PAGE', [], [], '', false);
+                        break;
+                    case 'Page N':
+                        $run->addText('Page ', $style);
+                        $run->addField('PAGE', [], [], '', false);
+                        break;
+                    case 'N / M':
+                        $run->addField('PAGE', [], [], '', false);
+                        $run->addText(' / ', $style);
+                        $run->addField('NUMPAGES', [], [], '', false);
+                        break;
+                    case 'Page N of M':
+                    default:
+                        $run->addText('Page ', $style);
+                        $run->addField('PAGE', [], [], '', false);
+                        $run->addText(' of ', $style);
+                        $run->addField('NUMPAGES', [], [], '', false);
+                }
+            }
+        }
 
         $html = (string) ($row->content_html ?: '<p>(empty template)</p>');
         // PhpWord's Html::addHtml uses loadXML (not loadHTML) so the body
@@ -1247,10 +1363,14 @@ class HrDocumentTemplateController extends Controller
      * back to the browser. Used by the "Download DOCX" button and the
      * per-employee generate flow. The tmp file is removed once the response
      * is flushed via `deleteFileAfterSend`.
+     *
+     * $withHeaderFooter defaults to true (letterhead), so the per-employee
+     * generate flow keeps the header/footer/logo; the template author's
+     * content-only "Download DOCX" passes false.
      */
-    public function renderDocx($row, string $filename)
+    public function renderDocx($row, string $filename, bool $withHeaderFooter = true)
     {
-        $tmp = $this->buildDocxFile($row);
+        $tmp = $this->buildDocxFile($row, $withHeaderFooter);
         return response()->download($tmp, $filename)->deleteFileAfterSend(true);
     }
 
