@@ -986,6 +986,23 @@ export const SALES_MATRIX_DETAIL_CSS = `
   transition: all .17s;
 }
 .smd-deal-save-btn:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(124,58,237,.45); }
+/* Saving state (QA #254 / #255).
+   The spinner says the click landed and the app is working; the dimmed,
+   not-allowed form says the fields are out of reach until it finishes. The
+   fields themselves are disabled in the markup — this only makes that
+   visible, so a user cannot tell the difference between "busy" and "broken". */
+.smd-deal-save-btn:disabled { opacity: .75; cursor: not-allowed; transform: none; box-shadow: none; }
+.smd-deal-save-btn:disabled:hover { transform: none; box-shadow: none; }
+.tm-save-spin {
+  display: inline-block; width: 12px; height: 12px; margin-right: 7px;
+  vertical-align: -1px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.45); border-top-color: #fff;
+  animation: tm-save-spin .65s linear infinite;
+}
+@keyframes tm-save-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .tm-save-spin { animation: none; } }
+/* The whole form reads as unavailable while the POST is in flight. */
+.smd-deal-form :disabled { opacity: .6; cursor: not-allowed; }
 /* Right-card (Task Manager) inputs — match the prototype's lavender fill
    (#f5f3ff / #c4b5fd border / #5b21b6 text, focus → #ede9fe). Scoped to
    the deal form so the middle stage-card inputs keep their own styling. */

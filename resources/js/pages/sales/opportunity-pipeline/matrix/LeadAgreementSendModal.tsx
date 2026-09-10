@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 /* Force-download helper. A cross-origin <a download> is IGNORED by the browser
@@ -246,6 +246,14 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
   const toast = useToast();
   const [payload, setPayload] = useState<ApplicablePayload | null>(null);
   const [loading, setLoading] = useState(false);
+  /* Latest parent payload, kept current without being a render trigger. */
+  /* Minimum time the skeleton stays up — long enough to read as a state,
+     short enough not to feel like a wait. Matches the worksheet's floor. */
+  const SKELETON_MIN_MS = 450;
+  const skeletonSinceRef = useRef<number | null>(null);
+  const seedTimerRef = useRef<number | null>(null);
+  const seedRef = useRef(data);
+  seedRef.current = data;
   const [activeSegId, setActiveSegId] = useState<number | null>(null);
   /* Customer / Consignee detail cards — collapsible, open by default.
    * They are read-only context you check once and then stop needing, but they
@@ -610,8 +618,38 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
        silently reverted every mark to how the page found them.
        So it seeds the view and a fresh read replaces it. */
     let cancelled = false;
-    if (data) setPayload(data);
-    else setLoading(true);
+    /* The seed is read through a ref, and `data` is NOT a dependency.
+     *
+       It is a first frame, not a subscription: it should paint once when the
+       popup opens and then get out of the way. As a dependency it would
+       re-run this effect every time the parent refreshed its own copy — and
+       the parent refreshes on send — so a send would fire a second fetch and
+       briefly repaint the rows from a copy older than the one just written.
+       A ref keeps the value current without making it a trigger. */
+    /* The skeleton always shows, seed or no seed.
+     *
+       Seeding alone opened the popup with rows already in it and no loading
+       state at all — faster, but the screen went from nothing to a full table
+       with no moment that said "opening". A short skeleton is what makes the
+       transition read as deliberate.
+     *
+       So it is shown for a floor of SKELETON_MIN_MS and then the seed takes
+       over, rather than being held until the network answers. The wait is the
+       floor, not the request: about half a second instead of the three
+       seconds the server takes, with the fresh copy still replacing the seed
+       silently when it lands. Same floor the worksheet skeleton uses. */
+    const seed = seedRef.current;
+    setLoading(true);
+    skeletonSinceRef.current = Date.now();
+    if (seed) {
+      const t = window.setTimeout(() => {
+        if (cancelled) return;
+        setPayload(seed);
+        setLoading(false);
+        skeletonSinceRef.current = null;
+      }, SKELETON_MIN_MS);
+      seedTimerRef.current = t;
+    }
     /* light=1 — the LIST does not need the agreement bodies.
        Every row here shows a code, a title, a party and a status; `content`
        is the one field nothing on this screen renders, and it is by far the
@@ -623,10 +661,23 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
       .then(r => { if (!cancelled) setPayload((r.data?.data ?? null) as ApplicablePayload | null); })
       // A failed refresh keeps the seeded copy rather than blanking the popup —
       // stale beats empty when the user already has it open.
-      .catch(() => { if (!cancelled && !data) setPayload(null); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [open, leadId, data]);
+      .catch(() => { if (!cancelled && !seed) setPayload(null); })
+      .finally(() => {
+        if (cancelled) return;
+        /* Never cut the skeleton off mid-sweep: if the answer beat the floor,
+           serve out what is left of it. */
+        const since = skeletonSinceRef.current;
+        const left  = since === null ? 0 : SKELETON_MIN_MS - (Date.now() - since);
+        skeletonSinceRef.current = null;
+        if (left > 0) window.setTimeout(() => { if (!cancelled) setLoading(false); }, left);
+        else setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      if (seedTimerRef.current) { window.clearTimeout(seedTimerRef.current); seedTimerRef.current = null; }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, leadId]);
 
   /* Saving the deal's answer for one document.
      Written straight through rather than batched on close: the popup is the

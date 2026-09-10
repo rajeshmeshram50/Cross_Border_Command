@@ -109,10 +109,20 @@ class ClmBuyerProfileController extends Controller
         /* ── 5. Completed agreement signature requests, keyed by party + lead. ── */
         $sigByParty   = [];   // "Model#id" → set of completed agreement ids (party-wise list)
         $agrSigByLead = [];   // lead_id    → ['Customer'|'Consignee' → set of agreement ids]
-        foreach (ClmSignatureRequest::where('client_id', $cid)
-            ->where('document_type', ClmSignatureRequest::DOC_AGREEMENT)
+        /* Agreement and trade-doc signatures come back in ONE read.
+         *
+           They were two queries against the same table with the same client
+           and the same status, differing only in document_type — and on a
+           deployment where the database is a network hop away every query
+           costs far more than the work it does. Fetched together and split
+           here; the two loops below are unchanged apart from reading from
+           their own slice. */
+        $sigRowsAll = ClmSignatureRequest::where('client_id', $cid)
+            ->whereIn('document_type', [ClmSignatureRequest::DOC_AGREEMENT, ClmSignatureRequest::DOC_TRADE])
             ->where('status', 'completed')
-            ->get(['model_name', 'party_id', 'lead_id', 'trade_doc_ids']) as $sr) {
+            ->get(['model_name', 'party_id', 'lead_id', 'trade_doc_ids', 'trade_doc_id', 'document_type']);
+
+        foreach ($sigRowsAll->where('document_type', ClmSignatureRequest::DOC_AGREEMENT) as $sr) {
             $ids = is_array($sr->trade_doc_ids) ? $sr->trade_doc_ids : [];
             $party = $sr->model_name === 'Consignee' ? 'Consignee' : 'Customer';
             foreach ($ids as $aid) {
@@ -135,10 +145,7 @@ class ClmBuyerProfileController extends Controller
            customer list further down; the per-lead map stays lead-only, because
            the transaction rows below are genuinely per-deal. */
         $tdSigByParty = [];  // 'Customer'|'Consignee' → party_id → set of trade_doc ids
-        foreach (ClmSignatureRequest::where('client_id', $cid)
-            ->where('document_type', ClmSignatureRequest::DOC_TRADE)
-            ->where('status', 'completed')
-            ->get(['model_name', 'party_id', 'lead_id', 'trade_doc_ids', 'trade_doc_id']) as $sr) {
+        foreach ($sigRowsAll->where('document_type', ClmSignatureRequest::DOC_TRADE) as $sr) {
             $party = $sr->model_name === 'Consignee' ? 'Consignee' : 'Customer';
             $ids = is_array($sr->trade_doc_ids) && $sr->trade_doc_ids ? $sr->trade_doc_ids : [$sr->trade_doc_id];
             foreach ((array) $ids as $mid) {
@@ -577,11 +584,18 @@ class ClmBuyerProfileController extends Controller
                (QA #7), so counting them here would leave this cell reading more
                than the panel it summarises. One entity is still two roles, and
                each role is counted on its own. */
+            /* 'any' when the consignee IS the customer.
+             *
+               Its vault shows the customer's documents as well as its own in
+               that case, so the cell has to count the same set — every
+               document applicable to either party, each once. A separate
+               consignee keeps 'consignee': two companies, two sets. The PI is
+               not in $applicTd at all, so it stays out of both. */
             $tdConsDeal = $docProgress(
                 $applicTd,
                 $tdPartyById,
                 ($tdSigByLead[$lid]['Customer'] ?? []) + ($tdSigByLead[$lid]['Consignee'] ?? []),
-                'consignee',
+                $separateConsignee ? 'consignee' : 'any',
             );
             $tdSigSet  = $separateConsignee
                 ? ($tdSigByLead[$lid]['Customer'] ?? [])

@@ -415,6 +415,38 @@ class SegmentDocUploadController extends Controller
         $coreCatalog         = collect(array_merge($company_dd, $owner_kyc, $trade_licenses));
         $coreCatalogVerified = $coreCatalog->where('status', 'Verified')->count();
 
+        /* tally=1 — the four numbers the CLM Details card needs, and nothing
+         * else.
+         *
+         * The Sales Matrix detail page opens two vaults on load purely to
+         * print "4 of 4 documents · 100%" on two cards. Everything below this
+         * line — every deal, its trade documents, its agreements, the shipment
+         * matrix — is built and then thrown away by that caller. Locally that
+         * waste is 30-43 queries against 4.5 ms of database time and nobody
+         * notices; on a deployment where each query is a network hop it was
+         * 5.3 s and 6.2 s, the two slowest requests on the page.
+         *
+         * The counts are already complete here: they come from the company
+         * DD, owner KYC and trade licence buckets alone, which is exactly what
+         * the card means by "core". Returning now skips the rest.
+         *
+         * Only the core_* keys are sent. The caller reads
+         * `core_total_documents ?? total_documents`, so with the core keys
+         * present the all-inclusive pair it falls back to is never consulted —
+         * and that pair cannot be produced without doing the very work this
+         * mode exists to avoid. Any caller that needs the full picture simply
+         * does not pass the flag. */
+        if ($request->boolean('tally')) {
+            return response()->json([
+                'data' => [
+                    'core_total_documents'   => $coreMandatory->count(),
+                    'core_verified_signed'   => $coreVerified,
+                    'core_catalog_documents' => $coreCatalog->count(),
+                    'core_catalog_verified'  => $coreCatalogVerified,
+                ],
+            ]);
+        }
+
         // Per-shipment matrix — each of the party's shipments with its buyer +
         // consignee Trade Documents and Agreements (split by signature party).
         // Pass the ORIGINAL route id ($id) for the shipment lookup. For a
@@ -535,7 +567,17 @@ class SegmentDocUploadController extends Controller
                      customer's figure with the consignee's obligations. */
                 // This vault's own side only — see the note in
                 // buildShipmentAgreements() on why one entity is still two roles.
-                $sideRows = $type === 'consignee' ? $consRows : $buyerRows;
+                /* Same rule as the ratio in buildShipmentAgreements(): a
+                   same-as-customer consignee shows the customer's documents
+                   too, minus the PI. The list and the count must agree. */
+                $sideRows = $type === 'consignee'
+                    ? (!empty($s['buyer_is_consignee'])
+                        ? array_merge(
+                            array_values(array_filter($buyerRows, fn ($r) => empty($r['pi_id']))),
+                            $consRows,
+                          )
+                        : $consRows)
+                    : $buyerRows;
                 $seenInDeal = [];
                 foreach ($sideRows as $r) {
                     $k = ($r['db_id'] ?? 'x') . '|' . ($r['name'] ?? '');
@@ -1056,7 +1098,30 @@ class SegmentDocUploadController extends Controller
                is the consignee's to sign, so it stays out of the customer's
                vault even when the two are the same company (and the other way
                round). Only agreements were reported; trade docs are untouched. */
-            $tradeAll = $primary['trade'];
+        /* A consignee created AS the customer holds the customer's documents.
+         *
+           Choosing "same as customer" on the consignee form is a statement
+           that the two are one company — its KYC and owners are cloned from
+           the customer at save time — so its vault shows what the customer's
+           shows. A SEPARATE consignee still sees only its own side: there the
+           two are different companies and the buyer's papers are not its
+           business.
+         *
+           The PI is the one exception, in both cases. It is raised to the
+           buyer, carries the buyer's commercial terms and is signed by the
+           buyer; the consignee is not a party to it in either arrangement,
+           and the customer's own vault already carries it. It lives on the
+           buyer side, so it is filtered out of the merge rather than being
+           moved back.
+         *
+           De-duplicated because a Buyer+Consignee document is emitted into
+           both lists under the same id and must be counted once. */
+            $tradeAll = ($type === 'consignee' && $buyerIsConsignee)
+                ? $dedupe(array_merge(
+                    array_values(array_filter($tradeBuyer, fn ($r) => empty($r['pi_id']))),
+                    $tradeCons,
+                  ))
+                : $primary['trade'];
             $agrAll   = $primary['agr'];
             $signed   = fn (array $d) => collect($d)->where('status', 'Signed')->count();
 

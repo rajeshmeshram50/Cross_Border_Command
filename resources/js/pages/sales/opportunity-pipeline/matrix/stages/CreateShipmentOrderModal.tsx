@@ -199,7 +199,20 @@ export default function CreateShipmentOrderModal({
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   // Freeze background page scroll while the modal is open (locks html + body).
-  useScrollLock(open);
+  /* The second argument is not optional here — it is what stops this modal
+     locking ITSELF.
+   *
+     useScrollLock walks the whole document, finds every element that is
+     currently scrolling and pins overflow:hidden on it inline. .cso-body is
+     one of those elements: it is the form's scroller and its content is
+     taller than the box the moment the modal opens. So the lock froze the
+     body it was meant to protect, and an INLINE overflow beats every rule in
+     the stylesheet — which is why the grid template, min-height:0 and
+     overflow-y:auto all looked correct and none of them worked.
+   *
+     Naming the backdrop marks this overlay's own subtree as the part that is
+     SUPPOSED to scroll, exactly as the hook intends. */
+  useScrollLock(open, '.cso-backdrop');
 
   const [shippingLiability, setLiability] = useState('');
   const [coldChain, setColdChain]         = useState('');
