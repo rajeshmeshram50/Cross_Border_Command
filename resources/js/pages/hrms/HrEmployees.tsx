@@ -29,7 +29,7 @@ import { leavePlansApi } from './leavePlansApi';
    how the figures drift apart. */
 import {
   type SalBreakComp, SPLIT_CODES, MAX_COMP_AMOUNT, MAX_COMP_LABEL, CTC_ROUNDING_SLACK,
-  seedBreakup, absorbIntoSpecial, statutoryPt, pfDeduction, breakupSignature, validateBreakup,
+  seedBreakup, absorbIntoSpecial, reseedSplit, planEarningRemoval, statutoryPt, pfDeduction, breakupSignature, validateBreakup,
 } from '../../utils/salaryBreakup';
 import { resolveProbation } from '../../utils/probation';
 import { useModulePermission } from '../../hooks/useModulePermission';
@@ -739,6 +739,11 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
   const [onbName, setOnbName] = useState('');
   const [onbEmail, setOnbEmail] = useState('');
   const [onbDept, setOnbDept] = useState('');
+  /* Designation + Primary Role are captured HERE now, not on the public
+     onboarding form — what someone is hired as is HR's call, and the candidate
+     was previously choosing it off the master list. (CBC #24) */
+  const [onbDesignation, setOnbDesignation] = useState('');
+  const [onbRole, setOnbRole] = useState('');
   const [onbDate, setOnbDate] = useState('');
   const [onbExpiry, setOnbExpiry] = useState<ExpiryDays>(15);
   const [generatedInviteUrl, setGeneratedInviteUrl] = useState<string | null>(null);
@@ -793,6 +798,8 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
         invitee_name: onbName.trim(),
         invitee_email: onbEmail.trim(),
         department_id: deptId ?? null,
+        designation_id: onbDesignation ? Number(onbDesignation) : null,
+        primary_role_id: onbRole ? Number(onbRole) : null,
         expected_join_date: onbDate || null,
         expiry_days: onbExpiry,
         app_origin: typeof window !== 'undefined' ? window.location.origin : undefined,
@@ -826,6 +833,8 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     setOnbName('');
     setOnbEmail('');
     setOnbDept('');
+    setOnbDesignation('');
+    setOnbRole('');
     setOnbDate('');
     setOnbExpiry(15);
     setOnbErrors({});
@@ -1631,13 +1640,11 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     seededForSalaryRef.current = settledSalary;
     const amt = Number(settledSalary) || 0;
     const monthlyGross = eSalaryFreq === 'Per month' ? amt : amt / 12;
-    setEEarnings(prev => {
-      // HR's own components are kept; the three derived ones are rebuilt.
-      // Special then absorbs the kept ones so the re-seed lands ON the new CTC
-      // rather than at CTC + whatever HR had added.
-      const custom = prev.filter(c => !SPLIT_CODES.includes(c.code));
-      return absorbIntoSpecial([...seedBreakup(monthlyGross), ...custom], monthlyGross);
-    });
+    // HR's own components are kept, and the derived ones are rebuilt — but only
+    // those still on the form. A split row HR deleted (typically Special
+    // Allowance) used to come back on the next CTC edit and end up in payroll.
+    // (CBC #9)
+    setEEarnings(prev => reseedSplit(prev, monthlyGross));
     /* Professional Tax is a function of the gross exactly like Basic / HRA, so a
        new CTC re-derives it too instead of leaving the old slab figure sitting
        against a salary it no longer belongs to. Same ownership rule as the
@@ -1800,21 +1807,37 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     const list = which === 'earn' ? eEarnings : eDeductions;
     const removed = list[i];
     const name = removed?.label?.trim() || 'this component';
+    /* Removing an earning must not change what the employee earns. (CBC #22)
+       A split row (Basic / HRA / Special) used to be dropped outright, so
+       deleting Special Allowance left the breakup short by its amount and the
+       CTC check failed with nothing said about how to fix it. The amount is
+       folded into Basic instead — the same rule the Revise Salary modal
+       applies — and the confirmation says so before anything moves. */
+    const plan = which === 'earn' ? planEarningRemoval(eEarnings, i) : null;
     const ok = await confirmDialog({
       title: 'Remove component?',
-      message: <>Remove <strong>{name}</strong> from the salary breakup? It’s applied when you save the employee.</>,
+      message: (
+        <>
+          Remove <strong>{name}</strong> from the salary breakup?
+          {plan?.mergeLabel && plan.amount > 0 && (
+            <> Its ₹{plan.amount.toLocaleString('en-IN')} moves to <strong>{plan.mergeLabel}</strong>, so the monthly gross does not change.</>
+          )}
+          {' '}It’s applied when you save the employee.
+        </>
+      ),
       tone: 'danger',
       confirmLabel: 'Remove',
       cancelLabel: 'Cancel',
       icon: 'delete-bin-line',
     });
     if (!ok) return;
-    if (which === 'earn') {
-      const rest = eEarnings.filter((_, idx) => idx !== i);
-      // Removing one of HR's own rows hands its money back to Special.
+    if (which === 'earn' && plan) {
+      /* Custom rows still hand their money back to Special where one exists —
+         absorbIntoSpecial is a no-op once Special is gone, and the fold above
+         has already kept the total whole. */
       setEEarnings(SPLIT_CODES.includes(removed?.code)
-        ? rest
-        : absorbIntoSpecial(rest, monthlyGrossFromSalary()));
+        ? plan.next
+        : absorbIntoSpecial(plan.next, monthlyGrossFromSalary()));
     } else {
       setEDeductions(eDeductions.filter((_, idx) => idx !== i));
       // Removing the ESI / Professional Tax row also unticks its checkbox so
@@ -3934,7 +3957,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                   onClick={() => {
                     setGeneratedInviteUrl(null);
                     setCopiedAt(0);
-                    setOnbName(''); setOnbEmail(''); setOnbDept(''); setOnbDate(''); setOnbExpiry(15); setOnbErrors({});
+                    setOnbName(''); setOnbEmail(''); setOnbDept(''); setOnbDesignation(''); setOnbRole(''); setOnbDate(''); setOnbExpiry(15); setOnbErrors({});
                   }}
                   className="btn onb-secondary-btn fw-semibold rounded-pill flex-grow-1"
                   style={{ fontSize: 13, padding: '10px 16px' }}
@@ -4020,6 +4043,31 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                     {onbErrors.date && (
                       <div className="onb-error"><i className="ri-error-warning-line" />{onbErrors.date}</div>
                     )}
+                  </Col>
+                  {/* Designation + Primary Role. Optional, unlike the four
+                      above: an invite can legitimately go out before the title
+                      is settled, and the employee record is then created
+                      without one exactly as it was before these existed. They
+                      are shown READ-ONLY on the candidate's form. (CBC #24) */}
+                  <Col md={6}>
+                    <label className="onb-label">Designation</label>
+                    <MasterSelect
+                      value={onbDesignation}
+                      onChange={setOnbDesignation}
+                      placeholder="Select designation"
+                      options={designationOptions}
+                      onOpen={() => reloadMasters()}
+                    />
+                  </Col>
+                  <Col md={6}>
+                    <label className="onb-label">Primary Role</label>
+                    <MasterSelect
+                      value={onbRole}
+                      onChange={setOnbRole}
+                      placeholder="Select role"
+                      options={primaryRoleOptions}
+                      onOpen={() => reloadMasters()}
+                    />
                   </Col>
                 </Row>
 

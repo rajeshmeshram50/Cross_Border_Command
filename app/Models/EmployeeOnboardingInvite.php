@@ -19,7 +19,9 @@ class EmployeeOnboardingInvite extends Model
     protected $fillable = [
         'client_id', 'branch_id', 'created_by',
         'invitee_name', 'invitee_email',
-        'department_id', 'expected_join_date',
+        // Set by HR when the link is generated — the candidate cannot choose
+        // what they are hired as. (CBC #24)
+        'department_id', 'designation_id', 'primary_role_id', 'expected_join_date',
         'token', 'slug', 'expires_at',
         'status', 'completed_at', 'employee_id',
     ];

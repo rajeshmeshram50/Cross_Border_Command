@@ -11,6 +11,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { Shimmer } from '../../components/ui/Shimmer';
 import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import api from '../../api';
+import { assertApiBlob } from '../../utils/downloadFile';
 import '../../../css/recruitment.css';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
 
@@ -79,6 +80,10 @@ interface PayrollRow {
   /* The PF figure is a snapshot taken when the slip was generated; "PF
      Applicable" on the employee master is live. Set by the server only when a
      finalized cycle disagrees with the flag as it reads today. (#90) */
+  /** Weekly offs in the period. Null when the row has no payslip in the run. */
+  weekOffDays?: number | null;
+  /** Paid holidays in the period — excluded from Absent. Null when not computed. */
+  holidayDays?: number | null;
   pfStale?: boolean;
   pfNotice?: string | null;
   /* Full monthly salary from the structure, and whether this cycle pays less
@@ -98,8 +103,29 @@ interface PayrollRow {
   bankVerified?: boolean;
 }
 
+/* Money on this screen carries its PAISE. (CBC #10)
+ *
+ * This used to format with maximumFractionDigits: 0, which silently dropped the
+ * decimals from every payroll column — and a payroll table whose figures are
+ * rounded independently stops adding up in front of the reader:
+ *
+ *     gross 1,00,416.67  ded 96,754.49  net 3,662.18   (what payroll computed)
+ *     gross 1,00,417     ded 96,754     net 3,662      (what the grid printed)
+ *                        1,00,417 - 96,754 = 3,663, but Net says 3,662
+ *
+ * Nothing was miscalculated; the row simply could not be reconciled by eye,
+ * which is exactly what gets raised as "the salary calculation is wrong for
+ * decimal values". Both bounds are pinned so every cell shows the same two
+ * decimals — a column mixing ₹5,641.8 with ₹10,288 reads no better.
+ *
+ * Rounded to the paisa first: these are floating-point sums of decimal amounts,
+ * so a total can arrive as ...0000000002 and print a third decimal.
+ *
+ * fmtINRShort (the KPI tiles) is deliberately untouched — ₹1.2L is a headline,
+ * not a figure anyone reconciles. */
 const fmtINR = (n: number) =>
-  new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    .format(Math.round((Number(n) || 0) * 100) / 100);
 
 const fmtINRShort = (n: number) => {
   if (n >= 10000000) return `₹${(n / 10000000).toFixed(2)}Cr`;
@@ -985,6 +1011,10 @@ export default function HrPayroll() {
         params: { download: 1 },
         responseType: 'blob',
       });
+      // A 200 is not proof of a PDF — see assertApiBlob. Without this a web
+      // page returned by a route that never matched saves as a blank
+      // payslip. (CBC #23)
+      await assertApiBlob(res.data as Blob, 'pdf');
       const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const a = document.createElement('a');
       a.href = url;
@@ -1467,7 +1497,10 @@ export default function HrPayroll() {
     {
       header: 'Employee',
       accessorKey: 'name',
-      meta: { width: '25%', wrap: true },
+      /* 25% -> 22%: the Weekly Off column (CBC #7) has to come out of the same
+         100% budget (serial 4% + columns 96%), and the name cell had the most
+         slack — it truncates with a tooltip anyway. */
+      meta: { width: '22%', wrap: true },
       cell: info => {
         const r = info.row.original;
         return (
@@ -1486,23 +1519,57 @@ export default function HrPayroll() {
         );
       },
     },
-    { header: 'Present', accessorKey: 'present', meta: { width: '11%', align: 'center' }, cell: info => <span className="fs-13 fw-bold">{info.row.original.present}</span> },
+    { header: 'Present', accessorKey: 'present', meta: { width: '10%', align: 'center' }, cell: info => <span className="fs-13 fw-bold">{info.row.original.present}</span> },
     {
       header: 'Absent',
       accessorKey: 'absent',
+      meta: { width: '10%', align: 'center' },
+      cell: info => {
+        const r = info.row.original;
+        /* Say that holidays were taken out. The figure is derived, and a
+           reader counting days by hand has no way to see which credits went
+           into it — that invisibility is what got holidays reported as being
+           counted twice. (CBC #8) */
+        const hol = r.holidayDays ?? 0;
+        return (
+          <span
+            className="fs-13 fw-bold"
+            style={{ color: r.absent ? '#b1401d' : 'var(--vz-secondary-color)' }}
+            title={hol > 0
+              ? `${hol} paid holiday day(s) in this period are excluded from Absent.`
+              : undefined}
+          >
+            {r.absent}
+            {hol > 0 && <span className="text-muted" style={{ fontSize: 10, marginLeft: 3 }}>*</span>}
+          </span>
+        );
+      },
+    },
+    {
+      /* Weekly offs sit next to Absent on purpose: they are the days that are
+         NOT worked and NOT absence, and without them a full month reads short
+         — Present + Absent never reached the days in the month and there was
+         nothing on the row to say why. (CBC #7) */
+      header: 'Weekly Off',
+      accessorKey: 'weekOffDays',
       meta: { width: '11%', align: 'center' },
-      cell: info => <span className="fs-13 fw-bold" style={{ color: info.row.original.absent ? '#b1401d' : 'var(--vz-secondary-color)' }}>{info.row.original.absent}</span>,
+      cell: info => {
+        const w = info.row.original.weekOffDays;
+        return w === null || w === undefined
+          ? <span className="text-muted" title="Not computed — this employee has no payslip in this run.">—</span>
+          : <span className="fs-13 fw-bold" style={{ color: w ? '#0c63b0' : 'var(--vz-secondary-color)' }}>{w}</span>;
+      },
     },
     {
       header: 'Late Marks',
       accessorKey: 'lateMarks',
-      meta: { width: '12%', align: 'center' },
+      meta: { width: '11%', align: 'center' },
       cell: info => <span className="fs-13 fw-semibold" style={{ color: info.row.original.lateMarks ? '#a06f00' : 'var(--vz-secondary-color)' }}>{info.row.original.lateMarks}</span>,
     },
     {
       header: 'Missing Punch',
       accessorKey: 'missingPunch',
-      meta: { width: '13%', align: 'center' },
+      meta: { width: '12%', align: 'center' },
       cell: info => {
         const r = info.row.original;
         return (
@@ -1520,7 +1587,7 @@ export default function HrPayroll() {
     {
       header: 'Att. Status',
       accessorKey: 'attSource',
-      meta: { width: '13%', align: 'center' },
+      meta: { width: '12%', align: 'center' },
       cell: info => {
         const r = info.row.original;
         const sourceTone =
@@ -1538,7 +1605,7 @@ export default function HrPayroll() {
     {
       header: 'Mismatch',
       accessorKey: 'mismatch',
-      meta: { width: '11%', align: 'center' },
+      meta: { width: '8%', align: 'center' },
       cell: info => {
         const m = info.row.original.mismatch;
         return m ? <span style={{ color: '#b1401d', fontWeight: 600 }} className="fs-13">{m}</span> : <span className="text-muted">—</span>;
@@ -1599,9 +1666,20 @@ export default function HrPayroll() {
         header: 'PF (Emp)', accessorKey: 'pfEmp', meta: { width: '7%', align: 'right' },
         cell: info => {
           const r = info.row.original;
+          /* A zero is muted, the way ESI and PT already render theirs. (CBC #6)
+             This column painted ₹0 in the same solid violet as a real
+             deduction, so "not applicable" and "computed to nothing" looked
+             identical to "the calculation failed" — which is how a correct ₹0
+             kept getting raised as a bug. The amber ⓘ still carries the
+             server's reason where there is one; where there is not, the zero
+             now says plainly that PF does not apply to this employee, without
+             needing a hover to find out. */
+          const zero = !r.pfEmp;
           return (
-            <span className="fs-13" style={{ color: '#5a3fd1' }}>
-              ₹{fmtINR(r.pfEmp)}
+            <span className="fs-13" style={zero ? undefined : { color: '#5a3fd1' }}>
+              {zero
+                ? <span className="text-muted" title={r.pfStale ? undefined : 'PF is not applicable for this employee.'}>₹0</span>
+                : `₹${fmtINR(r.pfEmp)}`}
               {r.pfStale && (
                 <i
                   className="ri-information-line ms-1"
@@ -2373,7 +2451,9 @@ export default function HrPayroll() {
                 className="pay-tbl-att"
                 fitToViewport
                 autoFitRows
-                minWidth={1100}
+                /* +130px for the Weekly Off column, so the row still has its
+                   real width to scroll to instead of compacting. (CBC #7) */
+                minWidth={1230}
                 loading={loading}
                 searchValue={q}
                 onSearchChange={setQ}

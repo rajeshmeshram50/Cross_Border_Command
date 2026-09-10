@@ -41,6 +41,10 @@ class OnboardingController extends Controller
             'invitee_name'       => 'required|string|max:255',
             'invitee_email'      => 'required|email|max:191',
             'department_id'      => 'nullable|integer|exists:master_departments,id',
+            // HR's call, captured with the link rather than asked of the
+            // candidate on the public form. (CBC #24)
+            'designation_id'     => 'nullable|integer|exists:master_designations,id',
+            'primary_role_id'    => 'nullable|integer|exists:master_roles,id',
             // Realistic window for a new joiner — no absurd historical dates,
             // no far-future. Mirrors validateOnboardingPayload's date_of_joining.
             'expected_join_date' => 'nullable|date|after_or_equal:' . now()->subYear()->toDateString() . '|before_or_equal:' . now()->addYears(2)->toDateString(),
@@ -88,6 +92,8 @@ class OnboardingController extends Controller
             'invitee_name'       => $data['invitee_name'],
             'invitee_email'      => $data['invitee_email'],
             'department_id'      => $data['department_id'] ?? null,
+            'designation_id'     => $data['designation_id'] ?? null,
+            'primary_role_id'    => $data['primary_role_id'] ?? null,
             'expected_join_date' => $data['expected_join_date'] ?? null,
             'token'              => $token,
             'slug'               => $slug,
@@ -137,6 +143,8 @@ class OnboardingController extends Controller
                 'invitee_email'      => $invite->invitee_email,
                 'invitee_name'       => $invite->invitee_name,
                 'department_id'      => $invite->department_id,
+                'designation_id'     => $invite->designation_id,
+                'primary_role_id'    => $invite->primary_role_id,
                 'expected_join_date' => $invite->expected_join_date?->toDateString(),
                 'expires_at'         => $invite->expires_at?->toIso8601String(),
                 'url'                => $url,
@@ -191,6 +199,10 @@ class OnboardingController extends Controller
                 'invitee_name'       => $invite->invitee_name,
                 'invitee_email'      => $invite->invitee_email,
                 'department_id'      => $invite->department_id,
+                // Read-only on the form — shown so the candidate can SEE the
+                // role they were hired for, not choose it. (CBC #24)
+                'designation_id'     => $invite->designation_id,
+                'primary_role_id'    => $invite->primary_role_id,
                 'expected_join_date' => $invite->expected_join_date?->toDateString(),
                 'expires_at'         => $invite->expires_at?->toIso8601String(),
                 'org_name'           => $orgName,
@@ -285,6 +297,18 @@ class OnboardingController extends Controller
                     // Department defaults to the one the admin pre-set on the
                     // invite if the candidate didn't override.
                     'department_id' => $data['department_id'] ?? $invite->department_id,
+                    /* Designation and Primary Role come from the INVITE and only
+                     * the invite. (CBC #24)
+                     *
+                     * These used to be pickers on the public form, so a
+                     * candidate chose their own job title from the master list.
+                     * They are HR's decision now, set when the link is
+                     * generated. The `??` deliberately does NOT fall back to
+                     * $data: the fields are gone from the form, and honouring
+                     * them if they reappeared in a hand-made request would put
+                     * the choice back in the candidate's hands. */
+                    'designation_id'  => $invite->designation_id,
+                    'primary_role_id' => $invite->primary_role_id,
                     'date_of_joining' => $data['date_of_joining'] ?? $invite->expected_join_date,
                 ]));
 

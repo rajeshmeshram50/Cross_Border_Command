@@ -357,7 +357,7 @@ export default function DocGenerateModal({
                 /* Say the catalogue is missing rather than that the template
                    has no fields — the second is a claim we cannot make when
                    the list never arrived. */
-                <div className="dgm-empty" style={{ borderColor: '#fcd34d', background: '#fffbeb', color: '#92400e' }}>
+                <div className="dgm-empty dgm-empty--warn">
                   <i className="ri-error-warning-line" style={{ fontSize: 20, display: 'block', marginBottom: 4 }} />
                   Couldn't load your organisation's custom fields, so any custom variables in
                   this template can't be filled here. Close and reopen to retry — if it keeps
@@ -430,7 +430,7 @@ export default function DocGenerateModal({
                   {{braces}}, so naming them here is the last point at which
                   that is cheap to fix. */}
               {unresolvedTokens.length > 0 && (
-                <div className="dgm-empty mt-2" style={{ borderColor: '#fcd34d', background: '#fffbeb', color: '#92400e', textAlign: 'left' }}>
+                <div className="dgm-empty dgm-empty--warn mt-2" style={{ textAlign: 'left' }}>
                   <i className="ri-error-warning-line me-1" />
                   {unresolvedTokens.length === 1 ? 'This variable is' : 'These variables are'} in the
                   template but not registered as a custom field, so {unresolvedTokens.length === 1 ? 'it' : 'they'} will
@@ -786,6 +786,36 @@ function ScopedStyles() {
       .dgm-btn-primary { border: 0; color: #fff; background: linear-gradient(135deg,#6366f1,#8b5cf6); box-shadow: 0 4px 12px rgba(99,102,241,0.30); }
 
       /* Dark mode */
+      /* Two more light chips the sweep turned up. (CBC #8)
+         .dgm-btn-outline is a WHITE button — a bright slab on the dark footer —
+         and .dgm-stale an amber pill, the same family as the warning banner
+         above and light for the same reason. Both keep their identity (violet
+         outline, amber caution); only the ground moves. */
+      [data-bs-theme="dark"] .dgm-btn-outline,
+      [data-layout-mode="dark"] .dgm-btn-outline {
+        background: rgba(124,58,237,0.14); border-color: #a78bfa; color: #c4b5fd;
+      }
+      [data-bs-theme="dark"] .dgm-stale,
+      [data-layout-mode="dark"] .dgm-stale {
+        background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.45); color: #fcd34d;
+      }
+
+      /* The custom-variable panel. (CBC #8)
+         Every other block in this modal had a dark rule — body, footer, inputs,
+         buttons, preview stage — but the tinted panel the variable fields sit
+         on did not, so it stayed #f8fafc: one white slab in the middle of a
+         dark dialog. Its labels go with it; #6b7280 on a dark ground is barely
+         legible. */
+      [data-bs-theme="dark"] .dgm-fieldgrid,
+      [data-layout-mode="dark"] .dgm-fieldgrid {
+        background: rgba(255,255,255,0.04);
+        border-color: rgba(255,255,255,0.10);
+      }
+      [data-bs-theme="dark"] .dgm-section-title,
+      [data-layout-mode="dark"] .dgm-section-title,
+      [data-bs-theme="dark"] .dgm-label,
+      [data-layout-mode="dark"] .dgm-label { color: rgba(255,255,255,0.60); }
+
       [data-bs-theme="dark"] .dgm-body,
       [data-layout-mode="dark"] .dgm-body { background: #1f2937; }
       [data-bs-theme="dark"] .dgm-footer,
@@ -796,9 +826,20 @@ function ScopedStyles() {
       }
       [data-bs-theme="dark"] .dgm-input::placeholder,
       [data-layout-mode="dark"] .dgm-input::placeholder { color: rgba(255,255,255,0.35); }
+      /* Amber warning flavour of .dgm-empty. The palette was inline on both
+         call sites, and an inline style outranks the dark rule below — so the
+         banner stayed a light amber card whatever the theme. (CBC #8) */
+      .dgm-empty--warn { border-color: #fcd34d; background: #fffbeb; color: #92400e; }
       [data-bs-theme="dark"] .dgm-empty,
       [data-layout-mode="dark"] .dgm-empty {
         background: rgba(99,102,241,0.10); border-color: rgba(129,140,248,0.40); color: #c7d2fe;
+      }
+      /* AFTER the dark .dgm-empty rule above, deliberately: both selectors
+         weigh the same, so whichever comes last wins — placed before it, the
+         amber warning was repainted indigo in dark mode. */
+      [data-bs-theme="dark"] .dgm-empty--warn,
+      [data-layout-mode="dark"] .dgm-empty--warn {
+        border-color: rgba(245,158,11,0.45); background: rgba(245,158,11,0.12); color: #fcd34d;
       }
       [data-bs-theme="dark"] .dgm-btn-ghost,
       [data-layout-mode="dark"] .dgm-btn-ghost {

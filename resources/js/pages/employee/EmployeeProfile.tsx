@@ -10,6 +10,7 @@ import HeaderFooterPanel, {
   type HeaderConfig, type FooterConfig,
 } from '../hrms/doc-templates/HeaderFooterPanel';
 import api from '../../api';
+import { assertApiBlob } from '../../utils/downloadFile';
 import { useAuth } from '../../contexts/AuthContext';
 import { draftFilesKey, saveDraftFiles, loadDraftFiles, deleteDraftFiles } from '../../utils/draftFileStore';
 import { type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
@@ -637,6 +638,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     setDownloadingDocId(docId);
     try {
       const resp = await api.get(`/hr-document-signatures/${docId}/download-pdf`, { responseType: 'blob' });
+      /* Reject a non-PDF before wrapping it as one — a 200 carrying the SPA's
+         index.html or a JSON error would otherwise save/open as a blank
+         document with nothing explaining why. (CBC #23) */
+      await assertApiBlob(resp.data as Blob, 'pdf');
       const url = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
       const a = document.createElement('a');
       a.href = url;
@@ -647,7 +652,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       URL.revokeObjectURL(url);
       toast.success('Downloaded', 'Your signed PDF has been saved.');
     } catch (err: any) {
-      toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
+      toast.error('Could not download', err?.response?.data?.message || err?.message || 'Please try again.');
     } finally {
       setDownloadingDocId(null);
     }

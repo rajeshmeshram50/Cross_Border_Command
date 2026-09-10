@@ -473,12 +473,18 @@ class PayrollController extends Controller
         // Structure gross per employee, so slips generated before the monthly
         // line data still caption the contractual CTC correctly. (#134)
         $structureGross = $this->structureGrossMap($slips);
+        // Weekly offs per employee for the Biometric Input column. (CBC #7)
+        $weekOffs = $this->weekOffDaysMap($slips, $period);
+        // Holidays per employee, so Absent does not swallow them. (CBC #8)
+        $holidays = $this->holidayDaysMap($slips, $period);
         $rows = $slips->map(fn ($p) => $this->serializePayslip(
             $p,
             false,
             $elapsed[$p->employee_id] ?? null,
             $pfNotices[$p->id] ?? null,
             $structureGross[$p->employee_id] ?? null,
+            $weekOffs[$p->employee_id] ?? null,
+            $holidays[$p->employee_id] ?? null,
         ));
 
         /* Employees this cycle SHOULD pay who have no payslip in it yet. (#121)
@@ -1369,18 +1375,137 @@ class PayrollController extends Controller
         $gross   = (float) $slip->gross_earnings;
         $lopAmt  = (float) $slip->lop_amount;
 
+        $num = fn ($v) => rtrim(rtrim(number_format((float) $v, 2, '.', ''), '0'), '.');
+
         $basis = 'This Cycle is each component at the rate in force during this pay window. '
             . 'Attendance is not applied to the component lines — absence is charged once, '
             . 'as the Loss of Pay deduction';
         if ($lopDays > 0) {
-            $basis .= ' (₹' . number_format($lopAmt, 2) . ' for ' . rtrim(rtrim(number_format($lopDays, 2, '.', ''), '0'), '.')
-                . ' of ' . rtrim(rtrim(number_format($working, 2, '.', ''), '0'), '.') . ' working day(s), '
-                . 'paid days ' . rtrim(rtrim(number_format($paid, 2, '.', ''), '0'), '.') . ')';
+            $basis .= ' (₹' . number_format($lopAmt, 2) . ' for ' . $num($lopDays)
+                . ' of ' . $num($working) . ' working day(s), '
+                . 'paid days ' . $num($paid) . ')';
         }
         $basis .= '. Net Pay = Total Earnings ₹' . number_format($gross, 2)
             . ' − Total Deductions ₹' . number_format((float) $slip->total_deductions, 2)
             . ' = ₹' . number_format((float) $slip->net_pay, 2) . '.';
         $out[] = $basis;
+
+        /* The DAY arithmetic, stated as a sum. (CBC #4)
+         *
+         * The header tiles show Days in Month, Payable Days, Days Present, LOP
+         * and Paid Days as five separate numbers with no stated relationship,
+         * so there was no way to see that they are one equation — or which
+         * denominator the component rates are actually divided by. Working days
+         * already exclude weekly offs, which is why a low Paid Days figure does
+         * not mean the week-offs were docked. */
+        if ($working > 0) {
+            /* State the sum ONLY when it actually holds — and know what "holds"
+             * means here, because paid + lop == working is NOT the invariant.
+             *
+             * PayrollService keeps two different "paid days" on purpose (#114):
+             * paid_days is what ATTENDANCE credits, and it deliberately does
+             * NOT subtract the late-mark penalty, so someone with perfect
+             * attendance still reads 27 / 27 while carrying 0.5 LOP for late
+             * marks. Against that slip a naive check reports the days as
+             * broken. The late penalty is therefore taken out of the LOP side
+             * before the two are compared, and called out separately.
+             *
+             * Two further cases legitimately do not balance and must not be
+             * accused of anything: a cycle still running charges LOP only up to
+             * today (the elapsed-days cap), and a held slip carries working
+             * days with nothing computed against them. In both the figures are
+             * simply stated. Printing "these do not add up, check attendance"
+             * across a correct slip would send HR hunting a bug that is not
+             * there — the opposite of what this note is for. */
+            $lateLop    = $slip->late_lop_days === null ? null : (float) $slip->late_lop_days;
+            $absenceLop = $lateLop === null ? $lopDays : max(0, round($lopDays - $lateLop, 2));
+
+            if (abs(($paid + $absenceLop) - $working) < 0.005) {
+                $days = 'Days: working ' . $num($working) . ' = paid ' . $num($paid)
+                    . ' + loss of pay ' . $num($absenceLop) . '.';
+                if ($lateLop !== null && $lateLop > 0) {
+                    $days .= ' A further ' . $num($lateLop) . ' day(s) is charged as loss of pay for late marks'
+                        . ' — Paid Days still shows what attendance credited, which is why the two do not net off.';
+                }
+            } else {
+                /* Name the RIGHT reason, or none.
+                 *
+                 * Three different situations land here and they are not
+                 * interchangeable. A pro-rated slip (mid-cycle join or exit)
+                 * counts working days across the whole month while paying only
+                 * the days employed — that is settled and final, so telling its
+                 * reader the cycle is "still open" is simply false. An open run
+                 * caps loss of pay at today and really does settle later. And a
+                 * slip that is neither gets the figures with no explanation
+                 * attached, which is honest: an invented cause is worse than an
+                 * absent one on the note whose whole purpose is auditability. */
+                $proRated = false;
+                foreach ((array) ($slip->exceptions ?? []) as $e) {
+                    $reason = is_array($e) ? (string) ($e['reason'] ?? '') : '';
+                    if (stripos($reason, 'pro-rated') !== false || stripos($reason, 'prorated') !== false) {
+                        $proRated = true;
+                        break;
+                    }
+                }
+                $settled = in_array(strtolower((string) $slip->status), ['paid', 'approved'], true);
+
+                $days = 'Days recorded: working ' . $num($working) . ', paid ' . $num($paid)
+                    . ', loss of pay ' . $num($lopDays) . '.';
+                if ($proRated) {
+                    $days .= ' Working days cover the whole month while pay covers only the days employed,'
+                        . ' so the two are not meant to net off — see the pro-ration note below.';
+                } elseif (!$settled) {
+                    $days .= ' A cycle that is still open charges loss of pay only up to today, so these settle'
+                        . ' when the run is finalized.';
+                }
+            }
+            $days .= ' Weekly offs are excluded from working days, so they are neither counted nor docked.';
+            $out[] = $days;
+        }
+
+        /* Why a component line differs from its Monthly figure. (CBC #4)
+         *
+         * The reader's actual question is "Basic says ₹12,500 a month but
+         * ₹15,080.65 this cycle — where did that come from?". The blended /
+         * pro-rated exceptions below explain the CAUSE, but only when the run
+         * recorded one, and neither says which lines moved. This names them, so
+         * the two columns can be reconciled line by line without knowing the
+         * internals. */
+        $moved = [];
+        foreach ((array) ($slip->earnings ?? []) as $c) {
+            if (!is_array($c)) {
+                continue;
+            }
+            $monthly = $c['monthly'] ?? null;
+            $amount  = $c['amount'] ?? null;
+            if ($monthly === null || $amount === null) {
+                continue;
+            }
+            /* ROUND the difference before comparing it to a paisa.
+             * abs(1000.01 - 1000.00) is 0.00999999999999091 in binary floating
+             * point, so `>= 0.01` was false and a component that really had
+             * moved by exactly one paisa was silently left out of the
+             * reconciliation — the two columns then disagreed with nothing
+             * explaining why, which is the whole complaint this note answers.
+             * Rounding to paisa first makes the boundary behave as written. */
+            if (round(abs((float) $monthly - (float) $amount), 2) >= 0.01) {
+                $moved[] = ($c['label'] ?? 'Component') . ' ₹' . number_format((float) $monthly, 2)
+                    . ' → ₹' . number_format((float) $amount, 2);
+            }
+        }
+        if ($moved) {
+            /* Cap the list. A structure with thirty components produced a
+             * 1,200-character run-on sentence that nobody reads — and the note
+             * exists to be read. The first few name the pattern; the count
+             * carries the rest, and the table above is the full record. */
+            $shown = array_slice($moved, 0, 6);
+            $more  = count($moved) - count($shown);
+            $out[] = 'Monthly is the salary structure rate; This Cycle is what this window pays. '
+                . 'Lines that differ: ' . implode(', ', $shown)
+                . ($more > 0 ? ', and ' . $more . ' more' : '')
+                . '. The reason is stated below — a mid-cycle revision is blended across the rates that were '
+                . 'in force, and a join or exit inside the window is pro-rated to the days employed.';
+        }
 
         /* The factors recorded when the run was generated. Matched on the
          * phrases PayrollService writes, so a note it stops emitting simply
@@ -1942,6 +2067,85 @@ class PayrollController extends Controller
      * disagree, and the report used to show only a bare ₹0 — reported twice as
      * "PF Applicable No→Yes does nothing". (#90 reopen)
      */
+    /**
+     * Weekly offs falling in the period, per employee. (CBC #7)
+     *
+     * Biometric Input showed Present / Absent / Late / Missing Punch with no
+     * mention of weekly offs, so a month where someone worked every scheduled
+     * day still read as short — the off days were simply invisible, and there
+     * was no way to tell them apart from absence.
+     *
+     * Built as ONE map rather than per row: the grid serializes every employee
+     * in the run, and resolving the relation inside the serializer would be a
+     * query each. Counted from the employee's own weekly_off pattern, not
+     * derived from working_days, which is pro-rated for a mid-period joiner and
+     * would not give the real number back.
+     */
+    /**
+     * Paid holidays in the period, per employee. (CBC #8)
+     *
+     * Absent is DERIVED on the row as working − present − paid leave, and that
+     * subtraction never knew about holidays: a public holiday nobody punched on
+     * is not present, not leave, and still inside working_days, so every
+     * employee picked up an extra Absent day for it. Payroll itself was right —
+     * it credits the holiday as paid — only the reader disagreed.
+     *
+     * The count cannot be read off the payslip: the engine computes
+     * `holiday_days` and then loses it on save (no such column, so mass
+     * assignment drops it), which is why this recomputes rather than reads. Via
+     * PayrollService so the exclusion of holidays landing on a weekly off is
+     * the engine's own rule and not a second copy of it.
+     *
+     * Memoized per holiday group: employees overwhelmingly share one, and the
+     * date set costs a query each.
+     */
+    private function holidayDaysMap($slips, $period): array
+    {
+        if (!$period || $slips->isEmpty()) {
+            return [];
+        }
+        $svc   = app(\App\Services\PayrollService::class);
+        $start = Carbon::create((int) $period->year, (int) $period->month, 1)->startOfDay();
+        $end   = (clone $start)->endOfMonth()->startOfDay();
+
+        $employees = \App\Models\Employee::withTrashed()
+            ->whereIn('id', $slips->pluck('employee_id')->filter()->unique()->values())
+            ->get(['id', 'weekly_off', 'holiday_group_id', 'client_id']);
+
+        $memo = [];
+        $out  = [];
+        foreach ($employees as $e) {
+            // Weekly off is part of the key: the same group yields a different
+            // count for someone whose Saturday is off.
+            $key = ($e->holiday_group_id ?? 'none') . '|' . ($e->weekly_off ?? '');
+            $out[$e->id] = $memo[$key] ??= $svc->holidayDaysFor($e, $start->copy(), $end->copy());
+        }
+        return $out;
+    }
+
+    private function weekOffDaysMap($slips, $period): array
+    {
+        if (!$period || $slips->isEmpty()) {
+            return [];
+        }
+        $patterns = \App\Models\Employee::withTrashed()
+            ->whereIn('id', $slips->pluck('employee_id')->filter()->unique()->values())
+            ->pluck('weekly_off', 'id');
+
+        $start = Carbon::create((int) $period->year, (int) $period->month, 1)->startOfDay();
+        $end   = (clone $start)->endOfMonth()->startOfDay();
+
+        $out = [];
+        foreach ($patterns as $empId => $label) {
+            $n = 0;
+            for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
+                if (\App\Support\WeekOff::isOff((string) ($label ?? ''), $d)) $n++;
+            }
+            $out[$empId] = $n;
+        }
+        return $out;
+    }
+
     private function pfNoticeMap($slips, $run, $period): array
     {
         $frozen = !in_array($run?->status, ['draft', 'generated'], true)
@@ -2019,7 +2223,7 @@ class PayrollController extends Controller
     }
 
     /** Maps a Payslip into the shape the SPA's PayrollRow already consumes. */
-    private function serializePayslip(Payslip $p, bool $full = false, ?float $elapsedWorkingDays = null, ?string $pfNotice = null, ?float $structureGross = null): array
+    private function serializePayslip(Payslip $p, bool $full = false, ?float $elapsedWorkingDays = null, ?string $pfNotice = null, ?float $structureGross = null, ?int $weekOffDays = null, ?float $holidayDays = null): array
     {
         $name = $p->employee_name ?: 'Employee';
         $parts = preg_split('/\s+/', trim($name));
@@ -2112,10 +2316,15 @@ class PayrollController extends Controller
                denominator is the elapsed part of the month rather than the
                whole of it, so days that have not happened yet are not counted
                as absences. Null (a finished month) keeps the full figure. */
+            /* Holidays come out too. (CBC #8) A public holiday is inside
+               working_days and is neither present nor leave, so without this
+               term every employee collected an extra Absent day for it — while
+               payroll had already paid it as a credited day. */
             'absent'      => (float) max(0, ($elapsedWorkingDays !== null
                     ? min((float) $p->working_days, $elapsedWorkingDays)
                     : (float) $p->working_days)
-                - (float) $p->present_days - (float) $p->paid_leave_days),
+                - (float) $p->present_days - (float) $p->paid_leave_days - (float) ($holidayDays ?? 0)),
+            'holidayDays' => $holidayDays,
             'lateMarks'   => (int) $p->late_marks,
             'missingPunch'=> (int) $p->missing_punches,
             'unpaidLeave' => (float) $p->unpaid_leave_days,
@@ -2143,6 +2352,11 @@ class PayrollController extends Controller
             // modal shows the actual issues instead of guessing.
             'reasons'     => collect($this->visibleExceptions($p))->pluck('reason')->filter()->values()->all(),
             'bankVerified' => (bool) $p->bank_verified,
+            /* On the LIST row now, not just the payslip: the Biometric Input
+               table needs it per employee. Null when the caller did not resolve
+               the map, which the grid renders as a dash rather than a 0 it
+               cannot vouch for. (CBC #7) */
+            'weekOffDays' => $weekOffDays,
         ];
 
         if ($full) {
@@ -2223,15 +2437,10 @@ class PayrollController extends Controller
              * been docked. Recomputed here from the employee's own pattern
              * rather than derived from working_days, which is prorated for a
              * mid-period joiner and would not give this back. */
-            $row['weekOffDays'] = 0;
-            if ($p->period && $emp) {
-                $wStart = Carbon::create((int) $p->period->year, (int) $p->period->month, 1)->startOfDay();
-                $wEnd   = (clone $wStart)->endOfMonth()->startOfDay();
-                $label  = (string) ($emp->weekly_off ?? '');
-                for ($d = $wStart->copy(); $d->lte($wEnd); $d->addDay()) {
-                    if (\App\Support\WeekOff::isOff($label, $d)) $row['weekOffDays']++;
-                }
-            }
+            /* Same count the list rows carry — one implementation, so the
+               payslip and the Biometric Input column cannot disagree. */
+            $row['weekOffDays'] = $weekOffDays
+                ?? ($this->weekOffDaysMap(collect([$p]), $p->period)[$p->employee_id] ?? 0);
             $row['lopDays']           = (float) $p->lop_days;
             /* How much of Loss of Pay is the late-mark penalty rather than days
              * missed. Null on slips generated before the column existed — the
@@ -2295,6 +2504,10 @@ class PayrollController extends Controller
             'missingPunch'=> 0,
             'unpaidLeave' => 0.0,
             'paidLeave'   => 0.0,
+            // Null, not 0: this employee has no slip in the run, so we are not
+            // asserting they had no weekly offs. (CBC #7)
+            'weekOffDays' => null,
+            'holidayDays' => null,
             'attSource'   => 'Manual',
             'mismatch'    => null,
             'attMismatch' => false,

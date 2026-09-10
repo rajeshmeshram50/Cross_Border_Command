@@ -365,9 +365,9 @@ export default function PayslipViewerModal({
      print a bare "0 hr" under a real allowance. */
   const otWorkings = otPaidHours > 0
     ? [
-        overtimeRate ? `${num(otPaidHours)} hr × ₹${overtimeRate.toLocaleString('en-IN')}/hr` : `${num(otPaidHours)} hr`,
+        overtimeRate ? `${num(otPaidHours)} hr × ₹${inr(overtimeRate)}/hr` : `${num(otPaidHours)} hr`,
         overtimeHourly && overtimeMultiplier
-          ? `(₹${overtimeHourly.toLocaleString('en-IN')}/hr × ${num(overtimeMultiplier)}${overtimeRateName ? ` ${overtimeRateName}` : ''})`
+          ? `(₹${inr(overtimeHourly)}/hr × ${num(overtimeMultiplier)}${overtimeRateName ? ` ${overtimeRateName}` : ''})`
           : null,
       ].filter(Boolean).join(' ')
     : null;
@@ -383,9 +383,28 @@ export default function PayslipViewerModal({
     ? [...earnings, { label: 'Overtime Allowance', amount: otPricedAmount }]
     : earnings;
 
-  const totalEarnings   = shownEarnings.reduce((s, r) => s + r.amount, 0);
-  const totalDeductions = deductions.reduce((s, r) => s + r.amount, 0);
-  const netPay          = totalEarnings - totalDeductions;
+  /* Money is rendered to the PAISA, always. (CBC #10)
+   *
+   * Every figure on this slip went through `toLocaleString('en-IN')` with no
+   * options, which formats to a variable number of decimals: ₹5,641.8 (one),
+   * ₹1,00,416.666 (three) and ₹10,288 (none) could sit in the same column. The
+   * components then looked as though they neither matched each other nor added
+   * up to the total — the arithmetic was right, the presentation was not.
+   *
+   * The sums are rounded to the paisa before display for the same reason: they
+   * are floating-point additions of decimal amounts, so 5144.07 + 3086.44 +
+   * 2057.49 can land on ...0000000002 and print a total nobody can reconcile. */
+  const inr = (n: number) =>
+    (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('en-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+  const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+
+  const totalEarnings   = round2(shownEarnings.reduce((s, r) => s + r.amount, 0));
+  const totalDeductions = round2(deductions.reduce((s, r) => s + r.amount, 0));
+  const netPay          = round2(totalEarnings - totalDeductions);
 
   /* Was this cycle pro-rated for a mid-month join or exit? Decided from the
      lines themselves rather than from a date: if any component was paid at less
@@ -395,7 +414,7 @@ export default function PayslipViewerModal({
   const isProrated = shownEarnings.some(
     r => r.monthly !== undefined && Math.abs(r.monthly - r.amount) > 1,
   );
-  const totalMonthly = shownEarnings.reduce((s, r) => s + (r.monthly ?? r.amount), 0);
+  const totalMonthly = round2(shownEarnings.reduce((s, r) => s + (r.monthly ?? r.amount), 0));
 
   return createPortal(
     <div
@@ -685,10 +704,10 @@ export default function PayslipViewerModal({
                                    at all (overtime, bonus), so the column never
                                    invents a monthly value for them. */
                                 <td className="text-end" style={{ color: 'var(--vz-secondary-color)' }}>
-                                  ₹{(r.monthly ?? r.amount).toLocaleString('en-IN')}
+                                  ₹{inr(r.monthly ?? r.amount)}
                                 </td>
                               )}
-                              <td className="text-end fw-semibold">₹{r.amount.toLocaleString('en-IN')}</td>
+                              <td className="text-end fw-semibold">₹{inr(r.amount)}</td>
                             </tr>
                           );
                         })}
@@ -698,10 +717,10 @@ export default function PayslipViewerModal({
                           <td className="fw-bold" style={{ color: '#108548' }}>Total Earnings</td>
                           {isProrated && (
                             <td className="text-end" style={{ color: 'var(--vz-secondary-color)' }}>
-                              ₹{totalMonthly.toLocaleString('en-IN')}
+                              ₹{inr(totalMonthly)}
                             </td>
                           )}
-                          <td className="text-end fw-bold" style={{ color: '#108548' }}>₹{totalEarnings.toLocaleString('en-IN')}</td>
+                          <td className="text-end fw-bold" style={{ color: '#108548' }}>₹{inr(totalEarnings)}</td>
                         </tr>
                       </tfoot>
                     </table>
@@ -743,14 +762,14 @@ export default function PayslipViewerModal({
                         {deductions.map(r => (
                           <tr key={r.label}>
                             <td>{r.label}</td>
-                            <td className="text-end fw-semibold">₹{r.amount.toLocaleString('en-IN')}</td>
+                            <td className="text-end fw-semibold">₹{inr(r.amount)}</td>
                           </tr>
                         ))}
                       </tbody>
                       <tfoot>
                         <tr style={{ background: 'rgba(239,68,68,0.06)' }}>
                           <td className="fw-bold" style={{ color: '#b91c1c' }}>Total Deductions</td>
-                          <td className="text-end fw-bold" style={{ color: '#b91c1c' }}>₹{totalDeductions.toLocaleString('en-IN')}</td>
+                          <td className="text-end fw-bold" style={{ color: '#b91c1c' }}>₹{inr(totalDeductions)}</td>
                         </tr>
                       </tfoot>
                     </table>
@@ -785,17 +804,17 @@ export default function PayslipViewerModal({
                   <div className="d-flex gap-3">
                     <div>
                       <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.65)' }}>GROSS</div>
-                      <div className="text-white fw-bold" style={{ fontSize: 12 }}>₹{totalEarnings.toLocaleString('en-IN')}</div>
+                      <div className="text-white fw-bold" style={{ fontSize: 12 }}>₹{inr(totalEarnings)}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.65)' }}>DEDUCTIONS</div>
-                      <div className="fw-bold" style={{ color: '#fecaca', fontSize: 12 }}>−₹{totalDeductions.toLocaleString('en-IN')}</div>
+                      <div className="fw-bold" style={{ color: '#fecaca', fontSize: 12 }}>−₹{inr(totalDeductions)}</div>
                     </div>
                   </div>
                 </div>
                 <div className="text-end">
                   <h2 className="text-white fw-bold mb-0" style={{ fontSize: 26 }}>
-                    ₹{netPay.toLocaleString('en-IN')}
+                    ₹{inr(netPay)}
                   </h2>
                   <small style={{ color: 'rgba(255,255,255,0.78)', fontSize: 10 }}>Per Month (In Hand)</small>
                 </div>

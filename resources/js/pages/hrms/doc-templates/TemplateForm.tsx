@@ -253,6 +253,26 @@ export default function TemplateFormPage() {
   // (the old version silently bounced back to the list).
   useEffect(() => {
     if (!editingId) { setBootstrapping(false); return; }
+    /* Do NOT re-fetch a row this component just created. (CBC #15)
+     *
+     * The first DOCX upload runs ensureSavedDraft(), which POSTs a new draft
+     * and navigates to /:id/edit. That flips `editingId` from null to the new
+     * id and fires this effect — so a GET for the row goes out WHILE the
+     * multipart upload is still in flight. The row it fetches is the draft as
+     * it was created: no content_html. Whichever response lands last wins, and
+     * when it was the GET it overwrote the parsed body with '', leaving the
+     * preview on "No content yet" for a document that had uploaded perfectly
+     * well. A second upload never showed it, because by then `editingId` no
+     * longer changes and this effect does not run.
+     *
+     * ensureSavedDraft() already called setEditing() with the full row, so
+     * there is nothing here left to load — skipping is both correct and one
+     * request cheaper. */
+    if (skipRowFetchForRef.current != null && String(skipRowFetchForRef.current) === String(editingId)) {
+      skipRowFetchForRef.current = null;
+      setBootstrapping(false);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -550,6 +570,11 @@ export default function TemplateFormPage() {
   // Make sure a server-side row exists so the DOCX has something to attach to.
   // If the template hasn't been saved yet, auto-create it as a Draft instead of
   // forcing the user to click "Save as Draft" first.
+  /* Set when this component creates the draft itself, so the row-load effect
+     can tell "the URL changed because WE just saved" from "the user opened an
+     existing template". See the note in that effect. (CBC #15) */
+  const skipRowFetchForRef = useRef<number | string | null>(null);
+
   const ensureSavedDraft = async (): Promise<TemplateRow | null> => {
     // The backend needs at least the Step 1 basics to create/update a row.
     if (!validateStep(1)) {
@@ -570,6 +595,9 @@ export default function TemplateFormPage() {
       }
       const { data } = await api.post('/hr-document-templates', buildPayload('Draft'));
       setEditing(data);
+      // Claim the id BEFORE navigating: the effect runs on the render that
+      // follows, and must see this already set. (CBC #15)
+      skipRowFetchForRef.current = data.id;
       navigate(`/hr/doc-templates/${data.id}/edit`, { replace: true, state: { step } });
       return data as TemplateRow;
     } catch (err: any) {

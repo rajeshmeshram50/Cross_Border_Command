@@ -3,7 +3,7 @@ import { Modal, ModalBody } from 'reactstrap';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { resolveFileUrl } from '../utils/resolveFileUrl';
-import { downloadFile } from '../utils/downloadFile';
+import { downloadFile, assertApiBlob } from '../utils/downloadFile';
 import ProgressDial from './ui/ProgressDial';
 import Tooltip from './ui/Tooltip';
 import '../../css/recruitment.css';
@@ -340,11 +340,27 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
        * URL is pushed into it once the bytes arrive. If the tab is blocked
        * anyway — a blocker that stops even same-gesture popups — we say so
        * instead of failing silently, and the row's Download button is still
-       * there as the way through. */
-      const win = window.open('', '_blank', 'noopener,noreferrer');
+       * there as the way through.
+       *
+       * NO 'noopener' in the features: window.open() returns NULL when it is
+       * specified, so the handle needed to navigate the tab never came back —
+       * every click reported "pop-up blocked" and left a stray about:blank tab
+       * behind. Every other place in this app that keeps the handle opens the
+       * same way. The opener link is severed on the line below instead, which
+       * gets the same protection without throwing away the reference. */
+      const win = window.open('', '_blank');
+      if (win) win.opener = null;
       setBusyKey(d.key); setBusyAction('view');
       try {
         const resp = await api.get(`/hr-document-signatures/${d.runId}/download-pdf`, { responseType: 'blob' });
+        /* Check the bytes are actually a PDF before declaring them one. (CBC #23)
+         *
+         * The Blob below asserts `application/pdf` whatever came back, so a
+         * response that is really an HTML page or a JSON error — which a 200
+         * carries without axios throwing — opened in the viewer as a perfectly
+         * BLANK document. Nothing on screen said the file had not been
+         * fetched. */
+        await assertApiBlob(resp.data as Blob, 'pdf');
         const objUrl = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
         if (win && !win.closed) {
           win.location.href = objUrl;
@@ -355,7 +371,7 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
       } catch (err: any) {
         // The placeholder tab must not be left sitting on about:blank.
         if (win && !win.closed) win.close();
-        toast.error('Could not open', err?.response?.data?.message || 'Please try again.');
+        toast.error('Could not open', err?.response?.data?.message || err?.message || 'Please try again.');
       } finally { setBusyKey(null); setBusyAction(null); }
       return;
     }
@@ -371,6 +387,8 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
       if (d.runId) {
         toast.info('Downloading…', 'Preparing the signed PDF.');
         const resp = await api.get(`/hr-document-signatures/${d.runId}/download-pdf`, { responseType: 'blob' });
+        // Same guard as View: never save a web page under a .pdf name. (CBC #23)
+        await assertApiBlob(resp.data as Blob, 'pdf');
         const objUrl = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
         const a = document.createElement('a');
         a.href = objUrl; a.download = `${(d.name || 'document').replace(/\s+/g, '-')}-signed.pdf`;
@@ -392,7 +410,7 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
         toast.info('Not available yet', 'This document has not been generated / signed yet.');
       }
     } catch (err: any) {
-      toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
+      toast.error('Could not download', err?.response?.data?.message || err?.message || 'Please try again.');
     } finally { setBusyKey(null); setBusyAction(null); }
   };
 
