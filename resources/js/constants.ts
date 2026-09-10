@@ -386,6 +386,9 @@ export const MENU_ITEMS: MenuItem[] = [
   { id: '', section: 'BILLING', label: '', icon: '', roles: ['super_admin'] },
   { id: 'plans', icon: 'CreditCard', label: 'Plans', roles: ['super_admin'] },
   { id: 'payments', icon: 'IndianRupee', label: 'Payments', roles: ['super_admin'] },
+  // [Integration Subscriptions] Parked pending R&D on usage/health tracking.
+  // Re-enable this menu item (and the route + schedule + api routes) when ready.
+  // { id: 'integrations', icon: 'CalendarClock', label: 'Integrations', roles: ['super_admin'] },
 
   { id: '', section: 'OPERATIONS', label: '', icon: '', roles: ['client_admin'] },
   { id: 'branches', icon: 'GitBranch', label: 'Branches', roles: ['client_admin'] },

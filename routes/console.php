@@ -21,3 +21,11 @@ Schedule::command('hr:send-probation-emails')
 Schedule::command('backup:email')
     ->dailyAt('02:00')
     ->withoutOverlapping();
+
+// [Integration Subscriptions] Parked pending R&D — the daily reminder job is
+// disabled so no emails go out while the feature is being redesigned. The
+// command itself (subscriptions:send-expiry-reminders) still exists and can be
+// run manually; re-enable this schedule when the feature ships.
+// Schedule::command('subscriptions:send-expiry-reminders')
+//     ->dailyAt('08:00')
+//     ->withoutOverlapping();

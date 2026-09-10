@@ -483,11 +483,19 @@ class HrDocumentTemplateController extends Controller
         $abs = $uploaded->getRealPath();
 
         // Best-effort DOCX → HTML so the web editor stays usable. If parsing
-        // fails (legacy .doc, embedded media, etc) we keep the upload but
-        // skip the HTML refresh.
+        // fails or recovers nothing (legacy .doc, scanned/image-only doc, an
+        // unreadable structure), we KEEP the previous content rather than
+        // overwriting it with a blank — that silent wipe was why an upload
+        // sometimes showed no content. $contentExtracted tells the frontend
+        // whether the body actually refreshed, so it can warn when it didn't.
         $html = $row->content_html;
+        $contentExtracted = false;
         try {
-            $html = $this->docxToHtml($abs) ?: $row->content_html;
+            $parsed = $this->docxToHtml($abs);
+            if (trim(strip_tags($parsed)) !== '') {
+                $html = $parsed;
+                $contentExtracted = true;
+            }
         } catch (\Throwable $e) {
             // ignore — file is saved, web editor falls back to previous content
         }
@@ -516,7 +524,10 @@ class HrDocumentTemplateController extends Controller
 
         $row->update($update);
         $row->load(self::WITH);
-        return response()->json($row);
+        // content_extracted lets the frontend toast a warning when the DOCX was
+        // stored but its body couldn't be read (so the preview kept the old
+        // content) — instead of the user silently seeing nothing change.
+        return response()->json(array_merge($row->toArray(), ['content_extracted' => $contentExtracted]));
     }
 
     /* ───── ONBOARDING INTEGRATION ───── */
@@ -1719,14 +1730,84 @@ class HrDocumentTemplateController extends Controller
      */
     private function docxToHtml(string $absPath): string
     {
-        $phpWord = IOFactory::load($absPath);
-        $html = '';
-        foreach ($phpWord->getSections() as $section) {
-            foreach ($section->getElements() as $el) {
-                $html .= $this->elementToHtml($el);
+        // Primary: PhpWord's model — keeps tables + bold/italic WHEN it can read
+        // the file. Its Word2007 reader is limited though; it silently drops
+        // whole categories of content (content controls / w:sdt, text boxes,
+        // some field runs), which is why an upload sometimes came in blank.
+        $phpwordHtml = '';
+        try {
+            $phpWord = IOFactory::load($absPath);
+            foreach ($phpWord->getSections() as $section) {
+                foreach ($section->getElements() as $el) {
+                    $phpwordHtml .= $this->elementToHtml($el);
+                }
             }
+        } catch (\Throwable $e) {
+            $phpwordHtml = '';
         }
-        return trim($html) ?: '<p></p>';
+        $phpwordHtml = trim($phpwordHtml);
+
+        // Fallback: read the text straight out of word/document.xml. This walk
+        // groups every <w:t> by its parent <w:p>, so it captures the text
+        // PhpWord's model misses — at the cost of flattening tables to
+        // paragraphs. Reliable where the primary path returns little/nothing.
+        $rawHtml = $this->rawDocxParagraphs($absPath);
+
+        // Keep whichever recovered MORE visible text. Raw wins exactly when
+        // PhpWord dropped content; PhpWord wins on well-formed files (better
+        // structure). Comparing stripped-tag length is a good proxy for "how
+        // much of the document actually came through".
+        $phpwordLen = mb_strlen(trim(strip_tags($phpwordHtml)));
+        $rawLen     = mb_strlen(trim(strip_tags($rawHtml)));
+        $chosen = $rawLen > $phpwordLen ? $rawHtml : $phpwordHtml;
+
+        // May legitimately be '' (both readers found nothing) — the caller
+        // guards against overwriting existing content with a blank result.
+        return trim($chosen);
+    }
+
+    /**
+     * Text-first DOCX extraction straight from word/document.xml — the reliable
+     * safety net for {@see docxToHtml()}. Groups every visible run (<w:t>) by
+     * its containing paragraph (<w:p>), so nothing PhpWord's reader skips
+     * (content controls, text boxes, odd field runs) is lost. Tables are
+     * flattened to paragraphs, which is an acceptable trade for never showing a
+     * blank preview after an upload.
+     */
+    private function rawDocxParagraphs(string $absPath): string
+    {
+        if (!class_exists('ZipArchive') || !is_file($absPath)) return '';
+
+        $zip = new \ZipArchive();
+        if ($zip->open($absPath) !== true) return '';
+        try {
+            $xml = $zip->getFromName('word/document.xml');
+        } finally {
+            $zip->close();
+        }
+        if ($xml === false || $xml === '') return '';
+
+        // Body only, so header/footer parts never bleed into the content.
+        if (preg_match('#<w:body\b[^>]*>(.*)</w:body>#s', $xml, $m)) {
+            $xml = $m[1];
+        }
+
+        $out = '';
+        // One chunk per paragraph. The lookahead splits BEFORE each <w:p …> /
+        // <w:p> open tag; <w:pPr> (paragraph properties) does not match because
+        // the char after "<w:p" there is "P", not a space or ">".
+        foreach (preg_split('#(?=<w:p[ >])#', $xml) as $chunk) {
+            if (strncmp($chunk, '<w:p', 4) !== 0) continue;   // skip pre-first-paragraph junk
+            if (!preg_match_all('#<w:t\b[^>]*>(.*?)</w:t>#s', $chunk, $mm)) continue;
+
+            // <w:t> content is XML-escaped in the file; decode to raw text, then
+            // re-escape for safe HTML output.
+            $text = trim(html_entity_decode(implode('', $mm[1]), ENT_QUOTES | ENT_XML1, 'UTF-8'));
+            if ($text === '') continue;
+
+            $out .= '<p>' . htmlspecialchars($text, ENT_QUOTES) . '</p>';
+        }
+        return $out;
     }
 
     private function elementToHtml($el): string
