@@ -103,9 +103,16 @@ class SubscriptionController extends Controller
         // Free plan — activate immediately, no Razorpay
         if ($total <= 0) {
             $payment = $this->createPendingPayment(
-                $client, $plan, $user, $amount, $gst, $total,
-                $request->billing_cycle, $request->payment_method,
-                $validFrom, $validUntil,
+                $client,
+                $plan,
+                $user,
+                $amount,
+                $gst,
+                $total,
+                $request->billing_cycle,
+                $request->payment_method,
+                $validFrom,
+                $validUntil,
                 razorpayOrderId: null,
                 keptBranchIds: $keptBranchIds,
             );
@@ -136,9 +143,16 @@ class SubscriptionController extends Controller
         }
 
         $payment = $this->createPendingPayment(
-            $client, $plan, $user, $amount, $gst, $total,
-            $request->billing_cycle, $request->payment_method,
-            $validFrom, $validUntil,
+            $client,
+            $plan,
+            $user,
+            $amount,
+            $gst,
+            $total,
+            $request->billing_cycle,
+            $request->payment_method,
+            $validFrom,
+            $validUntil,
             razorpayOrderId: $order['id'],
             keptBranchIds: $keptBranchIds,
         );
@@ -302,10 +316,16 @@ class SubscriptionController extends Controller
     }
 
     private function createPendingPayment(
-        Client $client, Plan $plan, $user,
-        float $amount, float $gst, float $total,
-        string $billingCycle, string $paymentMethod,
-        $validFrom, $validUntil,
+        Client $client,
+        Plan $plan,
+        $user,
+        float $amount,
+        float $gst,
+        float $total,
+        string $billingCycle,
+        string $paymentMethod,
+        $validFrom,
+        $validUntil,
         ?string $razorpayOrderId,
         ?array $keptBranchIds = null,
     ): Payment {

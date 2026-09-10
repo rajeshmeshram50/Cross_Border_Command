@@ -550,7 +550,7 @@ export default function TemplateFormPage() {
   // Make sure a server-side row exists so the DOCX has something to attach to.
   // If the template hasn't been saved yet, auto-create it as a Draft instead of
   // forcing the user to click "Save as Draft" first.
-  const ensureSavedDraft = async (): Promise<TemplateRow | null> => {
+  const ensureSavedDraft = async (opts?: { skipNavigate?: boolean }): Promise<TemplateRow | null> => {
     // The backend needs at least the Step 1 basics to create/update a row.
     if (!validateStep(1)) {
       setStep(1);
@@ -570,7 +570,16 @@ export default function TemplateFormPage() {
       }
       const { data } = await api.post('/hr-document-templates', buildPayload('Draft'));
       setEditing(data);
-      navigate(`/hr/doc-templates/${data.id}/edit`, { replace: true, state: { step } });
+      // NOTE: navigation to /edit is deliberately NOT done here when
+      // skipNavigate is set. On a NEW template the first DOCX upload/download
+      // calls this, and navigating immediately swaps the route param, which
+      // re-runs the bootstrap fetch and resets contentHtml to empty WHILE the
+      // upload is still in flight — clobbering the just-extracted content (the
+      // "first upload shows nothing, second works" bug). Callers that pass
+      // skipNavigate perform the navigation AFTER their operation completes.
+      if (!opts?.skipNavigate) {
+        navigate(`/hr/doc-templates/${data.id}/edit`, { replace: true, state: { step } });
+      }
       return data as TemplateRow;
     } catch (err: any) {
       toast.error('Could not save draft', err?.response?.data?.message || 'Please try again.');
@@ -584,9 +593,13 @@ export default function TemplateFormPage() {
     // auto-save (PUT) AND the blob download — and keeps the button disabled
     // so the user can't fire multiple download requests.
     setDownloadingDocx(true);
+    // Whether we're on a brand-new (unsaved) template. If so, defer the
+    // /edit navigation until AFTER the download so the mid-flight route change
+    // can't reset the page (see ensureSavedDraft's skipNavigate note).
+    const wasNew = !editing;
     let row;
     try {
-      row = await ensureSavedDraft();
+      row = await ensureSavedDraft({ skipNavigate: true });
     } catch {
       setDownloadingDocx(false);
       return;
@@ -602,6 +615,7 @@ export default function TemplateFormPage() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+      if (wasNew) navigate(`/hr/doc-templates/${row.id}/edit`, { replace: true, state: { step } });
     } catch (err: any) {
       toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
     } finally {
@@ -613,9 +627,15 @@ export default function TemplateFormPage() {
     // Flip the loader on FIRST so it covers the whole operation — the draft
     // auto-save (PUT) AND the upload/parse (POST) — not just the POST.
     setUploadingDocx(true);
+    // New/unsaved template? Defer the /edit navigation until AFTER the upload.
+    // Navigating first (the old behaviour) swapped the route param mid-upload,
+    // re-ran the bootstrap fetch, and reset contentHtml to empty just as the
+    // extracted content arrived — so the first upload showed nothing and only a
+    // second upload (draft already existed → no navigation) worked. (QA)
+    const wasNew = !editing;
     let row;
     try {
-      row = await ensureSavedDraft();
+      row = await ensureSavedDraft({ skipNavigate: true });
     } catch {
       setUploadingDocx(false);
       return;
@@ -633,7 +653,19 @@ export default function TemplateFormPage() {
       setContentHtml(data.content_html || '');
       setEditorMode('word');
       setEditing(data);
-      toast.success('Revised DOCX uploaded', `Imported ${data.docx_original_name}.`);
+      // content_extracted === false → the file was stored but its body couldn't
+      // be read (kept the previous content), so tell the user rather than let
+      // them think the upload silently did nothing.
+      if (data.content_extracted === false) {
+        toast.error('DOCX uploaded, but content could not be read',
+          `${data.docx_original_name} was saved, but its text couldn't be extracted (it may use content controls, text boxes, or be image-only). The preview kept the previous content.`);
+      } else {
+        toast.success('Revised DOCX uploaded', `Imported ${data.docx_original_name}.`);
+      }
+      // Now that the upload has landed and content is set, move the URL to
+      // /edit. The bootstrap re-fetch this triggers reads the row we just
+      // saved (content already persisted), so it can't clobber anything.
+      if (wasNew) navigate(`/hr/doc-templates/${row.id}/edit`, { replace: true, state: { step } });
     } catch (err: any) {
       toast.error('Could not upload', err?.response?.data?.message || 'Please try again.');
     } finally {
