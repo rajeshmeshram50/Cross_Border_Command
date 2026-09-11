@@ -447,6 +447,46 @@ class SegmentDocUploadController extends Controller
             ]);
         }
 
+        /* docs=1 — the three STANDARD buckets, and nothing else.
+         *
+         * The lead-scoped Evidence Vault (My Workplace → CLM Details →
+         * Customer / Consignee Details) lists Due Diligence, KYC Documents and
+         * Trade License. That is the entire screen. Everything below this line
+         * — every deal, its trade documents and agreements, the shipment matrix
+         * — is built, serialised, sent, and dropped on the floor by that
+         * caller. With several consignees under one customer that whole cost is
+         * paid again on every tab switch, which is what made switching between
+         * them feel slow (QA #37).
+         *
+         * Same idea as tally=1 above, one step less severe: that mode answers
+         * with counts only, this one answers with the rows the vault renders.
+         * Opt-in, so every existing caller keeps the full response.
+         *
+         * The totals that MIX standard and per-deal documents (total_documents,
+         * verified_signed, pending, trade_documents_count, agreements_count)
+         * are deliberately absent rather than sent as standard-only figures —
+         * they cannot be computed without the work this mode exists to skip,
+         * and a half-figure under a familiar key is worse than no key at all.
+         */
+        if ($request->boolean('docs')) {
+            return response()->json([
+                'data' => [
+                    'same_as_customer'       => $sameAsCustomer,
+                    'company_dd'             => $company_dd,
+                    'owner_kyc'              => $owner_kyc,
+                    'trade_licenses'         => $trade_licenses,
+                    'company_dd_count'       => count($company_dd),
+                    'owner_kyc_count'        => count($owner_kyc),
+                    'trade_license_count'    => count($trade_licenses),
+                    'core_total_documents'   => $coreMandatory->count(),
+                    'core_verified_signed'   => $coreVerified,
+                    'core_catalog_documents' => $coreCatalog->count(),
+                    'core_catalog_verified'  => $coreCatalogVerified,
+                    'last_updated'           => optional($uploads->max('updated_at'))->format('d-M-Y'),
+                ],
+            ]);
+        }
+
         // Per-shipment matrix — each of the party's shipments with its buyer +
         // consignee Trade Documents and Agreements (split by signature party).
         // Pass the ORIGINAL route id ($id) for the shipment lookup. For a
