@@ -135,12 +135,8 @@ function computeCpComp(v: Record<string, unknown>): { percent: number; complete:
   let total = Number(v?.core_total_documents ?? 0);
   let done  = Number(v?.core_verified_signed ?? 0);
 
-  // 2) CASE-TO-CASE docs — added ONLY for parties that carry a shipment.
-  //    Customer/Consignee → each shipment's Trade Docs + Agreement ratios
-  //    (shipment_agreements[]). Supplier → each with-shipment deal's Trade
-  //    Docs ratio (vendor_with_shipment[]). No shipment ⇒ these arrays are
-  //    empty, so only the standard docs count (per the requested rule).
-  const ships = Array.isArray(v?.shipment_agreements) ? (v.shipment_agreements as Record<string, unknown>[]) : [];
+  const ships = (Array.isArray(v?.shipment_agreements) ? (v.shipment_agreements as Record<string, unknown>[]) : [])
+    .filter(sh => sh?.has_shipment !== false);
   for (const sh of ships) {
     const td = parse((sh?.trade_docs as Record<string, unknown>)?.ratio);
     const ag = parse((sh?.agreement as Record<string, unknown>)?.ratio);
