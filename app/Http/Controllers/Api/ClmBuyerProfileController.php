@@ -27,7 +27,8 @@ class ClmBuyerProfileController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $cid  = (int) ($user->client_id ?? 0);
 
         $empty = ['buyers' => [], 'consignees' => [], 'ws_eq' => [], 'ws_neq' => [], 'wos_eq' => [], 'wos_neq' => []];
@@ -76,8 +77,10 @@ class ClmBuyerProfileController extends Controller
             $list = [];
             foreach ($agreements as $a) {
                 if ((string) $a->regulatory !== (string) $s->regulatory_status) continue;
-                if ($this->csvHasToken((string) $a->segment, (string) $s->name)
-                    || $this->csvHasToken((string) $a->segment, (string) $s->code)) {
+                if (
+                    $this->csvHasToken((string) $a->segment, (string) $s->name)
+                    || $this->csvHasToken((string) $a->segment, (string) $s->code)
+                ) {
                     $list[] = (int) $a->id;
                 }
             }
@@ -98,8 +101,10 @@ class ClmBuyerProfileController extends Controller
             $list = [];
             foreach ($tradeDocs as $m) {
                 if ((string) $m->regulatory !== (string) $s->regulatory_status) continue;
-                if ($this->csvHasToken((string) $m->segment, (string) $s->name)
-                    || $this->csvHasToken((string) $m->segment, (string) $s->code)) {
+                if (
+                    $this->csvHasToken((string) $m->segment, (string) $s->name)
+                    || $this->csvHasToken((string) $m->segment, (string) $s->code)
+                ) {
                     $list[] = (int) $m->id;
                 }
             }
@@ -166,7 +171,7 @@ class ClmBuyerProfileController extends Controller
             return array_values(array_unique($ids));
         };
         // Buyer trade type from its primary-address country (India → domestic).
-        $docTypeForCountry = fn (?string $country): string => trim((string) $country) === 'India' ? 'domestic' : 'international';
+        $docTypeForCountry = fn(?string $country): string => trim((string) $country) === 'India' ? 'domestic' : 'international';
         $unionFor = function (array $segIds, string $docType) use ($selForSeg): array {
             $u = ['kyc' => [], 'dd' => [], 'tl' => [], 'td' => []];
             foreach ($segIds as $sid) {
@@ -220,7 +225,7 @@ class ClmBuyerProfileController extends Controller
          * disagreed (QA: non-applicable trade docs / agreements on Customer
          * Profile). Supplier-only now resolves to neither, as in the vault. */
         $partyFlags = function (?string $party): array {
-            $tokens = array_filter(array_map(fn ($t) => strtolower(trim($t)), explode(',', (string) $party)));
+            $tokens = array_filter(array_map(fn($t) => strtolower(trim($t)), explode(',', (string) $party)));
             if (empty($tokens)) return [true, true];
             return [
                 in_array('buyer', $tokens, true),
@@ -235,7 +240,8 @@ class ClmBuyerProfileController extends Controller
          * document counts once — including the consignee-only ones, which are
          * that same party's obligations. Mirrors the Evidence Vault. */
         $docProgress = function (array $applicableIds, array $partyById, array $signedForSide, string $side) use ($partyFlags): array {
-            $t = 0; $d = 0;
+            $t = 0;
+            $d = 0;
             foreach ($applicableIds as $id) {
                 [$fb, $fc] = $partyFlags($partyById[$id] ?? null);
                 $applies = $side === 'any' ? ($fb || $fc) : ($side === 'buyer' ? $fb : $fc);
@@ -247,7 +253,8 @@ class ClmBuyerProfileController extends Controller
         };
         // Regulatory tier label from a set of segment ids.
         $regFor = function (array $segIds) use ($segRegById): string {
-            $hasHigh = false; $hasLow = false;
+            $hasHigh = false;
+            $hasLow = false;
             foreach ($segIds as $sid) {
                 $r = $segRegById[$sid] ?? null;
                 if ($r === 'highly') $hasHigh = true;
@@ -267,11 +274,13 @@ class ClmBuyerProfileController extends Controller
         // Latest non-cancelled PI per lead.
         $piByLead = [];
         if (!empty($leadIds)) {
-            foreach (ProformaInvoice::where('client_id', $cid)
-                ->whereIn('opp_id', $leadIds)
-                ->where('status', '!=', 'cancelled')
-                ->orderBy('id')
-                ->get(['id', 'opp_id', 'code']) as $pi) {
+            foreach (
+                ProformaInvoice::where('client_id', $cid)
+                    ->whereIn('opp_id', $leadIds)
+                    ->where('status', '!=', 'cancelled')
+                    ->orderBy('id')
+                    ->get(['id', 'opp_id', 'code']) as $pi
+            ) {
                 $piByLead[(int) $pi->opp_id] = $pi;   // later id wins = latest
             }
         }
@@ -282,11 +291,13 @@ class ClmBuyerProfileController extends Controller
         $piSignedIds = [];
         $piIdsForSig = collect($piByLead)->pluck('id')->all();
         if (!empty($piIdsForSig)) {
-            foreach (ClmSignatureRequest::where('client_id', $cid)
-                ->where('document_type', ClmSignatureRequest::DOC_PROFORMA_INVOICE)
-                ->whereIn('trade_doc_id', $piIdsForSig)
-                ->where('status', 'completed')
-                ->get(['trade_doc_id']) as $sr) {
+            foreach (
+                ClmSignatureRequest::where('client_id', $cid)
+                    ->where('document_type', ClmSignatureRequest::DOC_PROFORMA_INVOICE)
+                    ->whereIn('trade_doc_id', $piIdsForSig)
+                    ->where('status', 'completed')
+                    ->get(['trade_doc_id']) as $sr
+            ) {
                 $piSignedIds[(int) $sr->trade_doc_id] = true;
             }
         }
@@ -296,18 +307,22 @@ class ClmBuyerProfileController extends Controller
         $piIds = collect($piByLead)->pluck('id')->all();
         if (!empty($piIds)) {
             $itemsByPi = [];
-            foreach (ProformaInvoiceItem::whereIn('proforma_invoice_id', $piIds)
-                ->whereNotNull('product_id')
-                ->get(['proforma_invoice_id', 'product_id']) as $it) {
+            foreach (
+                ProformaInvoiceItem::whereIn('proforma_invoice_id', $piIds)
+                    ->whereNotNull('product_id')
+                    ->get(['proforma_invoice_id', 'product_id']) as $it
+            ) {
                 $itemsByPi[(int) $it->proforma_invoice_id][] = (int) $it->product_id;
             }
             $allProductIds = collect($itemsByPi)->flatten()->unique()->values()->all();
             $segByProduct = [];
             if (!empty($allProductIds)) {
-                foreach (Product::where('client_id', $cid)
-                    ->whereIn('id', $allProductIds)
-                    ->whereNotNull('segment_id')
-                    ->get(['id', 'segment_id']) as $p) {
+                foreach (
+                    Product::where('client_id', $cid)
+                        ->whereIn('id', $allProductIds)
+                        ->whereNotNull('segment_id')
+                        ->get(['id', 'segment_id']) as $p
+                ) {
                     $segByProduct[(int) $p->id] = (int) $p->segment_id;
                 }
             }
@@ -342,9 +357,9 @@ class ClmBuyerProfileController extends Controller
         // the list's CONSIGNEES column matches the consignee popup.
         $customers = Customer::query()->forUser($user)
             ->withCount(['consignees as consignees_count' => function ($q) {
-                $q->where(fn ($w) => $w->where('same_as_customer', false)->orWhereNull('same_as_customer'));
+                $q->where(fn($w) => $w->where('same_as_customer', false)->orWhereNull('same_as_customer'));
             }])
-            ->with('primaryAddress:id,customer_id,country')
+            ->with('primaryAddress:id,customer_id,country,city,cp_name')
             ->orderBy('id')
             ->get();
 
@@ -373,7 +388,7 @@ class ClmBuyerProfileController extends Controller
                docProgress() applies the same party rule the Evidence Vault
                uses, so the two screens agree. */
             $agr      = $docProgress($applic, $agrPartyById, $sigByParty['Customer#' . $c->id] ?? [], 'buyer');
-            $segNames = collect(explode(',', (string) $c->segment))->map(fn ($n) => trim($n))->filter()->values()->all();
+            $segNames = collect(explode(',', (string) $c->segment))->map(fn($n) => trim($n))->filter()->values()->all();
             $buyers[] = [
                 'sr'      => $sr,
                 'id'      => $c->customer_code ?: ('C-' . str_pad((string) $c->id, 3, '0', STR_PAD_LEFT)),
@@ -383,6 +398,15 @@ class ClmBuyerProfileController extends Controller
                 'sc'      => '#0e7490',
                 'sb'      => '#f0fdff',
                 'country' => optional($c->primaryAddress)->country ?: '—',
+                /* Identity chips for the Evidence Vault header. Same fields the
+                   Customer list hands its vault (CustomerController::row), so
+                   the header reads identically wherever it is opened from.
+                   `risk` especially: the header falls back to "Low Risk" when
+                   it is absent, which quietly mislabels a High Risk buyer. */
+                'contact' => optional($c->primaryAddress)->cp_name,
+                'city'    => optional($c->primaryAddress)->city,
+                'type'    => $c->type,
+                'risk'    => $c->risk_level,
                 'cn'      => (int) ($c->consignees_count ?? 0),
                 'kyc'     => $prog['kyc'],
                 'dd'      => $prog['dd'],
@@ -403,7 +427,9 @@ class ClmBuyerProfileController extends Controller
             // is mapped to); `customer` is just the legacy single primary. The
             // profile must reflect ALL mapped customers, not only the primary.
             ->with([
-                'primaryAddress:id,consignee_id,country',
+                // cp_name + city feed the Evidence Vault header chips — see the
+                // customer query above.
+                'primaryAddress:id,consignee_id,country,city,cp_name',
                 'customer:id,customer_code',
                 // `segment` is needed too: a same-as-customer consignee resolves
                 // its applicable set from the CUSTOMER's segments (see the loop below).
@@ -456,7 +482,7 @@ class ClmBuyerProfileController extends Controller
                 // the single primary when the pivot has no rows.
                 'cids'    => (function () use ($c) {
                     $codes = $c->customers
-                        ->map(fn ($cu) => $cu->customer_code ?: ('C-' . str_pad((string) $cu->id, 3, '0', STR_PAD_LEFT)))
+                        ->map(fn($cu) => $cu->customer_code ?: ('C-' . str_pad((string) $cu->id, 3, '0', STR_PAD_LEFT)))
                         ->filter()
                         ->values()
                         ->all();
@@ -471,6 +497,11 @@ class ClmBuyerProfileController extends Controller
                 'sc'      => '#0e7490',
                 'sb'      => '#f0fdff',
                 'country' => optional($c->primaryAddress)->country ?: '—',
+                // Evidence Vault header chips — see the buyer rows above.
+                // A consignee has no `type`, so only these three.
+                'contact' => optional($c->primaryAddress)->cp_name,
+                'city'    => optional($c->primaryAddress)->city,
+                'risk'    => $c->risk_level,
                 'same_as_customer' => (bool) $c->same_as_customer,
                 'kyc'     => $prog['kyc'],
                 'dd'      => $prog['dd'],
@@ -496,7 +527,10 @@ class ClmBuyerProfileController extends Controller
         $consProgById = [];
         foreach ($consOut as $co) $consProgById[$co['db_id']] = $co;
 
-        $wsEq = []; $wsNeq = []; $wosEq = []; $wosNeq = [];
+        $wsEq = [];
+        $wsNeq = [];
+        $wosEq = [];
+        $wosNeq = [];
 
         /* Party-level Trade Docs, summed across the party's own deals.
          *
@@ -602,7 +636,10 @@ class ClmBuyerProfileController extends Controller
                 ? ($tdSigByLead[$lid]['Customer'] ?? [])
                 : (($tdSigByLead[$lid]['Customer'] ?? []) + ($tdSigByLead[$lid]['Consignee'] ?? []));
             $tdBuyer   = $docProgress($applicTd, $tdPartyById, $tdSigSet, $separateConsignee ? 'buyer' : 'any');
-            if ($pi) { $tdBuyer['t'] += 1; if (isset($piSignedIds[(int) $pi->id])) $tdBuyer['d'] += 1; }
+            if ($pi) {
+                $tdBuyer['t'] += 1;
+                if (isset($piSignedIds[(int) $pi->id])) $tdBuyer['d'] += 1;
+            }
 
             $base = [
                 'opp'      => $l->opp_code ?: ('OPP-' . $lid),
@@ -635,7 +672,6 @@ class ClmBuyerProfileController extends Controller
                    that is also the customer still counts it: that row reads
                    $tdBuyer, which carries the PI. */
                 $base['c_agr'] = $docProgress($applicAgr, $agrPartyById, $agrSigByLead[$lid]['Consignee'] ?? [], 'consignee');
-
             }
 
             /* Roll this deal into the party totals the two list tables show.
@@ -665,10 +701,19 @@ class ClmBuyerProfileController extends Controller
                 $addTd($agrByConsignee, (int) $cons->id, $agrConsDeal);
             }
 
-            if ($hasShip && $separateConsignee)        { $base['sr'] = ++$n['wsNeq'];  $wsNeq[]  = $base; }
-            elseif ($hasShip && !$separateConsignee)   { $base['sr'] = ++$n['wsEq'];   $wsEq[]   = $base; }
-            elseif (!$hasShip && $separateConsignee)   { $base['sr'] = ++$n['wosNeq']; $wosNeq[] = $base; }
-            else                                       { $base['sr'] = ++$n['wosEq'];  $wosEq[]  = $base; }
+            if ($hasShip && $separateConsignee) {
+                $base['sr'] = ++$n['wsNeq'];
+                $wsNeq[]  = $base;
+            } elseif ($hasShip && !$separateConsignee) {
+                $base['sr'] = ++$n['wsEq'];
+                $wsEq[]   = $base;
+            } elseif (!$hasShip && $separateConsignee) {
+                $base['sr'] = ++$n['wosNeq'];
+                $wosNeq[] = $base;
+            } else {
+                $base['sr'] = ++$n['wosEq'];
+                $wosEq[]  = $base;
+            }
         }
 
         /* Both lists are built before the lead loop runs, so the aggregated
@@ -739,7 +784,10 @@ class ClmBuyerProfileController extends Controller
             $co['agr'] = $agrByConsignee[(int) $co['db_id']] ?? ['d' => 0, 't' => 0];
 
             $own = $tdByConsignee[(int) $co['db_id']] ?? null;
-            if ($own) { $co['td'] = $own; continue; }
+            if ($own) {
+                $co['td'] = $own;
+                continue;
+            }
 
             /* SAME AS CUSTOMER, with no deal of its own.
              *

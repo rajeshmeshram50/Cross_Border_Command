@@ -565,12 +565,15 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   /* Tab badge count. Trade Documents / Agreements are shipment-wise, so
    * their badge reflects the real number of trade docs / agreements across
    * all shipments (sum of each shipment's ratio total), not the standard KPI. */
+  const shippedRows = vault.shipment_agreements.filter(r => r.has_shipment !== false);
   const ratioTotal = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[1] ?? p[0], 10) || 0; };
   const shipmentDocCount = (key: 'trade_docs' | 'agreement') =>
-    vault.shipment_agreements.reduce((acc, r) => acc + ratioTotal(r[key].ratio), 0);
+    shippedRows.reduce((acc, r) => acc + ratioTotal(r[key].ratio), 0);
   /* The Case-to-Case tab covers trade documents AND agreements now, so its
      badge totals both — the same sum the Customer vault's single tab shows.
-     Counting only trade docs here would under-report the tab's own list. */
+     Counting only trade docs here would under-report the tab's own list.
+     Summed over shippedRows, the same set shipmentDocDone() and the table
+     itself read, or the ratio would be a subset over a whole. */
   const tabCount = (t: typeof TABS[number]): number =>
     t.key === 'trade-documents'
       ? shipmentDocCount('trade_docs') + shipmentDocCount('agreement')
@@ -598,7 +601,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
      signed half comes from the ratio's numerator rather than an attachment. */
   const ratioDone = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[0], 10) || 0; };
   const shipmentDocDone = (key: 'trade_docs' | 'agreement') =>
-    vault.shipment_agreements.reduce((acc, r) => acc + ratioDone(r[key].ratio), 0);
+    shippedRows.reduce((acc, r) => acc + ratioDone(r[key].ratio), 0);
   const tdTotal  = shipmentDocCount('trade_docs');
   const tdDone   = shipmentDocDone('trade_docs');
   const agrTotal = shipmentDocCount('agreement');
@@ -814,7 +817,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           </div>
 
           {(tab === 'shipment-agreements' || tab === 'trade-documents')
-            ? <ShipmentTable rows={vault.shipment_agreements} kind="both"
+            ? <ShipmentTable rows={shippedRows} kind="both"
                              onSend={(leadId, doc, party) => { if (doc.pi_id) setPiSend({ leadId, doc }); else setShipSend({ leadId, doc, party }); }}
                              activeSend={shipSend ?? (piSend ? { ...piSend, party: 'consignee' as const } : null)}
                              onBulkSend={(leadId, docs, party) => { if (docs.length) setShipSend({ leadId, doc: docs[0], docs, party }); }} />
