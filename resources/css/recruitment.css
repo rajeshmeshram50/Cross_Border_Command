@@ -11444,31 +11444,38 @@
    context where --vz-card-bg doesn't resolve to a dark hex. Force the
    same #222831 surface used by the other popups so the header text,
    stage labels and the "Approval Audit Log" title are readable. */
-[data-bs-theme="dark"] .ep-audit-popover {
+[data-bs-theme="dark"] .ep-audit-popover,
+[data-layout-mode="dark"] .ep-audit-popover {
   background: #222831 !important;
   border-color: rgba(255,255,255,0.10) !important;
   color: rgba(255,255,255,0.92) !important;
 }
 [data-bs-theme="dark"] .ep-audit-popover .fw-bold,
-[data-bs-theme="dark"] .ep-audit-popover .fw-semibold {
+[data-layout-mode="dark"] .ep-audit-popover .fw-bold,
+[data-bs-theme="dark"] .ep-audit-popover .fw-semibold,
+[data-layout-mode="dark"] .ep-audit-popover .fw-semibold {
   color: rgba(255,255,255,0.96) !important;
 }
-[data-bs-theme="dark"] .ep-audit-popover small {
+[data-bs-theme="dark"] .ep-audit-popover,
+[data-layout-mode="dark"] .ep-audit-popover small {
   color: rgba(255,255,255,0.65) !important;
 }
 /* Stage badges (CREATED / PENDING / APPROVED / REJECTED) — the light
    light pastel pills used in the light theme wash out on the #222831
    surface. Swap to translucent tinted fills with brighter text so each
    state stays readable. */
-[data-bs-theme="dark"] .ep-audit-popover .ep-audit-stage-badge--pending {
+[data-bs-theme="dark"] .ep-audit-popover .ep-audit-stage-badge--pending,
+[data-layout-mode="dark"] .ep-audit-popover .ep-audit-stage-badge--pending {
   background: rgba(245,158,11,0.18) !important;
   color: #fcd34d !important;
 }
-[data-bs-theme="dark"] .ep-audit-popover .ep-audit-stage-badge--rejected {
+[data-bs-theme="dark"] .ep-audit-popover .ep-audit-stage-badge--rejected,
+[data-layout-mode="dark"] .ep-audit-popover .ep-audit-stage-badge--rejected {
   background: rgba(239,68,68,0.20) !important;
   color: #fca5a5 !important;
 }
-[data-bs-theme="dark"] .ep-audit-popover .ep-audit-stage-badge--approved {
+[data-bs-theme="dark"] .ep-audit-popover .ep-audit-stage-badge--approved,
+[data-layout-mode="dark"] .ep-audit-popover .ep-audit-stage-badge--approved {
   background: rgba(16,185,129,0.20) !important;
   color: #6ee7b7 !important;
 }
@@ -12024,6 +12031,11 @@
    The under-target badge is inline amber pastel (light); the on-target one
    falls back to the default pill. Repaint both as translucent accent chips so
    they don't read as light badges on the dark table. */
+/* The Att. cell no longer clips (meta.wrap), so the chip must refuse to break
+   instead — "27/31" splitting across two lines would be worse than the stray
+   ellipsis it replaced. (CBC #12) */
+.pay-att-badge { white-space: nowrap; }
+
 :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .pay-page .pay-att-badge[data-att="low"] {
   background: rgba(245,158,11,0.18) !important; color: #fcd34d !important;
 }
@@ -14020,4 +14032,27 @@
   .dt-table tbody tr.dt-empty-row { border: 0 !important; box-shadow: none !important; background: transparent !important; }
   .dt-table tbody tr.dt-empty-row td { display: block !important; text-align: center !important; border: 0 !important; }
   .dt-table tbody tr.dt-empty-row td::before { content: none !important; }
+}
+
+/* Audit-log toggle in the Advances table. Its background was inline
+   var(--vz-card-bg, #ffffff) — the card-scoped token, which paints WHITE
+   wherever there is no .card ancestor. Explicit values instead. (CBC #8) */
+.adv-audit-btn         { background: #f3f4f6; }
+.adv-audit-btn.is-open { background: #ffffff; }
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .adv-audit-btn         { background: rgba(255,255,255,0.06); }
+:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .adv-audit-btn.is-open { background: #222831; }
+
+/* ── Leave Plans chips ────────────────────────────────────────────────────────
+ * Both were inline light palettes with no class, so they stayed a pale grey
+ * slab and a mint pill while the rest of the page went dark. (CBC #1)
+ * ========================================================================== */
+.lvp-locked-chip    { background: #eef2f6; color: #475569; }
+.lvp-unlimited-pill { background: #d1fae5; color: #065f46; }
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .lvp-locked-chip {
+  background: rgba(255, 255, 255, 0.07);
+  color: #cbd5e1;
+}
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .lvp-unlimited-pill {
+  background: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
 }

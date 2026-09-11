@@ -69,7 +69,10 @@ export interface DataTableProps<T> {
   initialSort?: SortingState;
   disableSorting?: boolean;
   leading?: DataTableColumn<T>[];
-  serial?: boolean | { header?: string; width?: string | number };
+  /** Sr No column. `offset` is for callers that paginate EXTERNALLY and hand
+   *  this component a page slice (paginate={false}) — without it the numbering
+   *  restarts at 1 on every page. */
+  serial?: boolean | { header?: string; width?: string | number; offset?: number };
   pageSize?: number;
   pageSizeOptions?: number[];
   autoFitRows?: boolean;
@@ -230,9 +233,12 @@ export default function DataTable<T extends object>({
       meta: { align: 'center', width: cfg.width ?? 56 },
       cell: info => {
         const pos = info.table.getRowModel().rows.findIndex(r => r.id === info.row.id);
+        /* An externally paginated table gets its offset from the caller: the
+           table only ever sees one page's rows, so it cannot work out where
+           that page starts on its own. (CBC #11) */
         const offset = paginate
           ? (info.table.getState().pagination?.pageIndex ?? 0) * (info.table.getState().pagination?.pageSize ?? 0)
-          : 0;
+          : (cfg.offset ?? 0);
         return <span className="dt-serial">{offset + pos + 1}</span>;
       },
     };

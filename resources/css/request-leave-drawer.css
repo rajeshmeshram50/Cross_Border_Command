@@ -331,11 +331,33 @@
   left: 0; right: 0;
   max-height: 292px;
   overflow-y: auto;
-  background: var(--vz-card-bg, #fff);
+  background: #fff;
   border: 1px solid var(--vz-border-color, #e5e7eb);
   border-radius: 10px;
   box-shadow: 0 12px 28px -8px rgba(16, 24, 34, 0.22);
 }
+/* Explicit dark surface, NOT var(--vz-card-bg). (CBC #2)
+   That token is defined inside `.card` and nowhere else — never on :root — and
+   this panel is absolutely positioned inside a MODAL, which has no card
+   ancestor. The declaration therefore fell back to its literal #fff and the
+   employee-search dropdown opened as a white sheet over the dark drawer. */
+[data-bs-theme="dark"] .lvr-notify-panel,
+[data-layout-mode="dark"] .lvr-notify-panel,
+[data-layout-mode="dark"] .lvr-notify-panel {
+  background: #222831;
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.55);
+}
+/* The two states rendered INSIDE that panel carry their own light greys. */
+[data-bs-theme="dark"] .lvr-search-loading,
+[data-layout-mode="dark"] .lvr-search-loading,
+[data-layout-mode="dark"] .lvr-search-loading {
+  color: rgba(255, 255, 255, 0.72);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+[data-bs-theme="dark"] .lvr-empty-search,
+[data-layout-mode="dark"] .lvr-empty-search,
+[data-layout-mode="dark"] .lvr-empty-search { color: rgba(255, 255, 255, 0.55); }
 .lvr-notify-panel .lvr-search-loading,
 .lvr-notify-panel .lvr-empty-search { margin: 0; border: 0; }
 .lvr-notify-panel .lvr-notify-list { max-height: none; overflow: visible; }
@@ -408,67 +430,91 @@
    header + primary button already work in both themes.
    ================================================================= */
 [data-bs-theme="dark"] .lvr-drawer-modal .modal-content,
-[data-bs-theme="dark"] .lvr-drawer-content {
+[data-layout-mode="dark"] .lvr-drawer-modal .modal-content,
+[data-bs-theme="dark"] .lvr-drawer-content,
+[data-layout-mode="dark"] .lvr-drawer-content {
   /* Solid opaque hex — NOT var(--vz-card-bg): the modal is portalled and the
      theme variable resolved transparent there, making the whole drawer
      see-through. A fixed dark surface keeps it solid. */
   background: #1c2531 !important;
 }
-[data-bs-theme="dark"] .lvr-section-title { color: #9ca3af; }
-[data-bs-theme="dark"] .lvr-mini-label { color: #9ca3af; }
+[data-bs-theme="dark"] .lvr-section-title,
+[data-layout-mode="dark"] .lvr-section-title { color: #9ca3af; }
+[data-bs-theme="dark"] .lvr-mini-label,
+[data-layout-mode="dark"] .lvr-mini-label { color: #9ca3af; }
 
 [data-bs-theme="dark"] .lvr-input,
-[data-bs-theme="dark"] .lvr-textarea {
+[data-layout-mode="dark"] .lvr-input,
+[data-bs-theme="dark"] .lvr-textarea,
+[data-layout-mode="dark"] .lvr-textarea {
   background: var(--vz-secondary-bg);
   color: var(--vz-body-color);
   border-color: var(--vz-border-color);
 }
 [data-bs-theme="dark"] .lvr-input::placeholder,
-[data-bs-theme="dark"] .lvr-textarea::placeholder { color: #8a909c; }
+[data-layout-mode="dark"] .lvr-input::placeholder,
+[data-bs-theme="dark"] .lvr-textarea::placeholder,
+[data-layout-mode="dark"] .lvr-textarea::placeholder { color: #8a909c; }
 
-[data-bs-theme="dark"] .lvr-date-strip {
+[data-bs-theme="dark"] .lvr-date-strip,
+[data-layout-mode="dark"] .lvr-date-strip {
   background: rgba(255,255,255,0.04);
   border-color: var(--vz-border-color);
 }
 [data-bs-theme="dark"] .lvr-days-pill,
-[data-bs-theme="dark"] .lvr-count-pill {
+[data-layout-mode="dark"] .lvr-days-pill,
+[data-bs-theme="dark"] .lvr-count-pill,
+[data-layout-mode="dark"] .lvr-count-pill {
   background: rgba(124,92,252,0.20);
   color: #c4b5fd;
 }
 
-[data-bs-theme="dark"] .lvr-warning {
+[data-bs-theme="dark"] .lvr-warning,
+[data-layout-mode="dark"] .lvr-warning {
   background: rgba(245,158,11,0.14);
   color: #fcd34d;
 }
 
-[data-bs-theme="dark"] .lvr-chip {
+[data-bs-theme="dark"] .lvr-chip,
+[data-layout-mode="dark"] .lvr-chip {
   background: rgba(124,92,252,0.18);
   border-color: rgba(124,92,252,0.40);
   color: #c4b5fd;
 }
-[data-bs-theme="dark"] .lvr-chip-x { color: #c4b5fd; }
-[data-bs-theme="dark"] .lvr-chip-x:hover { background: rgba(124,92,252,0.30); }
+[data-bs-theme="dark"] .lvr-chip-x,
+[data-layout-mode="dark"] .lvr-chip-x { color: #c4b5fd; }
+[data-bs-theme="dark"] .lvr-chip-x:hover,
+[data-layout-mode="dark"] .lvr-chip-x:hover { background: rgba(124,92,252,0.30); }
 
-[data-bs-theme="dark"] .lvr-notify-list {
+[data-bs-theme="dark"] .lvr-notify-list,
+[data-layout-mode="dark"] .lvr-notify-list {
   background: #232d3a;
   border-color: var(--vz-border-color);
 }
-[data-bs-theme="dark"] .lvr-notify-row { border-bottom-color: var(--vz-border-color); }
-[data-bs-theme="dark"] .lvr-notify-row:hover { background: rgba(255,255,255,0.04); }
-[data-bs-theme="dark"] .lvr-notify-row.is-selected { background: rgba(124,92,252,0.15); }
-[data-bs-theme="dark"] .lvr-notify-name { color: var(--vz-body-color); }
-[data-bs-theme="dark"] .lvr-notify-sub { color: #9ca3af; }
+[data-bs-theme="dark"] .lvr-notify-row,
+[data-layout-mode="dark"] .lvr-notify-row { border-bottom-color: var(--vz-border-color); }
+[data-bs-theme="dark"] .lvr-notify-row:hover,
+[data-layout-mode="dark"] .lvr-notify-row:hover { background: rgba(255,255,255,0.04); }
+[data-bs-theme="dark"] .lvr-notify-row,
+[data-layout-mode="dark"] .lvr-notify-row.is-selected { background: rgba(124,92,252,0.15); }
+[data-bs-theme="dark"] .lvr-notify-name,
+[data-layout-mode="dark"] .lvr-notify-name { color: var(--vz-body-color); }
+[data-bs-theme="dark"] .lvr-notify-sub,
+[data-layout-mode="dark"] .lvr-notify-sub { color: #9ca3af; }
 
-[data-bs-theme="dark"] .lvr-footer {
+[data-bs-theme="dark"] .lvr-footer,
+[data-layout-mode="dark"] .lvr-footer {
   background: #1c2531;
   border-top-color: var(--vz-border-color);
 }
-[data-bs-theme="dark"] .lvr-btn-ghost {
+[data-bs-theme="dark"] .lvr-btn-ghost,
+[data-layout-mode="dark"] .lvr-btn-ghost {
   background: var(--vz-secondary-bg);
   color: var(--vz-body-color);
   border-color: var(--vz-border-color);
 }
-[data-bs-theme="dark"] .lvr-btn-ghost:hover {
+[data-bs-theme="dark"] .lvr-btn-ghost:hover,
+[data-layout-mode="dark"] .lvr-btn-ghost:hover {
   background: rgba(255,255,255,0.06);
   border-color: rgba(255,255,255,0.20);
 }

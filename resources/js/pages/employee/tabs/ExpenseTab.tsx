@@ -629,6 +629,7 @@ export default function ExpenseTab() {
                 <AdvanceRequestsTable
                   rows={visibleAdvances}
                   loading={loadingAdvances}
+                  serialOffset={pageStart}
                   accent={accent}
                   fallbackInitials={initials}
                   fallbackName={employee?.name || employeeId}
@@ -645,6 +646,10 @@ export default function ExpenseTab() {
                 <ExpenseClaimsTable
                   rows={visibleExpenses}
                   loading={loadingClaims}
+                  /* This tab owns the pager and passes a single page slice, so
+                     the Sr No. column has to be told where the page starts —
+                     otherwise every page numbers itself 1, 2, 3. (CBC #11) */
+                  serialOffset={pageStart}
                   accent={accent}
                   fallbackInitials={initials}
                   fallbackName={employee?.name || employeeId}
