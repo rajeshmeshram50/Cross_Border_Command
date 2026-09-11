@@ -334,6 +334,33 @@ export default function PayslipViewerModal({
      whose run is locked and can't recompute. */
   const num = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ''));
 
+  /* Money is rendered to the PAISA, always. (CBC #10)
+   *
+   * Every figure on this slip went through `toLocaleString('en-IN')` with no
+   * options, which formats to a variable number of decimals: ₹5,641.8 (one),
+   * ₹1,00,416.666 (three) and ₹10,288 (none) could sit in the same column. The
+   * components then looked as though they neither matched each other nor added
+   * up to the total — the arithmetic was right, the presentation was not.
+   *
+   * The sums are rounded to the paisa before display for the same reason: they
+   * are floating-point additions of decimal amounts, so 5144.07 + 3086.44 +
+   * 2057.49 can land on ...0000000002 and print a total nobody can reconcile.
+   *
+   * DECLARED HERE, beside num(), and not further down where it used to sit.
+   * `otWorkings` below calls inr() while building the overtime workings line,
+   * and that is a plain const evaluated during render — so with the old
+   * placement it ran ~29 lines before this declaration and threw
+   * "Cannot access 'inr' before initialization" (a temporal dead zone).
+   * It only fired when otPaidHours > 0, because the other branch of that
+   * ternary never touches inr — so a payslip WITH overtime broke the viewer
+   * while one without opened fine. Keep both display helpers above their
+   * first use. */
+  const inr = (n: number) =>
+    (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('en-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
   /* THE hour count the allowance was priced on. The KPI below may show a
      different, live figure; this one is what the money is built from, so it is
      the only one the workings may quote. Older slips that predate the stored

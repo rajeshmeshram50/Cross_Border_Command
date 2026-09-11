@@ -1,3 +1,6 @@
+import { useEffect, useRef, useState } from 'react';
+import api from '../../../api';
+import { useToast } from '../../../contexts/ToastContext';
 /* ─────────────────────────────────────────────────────────────────────────
  * CLM Master Management — shared visual tokens + base CSS.
  *
@@ -1576,4 +1579,103 @@ export function paginate<T>(rows: T[], page: number, perPage: number = PER_PAGE)
   const safePage = Math.min(Math.max(1, page), pageCount);
   const start = (safePage - 1) * pp;
   return { slice: rows.slice(start, start + pp), start, pageCount, safePage, perPage: pp };
+}
+
+/* ── Shared list hooks (server-side paging + auto-fit) ──
+ *
+ * Used by every CLM master list. Kept here rather than in one page so the
+ * two tabs of a page — and the pages themselves — cannot drift apart on the
+ * debounce, the stale-request guard or the rows-per-page floor. */
+/* Server-side paging shared by both tabs.
+ *
+ * Holds one page of rows and the filtered total, and refetches whenever the
+ * page, the page size, the debounced search or reloadKey changes.
+ *
+ * Why the search is in here rather than a useMemo over `rows`: once the client
+ * holds one page, filtering there searches ten rows out of five hundred and
+ * reports "2 results" for a term that matches eighty. The endpoint does it.
+ *
+ * `extraParams` are STATIC per call site (e.g. { view: 'list' }) and are
+ * deliberately absent from the effect deps — an object literal would be a new
+ * reference on every render and would refetch in a loop. Pass a constant.
+ */
+export function usePagedList<T>(endpoint: string, reloadKey: number, extraParams: Record<string, string | number> = {}) {
+  const toast = useToast();
+  const [rows,  setRows]  = useState<T[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch]   = useState('');
+  const [debounced, setDebounced] = useState('');
+  const [page, setPage] = useState(1);
+  const [rpp,  setRpp]  = useState(PER_PAGE);
+  // Newest-request token: a page move, a size change and a debounced search can
+  // each fire while the previous request is still out.
+  const reqRef = useRef(0);
+
+  // Typing is not a request.
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Back to page 1 whenever the result SET changes rather than the position in
+  // it — staying on page 9 of a search with two pages renders an empty table.
+  useEffect(() => { setPage(1); }, [debounced, rpp]);
+
+  useEffect(() => {
+    const token = ++reqRef.current;
+    setLoading(true);
+    api.get<{ status: boolean; data: T[]; total?: number; count?: number }>(endpoint, {
+      params: { ...extraParams, page, per_page: rpp, ...(debounced ? { search: debounced } : {}) },
+    })
+      .then(r => {
+        if (token !== reqRef.current) return;
+        setRows(r.data.data ?? []);
+        setTotal(Number(r.data.total ?? r.data.count ?? 0));
+      })
+      .catch(() => { if (token === reqRef.current) { toast.error('Load failed', 'Could not load the list'); setRows([]); setTotal(0); } })
+      .finally(() => { if (token === reqRef.current) setLoading(false); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endpoint, page, rpp, debounced, reloadKey]);
+
+  return { rows, total, loading, search, setSearch, page, setPage, rpp, setRpp };
+}
+
+/* Rows that fit the visible table, never fewer than PER_PAGE (10).
+ * Grow-only: a tall screen uses the room it has, a short one still gets a full
+ * standard page. The old floor was 4, which served four-row pages on a laptop
+ * and made the same tenant look different on every machine. */
+export function useAutoFitRows(
+  scrollRef: React.RefObject<HTMLDivElement | null>,
+  autoFitRef: React.MutableRefObject<boolean>,
+  setRpp: (fn: (prev: number) => number) => void,
+  deps: unknown[],
+) {
+  const [fillH, setFillH] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const THEAD = 40, ROW = 46, FOOTER = 96;
+      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const fit = Math.max(PER_PAGE, Math.floor(avail / ROW));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
+      const fh = Math.max(0, window.innerHeight - top - 64);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    /* Mount and SETTLED resizes only. Not a ResizeObserver on the page root:
+       the "What We Are Doing Here" box animates its height on expand/collapse,
+       which fired this every animation frame and visibly disturbed the layout.
+       Debounced because a size change is a refetch now, and a drag emits
+       scores of resize events. */
+    let t: number | undefined;
+    const onResize = () => { window.clearTimeout(t); t = window.setTimeout(recompute, 180); };
+    window.addEventListener('resize', onResize);
+    return () => { window.removeEventListener('resize', onResize); window.clearTimeout(t); cancelAnimationFrame(raf); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return fillH;
 }

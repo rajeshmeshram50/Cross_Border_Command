@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
@@ -138,11 +138,19 @@ export default function ClmAgreementsSentPage() {
     return list;
   }, [search, tab, sent]);
 
-  // Every agreement currently in clarification — both those awaiting our reply
-  // AND those we've already answered (awaiting the approver's next decision) —
-  // so the full conversation stays checkable here until the round closes.
+  /* Every agreement with a clarification thread — those awaiting our reply AND
+     those we've already answered (awaiting the approver's next decision) — so
+     the full conversation stays checkable here until the round closes.
+
+     Driven by the THREAD, not by `status === 'clarify'`. With several approvers
+     that single status describes whoever acted last: A raises a query, B then
+     approves, and the contract stopped reporting 'clarify' — so it dropped off
+     this panel while A's question sat unanswered and A was still blocking the
+     agreement. The thread is per-query and cannot be overwritten by someone
+     else's decision. (The server derives its status the same way now; this is
+     the belt to that braces, and it also fixes rows saved before that.) */
   const clarifyList = useMemo(
-    () => sent.filter(c => c.status === 'clarify'),
+    () => sent.filter(c => c.status === 'clarify' || (c.clarifications?.length ?? 0) > 0),
     [sent],
   );
 
@@ -760,84 +768,207 @@ function ClarifyTable({ rows, onRespond, t }: { rows: SentRow[]; onRespond: (id:
   );
 }
 
-/* ── Respond to clarification modal ── */
+/* ── Respond to clarification modal ──
+ *
+ * Two panes: the conversation on the left (read-only history), the composer on
+ * the right. The single-column version put the textarea BELOW a thread that
+ * could run to 300px of scroll, so on a laptop the sender scrolled the history,
+ * lost sight of the question, then scrolled back down to answer it. Side by
+ * side, the query stays on screen while it is being answered.
+ *
+ * Palette unchanged — the violet header, violet approver bubbles and cyan
+ * sender bubbles are the same tokens the rest of this page uses.
+ */
 function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; onClose: () => void; onSubmit: (id: string, text: string) => void; t: OpsTokens }) {
   const [text, setText] = useState('');
   const [err, setErr] = useState(false);
-  const { typingName, notifyTyping, stopTyping } = useTyping(contract.id);
+  /* Only the approver side of THIS conversation can raise the indicator. The
+     whisper channel is per-tenant, so without this any colleague with an
+     agreements page open could surface in here as "…is typing". `approver` is
+     the contract's primary; `cl.by` covers the rest when several approvers have
+     each asked something. */
+  const { typingName, notifyTyping, stopTyping } = useTyping(contract.id, {
+    expect: [contract.approver, ...contract.clarifications.map(cl => cl.by)],
+  });
   const pending = contract.clarifications.filter(cl => !cl.response);
   const hasPending = pending.length > 0;
+  /* Matches the API's own ceiling (`response` is validated max:2000). A counter
+     that stopped short of what the endpoint accepts would invent a limit. */
+  const MAX = 2000;
+  // Most recent answer the sender gave — offered as a one-click refill when a
+  // similar query comes round again, which is common on a repeat round.
+  const prevResponse = [...contract.clarifications].reverse().find(cl => cl.response)?.response ?? '';
+
+  /* Open on the NEWEST message, the way every chat does.
+     The thread is oldest-first, so a conversation long enough to scroll opened
+     showing the first query — usually one already answered — and the query
+     actually being asked sat below the fold. Jumping to the bottom puts the
+     live question next to the box that answers it.
+     Layout effect, not effect: `scrollTop` has to be set before the browser
+     paints, or the thread is visibly at the top for a frame and then lurches. */
+  const threadRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const el = threadRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [contract.clarifications.length]);
+
+  const card: React.CSSProperties = {
+    background: t.surface,
+    border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.26)' : '#EDE9FE'}`,
+    borderRadius: 16,
+    padding: 16,
+  };
+  const capLabel: React.CSSProperties = {
+    fontSize: 8.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase',
+    color: t.dark ? '#c4b5fd' : '#7C3AED',
+  };
+
   return (
     <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(12,5,38,.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'var(--font-sans)' }}>
-      <div style={{ width: '100%', maxWidth: 500, borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 80px rgba(12,5,38,.35)', animation: 'awsSlideUp .22s cubic-bezier(.22,1,.36,1) both' }}>
-        <div style={{ background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#5B21B6,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', padding: '18px 20px', position: 'relative', overflow: 'hidden' }}>
+      <div className="aws-clarify-modal" style={{ width: '100%', maxWidth: 880, borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 80px rgba(12,5,38,.35)', animation: 'awsSlideUp .22s cubic-bezier(.22,1,.36,1) both' }}>
+
+        {/* Header — unchanged palette */}
+        <div style={{ background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#5B21B6,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', padding: '18px 22px', position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.16),transparent)', pointerEvents: 'none' }} />
           <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
               <div style={{ width: 44, height: 44, borderRadius: 13, background: 'rgba(255,255,255,.2)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,.15)', flexShrink: 0 }}><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg></div>
               <div>
                 <div style={{ fontSize: 8.5, fontWeight: 700, color: 'rgba(255,255,255,.62)', letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 3 }}>{contract.id} · {hasPending ? 'Clarification Response' : 'Clarification Conversation'}</div>
-                <div style={{ fontSize: 16, fontWeight: 900, color: '#fff', letterSpacing: '-.3px', maxWidth: 290, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contract.title}</div>
+                <div style={{ fontSize: 17, fontWeight: 900, color: '#fff', letterSpacing: '-.3px', maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contract.title}</div>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,.72)', marginTop: 2 }}>{hasPending ? 'Review the query and provide your clarification.' : 'The full conversation for this agreement.'}</div>
               </div>
             </div>
             <button onClick={() => { stopTyping(); onClose(); }} style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✕</button>
           </div>
         </div>
-        {/* Full conversation thread — every query + response in order, so the
-            sender reads the whole back-and-forth, not just the latest query. */}
-        <div style={{ padding: '14px 20px', background: t.dark ? '#1c1733' : '#FAF5FF', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, maxHeight: 300, overflowY: 'auto' }}>
-          <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#c4b5fd' : '#7C3AED', marginBottom: 11 }}>Conversation</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {contract.clarifications.map((cl, i) => (
-              <div key={i}>
-                {/* Approver query (left) */}
-                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                  <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(cl.by || contract.approver)}</span></div>
-                  <div style={{ maxWidth: '80%', minWidth: 0 }}>
-                    <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3 }}>{cl.by || contract.approver} · Approver · {cl.date}</div>
-                    <div style={{ background: t.surface, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, borderRadius: '4px 12px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.textSub, lineHeight: 1.55, wordBreak: 'break-word', display: 'inline-block' }}>{cl.query}</div>
+
+        {/* Body — two panes */}
+        <div className="aws-clarify-body" style={{ background: t.dark ? '#150f2b' : '#F7F5FF', padding: 18, display: 'grid', gridTemplateColumns: hasPending ? '1.05fr .95fr' : '1fr', gap: 16, alignItems: 'start' }}>
+
+          {/* LEFT — conversation history */}
+          <div style={card}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 13 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: t.text }}>Conversation History</span>
+              </div>
+              {contract.clarifications.length > 0 && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 9.5, fontWeight: 700, color: t.dark ? '#c4b5fd' : '#6D28D9', background: t.dark ? 'rgba(124,58,237,.18)' : '#F3EEFF', border: `1px solid ${t.dark ? 'rgba(167,139,250,.3)' : '#E4DAFF'}`, borderRadius: 20, padding: '4px 10px', whiteSpace: 'nowrap' }}>
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+                  {contract.clarifications[contract.clarifications.length - 1].date}
+                </span>
+              )}
+            </div>
+
+            <div ref={threadRef} className="aws-thread" style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 330, overflowY: 'auto' }}>
+              {contract.clarifications.map((cl, i) => (
+                <div key={i}>
+                  {/* Approver query */}
+                  <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 9.5, fontWeight: 900, color: '#fff' }}>{inits(cl.by || contract.approver)}</span></div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, marginBottom: 4 }}>{cl.by || contract.approver} · Approver · {cl.date}</div>
+                      <div style={{ background: t.dark ? 'rgba(124,58,237,.12)' : '#F4F1FC', border: `1px solid ${t.dark ? 'rgba(124,58,237,.28)' : '#E7E1FA'}`, borderRadius: '4px 12px 12px 12px', padding: '10px 13px', fontSize: 12, color: t.textSub, lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.query}</div>
+                    </div>
+                  </div>
+                  {/* Sender response, or the awaiting note */}
+                  {cl.response
+                    ? <div style={{ display: 'flex', gap: 9, justifyContent: 'flex-end', alignItems: 'flex-start', marginTop: 8 }}>
+                        <div style={{ maxWidth: '82%', minWidth: 0 }}>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, marginBottom: 4, textAlign: 'right' }}>You · {contract.createdBy}</div>
+                          <div style={{ background: t.dark ? 'rgba(8,145,178,.16)' : '#E0F7FA', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.42)' : '#A5F3FC'}`, borderRadius: '12px 4px 12px 12px', padding: '10px 13px', fontSize: 12, color: t.dark ? '#a5f3fc' : '#0e7490', lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.response}</div>
+                        </div>
+                        <div style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 9.5, fontWeight: 900, color: '#fff' }}>{inits(contract.createdBy)}</span></div>
+                      </div>
+                    : <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 7, marginLeft: 39, fontSize: 9.5, fontWeight: 700, color: '#F59E0B' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting your response</div>}
+                </div>
+              ))}
+            </div>
+            <TypingIndicator name={typingName} color={t.dark ? '#c4b5fd' : '#7C3AED'} />
+          </div>
+
+          {/* RIGHT — composer. Only rendered when something is actually open;
+              otherwise the history takes the full width. */}
+          {hasPending ? (
+            <div style={card}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, background: t.dark ? 'rgba(124,58,237,.2)' : '#EFE9FF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Share Your Clarification</div>
+                  <div style={{ fontSize: 10.5, color: t.textMuted, lineHeight: 1.5, marginTop: 2 }}>
+                    Answering {pending[pending.length - 1].by || contract.approver}&rsquo;s query to continue the process.
                   </div>
                 </div>
-                {/* Sender response (right) or awaiting note */}
-                {cl.response
-                  ? <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'flex-start', marginTop: 7 }}>
-                      <div style={{ maxWidth: '80%', minWidth: 0 }}>
-                        <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3, textAlign: 'right' }}>You · {contract.createdBy}</div>
-                        <div style={{ background: t.dark ? 'rgba(8,145,178,.16)' : '#E0F7FA', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.42)' : '#A5F3FC'}`, borderRadius: '12px 4px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.dark ? '#a5f3fc' : '#0e7490', lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.response}</div>
-                      </div>
-                      <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(contract.createdBy)}</span></div>
-                    </div>
-                  : <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 6, marginLeft: 34, fontSize: 9, fontWeight: 600, color: '#F59E0B' }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting your response</div>}
               </div>
-            ))}
-          </div>
-          <TypingIndicator name={typingName} color={t.dark ? '#c4b5fd' : '#7C3AED'} />
+
+              <div style={{ position: 'relative' }}>
+                <textarea
+                  value={text}
+                  maxLength={MAX}
+                  onChange={e => { setText(e.target.value); setErr(false); notifyTyping(); }}
+                  placeholder="Type your clarification response here…"
+                  onFocus={e => { e.currentTarget.style.borderColor = '#7C3AED'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124,58,237,.12)'; }}
+                  onBlur={e => { e.currentTarget.style.borderColor = err ? '#EF4444' : (t.dark ? t.border : '#E6E1F5'); e.currentTarget.style.boxShadow = 'none'; }}
+                  style={{ width: '100%', height: 150, padding: '12px 14px 26px', border: `1.5px solid ${err ? '#EF4444' : (t.dark ? t.border : '#E6E1F5')}`, borderRadius: 12, fontFamily: 'inherit', fontSize: 12.5, color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', resize: 'none', outline: 'none', boxSizing: 'border-box', lineHeight: 1.55, transition: 'border-color .15s, box-shadow .15s' }}
+                />
+                <span style={{ position: 'absolute', right: 12, bottom: 10, fontSize: 9.5, fontWeight: 600, color: t.textMuted, pointerEvents: 'none' }}>{text.length}/{MAX}</span>
+              </div>
+              {err && <div style={{ fontSize: 9.5, color: '#EF4444', marginTop: 6, fontWeight: 600 }}>Please enter your response before submitting.</div>}
+
+              {prevResponse && (
+                <>
+                  <div style={{ ...capLabel, display: 'flex', alignItems: 'center', gap: 5, margin: '14px 0 8px' }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
+                    Quick action
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setText(prevResponse.slice(0, MAX)); setErr(false); notifyTyping(); }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 9, border: `1.5px solid ${t.dark ? t.border : '#E6E1F5'}`, background: t.dark ? 'rgba(255,255,255,.04)' : '#FBFAFF', color: t.dark ? '#cbd5e1' : '#5B21B6', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                    Use previous response
+                  </button>
+                </>
+              )}
+
+              {/* Submit first, Cancel second — 2:1. */}
+              <div style={{ display: 'flex', gap: 9, marginTop: 14 }}>
+                <button
+                  onClick={() => { if (!text.trim()) { setErr(true); return; } stopTyping(); onSubmit(contract.id, text.trim()); }}
+                  style={{ flex: 2, padding: '13px 16px', borderRadius: 12, border: 'none', background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', color: '#fff', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 14px rgba(109,40,217,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" style={{ flexShrink: 0 }}><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
+                  Submit
+                </button>
+                <button onClick={() => { stopTyping(); onClose(); }} style={{ flex: 1, padding: '13px 16px', borderRadius: 12, border: `1.5px solid ${t.dark ? t.border : '#E6E1F5'}`, background: 'transparent', color: t.dark ? '#cbd5e1' : '#64748B', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+              </div>
+            </div>
+          ) : null}
         </div>
-        {hasPending ? (
-          <div style={{ padding: '16px 20px', background: t.surface, borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}` }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
-              <span style={{ fontSize: 9, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#7C3AED', textTransform: 'uppercase', letterSpacing: '.1em' }}>Your Response <span style={{ color: '#EF4444' }}>*</span></span>
-            </div>
-            <textarea value={text} onChange={e => { setText(e.target.value); setErr(false); notifyTyping(); }} placeholder="Provide your clarification response to the approver…"
-              onFocus={e => { e.currentTarget.style.borderColor = '#7C3AED'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124,58,237,.12)'; }}
-              onBlur={e => { e.currentTarget.style.borderColor = err ? '#EF4444' : (t.dark ? t.border : '#E2E8F0'); e.currentTarget.style.boxShadow = 'none'; }}
-              style={{ width: '100%', height: 90, padding: '11px 13px', border: `1.5px solid ${err ? '#EF4444' : (t.dark ? t.border : '#E2E8F0')}`, borderRadius: 12, fontFamily: 'inherit', fontSize: 12, color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', resize: 'none', outline: 'none', boxSizing: 'border-box', lineHeight: 1.55, transition: 'border-color .15s, box-shadow .15s' }} />
-            {err && <div style={{ fontSize: 9, color: '#EF4444', marginTop: 5, fontWeight: 600 }}>Please enter your response before submitting.</div>}
-            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-              <button onClick={() => { stopTyping(); onClose(); }} style={{ flex: 1, padding: 10, borderRadius: 10, border: `1.5px solid ${t.dark ? t.border : '#E2E8F0'}`, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F9FA', color: t.dark ? '#cbd5e1' : '#64748B', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={() => { if (!text.trim()) { setErr(true); return; } stopTyping(); onSubmit(contract.id, text.trim()); }} style={{ flex: 2, padding: 10, borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', color: '#fff', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer', boxShadow: '0 3px 10px rgba(109,40,217,.35)' }}>Submit Clarification Response</button>
-            </div>
-          </div>
-        ) : (
-          <div style={{ padding: '14px 20px', background: t.surface, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <span style={{ fontSize: 10.5, fontWeight: 600, color: t.textMuted, display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1.4 }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2.2" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12" /></svg>
-              You've responded — awaiting {contract.approver}'s decision.
-            </span>
+
+        {/* Foot */}
+        <div style={{ padding: '12px 22px', background: t.surface, borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.22)' : '#EDE9FE'}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <span style={{ fontSize: 10.5, fontWeight: 600, color: t.textMuted, display: 'flex', alignItems: 'center', gap: 7, lineHeight: 1.4 }}>
+            {hasPending ? (
+              <>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+                Your response will be shared with the approver for further review.
+              </>
+            ) : (
+              <>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2.2" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12" /></svg>
+                You&rsquo;ve responded &mdash; awaiting {contract.approver}&rsquo;s decision.
+              </>
+            )}
+          </span>
+          {!hasPending && (
             <button onClick={onClose} style={{ padding: '10px 22px', borderRadius: 10, border: `1.5px solid ${t.dark ? t.border : '#E2E8F0'}`, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F9FA', color: t.dark ? '#cbd5e1' : '#64748B', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>Close</button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
@@ -862,6 +993,25 @@ const codePill = (dark: boolean): React.CSSProperties => ({ fontFamily: "'Geist 
 const AWS_CSS = `
 @keyframes awsSlideUp { from { opacity:0; transform:translateY(24px) scale(.96); } to { opacity:1; transform:none; } }
 @keyframes awsSpin { to { transform: rotate(360deg); } }
+
+/* Slim scrollbar for the clarification thread. The platform default is ~15px
+   wide — in a 250px column that is 6% of the bubble width given over to chrome,
+   and it sat hard against the message text. 5px, transparent track, thumb only
+   on the violet the thread already uses. */
+.aws-thread { scrollbar-width: thin; scrollbar-color: rgba(124,58,237,.34) transparent; }
+.aws-thread::-webkit-scrollbar { width: 5px; }
+.aws-thread::-webkit-scrollbar-track { background: transparent; }
+.aws-thread::-webkit-scrollbar-thumb { background: rgba(124,58,237,.28); border-radius: 999px; }
+.aws-thread::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,.5); }
+
+/* ── Responsive clarification modal ──
+   Two panes side by side on a laptop; below this width they stack (history
+   first, composer under it) and the card itself scrolls, since the stacked
+   height overruns a phone viewport. */
+@media (max-width: 820px) {
+  .aws-clarify-body { grid-template-columns: 1fr !important; }
+  .aws-clarify-modal { max-height: 92vh; overflow-y: auto !important; }
+}
 
 /* ── Responsive tabs (QA #10) ──
    On narrow screens the tab rail goes full width with 2 tabs per row and the

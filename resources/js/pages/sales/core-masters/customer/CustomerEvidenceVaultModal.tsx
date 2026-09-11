@@ -535,7 +535,11 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                     );
                   })()}
                   {customer.country && <span className="cev-chip cev-chip-country">{customer.country}</span>}
-                  <span className="cev-chip cev-chip-risk"  data-risk={(customer.risk ?? 'Low').replace(/\s*risk$/i, '').toLowerCase()}>{(customer.risk ?? 'Low').replace(/\s*risk$/i, '')} Risk</span>
+                  {(() => {
+                    const risk = (customer.risk ?? '').replace(/\s*risk$/i, '').trim();
+                    if (!risk) return null;
+                    return <span className="cev-chip cev-chip-risk" data-risk={risk.toLowerCase()}>{risk} Risk</span>;
+                  })()}
                 </div>
               </div>
             </div>
@@ -1023,7 +1027,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
             <th>{authorityLbl}</th>
             <th>Requirement</th>
             <th>Attachment</th>
-            <th style={{ width: 140 }}>Actions</th>
+            <th style={{ width: 260 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -1232,13 +1236,17 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           target={canViewOrDownload ? '_blank' : undefined}
           rel="noreferrer"
           aria-disabled={!canViewOrDownload}
-          className={`cev-row-act cev-row-act-view ${!canViewOrDownload ? 'is-disabled' : ''}`}
+          className={`cev-row-act cev-row-act-view sev-row-act-txt ${!canViewOrDownload ? 'is-disabled' : ''}`}
           onClick={e => { if (!canViewOrDownload) { e.preventDefault(); return; } setViewing(true); window.setTimeout(() => setViewing(false), 1200); }}
           aria-label="View"
         >
+          {/* Only the ICON swaps for the spinner — the label stays put, so the
+              button keeps its width and the row of actions doesn't reflow
+              while one of them is working. */}
           {viewing
-            ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 14 }} aria-hidden />
+            ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 13 }} aria-hidden />
             : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>}
+          <span>View</span>
         </a>
       </Tooltip>
       <Tooltip label={canViewOrDownload ? (downloading ? 'Downloading…' : `Download ${doc.attachment}`) : 'No attachment yet'}>
@@ -1246,12 +1254,13 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           type="button"
           disabled={!canViewOrDownload || downloading}
           onClick={download}
-          className={`cev-row-act cev-row-act-download ${!canViewOrDownload ? 'is-disabled' : ''}`}
+          className={`cev-row-act cev-row-act-download sev-row-act-txt ${!canViewOrDownload ? 'is-disabled' : ''}`}
           aria-label="Download"
         >
           {downloading
-            ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 14 }} aria-hidden />
+            ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 13 }} aria-hidden />
             : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
+          <span>Download</span>
         </button>
       </Tooltip>
       {category !== 'td' && (
@@ -1260,14 +1269,18 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           type="button"
           disabled={!canReupload || busy}
           onClick={() => fileRef.current?.click()}
-          className={`cev-row-act cev-row-act-upload ${(!canReupload || busy) ? 'is-disabled' : ''}`}
+          className={`cev-row-act cev-row-act-upload sev-row-act-txt ${(!canReupload || busy) ? 'is-disabled' : ''}`}
           aria-label={doc.attachment ? 'Re-upload' : 'Upload'}
         >
+          {/* Busy uses the same loader, at the same size, as View and Download
+              beside it — the three busy states in this row should read as one
+              control changing, not three different spinners. */}
           {busy
-            ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 13 }} aria-hidden />
             : doc.attachment
               ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
               : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>}
+          <span>{doc.attachment ? 'Re-upload' : 'Upload'}</span>
         </button>
       </Tooltip>
       )}

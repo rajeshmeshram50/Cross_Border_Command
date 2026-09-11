@@ -1469,7 +1469,13 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                         className={`lasm-tab ${tdTab === key ? 'is-on' : ''}`}
                         onClick={() => setTdTab(key)}
                       >
-                        {label}<span className="lasm-tab-count">{tdBuckets[key].length}</span>
+                        {/* The Proforma Invoice row is rendered outside the pager, so it
+                            was outside this count too — Customer Documents read "0" while
+                            showing the PI sitting in it. The badge counts what the tab
+                            displays, so the PI is added to the tab that displays it. */}
+                        {label}<span className="lasm-tab-count">
+                          {tdBuckets[key].length + (payload.pi_document && key === 'buyer' ? 1 : 0)}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -1671,7 +1677,13 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                 1, 2, 3 down the page instead of restarting. The
                                 PI sits outside the pager, so it is present on
                                 every page and the offset applies throughout. */}
-                            <td>{(tdSafePage - 1) * TD_PER_PAGE + i + 1 + (payload.pi_document ? 1 : 0)}</td>
+                            {/* The +1 offset accounts for the PI row above, so it has to
+                                ask whether that row is RENDERED here — not merely whether
+                                a PI exists. The PI row only appears on All and Customer
+                                (piOnThisTab); on Consignee and Customer + Consignee it
+                                does not, yet the offset was applied anyway, so those tabs
+                                opened numbered 2, 3, 4 with no row 1 anywhere. */}
+                            <td>{(tdSafePage - 1) * TD_PER_PAGE + i + 1 + (payload.pi_document && piOnThisTab ? 1 : 0)}</td>
                             <td>
                               {(() => { const nm = td.title || td.name || ''; const long = nm.length > 25; return <Tooltip label={nm} disabled={!long}><div className="lasm-doc-name">{long ? nm.slice(0, 25) + '…' : nm}</div></Tooltip>; })()}
                               <div className="lasm-doc-sub">{td.reference}</div>

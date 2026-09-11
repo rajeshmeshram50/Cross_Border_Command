@@ -12,20 +12,63 @@ use Illuminate\Support\Facades\DB;
 
 class ClmClauseController extends Controller
 {
+    private const DEFAULT_PER_PAGE = 10;
+    private const MAX_PER_PAGE     = 100;
     /* ── TYPES ── */
 
     public function typesIndex(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         if (!$user->client_id) {
             return response()->json(['status' => true, 'data' => [], 'count' => 0]);
         }
         // Branch-scoped read: branch users see globals + client-level rows +
         // their own branch's rows; sibling branches stay hidden.
         $branchFilter = $request->integer('branch_id') ?: null;
-        $typeQuery = ClmClauseType::query()->orderBy('id');
+        // Newest first — the list is read that way and paging has to agree with
+        // it, or page 2 is a different set depending on who sorted last.
+        $paged     = $this->wantsPage($request);
+        $typeQuery = ClmClauseType::query()->orderByDesc('id', $paged ? 'desc' : 'asc');
         MasterVisibility::applyReadScope($typeQuery, $user, $branchFilter);
-        $rows = $typeQuery->get();
+
+        /* Search moves server-side with the paging. Once the client holds one
+           page, filtering there searches 10 rows out of 500 and reports "2
+           results" for a term that matches 80. */
+        if ($search = trim((string) $request->input('search', ''))) {
+            $like = '%' . $search . '%';
+            $typeQuery->where(function ($w) use ($like) {
+                $w->where('name', 'ilike', $like)->orWhere('code', 'ilike', $like);
+            });
+        }
+
+        /* Only types that actually HAVE clauses (?with_clauses=1).
+           The clause picker offers these — an empty type can be selected and
+           then just reports "No clauses found for X", a dead end the user has
+           to back out of. It used to filter client-side on `in_use`, which
+           needed every type in memory; once the dropdown pages, a client-side
+           filter would strip rows out of a page and deliver seven of ten.
+           Built from a SCOPED library query rather than a raw EXISTS so the
+           branch-visibility rule stays in one place — the library links to a
+           type by name, case- and whitespace-insensitively. */
+        if ($request->boolean('with_clauses')) {
+            $usedQuery = ClmClauseLibrary::query();
+            MasterVisibility::applyReadScope($usedQuery, $user, $branchFilter);
+            $used = $usedQuery->selectRaw('DISTINCT LOWER(TRIM(clause_type)) AS t')->pluck('t')->all();
+            // `?: ['']` so "no clauses at all" yields an empty list rather than
+            // an IN () that Postgres rejects.
+            $typeQuery->whereIn(DB::raw('LOWER(TRIM(name))'), $used ?: ['']);
+        }
+
+        /* PAGINATION — opt-in via per_page, so every existing caller that just
+           wants the whole list (pickers, the clause insert panel) is unchanged. */
+        $perPage = $request->filled('per_page')
+            ? min(200, max(1, (int) $request->input('per_page')))
+            : null;
+        $page  = max(1, (int) $request->input('page', 1));
+        $total = $perPage ? (clone $typeQuery)->count() : null;
+
+        $rows = $perPage ? $typeQuery->forPage($page, $perPage)->get() : $typeQuery->get();
 
         /* Usage map: how many Clause Library entries reference each type. The
          * library links to a type by NAME (no FK), so we match case-insensitively.
@@ -42,12 +85,20 @@ class ClmClauseController extends Controller
             $row->in_use = (int) ($usage[mb_strtolower((string) $row->name)] ?? 0);
         });
 
-        return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
+        return response()->json([
+            'status' => true,
+            'data'   => $rows,
+            // `count` stays the rows in hand (unchanged for existing callers);
+            // `total` is the whole filtered set, which is what a pager needs.
+            'count'  => $rows->count(),
+            'total'  => $total ?? $rows->count(),
+        ]);
     }
 
     public function typesStore(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
 
         /* Description is no longer required — the redesigned Clause Type
@@ -86,7 +137,8 @@ class ClmClauseController extends Controller
 
     public function typesUpdate(Request $request, $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $lookup = ClmClauseType::query()->whereKey($id);
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
@@ -135,7 +187,8 @@ class ClmClauseController extends Controller
 
     public function typesDestroy(Request $request, $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $lookup = ClmClauseType::query()->whereKey($id);
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
@@ -150,16 +203,49 @@ class ClmClauseController extends Controller
 
     public function libraryIndex(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         if (!$user->client_id) {
             return response()->json(['status' => true, 'data' => [], 'count' => 0]);
         }
         // Branch-scoped read (globals + client-level + own branch; siblings hidden).
         @ini_set('memory_limit', '512M'); // usage-scan reads CTC drafts; guard against OOM on large data
 
+        $paged = $this->wantsPage($request);
         $query = ClmClauseLibrary::query()->orderBy('id', 'desc');   // newest entry first
         MasterVisibility::applyReadScope($query, $user, $request->integer('branch_id') ?: null);
-        $rows = $query->get();
+
+        /* Filter to one clause TYPE. The clause picker in the CTC editor shows
+           one type's clauses at a time; without this it had to download every
+           clause in the tenant (302 KB) and filter in the browser. */
+        if ($type = trim((string) $request->input('clause_type', ''))) {
+            $query->where('clause_type', $type);
+        }
+
+        // Server-side search — same reason as typesIndex: a client filtering one
+        // page reports the page, not the set.
+        if ($search = trim((string) $request->input('search', ''))) {
+            $like = '%' . $search . '%';
+            $query->where(function ($w) use ($like) {
+                $w->where('name', 'ilike', $like)
+                    ->orWhere('code', 'ilike', $like)
+                    ->orWhere('clause_type', 'ilike', $like);
+            });
+        }
+
+        $perPage = $request->filled('per_page')
+            ? min(200, max(1, (int) $request->input('per_page')))
+            : null;
+        $page  = max(1, (int) $request->input('page', 1));
+        $total = $perPage ? (clone $query)->count() : null;
+
+        /* Paginate BEFORE the CTC scan below — that is the expensive half.
+           scanCtcForClauses() reads every CTC contract's content and saved
+           versions looking for each row's heading, so the work scales with the
+           number of rows handed to it. Unpaged, 500 clauses meant 500 needles
+           against every draft in the tenant, which is what the memory_limit
+           bump above exists to survive. One page needs 10. */
+        $rows = $perPage ? $query->forPage($page, $perPage)->get() : $query->get();
 
         // Best-effort "used in a CTC agreement" flag. Clauses are COPIED into an
         // agreement's draft as `<h3>Name</h3>…` (see ClmClauseInsertPanel), not
@@ -173,7 +259,12 @@ class ClmClauseController extends Controller
         }
         $this->scanCtcForClauses((int) $user->client_id, $items);
 
-        return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
+        return response()->json([
+            'status' => true,
+            'data'   => $rows,
+            'count'  => $rows->count(),
+            'total'  => $total ?? $rows->count(),
+        ]);
     }
 
     /** Scan every CTC contract's content + saved versions in CHUNKS (bounded
@@ -183,14 +274,16 @@ class ClmClauseController extends Controller
      *  client had many/large CTC drafts (whose `versions` JSON stores every past draft). */
     private function scanCtcForClauses(int $clientId, array $items): void
     {
-        $items = array_values(array_filter($items, fn ($it) => ($it['needle'] ?? '') !== ''));
+        $items = array_values(array_filter($items, fn($it) => ($it['needle'] ?? '') !== ''));
         if (!$items) return;
         \App\Models\CtcContract::where('client_id', $clientId)
             ->select('id', 'content', 'versions')
             ->chunkById(25, function ($chunk) use ($items) {
                 foreach ($chunk as $c) {
                     $hay = mb_strtolower((string) $c->content);
-                    foreach ((array) ($c->versions ?? []) as $v) { $hay .= "\n" . mb_strtolower((string) ($v['content'] ?? '')); }
+                    foreach ((array) ($c->versions ?? []) as $v) {
+                        $hay .= "\n" . mb_strtolower((string) ($v['content'] ?? ''));
+                    }
                     $allDone = true;
                     foreach ($items as $it) {
                         if ($it['row']->in_use) continue;
@@ -211,7 +304,8 @@ class ClmClauseController extends Controller
 
     public function libraryStore(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
 
         /* Party is no longer required — the redesigned Add Clause modal
@@ -256,7 +350,8 @@ class ClmClauseController extends Controller
 
     public function libraryUpdate(Request $request, $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $lookup = ClmClauseLibrary::query()->whereKey($id);
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
@@ -294,7 +389,8 @@ class ClmClauseController extends Controller
 
     public function libraryDestroy(Request $request, $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $lookup = ClmClauseLibrary::query()->whereKey($id);
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
@@ -330,6 +426,10 @@ class ClmClauseController extends Controller
     private function nextCode(string $model, int $clientId, ?int $branchId, string $prefix): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
+        return $this->previewCode($model, $clientId, $branchId, $prefix);
+    }
+    private function previewCode(string $model, int $clientId, ?int $branchId, string $prefix): string
+    {
         $query = $model::where('client_id', $clientId);
         $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
         $codes = $query->pluck('code')->all();

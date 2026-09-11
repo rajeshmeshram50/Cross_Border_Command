@@ -135,12 +135,8 @@ function computeCpComp(v: Record<string, unknown>): { percent: number; complete:
   let total = Number(v?.core_total_documents ?? 0);
   let done  = Number(v?.core_verified_signed ?? 0);
 
-  // 2) CASE-TO-CASE docs — added ONLY for parties that carry a shipment.
-  //    Customer/Consignee → each shipment's Trade Docs + Agreement ratios
-  //    (shipment_agreements[]). Supplier → each with-shipment deal's Trade
-  //    Docs ratio (vendor_with_shipment[]). No shipment ⇒ these arrays are
-  //    empty, so only the standard docs count (per the requested rule).
-  const ships = Array.isArray(v?.shipment_agreements) ? (v.shipment_agreements as Record<string, unknown>[]) : [];
+  const ships = (Array.isArray(v?.shipment_agreements) ? (v.shipment_agreements as Record<string, unknown>[]) : [])
+    .filter(sh => sh?.has_shipment !== false);
   for (const sh of ships) {
     const td = parse((sh?.trade_docs as Record<string, unknown>)?.ratio);
     const ag = parse((sh?.agreement as Record<string, unknown>)?.ratio);
@@ -1106,7 +1102,7 @@ function Stage1(p: {
           <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 12, padding: 12, overflowY: 'auto' }}>
             {/* Counterparty sub-card */}
             <div style={{ borderRadius: 14, overflow: 'hidden', border: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#E4DCFB'}`, background: t.surface, boxShadow: '0 4px 14px rgba(109,40,217,.1)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(110deg,#4C1D95,#6D28D9,#7C3AED)', backgroundSize: '14px 14px, auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', backgroundImage: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(110deg,#4C1D95,#6D28D9,#7C3AED)', backgroundSize: '14px 14px, auto' }}>
                 <div style={{ width: 26, height: 26, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
                 </div>
@@ -1169,7 +1165,7 @@ function Stage1(p: {
             </div>
             {/* Our Organisation sub-card */}
             <div style={{ borderRadius: 14, border: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#E4DCFB'}`, background: t.surface, boxShadow: '0 4px 14px rgba(109,40,217,.1)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderRadius: '13px 13px 0 0', background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(110deg,#4C1D95,#6D28D9,#7C3AED)', backgroundSize: '14px 14px, auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderRadius: '13px 13px 0 0', backgroundImage: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(110deg,#4C1D95,#6D28D9,#7C3AED)', backgroundSize: '14px 14px, auto' }}>
                 <div style={{ width: 26, height: 26, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18" /><path d="M5 21V7l8-4v18" /><path d="M19 21V11l-6-4" /><line x1="9" y1="9" x2="9" y2="9" /><line x1="9" y1="12" x2="9" y2="12" /><line x1="9" y1="15" x2="9" y2="15" /></svg>
                 </div>
@@ -1299,7 +1295,7 @@ function Stage1(p: {
                   <ReadEmpty t={t} title="Organisation not selected" sub="Please select your organisation from the left panel." chips={[]} />
                 ) : (
                   <div style={{ borderRadius: 14, overflow: 'hidden', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, background: t.surface, boxShadow: '0 4px 16px rgba(109,40,217,.08)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: 'radial-gradient(rgba(255,255,255,.28) 1.3px, transparent 1.3px), linear-gradient(118deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6,#A78BFA)', backgroundSize: '14px 14px, auto', borderRadius: '14px 14px 0 0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', backgroundImage: 'radial-gradient(rgba(255,255,255,.28) 1.3px, transparent 1.3px), linear-gradient(118deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6,#A78BFA)', backgroundSize: '14px 14px, auto', borderRadius: '14px 14px 0 0' }}>
                       <div style={{ width: 40, height: 40, borderRadius: 11, background: 'rgba(255,255,255,.2)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>{p.org.initials}</span></div>
                       <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>{p.org.name}</div><div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.7)', fontWeight: 500 }}>Short Code: {p.org.shortCode}</div></div>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.3)' }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#34d399' }} /><span style={{ fontSize: 9, fontWeight: 800, color: '#fff' }}>Active</span></span>
@@ -1377,7 +1373,7 @@ function Stage1(p: {
                 ? { position: 'fixed', inset: 16, zIndex: 400, background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD'}`, overflow: 'hidden', boxShadow: '0 30px 80px rgba(8,3,28,.5)', display: 'flex', flexDirection: 'column' }
                 : { flex: 1, minHeight: 0, background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column' }}>
                 {/* header with actions */}
-                <div style={{ padding: '12px 14px', background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#4C1D95 0%,#6D28D9 40%,#7C3AED 75%,#8B5CF6 100%)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
+                <div style={{ padding: '12px 14px', backgroundImage: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#4C1D95 0%,#6D28D9 40%,#7C3AED 75%,#8B5CF6 100%)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></div>
                     <div><div style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,.6)' }}>Stage 03</div><div style={{ fontSize: 12.5, fontWeight: 800, color: '#fff' }}>Draft Agreement Content</div><div style={{ fontSize: 8, fontWeight: 500, color: 'rgba(255,255,255,.65)' }}>Write or paste your agreement text below</div></div>
@@ -1673,7 +1669,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
       {/* LEFT — Counterparty Details (stages 2-3) · Contract Summary (stage 4) */}
       <div style={{ flex: 2, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ flex: 1, minHeight: 0, background: t.dark ? '#161226' : 'linear-gradient(160deg,#faf8ff,#f3effe 50%,#ede8fd)', borderRadius: 16, border: `1.5px solid ${t.dark ? 'rgba(139,92,246,.3)' : 'rgba(139,92,246,.22)'}`, boxShadow: '0 4px 20px rgba(109,40,217,.1)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '11px 14px', background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div style={{ padding: '11px 14px', backgroundImage: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{stage === 4
                 ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
@@ -1699,7 +1695,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
       {/* MIDDLE — changes per stage */}
       <div style={{ flex: 5.5, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ flex: 1, minHeight: 0, background: t.surface, borderRadius: 16, border: `1.5px solid ${stage === 4 ? 'rgba(5,150,105,.25)' : (t.dark ? 'rgba(124,58,237,.25)' : 'rgba(124,58,237,.18)')}`, boxShadow: '0 4px 20px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '11px 16px', background: `radial-gradient(rgba(255,255,255,.26) 1.2px, transparent 1.2px), linear-gradient(118deg,${MID.head})`, backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div style={{ padding: '11px 16px', backgroundImage: `radial-gradient(rgba(255,255,255,.26) 1.2px, transparent 1.2px), linear-gradient(118deg,${MID.head})`, backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
               <div><div style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>{MID.sup}</div><div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{MID.title}</div></div>
@@ -1804,7 +1800,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
       {/* RIGHT — Internal Review & Approval (2-3) · Contract History (stage 4) */}
       <div style={{ flex: 2.5, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ flex: 1, minHeight: 0, background: stage === 4 ? (t.dark ? '#0e1f1a' : 'linear-gradient(160deg,#f0fdf6,#ecfdf3 45%,#e3fbec)') : (t.dark ? '#161226' : 'linear-gradient(160deg,#faf8ff,#f3effe 40%,#ede8fd)'), borderRadius: 16, border: `1.5px solid ${stage === 4 ? (t.dark ? 'rgba(16,185,129,.3)' : 'rgba(16,185,129,.3)') : (t.dark ? 'rgba(167,139,250,.3)' : 'rgba(167,139,250,.28)')}`, boxShadow: '0 4px 24px rgba(109,40,217,.1)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '11px 14px', background: stage === 4 ? 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#064E3B,#047857,#059669,#10B981)' : 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#6D28D9,#7C3AED,#8B5CF6,#A78BFA)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
+          <div style={{ padding: '11px 14px', backgroundImage: stage === 4 ? 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#064E3B,#047857,#059669,#10B981)' : 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#6D28D9,#7C3AED,#8B5CF6,#A78BFA)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
             <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{stage === 4
               ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
               : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>}</div>
@@ -2147,7 +2143,7 @@ function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t:
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,7,50,.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'var(--font-sans)' }}>
       <div onClick={e => e.stopPropagation()} style={{ width: 'min(500px,94vw)', maxHeight: '88vh', background: t.surface, borderRadius: 20, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.25)'}`, boxShadow: '0 40px 80px rgba(109,40,217,.35)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* header */}
-        <div style={{ padding: '16px 20px', background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(120deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div style={{ padding: '16px 20px', backgroundImage: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(120deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg></div>
             <div><div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,.6)' }}>Send for Signature &amp; Negotiation · {code}</div><Tooltip label={fullTitle} position="bottom" zIndex={TIP_Z} disabled={fullTitle.length <= 30}><div style={{ fontSize: 17, fontWeight: 800, color: '#fff', letterSpacing: '-.3px', marginTop: 1 }}>{shownTitle}</div></Tooltip><div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg><span style={{ fontSize: 9, color: 'rgba(255,255,255,.72)', fontWeight: 500 }}>Sent via secure e-sign link · All parties notified</span></div></div>
@@ -2535,7 +2531,7 @@ function CpReadCard({ t, idx, cp, comp, onOpenVault }: { t: OpsTokens; idx: numb
   const ringClickable = !!onOpenVault && !!comp && !comp.loading;
   return (
     <div style={{ flexShrink: 0, background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 4px 16px rgba(109,40,217,.08)' }}>
-      <div style={{ position: 'relative', background: `radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,${cp.badge === 'BUYER' ? '#0e7490,#0891b2,#06b6d4' : cp.badge === 'SUPPLIER' ? '#047857,#059669,#10b981' : '#4C1D95,#6D28D9,#7C3AED'})`, backgroundSize: '14px 14px, auto', padding: '11px 14px' }}>
+      <div style={{ position: 'relative', backgroundImage: `radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,${cp.badge === 'BUYER' ? '#0e7490,#0891b2,#06b6d4' : cp.badge === 'SUPPLIER' ? '#047857,#059669,#10b981' : '#4C1D95,#6D28D9,#7C3AED'})`, backgroundSize: '14px 14px, auto', padding: '11px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8, paddingRight: comp ? 122 : 0 }}>
           <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,.7)' }}>Counter Party {idx}</span>
           {cp.badge && <span style={{ fontSize: 8, fontWeight: 800, padding: '2px 8px', borderRadius: 20, background: 'rgba(255,255,255,.2)', border: '1px solid rgba(255,255,255,.35)', color: '#fff', textTransform: 'uppercase' }}>{cp.badge === 'BUYER' ? 'CUSTOMER' : cp.badge}</span>}
@@ -2760,7 +2756,7 @@ function RightTools({ t, draft, onInsert, summary, declineReason, declinedBy, ac
 function Panel({ t, header, title, headGrad, children, onCollapse, collapseDir, icon }: { t: OpsTokens; header: string; title: string; headGrad: string; children: React.ReactNode; onCollapse?: () => void; collapseDir?: 'left' | 'right'; icon?: React.ReactNode }) {
   return (
     <div style={{ flex: 1, minHeight: 0, background: t.dark ? '#161226' : 'linear-gradient(160deg,#faf8ff 0%,#f5f0fe 35%,#ede8fd 100%)', borderRadius: 16, border: `1.5px solid ${t.dark ? 'rgba(139,92,246,.3)' : 'rgba(139,92,246,.28)'}`, boxShadow: '0 6px 32px rgba(109,40,217,.12)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ padding: '13px 14px', display: 'flex', alignItems: 'center', gap: 11, flexShrink: 0, position: 'relative', overflow: 'hidden', background: `radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,${headGrad})`, backgroundSize: '14px 14px, auto', borderRadius: '14px 14px 0 0' }}>
+      <div style={{ padding: '13px 14px', display: 'flex', alignItems: 'center', gap: 11, flexShrink: 0, position: 'relative', overflow: 'hidden', backgroundImage: `radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,${headGrad})`, backgroundSize: '14px 14px, auto', borderRadius: '14px 14px 0 0' }}>
         <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '55%', background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent)', pointerEvents: 'none', borderRadius: '14px 14px 0 0' }} />
         <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative', zIndex: 1 }}>{icon ?? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}</div>
         <div style={{ flex: 1, minWidth: 0, position: 'relative', zIndex: 1 }}><div style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,.65)', marginBottom: 2 }}>{header}</div><div style={{ fontSize: 13, fontWeight: 800, color: '#fff', letterSpacing: '-.25px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div></div>
@@ -2900,7 +2896,7 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
     <div onClick={e => { if (!submitting && e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,7,50,.72)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontFamily: 'var(--font-sans)', cursor: submitting ? 'wait' : 'auto' }}>
       <div style={{ width: '100%', maxWidth: 420, borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 80px rgba(109,40,217,.3)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.25)'}` }}>
         {/* header */}
-        <div style={{ background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#3B0764,#5B21B6,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#3B0764,#5B21B6,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg></div>
             <div><div style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Stage 02</div><div style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>Review &amp; Approval Workflow</div><div style={{ fontSize: 8.5, color: 'rgba(255,255,255,.65)', fontWeight: 500 }}>Select approvers for this agreement draft</div></div>
@@ -3014,7 +3010,7 @@ function ApproverPickerModal({ t, existing, onClose, onAdd }: { t: OpsTokens; ex
   return (
     <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 99999999, background: 'rgba(15,7,50,.72)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontFamily: 'var(--font-sans)' }}>
       <div style={{ width: '100%', maxWidth: 520, maxHeight: '86vh', borderRadius: 20, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 40px 80px rgba(109,40,217,.3)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.25)'}` }}>
-        <div style={{ background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#5B21B6,#6D28D9,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <div style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#5B21B6,#6D28D9,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg></div>
             <div><div style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>Select Approvers</div><div style={{ fontSize: 8.5, color: 'rgba(255,255,255,.7)', fontWeight: 500 }}>Same branch only — select multiple</div></div>
@@ -3078,28 +3074,59 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
   const [pending, setPending] = useState<PickEntry | null>(null);
   const [referred, setReferred] = useState('');
   const [dir, setDir] = useState<Record<'buyer' | 'consignee' | 'supplier', PickEntry[]>>({ buyer: [], consignee: [], supplier: [] });
-  const [loading, setLoading] = useState(true);
+  /* Per-tab, not one flag for all three.
+   *
+   * The three lists still go out together — nothing is deferred, so no tab is
+   * slower than it was. What changed is when each STOPS saying "Loading…".
+   * Gating on Promise.allSettled meant the whole picker waited for the slowest
+   * of the three, and that is /vendors (200 rows, each with an eager-loaded
+   * address + country): ~3.7s against ~1.8s for /customers. The picker opens on
+   * the Customer tab, so the list the user was looking at had been ready for
+   * nearly two seconds while the modal waited on data for a tab they had not
+   * clicked. Each response now clears only its own tab. */
+  const [ready, setReady] = useState<Record<'buyer' | 'consignee' | 'supplier', boolean>>({ buyer: false, consignee: false, supplier: false });
+  const loading = !ready[tab];
 
   useEffect(() => {
     let alive = true;
     const rowsOf = (d: unknown): Record<string, unknown>[] => Array.isArray(d) ? d as Record<string, unknown>[] : ((d as { data?: unknown })?.data as Record<string, unknown>[] ?? []);
-    Promise.allSettled([api.get('/customers', { params: { tab: 'all' } }), api.get('/consignees'), api.get('/vendors', { params: { per_page: 200 } })]).then(([cu, co, ve]) => {
+    /* A failed list settles too: the tab stops loading and shows its empty
+       state, rather than spinning forever on a request that is not coming. */
+    const settle = (key: 'buyer' | 'consignee' | 'supplier', rows: PickEntry[]) => {
       if (!alive) return;
-      const buyer = cu.status === 'fulfilled' ? rowsOf(cu.value.data).map((r, i) => toEntry(r.company ?? r.company_name, r.country, r.phone, r.email, r.id, i, r.db_id ?? r.id)) : [];
-      const consignee = co.status === 'fulfilled' ? rowsOf(co.value.data).map((r, i) => ({ ...toEntry(r.company ?? r.company_name, r.country, r.phone, r.email, r.id, i, r.db_id ?? r.id), sameAsCustomer: !!r.same_as_customer })) : [];
-      const supplier = ve.status === 'fulfilled' ? rowsOf(ve.value.data).map((r, i) => {
-        const a = (r.primaryAddress ?? r.primary_address) as Record<string, unknown> | undefined;
+      setDir(prev => ({ ...prev, [key]: rows }));
+      setReady(prev => ({ ...prev, [key]: true }));
+    };
+    const done = (key: 'buyer' | 'consignee' | 'supplier') => () => { if (alive) setReady(prev => ({ ...prev, [key]: true })); };
+
+    /* light=1 on all three: the picker's own shape — name, code, country,
+       contact. The full index paths build the LIST pages (tab pill counts,
+       per-row consignee counts, every address, nested mapped customers), none
+       of which this list renders. `tab` is not passed because light applies no
+       tab filter, which is what tab=all meant here. */
+    api.get('/customers', { params: { light: 1 } })
+      .then(r => settle('buyer', rowsOf(r.data).map((x, i) => toEntry(x.company ?? x.company_name, x.country, x.phone, x.email, x.id, i, x.db_id ?? x.id))))
+      .catch(done('buyer'));
+
+    api.get('/consignees', { params: { light: 1 } })
+      .then(r => settle('consignee', rowsOf(r.data).map((x, i) => ({ ...toEntry(x.company ?? x.company_name, x.country, x.phone, x.email, x.id, i, x.db_id ?? x.id), sameAsCustomer: !!x.same_as_customer }))))
+      .catch(done('consignee'));
+
+    /* Suppliers also drop ?per_page=200, which was silently hiding the 201st
+       supplier onwards from a search that runs in the browser. */
+    api.get('/vendors', { params: { light: 1 } })
+      .then(r => settle('supplier', rowsOf(r.data).map((x, i) => {
+        const a = (x.primaryAddress ?? x.primary_address) as Record<string, unknown> | undefined;
         // Show the supplier's COUNTRY (Domestic/India vs International), not the
         // city — same basis as Customer/Consignee. The vendor index eager-loads
         // primaryAddress.country { name }; fall back to any flat country field.
         const ac = a?.country as { name?: string } | string | null | undefined;
         const country = (typeof ac === 'object' && ac ? ac.name : (typeof ac === 'string' ? ac : undefined))
-          ?? (r.country as string | undefined);
-        return toEntry(r.company_name ?? r.vendor_name, country ?? a?.city, a?.contact_no ?? r.mobile, r.primary_email ?? a?.email, r.vendor_code ?? r.id, i, r.db_id ?? r.id);
-      }) : [];
-      setDir({ buyer, consignee, supplier });
-      setLoading(false);
-    });
+          ?? (x.country as string | undefined);
+        return toEntry(x.company_name ?? x.vendor_name, country ?? a?.city, a?.contact_no ?? x.mobile, x.primary_email ?? a?.email, x.vendor_code ?? x.id, i, x.db_id ?? x.id);
+      })))
+      .catch(done('supplier'));
+
     return () => { alive = false; };
   }, []);
 

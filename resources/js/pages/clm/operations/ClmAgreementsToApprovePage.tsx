@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 // Vite-friendly worker URL — same setup the CTC sign-position modal uses.
 import PdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
@@ -579,12 +579,26 @@ function ClarificationTable({ rows, page, setPage, pageSize, onPageSize, onRevie
 function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, submitting = false, t }: { contract: AtaContract; onClose: () => void; onSubmit: (id: string, mode: 'clarification' | 'rejected', comment: string) => void; initialChoice?: 'clarify' | 'reject' | null; submitting?: boolean; t: OpsTokens }) {
   const [choice, setChoice] = useState<'clarify' | 'reject' | null>(initialChoice);
   const [comment, setComment] = useState('');
-  /* Mirrors CtcContractController's rules — reject takes max:1000, clarify
-     max:2000. Enforced here so the field stops at the same figure the server
-     would reject at, rather than letting the user finish and then fail. */
-  const commentMax = choice === 'reject' ? 1000 : 2000;
+  /* 1,000 characters per submission, for a rejection reason and a clarification
+     query alike.
+     The server's ceiling for a query is 2,000 (CtcContractController), and this
+     used to match it. One query of 2,000 characters is not a question, though —
+     it is a document, and it lands in a chat bubble in a 230px thread that the
+     initiator has to scroll. A clarification round-trip is cheap; a second
+     query is the right way to ask a second thing. The server keeps its 2,000 as
+     the outer bound, so nothing already sent is invalidated by this. */
+  const commentMax = 1000;
   const [err, setErr] = useState(false);
-  const { typingName, notifyTyping, stopTyping } = useTyping(contract.id);
+  /* The initiator is the only person who answers an approver's query, so they
+     are the only one whose typing belongs in this modal. Without the filter the
+     per-tenant whisper channel lets anyone with an agreements page open appear
+     here as "…is typing". */
+  const { typingName, notifyTyping, stopTyping } = useTyping(contract.id, { expect: [contract.createdBy] });
+  /* Clarify is the only branch with a conversation to read, so it is the only
+     one that earns the second pane. Reject and the undecided Choose-Action
+     state stay the narrow single column they have always been — widening them
+     would leave half the card empty. */
+  const isClarify = choice === 'clarify';
 
   const close = () => { stopTyping(); onClose(); };
 
@@ -597,7 +611,7 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, su
 
   return (
     <div onClick={e => { if (e.target === e.currentTarget) close(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(8,3,28,.82)', backdropFilter: 'blur(14px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'var(--font-sans)' }}>
-      <div style={{ width: '100%', maxWidth: 520, position: 'relative', borderRadius: 24, overflow: 'hidden', boxShadow: '0 50px 100px rgba(8,3,28,.5),0 20px 40px rgba(6,182,212,.12)', border: '1px solid rgba(255,255,255,.1)', animation: 'ataSlideUp .24s cubic-bezier(.22,1,.36,1) both', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ width: '100%', maxWidth: isClarify ? 880 : 520, position: 'relative', borderRadius: 24, overflow: 'hidden', boxShadow: '0 50px 100px rgba(8,3,28,.5),0 20px 40px rgba(6,182,212,.12)', border: '1px solid rgba(255,255,255,.1)', animation: 'ataSlideUp .24s cubic-bezier(.22,1,.36,1) both', maxHeight: '90vh', display: 'flex', flexDirection: 'column', transition: 'max-width .2s cubic-bezier(.22,1,.36,1)' }}>
         {/* Frozen while Reject / Raise Clarification is being processed.
             Only the buttons were disabled, so the comment box and the
             reject-vs-clarify choice stayed live during the request: text typed
@@ -638,34 +652,57 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, su
               </div>
             </>
           )}
-          {choice === 'clarify' && (
-            <div style={{ marginBottom: 16 }}>
-              <ClarificationThread contract={contract} typingName={typingName} t={t} />
+          {/* Two panes while clarifying: the thread on the left stays readable
+              while the new query is typed on the right. Stacked, the approver
+              scrolled a 230px thread, lost the point they were querying, then
+              scrolled back down to write it. Reject has no thread, so it keeps
+              the single column. */}
+          <div className="ata-action-body" style={{ display: 'grid', gridTemplateColumns: isClarify ? '1.02fr .98fr' : '1fr', gap: 16, alignItems: 'start' }}>
+            {isClarify && <ClarificationThread contract={contract} typingName={typingName} t={t} />}
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textMuted, marginBottom: 7 }}>{choice === 'reject' ? 'Rejection Reason' : choice === 'clarify' ? (contract.clarifications.length > 0 ? 'Add New Clarification Query' : 'Clarification Query') : 'Comment / Reason'} <span style={{ color: '#EF4444' }}>*</span></div>
+              <textarea value={comment} onChange={e => { setComment(e.target.value); setErr(false); if (choice === 'clarify') notifyTyping(); }} placeholder={choice === 'reject' ? 'Enter the reason for rejecting this agreement…' : choice === 'clarify' ? 'Enter your clarification query for the initiator…' : 'Enter your clarification query or rejection reason…'}
+                maxLength={commentMax}
+                style={{ width: '100%', height: isClarify ? 168 : 85, padding: '11px 13px', border: `1.5px solid ${err && !comment.trim() ? '#EF4444' : t.searchBorder}`, borderRadius: 11, fontFamily: 'inherit', fontSize: 12, color: t.text, resize: 'none', outline: 'none', lineHeight: 1.55, background: t.searchBg, boxSizing: 'border-box' }} />
+              {/* Always on, not only near the ceiling. `maxLength` stops the
+                  field dead at 1,000 and a counter that appears at 900 explains
+                  that only to someone who was already past it — by then they
+                  have written the query they now have to cut. Shown from the
+                  first keystroke, it is a budget rather than a post-mortem.
+                  Amber at the limit; the colour is the only thing that changes
+                  state, so the row never moves the layout. */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, fontSize: 9.5, fontWeight: 700, marginTop: 6, color: comment.length >= commentMax ? '#D97706' : t.textMuted }}>
+                {comment.length >= commentMax && (
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                )}
+                {comment.length >= commentMax
+                  ? `Character limit reached — ${commentMax.toLocaleString()} maximum`
+                  : `${comment.length.toLocaleString()} / ${commentMax.toLocaleString()}`}
+              </div>
+              {err && !choice && <div style={{ fontSize: 9, color: '#EF4444', marginTop: 6, fontWeight: 600 }}>Please choose an action.</div>}
+              {/* Submit then Cancel, 2:1 — the same pair, in the same order, the
+                  initiator gets on the other side of this conversation.
+                  Reject keeps "Confirm Rejection": it is terminal for the
+                  agreement, and a plain "Submit" on a red button would be the
+                  one place in the flow where the label stops saying what the
+                  click does. */}
+              <div style={{ display: 'flex', gap: 9, marginTop: 12 }}>
+                <button onClick={submit} disabled={submitting} style={{ flex: 2, padding: 13, borderRadius: 12, border: 'none', background: choice === 'reject' ? 'linear-gradient(135deg,#EF4444,#DC2626)' : 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 800, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? .75 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 4px 16px rgba(6,182,212,.4)', letterSpacing: '-.1px' }}>
+                  {submitting
+                    ? <svg className="ata-spin" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                    : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>}
+                  {submitting ? 'Submitting…' : (choice === 'reject' ? 'Confirm Rejection' : 'Submit')}
+                </button>
+                <button onClick={close} disabled={submitting} style={{ flex: 1, padding: 13, borderRadius: 12, border: `1.5px solid ${t.searchBorder}`, background: 'transparent', color: t.textMuted, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? .55 : 1 }}>Cancel</button>
+              </div>
+              {isClarify && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 11, fontSize: 10, fontWeight: 600, color: t.textMuted, lineHeight: 1.45 }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2.2" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+                  Your query goes to {contract.createdBy}; the agreement waits on their reply.
+                </div>
+              )}
             </div>
-          )}
-          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textMuted, marginBottom: 7 }}>{choice === 'reject' ? 'Rejection Reason' : choice === 'clarify' ? (contract.clarifications.length > 0 ? 'Add New Clarification Query' : 'Clarification Query') : 'Comment / Reason'} <span style={{ color: '#EF4444' }}>*</span></div>
-          <textarea value={comment} onChange={e => { setComment(e.target.value); setErr(false); if (choice === 'clarify') notifyTyping(); }} placeholder={choice === 'reject' ? 'Enter the reason for rejecting this agreement…' : choice === 'clarify' ? 'Enter your clarification query for the initiator…' : 'Enter your clarification query or rejection reason…'}
-            maxLength={commentMax}
-            style={{ width: '100%', height: 85, padding: '11px 13px', border: `1.5px solid ${err && !comment.trim() ? '#EF4444' : t.searchBorder}`, borderRadius: 11, fontFamily: 'inherit', fontSize: 12, color: t.text, resize: 'none', outline: 'none', lineHeight: 1.55, background: t.searchBg, boxSizing: 'border-box' }} />
-          {/* maxLength stops the text growing past what the server accepts, and
-              the counter says why typing stopped — otherwise the field just goes
-              dead. Appears only near the ceiling so it is not noise the rest of
-              the time. The limits mirror CtcContractController: reason max:1000,
-              query max:2000. Keep them in step. */}
-          {comment.length > commentMax * 0.9 && (
-            <div style={{ fontSize: 9.5, fontWeight: 700, marginTop: 6, textAlign: 'right', color: comment.length >= commentMax ? '#D97706' : t.sub }}>
-              {comment.length >= commentMax
-                ? `Character limit reached — ${commentMax.toLocaleString()} maximum`
-                : `${comment.length.toLocaleString()} / ${commentMax.toLocaleString()}`}
-            </div>
-          )}
-          {err && !choice && <div style={{ fontSize: 9, color: '#EF4444', marginTop: 6, fontWeight: 600 }}>Please choose an action.</div>}
-          <button onClick={submit} disabled={submitting} style={{ width: '100%', marginTop: 12, padding: 13, borderRadius: 12, border: 'none', background: choice === 'reject' ? 'linear-gradient(135deg,#EF4444,#DC2626)' : 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 800, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? .75 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 4px 16px rgba(6,182,212,.4)', letterSpacing: '-.1px' }}>
-            {submitting
-              ? <svg className="ata-spin" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>}
-            {submitting ? 'Submitting…' : (choice === 'reject' ? 'Confirm Rejection' : choice === 'clarify' ? 'Submit Clarification' : 'Submit Action')}
-          </button>
+          </div>
         </div>
       </div>
     </div>
@@ -688,8 +725,22 @@ function ChoiceCard({ sel, onClick, grad, selBg, selBd, baseBg, baseBd, title, t
  *    popup so the approver reads the full back-and-forth (plus a live "typing…"
  *    indicator) right above the box where they add their next query. ── */
 function ClarificationThread({ contract, typingName, t }: { contract: AtaContract; typingName: string | null; t: OpsTokens }) {
+  /* Open on the NEWEST message, the way every chat does. The thread is
+     oldest-first, so a conversation long enough to scroll opened on the first
+     query — usually one already answered — with the live exchange below the
+     fold. Layout effect, not effect: `scrollTop` has to land before the browser
+     paints, or the thread shows the top for a frame and then lurches. */
+  const threadRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const el = threadRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [contract.clarifications.length]);
+
+  /* maxHeight tracks the composer pane opposite it (label + 168px box + button
+     + note ≈ 265) so the two columns end level instead of one trailing a ragged
+     edge below the other. */
   return (
-    <div style={{ background: t.dark ? '#102234' : '#F0FDFF', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.28)' : '#CFFAFE'}`, borderRadius: 14, padding: '12px 14px', maxHeight: 230, overflowY: 'auto' }}>
+    <div ref={threadRef} className="ata-thread" style={{ background: t.dark ? '#102234' : '#F0FDFF', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.28)' : '#CFFAFE'}`, borderRadius: 14, padding: '12px 14px', maxHeight: 265, overflowY: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 11 }}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
         <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#67e8f9' : '#0891b2' }}>Conversation History</span>
@@ -708,13 +759,19 @@ function ClarificationThread({ contract, typingName, t }: { contract: AtaContrac
                 </div>
                 <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(cl.by || contract.approver)}</span></div>
               </div>
-              {/* Sender's revert (left) — white/surface bubble */}
+              {/* Initiator's revert (left).
+                  `flex: 1` here against `maxWidth: 82%` on the query above made
+                  the two sides of the same conversation different shapes: a
+                  three-word reply stretched edge to edge while a three-word
+                  query sat in a small pill. Shrink-to-fit under the same cap,
+                  so length reads as length. The surface fill also read as an
+                  input box on the pale card — tinted, it reads as a bubble. */}
               {cl.response
                 ? <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 7 }}>
                     <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#22d3ee,#06b6d4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0c4a6e' }}>{inits(contract.createdBy)}</span></div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ maxWidth: '82%', minWidth: 0 }}>
                       <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3 }}>{contract.createdBy} · Initiator</div>
-                      <div style={{ background: t.surface, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.25)' : '#CFFAFE'}`, borderRadius: '4px 12px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.textSub, lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.response}</div>
+                      <div style={{ background: t.dark ? 'rgba(255,255,255,.05)' : '#fff', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.25)' : '#D8EFF4'}`, borderRadius: '4px 12px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.textSub, lineHeight: 1.55, wordBreak: 'break-word', boxShadow: t.dark ? 'none' : '0 1px 3px rgba(8,145,178,.07)' }}>{cl.response}</div>
                     </div>
                   </div>
                 : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 6, marginRight: 34, fontSize: 9, fontWeight: 600, color: '#F59E0B' }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting {contract.createdBy}&apos;s response</div>}
@@ -1027,7 +1084,22 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
 
 const ATA_CSS = `
 @keyframes ataSlideUp { from { opacity:0; transform:translateY(18px) scale(.97); } to { opacity:1; transform:none; } }
+
+/* ── Responsive Take Action modal ──
+   Clarify runs two panes side by side on a laptop: the thread on the left, the
+   new query on the right. Below this width they stack, thread first. */
+@media (max-width: 820px) {
+  .ata-action-body { grid-template-columns: 1fr !important; }
+}
 @keyframes ataSpin { to { transform: rotate(360deg); } }
+
+/* Slim scrollbar for the clarification thread — see the note on .aws-thread in
+   the initiator-side page; same rule, cyan to match this modal. */
+.ata-thread { scrollbar-width: thin; scrollbar-color: rgba(6,182,212,.4) transparent; }
+.ata-thread::-webkit-scrollbar { width: 5px; }
+.ata-thread::-webkit-scrollbar-track { background: transparent; }
+.ata-thread::-webkit-scrollbar-thumb { background: rgba(6,182,212,.32); border-radius: 999px; }
+.ata-thread::-webkit-scrollbar-thumb:hover { background: rgba(6,182,212,.55); }
 .ata-spin { animation: ataSpin .8s linear infinite; }
 `;
 
