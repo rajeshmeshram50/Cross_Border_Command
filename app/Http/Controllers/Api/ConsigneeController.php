@@ -25,6 +25,48 @@ class ConsigneeController extends Controller
     {
         $user = $request->user();
 
+        /* ── ?light=1 — the picker shape ──────────────────────────────────────
+         *
+         * A separate early return, so the list path below is untouched. That
+         * path eager-loads four relations — one of them nested
+         * (customers.primaryAddress) — and shape() then puts the FULL array of
+         * every customer mapped to the consignee inside each row, twelve fields
+         * per customer, plus its own address list. That is what the Consignee
+         * list page renders.
+         *
+         * A counterparty picker shows a name, a code, a country and a contact,
+         * and filters in the browser. It was carrying all of the above to
+         * display six fields.
+         *
+         * Values are read from exactly the same places shape() reads them, so a
+         * row here is indistinguishable from the full row as far as the picker
+         * is concerned — including the CN-000 fallback code, which the picker
+         * displays.
+         *
+         * same_as_customer is kept: the picker hides mirror consignees, and
+         * without this flag every mirror would become selectable. */
+        if ($request->boolean('light')) {
+            $rows = Consignee::query()
+                ->forUser($user, $request->integer('branch_id') ?: null)
+                // One eager load, not four. country / cp_contact / cp_email are
+                // plain columns on the address — no nested FK to resolve.
+                ->with(['primaryAddress:id,consignee_id,is_primary,country,cp_contact,cp_email'])
+                ->orderByDesc('id')
+                ->get(['id', 'consignee_code', 'company_name', 'same_as_customer'])
+                ->map(fn (Consignee $c) => [
+                    'id'               => $c->consignee_code ?: ('CN-' . str_pad((string) $c->id, 3, '0', STR_PAD_LEFT)),
+                    'db_id'            => $c->id,
+                    'company'          => $c->company_name,
+                    'country'          => $c->primaryAddress?->country,
+                    'phone'            => $c->primaryAddress?->cp_contact,
+                    'email'            => $c->primaryAddress?->cp_email,
+                    'same_as_customer' => (bool) $c->same_as_customer,
+                ])
+                ->all();
+
+            return response()->json(['count' => count($rows), 'data' => $rows]);
+        }
+
         $q = Consignee::query()
             // Honour the BranchSwitcher (see CustomerController::index).
             ->forUser($user, $request->integer('branch_id') ?: null)

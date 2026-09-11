@@ -27,12 +27,14 @@ type Prog = { d: number; t: number };
 
 type BuyerRow = {
   sr: number; id: string; db_id?: number; name: string; seg: string[]; sc: string; sb: string;
-  country: string; cn: number; kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog; ship: number;
+  country: string; contact?: string | null; city?: string | null; type?: string | null; risk?: string | null;
+  cn: number; kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog; ship: number;
 };
 
 type ConsRow = {
   sr: number; id: string; cid: string; cids?: string[]; db_id?: number; name: string; seg: string; sc: string; sb: string;
-  country: string; same_as_customer?: boolean; kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog; ship: number;
+  country: string; contact?: string | null; city?: string | null; risk?: string | null;
+  same_as_customer?: boolean; kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog; ship: number;
 };
 
 type Reg = 'High' | 'Low' | 'Both';
@@ -740,12 +742,27 @@ export default function ClmBuyerProfilePage() {
   const openBuyerVault = (r: BuyerRow, tab: VaultTab) => {
     if (!r.db_id) return;
     setBuyerVaultTab(tab);
-    setBuyerVault({ id: r.id, db_id: r.db_id, company: r.name, segment: r.seg.join(', '), country: r.country });
+    setBuyerVault({
+      id: r.id, db_id: r.db_id, company: r.name, segment: r.seg.join(', '), country: r.country,
+      // Identity chips — without these the header showed only segment, country
+      // and a hard-coded "Low Risk", unlike the same vault opened from the
+      // Customer list. Nulls are dropped so an absent field renders no chip
+      // rather than an empty one.
+      contact: r.contact ?? undefined,
+      contactCity: r.city ?? undefined,
+      type: r.type ?? undefined,
+      risk: r.risk ?? undefined,
+    });
   };
   const openConsVault = (r: ConsRow, tab: VaultTab) => {
     if (!r.db_id) return;
     setConsVaultTab(tab);
-    setConsVault({ id: r.id, db_id: r.db_id, company: r.name, segment: r.seg, country: r.country, customerId: r.cid });
+    setConsVault({
+      id: r.id, db_id: r.db_id, company: r.name, segment: r.seg, country: r.country, customerId: r.cid,
+      contact: r.contact ?? undefined,
+      contactCity: r.city ?? undefined,
+      risk: r.risk ?? undefined,
+    });
   };
   // Open the buyer (customer) Evidence Vault from a transaction row. Reuses the
   // full buyer record (segment, code) when the customer is in the buyer list,

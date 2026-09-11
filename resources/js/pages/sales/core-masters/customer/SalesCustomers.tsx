@@ -46,6 +46,7 @@ type Customer = {
   company: string; type: string; segment: string;
   country: string; country_iso?: string | null; contact: string; phone: string; email: string;
   whatsapp: 'Yes' | 'No'; consignees: number;
+  riskLevel?: string | null; city?: string | null;
   // True = Recurring (has ≥1 lead), false = Fresh. Drives the tab split and
   // counts client-side. See CustomerController::index().
   recurring?: boolean;
@@ -461,6 +462,8 @@ export default function SalesCustomers() {
                          segment: c.segment,
                          country: c.country,
                          contact: c.contact,
+                         contactCity: c.city ?? undefined,
+                         risk: c.riskLevel ?? undefined,
                        })} />
           </div>
         );

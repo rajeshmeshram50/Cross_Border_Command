@@ -777,6 +777,23 @@ export default function SalesMatrixDetail() {
        anything to show. Marking the last document Not necessary drove the
        first to 0, and the card then refused to open the very screen where the
        decision could be undone. */
+    /* The Proforma Invoice counts as a trade document here, because that is
+       what the popup this card opens shows: the PI sits at the top of the
+       Trade Documents table, marked Mandatory, sendable like any other row.
+       It is not inside `segments` — it belongs to the deal, not to a segment
+       — so the loop above never saw it, and a deal whose only outstanding
+       item WAS the PI read "No trade documents" on a card sitting next to a
+       popup listing one. Always counted when a PI exists: the backend calls
+       it "always Necessary — the deal's own invoice", never an optional
+       catalogue entry. Done on a completed signature, the same test the
+       agreements and trade docs use. */
+    const piDoc = agreementApplicable?.pi_document ?? null;
+    if (piDoc) {
+      const key = `pi:${piDoc.pi_id}`;
+      tdAny.add(key);
+      tdSeen.set(key, piDoc.signature_request?.status === 'completed');
+    }
+
     const agrTotal = agrSeen.size;
     const agrDone  = Array.from(agrSeen.values()).filter(Boolean).length;
     const tdTotal  = tdSeen.size;
