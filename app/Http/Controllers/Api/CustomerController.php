@@ -31,6 +31,44 @@ class CustomerController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
+        /* ── ?light=1 — the picker shape ──────────────────────────────────────
+         *
+         * A separate early return, so the list path below is untouched. That
+         * path loads every address row per customer, counts consignees twice
+         * (total and same-as-customer), adds a per-row is_recurring subquery,
+         * and then runs TWO more COUNT queries over the whole scope to fill the
+         * All / Recurring / Fresh tab pills — before shape() expands each row
+         * into its addresses, GST scrutiny and owners.
+         *
+         * A counterparty picker shows a name, a code, a country and a contact,
+         * and filters in the browser. None of the tab machinery is on screen.
+         *
+         * Values come from the same places shape() reads them, including the
+         * C-000 fallback code the picker displays, so the two shapes are
+         * indistinguishable as far as this list is concerned. */
+        if ($request->boolean('light')) {
+            $user = $request->user();
+            $rows = Customer::query()
+                ->forUser($user, $request->integer('branch_id') ?: null)
+                // Primary row only — the list path needs every address for its
+                // "+N locations" badge; the picker needs one country and one
+                // contact.
+                ->with(['primaryAddress:id,customer_id,is_primary,country,cp_contact,cp_email'])
+                ->orderByDesc('id')
+                ->get(['id', 'customer_code', 'company_name'])
+                ->map(fn (Customer $c) => [
+                    'id'      => $c->customer_code ?: ('C-' . str_pad((string) $c->id, 3, '0', STR_PAD_LEFT)),
+                    'db_id'   => $c->id,
+                    'company' => $c->company_name,
+                    'country' => $c->primaryAddress?->country,
+                    'phone'   => $c->primaryAddress?->cp_contact,
+                    'email'   => $c->primaryAddress?->cp_email,
+                ])
+                ->all();
+
+            return response()->json(['count' => count($rows), 'data' => $rows]);
+        }
+
         $user = $request->user();
 
         $q = Customer::query()
@@ -38,6 +76,8 @@ class CustomerController extends Controller
             // specific branch, narrow the list to it. Ignored for branch users
             // (they can't switch) inside applyReadScope.
             ->forUser($user, $request->integer('branch_id') ?: null)
+            /* NOTE: a ?light=1 request never reaches here — see the early
+             * return at the top of index(). */
             /* Single eager-load — `addresses` returns ALL rows in
              * customer_addresses (primary + extras). The Customer
              * model's `primaryAddress` relationship reads from the

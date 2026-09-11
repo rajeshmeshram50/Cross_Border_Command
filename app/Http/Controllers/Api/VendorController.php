@@ -102,6 +102,55 @@ class VendorController extends Controller
     {
         $user = $request->user();
 
+        /* ── ?light=1 — the picker shape ──────────────────────────────────────
+         *
+         * A whole separate early return, deliberately. Everything below this
+         * block is the Suppliers LIST: nine eager loads, a productMappings
+         * count, facet and category counts, and a compliance status derived
+         * per supplier from its segments' KYC / DD / Trade Licence / Trade
+         * Document sets plus its agreements. That derivation runs over the
+         * entire scoped set on every call, because the facet pills have to
+         * cover every supplier the filters could return.
+         *
+         * A counterparty picker uses none of it. It shows a name, a code, a
+         * country and a contact, and filters in the browser. It was paying for
+         * the compliance sweep on every open.
+         *
+         * Opt-in, so nothing else changes: a caller that does not send ?light
+         * takes the path below untouched, byte for byte. Field names match
+         * what the existing client mapping already reads, so the picker needs
+         * no special case for this shape.
+         *
+         * Not paginated. The picker filters client-side, so a page boundary
+         * would hide suppliers from search — which is what ?per_page=200 was
+         * already quietly doing past the 200th row. */
+        if ($request->boolean('light')) {
+            $rows = Vendor::query()
+                ->forUser($user, $request->integer('branch_id') ?: null)
+                // Two extra queries in total, not two per row: the address and
+                // the country are what carry the picker's country + contact.
+                ->with([
+                    'primaryAddress:id,vendor_id,country_id,contact_no,email',
+                    'primaryAddress.country:id,name',
+                ])
+                ->orderBy('company_name')
+                ->get(['id', 'vendor_code', 'company_name', 'primary_email'])
+                ->map(fn (Vendor $v) => [
+                    'id'            => $v->id,
+                    'db_id'         => $v->id,
+                    'vendor_code'   => $v->vendor_code,
+                    'company_name'  => $v->company_name,
+                    // Flat, already resolved — the client falls back to this
+                    // when there is no primaryAddress object to read.
+                    'country'       => $v->primaryAddress?->country?->name,
+                    'mobile'        => $v->primaryAddress?->contact_no,
+                    'primary_email' => $v->primary_email ?: $v->primaryAddress?->email,
+                ])
+                ->all();
+
+            return response()->json(['count' => count($rows), 'data' => $rows]);
+        }
+
         $q = Vendor::query()
             // Honour the BranchSwitcher (see CustomerController::index).
             ->forUser($user, $request->integer('branch_id') ?: null)
