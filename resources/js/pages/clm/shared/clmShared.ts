@@ -426,7 +426,13 @@ export const CLM_CSS = `
 /* Fill mode: the wrap stretches to a computed min-height (set inline) so the
  * card covers the page even with few rows, and the pagination is pushed to the
  * bottom. Opt-in via the .clm-table-fill class so other pages are unaffected. */
-.clm-table-fill { display: flex; flex-direction: column; }
+/* The stretch leaves empty space under the last row whenever the page is not
+   full — a search that matched one row, the final page of a set. Plain #fff
+   read as a hole punched in the card; a soft cyan tint reads as surface, the
+   same family as the table head. The table keeps its own white so the rows
+   stay crisp against it. */
+.clm-table-fill { display: flex; flex-direction: column; background: linear-gradient(180deg, #fafeff, #f3fafc); }
+.clm-table-fill > .clm-table { background: #fff; }
 .clm-table-fill > .clm-pag, .clm-table-fill > .wl-pager { margin-top: auto; }
 /* The pager lives inside the horizontally-scrolling table wrap. Without this it
  * stretches to the table's full scroll width (e.g. 1100px), so on zoom / narrow
@@ -1067,6 +1073,35 @@ body > .dropdown-menu.master-select-menu,
   font-family: inherit; font-size: 13px; color: #0c4a6e; line-height: 1.8;
   outline: none; cursor: text;
 }
+/* Give lists their markers back inside the editor.
+ *
+ * The app's global stylesheet resets ul to list-style none (twice — the admin
+ * theme and a plugin), which is right for nav menus and wrong here.
+ * execCommand('insertUnorderedList') WAS working all along: it wrapped the
+ * selection in ul/li, the markers just had nothing to draw, and with no indent
+ * either the result was pixel-identical to the paragraph it replaced — so the
+ * button looked dead.
+ *
+ * Same treatment .doc-html / .tpl-readonly-preview already get for RENDERED
+ * document HTML (see app.css, CBC #7); this is the authoring side of it, so a
+ * clause looks in the editor the way it will look in the agreement.
+ * Longhands, not the list-style shorthand — a minifier drops disc from
+ * "disc outside" as redundant and the built CSS then reads "list-style:
+ * outside", which looks like the marker was lost.
+ *
+ * NB: no backticks anywhere in here — this block lives inside a template
+ * literal, and one would end the string. */
+.clm-editor-body ul {
+  list-style-type: disc; list-style-position: outside;
+  margin-left: 0; padding-left: 1.6em;
+}
+.clm-editor-body ol {
+  list-style-type: decimal; list-style-position: outside;
+  margin-left: 0; padding-left: 1.6em;
+}
+.clm-editor-body ul ul     { list-style-type: circle; }
+.clm-editor-body ul ul ul  { list-style-type: square; }
+.clm-editor-body li        { display: list-item; }
 /* Subtle teal-tinted scrollbar so the editor's scroll affordance
  * matches the rest of the CLM module instead of the browser default. */
 .clm-editor-body::-webkit-scrollbar { width: 8px; }
@@ -1263,6 +1298,10 @@ body > .dropdown-menu.master-select-menu,
 }
 [data-bs-theme="dark"] .clm-total-num { background: #1e293b; color: #67e8f9; }
 [data-bs-theme="dark"] .clm-table-wrap { background: #0f172a; }
+/* Same idea in dark: the filler under a short page lifts slightly off the card
+   instead of matching it exactly, so the empty space still reads as surface. */
+[data-bs-theme="dark"] .clm-table-fill { background: linear-gradient(180deg, #101d2e, #0f172a); }
+[data-bs-theme="dark"] .clm-table-fill > .clm-table { background: #0f172a; }
 [data-bs-theme="dark"] .clm-table thead th {
   background: rgba(8,145,178,.18);
   color: #cffafe;
@@ -1608,6 +1647,15 @@ export function usePagedList<T>(endpoint: string, reloadKey: number, extraParams
   const [debounced, setDebounced] = useState('');
   const [page, setPage] = useState(1);
   const [rpp,  setRpp]  = useState(PER_PAGE);
+  /* Which query the rows in hand actually answer. Comparing it to the query
+     being requested separates the two kinds of load, which need opposite
+     feedback:
+       - REPLACE (search / page / size changed): the incoming rows are a
+         different set, so the ones on screen are already the wrong answer.
+         Dimming them leaves a wrong-but-legible list under a faint veil.
+       - REFRESH (same query, e.g. after a save): the same rows are coming
+         back, so blanking them would make a re-fetch look like data loss. */
+  const [applied, setApplied] = useState({ search: '', page: 1, rpp: PER_PAGE });
   // Newest-request token: a page move, a size change and a debounced search can
   // each fire while the previous request is still out.
   const reqRef = useRef(0);
@@ -1632,13 +1680,19 @@ export function usePagedList<T>(endpoint: string, reloadKey: number, extraParams
         if (token !== reqRef.current) return;
         setRows(r.data.data ?? []);
         setTotal(Number(r.data.total ?? r.data.count ?? 0));
+        setApplied({ search: debounced, page, rpp });
       })
       .catch(() => { if (token === reqRef.current) { toast.error('Load failed', 'Could not load the list'); setRows([]); setTotal(0); } })
       .finally(() => { if (token === reqRef.current) setLoading(false); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [endpoint, page, rpp, debounced, reloadKey]);
 
-  return { rows, total, loading, search, setSearch, page, setPage, rpp, setRpp };
+  /* True while a load that REPLACES the result set is in flight. Callers show
+     the skeleton for this and reserve the dim for a same-query refresh. */
+  const replacing = loading
+    && (applied.search !== debounced || applied.page !== page || applied.rpp !== rpp);
+
+  return { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp };
 }
 
 /* Rows that fit the visible table, never fewer than PER_PAGE (10).
