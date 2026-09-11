@@ -777,8 +777,16 @@
 [data-layout-mode="dark"] .dt-table tbody tr.dt-empty-row,
 [data-bs-theme="dark"] .dt-table tbody tr.dt-empty-row:hover,
 [data-layout-mode="dark"] .dt-table tbody tr.dt-empty-row:hover { background: var(--vz-secondary-bg, #212529); }
+/* Row dividers match the component's other NEUTRAL line (.dt-tabs uses the same
+   value) instead of sitting two points below it. (CBC #10)
+   In dark mode the horizontal rules stack up as: toolbar bottom (accent .30),
+   chipbar bottom (accent .22), tabs (white .10) and then the row dividers — at
+   white .07 they were the faintest line in the table, so rows read as barely
+   separated underneath much stronger section rules, which is the inconsistency
+   reported. The accent-tinted SECTION borders are deliberate and unchanged;
+   this only brings the row rule up to the neutral one already in use. */
 [data-bs-theme="dark"] .dt-table tbody td,
-[data-layout-mode="dark"] .dt-table tbody td { border-bottom-color: rgba(255, 255, 255, .07); }
+[data-layout-mode="dark"] .dt-table tbody td { border-bottom-color: rgba(255, 255, 255, .10); }
 [data-bs-theme="dark"] .dt-scroll,
 [data-layout-mode="dark"] .dt-scroll { scrollbar-color: rgba(255, 255, 255, .22) transparent; }
 [data-bs-theme="dark"] .dt-scroll::-webkit-scrollbar-thumb,

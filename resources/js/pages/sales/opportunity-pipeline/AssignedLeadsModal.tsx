@@ -57,7 +57,13 @@ export default function AssignedLeadsModal() {
   const [summary, setSummary] = useState<Summary>({
     total_sales_persons: 0, total_leads: 0, assigned_leads: 0, unassigned_leads: 0,
   });
-  const [loading, setLoading] = useState(false);
+  /* Starts TRUE. The summary above is only a SHAPE, not an answer — every
+   * count in it is zero until the API replies. With `loading` starting false
+   * the first painted frame published those zeros as if they were real
+   * ("Total Leads 0", "Assigned 0", "Unassigned 0") and then snapped to the
+   * true figures, which is what QA #261–#263 saw. True here means the cards
+   * show a shimmer until there is something honest to print. */
+  const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -152,11 +158,11 @@ export default function AssignedLeadsModal() {
              * "no data" reading instead of an error boundary. */}
             <span className="ldp-header-pill">
               <span className="ldp-header-pill-dot" />
-              {totalCount} Sales Members
+              {loading ? <span className="ldp-skel ldp-skel-num" /> : totalCount} Sales Members
             </span>
             <span className="ldp-header-pill">
               <span className="ldp-header-pill-dot" />
-              {summary?.total_leads ?? 0} Total Leads
+              {loading ? <span className="ldp-skel ldp-skel-num" /> : (summary?.total_leads ?? 0)} Total Leads
             </span>
             <button className="ldp-back-btn" onClick={onClose}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -174,6 +180,7 @@ export default function AssignedLeadsModal() {
           <StatCard
             label="TOTAL SALES PERSONS"
             value={totalCount}
+            loading={loading}
             sub="Active members"
             tone="slate"
             icon={
@@ -187,6 +194,7 @@ export default function AssignedLeadsModal() {
           <StatCard
             label="TOTAL LEADS"
             value={summary?.total_leads ?? 0}
+            loading={loading}
             sub="All leads"
             tone="amber"
             onClick={() => setKpiModal({ title: 'Total Leads', filter: {} })}
@@ -200,6 +208,7 @@ export default function AssignedLeadsModal() {
           <StatCard
             label="ASSIGNED LEADS"
             value={summary?.assigned_leads ?? 0}
+            loading={loading}
             sub="Salesperson assigned"
             tone="green"
             onClick={() => setKpiModal({ title: 'Assigned Leads', filter: { assigned: true } })}
@@ -212,6 +221,7 @@ export default function AssignedLeadsModal() {
           <StatCard
             label="UNASSIGNED LEADS"
             value={summary?.unassigned_leads ?? 0}
+            loading={loading}
             sub="Needs assignment"
             tone="red"
             onClick={() => setKpiModal({ title: 'Unassigned Leads', filter: { assigned: false } })}
@@ -409,14 +419,19 @@ function StatCard(props: {
   sub: string;
   tone: 'amber' | 'green' | 'red' | 'slate';
   icon: React.ReactNode;
+  /* While true the card prints a shimmer bar instead of `value`. A zero that
+   * only means "not fetched yet" is a wrong answer, not a neutral one — see
+   * the note on `loading` above. The card is also not clickable yet: the KPI
+   * popup it opens is scoped to a bucket whose size isn't known. */
+  loading?: boolean;
   /* When provided the card becomes a button that opens the KPI popup. */
   onClick?: () => void;
 }) {
-  const clickable = typeof props.onClick === 'function';
+  const clickable = typeof props.onClick === 'function' && !props.loading;
   return (
     <div
       className={`ldp-stat ldp-stat-${props.tone}${clickable ? ' ldp-stat-clickable' : ''}`}
-      onClick={props.onClick}
+      onClick={clickable ? props.onClick : undefined}
       role={clickable ? 'button' : undefined}
       tabIndex={clickable ? 0 : undefined}
       onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); props.onClick!(); } } : undefined}
@@ -425,7 +440,11 @@ function StatCard(props: {
       <div className="ldp-stat-body">
         <div className="ldp-stat-text">
           <div className="ldp-stat-label">{props.label}</div>
-          <div className="ldp-stat-value">{props.value.toLocaleString()}</div>
+          <div className="ldp-stat-value">
+            {props.loading
+              ? <span className="ldp-skel ldp-skel-kpi" aria-label="Loading" />
+              : props.value.toLocaleString()}
+          </div>
           <div className="ldp-stat-sub">{props.sub}</div>
         </div>
         <div className="ldp-stat-icon">
@@ -793,6 +812,12 @@ const LDP_CSS = `
 .ldp-skel-sr     { width: 24px; height: 24px; border-radius: 50%; }
 .ldp-skel-avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; }
 .ldp-skel-chip   { width: 64px; height: 20px; border-radius: 999px; }
+/* KPI value placeholder — sized to the digits it stands in for so the card
+   keeps its exact height and the number doesn't nudge the layout on arrival. */
+.ldp-skel-kpi    { width: 52px; height: 20px; border-radius: 6px; }
+/* Header-pill placeholder — a short bar in place of the count, keeping the
+   pill's own width close to what the real figure will need. */
+.ldp-skel-num    { width: 22px; height: 10px; border-radius: 4px; margin-right: 2px; }
 .ldp-skel-pill   { width: 36px; height: 22px; border-radius: 999px; }
 .ldp-skel-btn    { width: 86px; height: 26px; border-radius: 7px; }
 @keyframes ldp-shimmer {

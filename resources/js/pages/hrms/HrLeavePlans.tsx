@@ -789,8 +789,8 @@ export default function HrLeavePlans() {
                             {activePlan.name}
                             {activePlanLocked && (
                               <span
-                                className="badge d-inline-flex align-items-center gap-1"
-                                style={{ background: '#eef2f6', color: '#475569', fontWeight: 600 }}
+                                className="badge d-inline-flex align-items-center gap-1 lvp-locked-chip"
+                                style={{ fontWeight: 600 }}
                                 title="This plan is fully set up and locked. Clone it to make changes."
                               >
                                 <i className="ri-lock-2-line" /> Locked
@@ -1014,8 +1014,8 @@ function ConfigurationTab({
         )}
         {locked && (
         <span
-          className="d-inline-flex align-items-center gap-1 px-2 py-1 rounded"
-          style={{ background: '#eef2f6', color: '#475569', fontSize: 12.5, fontWeight: 600 }}
+          className="d-inline-flex align-items-center gap-1 px-2 py-1 rounded lvp-locked-chip"
+          style={{ fontSize: 12.5, fontWeight: 600 }}
         >
           <i className="ri-lock-2-line" /> This plan is fully set up — view only. Clone it to make changes.
         </span>
@@ -1376,7 +1376,7 @@ function LeaveBalancesTab() {
           if (!b || !b.applies) return <span className="text-muted">—</span>;
           if (b.unlimited) {
             return (
-              <span className="rec-pill" style={{ background: '#d1fae5', color: '#065f46', fontSize: 10.5 }}>
+              <span className="rec-pill lvp-unlimited-pill" style={{ fontSize: 10.5 }}>
                 <i className="ri-infinity-line me-1" />Unlimited
               </span>
             );

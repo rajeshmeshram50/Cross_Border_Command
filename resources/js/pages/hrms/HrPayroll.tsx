@@ -8,6 +8,7 @@ import PayrollRunModal, { type PayrollRunIssue, type PayrollSandwichItem, type P
 import SalaryStructureModal, { type SalaryEmployeeLite } from '../../components/SalaryStructureModal';
 import PaymentDisbursementModal from '../../components/PaymentDisbursementModal';
 import { useToast } from '../../contexts/ToastContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import { Shimmer } from '../../components/ui/Shimmer';
 import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import api from '../../api';
@@ -254,6 +255,7 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; pr
 
 export default function HrPayroll() {
   const toast = useToast();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -768,6 +770,14 @@ export default function HrPayroll() {
   const canReopenCycle =
     (runLockedCycle && cycle?.can_reopen !== false && cycle?.run_status !== 'paid')
     || (!!cycle && lockedFallback === cycle.key);
+  /* The selected cycle is the month we are currently IN, so it has not ended.
+     Runnable (see runPayroll), but the button says so rather than looking
+     identical to a finished month. (CBC #14) */
+  const isOpenCurrentCycle = (() => {
+    if (!cycle || isFutureCycle) return false;
+    const n = new Date();
+    return cycle.year === n.getFullYear() && cycle.month === n.getMonth() + 1;
+  })();
   const cycleLocked = isFutureCycle || !!blockedByCycle || runLockedCycle;
   const cycleLockReason = isFutureCycle
     ? `${cycle?.label} hasn't started yet — a future cycle has no attendance to process.`
@@ -842,9 +852,23 @@ export default function HrPayroll() {
           const curY = today.getFullYear();
           const curM = today.getMonth() + 1;
           setSelectedYear(curY);
-          const cur =
-            list.find(c => c.status === 'In Progress' && c.year === curY)
-            ?? list.find(c => c.year === curY && c.month === curM);
+          /* Open on the CURRENT month. (CBC #13)
+           *
+           * This used to prefer `find(status === 'In Progress')`, and find()
+           * returns the FIRST match in a list the server sends oldest-first. A
+           * tenant with an old cycle still sitting open — January, on most of
+           * them — therefore opened on January every single time, in September.
+           * The month the user wants is today's; an In Progress cycle only
+           * matters when today's month has none, and then it is the LATEST one
+           * that is live, not the oldest.
+           *
+           * Future months are excluded from the fallback: they cannot be
+           * processed, and landing on one strands the page. */
+          const thisMonth = list.find(c => c.year === curY && c.month === curM);
+          const latestLive = list
+            .filter(c => c.year === curY && c.status === 'In Progress' && (c.month ?? 0) <= curM)
+            .sort((a, b) => (b.month ?? 0) - (a.month ?? 0))[0];
+          const cur = thisMonth ?? latestLive;
           setCycleKey(monthKey(curY, (cur?.month ?? curM) - 1));
         }
       })
@@ -904,6 +928,44 @@ export default function HrPayroll() {
       toast.error('Cycle not started', `${cycle.label} hasn't begun yet — payroll can be run once the period starts.`);
       return;
     }
+
+    /* Running a month that has NOT ENDED is allowed, but never by accident.
+     * (CBC #14)
+     *
+     * The engine supports it deliberately — loss of pay is capped to the days
+     * that have actually elapsed, which is why a mid-month run does not dock
+     * anyone for days still to come, and it is what makes same-month payday
+     * possible. What was missing is that the button gave no sign the month is
+     * still open: Run looked identical on the 3rd and on the 30th, so a cycle
+     * could be generated off a third of a month's attendance without anyone
+     * intending it.
+     *
+     * A confirmation, not a block: blocking would remove same-month payroll for
+     * every tenant and make the elapsed-days capping dead code. */
+    const now = new Date();
+    const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
+    if (isCurrentMonth) {
+      const lastDay = new Date(year, month, 0).getDate();
+      const elapsed = now.getDate();
+      const ok = await confirm({
+        title: `${cycle.label} has not ended yet`,
+        message: (
+          <>
+            Today is day <strong>{elapsed} of {lastDay}</strong>, so attendance for this month is
+            not final. Loss of pay is counted only up to today and will change as the rest of the
+            month is recorded — re-run the cycle before approving it.
+            <br /><br />
+            Run payroll for <strong>{cycle.label}</strong> anyway?
+          </>
+        ),
+        tone: 'warning',
+        confirmLabel: 'Run anyway',
+        cancelLabel: 'Cancel',
+        icon: 'calendar-event-line',
+      });
+      if (!ok) return;
+    }
+
     setBusy(true);
     try {
       if (!periodMeta?.attendance_finalized) {
@@ -1341,7 +1403,7 @@ export default function HrPayroll() {
     },
     { header: 'Emp ID', accessorKey: 'empId', meta: { width: '9%' }, cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span> },
     { header: 'Department',  accessorKey: 'department',  meta: { width: '10%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
-    { header: 'Designation', accessorKey: 'designation', meta: { width: '11%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', meta: { width: '10%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     // "Gross Earnings", not "Earnings" — the figure is the month's gross, and
     // the bare word read as though it might be one earnings component rather
     // than their total. Matches what the Salary Report column, the payslip
@@ -1413,7 +1475,14 @@ export default function HrPayroll() {
          working days, so full attendance reads green. (#36) */
       header: () => <div className="text-center">Att.</div>,
       accessorKey: 'present',
-      meta: { width: '6%', align: 'center' },
+      /* `wrap` opts the cell out of the table's default
+         overflow:hidden + text-overflow:ellipsis, and 8% gives the pill room.
+         The cell holds a rounded chip whose padding already pushed it past a
+         6% column, so the cell drew a "…" beside a value that was perfectly
+         legible. The payable-day basis moving to calendar days (CBC #11) made
+         it worse — the denominator went from 26 to 31, so "27/31" is a
+         character wider than anything this column was sized for. (CBC #12) */
+      meta: { width: '8%', align: 'center', wrap: true },
       cell: info => {
         const r = info.row.original;
         /* The employee's OWN payable days, not the cycle's company-wide count.
@@ -1969,7 +2038,10 @@ export default function HrPayroll() {
             disabled={busy || (cycleLocked && !canReopenCycle)}
             title={canReopenCycle
               ? `${cycle.label} is already ${cycle.run_status} but not disbursed — reopen it to run payroll again.`
-              : cycleLockReason}
+              : (cycleLockReason
+                  ?? (isOpenCurrentCycle
+                        ? `${cycle.label} is still in progress — attendance is not final. You can run it; loss of pay counts only up to today.`
+                        : undefined))}
             style={{
               padding: '10px 18px',
               fontSize: 13,

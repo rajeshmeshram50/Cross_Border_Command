@@ -71,6 +71,9 @@ type ActionKind = 'manager-approve' | 'manager-reject' | 'hr-approve' | 'hr-reje
 type Props = {
   rows: AdvanceRequestRow[];
   loading?: boolean;
+  /** Index of the first row on this page — the caller paginates and passes one
+   *  slice, so the Sr No. column must be told where the page starts. (CBC #11) */
+  serialOffset?: number;
   fallbackName?: string;
   fallbackInitials?: string;
   accent?: string;
@@ -242,7 +245,7 @@ export function advanceRequestColumns({
 }: Omit<Props, 'rows' | 'loading'>): DataTableColumn<AdvanceRequestRow>[] {
   return [
     {
-      header: () => <div className="text-center">Adv ID</div>,
+      header: 'Adv ID',
       id: 'advance_no',
       accessorFn: (r: AdvanceRequestRow) => r.advance_no || `#${r.id}`,
       /* Fixed px, not 8%. As a percentage this column shrank with the table
@@ -266,16 +269,25 @@ export function advanceRequestColumns({
       cell: info => {
         const r = info.row.original;
         const empName = r.employee_name || fallbackName || ('#' + r.employee_id);
+        /* The identifier line is NOT conditional any more. (CBC #13)
+         *
+         * It only rendered when the API happened to return employee_code, and
+         * that field is null whenever the row's employee cannot be resolved —
+         * a soft-deleted or out-of-scope employee — so the row showed a bare
+         * name with nothing to identify it by, which is the whole point of the
+         * column. The numeric employee id is always present on the row, so it
+         * stands in when the code is missing rather than leaving the line off. */
+        const empRef = r.employee_code || (r.employee_id ? `#${r.employee_id}` : null);
         return (
           <div className="d-flex flex-column" style={{ lineHeight: 1.15, minWidth: 0 }}>
             <Tooltip label={empName}><span className="fw-semibold text-truncate">{empName}</span></Tooltip>
-            {r.employee_code && <small className="text-muted" style={{ fontSize: 10 }}>{r.employee_code}</small>}
+            {empRef && <small className="text-muted" style={{ fontSize: 10 }}>{empRef}</small>}
           </div>
         );
       },
     },
     {
-      header: () => <div className="text-center">Advance Type</div>,
+      header: 'Advance Type',
       id: 'advance_type',
       // "Other" carries the free-text detail, so sort/search see the full label.
       accessorFn: (r: AdvanceRequestRow) => (r.advance_type === 'Other' && r.advance_type_other ? `Other · ${r.advance_type_other}` : r.advance_type),
@@ -307,7 +319,7 @@ export function advanceRequestColumns({
     },
     ] as DataTableColumn<AdvanceRequestRow>[]),
     {
-      header: () => <div className="text-center">Amount</div>,
+      header: 'Amount',
       accessorKey: 'amount',
       meta: { width: 110, align: 'center' },
       /* Once HR sanctions a different net, THAT is the figure being disbursed
@@ -331,7 +343,7 @@ export function advanceRequestColumns({
       },
     },
     {
-      header: () => <div className="text-center">Requested</div>,
+      header: 'Requested',
       id: 'requested_date',
       accessorFn: (r: AdvanceRequestRow) => (r.requested_date ? new Date(r.requested_date).getTime() : 0),
       meta: { width: 120, align: 'center' },
@@ -380,7 +392,10 @@ export function advanceRequestColumns({
       header: 'Monthly EMI',
       id: 'monthly_emi',
       accessorFn: (r: AdvanceRequestRow) => (r.recovery_mode === 'emi' ? Number(r.monthly_emi || 0) : 0),
-      meta: { width: 120 },
+      /* Centred like Amount, the table's other money column. It defaulted to
+         left, so the two figures sat on different axes and the row read as
+         stepped. (CBC #8) */
+      meta: { width: 120, align: 'center' },
       cell: info => {
         const r = info.row.original;
         if (r.status === 'rejected') {
@@ -477,7 +492,7 @@ export function advanceRequestColumns({
       },
     },
     {
-      header: () => <div className="text-center">Advance Paid</div>,
+      header: 'Advance Paid',
       id: 'payment_status',
       enableSorting: false,
       accessorFn: (r: AdvanceRequestRow) => paymentStatusOf(r) ?? '',
@@ -507,7 +522,7 @@ export function advanceRequestColumns({
     // entirely on the Self Used view (a self advance is recovered from salary;
     // its progress lives in the Recovery columns).
     ...(usedFor === 'company' ? [{
-      header: () => <div className="text-center">Confirmation</div>,
+      header: 'Confirmation',
       id: 'settle',
       enableSorting: false,
       meta: { width: 130, align: 'center', wrap: true },
@@ -578,7 +593,7 @@ export function advanceRequestColumns({
       // Self Used gets a Recovery Status column in the same slot — is the
       // salary recovery (EMI / bi-monthly / lump sum) still ongoing or fully
       // recovered? Recovery only starts once the advance has actually been PAID.
-      header: () => <div className="text-center">Recovery Status</div>,
+      header: 'Recovery Status',
       id: 'recovery_status',
       enableSorting: false,
       meta: { width: 140, align: 'center', wrap: true },
@@ -608,7 +623,7 @@ export function advanceRequestColumns({
     // Zoho Books sync state — for BOTH self and company advances (the payout to
     // the employee is booked in Zoho either way). Mirrors the Expense Claims column.
     {
-      header: () => <div className="text-center">Zoho Sync</div>,
+      header: 'Zoho Sync',
       id: 'zoho_sync',
       enableSorting: false,
       meta: { width: 120, align: 'center', wrap: true },
@@ -637,7 +652,7 @@ export function advanceRequestColumns({
       },
     },
     {
-      header: () => <div className="text-center">Action</div>,
+      header: 'Action',
       id: '__actions',
       enableSorting: false,
       /* A FIXED width where the wide "Review & Approve" CTA appears, the same
@@ -680,6 +695,7 @@ export default function AdvanceRequestsTable({
   fallbackName, fallbackInitials, accent = '#6366f1',
   mode = 'mine', currentEmployeeId = null, canHrApprove = false, usedFor = 'self',
   onAct, onRecordPayment, onViewPayments, onReview, onSettle, onRaiseReimbursement,
+  serialOffset = 0,
 }: Props) {
   const [remarkRow, setRemarkRow] = useState<AdvanceRequestRow | null>(null);
   const columns = useMemo(
@@ -696,6 +712,9 @@ export default function AdvanceRequestsTable({
         data={rows}
         columns={columns}
         accent="violet"
+        /* Sr No., matching the Expense Claims table it shares a screen with —
+           the width formula already reserved DataTable's 56px for it. (CBC #11) */
+        serial={{ header: 'Sr No.', offset: serialOffset }}
         minWidth={advanceRequestsMinWidth(mode, usedFor)}
         loading={!!loading}
         searchable={false}
@@ -1064,10 +1083,9 @@ function AuditLogTrigger({
         type="button"
         title="View audit log"
         onClick={() => setOpen(!open)}
-        className="btn btn-sm d-inline-flex align-items-center justify-content-center"
+        className={`btn btn-sm d-inline-flex align-items-center justify-content-center adv-audit-btn${open ? ' is-open' : ''}`}
         style={{
           width: 28, height: 28, padding: 0,
-          background: open ? 'var(--vz-card-bg, #ffffff)' : 'var(--vz-secondary-bg, #f3f4f6)',
           color: 'var(--vz-secondary-color, #6b7280)',
           border: '1px solid var(--vz-border-color)',
           borderRadius: 8,

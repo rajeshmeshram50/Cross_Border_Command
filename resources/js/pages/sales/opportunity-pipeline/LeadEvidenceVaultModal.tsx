@@ -413,6 +413,18 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
             </div>
           )}
 
+          {/* Same as Customer → this consignee holds no documents of its own.
+              Every row below is a read-only mirror of the linked customer's,
+              and the note above has just said so: "refer to Customer Details".
+              Listing them here contradicted that in the same breath — the user
+              is sent elsewhere and then handed the documents anyway, with an
+              upload button that only ever answers 409. On this consignee the
+              note IS the answer, so it is the whole body.
+
+              Scoped to the SELECTED consignee (`sameAsCustomer` reads the loaded
+              vault, not the lead), so a sibling consignee that isn't mirrored
+              still shows its own tabs and table in the next tab along. */}
+          {!sameAsCustomer && (<>
           {/* ── TABS ── */}
           <div className="lev-tabs">
             {TABS.map(t => (
@@ -501,11 +513,21 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
               )}
             </div>
           </div>
+          </>)}
 
           {/* ── FOOTER ── */}
           <div className="lev-footer">
             <div className="lev-footer-actions">
-              <button type="button" className="lev-footer-btn outline" disabled={exporting || !vault} onClick={() => void onExportAll()}>
+              {/* Nothing to export from a mirrored consignee — the ZIP would be
+                  the customer's own files, downloaded from the one screen that
+                  just said to fetch them from the customer. */}
+              <button
+                type="button"
+                className="lev-footer-btn outline"
+                disabled={exporting || !vault || sameAsCustomer}
+                title={sameAsCustomer ? 'Same as Customer — export from Customer Details' : undefined}
+                onClick={() => void onExportAll()}
+              >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 {exporting ? 'Exporting…' : 'Export All'}
               </button>

@@ -1167,11 +1167,13 @@
 
         /* ── Stage 5 — Policies ── */
         .onb-pol-progress { background: #f3edff; border: 1px solid #e3d6ff; border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; display: flex; align-items: flex-start; gap: 12px; }
-        [data-bs-theme="dark"] .onb-pol-progress { background: rgba(124,92,252,0.12); border-color: rgba(124,92,252,0.28); }
+        [data-bs-theme="dark"] .onb-pol-progress,
+        [data-layout-mode="dark"] .onb-pol-progress { background: rgba(124,92,252,0.12); border-color: rgba(124,92,252,0.28); }
         .onb-pol-progress-icon { width: 36px; height: 36px; border-radius: 9px; background: linear-gradient(135deg,#7c3aed,#4c1d95); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .onb-pol-progress-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
         .onb-pol-progress-title { font-size: 13px; font-weight: 700; color: #4c1d95; margin: 0; }
-        [data-bs-theme="dark"] .onb-pol-progress-title { color: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-pol-progress-title,
+        [data-layout-mode="dark"] .onb-pol-progress-title { color: #c4b5fd; }
         .onb-pol-progress-count { font-size: 12.5px; font-weight: 800; color: #4c1d95; }
         .onb-pol-progress-bar { height: 4px; background: #ffffff; border-radius: 999px; overflow: hidden; margin: 6px 0; }
         .onb-pol-progress-fill { height: 100%; background: linear-gradient(90deg,#7c3aed,#4c1d95); border-radius: 999px; }
@@ -1183,29 +1185,42 @@
         .onb-pol-legend-link { margin-left: auto; color: #7c3aed; font-weight: 600; }
 
         .onb-pol-section { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
-        [data-bs-theme="dark"] .onb-pol-section { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+        /* Explicit hex, NOT var(--vz-card-bg). (CBC #11)
+           That token is defined inside `.card` and nowhere else — never on
+           :root — and this panel has no card ancestor, so the declaration was
+           invalid at computed-value time and the background fell back to
+           TRANSPARENT. The light surface behind it then showed through and the
+           whole Organizational Documents area read white in dark mode. */
+        [data-bs-theme="dark"] .onb-pol-section,
+        [data-layout-mode="dark"] .onb-pol-section { background: #222831; border-color: var(--vz-border-color); }
         .onb-pol-section-head { display: flex; align-items: center; gap: 11px; padding: 11px 16px; border-bottom: 1px solid #f1eff7; }
-        [data-bs-theme="dark"] .onb-pol-section-head { border-color: var(--vz-border-color); }
+        [data-bs-theme="dark"] .onb-pol-section-head,
+        [data-layout-mode="dark"] .onb-pol-section-head { border-color: var(--vz-border-color); }
         .onb-pol-section-icon { width: 32px; height: 32px; border-radius: 8px; background: #ece6ff; color: #5a3fd1; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .onb-pol-section-title { font-size: 13.5px; font-weight: 700; color: #1f2937; margin: 0; flex-grow: 1; }
-        [data-bs-theme="dark"] .onb-pol-section-title { color: var(--vz-heading-color, var(--vz-body-color)); }
+        [data-bs-theme="dark"] .onb-pol-section-title,
+        [data-layout-mode="dark"] .onb-pol-section-title { color: var(--vz-heading-color, var(--vz-body-color)); }
         .onb-pol-section-pill { padding: 3px 10px; border-radius: 999px; background: #ece6ff; color: #5a3fd1; font-size: 10.5px; font-weight: 800; }
 
         .onb-pol-doc { padding: 12px 16px; border-bottom: 1px solid #f1eff7; background: #fff; transition: background .15s ease; }
-        [data-bs-theme="dark"] .onb-pol-doc { border-color: var(--vz-border-color); }
+        [data-bs-theme="dark"] .onb-pol-doc,
+        [data-layout-mode="dark"] .onb-pol-doc { border-color: var(--vz-border-color); }
         .onb-pol-doc:last-child { border-bottom: none; }
         /* Hover affordance — the row is now click-to-expand, so it
            highlights softly under the cursor. Expanded rows keep the
            accent so the user can tell which one they opened. */
         .onb-pol-doc:hover { background: #faf8ff; }
         .onb-pol-doc.is-expanded { background: #faf8ff; }
-        [data-bs-theme="dark"] .onb-pol-doc:hover,
-        [data-bs-theme="dark"] .onb-pol-doc.is-expanded { background: rgba(124,92,252,0.08); }
+        [data-bs-theme="dark"] .onb-pol-doc,
+        [data-layout-mode="dark"] .onb-pol-doc:hover,
+        [data-bs-theme="dark"] .onb-pol-doc,
+        [data-layout-mode="dark"] .onb-pol-doc.is-expanded { background: rgba(124,92,252,0.08); }
         .onb-pol-doc-row { display: flex; align-items: center; gap: 11px; }
         .onb-pol-doc-icon { width: 32px; height: 32px; border-radius: 8px; background: #f3edff; color: #7c3aed; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .onb-pol-doc-meta { min-width: 0; flex-grow: 1; }
         .onb-pol-doc-name { font-size: 12.5px; font-weight: 700; color: #1f2937; margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-        [data-bs-theme="dark"] .onb-pol-doc-name { color: var(--vz-heading-color, var(--vz-body-color)); }
+        [data-bs-theme="dark"] .onb-pol-doc-name,
+        [data-layout-mode="dark"] .onb-pol-doc-name { color: var(--vz-heading-color, var(--vz-body-color)); }
         .onb-pol-doc-sub { font-size: 11px; color: var(--vz-secondary-color); margin: 1px 0 0; }
         .onb-pol-doc-status { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: #eef2f6; color: #5b6478; }
         .onb-pol-doc-status .dot { width: 6px; height: 6px; border-radius: 50%; background: #878a99; }
@@ -1519,13 +1534,16 @@
         [data-bs-theme="dark"] .onb-ver-progress-bar,
         [data-bs-theme="dark"] .onb-pay-progress-bar,
         [data-bs-theme="dark"] .onb-pol-progress-bar,
+        [data-layout-mode="dark"] .onb-pol-progress-bar,
         [data-bs-theme="dark"] .onb-prov-progress-bar,
         [data-bs-theme="dark"] .onb-doc-progress-bar { background: rgba(255,255,255,0.10); }
         [data-bs-theme="dark"] .onb-ver-info-track { background: rgba(255,255,255,0.10); }
 
         /* Stage 5 — policy doc rows + progress help */
-        [data-bs-theme="dark"] .onb-pol-doc { background: var(--vz-card-bg); }
+        [data-bs-theme="dark"] .onb-pol-doc,
+        [data-layout-mode="dark"] .onb-pol-doc { background: #1b2230; }
         [data-bs-theme="dark"] .onb-pol-progress-help,
+        [data-layout-mode="dark"] .onb-pol-progress-help,
         [data-bs-theme="dark"] .onb-doc-progress-help { color: #c4b5fd; }
 
         /* Stage 4 — payroll radio hover */
@@ -1558,10 +1576,12 @@
         /* Pay/Pol/Doc count + percentage chips */
         [data-bs-theme="dark"] .onb-pay-progress-count { color: #fcd34d; }
         [data-bs-theme="dark"] .onb-pol-progress-count,
+        [data-layout-mode="dark"] .onb-pol-progress-count,
         [data-bs-theme="dark"] .onb-doc-progress-count { color: #c4b5fd; }
         [data-bs-theme="dark"] .onb-prov-progress-count { color: #93c5fd; }
         [data-bs-theme="dark"] .onb-doc-cat-pct { background: rgba(255,255,255,0.08); color: var(--vz-body-color); }
-        [data-bs-theme="dark"] .onb-pol-doc-status { background: rgba(255,255,255,0.08); color: var(--vz-body-color); }
+        [data-bs-theme="dark"] .onb-pol-doc-status,
+        [data-layout-mode="dark"] .onb-pol-doc-status { background: rgba(255,255,255,0.08); color: var(--vz-body-color); }
 
         /* Stage cards — keep solid pill backgrounds readable */
         [data-bs-theme="dark"] .onb-init-section-step.basic   { background: rgba(124,92,252,0.20); color: #c4b5fd; }
@@ -1584,9 +1604,12 @@
         [data-bs-theme="dark"] .onb-prov-section-icon.system  { background: rgba(124,92,252,0.20); color: #c4b5fd; }
         [data-bs-theme="dark"] .onb-prov-section-icon.device  { background: rgba(59,130,246,0.20); color: #93c5fd; }
         [data-bs-theme="dark"] .onb-prov-section-icon.physical { background: rgba(10,179,156,0.20); color: #4dd4be; }
-        [data-bs-theme="dark"] .onb-pol-section-icon         { background: rgba(124,92,252,0.20); color: #c4b5fd; }
-        [data-bs-theme="dark"] .onb-pol-doc-icon             { background: rgba(124,92,252,0.18); color: #c4b5fd; }
-        [data-bs-theme="dark"] .onb-pol-section-pill         { background: rgba(124,92,252,0.22); color: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-pol-section-icon,
+        [data-layout-mode="dark"] .onb-pol-section-icon         { background: rgba(124,92,252,0.20); color: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-pol-doc-icon,
+        [data-layout-mode="dark"] .onb-pol-doc-icon             { background: rgba(124,92,252,0.18); color: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-pol-section-pill,
+        [data-layout-mode="dark"] .onb-pol-section-pill         { background: rgba(124,92,252,0.22); color: #c4b5fd; }
         [data-bs-theme="dark"] .onb-doc-row-icon             { background: rgba(124,92,252,0.18); color: #c4b5fd; }
         [data-bs-theme="dark"] .onb-doc-tag                  { background: rgba(124,92,252,0.22); color: #c4b5fd; }
 

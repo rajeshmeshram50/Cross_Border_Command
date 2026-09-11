@@ -82,6 +82,10 @@ type ActionKind = 'manager-approve' | 'manager-reject' | 'hr-approve' | 'hr-reje
 type Props = {
   rows: ExpenseClaimRow[];
   loading?: boolean;
+  /** Index of the first row on this page. The caller paginates (this component
+   *  renders one slice with paginate={false}), so the Sr No. column needs to be
+   *  told where the page starts or it restarts at 1 each time. (CBC #11) */
+  serialOffset?: number;
   /** Used as a fallback initials avatar tile when `employee_name` is null. */
   fallbackName?: string;
   fallbackInitials?: string;
@@ -279,7 +283,7 @@ export function expenseClaimColumns({
 }: Omit<Props, 'rows' | 'loading'>): DataTableColumn<ExpenseClaimRow>[] {
   return [
     {
-      header: () => <div className="text-center">Exp ID</div>,
+      header: 'Exp ID',
       id: 'claim_no',
       accessorFn: (c: ExpenseClaimRow) => c.claim_no || `#${c.id}`,
       // Sort strictly by the ID's numeric sequence (EXP-0002 < EXP-0028), not a
@@ -321,13 +325,20 @@ export function expenseClaimColumns({
         return (
           <div className="d-flex flex-column" style={{ lineHeight: 1.15, minWidth: 0 }}>
             <span className="fw-semibold text-truncate">{empName}</span>
-            {c.employee_code && <small className="text-muted" style={{ fontSize: 10 }}>{c.employee_code}</small>}
+            {/* Same rule as the Advances table: fall back to the numeric id so
+                a row is always identifiable, even when the employee record
+                cannot be resolved to a code. (CBC #13) */}
+            {(c.employee_code || c.employee_id) && (
+              <small className="text-muted" style={{ fontSize: 10 }}>
+                {c.employee_code || `#${c.employee_id}`}
+              </small>
+            )}
           </div>
         );
       },
     },
     {
-      header: () => <div className="text-center">Category</div>,
+      header: 'Category',
       id: 'category',
       accessorFn: (c: ExpenseClaimRow) => c.category_name ?? '',
       meta: { width: 130, align: 'center' },
@@ -352,7 +363,7 @@ export function expenseClaimColumns({
     },
     {
       /* Company-advance link — only reimbursement claims carry it. */
-      header: () => <div className="text-center">Linked Advance</div>,
+      header: 'Linked Advance',
       id: '__linked_advance',
       accessorFn: (c: ExpenseClaimRow) => c.reimbursement_for?.advance_no ?? '',
       meta: { width: 110, align: 'center' },
@@ -366,14 +377,14 @@ export function expenseClaimColumns({
     {
       /* Sorts on the real date, not the dd-Mon-yyyy label — the formatted
          string would order 01-Dec before 02-Jan. */
-      header: () => <div className="text-center">Expense Date</div>,
+      header: 'Expense Date',
       id: 'expense_date',
       accessorFn: (c: ExpenseClaimRow) => (c.expense_date ? new Date(c.expense_date).getTime() : 0),
       meta: { width: 120, align: 'center' },
       cell: info => <span className="text-muted">{fmtDate(info.row.original.expense_date)}</span>,
     },
     {
-      header: () => <div className="text-center">Amount</div>,
+      header: 'Amount',
       accessorKey: 'amount',
       meta: { width: 110, align: 'center' },
       cell: info => <span className="fw-bold">₹{Number(info.row.original.amount || 0).toLocaleString('en-IN')}</span>,
@@ -411,7 +422,7 @@ export function expenseClaimColumns({
       },
     },
     {
-      header: () => <div className="text-center">Payment Status</div>,
+      header: 'Payment Status',
       id: 'payment_status',
       enableSorting: false,
       accessorFn: (c: ExpenseClaimRow) => paymentStatusOf(c) ?? '',
@@ -437,7 +448,7 @@ export function expenseClaimColumns({
       },
     },
     {
-      header: () => <div className="text-center">Zoho Sync</div>,
+      header: 'Zoho Sync',
       id: 'zoho_sync',
       enableSorting: false,
       accessorFn: (c: ExpenseClaimRow) => c.zoho_sync ?? 'na',
@@ -476,7 +487,7 @@ export function expenseClaimColumns({
       },
     },
     {
-      header: () => <div className="text-center">Action</div>,
+      header: 'Action',
       id: '__actions',
       enableSorting: false,
       // HR and the reporting-manager (team) view both show the wide "Review &
@@ -506,6 +517,7 @@ export default function ExpenseClaimsTable({
   fallbackName, fallbackInitials, accent = '#7c5cfc',
   mode = 'mine', currentEmployeeId = null, canHrApprove = false,
   onAct, onRecordPayment, onViewPayments, onReview, onEmailReimbursement,
+  serialOffset = 0,
 }: Props) {
   const columns = useMemo(
     () => expenseClaimColumns({ accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, onAct, onRecordPayment, onViewPayments, onReview, onEmailReimbursement }),
@@ -521,6 +533,11 @@ export default function ExpenseClaimsTable({
         data={rows}
         columns={columns}
         accent="violet"
+        /* Sr No. — the width formula above has always reserved DataTable's 56px
+           for it, so the column was intended and simply never switched on. The
+           caller paginates and hands us one page slice, so the running number
+           has to come from it or every page would restart at 1. (CBC #11) */
+        serial={{ header: 'Sr No.', offset: serialOffset }}
         minWidth={expenseClaimsMinWidth(mode)}
         loading={!!loading}
         searchable={false}

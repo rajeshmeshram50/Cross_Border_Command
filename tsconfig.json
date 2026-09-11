@@ -8,6 +8,11 @@
         "esModuleInterop": true,
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
+        /* tsc ABORTS on the baseUrl deprecation (TS5101, exit 2) before it
+           type-checks a single file, so `tsc --noEmit` was silently checking
+           NOTHING — an undefined identifier passed clean. This keeps the option
+           working until the paths config is migrated. (CBC #11) */
+        "ignoreDeprecations": "6.0",
         "baseUrl": ".",
         "paths": {
             "@/*": ["resources/js/*"]

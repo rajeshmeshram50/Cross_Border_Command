@@ -966,8 +966,33 @@ export default function SalesMatrixDetail() {
     return false;
   };
 
+  /* Stage 3 onwards belongs to a QUALIFIED lead (QA #31).
+   *
+   * Stage 2 is where the lead is judged. Everything after it — sourcing
+   * products, pricing them, raising a quotation — is work done on a lead
+   * worth pursuing, so none of it should be reachable while the latest
+   * acknowledgement says Disqualified or Clarity Pending. Without this the
+   * lead could be disqualified and its products still edited, which is the
+   * state the report describes.
+   *
+   * The same test the backend uses for its Qualified bucket: qualified AND
+   * NOT disqualified. Both flags are rewritten from the latest
+   * acknowledgement, so this follows a re-judgement in either direction.
+   *
+   * Stages 1 and 2 stay open either way — a disqualified lead must still be
+   * readable, and Stage 2 is where the decision can be revisited. */
+  const requireQualifiedForSourcing = (): boolean => {
+    if (serverHeader.qualified && !serverHeader.disqualified) return true;
+    toast.error(
+      serverHeader.disqualified ? 'Lead is disqualified' : 'Lead is not qualified yet',
+      'Mark the lead Qualified in Lead Acknowledgement before sourcing products.',
+    );
+    return false;
+  };
+
   const goToStage = (n: StageNum) => {
     if (n > furthestStage) return;
+    if (n >= 3 && !requireQualifiedForSourcing()) return;
     if (n === 3 && !requireSalespersonForSourcing()) return;
     navStage(n);
   };
@@ -976,6 +1001,10 @@ export default function SalesMatrixDetail() {
   const goPrev = () => stage > 1 && navStage((stage - 1) as StageNum);
   const goNext = () => {
     if (stage >= 6) return;
+    // Same gate on the forward button, not just the tracker — Save & Next
+    // deliberately bypasses the furthestStage lock, so it has to carry the
+    // qualification rule itself.
+    if (stage === 2 && !requireQualifiedForSourcing()) return;
     if (stage === 2 && !requireSalespersonForSourcing()) return;
     // Crossing 5 → 6 via Save & Next is a "deal won" moment — drop a one-shot
     // session flag so the Victory stage celebrates EVERY time it's reached this
