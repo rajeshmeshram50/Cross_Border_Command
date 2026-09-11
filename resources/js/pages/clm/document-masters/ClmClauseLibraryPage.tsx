@@ -1,11 +1,10 @@
 import { forwardRef, memo, useEffect, useRef, useState } from 'react';
-import { forwardRef, memo, useEffect, useRef, useState } from 'react';
 import WorklistPager from "../../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
-import { CLM_CSS, PER_PAGE, usePagedList, useAutoFitRows } from '../shared/clmShared';
+import { CLM_CSS, usePagedList, useAutoFitRows } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import { ClmSkeletonRows, DeleteConf } from '../shared/clmCommon';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
@@ -55,81 +54,9 @@ const capitalizeFirst = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(
 
 type ClType = { id: number; code: string; name: string; description: string; in_use?: number };
 type ClLib = { id: number; code: string; clause_type: string; name: string; party: string; clause_status: string; content: string | null; in_use?: number };
-const MIN_ROWS = 10;
-const MAX_ROWS = 100;
-
-/** What a paged list request comes back with. */
-type PagedList<T> = { rows: T[]; total: number; nextCode: string };
-
-function useFittedRows(storageKey: string) {
-  const [rpp, setRpp] = useState<number>(() => {
-    try {
-      const saved = Number(localStorage.getItem(storageKey));
-      return Number.isFinite(saved) && saved >= MIN_ROWS && saved <= MAX_ROWS ? saved : PER_PAGE;
-    } catch {
-      return PER_PAGE;   // private mode can throw on access
-    }
-  });
-  /* Cleared once the user picks a size from Rows per page — a deliberate
-     choice outranks the measurement for the rest of the session. */
-  const autoFitRef        = useRef(true);
-  const settledRef        = useRef(false);
-  const [fillH, setFillH] = useState<number | undefined>(undefined);
-  const scrollRef         = useRef<HTMLDivElement | null>(null);
-  const rppRef            = useRef(rpp);
-  useEffect(() => { rppRef.current = rpp; }, [rpp]);
-
-  useEffect(() => {
-    try { localStorage.setItem(storageKey, String(rpp)); } catch { /* private mode */ }
-  }, [storageKey, rpp]);
-
-  useEffect(() => {
-    /* Card height. Free — no request — so it may run as often as it likes. */
-    const sizeCard = () => {
-      const el = scrollRef.current;
-      if (!el) return;
-      const fh = Math.max(0, window.innerHeight - el.getBoundingClientRect().top - 64);
-      setFillH(prev => (prev === fh ? prev : fh));
-    };
-    const fitRows = () => {
-      const el = scrollRef.current;
-      if (!el || !autoFitRef.current || settledRef.current) return;
-      const top = el.getBoundingClientRect().top;
-      const THEAD = 40, ROW = 46, FOOTER = 96;
-      const avail = window.innerHeight - top - THEAD - FOOTER;
-      const next  = Math.min(MAX_ROWS, Math.max(MIN_ROWS, Math.floor(avail / ROW)));
-      settledRef.current = true;
-      if (Math.abs(next - rppRef.current) <= 1) return;
-      setRpp(next);
-    };
-
-    sizeCard();
-    const raf = requestAnimationFrame(sizeCard);
-    const t   = window.setTimeout(() => { sizeCard(); fitRows(); }, 250);
-
-    const onResize = () => { settledRef.current = false; sizeCard(); fitRows(); };
-    window.addEventListener('resize', onResize);
-    return () => {
-      window.removeEventListener('resize', onResize);
-      window.clearTimeout(t);
-      cancelAnimationFrame(raf);
-    };
-  }, []);
-
-  return { rpp, setRpp, autoFitRef, fillH, scrollRef };
-}
-
-/** Trailing debounce, so typing a word is one request rather than one per key. */
-function useDebounced<T>(value: T, ms = 300): T {
-  const [out, setOut] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setOut(value), ms);
-    return () => clearTimeout(t);
-  }, [value, ms]);
-  return out;
-}
 
 export default function ClmClauseLibraryPage() {
+  const toast = useToast();
   const [tab, setTab]       = useState<'type'|'lib'>('type');
   /* The full type list, kept ONLY to populate the Clause Library form's type
      picker. The two LISTS are no longer fetched here — each pane asks the
@@ -150,6 +77,10 @@ export default function ClmClauseLibraryPage() {
       .catch(() => toast.error('Load failed', 'Could not load clause types'))
       .finally(() => setLoading(false));
   }, [reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* Each pane owns its own fetch, so switching tabs is just a tab change —
+     the incoming pane shows its own skeleton while its first page lands. */
+  const switchTab = (next: 'type' | 'lib') => { if (next !== tab) setTab(next); };
 
   const pillSwitcher = (
     <div className="clm-pill-group">
@@ -209,6 +140,12 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
      client-side sort/filter/paginate that used to live here would now be
      re-filtering ten already-filtered rows. */
   const slice     = rows;
+  /* usePagedList reports one `loading`. Split it by whether there is anything
+     on screen: a first load has no rows, so it gets the skeleton; a refetch
+     still shows the previous page, so it is dimmed rather than blanked —
+     blanking it would make a page change look like the list emptied. */
+  const firstLoad  = loading && rows.length === 0;
+  const refreshing = loading && rows.length > 0;
   const start     = (page - 1) * rpp;
   const safePage  = page;
   const autoFitRef = useRef(true);
@@ -263,15 +200,15 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
       </div>
 
       <div className={`clm-tab-body ${rows.length > 0 ? 'has-data' : ''}`}>
-        {rows.length === 0 && !busy ? (
+        {rows.length === 0 && !loading ? (
           <div className="clm-empty">
             <div className="clm-empty-ico">{ICO.bCl}</div>
             {/* Search now runs on the server, so an empty page is far more
                 often "nothing matched" than "nothing exists" — saying the
                 wrong one on a 200-row master reads as data loss. */}
-            <div className="clm-empty-title">{debouncedSearch ? 'No matching clause types' : 'No clause types yet'}</div>
+            <div className="clm-empty-title">{search ? 'No matching clause types' : 'No clause types yet'}</div>
             <div className="clm-empty-sub">
-              {debouncedSearch ? 'Try a different name or type ID.' : 'Click + Add Clause Type to create the first record.'}
+              {search ? 'Try a different name or type ID.' : 'Click + Add Clause Type to create the first record.'}
             </div>
           </div>
         ) : (
@@ -286,7 +223,7 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {!ready && <ClmSkeletonRows cols={4} />}
+                {firstLoad && <ClmSkeletonRows cols={4} />}
                 {rows.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
@@ -355,6 +292,9 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
 
   /* `rows` IS the page — the endpoint sorts, searches and slices. */
   const slice      = rows;
+  // See the note in TypesPane — one `loading` split by what is already on screen.
+  const firstLoad  = loading && rows.length === 0;
+  const refreshing = loading && rows.length > 0;
   const start      = (page - 1) * rpp;
   const safePage   = page;
   const autoFitRef = useRef(true);
@@ -412,12 +352,12 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
       </div>
 
       <div className={`clm-tab-body ${rows.length > 0 ? 'has-data' : ''}`}>
-        {rows.length === 0 && !busy ? (
+        {rows.length === 0 && !loading ? (
           <div className="clm-empty">
             <div className="clm-empty-ico">{ICO.bCl}</div>
-            <div className="clm-empty-title">{debouncedSearch ? 'No matching clauses' : 'No clauses yet'}</div>
+            <div className="clm-empty-title">{search ? 'No matching clauses' : 'No clauses yet'}</div>
             <div className="clm-empty-sub">
-              {debouncedSearch ? 'Try a different clause name, ID or type.' : 'Click + Add Clause to create the first record.'}
+              {search ? 'Try a different clause name, ID or type.' : 'Click + Add Clause to create the first record.'}
             </div>
           </div>
         ) : (
@@ -433,7 +373,7 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {!ready && <ClmSkeletonRows cols={5} />}
+                {firstLoad && <ClmSkeletonRows cols={5} />}
                 {rows.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>

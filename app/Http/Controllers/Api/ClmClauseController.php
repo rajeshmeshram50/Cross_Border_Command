@@ -26,10 +26,12 @@ class ClmClauseController extends Controller
         // Branch-scoped read: branch users see globals + client-level rows +
         // their own branch's rows; sibling branches stay hidden.
         $branchFilter = $request->integer('branch_id') ?: null;
-        // Newest first — the list is read that way and paging has to agree with
-        // it, or page 2 is a different set depending on who sorted last.
-        $paged     = $this->wantsPage($request);
-        $typeQuery = ClmClauseType::query()->orderByDesc('id', $paged ? 'desc' : 'asc');
+        /* Newest first WHEN PAGING — the list is read that way, and page 2 has
+           to continue page 1 rather than be a different set depending on who
+           sorted last. Unpaged callers keep the original ascending order, which
+           some of them render without sorting again. */
+        $typeQuery = ClmClauseType::query()
+            ->orderBy('id', $request->filled('per_page') ? 'desc' : 'asc');
         MasterVisibility::applyReadScope($typeQuery, $user, $branchFilter);
 
         /* Search moves server-side with the paging. Once the client holds one
@@ -211,7 +213,6 @@ class ClmClauseController extends Controller
         // Branch-scoped read (globals + client-level + own branch; siblings hidden).
         @ini_set('memory_limit', '512M'); // usage-scan reads CTC drafts; guard against OOM on large data
 
-        $paged = $this->wantsPage($request);
         $query = ClmClauseLibrary::query()->orderBy('id', 'desc');   // newest entry first
         MasterVisibility::applyReadScope($query, $user, $request->integer('branch_id') ?: null);
 
