@@ -109,6 +109,67 @@ class CtcContractController extends Controller
     }
 
     /**
+     * Is this user one of the contract's approvers?
+     *
+     * approve() has always enforced this; reject() and clarify() never did, so
+     * any authenticated user in the tenant could kill an agreement they had no
+     * part in, or post a query into its thread under their own name. The
+     * to-approve LIST is filtered by approver_emails, so they would not see the
+     * contract in the UI — but the endpoints take an id and were reachable
+     * directly.
+     *
+     * Returns true when the contract carries no approver information at all:
+     * approve() already treats that case as an unguarded legacy row, and the
+     * three actions have to agree on who may act.
+     */
+    private function isApprover(CtcContract $c, $user): bool
+    {
+        $email = strtolower(trim((string) ($user->email ?? '')));
+        $approvers = array_values($c->approvers ?? []);
+        $emails    = array_values($c->approver_emails ?? []);
+        $primary   = strtolower(trim((string) $c->primary_approver_email));
+
+        if (empty($approvers) && empty($emails) && $primary === '') return true;  // legacy, unconfigured
+        if ($email === '') return false;
+
+        foreach ($approvers as $a) {
+            if (strtolower(trim((string) ($a['email'] ?? ''))) === $email) return true;
+        }
+        foreach ($emails as $e) {
+            if (strtolower(trim((string) $e)) === $email) return true;
+        }
+        return $primary === $email;
+    }
+
+    /**
+     * Does THIS approver have a query of their own still unanswered?
+     *
+     * Clarification is personal; review and approval are not. Three approvers
+     * on one agreement each read it independently, and a question from one of
+     * them says nothing about whether the other two are ready to decide. Only
+     * the approver who asked is actually waiting on an answer.
+     *
+     * Matches on `by_email`, which clarify() stamps precisely because two
+     * approvers can share a display name. Entries written before that field
+     * existed fall back to the name.
+     */
+    private function hasMyOpenClarification(CtcContract $c, string $email, string $name = ''): bool
+    {
+        $email = strtolower(trim($email));
+        $name  = strtolower(trim($name));
+        foreach (array_values($c->clarifications ?? []) as $cl) {
+            if (trim((string) ($cl['response'] ?? '')) !== '') continue;   // answered
+            $byEmail = strtolower(trim((string) ($cl['by_email'] ?? '')));
+            if ($byEmail !== '') {
+                if ($email !== '' && $byEmail === $email) return true;
+                continue;
+            }
+            if ($name !== '' && strtolower(trim((string) ($cl['by'] ?? ''))) === $name) return true;
+        }
+        return false;
+    }
+
+    /**
      * Every approver on this contract with their individual decision — so the
      * UI can list all of them (Parth: approved, Vedant: approved) instead of
      * only the static primary approver. Falls back to the primary slot for
@@ -160,14 +221,20 @@ class CtcContractController extends Controller
             // 'Sent for Signing' / 'Signed' are post-approval — ignored here.
         }
         if ($cur) {
-            // Open round — reflect THIS approver's own decision first (personal
-            // inbox view): once they've approved their slot the row moves to
-            // their Approved tab even while other approvers are still pending.
-            // Otherwise surface a live clarification state, else stay pending.
+            /* Open round — this is a PERSONAL inbox row, so every branch here
+               reads the viewing approver's own position, never the contract's.
+               Once they have approved their slot the row moves to their
+               Approved tab while other approvers are still pending.
+               The clarification branch used to test `$c->approval_status`,
+               which is contract-wide: the moment ONE approver asked a question,
+               the row flipped to "Clarification" for all three of them, left
+               everyone else's Pending tab and sat in a queue that was not
+               theirs — so two approvers who were perfectly able to review and
+               approve saw an agreement apparently waiting on somebody else.
+               It now asks whether THIS approver has an unanswered query. */
             $mine = $this->myApproverStatus($c, $approverEmail);
-            if ($mine === 'approved')                        $cur['status'] = 'approved';
-            elseif ($mine === 'rejected')                    $cur['status'] = 'rejected';
-            elseif ($c->approval_status === 'clarification') $cur['status'] = 'clarification';
+            if ($mine === 'approved')     $cur['status'] = 'approved';
+            elseif ($mine === 'rejected') $cur['status'] = 'rejected';
             $rounds[] = $cur;
         }
         if (empty($rounds)) {                                 // legacy rows w/o audit
@@ -175,10 +242,46 @@ class CtcContractController extends Controller
             $mine = $this->myApproverStatus($c, $approverEmail);
             if ($mine === 'approved')     $shaped['status'] = 'approved';
             elseif ($mine === 'rejected') $shaped['status'] = 'rejected';
+            // shapeApprove reports the CONTRACT's status, so somebody else's
+            // open query would read as this approver's clarification here too.
+            // Same rule as the open round above: it is only their clarification
+            // if they are the one waiting on an answer.
+            elseif ($shaped['status'] === 'clarification' && !$this->hasMyOpenClarification($c, $approverEmail, $approverName)) {
+                $shaped['status'] = 'pending';
+            }
             return [$shaped];
         }
 
-        return collect(array_reverse($rounds))->map(fn ($r) => [
+        $ordered = array_reverse($rounds);                    // newest round first
+
+        /* An unanswered query of MINE outranks whatever the newest round says,
+           and is applied here rather than inside the open-round branch above
+           because it has to reach CLOSED rounds too.
+           Two cases, and only this placement covers both:
+            - I approved and then asked something. My decision is recorded, but
+              I am still waiting on an answer.
+            - Every approver approved (which CLOSES the round in the audit) and
+              I asked afterwards. There is no open round left to annotate, so
+              the branch above never ran and my own question stayed invisible to
+              me — filed under Approved, with no way to find it or to see the
+              reply when it arrived.
+           Only the newest round: older rounds are settled history, and a query
+           raised today says nothing about a round that closed last week.
+
+           A REJECTED round is the exception and keeps its status. Rejection is
+           terminal and collective — the agreement is dead until the initiator
+           revises and resubmits — so an outstanding query on it is moot, and
+           filing it under the asker's Clarifications tab would show them a
+           conversation that cannot go anywhere as if it still needed them.
+           Resubmit opens a fresh round, and a query still open then surfaces
+           against that one. */
+        if (!empty($ordered)
+            && $ordered[0]['status'] !== 'rejected'
+            && $this->hasMyOpenClarification($c, $approverEmail, $approverName)) {
+            $ordered[0]['status'] = 'clarification';
+        }
+
+        return collect($ordered)->map(fn ($r) => [
             'id'             => $c->code,
             'dbId'           => $c->id,
             'title'          => $c->title,
@@ -1075,18 +1178,31 @@ class CtcContractController extends Controller
         $total    = count($approvers);
         $approved = collect($approvers)->filter(fn ($a) => ($a['status'] ?? 'pending') === 'approved')->count();
 
-        if ($approved >= $total) {
+        /* Derived, not assigned — see deriveApprovalStatus().
+           This used to set 'approved' or 'pending' outright, which meant an
+           approval landing after someone else's open query wiped the
+           clarification state and dropped the agreement off the sender's
+           Clarifications panel. The derivation keeps an unanswered query
+           visible until it is actually answered, and still reports 'approved'
+           only when every approver has approved AND nothing is outstanding. */
+        $derived = $this->deriveApprovalStatus($row);
+
+        if ($approved >= $total && $derived === 'approved') {
             // Everyone has approved → contract is approved (stays at Stage 2;
             // the sender then chooses "Send for Signing & Negotiation").
-            $row->approval_status  = 'approved';
             $row->rejection_reason = null;
             $this->pushVersion($row, 'Approved by all ' . $total . ' approver' . ($total > 1 ? 's' : ''), 'Approved', $user->name ?? '');
         } else {
-            // Still waiting on others → keep the round open. The audit note uses
-            // a non-round status so approvalRoundsShaped() doesn't close it early.
-            $row->approval_status = 'pending';
-            $this->pushVersion($row, ($user->name ?? 'Approver') . ' approved (' . $approved . ' of ' . $total . ') — awaiting remaining approvers', 'Approving', $user->name ?? '');
+            // Still waiting on others, or on an answer to an open query → keep
+            // the round open. The audit note uses a non-round status so
+            // approvalRoundsShaped() doesn't close it early.
+            $note = ($user->name ?? 'Approver') . ' approved (' . $approved . ' of ' . $total . ')'
+                . ($derived === 'clarification'
+                    ? ' — awaiting a response to an open clarification'
+                    : ' — awaiting remaining approvers');
+            $this->pushVersion($row, $note, 'Approving', $user->name ?? '');
         }
+        $row->approval_status = $derived;
         $row->save();
         $this->broadcastApproval($row);
         return response()->json(['status' => true, 'data' => $this->shapeApprove($row->fresh(), $user->name ?? '')]);
@@ -1096,6 +1212,9 @@ class CtcContractController extends Controller
     {
         $user = $request->user(); if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
+        if (!$this->isApprover($row, $user)) {
+            return response()->json(['status' => false, 'message' => 'You are not an approver for this agreement.'], 403);
+        }
         $data = $request->validate(['reason' => 'required|string|max:1000']);
 
         // One rejection blocks the whole agreement — record which approver
@@ -1126,14 +1245,72 @@ class CtcContractController extends Controller
     {
         $user = $request->user(); if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
+        if (!$this->isApprover($row, $user)) {
+            return response()->json(['status' => false, 'message' => 'You are not an approver for this agreement.'], 403);
+        }
         $data = $request->validate(['query' => 'required|string|max:2000']);
         $thread = $row->clarifications ?? [];
         // Stamp the raising approver so the shared thread can attribute each
         // remark — any of the contract's approvers may add to the same thread.
-        $thread[] = ['query' => $data['query'], 'by' => $user->name ?: 'Approver', 'date' => now()->format('d M Y H:i'), 'response' => '', 'resolved' => false];
-        $row->update(['approval_status' => 'clarification', 'clarifications' => $thread]);
+        // `by_email` as well as `by`: two approvers can share a display name,
+        // and the per-approver state below has to match on something unique.
+        $thread[] = [
+            'query'    => $data['query'],
+            'by'       => $user->name ?: 'Approver',
+            'by_email' => strtolower((string) $user->email),
+            'date'     => now()->format('d M Y H:i'),
+            'response' => '',
+            'resolved' => false,
+        ];
+        $row->clarifications = $thread;
+        $row->approval_status = $this->deriveApprovalStatus($row);
+        $row->save();
         $this->broadcastApproval($row->fresh());
         return response()->json(['status' => true, 'data' => $this->shapeApprove($row->fresh(), $user->name ?? '')]);
+    }
+
+    /**
+     * The contract's approval state, derived from the approvers and the
+     * clarification thread rather than written by whoever acted last.
+     *
+     * `approval_status` is ONE field describing what is really per-approver
+     * state, and three people can be in three different positions at once. It
+     * used to be assigned directly by each action, so the last write won:
+     * approver A raised a query (status → clarification), approver B then
+     * approved, and approve() set it to 'pending' — silently clearing the
+     * clarification while A's question sat unanswered. The sender's
+     * Clarifications panel filters on this field, so the agreement simply
+     * vanished from it with two approvers still waiting.
+     *
+     * Order matters:
+     *  - rejected wins outright; one rejection blocks the agreement and no
+     *    later approval or query should reopen it.
+     *  - an UNANSWERED query outranks 'pending', because somebody is waiting on
+     *    the sender, not the other way round.
+     *  - all approved → approved. Otherwise still pending.
+     *
+     * Not called by reject(): a rejection is a deliberate terminal decision and
+     * stays sticky until the sender resubmits.
+     */
+    private function deriveApprovalStatus(CtcContract $row): string
+    {
+        if (($row->approval_status ?? '') === 'rejected') return 'rejected';
+
+        $approvers = array_values($row->approvers ?? []);
+        foreach ($approvers as $a) {
+            if (($a['status'] ?? 'pending') === 'rejected') return 'rejected';
+        }
+
+        $open = collect($row->clarifications ?? [])
+            ->contains(fn ($c) => trim((string) ($c['response'] ?? '')) === '');
+        if ($open) return 'clarification';
+
+        if (!empty($approvers)) {
+            $approved = collect($approvers)->filter(fn ($a) => ($a['status'] ?? 'pending') === 'approved')->count();
+            if ($approved >= count($approvers)) return 'approved';
+        }
+
+        return 'pending';
     }
 
     /** Sender responds to the latest open clarification. */
@@ -1143,17 +1320,33 @@ class CtcContractController extends Controller
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
         $data = $request->validate(['response' => 'required|string|max:2000']);
         $thread = $row->clarifications ?? [];
-        for ($i = count($thread) - 1; $i >= 0; $i--) {
-            if (empty($thread[$i]['response'])) {
-                $thread[$i]['response'] = $data['response'];
-                // Stamp WHEN the sender answered — distinct from the request's
-                // `date` so the review timeline shows the real answer time
-                // instead of reusing the "Clarification Requested" timestamp.
-                $thread[$i]['response_date'] = now()->format('d M Y H:i');
-                break;
-            }
+        /* Answer EVERY open query, not just the newest.
+           This used to walk backwards and `break` on the first one it filled.
+           But the sender has a single response box and no way to address one
+           query rather than another — they read the whole thread and write one
+           answer covering it. So when an approver asked twice before the sender
+           replied (or two approvers each asked), the older query kept
+           "Awaiting your response" against it forever, and because
+           deriveApprovalStatus treats any unanswered query as an open
+           clarification, the contract could never leave that state no matter
+           how many times the sender replied.
+           One answer, recorded against everything it was written to answer. */
+        $answeredAt = now()->format('d M Y H:i');
+        foreach ($thread as $i => $entry) {
+            if (trim((string) ($entry['response'] ?? '')) !== '') continue;
+            $thread[$i]['response'] = $data['response'];
+            // Stamp WHEN the sender answered — distinct from the request's
+            // `date` so the review timeline shows the real answer time
+            // instead of reusing the "Clarification Requested" timestamp.
+            $thread[$i]['response_date'] = $answeredAt;
         }
-        $row->update(['clarifications' => $thread]);
+        /* Recompute after answering. The derivation checks whether any query is
+           still open before letting the contract fall back to pending/approved;
+           with the loop above none is, unless an approver raised a new one
+           between the sender opening the modal and submitting. */
+        $row->clarifications = $thread;
+        $row->approval_status = $this->deriveApprovalStatus($row);
+        $row->save();
         $this->broadcastApproval($row->fresh());
         return response()->json(['status' => true, 'data' => $this->shapeSent($row->fresh())]);
     }

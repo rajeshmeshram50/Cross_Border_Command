@@ -23,7 +23,7 @@ import SearchClear from '../../../components/ui/SearchClear';
  * never gets buried behind the modal overlay's stacking context.
  * ───────────────────────────────────────────────────────────────────────── */
 
-type ClauseTypeRow = { id: number; code: string; name: string };
+type ClauseTypeRow = { id: number; code: string; name: string; in_use?: number };
 type ClauseRow     = { id: number; code: string; clause_type: string; name: string; content: string | null; clause_status?: string };
 
 function escapeHtml(s: string) {
@@ -55,20 +55,121 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
   const [ddSearch, setDdSearch] = useState('');
   const ddRef = useRef<HTMLDivElement | null>(null);
 
+  /* ── Clause TYPES: ten at a time, next ten on scroll ─────────────────────
+     This panel used to download every type AND every clause in the tenant on
+     open — 156 KB + 302 KB. The clauses were fetched for one reason: to work
+     out which types actually have any, so an empty one could not be picked.
+     The endpoint answers that itself now (?with_clauses=1), and both lists
+     arrive a page at a time.
+     The search is server-side for the same reason as everywhere else: with ten
+     types in memory, filtering locally searches ten of 456. */
+  const TYPE_PAGE = 10;
+  const [typePage, setTypePage]   = useState(1);
+  const [typeTotal, setTypeTotal] = useState(0);
+  const [loadingTypes, setLoadingTypes] = useState(false);
+  const [ddSearchDebounced, setDdSearchDebounced] = useState('');
+  const ddListRef = useRef<HTMLDivElement | null>(null);
+  const typeReqRef = useRef(0);
+
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    Promise.all([
-      api.get('/clm/clause-types').then(r => (Array.isArray(r.data?.data) ? r.data.data : []) as ClauseTypeRow[]).catch(() => [] as ClauseTypeRow[]),
-      api.get('/clm/clause-library').then(r => (Array.isArray(r.data?.data) ? r.data.data : []) as ClauseRow[]).catch(() => [] as ClauseRow[]),
-    ]).then(([t, c]) => {
-      if (cancelled) return;
-      setTypes(t);
-      setClauses(c);
-      setLoading(false);
-    });
-    return () => { cancelled = true; };
-  }, []);
+    const t = setTimeout(() => setDdSearchDebounced(ddSearch.trim()), 300);
+    return () => clearTimeout(t);
+  }, [ddSearch]);
+
+  // A new search term is a new list — reset rather than append onto the last.
+  useEffect(() => {
+    setTypes([]);
+    setTypePage(1);
+    setTypeTotal(0);
+    if (ddListRef.current) ddListRef.current.scrollTop = 0;
+  }, [ddSearchDebounced]);
+
+  useEffect(() => {
+    const token = ++typeReqRef.current;
+    setLoadingTypes(true);
+    if (typePage === 1) setLoading(true);
+    api.get('/clm/clause-types', {
+      params: {
+        with_clauses: 1, page: typePage, per_page: TYPE_PAGE,
+        ...(ddSearchDebounced ? { search: ddSearchDebounced } : {}),
+      },
+    })
+      .then(r => {
+        if (token !== typeReqRef.current) return;
+        const rows = (Array.isArray(r.data?.data) ? r.data.data : []) as ClauseTypeRow[];
+        setTypes(prev => {
+          const seen = new Set(prev.map(t => t.id));
+          return [...prev, ...rows.filter(t => !seen.has(t.id))];
+        });
+        setTypeTotal(Number(r.data?.total ?? rows.length));
+      })
+      .catch(() => { if (token === typeReqRef.current) setTypeTotal(0); })
+      .finally(() => {
+        if (token !== typeReqRef.current) return;
+        setLoadingTypes(false);
+        setLoading(false);
+      });
+  }, [typePage, ddSearchDebounced]);
+
+  /* Next page when the MENU is scrolled near its end. Same 48px of slack as the
+     clause list, so the fetch starts just before the user reaches the floor. */
+  const onTypeScroll = () => {
+    const el = ddListRef.current;
+    if (!el || loadingTypes) return;
+    if (types.length >= typeTotal) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 48) {
+      setTypePage(p => p + 1);
+    }
+  };
+
+  /* ── Clause list: ten at a time, next ten on scroll ──────────────────── */
+  const PAGE = 10;
+  const [clausePage, setClausePage] = useState(1);
+  const [clauseTotal, setClauseTotal] = useState(0);
+  const [loadingClauses, setLoadingClauses] = useState(false);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const clauseReqRef = useRef(0);
+
+  // A new type is a new list — drop what is held rather than appending the
+  // first page of Payment onto the last page of Warranty.
+  useEffect(() => {
+    setClauses([]);
+    setClausePage(1);
+    setClauseTotal(0);
+    if (listRef.current) listRef.current.scrollTop = 0;
+  }, [typeName]);
+
+  useEffect(() => {
+    if (!typeName) return;
+    const token = ++clauseReqRef.current;
+    setLoadingClauses(true);
+    api.get('/clm/clause-library', { params: { clause_type: typeName, page: clausePage, per_page: PAGE } })
+      .then(r => {
+        if (token !== clauseReqRef.current) return;
+        const rows = (Array.isArray(r.data?.data) ? r.data.data : []) as ClauseRow[];
+        // Append, never replace — page 2 adds to page 1. Guarded against a
+        // double-fire appending the same rows twice.
+        setClauses(prev => {
+          const seen = new Set(prev.map(c => c.id));
+          return [...prev, ...rows.filter(c => !seen.has(c.id))];
+        });
+        setClauseTotal(Number(r.data?.total ?? rows.length));
+      })
+      .catch(() => { if (token === clauseReqRef.current) setClauseTotal(0); })
+      .finally(() => { if (token === clauseReqRef.current) setLoadingClauses(false); });
+  }, [typeName, clausePage]);
+
+  /* Next page when the list is scrolled near its end. 48px of slack so the
+     fetch starts just before the user hits the floor, rather than after — the
+     list should feel continuous, not stop and wait. */
+  const onListScroll = () => {
+    const el = listRef.current;
+    if (!el || loadingClauses) return;
+    if (clauses.length >= clauseTotal) return;      // everything is in hand
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 48) {
+      setClausePage(p => p + 1);
+    }
+  };
 
   // Esc closes the picker (not the host wizard — the wizards' own Esc
   // handlers no-op while the clause panel is open).
@@ -90,17 +191,16 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
 
   // Clauses belonging to the chosen type (matched by the type's name, which
   // is what clause_library rows store in their clause_type column).
-  const visible = typeName ? clauses.filter(c => c.clause_type === typeName) : [];
-  /* Only offer types that actually HAVE clauses. An empty type could be picked
-   * and then just reported "No clauses found for X" — a dead end the user had
-   * to back out of, with nothing to do about it from here (clauses are created
-   * in the Clause Library master, not in this panel).
-   * Compared exactly the way `visible` above matches, so the two can never
-   * disagree: a type is listed only when selecting it would show something. */
-  const typesWithClauses = types.filter(t => clauses.some(c => c.clause_type === t.name));
-  const filteredTypes = ddSearch.trim()
-    ? typesWithClauses.filter(t => t.name.toLowerCase().includes(ddSearch.trim().toLowerCase()))
-    : typesWithClauses;
+  // `clauses` already holds only this type's rows — the endpoint filtered them.
+  const visible = typeName ? clauses : [];
+  /* `types` is already the filtered, searched page set.
+     Only types that actually HAVE clauses come back (?with_clauses=1) — an
+     empty one could otherwise be picked and then just report "No clauses found
+     for X", a dead end the user has to back out of, with nothing to do about it
+     from here (clauses are created in the Clause Library master, not in this
+     panel). The search is applied by the endpoint too: filtering again here
+     would search the ten rows in memory rather than all 456. */
+  const filteredTypes = types;
 
   const toggle = (id: number) => setSelected(prev => {
     const next = new Set(prev);
@@ -190,15 +290,16 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
                     />
                     <SearchClear show={ddSearch} onClear={() => { setDdSearch(''); }} />
                   </div>
-                  <div className="clp-dd-list">
-                    {/* Three cases, not two — "No results" would be a lie when
-                        types exist but every one of them is empty, which is
-                        exactly the state the filter above now hides. */}
+                  <div className="clp-dd-list" ref={ddListRef} onScroll={onTypeScroll}>
+                    {/* The endpoint returns only types that HAVE clauses
+                        (?with_clauses=1), so an empty result means one of two
+                        things — nothing matched the search, or the tenant has
+                        no usable type at all. */}
                     {filteredTypes.length === 0 ? (
                       <div className="clp-dd-empty">{
-                        types.length === 0              ? 'No clause types'
-                        : typesWithClauses.length === 0 ? 'No clause type has any clauses yet — add them in the Clause Library master.'
-                        : 'No results'
+                        loadingTypes             ? 'Loading…'
+                        : ddSearchDebounced      ? 'No results'
+                        : 'No clause type has any clauses yet — add them in the Clause Library master.'
                       }</div>
                     ) : filteredTypes.map(t => (
                       <button
@@ -212,6 +313,18 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
                           : t.name}
                       </button>
                     ))}
+                    {/* Foot of the infinite menu — says whether more are coming
+                        or the list has genuinely ended, so a menu that stops
+                        scrolling doesn't read as broken. */}
+                    {filteredTypes.length > 0 && (
+                      loadingTypes ? (
+                        <div className="clp-dd-empty" style={{ padding: '8px 0' }}>Loading more…</div>
+                      ) : types.length >= typeTotal ? (
+                        <div className="clp-dd-empty" style={{ padding: '6px 0', fontSize: 11, opacity: 0.7 }}>
+                          All {typeTotal} type{typeTotal === 1 ? '' : 's'} loaded
+                        </div>
+                      ) : null
+                    )}
                   </div>
                 </div>
               )}
@@ -219,7 +332,7 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
           </div>
 
           <div className="clp-list-label">Clauses {visible.length > 0 ? `(${visible.length})` : ''}</div>
-          <div className="clp-list">
+          <div className="clp-list" ref={listRef} onScroll={onListScroll}>
             {loading ? (
               <div className="clp-loading">
                 <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
@@ -228,7 +341,11 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
             ) : !typeName ? (
               <div className="clp-empty">Pick a clause type above to see its clauses.</div>
             ) : visible.length === 0 ? (
-              <div className="clp-empty">No clauses found for “{typeName}”.</div>
+              // Only "none" once the first page has actually come back —
+              // otherwise the empty state flashes while page 1 is in flight.
+              loadingClauses
+                ? <div className="clp-loading"><span>Loading clauses…</span></div>
+                : <div className="clp-empty">No clauses found for “{typeName}”.</div>
             ) : (
               visible.map(c => {
                 const on = selected.has(c.id);
@@ -242,6 +359,18 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
                   </label>
                 );
               })
+            )}
+            {/* Foot of the infinite list. Says which of the two states it is in
+                — still fetching, or genuinely at the end — because a list that
+                simply stops scrolling looks broken when more rows exist. */}
+            {typeName && visible.length > 0 && (
+              loadingClauses ? (
+                <div className="clp-loading" style={{ padding: '10px 0' }}><span>Loading more…</span></div>
+              ) : clauses.length >= clauseTotal ? (
+                <div className="clp-empty" style={{ padding: '8px 0', fontSize: 11, opacity: 0.7 }}>
+                  All {clauseTotal} clause{clauseTotal === 1 ? '' : 's'} loaded
+                </div>
+              ) : null
             )}
           </div>
         </div>

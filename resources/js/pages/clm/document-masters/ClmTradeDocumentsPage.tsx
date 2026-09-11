@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import WorklistPager from "../../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
-import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
+import { CLM_CSS, usePagedList, useAutoFitRows } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import { ClmSkeletonRows, DeleteConf, SimpleNameModal } from '../shared/clmCommon';
 import Tooltip from '../../../components/ui/Tooltip';
@@ -30,6 +30,8 @@ const PARTY_LABELS: Record<string, string> = {
   'Supplier-Advisory': 'Advisory',
   'Supplier-Strategic Risk': 'Strategic Risk',
 };
+const LIST_VIEW = { view: 'list' } as const;
+
 const partyLabels = (party: string): string[] =>
   (party ?? '').split(',').map(s => s.trim()).filter(Boolean).map(v => PARTY_LABELS[v] ?? v);
 
@@ -37,23 +39,29 @@ export default function ClmTradeDocumentsPage() {
   const toast = useToast();
   const [tab, setTab]           = useState<'list'|'lib'>('list');
   const [names, setNames]       = useState<TdName[]>([]);
-  const [lib, setLib]           = useState<TdLib[]>([]);
   const [segments, setSegments] = useState<Seg[]>([]);
   const [loading, setLoading]   = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
 
-  const reload = () => {
+  /* The two LISTS are no longer fetched here — each pane asks the server for
+     its own page. `/clm/trade-doc-library` unpaged was 788 KB for 100 rows,
+     because every row carried its drafted `content` plus header/footer config
+     (~8 KB each) that the list never renders.
+     What stays here is what the FORMS need: the full name list and the segment
+     list, both pickers that genuinely want every option. */
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = () => setReloadKey(k => k + 1);
+
+  useEffect(() => {
     setLoading(true);
     Promise.all([
       api.get<{ status: boolean; data: TdName[] }>('/clm/trade-doc-names'),
-      api.get<{ status: boolean; data: TdLib[] }>('/clm/trade-doc-library'),
       // Segments drive the Step-1 Segment Regulatory Status selector in the
       // draft modal (same source the Agreement wizard uses).
       api.get<{ status: boolean; data: Seg[] }>('/clm/segments').catch(() => ({ data: { data: [] } })),
-    ]).then(([n, l, s]) => { setNames(n.data.data ?? []); setLib(l.data.data ?? []); setSegments((s.data as { data?: Seg[] }).data ?? []); })
+    ]).then(([n, s]) => { setNames(n.data.data ?? []); setSegments((s.data as { data?: Seg[] }).data ?? []); })
       .catch(() => toast.error('Load failed', 'Could not load trade documents'))
       .finally(() => setLoading(false));
-  };
-  useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pillSwitcher = (
     <div className="clm-pill-group">
@@ -94,58 +102,31 @@ export default function ClmTradeDocumentsPage() {
       />
 
       {tab === 'list'
-        ? <NamesPane rows={names} loading={loading} reload={reload} />
-        : <LibraryPane rows={lib} names={names} segments={segments} loading={loading} reload={reload} />}
+        ? <NamesPane reloadKey={reloadKey} reload={reload} />
+        : <LibraryPane names={names} segments={segments} reloadKey={reloadKey} reload={reload} />}
     </div>
   );
 }
 
 /* ─── Names sub-tab ─── */
 
-function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean; reload: () => void }) {
+function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => void }) {
   const toast = useToast();
-  const [search, setSearch] = useState('');
-  const [page, setPage]     = useState(1);
+  const { rows, total, loading, search, setSearch, page, setPage, rpp, setRpp } =
+    usePagedList<TdName>('/clm/trade-doc-names', reloadKey);
   const [editing, setEditing] = useState<TdName | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<TdName | null>(null);
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return rows;
-    const s = search.toLowerCase();
-    return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s));
-  }, [rows, search]);
-  const [rpp, setRpp]     = useState(PER_PAGE);
+  /* `rows` IS the page — sorted, searched and sliced by the endpoint. */
+  const slice      = rows;
+  const start      = (page - 1) * rpp;
+  const safePage   = page;
   // Auto-fit rows to the viewport by default; once the user picks a value from
   // the "Rows per page" dropdown we respect their choice.
-  const autoFitRef        = useRef(true);
-  const [fillH, setFillH] = useState<number | undefined>(undefined);
-  const scrollRef         = useRef<HTMLDivElement | null>(null);
-  const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
-
-  // Dynamic pagination: rows-per-page auto-fits the visible table height and
-  // the card stretches to cover the page. Anchored via closest('.clm-root').
-  useEffect(() => {
-    const recompute = () => {
-      const el = scrollRef.current;
-      if (!el) return;
-      const top = el.getBoundingClientRect().top;
-      const THEAD = 40, ROW = 46, FOOTER = 96;
-      const avail = window.innerHeight - top - THEAD - FOOTER;
-      const fit = Math.max(4, Math.floor(avail / ROW));
-      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      const fh = Math.max(0, window.innerHeight - top - 64);
-      setFillH(prev => (prev === fh ? prev : fh));
-    };
-    recompute();
-    const raf = requestAnimationFrame(recompute);
-    // Not observing the page root: the "What We Are Doing Here" box animates its
-    // height on expand/collapse, so observing the root fired this recompute every
-    // animation frame and visibly disturbed the layout. Recompute only on mount
-    // and on genuine window resizes instead.
-    window.addEventListener('resize', recompute);
-    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
-  }, [filtered.length]);
+  const autoFitRef = useRef(true);
+  const scrollRef  = useRef<HTMLDivElement | null>(null);
+  const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total]);
 
   const onSave = async (name: string, id?: number) => {
     try {
@@ -235,8 +216,8 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
                 ))}
               </tbody>
             </table>
-            {!loading && filtered.length > 0 && (
-              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
+            {!loading && total > 0 && (
+              <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
         )}
@@ -250,10 +231,10 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
 
 /* ─── Library sub-tab ─── */
 
-function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]; names: TdName[]; segments: Seg[]; loading: boolean; reload: () => void }) {
+function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; segments: Seg[]; reloadKey: number; reload: () => void }) {
   const toast = useToast();
-  const [search, setSearch] = useState('');
-  const [page, setPage]     = useState(1);
+  const { rows, total, loading, search, setSearch, page, setPage, rpp, setRpp } =
+    usePagedList<TdLib>('/clm/trade-doc-library', reloadKey, LIST_VIEW);
   const [editing, setEditing] = useState<TdLib | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<TdLib | null>(null);
@@ -349,42 +330,15 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
     }
   };
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return rows;
-    const s = search.toLowerCase();
-    return rows.filter(r => r.title.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.doc_type.toLowerCase().includes(s) || r.name.toLowerCase().includes(s) || (r.segment ?? '').toLowerCase().includes(s) || (r.purpose ?? '').toLowerCase().includes(s) || partyLabels(r.party).join(' ').toLowerCase().includes(s));
-  }, [rows, search]);
-  const [rpp, setRpp]     = useState(PER_PAGE);
+  /* `rows` IS the page — sorted, searched and sliced by the endpoint. */
+  const slice      = rows;
+  const start      = (page - 1) * rpp;
+  const safePage   = page;
   // Auto-fit rows to the viewport by default; once the user picks a value from
   // the "Rows per page" dropdown we respect their choice.
-  const autoFitRef        = useRef(true);
-  const [fillH, setFillH] = useState<number | undefined>(undefined);
-  const scrollRef         = useRef<HTMLDivElement | null>(null);
-  const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
-
-  // Dynamic pagination: rows-per-page auto-fits the visible table height and
-  // the card stretches to cover the page. Anchored via closest('.clm-root').
-  useEffect(() => {
-    const recompute = () => {
-      const el = scrollRef.current;
-      if (!el) return;
-      const top = el.getBoundingClientRect().top;
-      const THEAD = 40, ROW = 46, FOOTER = 96;
-      const avail = window.innerHeight - top - THEAD - FOOTER;
-      const fit = Math.max(4, Math.floor(avail / ROW));
-      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      const fh = Math.max(0, window.innerHeight - top - 64);
-      setFillH(prev => (prev === fh ? prev : fh));
-    };
-    recompute();
-    const raf = requestAnimationFrame(recompute);
-    // Not observing the page root: the "What We Are Doing Here" box animates its
-    // height on expand/collapse, so observing the root fired this recompute every
-    // animation frame and visibly disturbed the layout. Recompute only on mount
-    // and on genuine window resizes instead.
-    window.addEventListener('resize', recompute);
-    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
-  }, [filtered.length]);
+  const autoFitRef = useRef(true);
+  const scrollRef  = useRef<HTMLDivElement | null>(null);
+  const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total]);
 
   const onDelete = async () => {
     if (!pendingDelete) return;
@@ -589,8 +543,8 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                 ))}
               </tbody>
             </table>
-            {!loading && filtered.length > 0 && (
-              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
+            {!loading && total > 0 && (
+              <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
         )}

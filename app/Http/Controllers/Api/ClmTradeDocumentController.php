@@ -46,7 +46,25 @@ class ClmTradeDocumentController extends Controller
         // Newest first — the latest-added type surfaces at the top of the list.
         $nameQuery = ClmTradeDocName::query()->orderBy('id', 'desc');
         MasterVisibility::applyReadScope($nameQuery, $user, $branchFilter);
-        $rows = $nameQuery->get();
+
+        // Server-side search, paired with the paging below.
+        if ($search = trim((string) $request->input('search', ''))) {
+            $like = '%' . $search . '%';
+            $nameQuery->where(function ($w) use ($like) {
+                $w->where('name', 'ilike', $like)->orWhere('code', 'ilike', $like);
+            });
+        }
+
+        /* Pagination — opt-in via per_page. The draft modal and the Trade
+           Document form both read this endpoint unpaged to fill their type
+           picker, so it has to stay opt-in. */
+        $perPage = $request->filled('per_page')
+            ? min(200, max(1, (int) $request->input('per_page')))
+            : null;
+        $page  = max(1, (int) $request->input('page', 1));
+        $total = $perPage ? (clone $nameQuery)->count() : null;
+
+        $rows = $perPage ? $nameQuery->forPage($page, $perPage)->get() : $nameQuery->get();
 
         /* Usage map: how many Library drafts reference each name (by name string,
          * case-insensitive — the library links to it by name, not an FK). Drives
@@ -62,7 +80,12 @@ class ClmTradeDocumentController extends Controller
             $row->in_use = (int) ($usage[mb_strtolower(trim((string) $row->name))] ?? 0);
         });
 
-        return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
+        return response()->json([
+            'status' => true,
+            'data'   => $rows,
+            'count'  => $rows->count(),
+            'total'  => $total ?? $rows->count(),
+        ]);
     }
 
     public function namesStore(Request $request)
@@ -196,7 +219,45 @@ class ClmTradeDocumentController extends Controller
         // Newest first — the latest-drafted document surfaces at the top.
         $libQuery = ClmTradeDocLibrary::query()->orderBy('id', 'desc');
         MasterVisibility::applyReadScope($libQuery, $user, $branchFilter);
-        $rows = $libQuery->get();
+
+        /* LIST VIEW — opt-in via ?view=list, and it must stay opt-in.
+           The three columns left out are the whole document: `content` is the
+           drafted HTML, header_config / footer_config the letterhead blocks.
+           At ~8 KB a row that made this endpoint 808 KB for 100 rows, and the
+           LIST renders none of them — it shows code, name, type, purpose and
+           party. But ClmTradeDocumentDraftPage fetches the SAME endpoint and
+           reads row.content to seed its editor, so stripping unconditionally
+           would open every draft blank. The caller says which it wants. */
+        if ($request->input('view') === 'list') {
+            $libQuery->select([
+                'id', 'client_id', 'branch_id', 'code', 'name', 'title',
+                'doc_type', 'purpose', 'party', 'regulatory', 'segment',
+                'file_path', 'docx_path', 'docx_original_name',
+                'status', 'created_at', 'updated_at',
+            ]);
+        }
+
+        /* Search moves server-side with the paging — a client filtering one
+           page searches ten rows out of a hundred and reports the page. */
+        if ($search = trim((string) $request->input('search', ''))) {
+            $like = '%' . $search . '%';
+            $libQuery->where(function ($w) use ($like) {
+                $w->where('name', 'ilike', $like)
+                  ->orWhere('code', 'ilike', $like)
+                  ->orWhere('title', 'ilike', $like)
+                  ->orWhere('doc_type', 'ilike', $like);
+            });
+        }
+
+        // Pagination — opt-in via per_page, so the draft page's unpaged fetch
+        // is untouched.
+        $perPage = $request->filled('per_page')
+            ? min(200, max(1, (int) $request->input('per_page')))
+            : null;
+        $page  = max(1, (int) $request->input('page', 1));
+        $total = $perPage ? (clone $libQuery)->count() : null;
+
+        $rows = $perPage ? $libQuery->forPage($page, $perPage)->get() : $libQuery->get();
 
         // Flag rows that have a signed (completed) signature request so the
         // frontend can lock Edit / Delete on them. Batch lookup avoids an
@@ -204,7 +265,12 @@ class ClmTradeDocumentController extends Controller
         $signedIds = ClmSignatureRequest::signedDraftIds($user->client_id, ClmSignatureRequest::DOC_TRADE);
         $rows->each(fn ($r) => $r->setAttribute('is_signed', in_array((int) $r->id, $signedIds, true)));
 
-        return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
+        return response()->json([
+            'status' => true,
+            'data'   => $rows,
+            'count'  => $rows->count(),
+            'total'  => $total ?? $rows->count(),
+        ]);
     }
 
     public function libraryStore(Request $request)

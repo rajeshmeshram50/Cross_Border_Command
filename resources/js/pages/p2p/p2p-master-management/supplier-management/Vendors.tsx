@@ -646,10 +646,6 @@ export default function Vendors() {
   const rememberRpp = (n: number) => {
     try { localStorage.setItem(PER_PAGE_KEY, String(n)); } catch { /* private mode */ }
   };
-  // Stretch the card to the viewport while auto-fitting (default / empty state) so
-  // the screen always fills like CLM Segment / T&C Master. A manual rows-per-page
-  // pick turns this off so a small count sits compact (no big internal gap).
-  const [fillH, setFillH] = useState<number | undefined>(undefined);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -731,11 +727,6 @@ export default function Vendors() {
     return () => window.clearTimeout(t);
   }, [search]);
 
-  /* True while a keystroke is still waiting out the debounce. Without it the
-     table sits showing the PREVIOUS result with no sign anything is coming,
-     which is indistinguishable from a search box that does not work. */
-  const searchPending = search.trim() !== debouncedSearch;
-
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
     // `silent` = refresh in the background WITHOUT flashing the loading skeleton
     // (used after closing the Edit/Add modal — the list is already on screen, so
@@ -799,21 +790,28 @@ export default function Vendors() {
      one-page result and render an empty table. */
   useEffect(() => { setPage(1); }, [tab, debouncedSearch, scopeTab, catParam, compParam]);
 
-  /* Raise the shimmer for a scope switch or a filter change — and only those.
-     Search is deliberately not here: it has its own spinner in the magnifier
-     and fires on every debounce, so shimmering would strobe the table as the
-     user types. Paging is not here either; those rows are the same set, one
-     page along, and the dim already covers it.
+  /* Raise the shimmer for anything that REPLACES the row set: a scope switch, a
+     filter, a search, a page turn, a sub-tab.
+     Dimming was the original answer for search and paging, on the reasoning
+     that the incoming rows resemble the outgoing ones. They do not. A search
+     narrows ten suppliers to one and a page turn swaps all ten, so the dim left
+     the previous page's rows legible underneath for the length of the round
+     trip — the user reads them as the result, then they change. The shimmer
+     says "these are being replaced", which is what happened.
+     Search hangs off `debouncedSearch`, not `search`, so it fires once per
+     pause in typing rather than once per keystroke — the reason the original
+     comment feared a strobe. The magnifier spinner still covers the gap
+     between the last keystroke and the debounce firing.
      bootedRef keeps the first mount out of it — `loading` owns that paint, and
      raising both would swap one skeleton for another. */
   useEffect(() => {
     if (bootedRef.current) setSwapping(true);
-  }, [scopeTab, catParam, compParam]);
+  }, [scopeTab, catParam, compParam, debouncedSearch, page, tab, rpp]);
 
   /* Dynamic rows-per-page — pick the count that fits between the table's top
      and the bottom of the viewport, so the page fills the screen and the rest
-     spills onto further pages (mirrors the CLM Segment Master). The table card
-     is also stretched (fillH) so it covers the page when rows are few. */
+     spills onto further pages (mirrors the CLM Segment Master). The card itself
+     is content-height — see the note beside `fit` below. */
   useEffect(() => {
     const recompute = () => {
       const el = scrollRef.current;
@@ -830,10 +828,7 @@ export default function Vendors() {
          exactly what it did: tabs, Filter, then the footer, with no table.
          Below 820px the page scrolls the way a page normally does: the card is
          content-height and shows a fixed number of rows. */
-      if (window.innerWidth <= 820) {
-        setFillH(prev => (prev === undefined ? prev : undefined));
-        return;
-      }
+      if (window.innerWidth <= 820) return;
 
       const top = el.getBoundingClientRect().top;
       const THEAD = 42, ROW = 54, PAGER = 56;
@@ -875,7 +870,16 @@ export default function Vendors() {
          fit is worth a request. */
       const fit = Math.max(10, Math.floor(avail / ROW));
       if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      setFillH(prev => (prev === cardH ? prev : cardH));
+      /* The card is CONTENT-HEIGHT — never stretched to the viewport.
+         It used to carry minHeight: cardH, on the reasoning that a short list
+         should still cover the page. What that actually produced was a blank
+         white half-screen between the last row and the pager, in three
+         everyday cases: a hand-picked page size of 5, the last page of a set
+         (4 rows where 10 fit), and any search that narrowed the result.
+         The stretch is redundant anyway. `fit` above is derived from cardH, so
+         a full page already fills the screen on its own; the stretch only ever
+         applied to pages that were NOT full — precisely the ones it made look
+         broken. cardH is still computed, purely to size that row count. */
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
@@ -890,7 +894,7 @@ export default function Vendors() {
     window.addEventListener('resize', recomputeDebounced);
     return () => { if (settleTimer) clearTimeout(settleTimer); window.removeEventListener('resize', recomputeDebounced); cancelAnimationFrame(raf); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, search, loading, brefOpen]);
+  }, [tab, search, loading, brefOpen, rpp]);
 useEffect(() => {
   if (!allowed) return;
 
@@ -1094,11 +1098,12 @@ useEffect(() => {
                 </button>
               </div>
               <div className="sl-search">
-                {/* The magnifier becomes a spinner while the debounce runs, so
-                    the pause is visibly deliberate rather than broken. */}
-                {searchPending
-                  ? <span className="sl-search-spin" aria-label="Searching" role="status" />
-                  : <svg className="sl-search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>}
+                {/* Static magnifier. It used to flip to a spinner while the
+                    debounce ran, back when the table only dimmed and nothing
+                    else said a request was coming. The table shimmers on search
+                    now, which says it far more plainly, and two indicators for
+                    one request read as two things happening. */}
+                <svg className="sl-search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
                 <input
                   type="text"
                   autoComplete="off"
@@ -1132,14 +1137,17 @@ useEffect(() => {
             {/* cols follows the header — the international scope drops GST State
                 Code, and a skeleton that is one column wider than the table it
                 stands in for makes the layout jump when the rows land. */}
+            {/* Skeleton row count follows the page size, capped at 12. A fixed 8
+                meant the skeleton and the table it stood in for were different
+                heights, so the page jumped every time the rows landed. */}
             {loading || swapping ? (
-              <div className="p-3"><ShimmerTable rows={8} cols={isIntlScope ? 14 : 15} /></div>
+              <div className="p-3"><ShimmerTable rows={Math.min(rpp, 12)} cols={isIntlScope ? 14 : 15} /></div>
             ) : (
               <>
                 {/* Dimmed, not replaced: on a refetch the previous rows stay
                     put so the table does not collapse and reflow the page under
                     the popover that triggered it. */}
-                <div className={`sl-table-scroll${refetching ? ' is-refetching' : ''}`} ref={scrollRef} style={fillH ? { minHeight: fillH } : undefined}>
+                <div className={`sl-table-scroll${refetching ? ' is-refetching' : ''}`} ref={scrollRef}>
                   <table className="sl-table">
                     <thead>
                       <tr>
