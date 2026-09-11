@@ -1,13 +1,12 @@
 import { forwardRef, memo, useEffect, useRef, useState } from 'react';
-import { forwardRef, memo, useEffect, useRef, useState } from 'react';
 import WorklistPager from "../../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../../api';
-import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
+import { ShimmerClmMaster, ShimmerTableRows } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
-import { CLM_CSS, PER_PAGE, usePagedList, useAutoFitRows } from '../shared/clmShared';
+import { CLM_CSS, usePagedList, useAutoFitRows } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
-import { ClmSkeletonRows, DeleteConf } from '../shared/clmCommon';
+import { DeleteConf } from '../shared/clmCommon';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import Tooltip from '../../../components/ui/Tooltip';
 import SearchClear from '../../../components/ui/SearchClear';
@@ -55,81 +54,9 @@ const capitalizeFirst = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(
 
 type ClType = { id: number; code: string; name: string; description: string; in_use?: number };
 type ClLib = { id: number; code: string; clause_type: string; name: string; party: string; clause_status: string; content: string | null; in_use?: number };
-const MIN_ROWS = 10;
-const MAX_ROWS = 100;
-
-/** What a paged list request comes back with. */
-type PagedList<T> = { rows: T[]; total: number; nextCode: string };
-
-function useFittedRows(storageKey: string) {
-  const [rpp, setRpp] = useState<number>(() => {
-    try {
-      const saved = Number(localStorage.getItem(storageKey));
-      return Number.isFinite(saved) && saved >= MIN_ROWS && saved <= MAX_ROWS ? saved : PER_PAGE;
-    } catch {
-      return PER_PAGE;   // private mode can throw on access
-    }
-  });
-  /* Cleared once the user picks a size from Rows per page — a deliberate
-     choice outranks the measurement for the rest of the session. */
-  const autoFitRef        = useRef(true);
-  const settledRef        = useRef(false);
-  const [fillH, setFillH] = useState<number | undefined>(undefined);
-  const scrollRef         = useRef<HTMLDivElement | null>(null);
-  const rppRef            = useRef(rpp);
-  useEffect(() => { rppRef.current = rpp; }, [rpp]);
-
-  useEffect(() => {
-    try { localStorage.setItem(storageKey, String(rpp)); } catch { /* private mode */ }
-  }, [storageKey, rpp]);
-
-  useEffect(() => {
-    /* Card height. Free — no request — so it may run as often as it likes. */
-    const sizeCard = () => {
-      const el = scrollRef.current;
-      if (!el) return;
-      const fh = Math.max(0, window.innerHeight - el.getBoundingClientRect().top - 64);
-      setFillH(prev => (prev === fh ? prev : fh));
-    };
-    const fitRows = () => {
-      const el = scrollRef.current;
-      if (!el || !autoFitRef.current || settledRef.current) return;
-      const top = el.getBoundingClientRect().top;
-      const THEAD = 40, ROW = 46, FOOTER = 96;
-      const avail = window.innerHeight - top - THEAD - FOOTER;
-      const next  = Math.min(MAX_ROWS, Math.max(MIN_ROWS, Math.floor(avail / ROW)));
-      settledRef.current = true;
-      if (Math.abs(next - rppRef.current) <= 1) return;
-      setRpp(next);
-    };
-
-    sizeCard();
-    const raf = requestAnimationFrame(sizeCard);
-    const t   = window.setTimeout(() => { sizeCard(); fitRows(); }, 250);
-
-    const onResize = () => { settledRef.current = false; sizeCard(); fitRows(); };
-    window.addEventListener('resize', onResize);
-    return () => {
-      window.removeEventListener('resize', onResize);
-      window.clearTimeout(t);
-      cancelAnimationFrame(raf);
-    };
-  }, []);
-
-  return { rpp, setRpp, autoFitRef, fillH, scrollRef };
-}
-
-/** Trailing debounce, so typing a word is one request rather than one per key. */
-function useDebounced<T>(value: T, ms = 300): T {
-  const [out, setOut] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setOut(value), ms);
-    return () => clearTimeout(t);
-  }, [value, ms]);
-  return out;
-}
 
 export default function ClmClauseLibraryPage() {
+  const toast = useToast();
   const [tab, setTab]       = useState<'type'|'lib'>('type');
   /* The full type list, kept ONLY to populate the Clause Library form's type
      picker. The two LISTS are no longer fetched here — each pane asks the
@@ -150,6 +77,10 @@ export default function ClmClauseLibraryPage() {
       .catch(() => toast.error('Load failed', 'Could not load clause types'))
       .finally(() => setLoading(false));
   }, [reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* Each pane owns its own fetch, so switching tabs is just a tab change —
+     the incoming pane shows its own skeleton while its first page lands. */
+  const switchTab = (next: 'type' | 'lib') => { if (next !== tab) setTab(next); };
 
   const pillSwitcher = (
     <div className="clm-pill-group">
@@ -199,7 +130,7 @@ export default function ClmClauseLibraryPage() {
 
 function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => void }) {
   const toast = useToast();
-  const { rows, total, loading, search, setSearch, page, setPage, rpp, setRpp } =
+  const { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp } =
     usePagedList<ClType>('/clm/clause-types', reloadKey);
   const [editing, setEditing] = useState<ClType | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -209,6 +140,20 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
      client-side sort/filter/paginate that used to live here would now be
      re-filtering ten already-filtered rows. */
   const slice     = rows;
+  /* usePagedList reports one `loading`. Split it by whether there is anything
+     on screen: a first load has no rows, so it gets the skeleton; a refetch
+     still shows the previous page, so it is dimmed rather than blanked —
+     blanking it would make a page change look like the list emptied. */
+  const firstLoad  = loading && (rows.length === 0 || replacing);
+  const refreshing = loading && !firstLoad;
+  /* Drives BOTH the branch below and the `has-data` class on .clm-tab-body.
+     Bare .clm-tab-body is the empty-state box — 90px tall, flex-centred,
+     overflow hidden — and `has-data` is what turns it back into a normal
+     `display: block` container. That class was keyed on `rows.length > 0`,
+     which is false during a first load, so the skeleton table was rendered
+     into a 90px clipped box and only its first row survived. Keyed on what is
+     actually rendered, the two can no longer disagree. */
+  const showTable = loading || rows.length > 0;
   const start     = (page - 1) * rpp;
   const safePage  = page;
   const autoFitRef = useRef(true);
@@ -262,16 +207,16 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
         </button>
       </div>
 
-      <div className={`clm-tab-body ${rows.length > 0 ? 'has-data' : ''}`}>
-        {rows.length === 0 && !busy ? (
+      <div className={`clm-tab-body ${showTable ? 'has-data' : ''}`}>
+        {!showTable ? (
           <div className="clm-empty">
             <div className="clm-empty-ico">{ICO.bCl}</div>
             {/* Search now runs on the server, so an empty page is far more
                 often "nothing matched" than "nothing exists" — saying the
                 wrong one on a 200-row master reads as data loss. */}
-            <div className="clm-empty-title">{debouncedSearch ? 'No matching clause types' : 'No clause types yet'}</div>
+            <div className="clm-empty-title">{search ? 'No matching clause types' : 'No clause types yet'}</div>
             <div className="clm-empty-sub">
-              {debouncedSearch ? 'Try a different name or type ID.' : 'Click + Add Clause Type to create the first record.'}
+              {search ? 'Try a different name or type ID.' : 'Click + Add Clause Type to create the first record.'}
             </div>
           </div>
         ) : (
@@ -286,8 +231,8 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {!ready && <ClmSkeletonRows cols={4} />}
-                {rows.map((r, i) => (
+                {firstLoad && <ShimmerTableRows rows={rpp} cols={4} cellClassName="clm-skel-cell" keyPrefix="clm-type-shim" />}
+                {!firstLoad && rows.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
@@ -347,7 +292,7 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
 
 function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey: number; reload: () => void }) {
   const toast = useToast();
-  const { rows, total, loading, search, setSearch, page, setPage, rpp, setRpp } =
+  const { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp } =
     usePagedList<ClLib>('/clm/clause-library', reloadKey);
   const [editing, setEditing] = useState<ClLib | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -355,6 +300,11 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
 
   /* `rows` IS the page — the endpoint sorts, searches and slices. */
   const slice      = rows;
+  // See the note in TypesPane — one `loading` split by what is already on screen.
+  const firstLoad  = loading && (rows.length === 0 || replacing);
+  const refreshing = loading && !firstLoad;
+  // See the note in TypesPane — `has-data` has to follow the rendered branch.
+  const showTable  = loading || rows.length > 0;
   const start      = (page - 1) * rpp;
   const safePage   = page;
   const autoFitRef = useRef(true);
@@ -411,13 +361,13 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
         </button>
       </div>
 
-      <div className={`clm-tab-body ${rows.length > 0 ? 'has-data' : ''}`}>
-        {rows.length === 0 && !busy ? (
+      <div className={`clm-tab-body ${showTable ? 'has-data' : ''}`}>
+        {!showTable ? (
           <div className="clm-empty">
             <div className="clm-empty-ico">{ICO.bCl}</div>
-            <div className="clm-empty-title">{debouncedSearch ? 'No matching clauses' : 'No clauses yet'}</div>
+            <div className="clm-empty-title">{search ? 'No matching clauses' : 'No clauses yet'}</div>
             <div className="clm-empty-sub">
-              {debouncedSearch ? 'Try a different clause name, ID or type.' : 'Click + Add Clause to create the first record.'}
+              {search ? 'Try a different clause name, ID or type.' : 'Click + Add Clause to create the first record.'}
             </div>
           </div>
         ) : (
@@ -433,8 +383,8 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {!ready && <ClmSkeletonRows cols={5} />}
-                {rows.map((r, i) => (
+                {firstLoad && <ShimmerTableRows rows={rpp} cols={5} cellClassName="clm-skel-cell" keyPrefix="clm-lib-shim" />}
+                {!firstLoad && rows.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
@@ -528,9 +478,47 @@ function ClauseLibModal(props: {
   const editorRef     = useRef<HTMLDivElement | null>(null);
   const initialContent = existing?.content ?? '';
 
+  /* Last caret position inside the editor.
+   *
+   * `document.execCommand` acts on the CURRENT selection. Clicking a toolbar
+   * control moves focus out of the contentEditable and collapses that
+   * selection, so by the time the handler ran there was nothing to format —
+   * which is why the entire strip did nothing. Calling focus() first was not
+   * enough: it restores focus but not the range the user had highlighted.
+   *
+   * Two halves, the same pair ClmRichTextToolbar uses:
+   *  - the bar suppresses mousedown, so a BUTTON never takes focus and the
+   *    selection is still live when execCommand runs;
+   *  - the two native <select>s must take focus to open their dropdown, so
+   *    they are exempt from that and their range is restored from here
+   *    instead. */
+  const savedRange = useRef<Range | null>(null);
+  useEffect(() => {
+    const remember = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const r = sel.getRangeAt(0);
+      if (editorRef.current?.contains(r.commonAncestorContainer)) savedRange.current = r.cloneRange();
+    };
+    document.addEventListener('selectionchange', remember);
+    return () => document.removeEventListener('selectionchange', remember);
+  }, []);
+
   const fmt = (cmd: string, val?: string) => {
-    editorRef.current?.focus();
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus();
+    const sel = window.getSelection();
+    // Only reinstate when focus actually left the editor (the <select> path) —
+    // overwriting a live selection would drop a range the user just made.
+    if (savedRange.current && sel && !el.contains(sel.anchorNode)) {
+      sel.removeAllRanges();
+      sel.addRange(savedRange.current);
+    }
     document.execCommand(cmd, false, val);
+    // Typing is not the only way content appears — formatting counts too, so
+    // clear a standing "content required" error the same way onInput does.
+    setErrors(p => (p.content ? { ...p, content: '' } : p));
   };
 
   const handleSave = async () => {
@@ -640,7 +628,10 @@ function ClauseLibModal(props: {
             {/* Simplified toolbar — only the buttons shown in the design:
                 font size, paragraph style, B/I/U/S, align L/C, lists,
                 undo/redo, clear formatting. */}
-            <div className="clm-editor-toolbar">
+            {/* Suppressed on the bar, not per button, so dividers and padding
+                are covered too. <select> is exempt — a native dropdown cannot
+                open without focus; fmt() restores its range instead. */}
+            <div className="clm-editor-toolbar" onMouseDown={e => { if (!(e.target as HTMLElement).closest('select')) e.preventDefault(); }}>
               <select className="clm-editor-tb-sel" defaultValue="3" onChange={e => { fmt('fontSize', e.target.value); e.target.value = '3'; }} title="Font size">
                 <option value="1">8</option><option value="2">10</option><option value="3">12</option><option value="4">14</option><option value="5">18</option><option value="6">24</option><option value="7">32</option>
               </select>
@@ -661,7 +652,6 @@ function ClauseLibModal(props: {
               <span className="clm-editor-tb-divider" />
               <button type="button" className="clm-editor-tb-btn" title="Undo" onClick={() => fmt('undo')}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg></button>
               <button type="button" className="clm-editor-tb-btn" title="Redo" onClick={() => fmt('redo')}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg></button>
-              <button type="button" className="clm-editor-tb-btn" title="Clear formatting" onClick={() => fmt('removeFormat')}>T̲ₓ</button>
             </div>
             <ClauseRichEditor ref={editorRef} initialHTML={initialContent} onInput={() => setErrors(p => (p.content ? { ...p, content: '' } : p))} />
             <div className="clm-editor-foot">

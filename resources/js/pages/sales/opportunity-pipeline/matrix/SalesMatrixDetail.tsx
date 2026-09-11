@@ -411,6 +411,11 @@ export default function SalesMatrixDetail() {
     leadSenderName?:      string | null;
     leadSenderCompany?:   string | null;
     leadCountry?:         string | null;
+    /* Written at line ~507 from `d.locked_currency` and read by the customer
+       picker's currency filter. It was declared on the header type but never
+       on this state object, so every read of it was a type error even though
+       the value is set and used at runtime. */
+    lockedCurrency?:      string | null;
   }>({});
 
   /* Resolved leadId — initially the one passed via router state. If that's
