@@ -825,8 +825,16 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
     if (buyerEqualsConsignee) { setTdTab('all'); return; }
     if (tdBuckets.buyer.length)          setTdTab('buyer');
     else if (tdBuckets.consignee.length) setTdTab('consignee');
+    /* No catalogue documents anywhere, but the lead has a PI: land on Customer
+       Documents, the only tab the PI row is pinned to. Falling through to
+       "Customer + Consignee" opened the popup on the one tab that cannot show
+       the single row this lead actually has. */
+    else if (payload?.pi_document)       setTdTab('buyer');
     else                                 setTdTab('both');
-  }, [open, view, buyerEqualsConsignee, tdBuckets.buyer.length, tdBuckets.consignee.length]);
+    /* A BOOLEAN in the deps, not the pi_document object: the 15s status poll
+       replaces `payload` with a fresh object every tick, and an object dep
+       would re-run this and snap the user's chosen tab back each time. */
+  }, [open, view, buyerEqualsConsignee, tdBuckets.buyer.length, tdBuckets.consignee.length, !!payload?.pi_document]);
 
   // Reset to page 1 whenever the visible row set changes (tab / segment /
   // tier / open) so the pager never lands on an out-of-range page.
@@ -1331,7 +1339,13 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                  the docs split into Buyer / Consignee / Both tabs by each
                  document's applicable party. The active tab also decides the
                  Zoho Sign recipient. ── */
-            tradeDocs.length === 0 ? (
+            /* The PI is a row in this table in its own right, and it is counted
+               as one on the CLM panel outside. Bailing out on an empty CATALOGUE
+               alone therefore contradicted that count: the badge said 1 and the
+               popup said "nothing configured". A lead whose segments carry no
+               trade documents but which HAS a PI still has exactly one thing to
+               show — and to send. */
+            tradeDocs.length === 0 && !payload.pi_document ? (
               <div className="lasm-empty">No trade documents configured for this lead's PI segments yet.</div>
             ) : (() => {
               const rows = tdBuckets[tdTab];
@@ -1482,7 +1496,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                 )}
 
                 <div className="lasm-td-panel">
-                  {rows.length === 0 ? (
+                  {/* Same reasoning as the outer guard: on a tab that carries the
+                      pinned PI row, the group is not empty even with no catalogue
+                      documents in it. */}
+                  {rows.length === 0 && !(payload.pi_document && piOnThisTab) ? (
                     <div className="lasm-td-empty">No trade documents in this group.</div>
                   ) : (<>
                     <div className="lasm-td-scroll">
@@ -1495,7 +1512,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                               aria-label="Select all trade documents"
                               ref={el => { if (el) el.indeterminate = someSel; }}
                               checked={allSel}
-                              disabled={selectableIds.length === 0 || !tdSignCustomer}
+                              /* totalSelectable, not selectableIds — toggleAll
+                                 ticks the PI row too, so a table holding only
+                                 the PI still has something to select all of. */
+                              disabled={totalSelectable === 0 || !tdSignCustomer}
                               onChange={toggleAll}
                             />
                           </th>

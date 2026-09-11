@@ -597,6 +597,20 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
   const colSpan = docType === 'quotation' ? 7 : 9;
 
+  /* The table has TWO things to wait for: the document list (`loading`) and the
+   * per-row signature status (`sigLoaded`). It used to show each differently —
+   * a shimmer for the first, and for the second a translucent veil laid over
+   * fully-painted rows. So switching the Quotation / PI tab (which re-reads the
+   * status for the new document type) washed the whole table out behind a
+   * half-transparent sheet, a loading state that looks nothing like the one the
+   * same table shows a second earlier (QA #265).
+   *
+   * One flag, one shimmer, both waits. The rows simply don't render until every
+   * cell in them can be trusted, which also keeps the QA #232 guarantee that
+   * nothing is clickable while the status is unknown — more firmly than the
+   * veil did, since there is no row underneath to reach. */
+  const tableBusy = loading || !sigLoaded;
+
   return (
     <>
       <style>{SHARED_STAGE_CSS}{STAGE5_CSS}</style>
@@ -763,22 +777,14 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         </div>
 
         {/* Document table.
-            While the signature status is still loading the WHOLE table is
-            sealed, not just the per-row buttons: a veil covers it, swallows
-            every click, and `inert` takes the rows out of the tab order too.
-            Scrolling is frozen with it - a half-usable table invited exactly
-            the actions this is here to prevent (QA #232). The two-step load
-            keeps this to a moment rather than the old Zoho round-trip. */}
-        <div className="s5-tbl-card smd-fade-in" key={docType} style={{ position: 'relative' }}>
-          {!sigLoaded && (
-            <div className="s5-tbl-veil" aria-live="polite">
-              {/* currentColor spinner, not .s5-sig-spin — that one is white for
-                  the purple button and would be invisible on this light veil. */}
-              <span className="s5-icn-spin" />
-              <span>Checking signature status…</span>
-            </div>
-          )}
-          <div className="s5-tbl-wrap" inert={!sigLoaded} style={!sigLoaded ? { overflow: 'hidden' } : undefined}>
+            Until BOTH the list and its signature status have landed the rows
+            are replaced by the shimmer, not merely dimmed — nothing is
+            clickable while a document's real state is unknown (QA #232), and
+            the wait looks the same however it was triggered (QA #265). The
+            two-step status load keeps this to a moment rather than the old
+            Zoho round-trip. */}
+        <div className="s5-tbl-card smd-fade-in" key={docType}>
+          <div className="s5-tbl-wrap">
             <table className="s5-tbl">
               <thead>
                 <tr>
@@ -794,7 +800,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                 </tr>
               </thead>
               <tbody>
-                {loading && Array.from({ length: 3 }).map((_, i) => (
+                {tableBusy && Array.from({ length: 3 }).map((_, i) => (
                   <tr key={`sk-${i}`} className="smd-fade-in">
                     {Array.from({ length: colSpan }).map((__, j) => (
                       <td key={j}><span className="smd-skel" style={{ maxWidth: j === colSpan - 1 ? 160 : 90 }} /></td>
@@ -802,7 +808,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                   </tr>
                 ))}
 
-                {!loading && rows.length === 0 && (
+                {!tableBusy && rows.length === 0 && (
                   <tr>
                     <td colSpan={colSpan} className="s5-empty">
                       {docType === 'quotation'
@@ -812,7 +818,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                   </tr>
                 )}
 
-                {!loading && rows.map((r, idx) => {
+                {!tableBusy && rows.map((r, idx) => {
                   const terminal = docType === 'quotation' && isTerminalQuote(r.status);
                   // One PI per lead: once ANY quotation on this opportunity has been
                   // converted (a PI exists), every OTHER quotation's Convert-to-PI
@@ -1766,14 +1772,6 @@ const STAGE5_CSS = `
 .s5-tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 /* Sits over the whole table while the signature status loads. It is the
    element that receives the clicks, so nothing underneath can be reached. */
-.s5-tbl-veil {
-  position: absolute; inset: 0; z-index: 6;
-  display: flex; align-items: center; justify-content: center; gap: 9px;
-  background: rgba(255,255,255,.72); backdrop-filter: blur(1.5px);
-  border-radius: inherit; cursor: wait;
-  font-size: 11.5px; font-weight: 700; color: #64748B; letter-spacing: .2px;
-}
-[data-bs-theme="dark"] .s5-tbl-veil { background: rgba(15,23,42,.72); color: #94A3B8; }
 /* Plain neutral-grey scrollbar (not the themed violet one) — matches Stage 3/4. */
 .s5-tbl-wrap::-webkit-scrollbar { width: 9px; height: 9px; }
 .s5-tbl-wrap::-webkit-scrollbar-track { background: transparent; }

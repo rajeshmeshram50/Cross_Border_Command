@@ -522,7 +522,15 @@ export const LFM_CSS = `
 }
 
 .lfm-modal {
-  width: min(94vw, 720px); height: 480px; max-height: 84vh;
+  /* Height follows the ACTIVE category instead of being pinned at 480px.
+     A flat height meant Lead Type (2 options) got exactly as much box as
+     Customer (hundreds), so stepping from a long category to a short one
+     left the options pane half empty and the popup never gave the space
+     back (QA #264). Now a short category shrinks the popup and a long one
+     lets it grow to 84vh, so more options are visible before scrolling.
+     The floor is the left category menu — it has six fixed rows plus the
+     Apply / Reset footer, and that is what stops the popup collapsing. */
+  width: min(94vw, 720px); height: auto; max-height: min(84vh, 640px);
   background: #fff; border-radius: 22px; box-shadow: 0 24px 60px rgba(var(--lfm-c-rgb),.18), 0 8px 24px rgba(15,23,42,.20);
   overflow: hidden; display: flex; flex-direction: column;
   animation: lfm-pop .18s ease-out;
@@ -574,7 +582,10 @@ export const LFM_CSS = `
 }
 .lfm-close:hover { background: rgba(255,255,255,.28); }
 
-.lfm-body { flex: 1; display: flex; min-height: 0; background: #f8fafc; }
+/* flex-basis AUTO, not 0. With the modal on height:auto, a body declared
+   flex:1 (basis 0%) contributes nothing to the modal's content height and
+   the popup collapses to its header. */
+.lfm-body { flex: 1 1 auto; display: flex; min-height: 0; background: #f8fafc; }
 
 /* ── Sidebar ── */
 .lfm-left {
@@ -670,9 +681,10 @@ export const LFM_CSS = `
 .lfm-search:hover { border-color: #cbd5e1; }
 .lfm-search:focus { background: #fff; border-color: var(--lfm-c-600); box-shadow: 0 0 0 3px rgba(var(--lfm-c-rgb),.15); }
 
-/* Fills the fixed-height modal and scrolls internally — the popup size never
-   changes, however many entries a facet has (e.g. Customer). */
-.lfm-options { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 4px; scrollbar-width: thin; scrollbar-color: #d1d5db transparent; }
+/* Sized by its own options (basis auto) so a short category doesn't hold open
+   a tall empty pane, and free to shrink + scroll once the modal hits 84vh —
+   which is what a long category like Customer does. */
+.lfm-options { flex: 0 1 auto; min-height: 0; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 4px; scrollbar-width: thin; scrollbar-color: #d1d5db transparent; }
 .lfm-options::-webkit-scrollbar { width: 8px; }
 .lfm-options::-webkit-scrollbar-track { background: transparent; }
 .lfm-options::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }

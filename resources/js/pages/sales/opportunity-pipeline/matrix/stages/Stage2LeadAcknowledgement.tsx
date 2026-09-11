@@ -3,6 +3,7 @@ import { formatDmy } from '../../../../../utils/formatDmy';
 import { createPortal } from 'react-dom';
 import api from '../../../../../api';
 import { useToast } from '../../../../../contexts/ToastContext';
+import { useConfirm } from '../../../../../contexts/ConfirmContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 import type { StageAcknowledgement } from '../SalesMatrixDetail';
 import Tooltip from '../../../../../components/ui/Tooltip';
@@ -47,6 +48,7 @@ type MasterPayload = {
 
 export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, reloadLead, canEnterNextStage }: StageProps) {
   const toast = useToast();
+  const confirm = useConfirm();
 
   /* Optimistic pending rows — prepended to the Activity Report the instant
    * the user clicks Submit, so the table updates without waiting for the
@@ -130,6 +132,23 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
     if (selected.size === 0) {
       toast.warning('Pick at least one', 'Select one or more reasons before submitting');
       return;
+    }
+
+    /* Un-qualifying a lead that has already moved on is a real decision,
+       not a toggle (QA #31). Products may be sourced against it, prices
+       shared, a quotation raised — and Stage 3 onwards locks the moment
+       this saves, so the work becomes unreachable. It is still allowed:
+       a lead genuinely can turn out to be bad after sourcing starts. It
+       just should not happen by mistake on the way past. */
+    if (pickerBucket !== 'qualified' && (header.leadStageId ?? 1) > 2) {
+      const ok = await confirm({
+        tone: 'warning',
+        title: pickerBucket === 'disqualified' ? 'Disqualify this lead?' : 'Move this lead back to Clarity Pending?',
+        message: 'This opportunity has already moved past Lead Acknowledgement. Saving this will lock Product Sourcing and every stage after it until the lead is marked Qualified again. Anything already sourced or priced stays on the lead.',
+        confirmLabel: 'Yes, save it',
+        cancelLabel: 'Go back',
+      });
+      if (!ok) return;
     }
 
     /* Build optimistic placeholder rows from the in-modal master list so

@@ -549,6 +549,16 @@ export default function SalesLeadWorksheet() {
     countSigRef.current = countSig;
 
     setLoading(true);
+    /* What this response should paint, held back until the skeleton has served
+     * its minimum time (see the `finally` block).
+     *
+     * Committing the rows here and lowering `loading` later left a window where
+     * rows.length > 0 AND loading === true — the exact condition that dims the
+     * tbody to 55%. So a tab switch faded the NEW data in for up to
+     * SKELETON_MIN_MS after it had already arrived, which reads as "the page
+     * loaded and then went pale" (QA #260). Rows and the loading flag now land
+     * in the same commit: skeleton, then the real table at full strength. */
+    let commit: (() => void) | null = null;
     try {
       const { data } = await api.get<{
         status: boolean;
@@ -569,20 +579,24 @@ export default function SalesLeadWorksheet() {
           ...activeFilters,
         },
       });
-      setLeads((data.data ?? []).map(mapServerToLead));
-      setTotal(data.pagination?.total ?? 0);
-      setLastPage(data.pagination?.last_page ?? 1);
-      if (data.counts) { setCounts(data.counts); setCountsLoaded(true); }
-      setCanDistribute((data as any).can_distribute !== false);
+      const mapped = (data.data ?? []).map(mapServerToLead);
+      commit = () => {
+        setLeads(mapped);
+        setTotal(data.pagination?.total ?? 0);
+        setLastPage(data.pagination?.last_page ?? 1);
+        if (data.counts) { setCounts(data.counts); setCountsLoaded(true); }
+        setCanDistribute((data as any).can_distribute !== false);
+      };
     } catch (e: any) {
       toast.error('Load failed', e?.response?.data?.message ?? 'Could not load leads');
-      setLeads([]); setTotal(0); setLastPage(1);
+      commit = () => { setLeads([]); setTotal(0); setLastPage(1); };
     } finally {
       const since = skeletonSinceRef.current;
       const left  = since === null ? 0 : SKELETON_MIN_MS - (Date.now() - since);
       skeletonSinceRef.current = null;
-      if (left > 0) setTimeout(() => setLoading(false), left);
-      else setLoading(false);
+      const paint = () => { commit?.(); setLoading(false); };
+      if (left > 0) setTimeout(paint, left);
+      else paint();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, dealState, debouncedQ, page, rpp, toast, activeFilters, reloadKey]);
