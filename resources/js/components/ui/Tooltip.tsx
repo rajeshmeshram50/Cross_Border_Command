@@ -1,4 +1,4 @@
-import { cloneElement, useEffect, useRef, useState } from 'react';
+import { cloneElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
@@ -32,7 +32,9 @@ interface TooltipProps {
   label: React.ReactNode;
   children: React.ReactElement;
   position?: Position;
-  /** Render delay in ms before the tooltip appears. Default 80. */
+  /** Render delay in ms before the tooltip appears. Default 40 — long enough
+   *  that sweeping the cursor across a row of icons does not flash every one,
+   *  short enough that a deliberate hover feels immediate. */
   delay?: number;
   /** Skip rendering the tooltip entirely (e.g. when the label is empty). */
   disabled?: boolean;
@@ -61,7 +63,7 @@ export default function Tooltip({
   label,
   children,
   position = 'top',
-  delay = 80,
+  delay = 40,
   disabled = false,
   offset = 8,
   maxWidth,
@@ -103,7 +105,13 @@ export default function Tooltip({
     setCoords({ top, left });
   };
 
-  useEffect(() => {
+  /* useLayoutEffect, not useEffect: the tooltip renders at -9999 until
+     place() has measured it, so with a passive effect the browser painted
+     it off-screen first and the entrance animation began out of view. The
+     tooltip then jumped into position partway through its own animation,
+     which is what read as "slow to appear". Laying out before paint means
+     the first frame the user sees is already in the right place. */
+  useLayoutEffect(() => {
     if (!open) return;
     place();
     const onScrollOrResize = () => setOpen(false);
@@ -314,7 +322,7 @@ export default function Tooltip({
             maxWidth: maxWidth ?? `min(360px, calc(100vw - 16px))`,
             zIndex,
             pointerEvents: 'none',
-            animation: 'cbcTooltipSpring 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            animation: 'cbcTooltipSpring 0.12s cubic-bezier(0.34, 1.56, 0.64, 1)',
             transformOrigin:
               position === 'top'    ? 'center bottom' :
               position === 'bottom' ? 'center top' :

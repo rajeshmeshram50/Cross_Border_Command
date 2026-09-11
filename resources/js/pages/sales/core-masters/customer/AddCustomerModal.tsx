@@ -5753,13 +5753,23 @@ const SCOPED_CSS = `
    One line, ellipsised, because the gap only fits one - a wrapping message
    would ride over the next row's label. The full text stays on hover via the
    title attribute Field() sets alongside it. */
-.acm-row .acm-field { position: relative; }
+/* The message takes real space and wraps.
+ *
+ * It used to be absolutely positioned and clipped to one line, so the row
+ * height never moved when an error appeared. The cost was that any message
+ * longer than the field got an ellipsis — "The primary address.cp email has
+ * already been ta…", "GST Number must be 15 characters (you've entered 8).
+ * Format: 2 digi…" — which is exactly the half that tells the user what to
+ * do. The full text was only on hover, and nobody hovers a red line they
+ * cannot read.
+ *
+ * In flow it can wrap to as many lines as it needs: the field grows, the grid
+ * row grows with it, and it can no longer land on the next row's label —
+ * which is the only reason it was taken out of flow. The row does shift down
+ * as the message appears; that is the normal cost and the readable trade. */
 .acm-row .acm-field > .acm-field-error,
 .acm-row .acm-field > .acm-field-note {
-  position: absolute; top: 100%; left: 0; right: 0;
-  margin-top: 1px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  line-height: 1.25;
+  line-height: 1.35;
 }
 
 /* Neutral counterpart to .acm-field-error — explains a field that is locked

@@ -557,21 +557,18 @@ class SegmentDocUploadController extends Controller
             foreach ($deals as $s) {
                 $buyerRows = $s['trade_docs_buyer']     ?? [];
                 $consRows  = $s['trade_docs_consignee'] ?? [];
-                // Mirrors how the ratio picks its set: when Customer = Consignee
-                // only this party's side is shown, otherwise both sides apply.
-                /* Same rule as the ratio above:
-                   · one entity  → the union, de-duplicated, so a both-parties
-                     document is one row and a consignee-only one is not lost;
-                   · two entities → this party's own side only. The other party
-                     has its own vault; listing its documents here inflated the
-                     customer's figure with the consignee's obligations. */
-                // This vault's own side only — see the note in
-                // buildShipmentAgreements() on why one entity is still two roles.
-                /* Same rule as the ratio in buildShipmentAgreements(): a
-                   same-as-customer consignee shows the customer's documents
-                   too, minus the PI. The list and the count must agree. */
+                /* Same rule as the ratio in buildShipmentAgreements(), and it
+                   has to stay the same rule or the tile and the list below it
+                   disagree: a "Same as Customer" consignee is one company with
+                   the customer, so it shows the customer's trade documents as
+                   well as its own, minus the PI. A separate consignee shows
+                   only its own side.
+                 *
+                   Keyed on $sameAsCustomer — this consignee's own tick — not
+                   on the deal's buyer_is_consignee, for the reason set out in
+                   buildShipmentAgreements(). */
                 $sideRows = $type === 'consignee'
-                    ? (!empty($s['buyer_is_consignee'])
+                    ? ($sameAsCustomer
                         ? array_merge(
                             array_values(array_filter($buyerRows, fn ($r) => empty($r['pi_id']))),
                             $consRows,
@@ -844,6 +841,25 @@ class SegmentDocUploadController extends Controller
         // Vendors aren't modelled as buyer/consignee shipments here.
         if (!in_array($type, ['customer', 'consignee'], true) || !$cid) return [];
 
+        /* Does THIS consignee hold the customer's documents?
+         *
+           The answer is the tick on the consignee form — "Same as Customer",
+           a statement that the two are one company, which is also what makes
+           resolveOwner serve the customer's standard buckets here and what
+           makes a direct upload 409. One decision, read from one place.
+         *
+           Deliberately NOT the per-deal `buyer_is_consignee` flag, which
+           answers a different question: whether the LEAD's mapped consignee
+           is the buyer. The two agree while a vault only ever shows deals
+           mapped to its own consignee, and disagree the moment it does not —
+           which is how a customer's Proforma Invoice once surfaced under a
+           consignee that was not that deal's consignee at all.
+         *
+           $entityId, not $owner->id: for a same-as-customer consignee
+           resolveOwner has already swapped $owner to the linked Customer. */
+        $ownerIsSameAsCustomer = $type === 'consignee'
+            && (bool) optional(Consignee::find($entityId))->same_as_customer;
+
         // Leads (opportunities) for this party that carry a shipment order.
         // NOTE: use $entityId (the route id), NOT $owner->id — for a
         // "same as customer" consignee, resolveOwner swaps $owner to the
@@ -1098,25 +1114,20 @@ class SegmentDocUploadController extends Controller
                is the consignee's to sign, so it stays out of the customer's
                vault even when the two are the same company (and the other way
                round). Only agreements were reported; trade docs are untouched. */
-        /* A consignee created AS the customer holds the customer's documents.
+        /* "Same as Customer" ticked → one company → it holds the customer's
+           documents, exactly as it holds the customer's KYC and owners (the
+           consignee form clones those at save time, and resolveOwner serves
+           the customer's standard buckets for the same reason). Not ticked →
+           two different companies → the buyer's papers are not its business.
          *
-           Choosing "same as customer" on the consignee form is a statement
-           that the two are one company — its KYC and owners are cloned from
-           the customer at save time — so its vault shows what the customer's
-           shows. A SEPARATE consignee still sees only its own side: there the
-           two are different companies and the buyer's papers are not its
-           business.
-         *
-           The PI is the one exception, in both cases. It is raised to the
-           buyer, carries the buyer's commercial terms and is signed by the
-           buyer; the consignee is not a party to it in either arrangement,
-           and the customer's own vault already carries it. It lives on the
-           buyer side, so it is filtered out of the merge rather than being
-           moved back.
+           The PI is the one exception either way: it is raised to the buyer,
+           carries the buyer's commercial terms and is signed by the buyer, so
+           it stays on the buyer side and is filtered out of the merge rather
+           than moved.
          *
            De-duplicated because a Buyer+Consignee document is emitted into
-           both lists under the same id and must be counted once. */
-            $tradeAll = ($type === 'consignee' && $buyerIsConsignee)
+           both lists under the same id and must appear once. */
+            $tradeAll = ($type === 'consignee' && $ownerIsSameAsCustomer)
                 ? $dedupe(array_merge(
                     array_values(array_filter($tradeBuyer, fn ($r) => empty($r['pi_id']))),
                     $tradeCons,

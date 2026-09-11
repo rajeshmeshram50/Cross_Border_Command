@@ -4965,6 +4965,9 @@ function ProductsStep(props: {
    * plain "Tax % + Tax Amount" pair and never show a CGST/SGST/IGST
    * breakdown. `intra` is only meaningful when !isIntl. */
   const intra = isIntraState(form.stateCode, homeStateCode);
+  /* Tax columns vary by document type, so the skeleton row has to match the
+     header or the table jumps a column when the real row arrives. */
+  const taxColCount = isIntl ? 2 : (intra ? 4 : 2);
   /* The tax block changes the column COUNT (8 / 10 / 8), so the colgroup is
    * per-mode rather than one fixed list. Each set sums to 100% — the table is
    * `table-layout: fixed`, so widths that overflow 100 get renormalised and
@@ -5185,6 +5188,25 @@ function ProductsStep(props: {
                 </tr>
               );
             })}
+            {/* Skeleton rows for the whole table body while it loads.
+             *
+                Step 2 opens instantly, but its contents do not: the product
+                options wait on masters, and on EDIT the already-saved lines
+                wait on the same hydration. Until both settled the tbody was
+                simply empty, so the step read as "nothing here" rather than
+                "still loading", and the rows then popped in (QA #32 / #33).
+             *
+                Three rows, because that is roughly what a typical document
+                holds — enough to occupy the table so the real rows replace
+                the placeholder instead of appearing out of nothing. Same
+                column count as the header, so nothing shifts on the swap. */}
+            {anyProductsLoading && products.length === 0 && Array.from({ length: 3 }).map((_, r) => (
+              <tr key={`sk-${r}`} className="qpi-products-skel-row">
+                {Array.from({ length: taxColCount + 5 }).map((_, c) => (
+                  <td key={c}><span className="qpi-skel" style={{ width: c === 0 ? '78%' : '58%' }} /></td>
+                ))}
+              </tr>
+            ))}
             {/* Add-product draft row — hidden entirely once there are no more
                 products to add (all mapped products already in the list, or
                 none mapped to the opportunity). */}
@@ -6429,7 +6451,14 @@ const SCOPED_CSS = `
   background: var(--qpi-act-accent, #7c3aed);
   border-color: transparent;
   color: #fff;
-  transform: translateY(-2px) scale(1.08);
+  /* Scale only — no lift. translateY(-2px) moved the button up out from
+     under a cursor resting near its bottom edge, which dropped :hover,
+     which moved it back, which re-entered hover: a flicker loop. Dark mode
+     made it obvious because the base tile is dark and the hover fill is the
+     full accent, so the flicker read as the colour flipping (QA #57).
+     Growing is safe — a larger box cannot leave the pointer behind. The
+     box-shadow below still gives the raised feel. */
+  transform: scale(1.08);
   box-shadow: 0 4px 14px color-mix(in srgb, var(--qpi-act-accent, #7c3aed) 45%, transparent);
 }
 .qpi-act:active { transform: translateY(0) scale(1); }
@@ -6485,7 +6514,12 @@ const SCOPED_CSS = `
 .qpi-moremenu-item:hover:not(:disabled) { background: #eff6ff; color: #0369a1; }
 .qpi-moremenu-item:disabled { opacity: .65; cursor: wait; }
 .qpi-moremenu-item svg { flex-shrink: 0; color: #0ea5e9; }
-.qpi-moremenu-item span { flex: 1; white-space: nowrap; }
+/* The label span takes the free space so the spinner sits at the right edge.
+   Scoped away from the spinner, which is also a <span>: it was picking up
+   flex:1 as well, and flex-basis:0 + grow overrode its 12px width, so the
+   ring stretched across the row as a pill-shaped blob (QA #58). */
+.qpi-moremenu-item span:not(.qpi-moremenu-spinner) { flex: 1; white-space: nowrap; }
+.qpi-moremenu-item span.qpi-moremenu-spinner { flex: 0 0 auto; }
 /* Declined / recalled notice banner at the top of the menu. */
 .qpi-moremenu-notice {
   display: flex; align-items: flex-start; gap: 8px;
@@ -6729,6 +6763,15 @@ const SCOPED_CSS = `
 .qpi-skel-label { width: 38%; height: 9px; border-radius: 4px; margin-bottom: 7px; }
 .qpi-skel-input { width: 100%; height: 38px; }
 .qpi-skel-note  { width: 100%; height: 64px; margin-top: 12px; }
+/* Placeholder row in the products table while the product lists load. The
+   height matches the real draft row's inputs so the table does not resize
+   when the two swap. */
+/* Placeholder rows standing in for the products table while it loads. The
+   cell padding and bar height match a real row so the table keeps its size
+   when the two swap — the width per cell is set inline, narrower than the
+   column, so the block reads as text rather than a solid slab. */
+.qpi-products-skel-row td { padding: 10px 12px; }
+.qpi-products-skel-row .qpi-skel { height: 18px; border-radius: 5px; }
 @media (prefers-reduced-motion: reduce) { .qpi-skel { animation: none; } }
 [data-bs-theme="dark"] .qpi-skel {
   background: linear-gradient(90deg, rgba(148,163,184,.12) 0%, rgba(148,163,184,.24) 50%, rgba(148,163,184,.12) 100%);

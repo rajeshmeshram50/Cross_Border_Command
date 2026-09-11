@@ -99,6 +99,10 @@ export interface VaultShipmentRow {
 }
 
 export interface VaultData {
+  /** True when this consignee was created with "Same as Customer" ticked —
+   *  the two are one company, so the vault carries the customer's documents
+   *  as well as its own. Sent by the API for exactly this decision. */
+  same_as_customer?:      boolean;
   total_documents:        number;
   verified_signed:        number;
   pending:                number;
@@ -160,12 +164,18 @@ const GROUPS: { key: GroupKey; title: string; sub: string; icon: string; overvie
   { key: 'case-to-case', title: 'Case to Case Documents & Agreements', sub: 'PER DEAL · TRADE DOCS & AGREEMENTS', icon: 'ri-todo-line',         overview: 'Send Documents & Agreements for Signature' },
 ];
 
-const TABS: { key: TabKey; label: string; icon: string; countKey: keyof VaultData; group: GroupKey }[] = [
+const TABS: { key: TabKey; label: string; sectionTitle?: string; icon: string; countKey: keyof VaultData; group: GroupKey }[] = [
   { key: 'company-dd',          label: 'Company Due Diligence', icon: 'ri-shield-check-line',   countKey: 'company_dd_count',       group: 'standard' },
   { key: 'owner-kyc',           label: 'Owner KYC Details',     icon: 'ri-user-3-line',         countKey: 'owner_kyc_count',        group: 'standard' },
   { key: 'trade-licenses',      label: 'Trade Licenses',        icon: 'ri-file-list-3-line',    countKey: 'trade_license_count',    group: 'standard' },
-  { key: 'trade-documents',     label: 'Trade Documents',       icon: 'ri-article-line',        countKey: 'trade_documents_count',  group: 'case-to-case' },
-  { key: 'shipment-agreements', label: 'Agreements',            icon: 'ri-truck-line',          countKey: 'total_shipments',        group: 'case-to-case' },
+  /* One Case-to-Case tab, as in the Customer vault. Trade documents and
+     agreements were split across two tabs here, but they belong to the same
+     deal and the table is keyed by shipment either way — so a user chasing
+     one deal had to look in two places and read the same shipment row twice.
+     The merged table marks each row's kind instead (showType). */
+  { key: 'trade-documents',     label: 'Trade Documents & Agreements (Per Transaction)',
+                                sectionTitle: 'Trade Documents & Agreements',
+                                                                icon: 'ri-article-line',        countKey: 'trade_documents_count',  group: 'case-to-case' },
 ];
 
 const groupOfTab = (t: TabKey): GroupKey => TABS.find(x => x.key === t)?.group ?? 'standard';
@@ -558,10 +568,13 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   const ratioTotal = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[1] ?? p[0], 10) || 0; };
   const shipmentDocCount = (key: 'trade_docs' | 'agreement') =>
     vault.shipment_agreements.reduce((acc, r) => acc + ratioTotal(r[key].ratio), 0);
+  /* The Case-to-Case tab covers trade documents AND agreements now, so its
+     badge totals both — the same sum the Customer vault's single tab shows.
+     Counting only trade docs here would under-report the tab's own list. */
   const tabCount = (t: typeof TABS[number]): number =>
-    t.key === 'trade-documents'     ? shipmentDocCount('trade_docs')
-    : t.key === 'shipment-agreements' ? shipmentDocCount('agreement')
-    : (vault[t.countKey] as number);
+    t.key === 'trade-documents'
+      ? shipmentDocCount('trade_docs') + shipmentDocCount('agreement')
+      : (vault[t.countKey] as number);
 
   /* Stat-row figures, matching the Customer and Supplier vaults.
    *
@@ -780,7 +793,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
             <div className="cev-section-left">
               <div className="cev-section-icon"><i className={tabMeta.icon} /></div>
               <div>
-                <div className="cev-section-title">{tabMeta.label}</div>
+                <div className="cev-section-title">{tabMeta.sectionTitle ?? tabMeta.label}</div>
                 <div className="cev-section-sub">{sectionSub(tab)}</div>
               </div>
             </div>
@@ -801,11 +814,12 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           </div>
 
           {(tab === 'shipment-agreements' || tab === 'trade-documents')
-            ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'}
+            ? <ShipmentTable rows={vault.shipment_agreements} kind="both"
                              onSend={(leadId, doc, party) => { if (doc.pi_id) setPiSend({ leadId, doc }); else setShipSend({ leadId, doc, party }); }}
                              activeSend={shipSend ?? (piSend ? { ...piSend, party: 'consignee' as const } : null)}
                              onBulkSend={(leadId, docs, party) => { if (docs.length) setShipSend({ leadId, doc: docs[0], docs, party }); }} />
             : <DocsTable rows={docsForTab} tab={tab} ownerType="consignee" ownerId={consignee?.db_id ?? null} onReload={reloadVault}
+                         sameAsCustomer={!!vault.same_as_customer}
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
                          onRemindTradeDoc={handleRemind} onRowBusyChange={onRowBusyChange} />}
         </div>
@@ -906,36 +920,36 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           const seen = new Set<string>();
           return list.filter((d) => { const k = ovDocKey(d); if (seen.has(k)) return false; seen.add(k); return true; });
         };
-        /* Which side's documents this consignee may see, per deal.
+        /* "Same as Customer" ticked → one company → this consignee shows the
+         * customer's documents alongside its own. Not ticked → two separate
+         * companies → its own side only.
          *
-         * This was inverted — copied from the customer vault with only the
-         * `buyer_is_consignee` branch swapped, so a deal with a SEPARATE
-         * consignee merged in `trade_docs_buyer` and put the buyer's Proforma
-         * Invoice in a consignee's list. The ratio built server-side already
-         * applied the right rule, so the tile and the list disagreed.
+         * Keyed on `vault.same_as_customer` — the tick on THIS consignee,
+         * which the API sends for exactly this purpose — not on each row's
+         * `buyer_is_consignee`, which answers whether the DEAL's mapped
+         * consignee is the buyer. Those differ when a vault shows a deal
+         * mapped to some other consignee, and that difference is how a
+         * customer's Proforma Invoice once appeared in the wrong vault.
          *
-         * The rule, matching SegmentDocUploadController's $tradeAll:
-         *   buyer_is_consignee  → the deal's consignee IS the buyer, one
-         *                         company, so it sees both sides.
-         *   otherwise           → two separate companies; the consignee sees
-         *                         only its own side.
+         * The PI is excluded either way: it is raised to the buyer, carries
+         * the buyer's terms and is signed by the buyer, and the customer's own
+         * vault already carries it. `pi_id` marks that row.
          *
-         * The PI is excluded either way. It is raised to the buyer, carries
-         * the buyer's commercial terms and is signed by the buyer; a consignee
-         * is not a party to it under either arrangement, and the customer's
-         * own vault already carries it. `pi_id` is what marks that row. */
+         * Must stay the same rule as SegmentDocUploadController's $tradeAll,
+         * which builds the ratio — the tile and the list are two views of one
+         * set and have disagreed before when only one of them was changed. */
         const withoutPi = (list: VaultShipmentDoc[]) => list.filter((d) => !d.pi_id);
-        const shipDocsOf = (r: VaultShipmentRow): VaultShipmentDoc[] => r.buyer_is_consignee
+        const shipDocsOf = (r: VaultShipmentRow): VaultShipmentDoc[] => vault.same_as_customer
           ? dedupeDocs([
               ...withoutPi(r.trade_docs_buyer ?? []),
               ...(r.trade_docs_consignee ?? []),
               ...withoutPi(r.agreements_buyer ?? []),
               ...(r.agreements_consignee ?? []),
             ])
-          : [
+          : dedupeDocs([
               ...(r.trade_docs_consignee ?? []),
               ...(r.agreements_consignee ?? []),
-            ];
+            ]);
         const shipments     = isStd ? [] : vault.shipment_agreements;
         const shipsWithDocs = isStd ? [] : shipments.filter((r) => shipDocsOf(r).length > 0);
         /* No auto-select of the first shipment any more. The panel opens on a
@@ -1296,7 +1310,6 @@ function VaultSkeleton() {
  * Expiry arrives as free text — the API hands back whatever the upload or the
  * segment-rule master carried ('01-Jan-2028', '2028-01-01', 'Lifetime', '—'),
  * so it is parsed leniently and left as-is when it is clearly not a date. */
-const EV_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function evParseExpiry(s?: string | null): Date | null {
   if (!s) return null;
   const t = s.trim();
@@ -1308,11 +1321,6 @@ function evParseExpiry(s?: string | null): Date | null {
   const d = new Date(t);
   return isNaN(d.getTime()) ? null : d;
 }
-function evFmtExpiry(s?: string | null): string {
-  const d = evParseExpiry(s);
-  if (!d) return s && s.trim() && s.trim() !== '-' ? s.trim() : '—';
-  return `${String(d.getDate()).padStart(2, '0')}-${EV_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
-}
 /* A document the API calls "Verified" is still expired if its date has passed —
    the API does not re-check that on read, so the table does it here. */
 function evEffectiveStatus(d: VaultDoc): VaultStatus | 'Expired' {
@@ -1320,31 +1328,8 @@ function evEffectiveStatus(d: VaultDoc): VaultStatus | 'Expired' {
   if (exp) { const today = new Date(); today.setHours(0, 0, 0, 0); if (exp < today) return 'Expired'; }
   return d.status;
 }
-/* Status pill for the Expiry/Status columns.
- *
- * Rendered as `.cev-pill[data-status]`, the vault's own pill, rather than a
- * private span with its own colours. That class is shape-only — the light
- * colours still come from the inline style below — but the stylesheet carries
- * `[data-bs-theme="dark"] .cev-pill[data-status="…"]` rules marked !important,
- * which is the one thing that can override an inline declaration. Built as a
- * standalone span it stayed hard-coded light green / light red on a dark page. */
-function VaultStatusPill({ status }: { status: VaultStatus | 'Expired' }) {
-  const map: Record<VaultStatus | 'Expired', { bg: string; color: string; bd: string }> = {
-    Verified: { bg: '#dcfce7', color: '#15803d', bd: '#bbf7d0' },
-    Expiring: { bg: '#fef3c7', color: '#b45309', bd: '#fde68a' },
-    Pending:  { bg: '#fee2e2', color: '#dc2626', bd: '#fecaca' },
-    Signed:   { bg: '#dcfce7', color: '#15803d', bd: '#bbf7d0' },
-    Expired:  { bg: '#fee2e2', color: '#b91c1c', bd: '#fca5a5' },
-  };
-  const s = map[status] ?? map.Pending;
-  return (
-    <span className="cev-pill" data-status={status} style={{ background: s.bg, color: s.color, border: `1px solid ${s.bd}`, whiteSpace: 'nowrap' }}>
-      {status}
-    </span>
-  );
-}
 
-function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, onRowBusyChange }: {
+function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, onRowBusyChange, sameAsCustomer = false }: {
   rows: VaultDoc[];
   tab: TabKey;
   onRowBusyChange?: (busy: boolean) => void;
@@ -1353,8 +1338,17 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
   onReload: () => Promise<void> | void;
   onSendTradeDoc?: (doc: VaultDoc) => void;
   onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
+  /** True when this consignee was created "Same as Customer". Its own
+   *  upload bucket is deliberately kept empty in that case — the API 409s
+   *  a direct upload — so the action is disabled rather than offered and
+   *  then refused. */
+  sameAsCustomer?: boolean;
 }) {
-  const numberHeader = tab === 'company-dd' ? 'License / Number' : tab === 'owner-kyc' ? 'Document Number' : tab === 'trade-licenses' ? 'License Number' : 'Reference No';
+  /* The code column is headed "Auto Code" on every tab, as it is in the
+     Customer vault. It used to change per tab — License / Number, Document
+     Number, License Number, Reference No — which read as four different
+     columns for one value, and none of them matched the customer's table
+     sitting one click away. */
   const authorityLbl = tab === 'trade-documents' ? 'Counter Party' : 'Issuing Authority';
   const category: 'kyc' | 'dd' | 'tl' | 'td' = tab === 'company-dd' ? 'dd' : tab === 'owner-kyc' ? 'kyc' : tab === 'trade-licenses' ? 'tl' : 'td';
   /* Which attachment chip is mid-download. The chip saves the file rather than
@@ -1367,21 +1361,20 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
       <table className="cev-table">
         <thead>
           <tr>
-            <th style={{ width: 56 }}>SR</th>
+            {/* Same seven columns, in the same order, as the Customer vault.
+                Issue Date, Expiry and Status were tried here and removed: the
+                two vaults sit one click apart in the Customer Profile, and a
+                consignee's table reading differently from the customer's made
+                them look like different kinds of record. Issue Date was the
+                weakest of the three anyway — the API only fills it for SIGNED
+                documents, so on these standard buckets it was always "—". */}
+            <th style={{ width: 56 }}>Sr No</th>
+            <th>Auto Code</th>
             <th>Document Name</th>
-            <th>{numberHeader}</th>
             <th>{authorityLbl}</th>
             <th>Requirement</th>
-            {/* Issue Date is only ever filled for SIGNED documents — the API
-                sets it to the signing date on the case-to-case buckets and
-                leaves it null on standard DD / KYC / Licence rows, which have
-                no issue date stored anywhere. It therefore reads "—" on the
-                standard tabs by design, not by fault. */}
-            <th>Issue Date</th>
-            <th>Expiry</th>
             <th>Attachment</th>
-            <th>Status</th>
-            <th style={{ width: 190 }}>Actions</th>
+            <th style={{ width: 140 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -1390,6 +1383,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
           ) : rows.map((d, i) => (
             <tr key={d.id}>
               <td>{i + 1}</td>
+              <td className="cev-mono cev-mono-ref">{d.reference || '—'}</td>
               {/* Single-line with a CSS ellipsis. A long name used to wrap over
                   several lines and blow the row height out; the previous
                   slice(0, 25) cut mid-word at a fixed character count regardless
@@ -1397,7 +1391,6 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
               <Tooltip label={d.name}>
                 <td className="cev-doc-name"><span className="cev-trunc">{d.name}</span></td>
               </Tooltip>
-              <td className="cev-mono cev-mono-ref">{d.reference || '—'}</td>
               <td className="cev-cell-dim">{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
               <td>
                 {/* The inline styles carry the light-mode pill and are left
@@ -1411,11 +1404,6 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                   <span className="cev-req cev-req-o" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
                 )}
               </td>
-              <td className="cev-cell-dim">{d.issue_date || '—'}</td>
-              {/* Plain text, not the .cev-date teal pill — the reference design
-                  shows both date columns as quiet grey so the eye lands on the
-                  Status pill instead. */}
-              <td className="cev-cell-dim">{evFmtExpiry(d.expiry)}</td>
               <td>
                 {d.attachment ? (
                   d.attachment_url ? (
@@ -1470,9 +1458,8 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                   )
                 ) : <span className="cev-muted">Not uploaded</span>}
               </td>
-              <td><VaultStatusPill status={evEffectiveStatus(d)} /></td>
               <td>
-                <VaultRowActions doc={d} ownerType={ownerType} ownerId={ownerId} category={category} onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} onBusyChange={onRowBusyChange} />
+                <VaultRowActions doc={d} ownerType={ownerType} ownerId={ownerId} category={category} onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} onBusyChange={onRowBusyChange} sameAsCustomer={sameAsCustomer} />
               </td>
             </tr>
           ))}
@@ -1483,7 +1470,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
   );
 }
 
-function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTradeDoc, onRemindTradeDoc, onBusyChange }: {
+function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTradeDoc, onRemindTradeDoc, onBusyChange, sameAsCustomer = false }: {
   doc: VaultDoc;
   onBusyChange?: (busy: boolean) => void;
   ownerType: 'customer' | 'consignee' | 'supplier';
@@ -1492,6 +1479,11 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   onReload: () => Promise<void> | void;
   onSendTradeDoc?: (doc: VaultDoc) => void;
   onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
+  /** True when this consignee was created "Same as Customer". Its own
+   *  upload bucket is deliberately kept empty in that case — the API 409s
+   *  a direct upload — so the action is disabled rather than offered and
+   *  then refused. */
+  sameAsCustomer?: boolean;
 }) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -1501,7 +1493,11 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   const [viewing, setViewing] = useState(false);
   const [trackerOpen, setTrackerOpen] = useState(false);
   const canViewOrDownload = !!doc.attachment_url;
-  const canReupload = !!ownerId && !!doc.doc_code;
+  /* Not offered when the consignee IS the customer: its bucket stays empty
+     by design and the API refuses the write, so an enabled button here was
+     a button that could only ever fail. The tooltip says where to go.
+     Same guard the Lead vault already applies. */
+  const canReupload = !!ownerId && !!doc.doc_code && !sameAsCustomer;
   // Signing lifecycle for Trade Document rows:
   //   • signed (completed)   → no Send / no Reminder, View signed + cert only
   //   • sent (inprogress)    → no Send, Reminder only
@@ -1671,7 +1667,11 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           flow (Send / Reminder / signed-file View), not manual file
           attachment. Standard tabs (KYC / DD / Trade Licenses) keep it. */}
       {category !== 'td' && (
-      <Tooltip label={canReupload ? (busy ? 'Uploading…' : (doc.attachment ? 'Re-upload (replace file)' : 'Upload')) : 'Save the record first'}>
+      <Tooltip label={canReupload
+        ? (busy ? 'Uploading…' : (doc.attachment ? 'Re-upload (replace file)' : 'Upload'))
+        : sameAsCustomer
+          ? 'Same as Customer — upload this on the linked customer instead'
+          : 'Save the record first'}>
         <button
           type="button"
           aria-disabled={!canReupload || busy}
@@ -1680,7 +1680,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           aria-label={doc.attachment ? 'Re-upload' : 'Upload'}
         >
           {busy
-            ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 14 }} aria-hidden />
             : doc.attachment
               ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
               : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>}
@@ -1720,7 +1720,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 
 function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend }: {
   rows: VaultShipmentRow[];
-  kind: 'trade' | 'agreement';
+  kind: 'trade' | 'agreement' | 'both';
   /** Sends every ticked document on one deal in a single action. Passing it is
    *  what turns the panel's tick column on — the panel owns the selection. */
   onBulkSend?: (leadId: number, docs: VaultShipmentDoc[], party: 'buyer' | 'consignee') => void;
@@ -1737,7 +1737,10 @@ function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend }: {
      each row does split by party, exactly like the customer vault, so a doc
      that both sides sign is visible from here too. */
   const filtered = rows;
-  const isAgreement = kind === 'agreement';
+  /* 'both' renders one table for the whole deal: the Agreement ratio column
+     is present, and each expanded row marks its own kind (showType), which
+     is what the two separate tabs used to convey. */
+  const isAgreement = kind === 'agreement' || kind === 'both';
   const COLS = isAgreement ? 11 : 10;
   return (
     <>
@@ -1797,8 +1800,13 @@ function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend }: {
                     <tr className="cev-ship-expand">
                       <td colSpan={COLS} style={{ padding: 0, background: '#f0fdff' }}>
                         <ShipmentDocPanel
-                          buyer={kind === 'trade' ? (r.trade_docs_buyer ?? []) : (r.agreements_buyer ?? [])}
-                          consignee={kind === 'trade' ? (r.trade_docs_consignee ?? []) : (r.agreements_consignee ?? [])}
+                          buyer={kind === 'both'
+                            ? [...(r.trade_docs_buyer ?? []), ...(r.agreements_buyer ?? [])]
+                            : kind === 'trade' ? (r.trade_docs_buyer ?? []) : (r.agreements_buyer ?? [])}
+                          consignee={kind === 'both'
+                            ? [...(r.trade_docs_consignee ?? []), ...(r.agreements_consignee ?? [])]
+                            : kind === 'trade' ? (r.trade_docs_consignee ?? []) : (r.agreements_consignee ?? [])}
+                          showType={kind === 'both'}
                           buyerIsConsignee={r.buyer_is_consignee}
                           onSend={onSend ? (doc, party) => onSend(r.id, doc, party) : undefined}
                           pendingSend={activeSend && activeSend.leadId === r.id ? { doc: activeSend.doc, party: activeSend.party } : null}

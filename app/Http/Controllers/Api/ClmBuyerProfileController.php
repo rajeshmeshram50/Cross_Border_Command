@@ -587,10 +587,11 @@ class ClmBuyerProfileController extends Controller
             /* 'any' when the consignee IS the customer.
              *
                Its vault shows the customer's documents as well as its own in
-               that case, so the cell has to count the same set — every
-               document applicable to either party, each once. A separate
-               consignee keeps 'consignee': two companies, two sets. The PI is
-               not in $applicTd at all, so it stays out of both. */
+               that case, so the cell has to total the same set — every
+               document applicable to either party, each once — or it reads
+               short against the panel it summarises. A separate consignee
+               keeps 'consignee': two companies, two sets. The PI is not in
+               $applicTd at all, so it stays out of both. */
             $tdConsDeal = $docProgress(
                 $applicTd,
                 $tdPartyById,
