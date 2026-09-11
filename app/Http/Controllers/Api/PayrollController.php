@@ -1459,7 +1459,21 @@ class PayrollController extends Controller
                         . ' when the run is finalized.';
                 }
             }
-            $days .= ' Weekly offs are excluded from working days, so they are neither counted nor docked.';
+            /* Which SIDE of the weekly-off change this slip was computed on.
+             *
+             * The payable-day basis moved to calendar days (CBC #11): a weekly
+             * off is now inside the denominator AND credited as a paid day.
+             * Slips generated before that carry the old working-day basis, and
+             * telling their reader the opposite would make a correct historical
+             * figure look wrong. The slip says which model it used — a
+             * denominator equal to the month's calendar days can only be the
+             * new one — so the sentence follows the slip rather than the code. */
+            $calendarDays = $slip->period
+                ? (int) Carbon::create((int) $slip->period->year, (int) $slip->period->month, 1)->daysInMonth
+                : 0;
+            $days .= $calendarDays > 0 && abs($working - $calendarDays) < 0.005
+                ? ' Weekly offs are inside this basis: they are paid days and are never docked.'
+                : ' Weekly offs are excluded from working days, so they are neither counted nor docked.';
             $out[] = $days;
         }
 
@@ -2320,10 +2334,35 @@ class PayrollController extends Controller
                working_days and is neither present nor leave, so without this
                term every employee collected an extra Absent day for it — while
                payroll had already paid it as a credited day. */
-            'absent'      => (float) max(0, ($elapsedWorkingDays !== null
-                    ? min((float) $p->working_days, $elapsedWorkingDays)
-                    : (float) $p->working_days)
-                - (float) $p->present_days - (float) $p->paid_leave_days - (float) ($holidayDays ?? 0)),
+            /* Absent is measured in SCHEDULED days — the days the employee was
+             * actually due to work. (CBC #8, corrected for CBC #11)
+             *
+             * working_days is the CALENDAR window now (weekly offs live inside
+             * it and are credited as paid), so subtracting only present + leave
+             * + holidays counted every Sunday as an absence: a 31-day August
+             * reported 30 absent for someone with 25 unworked days.
+             * elapsedWorkingDays, by contrast, has always counted scheduled
+             * days — so the two have to be brought into the same unit before
+             * they are compared.
+             *
+             * A slip generated BEFORE that change already excludes weekly offs
+             * from working_days, and subtracting them again would under-count.
+             * The slip says which basis it used: a denominator equal to the
+             * month's calendar days can only be the new one. */
+            'absent'      => (function () use ($p, $elapsedWorkingDays, $weekOffDays, $holidayDays) {
+                $working  = (float) $p->working_days;
+                $calendar = $p->period
+                    ? (float) Carbon::create((int) $p->period->year, (int) $p->period->month, 1)->daysInMonth
+                    : 0.0;
+                $calendarBasis = $calendar > 0 && abs($working - $calendar) < 0.005;
+                $scheduled = $calendarBasis ? max(0, $working - (float) ($weekOffDays ?? 0)) : $working;
+                $base = $elapsedWorkingDays !== null ? min($scheduled, $elapsedWorkingDays) : $scheduled;
+
+                return (float) max(0, $base
+                    - (float) $p->present_days
+                    - (float) $p->paid_leave_days
+                    - (float) ($holidayDays ?? 0));
+            })(),
             'holidayDays' => $holidayDays,
             'lateMarks'   => (int) $p->late_marks,
             'missingPunch'=> (int) $p->missing_punches,

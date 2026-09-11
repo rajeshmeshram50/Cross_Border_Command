@@ -308,8 +308,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
             {[0, 1].map(i => (
               <div
                 key={i}
-                className="d-flex align-items-center gap-3 p-3"
-                className="lsp-surface"
+                className="d-flex align-items-center gap-3 p-3 lsp-surface"
                 style={{ border: '1px solid var(--vz-border-color)', borderRadius: 12 }}
               >
                 <Shimmer width={44} height={44} radius={999} />
@@ -361,8 +360,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
                   <div style={{ fontSize: 13, fontWeight: 600 }}>Pending</div>
                   <button
                     type="button"
-                    className="btn btn-link p-0"
-                    className="lsp-accent" style={{ fontSize: 12, textDecoration: 'underline' }}
+                    className="btn btn-link p-0 lsp-accent" style={{ fontSize: 12, textDecoration: 'underline' }}
                     onClick={(e) => { e.stopPropagation(); openApprovers(r.id); }}
                   >
                     View Approvers
@@ -476,8 +474,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
                     </div>
                     <button
                       type="button"
-                      className="btn btn-link p-0"
-                      className="lsp-accent" style={{ fontSize: 12, textDecoration: 'underline' }}
+                      className="btn btn-link p-0 lsp-accent" style={{ fontSize: 12, textDecoration: 'underline' }}
                       onClick={() => setDetailsType(t)}
                     >
                       View details

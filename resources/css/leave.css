@@ -1374,3 +1374,28 @@
 .lv-req-table th:last-child {
   overflow: visible;
 }
+
+/* ── Leave Plans: surfaces the dark pass missed ───────────────────────────────
+ * Each of these declares a light fill and had no dark rule at all, so they
+ * stayed pastel while the page around them went dark. (CBC #1)
+ *
+ * .lp-switch-thumb is deliberately NOT here: a white knob is correct in both
+ * themes — it is the track behind it that has to change.
+ * ========================================================================== */
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .lp-count-pill {
+  background: rgba(124, 92, 252, 0.20);
+  color: #c4b5fd;
+}
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .lp-default-pill {
+  background: rgba(10, 179, 156, 0.20);
+  color: #5eead4;
+}
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .lts-back-btn {
+  background: rgba(124, 92, 252, 0.18);
+  color: #c4b5fd;
+}
+/* Switch track in its OFF state — a light grey pill on a dark card reads as
+   "on", which is the opposite of what it means. */
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .lp-switch {
+  background: rgba(255, 255, 255, 0.18);
+}
