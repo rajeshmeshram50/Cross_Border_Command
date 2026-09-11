@@ -387,23 +387,6 @@ export default function PayslipViewerModal({
      never as extra factors to multiply — printing "₹494.07/hr · 1.5× · 10.05 hr"
      invited exactly that, and none of those three numbers priced the figure
      beside them. */
-  /* Money is rendered to the PAISA, always. (CBC #10)
-   *
-   * Every figure on this slip went through `toLocaleString('en-IN')` with no
-   * options, which formats to a variable number of decimals: ₹5,641.8 (one),
-   * ₹1,00,416.666 (three) and ₹10,288 (none) could sit in the same column. The
-   * components then looked as though they neither matched each other nor added
-   * up to the total — the arithmetic was right, the presentation was not.
-   *
-   * The sums are rounded to the paisa before display for the same reason: they
-   * are floating-point additions of decimal amounts, so 5144.07 + 3086.44 +
-   * 2057.49 can land on ...0000000002 and print a total nobody can reconcile. */
-  const inr = (n: number) =>
-    (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('en-IN', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-
   /* Only when the priced hours are actually known. The employee-profile viewer
      renders the same modal without any OT props, where this would otherwise
      print a bare "0 hr" under a real allowance. */
