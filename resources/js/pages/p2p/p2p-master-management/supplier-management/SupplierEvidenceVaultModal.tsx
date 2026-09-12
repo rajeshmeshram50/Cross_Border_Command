@@ -692,7 +692,12 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   const stdTotal = stdAll.length;
   const stdUp    = upOf(stdAll);
   const stdPend  = stdTotal - stdUp;
-  const splitOf  = (rows: VaultDoc[]) => ({ up: upOf(rows), pend: rows.length - upOf(rows) });
+
+  const catStat = (rows: VaultDoc[]) => {
+    const up   = upOf(rows);
+    const pend = rows.length - up;
+    return { part: up, whole: rows.length, split: { up, pend } };
+  };
 
   const dealRows  = shipmentIdMode === 'with' ? (vault.vendor_with_shipment ?? []) : (vault.vendor_without_shipment ?? []);
   const dealDocs  = dealRows.flatMap(r => r.docs ?? []);
@@ -862,9 +867,9 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
             <SevStat tone="slate" icon={VAULT_GLYPHS.file}  label="Total Standard Documents" value={stdTotal} part={stdTotal} whole={stdTotal} split={{ up: stdUp, pend: stdPend }} />
             <SevStat tone="green" icon={VAULT_GLYPHS.checkCircle} label="Verified / Uploaded"   value={stdUp}    part={stdUp}    whole={stdTotal} tag="Compliant" />
             <SevStat tone="red"   icon={VAULT_GLYPHS.warning}   label="Pending"               value={stdPend}  part={stdPend}  whole={stdTotal} tag="Action needed" />
-            <SevStat tone="teal"  icon={VAULT_GLYPHS.home}          label="Company Due Diligence" value={vault.company_dd.length}     part={vault.company_dd.length}     whole={stdTotal} split={splitOf(vault.company_dd)} />
-            <SevStat tone="teal"  icon={VAULT_GLYPHS.user}          label="Owner KYC"             value={vault.owner_kyc.length}      part={vault.owner_kyc.length}      whole={stdTotal} split={splitOf(vault.owner_kyc)} />
-            <SevStat tone="teal"  icon={VAULT_GLYPHS.monitor}        label="Trade License"         value={vault.trade_licenses.length} part={vault.trade_licenses.length} whole={stdTotal} split={splitOf(vault.trade_licenses)} />
+            <SevStat tone="teal"  icon={VAULT_GLYPHS.home}          label="Company Due Diligence" value={vault.company_dd.length}     {...catStat(vault.company_dd)} />
+            <SevStat tone="teal"  icon={VAULT_GLYPHS.user}          label="Owner KYC"             value={vault.owner_kyc.length}      {...catStat(vault.owner_kyc)} />
+            <SevStat tone="teal"  icon={VAULT_GLYPHS.monitor}        label="Trade License"         value={vault.trade_licenses.length} {...catStat(vault.trade_licenses)} />
           </>) : (<>
             <SevStat tone="slate" icon={VAULT_GLYPHS.box}         label="With Shipment ID Transactions" value={withShipCount}    part={withShipCount}    whole={withShipCount}    split={dealSplit(vault.vendor_with_shipment)} />
             <SevStat tone="slate" icon={VAULT_GLYPHS.tag}         label="All Other Transactions"        value={withoutShipCount} part={withoutShipCount} whole={withoutShipCount} split={dealSplit(vault.vendor_without_shipment)} />

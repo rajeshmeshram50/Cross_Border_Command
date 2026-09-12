@@ -458,9 +458,10 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
   const stdTotal = stdAll.length;
   const stdUp    = stdAll.filter(isUploaded).length;
   const stdPend  = stdTotal - stdUp;
-  const splitOf  = (rows: VaultDoc[]) => {
-    const up = rows.filter(isUploaded).length;
-    return { up, pend: rows.length - up };
+  const catStat = (rows: VaultDoc[]) => {
+    const up   = rows.filter(isUploaded).length;
+    const pend = rows.length - up;
+    return { part: up, whole: rows.length, split: { up, pend } };
   };
 
   const ratioDone = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[0], 10) || 0; };
@@ -587,9 +588,9 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
             <SevStat tone="slate" icon="ri-file-list-3-line"     label="Total Standard Documents" value={stdTotal} part={stdTotal} whole={stdTotal} split={{ up: stdUp, pend: stdPend }} />
             <SevStat tone="green" icon="ri-checkbox-circle-line" label="Verified / Uploaded"      value={stdUp}    part={stdUp}    whole={stdTotal} tag="Compliant" />
             <SevStat tone="red"   icon="ri-error-warning-line"   label="Pending"                  value={stdPend}  part={stdPend}  whole={stdTotal} tag="Action needed" />
-            <SevStat tone="teal"  icon="ri-building-2-line"      label="Company Due Diligence"    value={vault.company_dd.length}     part={vault.company_dd.length}     whole={stdTotal} split={splitOf(vault.company_dd)} />
-            <SevStat tone="teal"  icon="ri-user-3-line"          label="Owner KYC"                value={vault.owner_kyc.length}      part={vault.owner_kyc.length}      whole={stdTotal} split={splitOf(vault.owner_kyc)} />
-            <SevStat tone="teal"  icon="ri-file-shield-2-line"   label="Trade License"            value={vault.trade_licenses.length} part={vault.trade_licenses.length} whole={stdTotal} split={splitOf(vault.trade_licenses)} />
+            <SevStat tone="teal"  icon="ri-building-2-line"      label="Company Due Diligence"    value={vault.company_dd.length}     {...catStat(vault.company_dd)} />
+            <SevStat tone="teal"  icon="ri-user-3-line"          label="Owner KYC"                value={vault.owner_kyc.length}      {...catStat(vault.owner_kyc)} />
+            <SevStat tone="teal"  icon="ri-file-shield-2-line"   label="Trade License"            value={vault.trade_licenses.length} {...catStat(vault.trade_licenses)} />
           </>) : (<>
             <SevStat tone="slate" icon="ri-file-list-3-line"     label="Total Case to Case Documents" value={c2cTotal} part={c2cTotal} whole={c2cTotal} split={{ up: c2cDone, pend: c2cPend, upLabel: 'signed', pendLabel: 'pending' }} />
             <SevStat tone="green" icon="ri-checkbox-circle-line" label="Total Signed"                 value={c2cDone}  part={c2cDone}  whole={c2cTotal} tag="Complete" />

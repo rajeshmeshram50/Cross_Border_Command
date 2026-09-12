@@ -18,6 +18,7 @@ use App\Models\Customer;
 use App\Models\Lead;
 use App\Models\Product;
 use App\Models\ProformaInvoice;
+use App\Models\ProformaInvoiceItem;
 use App\Models\Quotation;
 use App\Models\SegmentDocUpload;
 use App\Models\ShipmentOrder;
@@ -26,7 +27,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -53,6 +53,15 @@ class SegmentDocUploadController extends Controller
     ];
 
     private const CATEGORIES = ['kyc', 'dd', 'tl', 'td', 'qc'];
+
+    /**
+     * matchSegmentLibrary() results for the life of this request, keyed by
+     * (library, tenant, status column, segment). The controller is resolved
+     * per request, so the cache dies with it — no cross-request staleness.
+     *
+     * @var array<string,\Illuminate\Support\Collection>
+     */
+    private array $segmentLibraryCache = [];
 
     public function index(Request $request, string $type, int $id): JsonResponse
     {
@@ -343,12 +352,13 @@ class SegmentDocUploadController extends Controller
         // 3. Load master rows so the Vault can render reference/auth
         // metadata next to each row. One query per category keeps the
         // SQL count predictable even when 10+ segments are picked.
+        $authMap = ClmAuthority::idNameMap($cid);
         $masters = [
-            'kyc' => $this->fetchMasters(ClmKycDocument::class,    array_keys($unionByCat['kyc']), $cid),
-            'dd'  => $this->fetchMasters(ClmDdDocument::class,     array_keys($unionByCat['dd']),  $cid),
-            'tl'  => $this->fetchMasters(ClmTradeLicense::class,   array_keys($unionByCat['tl']),  $cid),
-            'td'  => $this->fetchMasters(ClmTradeDocLibrary::class,array_keys($unionByCat['td']),  $cid),
-            'qc'  => $this->fetchMasters(ClmQcDocument::class,     array_keys($unionByCat['qc']),  $cid),
+            'kyc' => $this->fetchMasters(ClmKycDocument::class,    array_keys($unionByCat['kyc']), $cid, $authMap),
+            'dd'  => $this->fetchMasters(ClmDdDocument::class,     array_keys($unionByCat['dd']),  $cid, $authMap),
+            'tl'  => $this->fetchMasters(ClmTradeLicense::class,   array_keys($unionByCat['tl']),  $cid, $authMap),
+            'td'  => $this->fetchMasters(ClmTradeDocLibrary::class,array_keys($unionByCat['td']),  $cid, $authMap),
+            'qc'  => $this->fetchMasters(ClmQcDocument::class,     array_keys($unionByCat['qc']),  $cid, $authMap),
         ];
 
         // 4. Pull the entity's actual uploads — group by category+code
@@ -498,7 +508,7 @@ class SegmentDocUploadController extends Controller
          * previously those parties showed 0 in the vault while the Buyer Profile
          * counted them. total_shipments and shipment_agreements stay strictly
          * shipment-linked, so the Case-to-Case shipment UI is unchanged. */
-        $deals     = $this->buildShipmentAgreements($owner, $type, $cid, $company_dd, $owner_kyc, $trade_licenses, $id, false);
+        $deals     = $this->buildShipmentAgreements($owner, $type, $cid, $company_dd, $owner_kyc, $trade_licenses, $id, false, $sameAsCustomer);
         $shipments = array_values(array_filter($deals, fn ($r) => !empty($r['has_shipment'])));
 
         /* Rows the Case-to-Case tables render.
@@ -876,7 +886,7 @@ class SegmentDocUploadController extends Controller
      *  The document buckets need ALL deals (a PI already carries applicable
      *  documents); total_shipments / shipment_agreements still want only the
      *  shipment-linked ones, so callers filter on the has_shipment flag. */
-    private function buildShipmentAgreements(Model $owner, string $type, int $cid, array $companyDd, array $ownerKyc, array $tradeLicenses, int $entityId, bool $shipmentLinkedOnly = true): array
+    private function buildShipmentAgreements(Model $owner, string $type, int $cid, array $companyDd, array $ownerKyc, array $tradeLicenses, int $entityId, bool $shipmentLinkedOnly = true, ?bool $sameAsCustomer = null): array
     {
         // Vendors aren't modelled as buyer/consignee shipments here.
         if (!in_array($type, ['customer', 'consignee'], true) || !$cid) return [];
@@ -897,8 +907,10 @@ class SegmentDocUploadController extends Controller
          *
            $entityId, not $owner->id: for a same-as-customer consignee
            resolveOwner has already swapped $owner to the linked Customer. */
-        $ownerIsSameAsCustomer = $type === 'consignee'
-            && (bool) optional(Consignee::find($entityId))->same_as_customer;
+        /* Passed in by vault(), which has already read the same tick for its own
+         * `same_as_customer` flag — one consignee row, read once. */
+        $ownerIsSameAsCustomer = $sameAsCustomer ?? ($type === 'consignee'
+            && (bool) optional(Consignee::find($entityId))->same_as_customer);
 
         // Leads (opportunities) for this party that carry a shipment order.
         // NOTE: use $entityId (the route id), NOT $owner->id — for a
@@ -993,6 +1005,14 @@ class SegmentDocUploadController extends Controller
                 });
         }
 
+        /* Every deal's PI -> products -> segments chain, resolved once.
+         *
+         * applicableShipmentDocs() used to walk it per deal: re-read the PI the
+         * loop above has already loaded, then its items, then those products'
+         * segments, then the segment rows. Four queries a deal, all of them
+         * answerable in four queries for the whole response. */
+        $dealCtx = $this->prefetchDealContext($cid, $piByLead, $piIds);
+
         // A document whose party covers BOTH buyer and consignee is emitted into
         // both lists; when merging the two sides for the ratio it must be counted
         // once (else "0/3" when only 2 distinct agreements exist). Dedupe by
@@ -1023,7 +1043,7 @@ class SegmentDocUploadController extends Controller
             // $owner is the party whose vault this is - its own segments narrow
             // the deal's list, so a consignee vault is not filtered by the
             // customer's segments (and vice versa).
-            $applicable = $this->applicableShipmentDocs($lead, $cid, $reqs, $owner->segment ?? null);
+            $applicable = $this->applicableShipmentDocs($lead, $cid, $reqs, $owner->segment ?? null, $dealCtx);
             $tradeBuyer = $applicable['trade_docs_buyer'];
             $tradeCons  = $applicable['trade_docs_consignee'];
             $agrBuyer   = $applicable['agreements_buyer'];
@@ -1248,6 +1268,73 @@ class SegmentDocUploadController extends Controller
     }
 
     /**
+     * Resolve, for EVERY deal at once, the chain applicableShipmentDocs() needs:
+     * the live Proforma Invoice per lead, the product ids on each PI, each
+     * product's CLM segment, and the segment rows themselves.
+     *
+     * Four queries for the whole response instead of four per deal. The PI map
+     * is free — $piByLead is already loaded, ordered by id ascending under the
+     * identical filter (client, opp, not cancelled), so its last entry per lead
+     * IS the `orderByDesc('id')->first()` the per-deal query was fetching.
+     *
+     * @param  \Illuminate\Support\Collection  $piByLead  live PIs grouped by opp_id, id ASC
+     * @param  int[]                           $piIds     every PI id in that map
+     * @return array{prefetched:bool, pi:array<int,ProformaInvoice>, pi_products:array<int,int[]>,
+     *               segment_by_product:array<int,int>, segments:array<int,ClmSegment>}
+     */
+    private function prefetchDealContext(int $cid, $piByLead, array $piIds): array
+    {
+        $ctx = [
+            'prefetched'         => true,
+            'pi'                 => [],
+            'pi_products'        => [],
+            'segment_by_product' => [],
+            'segments'           => [],
+        ];
+
+        foreach ($piByLead as $oppId => $group) {
+            $latest = $group->last();
+            if ($latest) $ctx['pi'][(int) $oppId] = $latest;
+        }
+        if (!$piIds) return $ctx;
+
+        // Ordered like ProformaInvoice::items(), so this map is a drop-in for the
+        // relation the per-deal path still uses on the quotation fallback.
+        foreach (ProformaInvoiceItem::whereIn('proforma_invoice_id', $piIds)
+            ->whereNotNull('product_id')
+            ->orderBy('line_no')
+            ->orderBy('id')
+            ->get(['proforma_invoice_id', 'product_id']) as $item) {
+            $ctx['pi_products'][(int) $item->proforma_invoice_id][] = (int) $item->product_id;
+        }
+        $productIds = collect($ctx['pi_products'])->flatten()->unique()->values()->all();
+        if (!$productIds) return $ctx;
+
+        // Same tenant + not-null-segment filter the per-deal query used; the
+        // soft-delete scope rides along on the model exactly as before.
+        foreach (Product::where('client_id', $cid)
+            ->whereIn('id', $productIds)
+            ->whereNotNull('segment_id')
+            ->get(['id', 'segment_id']) as $product) {
+            $ctx['segment_by_product'][(int) $product->id] = (int) $product->segment_id;
+        }
+        $segmentIds = array_values(array_unique($ctx['segment_by_product']));
+        if (!$segmentIds) return $ctx;
+
+        /* orderBy('id') where the per-deal query had none. Unordered reads are
+         * a known source of drift in this controller (see the QA #102 note in
+         * fetchMasters) and this order decides the order every trade document
+         * and agreement is listed in, so it is pinned rather than left to the
+         * plan. It matches what Postgres was already returning — the lists do
+         * not move — it just can no longer change underneath them. */
+        foreach (ClmSegment::where('client_id', $cid)->whereIn('id', $segmentIds)->orderBy('id')->get() as $seg) {
+            $ctx['segments'][(int) $seg->id] = $seg;
+        }
+
+        return $ctx;
+    }
+
+    /**
      * Every APPLICABLE trade-doc + agreement for a shipment lead, split by
      * party (buyer/consignee), with live signature status overlaid.
      *
@@ -1265,7 +1352,7 @@ class SegmentDocUploadController extends Controller
      * @param  \Illuminate\Support\Collection  $reqs  signature requests for this lead
      * @return array{trade_docs_buyer:array,trade_docs_consignee:array,agreements_buyer:array,agreements_consignee:array}
      */
-    private function applicableShipmentDocs(Lead $lead, int $cid, $reqs, ?string $partySegments = null): array
+    private function applicableShipmentDocs(Lead $lead, int $cid, $reqs, ?string $partySegments = null, array $ctx = []): array
     {
         $empty = ['trade_docs_buyer' => [], 'trade_docs_consignee' => [], 'agreements_buyer' => [], 'agreements_consignee' => []];
 
@@ -1295,11 +1382,26 @@ class SegmentDocUploadController extends Controller
          * a lead somehow carries sends without a live PI the quotation still
          * resolves the segments, because losing a signed agreement from the
          * archive is far worse than showing a count a little early. */
-        $source = ProformaInvoice::where('client_id', $cid)
-            ->where('opp_id', $lead->id)
-            ->where('status', '!=', ProformaInvoice::STATUS_CANCELLED)
-            ->orderByDesc('id')
-            ->first();
+        /* $ctx is the caller's ONE-PASS resolution of the same chain for every
+         * deal in the response: live PI per lead, its product ids, each
+         * product's segment, and the segment rows. Walking it here per deal
+         * cost four queries a deal for data the caller could read in four
+         * queries total. `prefetched` says the caller did that work, which
+         * also makes the absence of a lead authoritative: $ctx['pi'] holds
+         * EVERY live PI across these leads, so a lead missing from it has none
+         * and the PI query below would only confirm that at the price of a
+         * round trip. See prefetchDealContext(). */
+        $prefetched = !empty($ctx['prefetched']);
+        $source = $ctx['pi'][(int) $lead->id] ?? null;
+
+        if (!$source && !$prefetched) {
+            $source = ProformaInvoice::where('client_id', $cid)
+                ->where('opp_id', $lead->id)
+                ->where('status', '!=', ProformaInvoice::STATUS_CANCELLED)
+                ->orderByDesc('id')
+                ->first();
+        }
+        $fromPi = (bool) $source;
         if (!$source && $reqs->isNotEmpty()) {
             $source = Quotation::where('client_id', $cid)
                 ->where('opp_id', $lead->id)
@@ -1309,17 +1411,44 @@ class SegmentDocUploadController extends Controller
         }
         if (!$source) return $empty;
 
-        $productIds = $source->items()->whereNotNull('product_id')->pluck('product_id')->filter()->unique();
-        if ($productIds->isEmpty()) return $empty;
+        /* The quotation fallback is the archive rule (a sent document must
+         * never vanish) and is unreachable for a normal deal, so it is not
+         * prefetched — it resolves its own chain the original way. */
+        if ($fromPi && $prefetched) {
+            $productIds = collect($ctx['pi_products'][(int) $source->id] ?? [])->filter()->unique();
+            if ($productIds->isEmpty()) return $empty;
 
-        $segmentIds = Product::where('client_id', $cid)
-            ->whereIn('id', $productIds)
-            ->whereNotNull('segment_id')
-            ->pluck('segment_id')
-            ->unique();
-        if ($segmentIds->isEmpty()) return $empty;
+            $segmentIds = $productIds
+                ->map(fn ($pid) => $ctx['segment_by_product'][(int) $pid] ?? null)
+                ->filter()
+                ->unique()
+                ->flip();
+            if ($segmentIds->isEmpty()) return $empty;
 
-        $segments = ClmSegment::where('client_id', $cid)->whereIn('id', $segmentIds)->get();
+            /* Filtered out of the prefetched map rather than mapped over the
+             * deal's own id list, so the segments keep the ORDER the single
+             * ClmSegment query returned them in — which is the order the
+             * per-deal query used to return, and therefore the order the
+             * vault's document lists have always been built in. Mapping over
+             * $segmentIds instead would order them by where their product
+             * happens to sit on the PI, silently reshuffling every document
+             * list in the response. */
+            $segments = collect($ctx['segments'])
+                ->filter(fn ($seg, $sid) => $segmentIds->has((int) $sid))
+                ->values();
+        } else {
+            $productIds = $source->items()->whereNotNull('product_id')->pluck('product_id')->filter()->unique();
+            if ($productIds->isEmpty()) return $empty;
+
+            $segmentIds = Product::where('client_id', $cid)
+                ->whereIn('id', $productIds)
+                ->whereNotNull('segment_id')
+                ->pluck('segment_id')
+                ->unique();
+            if ($segmentIds->isEmpty()) return $empty;
+
+            $segments = ClmSegment::where('client_id', $cid)->whereIn('id', $segmentIds)->get();
+        }
         if ($segments->isEmpty()) return $empty;
 
         /* Narrow the deal's segments down to the ones the PARTY itself is
@@ -1409,19 +1538,17 @@ class SegmentDocUploadController extends Controller
         $tdBuyer = []; $tdCons = []; $agrBuyer = []; $agrCons = [];
         $seen = ['td' => ['Customer' => [], 'Consignee' => []], 'agr' => ['Customer' => [], 'Consignee' => []]];
 
-        /* Only what THIS deal marked Necessary in the Sales-Matrix popup.
-         * The vault used to list every segment-applicable document, so a deal
-         * that had already decided it needs three of twelve still showed all
-         * twelve here — two screens describing the same deal differently.
-         * Keyed "kind:id", loaded once: the loop runs per segment AND per
-         * party, so a lookup inside it would re-read the same handful of rows
-         * for every document on screen. */
-        $needs = [];
-        if (Schema::hasTable('clm_lead_doc_needs')) {
-            foreach (DB::table('clm_lead_doc_needs')->where('lead_id', $lead->id)->get() as $n) {
-                $needs[$n->doc_kind . ':' . $n->doc_id] = (bool) $n->needed;
-            }
-        }
+        /* clm_lead_doc_needs is deliberately NOT read here.
+         *
+         * The vault once hid anything the deal had not ticked Necessary in the
+         * Sales-Matrix popup. That rule was reversed below (necessity is a
+         * property of a document, not a reason to hide it) but the load stayed
+         * behind, and nothing has read $needs since — two queries per deal for
+         * an array that was thrown away, one of them a Schema::hasTable() that
+         * costs a pg_class lookup every time. On a ten-deal customer that was
+         * twenty round trips buying nothing. If per-deal necessity is ever
+         * surfaced again, load it ONCE for every lead in the response rather
+         * than per lead inside this method. */
 
         foreach ($segments as $seg) {
             // Agreements applicable to this segment.
@@ -1434,7 +1561,7 @@ class SegmentDocUploadController extends Controller
                  * documents than the screen the tick came from — and left the
                  * Buyer Profile (which counts applicable) disagreeing with both.
                  * Necessity is a property of a document, not a reason to hide
-                 * it. $needs stays loaded for the trade-doc pass below. */
+                 * it — the trade-doc pass below follows the same rule. */
                 [$forBuyer, $forCons] = $this->partyFlags($a->party);
                 $name = $a->title ?: $a->code;
                 // Trade docs + agreements are mandatory documents for the deal.
@@ -1496,7 +1623,28 @@ class SegmentDocUploadController extends Controller
         $name = $seg->name;
         $code = $seg->code;
         $statusVal = $statusCol === 'agr_status' ? 'Active' : 'active';
-        return $query->where('client_id', $cid)
+
+        /* Memoised per (library, tenant, status column, segment) for this
+         * request — the answer depends on nothing else.
+         *
+         * The Evidence Vault runs this twice for every segment of every deal,
+         * and a party's deals overwhelmingly repeat the same handful of
+         * segments: a ten-deal customer was re-running the same two
+         * LOWER()/LIKE scans 92 times for ~13 distinct answers. The scans are
+         * the single most expensive thing in the response (no index can serve
+         * a leading-wildcard LIKE), so repeating them is the whole cost.
+         *
+         * Keyed on the segment ID because that is what the WHERE is built
+         * from; a segment with no id (never the case for a persisted
+         * ClmSegment) falls through uncached rather than colliding on 0. */
+        $key = $seg->id ?? null;
+        $cacheKey = $key === null ? null
+            : get_class($query->getModel()) . '|' . $cid . '|' . $statusCol . '|' . (int) $key;
+        if ($cacheKey !== null && isset($this->segmentLibraryCache[$cacheKey])) {
+            return $this->segmentLibraryCache[$cacheKey];
+        }
+
+        $rows = $query->where('client_id', $cid)
             ->where('regulatory', $seg->regulatory_status)
             /* LOWER() on both sides. Postgres LIKE is case-sensitive, so a
                segment stored as "Foods" never matched a library row written
@@ -1520,6 +1668,10 @@ class SegmentDocUploadController extends Controller
             ->where($statusCol, $statusVal)
             ->orderBy('id')
             ->get();
+
+        if ($cacheKey !== null) $this->segmentLibraryCache[$cacheKey] = $rows;
+
+        return $rows;
     }
 
     /**
@@ -2062,7 +2214,7 @@ class SegmentDocUploadController extends Controller
      * useful display attributes (name, authority, expiry…) without
      * leaking internal ids the frontend doesn't need.
      */
-    private function fetchMasters(string $modelClass, array $codes, int $cid): array
+    private function fetchMasters(string $modelClass, array $codes, int $cid, ?array $authMap = null): array
     {
         if (empty($codes)) return [];
         /* orderBy('id') is load-bearing, not tidiness (QA #102).
@@ -2090,7 +2242,10 @@ class SegmentDocUploadController extends Controller
         // multi-authority docs) — resolve to current names so the Evidence
         // Vault shows the authority name, not a raw id. Unknown tokens (e.g. a
         // Trade Document's free-text counter party) pass through unchanged.
-        $authMap = ClmAuthority::idNameMap($cid);
+        /* Resolved once by the caller when it is fetching several categories —
+         * the vault reads five, and each one re-read the whole authority table
+         * to build an identical map. */
+        $authMap ??= ClmAuthority::idNameMap($cid);
         $byCode = [];
         foreach ($rows as $r) {
             // First row per code wins (see the orderBy note above) — a later
