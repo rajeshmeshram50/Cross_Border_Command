@@ -1658,8 +1658,16 @@ const SCOPED_CSS = `
 .lwp-root {
   font-family: var(--font-sans);
   background: linear-gradient(160deg, #f0fdfe 0%, #e8fafb 30%, #f5feff 60%, #ffffff 100%);
-  padding: 12px 24px 12px;
-  margin: -1rem -1.5rem;
+  /* 8px on all four sides — same as .page-content (app.css) and every other
+     page. The margin only exists to let the gradient bleed edge-to-edge, so it
+     cancels exactly .page-content's 8px and nothing more. It used to be
+     -1rem/-1.5rem, written against Velzon's stock padding that app.css has
+     since flattened to 8px, which is why the real gaps were 4px top/bottom
+     against 8px at the sides — and why setting this padding to a flat 8px
+     without fixing the margin pulled the cards 8px PAST the left and right
+     edges. */
+  padding: 8px;
+  margin: -8px;
   /* Fixed available height (viewport minus the header + horizontal menu) so
      the table card fills the screen, the table scrolls INSIDE it, and the
      pagination stays pinned at the bottom — works on small screens without

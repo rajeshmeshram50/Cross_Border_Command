@@ -5,7 +5,6 @@ import { saveAs } from 'file-saver';
 import api from '../../../api';
 import Tooltip from '../../../components/ui/Tooltip';
 import { useToast } from '../../../contexts/ToastContext';
-import { signatureRequestsToVaultDocs, type SigReqRow } from '../../../utils/vaultSignatureRows';
 import { downloadFile } from '../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../utils/resolveFileUrl';
 import type { VaultData, VaultDoc, VaultStatus } from '../core-masters/customer/CustomerEvidenceVaultModal';
@@ -88,7 +87,6 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
   const [vaultLive, setVaultLive] = useState<VaultData | null>(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [signatureRows, setSignatureRows] = useState<SigReqRow[]>([]);
   const [page, setPage] = useState(1);
   /* Which consignee tab is active (its db_id). Only meaningful when the
    * consignee strip is shown; defaults to the lead's mapped consignee. */
@@ -110,15 +108,24 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
   }, [consigneeTabs, activeConsId, target]);
 
   const ownerType = view?.ownerType ?? 'customer';
-  const modelName = ownerType === 'consignee' ? 'Consignee' : 'Customer';
 
   /* A consignee's checklist is scoped to the lead's customer segment (a
    * consignee can be mapped to multiple customers with different segments).
    * Only applies to a consignee view; a customer view uses its own segment. */
   const vaultParams = useMemo(
-    () => (ownerType === 'consignee' && scopeCustomerId
-      ? { params: { scope_customer_id: scopeCustomerId } }
-      : undefined),
+    () => ({
+      params: {
+        /* docs=1 — this vault renders three buckets (DD / KYC / Trade License)
+         * and nothing else. The full response also carries every deal, its
+         * trade documents and agreements, and the shipment matrix, all of
+         * which this screen drops. Asking for the part it uses is what makes a
+         * consignee tab switch cheap (QA #37). */
+        docs: 1,
+        ...(ownerType === 'consignee' && scopeCustomerId
+          ? { scope_customer_id: scopeCustomerId }
+          : {}),
+      },
+    }),
     [ownerType, scopeCustomerId],
   );
 
@@ -161,40 +168,58 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
   /* New tab → back to page 1. */
   useEffect(() => { setPage(1); }, [tab]);
 
+  /* Parties already fetched this session, keyed by owner.
+   *
+   * Switching consignee tabs walks back and forth over the same two or three
+   * parties; without this, every return trip paid for a fresh round trip
+   * (QA #37). A ref, not state — it must not itself cause a render — and it
+   * is emptied when the modal opens so a reopen never serves stale uploads. */
+  const vaultCacheRef = useRef<Map<string, VaultData>>(new Map());
+  const cacheKey = view?.db_id ? `${ownerType}:${view.db_id}` : null;
+
+  useEffect(() => { if (open) vaultCacheRef.current.clear(); }, [open]);
+
   const reloadVault = useCallback(() => {
     if (!view?.db_id) return Promise.resolve();
+    const key = `${ownerType}:${view.db_id}`;
     setLoading(true);
     return api.get(`/segment-uploads/${ownerType}/${view.db_id}/vault`, vaultParams)
-      .then(r => { setVaultLive((r.data?.data ?? null) as VaultData | null); })
+      .then(r => {
+        const fresh = (r.data?.data ?? null) as VaultData | null;
+        // An upload just changed this party — the cached copy is now wrong.
+        if (fresh) vaultCacheRef.current.set(key, fresh);
+        else vaultCacheRef.current.delete(key);
+        setVaultLive(fresh);
+      })
       .catch(() => { /* keep previous state on transient failures */ })
       .finally(() => setLoading(false));
   }, [view?.db_id, ownerType, vaultParams]);
 
   useEffect(() => {
-    if (!open || !view?.db_id) { setVaultLive(null); return; }
+    if (!open || !view?.db_id || !cacheKey) { setVaultLive(null); return; }
+
+    const cached = vaultCacheRef.current.get(cacheKey);
+    if (cached) { setVaultLive(cached); setLoading(false); return; }
+
     let cancelled = false;
+    /* Drop the party we just left before fetching the new one. Holding its
+     * rows through the load showed one consignee's documents under another
+     * consignee's tab — the loading state is the honest thing to show. */
+    setVaultLive(null);
     setLoading(true);
     api.get(`/segment-uploads/${ownerType}/${view.db_id}/vault`, vaultParams)
-      .then(r => { if (!cancelled) setVaultLive((r.data?.data ?? null) as VaultData | null); })
+      .then(r => {
+        if (cancelled) return;
+        const fresh = (r.data?.data ?? null) as VaultData | null;
+        if (fresh) vaultCacheRef.current.set(cacheKey, fresh);
+        setVaultLive(fresh);
+      })
       .catch(() => { if (!cancelled) setVaultLive(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [open, view?.db_id, ownerType, vaultParams]);
+  }, [open, view?.db_id, ownerType, vaultParams, cacheKey]);
 
-  useEffect(() => {
-    if (!open || !view?.db_id) { setSignatureRows([]); return; }
-    let cancelled = false;
-    api.get('/clm/signature-requests', { params: { party_id: view.db_id, model_name: modelName, sync: 1 } })
-      .then(r => { if (!cancelled) setSignatureRows(Array.isArray(r.data?.data) ? (r.data.data as SigReqRow[]) : []); })
-      .catch(() => { if (!cancelled) setSignatureRows([]); });
-    return () => { cancelled = true; };
-  }, [open, view?.db_id, modelName]);
-
-  const vault: VaultData | null = useMemo(() => {
-    if (!vaultLive) return null;
-    const sigRows = signatureRequestsToVaultDocs(signatureRows) as unknown as VaultDoc[];
-    return { ...vaultLive, trade_documents: sigRows, trade_documents_count: sigRows.length };
-  }, [vaultLive, signatureRows]);
+  const vault: VaultData | null = vaultLive;
 
   // Consignee flagged "Same as Customer" — its docs mirror the linked
   // customer and direct uploads are rejected (409). Show a badge + disable
@@ -452,7 +477,11 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
                     <th>Sr No</th>
                     <th>Auto Code</th>
                     <th>Document Name</th>
-                    <th>{tab === 'trade-documents' ? 'Counter Party' : 'Issuing Authority'}</th>
+                    {/* This vault has three tabs and none of them is Trade
+                        Documents, so the column never had a second heading to
+                        switch to — the ternary was reading a tab key TabKey
+                        does not contain. */}
+                    <th>Issuing Authority</th>
                     <th>Requirement</th>
                     <th>Actions</th>
                   </tr>

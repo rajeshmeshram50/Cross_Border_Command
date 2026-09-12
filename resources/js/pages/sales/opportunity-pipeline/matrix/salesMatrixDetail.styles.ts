@@ -16,8 +16,17 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-root {
   font-family: var(--font-sans);
   background: linear-gradient(160deg,#faf5ff 0%,#f5f3ff 35%,#fafafa 100%);
-  padding: 10px 14px 18px;
-  margin: -1rem -0.75rem;
+  /* One 8px gutter on all four sides — the app-wide number .page-content sets
+     (app.css) and every other page already follows.
+     The margin exists so the gradient background bleeds across the whole
+     content area instead of stopping at the gutter, so it must cancel exactly
+     what .page-content applies and no more. It said -1rem/-0.75rem, written
+     against Velzon's stock padding; app.css has since overridden that to a
+     flat 8px, so this was over-pulling by 8px at the top and 4px at the sides.
+     The visible gap above the customer banner was 8 - 16 + 10 = 2px, not the
+     10px the padding reads as — and 0px once the padding was evened up. */
+  padding: 8px;
+  margin: -8px;
   /* At least the viewport height — the columns fill it (see the card
      min-height below) and the page scrolls in the layout's own content area
      (whose scrollbar already starts below the navbar). Giving .smd-root its own

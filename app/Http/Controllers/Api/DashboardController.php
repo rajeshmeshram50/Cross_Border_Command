@@ -71,7 +71,7 @@ class DashboardController extends Controller
         $totalBranches = Branch::query()
             ->where(function ($q) {
                 $q->where('code', '!=', 'HO')
-                  ->orWhere('name', 'not ilike', '% — Head Office');
+                    ->orWhere('name', 'not ilike', '% — Head Office');
             })
             ->count();
 
@@ -155,7 +155,7 @@ class DashboardController extends Controller
                 'branches as branches_count' => function ($q) {
                     $q->where(function ($inner) {
                         $inner->where('code', '!=', 'HO')
-                              ->orWhere('name', 'not ilike', '% — Head Office');
+                            ->orWhere('name', 'not ilike', '% — Head Office');
                     });
                 },
                 'users',
@@ -247,7 +247,7 @@ class DashboardController extends Controller
         foreach ($mrrByPlan as $name => $amount) {
             $mrrByPlanRows[] = ['plan' => $name, 'mrr' => round($amount, 2)];
         }
-        usort($mrrByPlanRows, fn ($a, $z) => $z['mrr'] <=> $a['mrr']);
+        usort($mrrByPlanRows, fn($a, $z) => $z['mrr'] <=> $a['mrr']);
 
         return [
             'plan_distribution' => $planDistribution,
@@ -413,10 +413,10 @@ class DashboardController extends Controller
         // Recent payments — restricted to roles allowed to see billing
         $recentPayments = $canViewPayments
             ? Payment::with('plan:id,name')
-                ->where('client_id', $clientId)
-                ->orderByDesc('created_at')
-                ->limit(5)
-                ->get(['id', 'plan_id', 'total', 'status', 'method', 'invoice_number', 'valid_from', 'valid_until', 'created_at'])
+            ->where('client_id', $clientId)
+            ->orderByDesc('created_at')
+            ->limit(5)
+            ->get(['id', 'plan_id', 'total', 'status', 'method', 'invoice_number', 'valid_from', 'valid_until', 'created_at'])
             : collect();
 
         // Branches list — full list when no filter, single-branch when filtered.
@@ -436,19 +436,23 @@ class DashboardController extends Controller
         // Payment trend (last 6 months) — same gating as recent payments.
         // For restricted users we still emit month buckets with 0 amounts so
         // the chart axes render, but no revenue numbers leak through.
+        /* One grouped query instead of six — see monthlyBuckets(). A restricted
+           user still gets six zero buckets, so the axis renders without any
+           revenue figure passing through. */
+        $payMonths = $canViewPayments
+            ? $this->monthlyBuckets(
+                Payment::where('client_id', $clientId)->where('status', 'success'),
+                'created_at',
+                'total',
+            )
+            : [];
+
         $paymentTrend = [];
         for ($i = 5; $i >= 0; $i--) {
             $month = now()->subMonths($i);
-            $amount = $canViewPayments
-                ? (float) Payment::where('client_id', $clientId)
-                    ->where('status', 'success')
-                    ->whereYear('created_at', $month->year)
-                    ->whereMonth('created_at', $month->month)
-                    ->sum('total')
-                : 0.0;
             $paymentTrend[] = [
-                'month' => $month->format('M'),
-                'amount' => $amount,
+                'month'  => $month->format('M'),
+                'amount' => (float) ($payMonths[$month->format('Y-m')]->val ?? 0),
             ];
         }
 
@@ -471,7 +475,7 @@ class DashboardController extends Controller
         // disagree with the per-branch headcount donut. Live-only keeps every
         // employee figure (total, active, status donut, by-branch) consistent.
         $empBase = fn() => Employee::where('client_id', $clientId)
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
 
         // Status counts (enum values are Title-Case in the migration).
         $empStatusRows = $empBase()
@@ -488,7 +492,7 @@ class DashboardController extends Controller
         $totalEmployees    = (int) $empBase()->count();
         $activeEmployees   = (int) ($empStatusRows['Active'] ?? 0);
         $onLeaveEmployees  = (int) ($empStatusRows['On Leave'] ?? 0);
-        $probationEmployees= (int) ($empStatusRows['Probation'] ?? 0);
+        $probationEmployees = (int) ($empStatusRows['Probation'] ?? 0);
         $noticeEmployees   = (int) ($empStatusRows['Notice Period'] ?? 0);
         $exitedEmployees   = (int) (($empStatusRows['Resigned'] ?? 0) + ($empStatusRows['Terminated'] ?? 0));
 
@@ -523,13 +527,13 @@ class DashboardController extends Controller
         $empByDeptRows = Employee::query()
             ->leftJoin('master_departments', 'employees.department_id', '=', 'master_departments.id')
             ->where('employees.client_id', $clientId)
-            ->when($branchId, fn ($q) => $q->where('employees.branch_id', $branchId))
+            ->when($branchId, fn($q) => $q->where('employees.branch_id', $branchId))
             ->select(DB::raw("COALESCE(master_departments.name, 'Unassigned') as name"), DB::raw('count(*) as count'))
             ->groupBy('name')
             ->orderByDesc('count')
             ->limit(8)
             ->get()
-            ->map(fn ($r) => ['name' => $r->name, 'count' => (int) $r->count])
+            ->map(fn($r) => ['name' => $r->name, 'count' => (int) $r->count])
             ->toArray();
 
         // Designation top 5 — useful "who's most of the org" signal.
@@ -539,7 +543,7 @@ class DashboardController extends Controller
         $empByDesigRows = Employee::query()
             ->join('master_designations', 'employees.designation_id', '=', 'master_designations.id')
             ->where('employees.client_id', $clientId)
-            ->when($branchId, fn ($q) => $q->where('employees.branch_id', $branchId))
+            ->when($branchId, fn($q) => $q->where('employees.branch_id', $branchId))
             ->whereNotNull('master_designations.name')
             ->where('master_designations.name', '!=', '')
             ->select(DB::raw('master_designations.name as name'), DB::raw('count(*) as count'))
@@ -547,21 +551,25 @@ class DashboardController extends Controller
             ->orderByDesc('count')
             ->limit(5)
             ->get()
-            ->map(fn ($r) => ['name' => $r->name, 'count' => (int) $r->count])
+            ->map(fn($r) => ['name' => $r->name, 'count' => (int) $r->count])
             ->toArray();
 
         // Joining trend (last 6 months) — count rows whose date_of_joining
         // falls in each month bucket. Pre-seed all 6 buckets so the chart
         // axis is stable even for months with no hires.
+        // One grouped query instead of six — see monthlyBuckets().
+        $joinMonths = $this->monthlyBuckets(
+            $empBase()->whereNotNull('date_of_joining'),
+            'date_of_joining',
+        );
+
         $joiningTrend = [];
         for ($i = 5; $i >= 0; $i--) {
             $month = now()->subMonths($i);
-            $count = (int) $empBase()
-                ->whereNotNull('date_of_joining')
-                ->whereYear('date_of_joining', $month->year)
-                ->whereMonth('date_of_joining', $month->month)
-                ->count();
-            $joiningTrend[] = ['month' => $month->format('M'), 'count' => $count];
+            $joiningTrend[] = [
+                'month' => $month->format('M'),
+                'count' => (int) ($joinMonths[$month->format('Y-m')]->cnt ?? 0),
+            ];
         }
 
         // Tenure buckets — driven by date_of_joining vs today. Skip rows
@@ -579,7 +587,7 @@ class DashboardController extends Controller
             else                  $tenureBuckets['10+ yr']++;
         }
         $tenure = collect($tenureBuckets)
-            ->map(fn ($v, $k) => ['name' => $k, 'count' => $v])
+            ->map(fn($v, $k) => ['name' => $k, 'count' => $v])
             ->values()
             ->toArray();
 
@@ -597,7 +605,7 @@ class DashboardController extends Controller
             else                  $ageBuckets['56+']++;
         }
         $ageDistribution = collect($ageBuckets)
-            ->map(fn ($v, $k) => ['name' => $k, 'count' => $v])
+            ->map(fn($v, $k) => ['name' => $k, 'count' => $v])
             ->values()
             ->toArray();
 
@@ -646,7 +654,8 @@ class DashboardController extends Controller
                             'years'       => $kind === 'anniversary' ? max(0, $years) : null,
                         ]);
                     }
-                } catch (\Throwable $e) { /* skip bad dates */ }
+                } catch (\Throwable $e) { /* skip bad dates */
+                }
             }
         }
         $upcomingEvents = $upcomingEvents->sortBy('on')->take(6)->values();
@@ -662,7 +671,7 @@ class DashboardController extends Controller
                 'new_this_month'  => $newJoinersMonth,
                 'new_last_30d'    => $newJoinersLast30,
                 'avg_tenure_yrs'  => $avgTenureYears,
-                'faces_registered'=> $facesRegistered,
+                'faces_registered' => $facesRegistered,
             ],
             'status'           => $empStatus,
             'gender'           => $empGender,
@@ -680,17 +689,17 @@ class DashboardController extends Controller
         // above (a sub-branch user is already pinned to their branch via the
         // $branchId rewrite in clientStats()). Quotations / PIs / Leads all
         // carry branch_id, so the same filter applies cleanly.
-        $leadBase = fn () => Lead::where('client_id', $clientId)
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
-        $qtBase = fn () => Quotation::where('client_id', $clientId)
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
-        $piBase = fn () => ProformaInvoice::where('client_id', $clientId)
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+        $leadBase = fn() => Lead::where('client_id', $clientId)
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
+        $qtBase = fn() => Quotation::where('client_id', $clientId)
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
+        $piBase = fn() => ProformaInvoice::where('client_id', $clientId)
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
 
         // Lead KPIs. "Won" = reached the Victory stage (lead_stage_id 6) OR
         // has won_at stamped (the two are set together, but OR-ing is robust
         // against either being missing).
-        $isWon = fn ($w) => $w->whereNotNull('won_at')->orWhere('lead_stage_id', '>=', 6);
+        $isWon = fn($w) => $w->whereNotNull('won_at')->orWhere('lead_stage_id', '>=', 6);
         $totalLeads     = (int) $leadBase()->count();
         $qualifiedLeads = (int) $leadBase()->where('qualified', true)->where('disqualified', false)->count();
         $disqLeads      = (int) $leadBase()->where('disqualified', true)->count();
@@ -714,9 +723,9 @@ class DashboardController extends Controller
         $curUpper = strtoupper((string) $curMode);
         $currencySymbol = str_contains($curUpper, 'USD') ? '$'
             : (str_contains($curUpper, 'EUR') ? '€'
-            : (str_contains($curUpper, 'GBP') ? '£'
-            : (str_contains($curUpper, 'AED') ? 'AED '
-            : '₹')));
+                : (str_contains($curUpper, 'GBP') ? '£'
+                    : (str_contains($curUpper, 'AED') ? 'AED '
+                        : '₹')));
 
         // Pipeline funnel — count by lead_stage_id. The UI uses 1-4 then jumps
         // to 6 (Quotation vs PI) and 8 (Victory).
@@ -760,27 +769,25 @@ class DashboardController extends Controller
         $sparkQuotations = [];
         $sparkPis = [];
         $sparkValue = [];
+        /* Three grouped queries instead of eighteen — see monthlyBuckets().
+           The loop below still walks all six months so a month with no rows
+           keeps its zero bucket and the chart axis stays stable. */
+        $leadMonths = $this->monthlyBuckets($leadBase(), 'created_at');
+        $qtMonths   = $this->monthlyBuckets($qtBase(), 'created_at', 'grand_total');
+        $piMonths   = $this->monthlyBuckets($piBase(), 'created_at');
+
         for ($i = 5; $i >= 0; $i--) {
             $month = now()->subMonths($i);
-            $leadCount = (int) $leadBase()
-                ->whereYear('created_at', $month->year)
-                ->whereMonth('created_at', $month->month)
-                ->count();
+            $ym    = $month->format('Y-m');
+
+            $leadCount = (int) ($leadMonths[$ym]->cnt ?? 0);
             $leadsTrend[]  = ['month' => $month->format('M'), 'count' => $leadCount];
             $sparkLeads[]  = $leadCount;
 
-            $qtAgg = $qtBase()
-                ->whereYear('created_at', $month->year)
-                ->whereMonth('created_at', $month->month)
-                ->selectRaw('COUNT(*) as cnt, COALESCE(SUM(grand_total), 0) as val')
-                ->first();
-            $sparkQuotations[] = (int) ($qtAgg->cnt ?? 0);
-            $sparkValue[]      = (float) ($qtAgg->val ?? 0);
+            $sparkQuotations[] = (int) ($qtMonths[$ym]->cnt ?? 0);
+            $sparkValue[]      = (float) ($qtMonths[$ym]->val ?? 0);
 
-            $sparkPis[] = (int) $piBase()
-                ->whereYear('created_at', $month->year)
-                ->whereMonth('created_at', $month->month)
-                ->count();
+            $sparkPis[] = (int) ($piMonths[$ym]->cnt ?? 0);
         }
 
         // Recent opportunities — latest 6 leads with their stage + customer.
@@ -789,7 +796,7 @@ class DashboardController extends Controller
             ->orderByDesc('id')
             ->limit(6)
             ->get(['id', 'opp_code', 'lead_stage_id', 'customer_id', 'sender_company', 'qualified', 'disqualified', 'won_at', 'created_at'])
-            ->map(fn ($l) => [
+            ->map(fn($l) => [
                 'id'           => $l->id,
                 'opp_code'     => $l->opp_code,
                 'customer'     => $l->customer?->company_name ?: ($l->sender_company ?: '—'),
@@ -810,7 +817,7 @@ class DashboardController extends Controller
             ->limit(5)
             ->with('customer:id,company_name')
             ->get()
-            ->map(fn ($r) => [
+            ->map(fn($r) => [
                 'customer'   => $r->customer?->company_name ?? '—',
                 'value'      => (float) $r->value,
                 'quotations' => (int) $r->quotations,
@@ -820,10 +827,10 @@ class DashboardController extends Controller
         // Product catalogue + supplier (vendor) onboarding, branch-scoped the
         // same way. Both carry client_id + branch_id and a 4-step onboarding
         // (step_completed 0-4) plus a draft/inactive/active status.
-        $prodBase = fn () => Product::where('client_id', $clientId)
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
-        $venBase = fn () => Vendor::where('client_id', $clientId)
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+        $prodBase = fn() => Product::where('client_id', $clientId)
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
+        $venBase = fn() => Vendor::where('client_id', $clientId)
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
 
         $prodStatus = $prodBase()->select('status', DB::raw('count(*) as c'))->groupBy('status')->pluck('c', 'status')->toArray();
         $venStatus  = $venBase()->select('status', DB::raw('count(*) as c'))->groupBy('status')->pluck('c', 'status')->toArray();
@@ -847,14 +854,14 @@ class DashboardController extends Controller
         $venByType = Vendor::query()
             ->leftJoin('master_vendor_types', 'vendors.vendor_type_id', '=', 'master_vendor_types.id')
             ->where('vendors.client_id', $clientId)
-            ->when($branchId, fn ($q) => $q->where('vendors.branch_id', $branchId))
+            ->when($branchId, fn($q) => $q->where('vendors.branch_id', $branchId))
             ->whereNull('vendors.deleted_at')
             ->select(DB::raw("COALESCE(master_vendor_types.name, 'Unassigned') as name"), DB::raw('count(*) as count'))
             ->groupBy('name')
             ->orderByDesc('count')
             ->limit(5)
             ->get()
-            ->map(fn ($r) => ['name' => $r->name, 'count' => (int) $r->count])
+            ->map(fn($r) => ['name' => $r->name, 'count' => (int) $r->count])
             ->toArray();
 
         $procurementAnalytics = [
@@ -891,8 +898,8 @@ class DashboardController extends Controller
         // E-signature requests + segments are branch-scoped; the compliance
         // LIBRARY masters (KYC/DD/QC/TL/agreements/trade-docs/clauses/T&Cs) are
         // client-level only, so those are shown as client-wide catalogue sizes.
-        $sigBase = fn () => ClmSignatureRequest::where('client_id', $clientId)
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+        $sigBase = fn() => ClmSignatureRequest::where('client_id', $clientId)
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
 
         $sigStatusRows = $sigBase()->select('status', DB::raw('count(*) as c'))->groupBy('status')->pluck('c', 'status')->toArray();
         $sigTypeRows   = $sigBase()->select('document_type', DB::raw('count(*) as c'))->groupBy('document_type')->pluck('c', 'document_type')->toArray();
@@ -920,17 +927,17 @@ class DashboardController extends Controller
         $library = [
             ['name' => 'KYC Documents',       'count' => (int) ClmKycDocument::where('client_id', $clientId)->count(),     'icon' => 'kyc'],
             ['name' => 'Due Diligence',       'count' => (int) ClmDdDocument::where('client_id', $clientId)->count(),      'icon' => 'dd'],
-            ['name' => 'Quality & Compliance','count' => (int) ClmQcDocument::where('client_id', $clientId)->count(),      'icon' => 'qc'],
+            ['name' => 'Quality & Compliance', 'count' => (int) ClmQcDocument::where('client_id', $clientId)->count(),      'icon' => 'qc'],
             ['name' => 'Trade Licenses',      'count' => (int) ClmTradeLicense::where('client_id', $clientId)->count(),    'icon' => 'tl'],
-            ['name' => 'Agreements',          'count' => (int) ClmAgreementLibrary::where('client_id', $clientId)->count(),'icon' => 'agr'],
+            ['name' => 'Agreements',          'count' => (int) ClmAgreementLibrary::where('client_id', $clientId)->count(), 'icon' => 'agr'],
             ['name' => 'Trade Documents',     'count' => (int) ClmTradeDocLibrary::where('client_id', $clientId)->count(), 'icon' => 'td'],
             ['name' => 'Clauses',             'count' => (int) ClmClauseLibrary::where('client_id', $clientId)->count(),   'icon' => 'clause'],
             ['name' => 'Terms & Conditions',  'count' => (int) ClmTncLibrary::where('client_id', $clientId)->count(),      'icon' => 'tnc'],
         ];
 
         // Segments (branch-aware) — total + highly-regulated count.
-        $segBase = fn () => ClmSegment::where('client_id', $clientId)
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+        $segBase = fn() => ClmSegment::where('client_id', $clientId)
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
         $totalSegments     = (int) $segBase()->count();
         $highlyRegSegments = (int) $segBase()->where('regulatory_status', 'highly')->count();
 
@@ -974,7 +981,7 @@ class DashboardController extends Controller
             }
             // Largest branch by users (login seats) first — this is a tenant
             // view, so we rank by seats, then employees, not sales value.
-            usort($byBranch, fn ($a, $z) => ($z['users'] <=> $a['users']) ?: ($z['employees'] <=> $a['employees']));
+            usort($byBranch, fn($a, $z) => ($z['users'] <=> $a['users']) ?: ($z['employees'] <=> $a['employees']));
         }
 
         // ── Access & permissions overview — how many modules each user can
@@ -984,7 +991,7 @@ class DashboardController extends Controller
         $totalModules = (int) Module::count();
         $access = [];
         $permAgg = Permission::where('client_id', $clientId)
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
             ->where('can_view', true)
             ->select(
                 'user_id',
@@ -1015,7 +1022,7 @@ class DashboardController extends Controller
             }
             // Most-privileged users first. Return a generous slice so the
             // frontend can paginate (5 per page) rather than just a top-N.
-            usort($access, fn ($a, $z) => $z['modules'] <=> $a['modules']);
+            usort($access, fn($a, $z) => $z['modules'] <=> $a['modules']);
             $access = array_slice($access, 0, 60);
         }
 
@@ -1132,7 +1139,7 @@ class DashboardController extends Controller
             'photo_url'       => $emp?->photo_url,
             'status'          => $emp?->status ?: 'Active',
             'department_name' => $emp?->department?->name,
-            'designation_name'=> $emp?->designation?->name,
+            'designation_name' => $emp?->designation?->name,
             'manager_id'      => $manager?->id,
             'manager_name'    => $manager?->display_name,
             'manager_photo'   => $manager?->photo_url,
@@ -1175,7 +1182,7 @@ class DashboardController extends Controller
                 ->orderByDesc('id')
                 ->limit(5)
                 ->get(['id', 'claim_no', 'title', 'category_name', 'amount', 'currency', 'expense_date', 'status', 'manager_status', 'hr_status'])
-                ->map(fn ($c) => [
+                ->map(fn($c) => [
                     'id'           => $c->id,
                     'claim_no'     => $c->claim_no,
                     'title'        => $c->title,
@@ -1196,7 +1203,7 @@ class DashboardController extends Controller
                 ->orderByDesc('created_at')
                 ->limit(5)
                 ->get(['id', 'claim_no', 'title', 'amount', 'currency', 'employee_id', 'category_name', 'created_at'])
-                ->map(fn ($c) => [
+                ->map(fn($c) => [
                     'id'         => $c->id,
                     'claim_no'   => $c->claim_no,
                     'title'      => $c->title,
@@ -1306,7 +1313,7 @@ class DashboardController extends Controller
             foreach ($byType as $name => $days) {
                 $leaveByType[] = ['type' => $name, 'days' => round($days, 1)];
             }
-            usort($leaveByType, fn ($a, $b) => $b['days'] <=> $a['days']);
+            usort($leaveByType, fn($a, $b) => $b['days'] <=> $a['days']);
         }
 
         // ── My Team — pick the most-relevant cohort based on where the
@@ -1358,7 +1365,7 @@ class DashboardController extends Controller
                 // 3. Department peers (top-of-tree fallback).
                 $deptBase = Employee::where('department_id', $emp->department_id)
                     ->where('client_id', $clientId)
-                    ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+                    ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
                     ->where('id', '!=', $employeeId)
                     ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated']);
                 $teamKind  = 'department';
@@ -1370,7 +1377,7 @@ class DashboardController extends Controller
                     ->get(['id', 'emp_code', 'display_name', 'designation_id']);
             }
 
-            $teamPeers = $teamPeers->map(fn ($p) => [
+            $teamPeers = $teamPeers->map(fn($p) => [
                 'id'               => $p->id,
                 'emp_code'         => $p->emp_code,
                 'display_name'     => $p->display_name,
@@ -1395,7 +1402,7 @@ class DashboardController extends Controller
             $empRoles = $emp ? array_values(array_unique(array_map('intval', array_filter(array_merge(
                 [$emp->primary_role_id, $emp->ancillary_role_id],
                 is_array($emp->ancillary_role_ids) ? $emp->ancillary_role_ids : [],
-            ), fn ($v) => $v !== null && $v !== '')))) : [];
+            ), fn($v) => $v !== null && $v !== '')))) : [];
 
             $announcements = Announcement::query()
                 ->where('client_id', $clientId)
@@ -1420,7 +1427,7 @@ class DashboardController extends Controller
                     return true;
                 })
                 ->take(5)
-                ->map(fn ($a) => [
+                ->map(fn($a) => [
                     'id'         => $a->id,
                     'title'      => $a->title,
                     'snippet'    => mb_strimwidth(strip_tags((string) $a->description), 0, 140, '…'),
@@ -1440,7 +1447,7 @@ class DashboardController extends Controller
             $today = Carbon::now();
             $rangeEnd = $today->copy()->addDays(30);
             $teamRows = Employee::where('client_id', $clientId)
-                ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+                ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
                 // Only active staff — exclude inactive / exited (resigned /
                 // terminated) people from birthday / work-anniversary celebrations.
                 ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated'])
@@ -1465,7 +1472,8 @@ class DashboardController extends Controller
                                 'years'       => $kind === 'anniversary' ? max(0, $years) : null,
                             ]);
                         }
-                    } catch (\Throwable $e) { /* skip bad dates */ }
+                    } catch (\Throwable $e) { /* skip bad dates */
+                    }
                 }
             }
             $upcomingEvents = $upcomingEvents->sortBy('on')->take(6)->values();
@@ -1533,6 +1541,23 @@ class DashboardController extends Controller
     }
 
     /** Roll up the two-stage expense status into a single chip value. */
+
+    private function monthlyBuckets($query, string $dateCol, ?string $sumCol = null, int $months = 6): array
+    {
+        $from = now()->subMonths($months - 1)->startOfMonth();
+        $sum  = $sumCol ? "COALESCE(SUM({$sumCol}), 0)" : '0';
+
+        $rows = $query
+            ->where($dateCol, '>=', $from)
+            ->selectRaw("to_char({$dateCol}, 'YYYY-MM') as ym, COUNT(*) as cnt, {$sum} as val")
+            ->groupByRaw("to_char({$dateCol}, 'YYYY-MM')")
+            ->get();
+
+        $out = [];
+        foreach ($rows as $r) $out[(string) $r->ym] = $r;
+        return $out;
+    }
+
     private function rollupExpenseStatus(?string $managerStatus, ?string $hrStatus): string
     {
         if ($managerStatus === 'rejected' || $hrStatus === 'rejected') return 'Rejected';
@@ -1550,10 +1575,18 @@ class DashboardController extends Controller
     {
         if (!$emp) return 0;
         $fields = [
-            'first_name', 'last_name', 'gender', 'date_of_birth',
-            'email', 'mobile',
-            'department_id', 'designation_id', 'date_of_joining',
-            'address_line1', 'city', 'country_id',
+            'first_name',
+            'last_name',
+            'gender',
+            'date_of_birth',
+            'email',
+            'mobile',
+            'department_id',
+            'designation_id',
+            'date_of_joining',
+            'address_line1',
+            'city',
+            'country_id',
         ];
         $hit = 0;
         foreach ($fields as $f) {
