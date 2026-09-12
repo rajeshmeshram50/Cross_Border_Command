@@ -3942,7 +3942,7 @@ function ConsigneeUploadExpiryPopup({ docName, docCode, authority, category, fil
                 have been issued in the future. */}
             <div className="acm-upx-fld">
               <label>Issue Date <span className="acm-upx-hint">Optional</span></label>
-              <MasterDatePicker value={issue} maxDate={today} placeholder="Select issue date" onChange={(v: string) => setIssue(v)} />
+              <MasterDatePicker value={issue} maxDate={today} placeholder="Select issue date" onChange={(v: string) => setIssue(v)} disabled={busy} />
             </div>
             <div className="acm-upx-fld">
               <label>Expiry {!hasExpiry && <span className="acm-upx-hint">Has an expiry date?</span>}</label>
@@ -3956,7 +3956,7 @@ function ConsigneeUploadExpiryPopup({ docName, docCode, authority, category, fil
                   <div className="acm-upx-date">
                     {/* Can't already be expired on the day it is filed. */}
                     {/* Floor is the LATER of today and the issue date. */}
-                    <MasterDatePicker value={date} minDate={issue && issue > today ? issue : today} placeholder="Select expiry date" onChange={(v: string) => setDate(v)} />
+                    <MasterDatePicker value={date} minDate={issue && issue > today ? issue : today} placeholder="Select expiry date" onChange={(v: string) => setDate(v)} disabled={busy} />
                   </div>
                 )}
               </div>

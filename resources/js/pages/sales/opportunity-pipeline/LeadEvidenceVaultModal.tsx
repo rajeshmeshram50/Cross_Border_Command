@@ -8,6 +8,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { downloadFile } from '../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../utils/resolveFileUrl';
 import type { VaultData, VaultDoc, VaultStatus } from '../core-masters/customer/CustomerEvidenceVaultModal';
+import { VaultReuploadPopup } from '../../p2p/p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Lead Evidence Vault — Sales Matrix lead-stage popup
@@ -706,12 +707,24 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
     finally { setDling(false); }
   };
 
-  const onPick = async (f: File | undefined) => {
-    if (!f || !ownerId || !doc.doc_code) return;
+  /* Upload runs through the same dialog the other two vaults use, so the issue
+     and expiry dates are asked for before the file goes up. Uploading straight
+     off the file picker stored both as null, and this vault has no columns for
+     them — but the record is shared, so the Consignee vault's Issue Date and
+     Expiry columns were left blank by anything filed from here.
+     No className: this vault's header is violet, which is the dialog's own
+     default. The popup owns the picker and the type / size guards. */
+  const [reupOpen, setReupOpen] = useState(false);
+  /* CONSIGNEE only. This same component also drives the CLM panel's "Customer
+     Details" row, and the issue-date work is scoped to the consignee — so the
+     customer keeps the straight-to-picker upload it has always had. */
+  const useUploadPopup = ownerType === 'consignee';
 
-    // Validate on the FRONTEND before uploading so the user gets an immediate
-    // toast instead of a silent 422 (the server enforces the same rules:
-    // pdf/jpg/jpeg/png, max 2048 KB). Mirrors the backend attachment rule.
+  /* Customer path: straight from the file picker, exactly as before. The
+     dialog owns these guards for the consignee path, so they live here only
+     for the side that still uploads without it. */
+  const onPickDirect = async (f: File | undefined) => {
+    if (!f || !ownerId || !doc.doc_code) return;
     const VAULT_ALLOWED = ['pdf', 'jpg', 'jpeg', 'png'];
     const VAULT_MAX_KB = 2048;
     const ext = (f.name.split('.').pop() || '').toLowerCase();
@@ -723,7 +736,11 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
       toast.error('File too large', `The file must be ${VAULT_MAX_KB} KB (2 MB) or smaller.`);
       return;
     }
+    await doUpload(f);
+  };
 
+  const doUpload = async (f: File, issueDate?: string, expiryDate?: string) => {
+    if (!ownerId || !doc.doc_code) return;
     setBusy(true);
     try {
       const fd = new FormData();
@@ -731,7 +748,12 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
       fd.append('doc_code', doc.doc_code);
       fd.append('doc_name', doc.name || doc.doc_code);
       fd.append('attachment', f);
+      // Left out when not given — the endpoint's rules are nullable, and an
+      // empty string would fail their `date` check.
+      if (issueDate) fd.append('issue_date', issueDate);
+      if (expiryDate) fd.append('expiry_date', expiryDate);
       await api.post(`/segment-uploads/${ownerType}/${ownerId}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setReupOpen(false);
       await onReload();
       toast.success('Uploaded', `${f.name} attached.`);
     } catch (e: any) {
@@ -746,8 +768,23 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
 
   return (
     <div className="lev-row-actions">
-      <input ref={fileRef} type="file" hidden accept=".pdf,.jpg,.jpeg,.png"
-             onChange={e => { void onPick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }} />
+      {/* Customer keeps the plain hidden-input picker; only the consignee goes
+          through the dialog. */}
+      {!useUploadPopup && (
+        <input ref={fileRef} type="file" hidden accept=".pdf,.jpg,.jpeg,.png"
+               onChange={e => { void onPickDirect(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }} />
+      )}
+      {reupOpen && useUploadPopup && (
+        <VaultReuploadPopup
+          doc={doc}
+          category={category}
+          busy={busy}
+          withIssueDate
+          className="lev-reup"
+          onClose={() => { if (!busy) setReupOpen(false); }}
+          onSubmit={(f, opts) => doUpload(f, opts?.issueDate, opts?.expiryDate)}
+        />
+      )}
       <Tooltip label={canViewOrDownload ? `View ${doc.attachment}` : 'No attachment yet'}>
         <a href={canViewOrDownload ? doc.attachment_url! : undefined} target={canViewOrDownload ? '_blank' : undefined} rel="noreferrer"
            aria-disabled={!canViewOrDownload} className={`lev-act lev-act-view ${!canViewOrDownload ? 'is-disabled' : ''}`}
@@ -769,7 +806,8 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
                     toast.warning('Upload not allowed', 'This consignee is “Same as Customer” — you cannot upload a file here. Upload it on the linked customer instead.');
                     return;
                   }
-                  fileRef.current?.click();
+                  if (useUploadPopup) setReupOpen(true);
+                  else fileRef.current?.click();
                 }}
                 className={`lev-act lev-act-upload ${(sameAsCustomer || !canReupload || busy) ? 'is-disabled' : ''}`} aria-label={doc.attachment ? 'Re-upload' : 'Upload'}>
           {busy
@@ -944,6 +982,52 @@ const LEV_CSS = `
 .lev-mirror-cta:hover { filter: brightness(1.07); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(180,83,9,.34); }
 .lev-mirror-cta:active { transform: none; }
 [data-bs-theme="dark"] .lev-mirror-cta { background: linear-gradient(135deg, #F59E0B, #D97706); color: #1c1410; }
+
+/* ─── Upload dialog, as launched FROM THIS VAULT ───────────────────────────
+ *
+ * The dialog itself is shared (VaultReuploadPopup). Its violet already matches
+ * this vault's header, so nothing is recoloured here — only the geometry.
+ *
+ * minmax(0,1fr) is the one that matters. A grid item's default min-width is
+ * AUTO, so a column sized 1fr still refuses to go narrower than its content —
+ * and an Issuing Authority value can run to a couple of hundred characters.
+ * That one cell held its column open, pushed the right-hand column clean past
+ * the card, and the card's overflow:hidden cut it off: Document Name and Issue
+ * Date were rendered but invisible, which read as "the fields are missing".
+ * Letting both columns shrink is also what lets .cev-reup-ro's ellipsis bite. */
+.lev-reup .cev-reup-card { max-width: 880px; }
+.lev-reup .cev-reup-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.lev-reup .cev-reup-fld { min-width: 0; }
+
+/* The read-only boxes carry text-overflow: ellipsis and it never fired — they
+   are flex containers, and text-overflow only applies to a BLOCK container's
+   own text. Block + line-height keeps the 38px height and the centring that
+   align-items was doing, and lets the ellipsis work. */
+.lev-reup .cev-reup-ro {
+  display: block; line-height: 36px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Expiry: the Yes / No pair and the date on ONE line. Stacked, the Expiry cell
+   was two rows tall while the four fields around it were one, so the grid
+   pulled out of line and the dialog grew for a field that needs none of it.
+   row-gap 0 because the label already has margin-bottom: 6px — a flex row-gap
+   ADDS to it, which pushed this field's control 8px below its neighbours'. */
+.lev-reup .cev-reup-fld:has(> .cev-reup-toggle) {
+  display: flex; flex-wrap: wrap; align-items: center;
+  row-gap: 0; column-gap: 8px;
+}
+.lev-reup .cev-reup-fld:has(> .cev-reup-toggle) > label { flex: 0 0 100%; }
+/* The date wrapper's 8px top margin is an inline style, so clearing it needs
+   !important. */
+.lev-reup .cev-reup-fld > .cev-reup-toggle + div {
+  margin-top: 0 !important; flex: 1 1 170px; min-width: 0;
+}
+/* One row of controls, one height — .cev-reup-ro and the toggle are both 38px;
+   the picker sizes itself from its padding and lands a shade taller. */
+.lev-reup .cev-reup-fld > .cev-reup-toggle + div .master-datepicker-toggle {
+  height: 38px; box-sizing: border-box;
+}
 
 /* Trail strip — shown only when the vault was reached from a consignee.
    Deliberately quiet: one short line under a hero that already carries the

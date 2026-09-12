@@ -1505,6 +1505,16 @@ function evFmtExpiry(s?: string | null): string {
   return `${String(d.getDate()).padStart(2, '0')}-${EV_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
 }
 
+/* Date cells read "N/A" when there is no date, not "—".
+   Expiry already showed N/A (its fallback text comes from the segment-rule
+   master), so a bare dash in Issue Date beside it looked like a different kind
+   of nothing — a missing value versus a not-applicable one. Both mean the same
+   here: no date was recorded. */
+const evFmtDateCell = (s?: string | null): string => {
+  const t = evFmtExpiry(s);
+  return !t || t === '—' ? 'N/A' : t;
+};
+
 function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, onRowBusyChange, sameAsCustomer = false }: {
   rows: VaultDoc[];
   tab: TabKey;
@@ -1600,7 +1610,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                 )}
               </td>
               {tab !== 'trade-documents' && (
-                <td className="cev-cell-dim">{evFmtExpiry(d.issue_date)}</td>
+                <td className="cev-cell-dim">{evFmtDateCell(d.issue_date)}</td>
               )}
               {/* A date already past is called out — evEffectiveStatus treats it
                   as Expired regardless of what the API called the row, and the
@@ -1608,7 +1618,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                   beside it says otherwise. */}
               {tab !== 'trade-documents' && (
                 <td className={evEffectiveStatus(d) === 'Expired' ? 'cev-exp-over' : 'cev-cell-dim'}>
-                  {evFmtExpiry(d.expiry)}
+                  {evFmtDateCell(d.expiry)}
                 </td>
               )}
               <td>
@@ -2140,6 +2150,21 @@ const CNEV_CSS = `
   background: rgba(6,182,212,.12); border-color: rgba(6,182,212,.35); color: #67e8f9;
 }
 [data-bs-theme="dark"] .cev-reup-ov.cnev-reup .cev-reup-cur:hover { background: rgba(6,182,212,.20); }
+
+/* Everything is disabled while the upload is in flight — the drop zone and the
+   Yes / No pair included, not just Cancel and Save. The attribute alone blocks
+   the click; this is the cue that says so, otherwise the controls look live and
+   the user keeps pressing them. */
+.cev-reup-ov.cnev-reup .cev-reup-drop:disabled,
+.cev-reup-ov.cnev-reup .cev-reup-toggle button:disabled {
+  opacity: .55; cursor: not-allowed;
+}
+.cev-reup-ov.cnev-reup .cev-reup-drop:disabled:hover {
+  border-color: #cbd5e1; background: #f8fafc; color: #64748b;
+}
+[data-bs-theme="dark"] .cev-reup-ov.cnev-reup .cev-reup-drop:disabled:hover {
+  border-color: #2a4a56; background: #16303b; color: #9db3c1;
+}
 
 /* Expiry: the Yes / No pair and the date on ONE line.
  *
