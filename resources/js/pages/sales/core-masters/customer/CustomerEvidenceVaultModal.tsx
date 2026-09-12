@@ -1331,7 +1331,10 @@ function ShipmentTable({ rows, kind, filter, onSend, onBulkSend, activeSend }: {
      see shippedRows in the vault — so this only splits by the consignee switch. */
   const filtered = rows.filter(r => buyerNeq ? !r.buyer_is_consignee : r.buyer_is_consignee);
   const showAgreement = kind === 'agreement' || kind === 'both';
-  const COLS = showAgreement ? 11 : 10;
+  /* 'both' is the mode whose expanded row shows trade documents and agreements
+     as one list, so the two ratio columns collapse into one to match it. */
+  const merged = kind === 'both';
+  const COLS = showAgreement && !merged ? 11 : 10;
   return (
     <>
       <div className="cev-table-wrap">
@@ -1345,11 +1348,14 @@ function ShipmentTable({ rows, kind, filter, onSend, onBulkSend, activeSend }: {
               <th>Opportunity ID</th>
               <th>Customer</th>
               <th>Consignee</th>
-              <th>Due Dil.</th>
-              <th>KYC</th>
-              <th>Trade Lic.</th>
-              <th>Trade Docs</th>
-              {showAgreement && <th>Agreement</th>}
+              <th style={RATIO_COL}>Due Dil.</th>
+              <th style={RATIO_COL}>KYC</th>
+              <th style={RATIO_COL}>Trade Lic.</th>
+              {/* One column when the expanded panel shows one merged list. Its
+                  header is far wider than the ratio under it, so the pair is
+                  centred rather than left to hug the left edge of the column. */}
+              <th style={RATIO_COL}>{merged ? 'Trade Docs & Agreements' : 'Trade Docs'}</th>
+              {showAgreement && !merged && <th style={RATIO_COL}>Agreement</th>}
             </tr>
           </thead>
           <tbody>
@@ -1380,11 +1386,11 @@ function ShipmentTable({ rows, kind, filter, onSend, onBulkSend, activeSend }: {
                         {r.consignee || '—'}
                       </span>
                     </td>
-                    <td><Ratio r={r.due_dil} /></td>
-                    <td><Ratio r={r.kyc} /></td>
-                    <td><Ratio r={r.trade_lic} /></td>
-                    <td><Ratio r={r.trade_docs} /></td>
-                    {showAgreement && <td><Ratio r={r.agreement} /></td>}
+                    <td style={RATIO_COL}><Ratio r={r.due_dil} /></td>
+                    <td style={RATIO_COL}><Ratio r={r.kyc} /></td>
+                    <td style={RATIO_COL}><Ratio r={r.trade_lic} /></td>
+                    <td style={RATIO_COL}><Ratio r={merged ? sumRatios(r.trade_docs, r.agreement) : r.trade_docs} /></td>
+                    {showAgreement && !merged && <td style={RATIO_COL}><Ratio r={r.agreement} /></td>}
                   </tr>
                   {open && (
                     <tr className="cev-ship-expand">
@@ -1464,12 +1470,10 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
   const pickable  = docs.filter(selectable);
   const chosen    = docs.filter(d => picked.includes(docKey(d)) && selectable(d));
   const allPicked = pickable.length > 0 && chosen.length === pickable.length;
-  /* Trade documents and agreements travel through different send flows, so one
-     batch has to be all of one kind. */
-  /* A batch may mix trade documents and agreements. They still travel on
-     separate signature requests — the two live in different libraries and the
-     backend keeps one request to one kind — so a mixed pick is sent as two
-     rounds, back to back, from the one click. */
+  /* A batch may mix trade documents and agreements, and they now travel in ONE
+     signature request: the send endpoint takes both libraries and renders them
+     into a single Zoho envelope, so the signer gets one email listing every
+     document ticked here. Used only to word the tooltip. */
   const mixedKinds = new Set(chosen.map(d => (d.doc_type === 'agreement' ? 'agreement' : 'trade'))).size > 1;
   const bulkParty = (d: VaultShipmentDoc): 'buyer' | 'consignee' => (buyer.includes(d) ? 'buyer' : 'consignee');
   const toggle    = (d: VaultShipmentDoc) =>
@@ -1575,7 +1579,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
                   <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                     {d.signed_url && (
                       <Tooltip label="View signed document">
-                        <button type="button" aria-label="View" onClick={() => window.open(resolveFileUrl(d.signed_url!), '_blank', 'noopener')} style={{ ...docActStyle('#0891b2'), padding: '4px 8px' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg> View</button>
+                        <button type="button" aria-label="View" onClick={() => window.open(resolveFileUrl(d.signed_url!), '_blank', 'noopener')} style={docActStyle('view')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg> View</button>
                       </Tooltip>
                     )}
                     {d.status === 'Draft' && onSend && d.db_id && (() => {
@@ -1584,7 +1588,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
                         <Tooltip label={isSending ? 'Sending…' : 'Send for signature'}>
                         <button type="button" aria-label="Send" disabled={isSending}
                           onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')}
-                          style={{ ...docActPrimary(), padding: '4px 8px', ...(isSending ? { cursor: 'wait' } : null) }}>
+                          style={{ ...docActStyle('send'), ...(isSending ? { cursor: 'wait' } : null) }}>
                           {isSending
                             ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 12, display: 'inline-block' }} aria-hidden />
                             : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}{isSending ? ' Sending…' : ' Send'}
@@ -1598,7 +1602,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
                         <Tooltip label={isSending ? 'Sending…' : 'Send the Proforma Invoice for signature'}>
                         <button type="button" aria-label="Send for Signature" disabled={isSending}
                           onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')}
-                          style={{ ...docActPrimary(), padding: '4px 8px', ...(isSending ? { cursor: 'wait' } : null) }}>
+                          style={{ ...docActStyle('send'), ...(isSending ? { cursor: 'wait' } : null) }}>
                           {isSending
                             ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 12, display: 'inline-block' }} aria-hidden />
                             : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}{isSending ? ' Sending…' : ' Send'}
@@ -1612,7 +1616,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
                         <Tooltip label={isSending ? 'Sending…' : `Re-send for signature (${d.status.toLowerCase()})`}>
                         <button type="button" aria-label="Resend for Signature" disabled={isSending}
                           onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')}
-                          style={{ ...docActPrimary(), padding: '4px 8px', ...(isSending ? { cursor: 'wait' } : null) }}>
+                          style={{ ...docActStyle('send'), ...(isSending ? { cursor: 'wait' } : null) }}>
                           {isSending
                             ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 12, display: 'inline-block' }} aria-hidden />
                             : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg>}{isSending ? ' Sending…' : ' Resend'}
@@ -1620,12 +1624,12 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
                         </Tooltip>
                       );
                     })()}
-                    {d.status === 'Pending' && d.sig_req_id > 0 && <Tooltip label={busy === d.sig_req_id ? 'Sending reminder…' : 'Send reminder to the signer'}><button type="button" aria-label="Send Reminder" disabled={busy === d.sig_req_id} onClick={() => remind(d)} style={{ ...docActStyle('#06b6d4'), padding: '4px 8px' }}>{busy === d.sig_req_id ? '…' : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>}{busy === d.sig_req_id ? ' Sending…' : ' Remind'}</button></Tooltip>}
+                    {d.status === 'Pending' && d.sig_req_id > 0 && <Tooltip label={busy === d.sig_req_id ? 'Sending reminder…' : 'Send reminder to the signer'}><button type="button" aria-label="Send Reminder" disabled={busy === d.sig_req_id} onClick={() => remind(d)} style={docActStyle('remind')}>{busy === d.sig_req_id ? '…' : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>}{busy === d.sig_req_id ? ' Sending…' : ' Remind'}</button></Tooltip>}
                     {(d.signature_request_id ?? (d.sig_req_id > 0 ? d.sig_req_id : null)) && (
                       <Tooltip label="View signing timeline">
                         <button type="button" aria-label="Signing activity tracker"
                           onClick={() => setTrackSig({ id: (d.signature_request_id ?? d.sig_req_id) as number, code: d.pi_code || d.name })}
-                          style={{ ...docActStyle('#0891b2'), padding: '4px 8px' }}>
+                          style={docActStyle('track')}>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5" /><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" /><path d="M12 7v5l4 2" /></svg> Track
                         </button>
                       </Tooltip>
@@ -1644,7 +1648,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
           <span className="cev-sdp-bulk-count">{chosen.length} of {pickable.length} selected</span>
           <button type="button" className="cev-sdp-bulk-clear" onClick={() => setPicked([])}>Clear</button>
           <Tooltip label={mixedKinds
-            ? `Send the ${chosen.length} selected documents for signature — trade documents and agreements go out as two requests, one after the other`
+            ? `Send all ${chosen.length} selected documents — trade documents and agreements together in one envelope`
             : `Send the ${chosen.length} selected document${chosen.length > 1 ? 's' : ''} for signature in one go`}>
             <button
               type="button"
@@ -1677,23 +1681,25 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
   const toast = useToast();
   const [agr, setAgr] = useState<AgreementContext | null>(null);
   const [td,  setTd]  = useState<{ ids: number[]; leadId: number; modelName: 'Customer' | 'Consignee'; customer: SendForSignatureCustomer | null } | null>(null);
-  /* A batch that mixes both kinds runs in two rounds: the trade documents go
-     first and the agreements wait here until that round finishes. They cannot
-     share one request — the two live in different libraries and the server
-     keeps one signature request to one kind — so the signer receives two. */
-  const [queuedAgr, setQueuedAgr] = useState<AgreementContext | null>(null);
+  /* Agreements travelling in the SAME envelope as the trade documents.
+     A mixed batch used to run in two rounds — trade documents first, agreements
+     after — because a signature request was one request to one library. The
+     send endpoint now accepts both lists and renders them into a single Zoho
+     request, so the signer gets one email with every document they ticked, and
+     the preview rail shows all of them instead of only the trade documents. */
+  const [mixedAgrDocs, setMixedAgrDocs] = useState<Array<{ id: number; name: string; code?: string; sub?: string }> | null>(null);
   const sentAny = useRef(false);
 
   /* Only refresh-and-close once the whole chain is done; calling the parent's
      onSent between rounds would clear `target` and drop the second round. */
   const finish = () => {
-    setAgr(null); setTd(null); setQueuedAgr(null);
+    setAgr(null); setTd(null); setMixedAgrDocs(null);
     if (sentAny.current) onSent(); else onClose();
   };
 
   useEffect(() => {
     sentAny.current = false;
-    if (!target?.doc.db_id) { setAgr(null); setTd(null); setQueuedAgr(null); return; }
+    if (!target?.doc.db_id) { setAgr(null); setTd(null); setMixedAgrDocs(null); return; }
     let cancelled = false;
     (async () => {
       try {
@@ -1754,10 +1760,13 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
 
         if (tdBatch.length) {
           const p = target.party === 'consignee' ? cons : cust;
-          if (agrCtx) {
-            toast.info('Two steps', `${tdBatch.length} trade document${tdBatch.length > 1 ? 's' : ''} first — the ${agrBatch.length} agreement${agrBatch.length > 1 ? 's' : ''} follow in a second step.`);
-          }
-          setQueuedAgr(agrCtx);
+          /* Both kinds ticked → ONE envelope. The agreements are handed to the
+             trade-doc modal as extra rows rather than queued behind it, so they
+             are previewed and positioned in the same pass and posted together
+             as agreement_ids. */
+          setMixedAgrDocs(agrCtx
+            ? agrCtx.agreements.map(a => ({ id: a.id, name: a.title ?? a.code ?? `Agreement ${a.id}`, code: a.code ?? undefined, sub: 'AGREEMENT' }))
+            : null);
           setTd({
             ids: tdBatch.map(d => d.db_id!),
             leadId: target.leadId,
@@ -1805,37 +1814,71 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
         customer={td?.customer ?? null}
         leadId={td?.leadId ?? null}
         preselectedDocIds={td?.ids}
-        onClose={() => { setTd(null); setQueuedAgr(null); finish(); }}
+        mixedAgreements={mixedAgrDocs ?? undefined}
+        onClose={() => { setTd(null); setMixedAgrDocs(null); finish(); }}
         onSent={() => {
           sentAny.current = true;
           setTd(null);
-          /* Hand straight over to the agreement round when one is queued. */
-          if (queuedAgr) { setAgr(queuedAgr); setQueuedAgr(null); } else { onSent(); }
+          setMixedAgrDocs(null);
+          onSent();
         }}
       />
     </>
   );
 }
 
+/* The four compliance-ratio columns share one width and one alignment.
+ *
+ * They were auto-sized, so each column was only as wide as its own heading:
+ * "KYC" sat tight against "DUE DIL." while "TRADE DOCS & AGREEMENTS" — one
+ * column since the tabs merged — stretched far wider than the 1/3 underneath
+ * it. Reading across a row meant crossing four different gaps. A fixed width
+ * makes the gaps equal and centres the numbers over their headings; the long
+ * heading wraps instead of forcing its column wider. */
+export const RATIO_COL: CSSProperties = { width: 132, textAlign: 'center', whiteSpace: 'normal' };
+
 const partyTabStyle = (on: boolean): CSSProperties => ({
   display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
   fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, color: on ? '#fff' : '#0e7490',
   background: on ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : '#e0f7fa',
 });
-const docActStyle = (c: string): CSSProperties => ({
-  display: 'inline-flex', alignItems: 'center', gap: 5, margin: '0 3px', padding: '4px 10px', borderRadius: 7, border: `1.5px solid ${c}`,
-  background: '#fff', color: c, fontFamily: 'inherit', fontSize: 10, fontWeight: 700, cursor: 'pointer',
-});
 
-/* Filled counterpart for the send-type actions. Send / Resend are the primary
-   thing you do to a row, so they carry the solid cyan pill while the secondary
-   actions — View, Reminder, Track — stay pale outlines beside them. */
-const docActPrimary = (): CSSProperties => ({
-  display: 'inline-flex', alignItems: 'center', gap: 5, margin: '0 3px', padding: '4px 10px', borderRadius: 7,
-  border: '1.5px solid transparent', background: 'linear-gradient(135deg, #22d3ee, #0891b2)', color: '#fff',
-  fontFamily: 'inherit', fontSize: 10, fontWeight: 700, cursor: 'pointer',
-  boxShadow: '0 2px 8px rgba(8,145,178,.30)',
-});
+const DOC_ACT_TINTS = {
+  view:   { fg: '#2563eb', bg: 'rgba(37, 99, 235, .08)', bd: 'rgba(37, 99, 235, .20)' },
+  send:   { fg: '#0891b2', bg: '#cffafe',                bd: '#67e8f9' },
+  remind: { fg: '#b45309', bg: '#fef3c7',                bd: '#fcd34d' },
+  track:  { fg: '#0e7490', bg: '#cffafe',                bd: '#67e8f9' },
+} as const;
+
+const docActStyle = (kind: keyof typeof DOC_ACT_TINTS): CSSProperties => {
+  const t = DOC_ACT_TINTS[kind];
+  return {
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+    margin: '0 3px', height: 26, padding: '0 9px', borderRadius: 7,
+    border: `1px solid ${t.bd}`, background: t.bg, color: t.fg,
+    fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700, letterSpacing: '.01em',
+    whiteSpace: 'nowrap', cursor: 'pointer',
+  };
+};
+
+/* Add two "signed/total" ratios into one.
+ *
+ * The Case-to-Case panel merged its Trade Documents and Agreements tabs into a
+ * single list, so the matrix above it reporting them as two separate columns
+ * (1/2 and 0/1) no longer described anything the user could open — the row
+ * expands to one list of three. They are summed into one "Trade Docs &
+ * Agreements" column, and the percentage is recomputed from the summed pair
+ * rather than averaged, so 1/2 + 0/1 reads 1/3 · 33%, not 25%. */
+export function sumRatios(...rs: { ratio: string; pct: number }[]): { ratio: string; pct: number } {
+  let done = 0;
+  let total = 0;
+  for (const r of rs) {
+    const [d, t] = String(r?.ratio ?? '0/0').split('/');
+    done  += parseInt(d, 10) || 0;
+    total += parseInt(t, 10) || 0;
+  }
+  return { ratio: `${done}/${total}`, pct: total > 0 ? Math.round((done / total) * 100) : 0 };
+}
 
 function Ratio({ r }: { r: { ratio: string; pct: number } }) {
   const tone = r.pct >= 100 ? 'good' : r.pct >= 50 ? 'mid' : 'bad';

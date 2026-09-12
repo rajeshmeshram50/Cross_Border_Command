@@ -185,6 +185,15 @@ interface Props {
    *  extra row in the preview rail (positionable like any doc); on send its
    *  coords go under document_settings['po'] and `purchase_order_id` is posted. */
   bundlePo?: { id: number; code: string; name: string; previewUrl: string } | null;
+  /** Agreements to carry in the SAME envelope as the preselected trade
+   *  documents. The Case-to-Case panel can tick a trade document and an
+   *  agreement together; that selection used to be sent as two envelopes (trade
+   *  documents first, agreements in a second round), so the signer received two
+   *  emails for one deal and the preview only ever showed the trade document.
+   *  Passed here they share one Zoho request: they appear in the same rail, are
+   *  positioned in the same pass, and post as `agreement_ids` alongside
+   *  `trade_doc_ids`. Trade-doc mode only. */
+  mixedAgreements?: Array<{ id: number; name: string; code?: string; sub?: string }>;
   /** Seed every signature box at this size instead of the 150x45 default,
    *  and stack the roles one per row (three 240pt boxes do not fit an A4
    *  row, and consignee's x=380 would run off the sheet).
@@ -200,6 +209,18 @@ interface Props {
 /* Sentinel doc id for the bundled Purchase Order — negative so it can never
  * collide with a real (positive) CLM library id in selectedIds / settings. */
 const PO_BUNDLE_ID = -100;
+
+/* Agreement library ids share a number space with trade-doc ids — agreement 5
+ * and trade document 5 are different documents — so a mixed envelope cannot key
+ * both on the bare id: the settings map, the preview cache and the rail would
+ * treat them as one row. Agreements are namespaced into the negative range
+ * instead, the same trick PO_BUNDLE_ID already uses, offset far enough past it
+ * that the two can never collide. The bare ids are restored when the payload is
+ * built. */
+const AGR_KEY_BASE = 1_000_000;
+const agrKey  = (id: number) => -(AGR_KEY_BASE + id);
+const isAgrKey = (k: number) => k <= -AGR_KEY_BASE;
+const agrIdOf = (k: number) => -k - AGR_KEY_BASE;
 
 export default function SalesCustomerSendForSignatureModal({
   open,
@@ -218,6 +239,7 @@ export default function SalesCustomerSendForSignatureModal({
   preselectedDocs,
   bundlePo = null,
   boxSize = null,
+  mixedAgreements,
 }: Props) {
   const isAgreement = mode === 'agreement';
   /* Seeds actually used below. Without `boxSize` these ARE the exported
@@ -559,8 +581,12 @@ export default function SalesCustomerSendForSignatureModal({
     const hasPreselected = Array.isArray(preselectedDocIds) && preselectedDocIds.length > 0;
     const tradeRoleSigners = tradeSigners ?? [];
     const isTradeRoleMode  = tradeRoleSigners.length > 0;
-    setStep(hasPreselected ? 2 : 1);
-    const initialIds = hasPreselected ? preselectedDocIds!.slice(0, 10) : [];
+    setStep(hasPreselected || (mixedAgreements?.length ?? 0) > 0 ? 2 : 1);
+    const initialIds = [
+      ...(hasPreselected ? preselectedDocIds!.slice(0, 10) : []),
+      // Agreements riding in the same envelope, under their namespaced keys.
+      ...((mixedAgreements ?? []).slice(0, 10).map(a => agrKey(a.id))),
+    ];
     // Append the bundled PO (sentinel id) so it appears in the rail + is sent.
     setSelectedIds(bundlePo ? [...initialIds, PO_BUNDLE_ID] : initialIds);
     // Multi-party trade send → seed display rows from the resolved role
@@ -689,8 +715,18 @@ export default function SalesCustomerSendForSignatureModal({
   // The full doc list the rail/preview resolve against — the fetched CLM docs
   // plus, when bundling, a synthetic Purchase Order row for the sentinel id.
   const allDocs = useMemo<TradeDoc[]>(
-    () => bundlePo ? [...docs, { id: PO_BUNDLE_ID, code: bundlePo.code, name: bundlePo.name, title: bundlePo.name }] : docs,
-    [docs, bundlePo],
+    () => {
+      const rows = [...docs];
+      // Agreements sent in the same envelope: the modal's own library fetch is
+      // the TRADE-doc library and cannot resolve them, so their rows are built
+      // from the caller's metadata under the namespaced keys.
+      for (const a of mixedAgreements ?? []) {
+        rows.push({ id: agrKey(a.id), code: a.code ?? `A-${a.id}`, name: a.name, title: a.name, purpose: a.sub ?? undefined });
+      }
+      if (bundlePo) rows.push({ id: PO_BUNDLE_ID, code: bundlePo.code, name: bundlePo.name, title: bundlePo.name });
+      return rows;
+    },
+    [docs, bundlePo, mixedAgreements],
   );
   const selectedDocs = useMemo(() => selectedIds.map(id => allDocs.find(d => d.id === id)).filter(Boolean) as TradeDoc[], [selectedIds, allDocs]);
 
@@ -724,6 +760,11 @@ export default function SalesCustomerSendForSignatureModal({
     // bail rather than deref a null previewUrl.
     if (activeDocId === PO_BUNDLE_ID && !bundlePo) return;
     if (!isAgreement && !isRaw && activeDocId !== PO_BUNDLE_ID && !customer?.db_id) return;
+    /* A namespaced agreement row previews through the agreement side of the
+       shared preview endpoint — the same renderer, addressed by agreement_id.
+       Without this the row rendered the trade document whose id collided with
+       it, or nothing at all. */
+    const previewAgrId = isAgrKey(activeDocId) ? agrIdOf(activeDocId) : null;
     const docId = activeDocId;
     let cancelled = false;
     setPreviewLoading(true);
@@ -753,7 +794,9 @@ export default function SalesCustomerSendForSignatureModal({
         )
       : api.post('/clm/signature-requests/preview',
           {
-            ...(sendAsAgreement ? { agreement_id: docId } : { trade_doc_id: docId }),
+            ...(previewAgrId !== null
+              ? { agreement_id: previewAgrId }
+              : sendAsAgreement ? { agreement_id: docId } : { trade_doc_id: docId }),
             party_id: customer!.db_id,
             model_name: modelName,
             ...(leadId ? { lead_id: leadId } : {}),
@@ -1067,18 +1110,43 @@ export default function SalesCustomerSendForSignatureModal({
       // PO rides via purchase_order_id with its coords remapped under key 'po'.
       const realIds = selectedIds.filter(id => id !== PO_BUNDLE_ID);
       const bundlingPo = !!bundlePo && selectedIds.includes(PO_BUNDLE_ID);
-      let docSettingsOut: Record<string, unknown> = documentSettings as Record<string, unknown>;
+      /* Namespaced agreement keys come back out as real library ids here. When
+         the envelope carries BOTH libraries every per-document map has to be
+         re-keyed "<kind>:<id>", because a bare id is ambiguous across the two —
+         the server keys the same way for a mixed send. A single-library send is
+         left exactly as it was. */
+      const agrKeysPicked = realIds.filter(isAgrKey);
+      const tdIdsPicked   = realIds.filter(id => !isAgrKey(id));
+      const mixing        = agrKeysPicked.length > 0 && tdIdsPicked.length > 0;
+      const kindKeyOf = (k: number) => isAgrKey(k) ? `agreement:${agrIdOf(k)}` : `trade_doc:${k}`;
+      const reKey = (m: Record<string, unknown>): Record<string, unknown> => {
+        if (!mixing) return m;
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(m)) {
+          const n = Number(k);
+          out[Number.isNaN(n) ? k : kindKeyOf(n)] = v;
+        }
+        return out;
+      };
+      let docSettingsOut: Record<string, unknown> = reKey(documentSettings as Record<string, unknown>);
       if (bundlingPo) {
-        const clone: Record<string, unknown> = { ...(documentSettings as Record<string, unknown>) };
-        const poCoords = clone[String(PO_BUNDLE_ID)];
-        delete clone[String(PO_BUNDLE_ID)];
+        const clone: Record<string, unknown> = { ...docSettingsOut };
+        const poCoords = clone[mixing ? kindKeyOf(PO_BUNDLE_ID) : String(PO_BUNDLE_ID)];
+        delete clone[mixing ? kindKeyOf(PO_BUNDLE_ID) : String(PO_BUNDLE_ID)];
         if (poCoords) clone.po = poCoords;
         docSettingsOut = clone;
       }
       const payload = {
         // Supplier agreements post agreement_ids (document_type=agreement);
-        // everything else posts trade_doc_ids. Same endpoint + render flow.
-        ...(sendAsAgreement ? { agreement_ids: realIds } : { trade_doc_ids: realIds }),
+        // everything else posts trade_doc_ids. A Case-to-Case selection that
+        // spans both posts BOTH lists, and the server renders them into one
+        // Zoho request. Same endpoint + render flow either way.
+        ...(sendAsAgreement
+          ? { agreement_ids: realIds }
+          : {
+              ...(tdIdsPicked.length   ? { trade_doc_ids: tdIdsPicked } : {}),
+              ...(agrKeysPicked.length ? { agreement_ids: agrKeysPicked.map(agrIdOf) } : {}),
+            }),
         ...(bundlingPo ? { purchase_order_id: bundlePo!.id } : {}),
         party_id: customer.db_id,
         model_name: modelName,
@@ -1094,9 +1162,9 @@ export default function SalesCustomerSendForSignatureModal({
         // mirror the saved row's columns. Backend layers them over the
         // saved config when rendering each doc to PDF, so each draft can
         // carry its own brand band + body edits in a multi-doc send.
-        ...(Object.keys(headerOverrides).length  ? { header_config_overrides:  headerOverrides  } : {}),
-        ...(Object.keys(footerOverrides).length  ? { footer_config_overrides:  footerOverrides  } : {}),
-        ...(Object.keys(contentOverrides).length ? { content_overrides:        contentOverrides } : {}),
+        ...(Object.keys(headerOverrides).length  ? { header_config_overrides:  reKey(headerOverrides  as Record<string, unknown>) } : {}),
+        ...(Object.keys(footerOverrides).length  ? { footer_config_overrides:  reKey(footerOverrides  as Record<string, unknown>) } : {}),
+        ...(Object.keys(contentOverrides).length ? { content_overrides:        reKey(contentOverrides as Record<string, unknown>) } : {}),
       };
       const r = await api.post('/clm/signature-requests', payload);
       const data = r.data?.data;

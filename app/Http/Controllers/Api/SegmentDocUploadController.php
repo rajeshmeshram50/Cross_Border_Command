@@ -1518,16 +1518,36 @@ class SegmentDocUploadController extends Controller
         ];
         foreach ($reqs->sortByDesc('id') as $r) {
             $party = $r->model_name === 'Consignee' ? 'Consignee' : 'Customer';
-            if (!isset($sigIndex[$r->document_type][$party])) continue;
-            $ids = is_array($r->trade_doc_ids) && $r->trade_doc_ids ? $r->trade_doc_ids : [$r->trade_doc_id];
-            foreach ((array) $ids as $id) {
-                $id = (int) $id;
-                if (!$id) continue;
-                if (!isset($sigIndex[$r->document_type][$party][$id])) {
-                    $sigIndex[$r->document_type][$party][$id] = $r;   // latest wins
-                }
-                if (!isset($sigAny[$r->document_type][$id])) {
-                    $sigAny[$r->document_type][$id] = $r;             // latest wins
+
+            /* Which library each id belongs to.
+             *
+             * One envelope can now carry trade documents AND agreements, and
+             * `document_type` is a single column — trade document wins there
+             * when both are present. Filing every id under that one type left
+             * the agreement in a mixed send reading "Draft · never sent" while
+             * it sat in the signer's inbox next to the trade document.
+             * metadata.doc_kind_ids records the real split; requests written
+             * before that existed have none, and fall back to the old rule of
+             * one request, one kind. See ClmSignatureController::send(). */
+            $meta     = is_array($r->metadata) ? $r->metadata : [];
+            $kindIds  = is_array($meta['doc_kind_ids'] ?? null) ? $meta['doc_kind_ids'] : null;
+            $byKind   = $kindIds ?: [
+                $r->document_type => (is_array($r->trade_doc_ids) && $r->trade_doc_ids)
+                    ? $r->trade_doc_ids
+                    : [$r->trade_doc_id],
+            ];
+
+            foreach ($byKind as $kind => $ids) {
+                if (!isset($sigIndex[$kind][$party])) continue;
+                foreach ((array) $ids as $id) {
+                    $id = (int) $id;
+                    if (!$id) continue;
+                    if (!isset($sigIndex[$kind][$party][$id])) {
+                        $sigIndex[$kind][$party][$id] = $r;   // latest wins
+                    }
+                    if (!isset($sigAny[$kind][$id])) {
+                        $sigAny[$kind][$id] = $r;             // latest wins
+                    }
                 }
             }
         }
