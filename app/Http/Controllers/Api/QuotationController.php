@@ -4,6 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Concerns\EnforcesSegmentBuyerConsignee;
 use App\Http\Controllers\Controller;
+/* Fanned out to by qpiMasterBundle() so each list keeps its own scoping
+ * and response shape rather than being reimplemented there. */
+use App\Http\Controllers\Api\ConsigneeController;
+use App\Http\Controllers\Api\CustomerController;
+use App\Http\Controllers\Api\MasterController;
+use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\SalesLeadController;
 use App\Models\Customer;
 use App\Models\Quotation;
 use App\Models\QuotationItem;
@@ -60,7 +67,7 @@ class QuotationController extends Controller
         // read time with the owner's manager. Resolve all managers in ONE query
         // (owner user id → Employee → reportingManager/reportingManagerUser).
         $items    = collect($paginator->items());
-        $ownerIds = $items->map(fn ($r) => (int) ($r->sales_manager_id ?: $r->created_by))
+        $ownerIds = $items->map(fn($r) => (int) ($r->sales_manager_id ?: $r->created_by))
             ->filter()->unique()->values()->all();
         $mgrByOwner = empty($ownerIds) ? collect() : \App\Models\Employee::query()
             ->whereIn('user_id', $ownerIds)
@@ -166,7 +173,7 @@ class QuotationController extends Controller
         // segment flagged not-allowed, the consignee must be Same-as-Customer.
         if ($block = $this->segmentPartyBlockResponse(
             (int) $user->client_id,
-            array_map(fn ($it) => $it['product_id'] ?? null, $data['items']),
+            array_map(fn($it) => $it['product_id'] ?? null, $data['items']),
             $data['consignee_id'] ?? null,
         )) {
             return $block;
@@ -281,7 +288,7 @@ class QuotationController extends Controller
         // quotation can't be amended to add a not-allowed product/consignee.
         if ($block = $this->segmentPartyBlockResponse(
             (int) $user->client_id,
-            array_map(fn ($it) => $it['product_id'] ?? null, $data['items']),
+            array_map(fn($it) => $it['product_id'] ?? null, $data['items']),
             $data['consignee_id'] ?? null,
         )) {
             return $block;
@@ -702,8 +709,8 @@ class QuotationController extends Controller
             // (null for client-level users) or the row won't match the pill.
             $branchId = $user->branch_id;
             $codes = Quotation::where('client_id', $user->client_id)
-                ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
-                ->when($branchId === null, fn ($q) => $q->whereNull('branch_id'))
+                ->when($branchId !== null, fn($q) => $q->where('branch_id', $branchId))
+                ->when($branchId === null, fn($q) => $q->whereNull('branch_id'))
                 ->where('code', 'like', "QT/{$fy}/%")
                 ->pluck('code')->all();
             $max = 0;
@@ -752,8 +759,8 @@ class QuotationController extends Controller
         // QT/<FY>/1..N), so scope the scan to the branch. Increment past any gap
         // so we never collide with an existing row even if rows were deleted.
         $codes = Quotation::where('client_id', $clientId)
-            ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
-            ->when($branchId === null, fn ($q) => $q->whereNull('branch_id'))
+            ->when($branchId !== null, fn($q) => $q->where('branch_id', $branchId))
+            ->when($branchId === null, fn($q) => $q->whereNull('branch_id'))
             ->where('code', 'like', "QT/{$fy}/%")
             ->pluck('code')
             ->all();
@@ -1078,5 +1085,65 @@ class QuotationController extends Controller
                     ->orWhere('consignee_name', 'ilike', $like);
             });
         }
+    }
+
+    private function bundleCall(Request $request, callable $endpoint, array $query = [])
+    {
+        $user     = $request->user();
+        $branchId = $request->query('branch_id');
+        if ($branchId !== null && !array_key_exists('branch_id', $query)) {
+            $query['branch_id'] = $branchId;
+        }
+
+        $sub = Request::create($request->getPathInfo(), 'GET', $query);
+        $sub->setUserResolver(fn() => $user);
+        $sub->headers->set('Accept', 'application/json');
+
+        try {
+            $res = $endpoint($sub);
+        } catch (\Throwable $e) {
+            Log::warning('Bundle endpoint: a list failed', [
+                'bundle' => $request->getPathInfo(),
+                'error'  => $e->getMessage(),
+            ]);
+            return null;
+        }
+
+        if ($res instanceof JsonResponse) return $res->getData(true);
+        return json_decode($res->getContent(), true);
+    }
+
+    public function qpiGeoBundle(Request $request): JsonResponse
+    {
+        if (!$request->user()) abort(401);
+
+        return response()->json([
+            'countries'      => $this->bundleCall(
+                $request,
+                fn($r) => app(MasterController::class)->list($r, 'countries'),
+                ['fields' => 'id,name'],
+            ),
+            'gst_home_state' => $this->bundleCall($request, fn($r) => $this->gstHomeState($r)),
+        ]);
+    }
+
+
+    public function qpiMasterBundle(Request $request): JsonResponse
+    {
+        if (!$request->user()) abort(401);
+
+        $master = app(MasterController::class);
+
+        return response()->json([
+            'currencies'        => $this->bundleCall($request, fn($r) => $master->list($r, 'currencies')),
+            'incoterms'         => $this->bundleCall($request, fn($r) => $master->list($r, 'incoterms')),
+            'port_of_loading'   => $this->bundleCall($request, fn($r) => $master->list($r, 'port_of_loading')),
+            'port_of_discharge' => $this->bundleCall($request, fn($r) => $master->list($r, 'port_of_discharge')),
+            'bank_accounts'     => $this->bundleCall($request, fn($r) => $master->list($r, 'bank_accounts')),
+            'customers'         => $this->bundleCall($request, fn($r) => app(CustomerController::class)->index($r), ['tab' => 'all']),
+            'consignees'        => $this->bundleCall($request, fn($r) => app(ConsigneeController::class)->index($r)),
+            'leads'             => $this->bundleCall($request, fn($r) => app(SalesLeadController::class)->index($r), ['per_page' => 50]),
+            'products'          => $this->bundleCall($request, fn($r) => app(ProductController::class)->index($r), ['per_page' => 200, 'status' => 'active']),
+        ]);
     }
 }

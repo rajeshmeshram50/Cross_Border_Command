@@ -1483,28 +1483,54 @@ function clipFileName(s: string, max = 42): string {
   return s.slice(0, Math.max(1, max - ext.length - 1)) + '…' + ext;
 }
 
-function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
+/* Exported so the Consignee vault asks the same question in the same words.
+   Its upload used to fire the moment a file was picked, with no expiry — so
+   every document it stored had a null expiry_date and the Expiry column beside
+   it could only ever read N/A. Two copies of this dialog would have drifted. */
+export function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit, className, withIssueDate = false }: {
   doc: VaultDoc;
   category: 'kyc' | 'dd' | 'tl' | 'td' | 'agreement';
   busy: boolean;
   onClose: () => void;
-  onSubmit: (f: File, opts?: { docName?: string; expiryDate?: string }) => void | Promise<void>;
+  onSubmit: (f: File, opts?: { docName?: string; issueDate?: string; expiryDate?: string }) => void | Promise<void>;
+  /** Hook for the host vault to retune the dialog — the Consignee vault uses it
+   *  to carry its own header colour and width, since each vault's header is a
+   *  different gradient and a dialog launched from one should not arrive in
+   *  another's. Left off, the Supplier's violet is unchanged. */
+  className?: string;
+  /** Ask for the document's ISSUE date as well (QA #78, #80).
+   *  Opt-in: the Consignee vault turns it on, the Supplier's copy is untouched
+   *  until it asks for the same. */
+  withIssueDate?: boolean;
 }) {
   const toast = useToast();
 
   const isStd = category === 'kyc' || category === 'dd' || category === 'tl';
   const noExpiry = (s?: string | null) => !s || /^(lifetime|n\/a|—|-|varies|)$/i.test(s.trim());
+  /* The dates the API sends back are formatted 'd-M-Y' — "14-Mar-2025" — and
+     neither pattern below matches a month spelled in letters, so every saved
+     date parsed to '' and the dialog opened blank on a re-upload. Worse for
+     Expiry: "13-Mar-2027" is not in the no-expiry list, so the toggle came up
+     Yes over an empty picker, and saving then failed on "Expiry required".
+     The Date fallback reads that format, so what was stored comes back. */
   const toISO = (s?: string | null) => {
     if (!s) return '';
     const t = s.trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
     const m = t.match(/^(\d{2})[/-](\d{2})[/-](\d{4})$/);
-    return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    const d = new Date(t);
+    if (isNaN(d.getTime())) return '';
+    // Built from the LOCAL parts, not toISOString() — that converts to UTC and
+    // can roll the date back a day for anyone east of Greenwich.
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
   const [file, setFile] = useState<File | null>(null);
   const docName = doc.name || '';
   const [hasExpiry, setHasExpiry] = useState(isStd && !noExpiry(doc.expiry));
   const [expiryDate, setExpiryDate] = useState(toISO(doc.expiry));
+  const [issueDate, setIssueDate] = useState(toISO(doc.issue_date));
+  const todayIso = new Date().toISOString().slice(0, 10);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const pick = (f: File | undefined) => {
     if (!f) return;
@@ -1521,11 +1547,21 @@ function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
   const save = () => {
     if (!file) return;
     if (isStd && hasExpiry && !expiryDate) { toast.error('Expiry required', 'Pick an expiry date or set Expiry to “No”.'); return; }
-    void onSubmit(file, isStd ? { docName, expiryDate: hasExpiry ? expiryDate : undefined } : undefined);
+    // A licence cannot lapse before it was granted. The server enforces this
+    // too (after_or_equal:issue_date); this is the immediate answer.
+    if (isStd && withIssueDate && issueDate && hasExpiry && expiryDate && expiryDate < issueDate) {
+      toast.error('Dates out of order', 'The expiry date cannot be earlier than the issue date.');
+      return;
+    }
+    void onSubmit(file, isStd
+      ? { docName, issueDate: withIssueDate ? (issueDate || undefined) : undefined, expiryDate: hasExpiry ? expiryDate : undefined }
+      : undefined);
   };
+  /* No inline <style> here — CEV_REUP_CSS moved into
+     supplier-evidence-vault.css. The className hook stays: it is how the
+     Consignee vault recolours this dialog to match its own header. */
   return createPortal(
-    <div className="cev-reup-ov" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
-      <style>{CEV_REUP_CSS}</style>
+    <div className={`cev-reup-ov${className ? ` ${className}` : ''}`} onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div className="cev-reup-card" role="dialog" aria-modal="true">
         <div className="cev-reup-hd">
           <div className="cev-reup-hd-l">
@@ -1552,26 +1588,58 @@ function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
                 <label>Issuing Authority</label>
                 <div className="cev-reup-ro">{doc.authority && doc.authority !== '—' ? doc.authority : '—'}</div>
               </div>
+              {/* Issue date — when the document was granted. Optional: plenty
+                  of documents carry no meaningful one, and every row already on
+                  file predates the field. Capped at today; the future is not a
+                  date a certificate can have been issued on. */}
+              {withIssueDate && (
+                <div className="cev-reup-fld">
+                  <label>Issue Date <span className="cev-reup-hint">Optional</span></label>
+                  <MasterDatePicker value={issueDate} onChange={setIssueDate} placeholder="Select issue date" maxDate={todayIso} popupClassName="cev-reup-cal" disabled={busy} />
+                </div>
+              )}
               <div className="cev-reup-fld">
                 <label>Expiry <span className="cev-reup-hint">Has an expiry date?</span></label>
                 <div className="cev-reup-toggle">
-                  <button type="button" className={hasExpiry ? 'on' : ''} onClick={() => setHasExpiry(true)}>Yes</button>
-                  <button type="button" className={!hasExpiry ? 'on' : ''} onClick={() => { setHasExpiry(false); setExpiryDate(''); }}>No</button>
+                  <button type="button" className={hasExpiry ? 'on' : ''} disabled={busy} onClick={() => setHasExpiry(true)}>Yes</button>
+                  <button type="button" className={!hasExpiry ? 'on' : ''} disabled={busy} onClick={() => { setHasExpiry(false); setExpiryDate(''); }}>No</button>
                 </div>
-                {hasExpiry && <div style={{ marginTop: 8 }}><MasterDatePicker value={expiryDate} onChange={setExpiryDate} placeholder="Select expiry date" minDate={new Date().toISOString().slice(0, 10)} /></div>}
+                {/* Floor is the LATER of today and the issue date — an expiry
+                    that predates its own issue date is not a valid range.
+                    Gated on withIssueDate so a caller that never opted in keeps
+                    the floor it always had.
+                    popupClassName raises this calendar above the dialog (see
+                    .cev-reup-cal); the picker's global z-index is left alone. */}
+                {hasExpiry && <div style={{ marginTop: 8 }}><MasterDatePicker value={expiryDate} onChange={setExpiryDate} placeholder="Select expiry date" minDate={withIssueDate && issueDate && issueDate > todayIso ? issueDate : todayIso} popupClassName="cev-reup-cal" disabled={busy} /></div>}
               </div>
+              {/* Current File fills the cell beside Expiry.
+                  With the Issue Date field on, the grid holds five fields, so
+                  the last row had Expiry on the left and an empty cell on the
+                  right while this sat full-width underneath. Only in that mode:
+                  without Issue Date the grid is four fields in two even rows
+                  and there is no gap to fill. */}
+              {withIssueDate && doc.attachment && (
+                <div className="cev-reup-fld">
+                  <label>Current File</label>
+                  <a className="cev-reup-cur" href={doc.attachment_url ?? undefined} target="_blank" rel="noreferrer"><i className="ri-file-text-line" /><span>{doc.attachment}</span></a>
+                </div>
+              )}
             </div>
           )}
-          {doc.attachment && (
+          {(!withIssueDate || !isStd) && doc.attachment && (
             <div className="cev-reup-fld">
               <label>Current File</label>
-              <a className="cev-reup-cur" href={doc.attachment_url} target="_blank" rel="noreferrer"><i className="ri-file-text-line" /><span>{doc.attachment}</span></a>
+              <a className="cev-reup-cur" href={doc.attachment_url ?? undefined} target="_blank" rel="noreferrer"><i className="ri-file-text-line" /><span>{doc.attachment}</span></a>
             </div>
           )}
           <div className="cev-reup-fld">
             <label>Upload Document <span className="cev-reup-req">*</span></label>
             <input ref={inputRef} type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { pick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }} />
-            <button type="button" className={`cev-reup-drop${file ? ' has' : ''}`} onClick={() => inputRef.current?.click()}>
+            {/* Locked while the upload is in flight. Cancel and Save already
+                were, but the picker was not — so a second file could be chosen
+                mid-request, and the dialog would then close having saved the
+                first one while showing the second. */}
+            <button type="button" className={`cev-reup-drop${file ? ' has' : ''}`} disabled={busy} onClick={() => inputRef.current?.click()}>
               <i className={file ? 'ri-file-check-line' : 'ri-upload-cloud-2-line'} />
               <span>{file ? file.name : 'Upload document (JPG / PNG / PDF, max 2 MB)'}</span>
             </button>
@@ -1589,59 +1657,6 @@ function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
   );
 }
 
-const CEV_REUP_CSS = `
-.cev-reup-ov { position:fixed; inset:0; z-index:100000; background:rgba(15,23,42,.5); display:flex; align-items:center; justify-content:center; padding:16px; }
-.cev-reup-card { width:100%; max-width:640px; background:#fff; border-radius:16px; overflow:hidden; box-shadow:0 24px 60px rgba(8,40,60,.32); font-family:'DM Sans',system-ui,sans-serif; }
-.cev-reup-hd { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:16px 18px; background:linear-gradient(120deg,#6d28d9,#7c3aed 55%,#8b5cf6); color:#fff; }
-.cev-reup-hd-l { display:flex; align-items:center; gap:12px; min-width:0; }
-.cev-reup-hd-ico { width:40px; height:40px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.18); color:#fff; font-size:20px; }
-.cev-reup-ttl { font-size:15px; font-weight:800; }
-.cev-reup-sub { font-size:12px; opacity:.85; margin-top:2px; }
-.cev-reup-x { background:rgba(255,255,255,.18); border:none; color:#fff; width:30px; height:30px; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
-.cev-reup-x:hover:not(:disabled) { background:rgba(255,255,255,.3); }
-.cev-reup-bd { padding:18px; display:flex; flex-direction:column; gap:16px; }
-.cev-reup-fld label { display:block; font-size:11px; font-weight:700; letter-spacing:0; text-transform:none; color:#3b0764; margin-bottom:6px; }
-.cev-reup-req { color:#dc2626; }
-.cev-reup-cur { display:inline-flex; align-items:center; gap:7px; max-width:100%; padding:8px 12px; border-radius:9px; background:#f5f3ff; border:1px solid #ddd6fe; color:#6d28d9; font-size:12.5px; font-weight:600; text-decoration:none; }
-.cev-reup-cur span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.cev-reup-cur:hover { background:#ede9fe; }
-.cev-reup-none { font-size:12.5px; color:#94a3b8; font-style:italic; }
-.cev-reup-drop { width:100%; display:flex; align-items:center; gap:9px; padding:12px 14px; border-radius:10px; border:1.5px dashed #cbd5e1; background:#f8fafc; color:#64748b; font-family:inherit; font-size:12.5px; font-weight:600; cursor:pointer; text-align:left; }
-.cev-reup-drop:hover { border-color:#8b5cf6; background:#faf5ff; color:#6d28d9; }
-.cev-reup-drop.has { border-style:solid; border-color:#8b5cf6; background:#faf5ff; color:#6d28d9; }
-.cev-reup-drop i { font-size:18px; flex-shrink:0; }
-.cev-reup-drop span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.cev-reup-ft { display:flex; justify-content:flex-end; gap:10px; padding:14px 18px; border-top:1px solid #eef2f7; }
-.cev-reup-cancel { padding:9px 18px; border-radius:9px; border:1.5px solid #e2e8f0; background:#fff; color:#475569; font-family:inherit; font-size:12.5px; font-weight:700; cursor:pointer; }
-.cev-reup-cancel:hover:not(:disabled) { background:#f8fafc; }
-.cev-reup-save { display:inline-flex; align-items:center; gap:7px; padding:9px 22px; border-radius:9px; border:none; background:linear-gradient(135deg,#6d28d9,#7c3aed 55%,#8b5cf6); color:#fff; font-family:inherit; font-size:12.5px; font-weight:700; cursor:pointer; }
-.cev-reup-save:disabled, .cev-reup-cancel:disabled { opacity:.55; cursor:not-allowed; }
-[data-bs-theme="dark"] .cev-reup-card { background:#0f2731; }
-[data-bs-theme="dark"] .cev-reup-drop { background:#16303b; border-color:#2a4a56; color:#9db3c1; }
-[data-bs-theme="dark"] .cev-reup-cur { background:rgba(139,92,246,.14); border-color:rgba(139,92,246,.35); color:#c4b5fd; }
-[data-bs-theme="dark"] .cev-reup-ft { border-top-color:#1c3a45; }
-[data-bs-theme="dark"] .cev-reup-cancel { background:#16303b; border-color:#2a4a56; color:#9db3c1; }
-/* Rich fields (standard docs): Auto Code · Document Name · Issuing Authority · Expiry. */
-.cev-reup-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-.cev-reup-ro { height:38px; padding:0 12px; border-radius:10px; background:#f7f4ff; border:1px solid #e4dcf7; color:#495057; font-family:inherit; font-size:13px; font-weight:400; display:flex; align-items:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; box-sizing:border-box; }
-.cev-reup-in { width:100%; height:38px; padding:5px 12px; border-radius:10px; border:1px solid #e4dcf7; background:#f7f4ff; font-family:inherit; font-size:13px; font-weight:400; color:#495057; box-sizing:border-box; transition:border-color .18s ease, box-shadow .18s ease; }
-.cev-reup-in:focus { outline:none; border-color:#7c3aed; box-shadow:0 0 0 3px rgba(124,58,237,.12); background:#fff; }
-.cev-reup-hint { font-size:11px; font-weight:500; text-transform:none; letter-spacing:0; color:#94a3b8; margin-left:6px; }
-.cev-reup-toggle { display:inline-flex; height:38px; border:1.5px solid #e9e2f7; background:#faf8ff; border-radius:9px; overflow:hidden; }
-.cev-reup-toggle button { min-width:46px; padding:0 15px; border:none; border-right:1.5px solid #e9e2f7; background:transparent; color:#6b7280; font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; transition:background .14s, color .14s; }
-.cev-reup-toggle button:last-child { border-right:0; }
-.cev-reup-toggle button:hover { background:#f1ebfe; color:#7c3aed; }
-.cev-reup-toggle button.on { background:#7c3aed; color:#fff; }
-.cev-mono { font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace; }
-[data-bs-theme="dark"] .cev-reup-ro { background:#16303b; border-color:#2a4a56; color:#cbd5e1; }
-[data-bs-theme="dark"] .cev-reup-in { background:#16303b; border-color:#2a4a56; color:#e2e8f0; }
-[data-bs-theme="dark"] .cev-reup-toggle { border-color:#2a4a56; }
-[data-bs-theme="dark"] .cev-reup-toggle button { background:#16303b; color:#9db3c1; }
-[data-bs-theme="dark"] .cev-reup-fld label { color:#c4b5fd; }
-[data-bs-theme="dark"] .cev-reup-none { color:#7c93a8; }
-[data-bs-theme="dark"] .cev-reup-cancel:hover:not(:disabled) { background:#1c3a45; }
-@media (max-width:560px) { .cev-reup-grid { grid-template-columns:1fr; } }
-`;
 
 function OvStatusPill({ s }: { s: VaultStatus | 'Expired' }) {
   const tone = s === 'Verified' || s === 'Signed' ? ['#ecfdf5', '#059669', '#6ee7b7', '#10b981']

@@ -3975,3 +3975,510 @@
 .sev .sev-chip-more:hover .cev-chip-seg-count {
   background: rgba(255, 255, 255, .34);
 }
+
+[data-bs-theme="dark"] .sev .cev-body {
+  background: #08222b;
+}
+
+[data-bs-theme="dark"] .sev .sev-stat--slate {
+  --evTone: #60a5fa;
+  --evTint: rgba(59, 130, 246, .14);
+  --evEdge: rgba(96, 165, 250, .36);
+  --evInk: #bfdbfe;
+}
+
+[data-bs-theme="dark"] .sev .sev-stat--teal {
+  --evTone: #22d3ee;
+  --evTint: rgba(8, 145, 178, .16);
+  --evEdge: rgba(34, 211, 238, .36);
+  --evInk: #a5f3fc;
+}
+
+[data-bs-theme="dark"] .sev .sev-stat--green {
+  --evTone: #34d399;
+  --evTint: rgba(16, 185, 129, .14);
+  --evEdge: rgba(52, 211, 153, .36);
+  --evInk: #a7f3d0;
+}
+
+[data-bs-theme="dark"] .sev .sev-stat--amber {
+  --evTone: #fbbf24;
+  --evTint: rgba(245, 158, 11, .14);
+  --evEdge: rgba(251, 191, 36, .36);
+  --evInk: #fcd34d;
+}
+
+[data-bs-theme="dark"] .sev .sev-stat--red {
+  --evTone: #f87171;
+  --evTint: rgba(239, 68, 68, .14);
+  --evEdge: rgba(248, 113, 113, .36);
+  --evInk: #fca5a5;
+}
+
+/* The unfilled part of the ring: .18 of the tone was tuned against white and
+ * all but vanishes on the dark card, which left the dial reading as a filled
+ * arc floating on nothing. */
+[data-bs-theme="dark"] .sev .sev-stat-ring .rg-bg {
+  opacity: .3;
+}
+
+/* The tag ("COMPLIANT" / "ACTION NEEDED") takes its text from --evInk above;
+ * give it an edge so it still reads as a chip rather than loose text. */
+[data-bs-theme="dark"] .sev .sev-stat-tag {
+  background: rgba(255, 255, 255, .04);
+  border-color: var(--evEdge, rgba(148, 197, 255, .22));
+}
+
+[data-bs-theme="dark"] .sev .cev-tab {
+  color: #8fb8c4;
+}
+
+[data-bs-theme="dark"] .sev .cev-tab:hover {
+  color: #a5f3fc;
+}
+
+[data-bs-theme="dark"] .sev .cev-tab.is-active {
+  color: #e0fbff;
+  background: linear-gradient(180deg, rgba(34, 211, 238, .17) 0%, rgba(34, 211, 238, .05) 100%);
+  border-bottom-color: #22d3ee;
+}
+
+[data-bs-theme="dark"] .sev .cev-tab.is-active .cev-tab-icon {
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+  color: #042c36;
+}
+
+[data-bs-theme="dark"] .sev .cev-tab.is-active::after {
+  background: linear-gradient(90deg, #22d3ee, #67e8f9);
+  box-shadow: 0 0 10px rgba(34, 211, 238, .75);
+}
+
+/* ─── Case-to-Case panel row actions ────────────────────────────────────────
+ *
+ * Scoped to `.cev-sdp`, the panel's own root, so they hold wherever the panel
+ * renders — expanded under a matrix row, or inside the Case-to-Case popup,
+ * which is outside the `.sev` vault root the table's own action classes need.
+ * Metrics match the standard-document table's action pills exactly. */
+.cev-sdp-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin: 0 3px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease;
+}
+
+.cev-sdp-act:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.cev-sdp-act:disabled {
+  opacity: .6;
+  cursor: wait;
+}
+
+.cev-sdp-act-view {
+  color: #2563eb;
+  background: rgba(37, 99, 235, .08);
+  border-color: rgba(37, 99, 235, .20);
+}
+
+.cev-sdp-act-send {
+  color: #0891b2;
+  background: #cffafe;
+  border-color: #67e8f9;
+}
+
+.cev-sdp-act-remind {
+  color: #b45309;
+  background: #fef3c7;
+  border-color: #fcd34d;
+}
+
+.cev-sdp-act-track {
+  color: #0e7490;
+  background: #cffafe;
+  border-color: #67e8f9;
+}
+
+/* Dark — every action gets the SOLID pale fill Send already had.
+ *
+ * View's 8%-of-blue wash was tuned for a white row; on the dark panel it read
+ * as an empty outline next to a clearly-filled Send, so the two looked like
+ * different kinds of control rather than two actions on the same row. Each now
+ * uses the same recipe — pale fill, dark ink, matching edge — and keeps its own
+ * hue so the actions stay tellable apart at a glance. */
+[data-bs-theme="dark"] .cev-sdp-act-view {
+  color: #10305e;
+  background: #bfdbfe;
+  border-color: #93c5fd;
+}
+
+[data-bs-theme="dark"] .cev-sdp-act-send {
+  color: #05363f;
+  background: #a5f3fc;
+  border-color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .cev-sdp-act-remind {
+  color: #4a2a05;
+  background: #fde68a;
+  border-color: #fcd34d;
+}
+
+[data-bs-theme="dark"] .cev-sdp-act-track {
+  color: #05363f;
+  background: #a5f3fc;
+  border-color: #67e8f9;
+}
+
+
+[data-bs-theme="dark"] .sev-ov .cev-ov-body {
+  background: #08222b;
+}
+
+[data-bs-theme="dark"] .sev-ov .sev-ov-pick-cap {
+  background: rgba(8, 145, 178, .10);
+  color: #7bb5c2;
+  border-color: rgba(8, 145, 178, .26);
+}
+
+[data-bs-theme="dark"] .sev-ov .sev-ov-pick {
+  background: #102b36;
+  border-color: rgba(8, 145, 178, .20);
+}
+
+[data-bs-theme="dark"] .sev-ov .sev-ov-picks li:nth-child(even) .sev-ov-pick {
+  background: #0d2630;
+}
+
+[data-bs-theme="dark"] .sev-ov .sev-ov-pick:hover {
+  background: rgba(8, 145, 178, .20);
+}
+
+[data-bs-theme="dark"] .sev-ov .sev-ov-pick-code {
+  background: rgba(8, 145, 178, .22);
+  color: #67e8f9;
+  border-color: rgba(34, 211, 238, .38);
+}
+
+[data-bs-theme="dark"] .sev-ov .sev-ov-pick-title {
+  color: #e7f2f7;
+}
+
+[data-bs-theme="dark"] .sev-ov .sev-ov-pick-sub {
+  color: #8fb8c4;
+}
+
+[data-bs-theme="dark"] .sev-ov .sev-ov-pick-go {
+  color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .sev-ov .sev-ov-pick-empty {
+  color: #8fb8c4;
+}
+
+.cev-shp-toggle.cev-sdp-party {
+  margin: 0 0 10px;
+}
+
+.cev-shp-toggle.cev-sdp-party button b {
+  font-weight: 800;
+  opacity: .85;
+}
+/* ─── Standard-document upload / re-upload popup ────────────────────────────
+ *
+ * Was an inline <style> block inside the Supplier vault. It moved here when the
+ * Customer vault gained the same popup: two copies of one stylesheet drift, and
+ * the point of the port is that both vaults show the SAME control. Portalled to
+ * document.body, so nothing here may depend on a vault-root class. */
+.cev-reup-ov { position:fixed; inset:0; z-index:100000; background:rgba(15,23,42,.5); display:flex; align-items:center; justify-content:center; padding:16px; }
+.cev-reup-card { width:100%; max-width:640px; background:#fff; border-radius:16px; overflow:hidden; box-shadow:0 24px 60px rgba(8,40,60,.32); font-family:'DM Sans',system-ui,sans-serif; }
+.cev-reup-hd { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:16px 18px; background:linear-gradient(120deg,#6d28d9,#7c3aed 55%,#8b5cf6); color:#fff; }
+.cev-reup-hd-l { display:flex; align-items:center; gap:12px; min-width:0; }
+.cev-reup-hd-ico { width:40px; height:40px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.18); color:#fff; font-size:20px; }
+.cev-reup-ttl { font-size:15px; font-weight:800; }
+.cev-reup-sub { font-size:12px; opacity:.85; margin-top:2px; }
+.cev-reup-x { background:rgba(255,255,255,.18); border:none; color:#fff; width:30px; height:30px; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
+.cev-reup-x:hover:not(:disabled) { background:rgba(255,255,255,.3); }
+.cev-reup-bd { padding:18px; display:flex; flex-direction:column; gap:16px; }
+.cev-reup-fld label { display:block; font-size:11px; font-weight:700; letter-spacing:0; text-transform:none; color:#3b0764; margin-bottom:6px; }
+.cev-reup-req { color:#dc2626; }
+.cev-reup-cur { display:inline-flex; align-items:center; gap:7px; max-width:100%; padding:8px 12px; border-radius:9px; background:#f5f3ff; border:1px solid #ddd6fe; color:#6d28d9; font-size:12.5px; font-weight:600; text-decoration:none; }
+.cev-reup-cur span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cev-reup-cur:hover { background:#ede9fe; }
+.cev-reup-none { font-size:12.5px; color:#94a3b8; font-style:italic; }
+.cev-reup-drop { width:100%; display:flex; align-items:center; gap:9px; padding:12px 14px; border-radius:10px; border:1.5px dashed #cbd5e1; background:#f8fafc; color:#64748b; font-family:inherit; font-size:12.5px; font-weight:600; cursor:pointer; text-align:left; }
+.cev-reup-drop:hover { border-color:#8b5cf6; background:#faf5ff; color:#6d28d9; }
+.cev-reup-drop.has { border-style:solid; border-color:#8b5cf6; background:#faf5ff; color:#6d28d9; }
+.cev-reup-drop i { font-size:18px; flex-shrink:0; }
+.cev-reup-drop span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cev-reup-ft { display:flex; justify-content:flex-end; gap:10px; padding:14px 18px; border-top:1px solid #eef2f7; }
+.cev-reup-cancel { padding:9px 18px; border-radius:9px; border:1.5px solid #e2e8f0; background:#fff; color:#475569; font-family:inherit; font-size:12.5px; font-weight:700; cursor:pointer; }
+.cev-reup-cancel:hover:not(:disabled) { background:#f8fafc; }
+.cev-reup-save { display:inline-flex; align-items:center; gap:7px; padding:9px 22px; border-radius:9px; border:none; background:linear-gradient(135deg,#6d28d9,#7c3aed 55%,#8b5cf6); color:#fff; font-family:inherit; font-size:12.5px; font-weight:700; cursor:pointer; }
+.cev-reup-save:disabled, .cev-reup-cancel:disabled { opacity:.55; cursor:not-allowed; }
+.cev-reup-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.cev-reup-ro { height:38px; padding:0 12px; border-radius:10px; background:#f7f4ff; border:1px solid #e4dcf7; color:#495057; font-family:inherit; font-size:13px; font-weight:400; display:flex; align-items:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; box-sizing:border-box; }
+.cev-reup-in { width:100%; height:38px; padding:5px 12px; border-radius:10px; border:1px solid #e4dcf7; background:#f7f4ff; font-family:inherit; font-size:13px; font-weight:400; color:#495057; box-sizing:border-box; transition:border-color .18s ease, box-shadow .18s ease; }
+.cev-reup-in:focus { outline:none; border-color:#7c3aed; box-shadow:0 0 0 3px rgba(124,58,237,.12); background:#fff; }
+.cev-reup-hint { font-size:11px; font-weight:500; text-transform:none; letter-spacing:0; color:#94a3b8; margin-left:6px; }
+.cev-reup-toggle { display:inline-flex; height:38px; border:1.5px solid #e9e2f7; background:#faf8ff; border-radius:9px; overflow:hidden; }
+.cev-reup-toggle button { min-width:46px; padding:0 15px; border:none; border-right:1.5px solid #e9e2f7; background:transparent; color:#6b7280; font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; transition:background .14s, color .14s; }
+.cev-reup-toggle button:last-child { border-right:0; }
+.cev-reup-toggle button:hover { background:#f1ebfe; color:#7c3aed; }
+.cev-reup-toggle button.on { background:#7c3aed; color:#fff; }
+
+/* The auto code is the one monospaced value in the form — it is an identifier,
+ * not prose, and reads as amber to match the code column in the table behind. */
+.cev-reup-code { font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace; color:#d97706; font-weight:700; }
+
+/* Expiry owns a full row: its Yes/No toggle and the date picker it reveals do
+ * not fit a half-width cell beside another field. */
+.cev-reup-fld-wide { grid-column:1 / -1; }
+
+[data-bs-theme="dark"] .cev-reup-card { background:#0f2731; }
+[data-bs-theme="dark"] .cev-reup-drop { background:#16303b; border-color:#2a4a56; color:#9db3c1; }
+[data-bs-theme="dark"] .cev-reup-cur { background:rgba(139,92,246,.14); border-color:rgba(139,92,246,.35); color:#c4b5fd; }
+[data-bs-theme="dark"] .cev-reup-ft { border-top-color:#1c3a45; }
+[data-bs-theme="dark"] .cev-reup-cancel { background:#16303b; border-color:#2a4a56; color:#9db3c1; }
+[data-bs-theme="dark"] .cev-reup-cancel:hover:not(:disabled) { background:#1c3a45; }
+[data-bs-theme="dark"] .cev-reup-ro { background:#16303b; border-color:#2a4a56; color:#cbd5e1; }
+[data-bs-theme="dark"] .cev-reup-in { background:#16303b; border-color:#2a4a56; color:#e2e8f0; }
+[data-bs-theme="dark"] .cev-reup-toggle { border-color:#2a4a56; }
+[data-bs-theme="dark"] .cev-reup-toggle button { background:#16303b; color:#9db3c1; }
+[data-bs-theme="dark"] .cev-reup-fld label { color:#c4b5fd; }
+[data-bs-theme="dark"] .cev-reup-none { color:#7c93a8; }
+[data-bs-theme="dark"] .cev-reup-code { color:#fbbf24; }
+@media (max-width:560px) { .cev-reup-grid { grid-template-columns:1fr; } }
+
+/* Expiry row: Yes/No toggle, then the date it reveals, side by side. The date
+ * picker takes whatever width is left so it lines up with the fields above it
+ * rather than stretching the full row on its own line. */
+.cev-reup-expiry { display:flex; align-items:center; gap:10px; }
+.cev-reup-expiry .cev-reup-toggle { flex:0 0 auto; }
+.cev-reup-expiry-date { flex:1 1 auto; min-width:0; }
+
+/* Stacked on a narrow sheet, where the two side by side would each be too
+ * cramped to read. */
+@media (max-width:560px) {
+  .cev-reup-expiry { flex-direction:column; align-items:stretch; }
+  .cev-reup-expiry-date { width:100%; }
+}
+
+/* The date picker portals its calendar to document.body at a fixed
+ * z-index: 11100 !important — chosen for the master screens, where the tallest
+ * thing above it is a modal in the 11000s. The upload popup sits at 100000
+ * (it has to clear the vault drawer at 11200 and the overview popup at 11400),
+ * so the calendar opened UNDERNEATH it and read as "the calendar won't open".
+ *
+ * Raised only for calendars opened from inside that popup, via the picker's
+ * own popupClassName hook — the global value is left alone. Both !important,
+ * so the extra class is what decides it. */
+.master-datepicker-popup.cev-reup-cal {
+  z-index: 100010 !important;
+}
+
+/* ─── Upload popup: dark-mode corrections ───────────────────────────────────
+ *
+ * `[data-bs-theme="dark"] .cev-reup-toggle button` and `.cev-reup-toggle
+ * button.on` carry the SAME specificity (0,2,1), and the dark rule is declared
+ * later — so in dark mode it repainted the selected segment too and Yes/No came
+ * out identical, with no way to see which answer was active. The selected
+ * segment is restated here, after both. */
+[data-bs-theme="dark"] .cev-reup-toggle button.on {
+  background: linear-gradient(135deg, #7c3aed, #8b5cf6);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, .45);
+}
+
+[data-bs-theme="dark"] .cev-reup-toggle button:hover:not(.on) {
+  background: rgba(139, 92, 246, .18);
+  color: #c4b5fd;
+}
+
+/* The card is violet-headed, so its dark surfaces take a violet cast rather
+ * than the teal one they inherited from the vault palette — the header, the
+ * field fills and the Save button now read as one control instead of a violet
+ * banner sitting on a teal sheet. Set on the shared class, so the Customer and
+ * Supplier vaults stay pixel-identical. */
+[data-bs-theme="dark"] .cev-reup-card {
+  background: #17102b;
+}
+
+[data-bs-theme="dark"] .cev-reup-bd {
+  background: #17102b;
+}
+
+[data-bs-theme="dark"] .cev-reup-ro,
+[data-bs-theme="dark"] .cev-reup-in,
+[data-bs-theme="dark"] .cev-reup-toggle,
+[data-bs-theme="dark"] .cev-reup-drop {
+  background: #1f1637;
+  border-color: rgba(139, 92, 246, .30);
+  color: #ddd6fe;
+}
+
+[data-bs-theme="dark"] .cev-reup-toggle button {
+  background: transparent;
+  color: #a5a0c0;
+}
+
+[data-bs-theme="dark"] .cev-reup-drop:hover,
+[data-bs-theme="dark"] .cev-reup-drop.has {
+  background: rgba(139, 92, 246, .16);
+  border-color: #8b5cf6;
+  color: #ddd6fe;
+}
+
+[data-bs-theme="dark"] .cev-reup-ft {
+  background: #17102b;
+  border-top-color: rgba(139, 92, 246, .22);
+}
+
+[data-bs-theme="dark"] .cev-reup-cancel {
+  background: #1f1637;
+  border-color: rgba(139, 92, 246, .30);
+  color: #c4b5fd;
+}
+
+[data-bs-theme="dark"] .cev-reup-cancel:hover:not(:disabled) {
+  background: rgba(139, 92, 246, .20);
+}
+
+[data-bs-theme="dark"] .cev-reup-fld label {
+  color: #c4b5fd;
+}
+
+[data-bs-theme="dark"] .cev-reup-code {
+  color: #fbbf24;
+}
+
+/* ─── Loading skeleton, restyled ────────────────────────────────────────────
+ *
+ * The old placeholder was a flat teal block with a white sweep across it. On
+ * the dark vault the sweep ran at 10% white, which is below the point where it
+ * reads as motion at all — the vault looked frozen rather than loading. The
+ * block now carries its own soft gradient so it has shape when the sweep is
+ * elsewhere, the sweep itself is a wider, brighter band, and each block starts
+ * a beat after the one before so the strip resolves as a wave down the page
+ * instead of every tile pulsing in lockstep. */
+.cev-sk {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #e2f5fa 0%, #cdeef6 48%, #e2f5fa 100%);
+}
+
+.cev-sk::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, .18) 35%,
+    rgba(255, 255, 255, .78) 50%,
+    rgba(255, 255, 255, .18) 65%,
+    transparent 100%
+  );
+  animation: cevShimmer 1.45s cubic-bezier(.4, 0, .2, 1) infinite;
+}
+
+/* The wave. Six KPI tiles and six table rows are the long runs, so the stagger
+ * is keyed off nth-child and wraps every six. */
+.cev-sk:nth-child(6n+2)::after { animation-delay: .08s; }
+.cev-sk:nth-child(6n+3)::after { animation-delay: .16s; }
+.cev-sk:nth-child(6n+4)::after { animation-delay: .24s; }
+.cev-sk:nth-child(6n+5)::after { animation-delay: .32s; }
+.cev-sk:nth-child(6n)::after   { animation-delay: .40s; }
+
+[data-bs-theme="dark"] .cev-sk {
+  background: linear-gradient(135deg, #10303c 0%, #16404f 48%, #10303c 100%);
+}
+
+[data-bs-theme="dark"] .cev-sk::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(103, 232, 249, .07) 35%,
+    rgba(103, 232, 249, .30) 50%,
+    rgba(103, 232, 249, .07) 65%,
+    transparent 100%
+  );
+}
+
+/* Radii that match what each placeholder stands in for, so the shapes do not
+ * change as the real content arrives. */
+.cev-skel-kpi    { border-radius: 12px; }
+.cev-skel-group  { border-radius: 13px; }
+.cev-skel-tab    { border-radius: 8px; }
+.cev-skel-section{ border-radius: 10px 10px 0 0; }
+.cev-skel-thead  { border-radius: 0; }
+.cev-skel-row    { border-radius: 8px; }
+
+/* A sweeping highlight is decoration; hold it still for anyone who has asked
+ * the OS to stop moving things. The tiles keep their gradient, so the page
+ * still reads as "not loaded yet". */
+@media (prefers-reduced-motion: reduce) {
+  .cev-sk::after { animation: none; opacity: .35; transform: none; }
+}
+
+/* The attachment chip is a label, not the document — a long export filename was
+ * pushing the column wider than the two date columns and the actions put
+ * together. Clipped shorter; the full name stays on the chip's own tooltip. */
+.cev-attach-name {
+  max-width: 112px;
+}
+
+/* Two actions instead of three (Download moved out — the attachment chip
+ * already downloads), so the buttons sit closer together and the column stops
+ * reserving room that nothing fills. */
+.cev-table .cev-row-actions {
+  gap: 5px;
+  flex-wrap: nowrap;
+}
+
+/* Overview action cell now holds two buttons (Download + Re-upload). */
+.cev-ov-acts {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* Re-upload is the secondary of the pair, so it drops the filled cyan pill the
+ * first-time Upload carries and sits as a pale outline beside Download. */
+.cev-ov-reup {
+  background: #f0fdff !important;
+  color: #0891b2 !important;
+  border: 1px solid rgba(6, 182, 212, .3) !important;
+  box-shadow: none !important;
+}
+
+.cev-ov-reup:hover:not(:disabled) {
+  background: #e0f9ff !important;
+  transform: none !important;
+}
+
+[data-bs-theme="dark"] .cev-ov-reup {
+  background: rgba(8, 145, 178, .18) !important;
+  color: #67e8f9 !important;
+  border-color: rgba(8, 145, 178, .40) !important;
+}
+
+[data-bs-theme="dark"] .cev-ov-reup:hover:not(:disabled) {
+  background: rgba(8, 145, 178, .30) !important;
+}

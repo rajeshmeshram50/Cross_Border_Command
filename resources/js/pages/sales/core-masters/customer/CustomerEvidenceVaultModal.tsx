@@ -8,6 +8,7 @@ import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
 import { CLM_CSS } from '../../../clm/shared/clmShared';
 import { useToast } from '../../../../contexts/ToastContext';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
+import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import { signatureRequestsToVaultDocs, mergeTradeDocuments, overlayShipmentSigStatus, type SigReqRow } from '../../../../utils/vaultSignatureRows';
 import { downloadFile, saveApiBlob } from '../../../../utils/downloadFile';
 import SalesCustomerSendForSignatureModal, {
@@ -28,7 +29,10 @@ export interface VaultDoc {
   reference?: string | null;
   authority?: string | null;
   issue_date?: string | null;
+  /** Free-text validity from the master, or the uploaded date. Seeds the popup. */
   expiry?: string | null;
+  /** The uploaded expiry date alone — null when the document carries none. */
+  expiry_date?: string | null;
   attachment?: string | null;
   attachment_url?: string | null;
   status: VaultStatus;
@@ -169,8 +173,8 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
   const [ovShipFilter, setOvShipFilter] = useState<'buyer-eq-consignee' | 'buyer-neq-consignee'>('buyer-eq-consignee');
   const [ovDownloadingKey, setOvDownloadingKey] = useState<string | null>(null);
   const [ovUploadingKey, setOvUploadingKey] = useState<string | null>(null);
-  const ovFileRef = useRef<HTMLInputElement | null>(null);
-  const ovUploadTarget = useRef<{ doc: VaultDoc; cat: 'dd' | 'kyc' | 'tl'; key: string } | null>(null);
+  /* Which overview row has its upload popup open (null = none). */
+  const [ovUploadDoc, setOvUploadDoc] = useState<{ doc: VaultDoc; cat: 'dd' | 'kyc' | 'tl'; key: string } | null>(null);
   const [shipmentFilter, setShipmentFilter] = useState<'buyer-eq-consignee' | 'buyer-neq-consignee'>('buyer-eq-consignee');
 
   const selectGroup = (g: GroupKey) => {
@@ -223,17 +227,24 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
       .finally(() => setLoading(false));
   }, [customer?.db_id]);
 
-  const ovUploadPick = useCallback(async (file: File | undefined) => {
-    const target = ovUploadTarget.current;
-    ovUploadTarget.current = null;
-    if (!file || !target || !customer?.db_id || !target.doc.doc_code) return;
+  /* Shared by the overview popup's Upload buttons. `target` is passed in now
+     rather than read from a ref: the file no longer arrives from a bare OS
+     dialog but from VaultUploadPopup, which also carries the issue / expiry
+     dates the row needs. Returns success so the popup can stay open on a
+     rejected file. */
+  const ovUploadPick = useCallback(async (
+    file: File | undefined,
+    target: { doc: VaultDoc; cat: 'dd' | 'kyc' | 'tl'; key: string } | null,
+    opts?: { issueDate?: string; expiryDate?: string },
+  ): Promise<boolean> => {
+    if (!file || !target || !customer?.db_id || !target.doc.doc_code) return false;
     if (!/\.(pdf|jpe?g|png)$/i.test(file.name)) {
       toast.error('Unsupported file type', 'Only PDF, JPG or PNG files are allowed. Word / Excel files are not supported.');
-      return;
+      return false;
     }
     if (file.size > 2048 * 1024) {
       toast.error('File too large', 'The file must be 2048 KB (2 MB) or smaller.');
-      return;
+      return false;
     }
     setOvUploadingKey(target.key);
     onRowBusyChange(true);
@@ -242,14 +253,18 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
       fd.append('category', target.cat);
       fd.append('doc_code', target.doc.doc_code);
       fd.append('doc_name', target.doc.name || target.doc.doc_code);
+      if (opts?.issueDate)  fd.append('issue_date', opts.issueDate);
+      if (opts?.expiryDate) fd.append('expiry_date', opts.expiryDate);
       fd.append('attachment', file);
       await api.post(`/segment-uploads/customer/${customer.db_id}`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       await reloadVault();
       toast.success('Document uploaded', `${file.name} has been attached.`);
+      return true;
     } catch (e: any) {
       toast.error('Upload failed', e?.response?.data?.message || 'The file could not be uploaded. Please try again.');
+      return false;
     } finally {
       setOvUploadingKey(null);
       onRowBusyChange(false);
@@ -770,14 +785,22 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
             : 'Select a shipment to view its Trade Documents & Agreements');
         return (
           <div className="cev-ov-overlay sev-ov" role="dialog" aria-modal="true">
-            <div className="cev-ov-card">
-              <input
-                ref={ovFileRef}
-                type="file"
-                hidden
-                accept=".pdf,.jpg,.jpeg,.png"
-                onChange={(e) => { void ovUploadPick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }}
+            {/* Same upload control the table rows use, so a document collected
+                from the overview list carries its issue and expiry dates too.
+                Rendered here (not per row) because it portals to document.body
+                and only one row can be uploading at a time. */}
+            {ovUploadDoc && (
+              <VaultUploadPopup
+                doc={ovUploadDoc.doc}
+                category={ovUploadDoc.cat}
+                busy={ovUploadingKey === ovUploadDoc.key}
+                onClose={() => setOvUploadDoc(null)}
+                onSubmit={async (f, opts) => {
+                  if (await ovUploadPick(f, ovUploadDoc, opts)) setOvUploadDoc(null);
+                }}
               />
+            )}
+            <div className="cev-ov-card">
               <div className="cev-ov-head">
                 <span className="cev-ov-head-icon"><i className="ri-list-check-2" aria-hidden /></span>
                 <div className="cev-ov-head-text">
@@ -841,10 +864,13 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
               ) : (
               <div className="cev-ov-body">
                 <table className="cev-ov-table">
-                  <thead><tr><th style={{ width: 64 }}>SR NO</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
+                  {/* Issued / Expired mirror the tab tables, so the overview
+                      lists the same facts about a document as the bucket it
+                      came from. Per-deal rows carry neither, and show em dashes. */}
+                  <thead><tr><th style={{ width: 58 }}>SR NO</th><th>DOCUMENT NAME</th><th style={{ width: 116 }}>ISSUED DATE</th><th style={{ width: 116 }}>EXPIRED AT</th><th style={{ width: 118 }}>STATUS</th><th style={{ width: 190 }}>ACTION</th></tr></thead>
                   <tbody>
                     {docs.length === 0 ? (
-                      <tr><td colSpan={4} className="cev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
+                      <tr><td colSpan={6} className="cev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
                     ) : docs.map((row, i) => {
                       const d = row.doc;
                       const absIdx = i;
@@ -857,6 +883,16 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                           <Tooltip label={d.name} disabled={(d.name || '').length <= 35}>
                             <td className="cev-ov-name">{(d.name || '').length > 35 ? (d.name || '').slice(0, 35) + '…' : d.name}</td>
                           </Tooltip>
+                          <td>
+                            {isStd && (d as VaultDoc).issue_date
+                              ? <span className="cev-date">{(d as VaultDoc).issue_date}</span>
+                              : <span style={{ color: '#9ca3af' }}>—</span>}
+                          </td>
+                          <td>
+                            {isStd && (d as VaultDoc).expiry_date
+                              ? <span className="cev-date cev-date-expiry">{(d as VaultDoc).expiry_date}</span>
+                              : <span style={{ color: '#9ca3af' }}>—</span>}
+                          </td>
                           <td><StatusPill s={d.status as VaultStatus} /></td>
                           <td>
                             {(() => {
@@ -864,24 +900,42 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                               const dling = ovDownloadingKey === dlKey;
                               const uping = ovUploadingKey === dlKey;
                               const canUpload = isStd && !!row.cat && !!customer.db_id && !!(d as VaultDoc).doc_code;
+                              /* Every row shows the SAME pair of buttons, with
+                                 Download greyed out until a file exists. The
+                                 pending rows used to show Upload alone, so the
+                                 column's buttons sat at a different x on every
+                                 other row and the eye had to re-find them all
+                                 the way down the list. Matches the tab tables,
+                                 where View stays visible-but-disabled. */
                               if (!url && canUpload) {
                                 return (
-                                  <button
-                                    type="button"
-                                    className="cev-ov-up"
-                                    disabled={uping}
-                                    onClick={() => {
-                                      ovUploadTarget.current = { doc: d as VaultDoc, cat: row.cat as 'dd' | 'kyc' | 'tl', key: dlKey };
-                                      ovFileRef.current?.click();
-                                    }}
-                                  >
-                                    {uping
-                                      ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Uploading…</>
-                                      : <><i className="ri-upload-2-line" aria-hidden /> Upload</>}
-                                  </button>
+                                  <span className="cev-ov-acts">
+                                    <Tooltip label="No file uploaded yet">
+                                      <button type="button" className="cev-ov-dl" disabled>
+                                        <i className="ri-download-2-line" aria-hidden /> Download
+                                      </button>
+                                    </Tooltip>
+                                    <button
+                                      type="button"
+                                      className="cev-ov-up"
+                                      disabled={uping}
+                                      onClick={() => setOvUploadDoc({ doc: d as VaultDoc, cat: row.cat as 'dd' | 'kyc' | 'tl', key: dlKey })}
+                                    >
+                                      {uping
+                                        ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Uploading…</>
+                                        : <><i className="ri-upload-2-line" aria-hidden /> Upload</>}
+                                    </button>
+                                  </span>
                                 );
                               }
+                              /* A document already on file can be replaced from
+                                 here too, not only from its own tab — the
+                                 overview is the list people actually work
+                                 through. Per-deal rows have no re-upload: their
+                                 file comes back signed from Zoho. */
+                              const canReupload = isStd && !!row.cat && !!customer.db_id && !!(d as VaultDoc).doc_code;
                               return (
+                                <span className="cev-ov-acts">
                                 <button
                                   type="button"
                                   className="cev-ov-dl"
@@ -904,6 +958,19 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                                     ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Downloading…</>
                                     : <><i className="ri-download-2-line" aria-hidden /> Download</>}
                                 </button>
+                                {canReupload && (
+                                  <button
+                                    type="button"
+                                    className="cev-ov-up cev-ov-reup"
+                                    disabled={uping}
+                                    onClick={() => setOvUploadDoc({ doc: d as VaultDoc, cat: row.cat as 'dd' | 'kyc' | 'tl', key: dlKey })}
+                                  >
+                                    {uping
+                                      ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Uploading…</>
+                                      : <><i className="ri-refresh-line" aria-hidden /> Re-upload</>}
+                                  </button>
+                                )}
+                                </span>
                               );
                             })()}
                           </td>
@@ -980,15 +1047,184 @@ export function SevStat(props: {
   );
 }
 
+/* Upload / Re-upload popup for the STANDARD document buckets (Company DD,
+ * Owner KYC, Trade Licences).
+ *
+ * The customer vault used to fire the OS file dialog straight off the Upload
+ * button, so the row's dates could never be captured — every upload landed with
+ * no issue date and no expiry, and the Expiry column fell back to the segment
+ * rule's generic validity text. The supplier vault already had this popup; this
+ * is the same control, plus the Issued Date the vault's row shape has always
+ * had a slot for (it was hard-coded null until now).
+ *
+ * Auto Code, Document Name and Issuing Authority stay read-only: they come from
+ * the segment rule's master row, and editing them here would let one party's
+ * upload disagree with the catalogue every other screen reads. */
+export function VaultUploadPopup({ doc, category, busy, onClose, onSubmit }: {
+  doc: VaultDoc;
+  category: 'kyc' | 'dd' | 'tl';
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (f: File, opts?: { issueDate?: string; expiryDate?: string }) => void | Promise<void>;
+}) {
+  const toast = useToast();
+  /* The master's `expiry` is free text — "Lifetime", "Varies", "—" all mean
+     "no expiry date". Anything date-shaped seeds the picker instead. */
+  const noExpiry = (v?: string | null) => !v || /^(lifetime|n\/a|—|-|varies|)$/i.test(v.trim());
+  const toISO = (v?: string | null) => {
+    if (!v) return '';
+    const t = v.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+    const m = t.match(/^(\d{2})[/-](\d{2})[/-](\d{4})$/);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+  };
+  const [file, setFile] = useState<File | null>(null);
+  const [issueDate, setIssueDate] = useState('');
+  const [hasExpiry, setHasExpiry] = useState(!noExpiry(doc.expiry));
+  const [expiryDate, setExpiryDate] = useState(toISO(doc.expiry));
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const pick = (f: File | undefined) => {
+    if (!f) return;
+    if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) {
+      toast.error('Unsupported file type', 'Only PDF, JPG or PNG files are allowed.');
+      return;
+    }
+    if (f.size > 2 * 1024 * 1024) {
+      toast.error('File too large', `${f.name} exceeds the 2 MB limit.`);
+      return;
+    }
+    setFile(f);
+  };
+
+  const save = () => {
+    if (!file) return;
+    if (hasExpiry && !expiryDate) {
+      toast.error('Expiry required', 'Pick an expiry date, or set Expiry to "No".');
+      return;
+    }
+    /* Checked here as well as server-side: the server rejects it with a 422 the
+       popup would surface as a bare field error, which reads as a bug rather
+       than a correction. */
+    if (issueDate && hasExpiry && expiryDate && expiryDate < issueDate) {
+      toast.error('Dates out of order', 'The expiry date cannot be before the issued date.');
+      return;
+    }
+    void onSubmit(file, {
+      issueDate: issueDate || undefined,
+      expiryDate: hasExpiry ? expiryDate : undefined,
+    });
+  };
+
+  const heading = category === 'dd' ? 'Due Diligence' : category === 'kyc' ? 'Owner KYC' : 'Trade License';
+
+  return createPortal(
+    <div className="cev-reup-ov" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+      <div className="cev-reup-card" role="dialog" aria-modal="true">
+        <div className="cev-reup-hd">
+          <div className="cev-reup-hd-l">
+            <span className="cev-reup-hd-ico"><i className="ri-upload-cloud-2-line" /></span>
+            <div>
+              <div className="cev-reup-ttl">{(doc.attachment ? 'Re-upload ' : 'Upload ') + heading + ' Document'}</div>
+              <div className="cev-reup-sub">{doc.name || doc.doc_code}</div>
+            </div>
+          </div>
+          <button type="button" className="cev-reup-x" onClick={onClose} aria-label="Close" disabled={busy}><i className="ri-close-line" /></button>
+        </div>
+
+        <div className="cev-reup-bd">
+          <div className="cev-reup-grid">
+            <div className="cev-reup-fld">
+              <label>Auto Code</label>
+              <div className="cev-reup-ro cev-reup-code">{doc.reference || doc.doc_code || '—'}</div>
+            </div>
+            <div className="cev-reup-fld">
+              <label>Document Name</label>
+              <div className="cev-reup-ro">{doc.name || '—'}</div>
+            </div>
+            <div className="cev-reup-fld">
+              <label>Issuing Authority</label>
+              <div className="cev-reup-ro">{doc.authority && doc.authority !== '—' ? doc.authority : '—'}</div>
+            </div>
+            <div className="cev-reup-fld">
+              <label>Issued Date</label>
+              <MasterDatePicker
+                value={issueDate}
+                onChange={setIssueDate}
+                placeholder="Select issued date"
+                maxDate={new Date().toISOString().slice(0, 10)}
+                popupClassName="cev-reup-cal"
+              />
+            </div>
+            <div className="cev-reup-fld cev-reup-fld-wide">
+              <label>Expiry <span className="cev-reup-hint">Has an expiry date?</span></label>
+              {/* Toggle and date on ONE row: the date only exists because Yes
+                  was picked, so sitting it beside the answer keeps the question
+                  and its consequence together instead of pushing the picker
+                  onto a line of its own. */}
+              <div className="cev-reup-expiry">
+                <div className="cev-reup-toggle">
+                  <button type="button" className={hasExpiry ? 'on' : ''} onClick={() => setHasExpiry(true)}>Yes</button>
+                  <button type="button" className={!hasExpiry ? 'on' : ''} onClick={() => { setHasExpiry(false); setExpiryDate(''); }}>No</button>
+                </div>
+                {hasExpiry && (
+                  <div className="cev-reup-expiry-date">
+                    <MasterDatePicker
+                      value={expiryDate}
+                      onChange={setExpiryDate}
+                      placeholder="Select expiry date"
+                      minDate={issueDate || new Date().toISOString().slice(0, 10)}
+                      popupClassName="cev-reup-cal"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {doc.attachment && (
+            <div className="cev-reup-fld">
+              <label>Current File</label>
+              <a className="cev-reup-cur" href={doc.attachment_url ? resolveFileUrl(doc.attachment_url) : undefined} target="_blank" rel="noreferrer">
+                <i className="ri-file-text-line" /><span>{doc.attachment}</span>
+              </a>
+            </div>
+          )}
+
+          <div className="cev-reup-fld">
+            <label>Upload Document <span className="cev-reup-req">*</span></label>
+            <input ref={inputRef} type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { pick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }} />
+            <button type="button" className={`cev-reup-drop${file ? ' has' : ''}`} onClick={() => inputRef.current?.click()}>
+              <i className={file ? 'ri-file-check-line' : 'ri-upload-cloud-2-line'} />
+              <span>{file ? file.name : 'Upload document (JPG / PNG / PDF, max 2 MB)'}</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="cev-reup-ft">
+          <button type="button" className="cev-reup-cancel" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="button" className="cev-reup-save" disabled={!file || busy} onClick={save}>
+            {busy ? <><i className="ri-loader-4-line cev-spin" /> Uploading…</> : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function VaultSkeleton() {
   return (
     <div className="cev-skel">
-      <div className="cev-skel-kpis">
-        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="cev-skel-kpi cev-sk" />)}
-      </div>
+      {/* Group cards lead the real layout, then the KPI strip. The skeleton had
+          them the other way round, so the whole page shuffled the moment the
+          vault loaded. */}
       <div className="cev-skel-groups">
         <div className="cev-skel-group cev-sk" />
         <div className="cev-skel-group cev-sk" />
+      </div>
+      <div className="cev-skel-kpis">
+        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="cev-skel-kpi cev-sk" />)}
       </div>
       <div className="cev-skel-tabs">
         {Array.from({ length: 3 }).map((_, i) => <div key={i} className="cev-skel-tab cev-sk" />)}
@@ -1027,13 +1263,17 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
             <th>Document Name</th>
             <th>{authorityLbl}</th>
             <th>Requirement</th>
-            <th>Attachment</th>
-            <th style={{ width: 260 }}>Actions</th>
+            <th style={{ width: 170 }}>Attachment</th>
+            <th style={{ width: 116 }}>Issued Date</th>
+            <th style={{ width: 116 }}>Expired At</th>
+            {/* Two actions now that Download has gone, so the column no longer
+                needs the 260px it was reserving for three. */}
+            <th style={{ width: 172 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr><td colSpan={7} className="cev-empty">No documents in this bucket yet.</td></tr>
+            <tr><td colSpan={9} className="cev-empty">No documents in this bucket yet.</td></tr>
           ) : rows.map((d, i) => (
             <tr key={`${d.doc_code ?? 'doc'}-${i}`}>
               <td>{i + 1}</td>
@@ -1055,11 +1295,15 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                     const key = String(d.db_id ?? d.doc_code ?? d.name ?? '');
                     const busy = chipBusy === key;
                     return (
+                      /* The shared Tooltip, as on the action buttons — this
+                         chip was the one control in the row still falling back
+                         to the browser's own `title` box, which is unstyled,
+                         slow to appear and ignores the theme. */
+                      <Tooltip label={busy ? 'Downloading…' : `Download ${d.attachment || 'attachment'}`}>
                       <a
                         href={d.attachment_url}
                         rel="noreferrer"
                         className="cev-attach"
-                        title={busy ? 'Downloading…' : `Download ${d.attachment || 'attachment'}`}
                         aria-busy={busy}
                         onClick={async (e) => {
                           e.preventDefault();
@@ -1072,11 +1316,41 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                         <i className={busy ? 'ri-loader-4-line cev-spin' : 'ri-download-2-line'} />{' '}
                         <span className="cev-attach-name">{d.attachment || 'Download'}</span>
                       </a>
+                      </Tooltip>
                     );
                   })()
                 ) : d.attachment ? (
-                  <span className="cev-attach cev-attach-muted" title={d.attachment}><i className="ri-file-line" /> <span className="cev-attach-name">{d.attachment}</span></span>
+                  <Tooltip label={d.attachment}>
+                    <span className="cev-attach cev-attach-muted"><i className="ri-file-line" /> <span className="cev-attach-name">{d.attachment}</span></span>
+                  </Tooltip>
                 ) : <span style={{ color: '#9ca3af' }}>—</span>}
+              </td>
+              {/* Captured on upload; blank for documents that carry no issue
+                  date, and for everything uploaded before the field existed. */}
+              <td>
+                {d.issue_date
+                  ? <span className="cev-date">{d.issue_date}</span>
+                  : <span style={{ color: '#9ca3af' }}>—</span>}
+              </td>
+              {/* Expiry of the UPLOADED document. `expiry` is not used here: it
+                  falls back to the master's free-text validity ("Lifetime",
+                  "2 years"), which is not a date. No date on file → em dash.
+                  Past dates read red and the next 30 days amber, reusing the
+                  chip the Attachment column's dates already use. */}
+              <td>
+                {(() => {
+                  if (!d.expiry_date) return <span style={{ color: '#9ca3af' }}>—</span>;
+                  const due = new Date(d.expiry_date);
+                  const days = Number.isNaN(due.getTime())
+                    ? null
+                    : Math.ceil((due.getTime() - Date.now()) / 86400000);
+                  const tone = days === null ? undefined : days < 0 ? 'pending' : days <= 30 ? 'expiring' : undefined;
+                  const note = days === null ? '' : days < 0 ? `Expired ${Math.abs(days)} day(s) ago` : `Expires in ${days} day(s)`;
+                  const chip = (
+                    <span className="cev-date cev-date-expiry" data-status={tone}>{d.expiry_date}</span>
+                  );
+                  return note ? <Tooltip label={note}>{chip}</Tooltip> : chip;
+                })()}
               </td>
               <td>
                 <VaultRowActions doc={d} ownerType={ownerType} ownerId={ownerId} category={category} onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} onBusyChange={onRowBusyChange} />
@@ -1104,9 +1378,9 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [reminding, setReminding] = useState(false);
-  const [downloading, setDownloading] = useState(false);
   const [viewing, setViewing] = useState(false);
   const [trackerOpen, setTrackerOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const canViewOrDownload = !!doc.attachment_url;
   const canReupload = !!ownerId && !!doc.doc_code;
   const isSigned     = doc.sig_state === 'completed' || doc.status === 'Signed';
@@ -1122,22 +1396,17 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
     try { await onRemindTradeDoc(doc); } finally { setReminding(false); }
   };
 
-  const download = async () => {
-    if (downloading || !doc.attachment_url) return;
-    setDownloading(true);
-    try { await downloadFile(doc.attachment_url, doc.attachment ?? undefined); }
-    finally { setDownloading(false); }
-  };
-
-  const onPick = async (f: File | undefined) => {
-    if (!f || !ownerId || !doc.doc_code) return;
+  /* Returns whether the upload succeeded, so the popup only closes on success
+     and a rejected file leaves the user's other entries intact. */
+  const onPick = async (f: File | undefined, opts?: { issueDate?: string; expiryDate?: string }): Promise<boolean> => {
+    if (!f || !ownerId || !doc.doc_code) return false;
     if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) {
       toast.error('Unsupported file type', 'Only PDF, JPG or PNG files are allowed. Word / Excel files are not supported.');
-      return;
+      return false;
     }
     if (f.size > 2048 * 1024) {
       toast.error('File too large', 'The file must be 2048 KB (2 MB) or smaller.');
-      return;
+      return false;
     }
     setBusy(true);
     onBusyChange?.(true);
@@ -1146,14 +1415,18 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
       fd.append('category', category);
       fd.append('doc_code', doc.doc_code);
       fd.append('doc_name', doc.name || doc.doc_code);
+      if (opts?.issueDate)  fd.append('issue_date', opts.issueDate);
+      if (opts?.expiryDate) fd.append('expiry_date', opts.expiryDate);
       fd.append('attachment', f);
       await api.post(`/segment-uploads/${ownerType}/${ownerId}`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       await onReload();
       toast.success('Document uploaded', `${f.name} has been attached.`);
+      return true;
     } catch (e: any) {
       toast.error('Upload failed', e?.response?.data?.message || 'The file could not be uploaded. Please try again.');
+      return false;
     } finally {
       setBusy(false);
       onBusyChange?.(false);
@@ -1250,26 +1523,25 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           <span>View</span>
         </a>
       </Tooltip>
-      <Tooltip label={canViewOrDownload ? (downloading ? 'Downloading…' : `Download ${doc.attachment}`) : 'No attachment yet'}>
-        <button
-          type="button"
-          disabled={!canViewOrDownload || downloading}
-          onClick={download}
-          className={`cev-row-act cev-row-act-download sev-row-act-txt ${!canViewOrDownload ? 'is-disabled' : ''}`}
-          aria-label="Download"
-        >
-          {downloading
-            ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 13 }} aria-hidden />
-            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
-          <span>Download</span>
-        </button>
-      </Tooltip>
+      {/* No Download action. The Attachment column's filename chip already
+          downloads the file, so the row carried the same action twice — the
+          column keeps View and Upload / Re-upload, which have nowhere else to
+          live. */}
+      {uploadOpen && category !== 'td' && (
+        <VaultUploadPopup
+          doc={doc}
+          category={category}
+          busy={busy}
+          onClose={() => setUploadOpen(false)}
+          onSubmit={async (f, opts) => { if (await onPick(f, opts)) setUploadOpen(false); }}
+        />
+      )}
       {category !== 'td' && (
       <Tooltip label={canReupload ? (busy ? 'Uploading…' : (doc.attachment ? 'Re-upload (replace file)' : 'Upload')) : 'Save the record first'}>
         <button
           type="button"
           disabled={!canReupload || busy}
-          onClick={() => fileRef.current?.click()}
+          onClick={() => setUploadOpen(true)}
           className={`cev-row-act cev-row-act-upload sev-row-act-txt ${(!canReupload || busy) ? 'is-disabled' : ''}`}
           aria-label={doc.attachment ? 'Re-upload' : 'Upload'}
         >
@@ -1497,13 +1769,17 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
 
   return (
     <div className="cev-sdp" style={{ padding: '12px 16px 16px' }}>
+      {/* Same control as the Customer = / ≠ Consignee switch above the matrix:
+          one pill group, the active segment filled. These were hand-rolled
+          inline buttons, which is why they sat flat and pale next to it — and
+          why dark mode could not reach them at all. */}
       {!buyerIsConsignee && (
-        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+        <div className="cev-shp-toggle cev-sdp-party">
           {!hideBuyerTab && (
-            <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>Customer Documents <b>{buyerOnly.length}</b></button>
+            <button type="button" className={party === 'buyer' ? 'is-active' : ''} onClick={() => setParty('buyer')}>Customer Documents <b>{buyerOnly.length}</b></button>
           )}
-          <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(activeParty === 'consignee')}>Consignee Documents <b>{consOnly.length}</b></button>
-          <button type="button" onClick={() => setParty('both')} style={partyTabStyle(activeParty === 'both')}>Both <b>{bothDocs.length}</b></button>
+          <button type="button" className={activeParty === 'consignee' ? 'is-active' : ''} onClick={() => setParty('consignee')}>Consignee Documents <b>{consOnly.length}</b></button>
+          <button type="button" className={activeParty === 'both' ? 'is-active' : ''} onClick={() => setParty('both')}>Both <b>{bothDocs.length}</b></button>
         </div>
       )}
       {docs.length === 0 ? (
@@ -1579,7 +1855,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
                   <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                     {d.signed_url && (
                       <Tooltip label="View signed document">
-                        <button type="button" aria-label="View" onClick={() => window.open(resolveFileUrl(d.signed_url!), '_blank', 'noopener')} style={docActStyle('view')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg> View</button>
+                        <button type="button" aria-label="View" onClick={() => window.open(resolveFileUrl(d.signed_url!), '_blank', 'noopener')} className={docActClass('view')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg> View</button>
                       </Tooltip>
                     )}
                     {d.status === 'Draft' && onSend && d.db_id && (() => {
@@ -1588,7 +1864,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
                         <Tooltip label={isSending ? 'Sending…' : 'Send for signature'}>
                         <button type="button" aria-label="Send" disabled={isSending}
                           onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')}
-                          style={{ ...docActStyle('send'), ...(isSending ? { cursor: 'wait' } : null) }}>
+                          className={docActClass('send')}>
                           {isSending
                             ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 12, display: 'inline-block' }} aria-hidden />
                             : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}{isSending ? ' Sending…' : ' Send'}
@@ -1602,7 +1878,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
                         <Tooltip label={isSending ? 'Sending…' : 'Send the Proforma Invoice for signature'}>
                         <button type="button" aria-label="Send for Signature" disabled={isSending}
                           onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')}
-                          style={{ ...docActStyle('send'), ...(isSending ? { cursor: 'wait' } : null) }}>
+                          className={docActClass('send')}>
                           {isSending
                             ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 12, display: 'inline-block' }} aria-hidden />
                             : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}{isSending ? ' Sending…' : ' Send'}
@@ -1616,7 +1892,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
                         <Tooltip label={isSending ? 'Sending…' : `Re-send for signature (${d.status.toLowerCase()})`}>
                         <button type="button" aria-label="Resend for Signature" disabled={isSending}
                           onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')}
-                          style={{ ...docActStyle('send'), ...(isSending ? { cursor: 'wait' } : null) }}>
+                          className={docActClass('send')}>
                           {isSending
                             ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 12, display: 'inline-block' }} aria-hidden />
                             : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg>}{isSending ? ' Sending…' : ' Resend'}
@@ -1624,12 +1900,12 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
                         </Tooltip>
                       );
                     })()}
-                    {d.status === 'Pending' && d.sig_req_id > 0 && <Tooltip label={busy === d.sig_req_id ? 'Sending reminder…' : 'Send reminder to the signer'}><button type="button" aria-label="Send Reminder" disabled={busy === d.sig_req_id} onClick={() => remind(d)} style={docActStyle('remind')}>{busy === d.sig_req_id ? '…' : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>}{busy === d.sig_req_id ? ' Sending…' : ' Remind'}</button></Tooltip>}
+                    {d.status === 'Pending' && d.sig_req_id > 0 && <Tooltip label={busy === d.sig_req_id ? 'Sending reminder…' : 'Send reminder to the signer'}><button type="button" aria-label="Send Reminder" disabled={busy === d.sig_req_id} onClick={() => remind(d)} className={docActClass('remind')}>{busy === d.sig_req_id ? '…' : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>}{busy === d.sig_req_id ? ' Sending…' : ' Remind'}</button></Tooltip>}
                     {(d.signature_request_id ?? (d.sig_req_id > 0 ? d.sig_req_id : null)) && (
                       <Tooltip label="View signing timeline">
                         <button type="button" aria-label="Signing activity tracker"
                           onClick={() => setTrackSig({ id: (d.signature_request_id ?? d.sig_req_id) as number, code: d.pi_code || d.name })}
-                          style={docActStyle('track')}>
+                          className={docActClass('track')}>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5" /><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" /><path d="M12 7v5l4 2" /></svg> Track
                         </button>
                       </Tooltip>
@@ -1837,29 +2113,21 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
  * heading wraps instead of forcing its column wider. */
 export const RATIO_COL: CSSProperties = { width: 132, textAlign: 'center', whiteSpace: 'normal' };
 
-const partyTabStyle = (on: boolean): CSSProperties => ({
-  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
-  fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, color: on ? '#fff' : '#0e7490',
-  background: on ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : '#e0f7fa',
-});
 
-const DOC_ACT_TINTS = {
-  view:   { fg: '#2563eb', bg: 'rgba(37, 99, 235, .08)', bd: 'rgba(37, 99, 235, .20)' },
-  send:   { fg: '#0891b2', bg: '#cffafe',                bd: '#67e8f9' },
-  remind: { fg: '#b45309', bg: '#fef3c7',                bd: '#fcd34d' },
-  track:  { fg: '#0e7490', bg: '#cffafe',                bd: '#67e8f9' },
-} as const;
-
-const docActStyle = (kind: keyof typeof DOC_ACT_TINTS): CSSProperties => {
-  const t = DOC_ACT_TINTS[kind];
-  return {
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-    margin: '0 3px', height: 26, padding: '0 9px', borderRadius: 7,
-    border: `1px solid ${t.bd}`, background: t.bg, color: t.fg,
-    fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700, letterSpacing: '.01em',
-    whiteSpace: 'nowrap', cursor: 'pointer',
-  };
-};
+/* Case-to-Case row actions carry only a class now.
+ *
+ * They were inline styles, chosen because this panel also renders inside the
+ * Case-to-Case popup while the table's `cev-row-act` classes are scoped to the
+ * vault root, which the popup sits outside of. The cost was dark mode: an
+ * inline background cannot be overridden by a [data-bs-theme="dark"] rule, so
+ * View kept an 8%-opacity wash that all but disappears on a dark row, while
+ * Send happened to use a solid pale fill and stayed legible — the two ended up
+ * looking like different classes of control.
+ *
+ * The classes are scoped to `.cev-sdp`, the panel's OWN root, so they travel
+ * with it to both places it renders, and each tone is declared once for light
+ * and once for dark. See supplier-evidence-vault.css. */
+const docActClass = (kind: 'view' | 'send' | 'remind' | 'track') => `cev-sdp-act cev-sdp-act-${kind}`;
 
 /* Add two "signed/total" ratios into one.
  *

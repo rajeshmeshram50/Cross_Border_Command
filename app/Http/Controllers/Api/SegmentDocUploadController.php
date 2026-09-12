@@ -144,9 +144,15 @@ class SegmentDocUploadController extends Controller
             'doc_code'    => ['required', 'string', 'max:32'],
             'doc_name'    => ['required', 'string', 'max:255'],
             'requirement' => ['nullable', Rule::in(['M', 'O'])],
+            // Optional issue date from the upload popup. Capped at today: a
+            // document cannot have been granted in the future, and both upload
+            // dialogs cap their picker the same way.
+            'issue_date'  => ['nullable', 'date', 'before_or_equal:today'],
             // Optional expiry date from the upload popup's Yes/No toggle.
-            // Absent / null ⇒ the document carries no expiry.
-            'expiry_date' => ['nullable', 'date'],
+            // Absent / null ⇒ the document carries no expiry. It must not
+            // predate the issue date when both are given — a licence cannot
+            // lapse before it was granted.
+            'expiry_date' => ['nullable', 'date', 'after_or_equal:issue_date'],
             // 2 MB cap + restricted to PDF / JPG / JPEG / PNG only — these all
             // preview in-browser via the row's View action. Word (doc/docx)
             // and spreadsheets are NOT accepted: browsers download Office
@@ -154,7 +160,9 @@ class SegmentDocUploadController extends Controller
             'attachment'  => ['required', 'file', 'max:2048', 'mimes:pdf,jpg,jpeg,png'],
         ]);
         $requirement = $data['requirement'] ?? 'O';
+        $issueDate   = $data['issue_date'] ?? null;
         $expiryDate  = $data['expiry_date'] ?? null;
+        $issueDate   = $data['issue_date'] ?? null;
 
         // Re-upload semantics: if a row already exists for the same
         // (entity, category, doc_code) tuple, drop its previous file
@@ -179,6 +187,7 @@ class SegmentDocUploadController extends Controller
                 'requirement'      => $requirement,
                 'attachment_path'  => $path,
                 'attachment_name'  => $name,
+                'issue_date'       => $issueDate,
                 'expiry_date'      => $expiryDate,
                 'uploaded_by'      => optional($request->user())->id,
             ]);
@@ -195,6 +204,7 @@ class SegmentDocUploadController extends Controller
             'requirement'     => $requirement,
             'attachment_path' => $path,
             'attachment_name' => $name,
+            'issue_date'      => $issueDate,
             'expiry_date'     => $expiryDate,
             'uploaded_by'     => optional($request->user())->id,
         ]);
@@ -298,6 +308,33 @@ class SegmentDocUploadController extends Controller
         $sameAsCustomer = $type === 'consignee'
             && (bool) optional(Consignee::find($id))->same_as_customer;
 
+        /* WHO the consignee mirrors, so the UI can send the user there.
+         *
+         * A mirrored consignee has no paperwork of its own — the vault answers
+         * with the customer's, and every write is refused (409 above). The
+         * honest thing to show is therefore not that list but a way over to the
+         * customer, and the caller cannot build that link itself: the consignee
+         * row carries the customer CODE for a header chip, not the id the
+         * customer vault needs to fetch with.
+         *
+         * $owner is already that customer — resolveOwner swapped it — so this
+         * costs one address lookup, and only on a mirrored consignee. */
+        $mirrorCustomer = null;
+        if ($sameAsCustomer && $owner instanceof Customer) {
+            $addr = $owner->primaryAddress;
+            $mirrorCustomer = [
+                'id'      => $owner->id,
+                'code'    => $owner->customer_code,
+                'name'    => $owner->company_name,
+                'segment' => $owner->segment,
+                'type'    => $owner->type,
+                'risk'    => $owner->risk_level,
+                'country' => $addr?->country,
+                'city'    => $addr?->city,
+                'contact' => $addr?->cp_name,
+            ];
+        }
+
         // 1. Resolve the entity's segment ids. Customer/Consignee
         // store segment as a comma-joined name string; Vendor uses an
         // FK column.
@@ -385,11 +422,22 @@ class SegmentDocUploadController extends Controller
                     'name'            => $master['name'] ?? $code,
                     'reference'       => $master['code'] ?? $code,
                     'authority'       => $master['authority'] ?? null,
-                    'issue_date'      => null,
+                    // Was hard-coded null until segment_doc_uploads grew the
+                    // column; it now reports what the uploader entered.
+                    'issue_date'      => optional($upload?->issue_date)->format('d-M-Y'),
                     // Prefer the expiry the user picked at upload time; fall
                     // back to the segment-rule master's generic validity text.
                     'expiry'          => optional($upload?->expiry_date)->format('d-M-Y')
                                           ?? ($master['expiry'] ?? '—'),
+                    /* The UPLOADED expiry on its own, with no fallback.
+                     *
+                     * `expiry` above falls back to the segment-rule master's
+                     * validity text, which is free prose — "Lifetime", "2
+                     * years", "Varies". That is the right thing for the upload
+                     * popup, which uses it to decide whether to pre-tick "has
+                     * an expiry date", but it cannot be printed in a date
+                     * column. This key is the date or nothing. */
+                    'expiry_date'     => optional($upload?->expiry_date)->format('d-M-Y'),
                     'attachment'      => $upload?->attachment_name,
                     'attachment_url'  => $upload?->attachment_url,
                     'status'          => $upload ? 'Verified' : 'Pending',
@@ -482,6 +530,7 @@ class SegmentDocUploadController extends Controller
             return response()->json([
                 'data' => [
                     'same_as_customer'       => $sameAsCustomer,
+                    'mirror_customer'        => $mirrorCustomer,
                     'company_dd'             => $company_dd,
                     'owner_kyc'              => $owner_kyc,
                     'trade_licenses'         => $trade_licenses,
@@ -700,6 +749,7 @@ class SegmentDocUploadController extends Controller
         return response()->json([
             'data' => [
                 'same_as_customer'       => $sameAsCustomer,
+                'mirror_customer'        => $mirrorCustomer,
                 'vendor_with_shipment'    => $vendorDeals['with_shipment'],
                 'vendor_without_shipment' => $vendorDeals['without_shipment'],
                 'vendor_deal_ratios'      => $vendorDeals['ratios'],
@@ -2310,6 +2360,7 @@ class SegmentDocUploadController extends Controller
             'attachment_path' => $row->attachment_path,
             'attachment_url'  => $row->attachment_url,
             'attachment_name' => $row->attachment_name,
+            'issue_date'      => optional($row->issue_date)->format('Y-m-d'),
             'expiry_date'     => optional($row->expiry_date)->format('Y-m-d'),
             'uploaded_by'     => $row->uploaded_by,
             'created_at'      => optional($row->created_at)->toIso8601String(),
