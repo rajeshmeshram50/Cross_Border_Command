@@ -900,18 +900,32 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                               const dling = ovDownloadingKey === dlKey;
                               const uping = ovUploadingKey === dlKey;
                               const canUpload = isStd && !!row.cat && !!customer.db_id && !!(d as VaultDoc).doc_code;
+                              /* Every row shows the SAME pair of buttons, with
+                                 Download greyed out until a file exists. The
+                                 pending rows used to show Upload alone, so the
+                                 column's buttons sat at a different x on every
+                                 other row and the eye had to re-find them all
+                                 the way down the list. Matches the tab tables,
+                                 where View stays visible-but-disabled. */
                               if (!url && canUpload) {
                                 return (
-                                  <button
-                                    type="button"
-                                    className="cev-ov-up"
-                                    disabled={uping}
-                                    onClick={() => setOvUploadDoc({ doc: d as VaultDoc, cat: row.cat as 'dd' | 'kyc' | 'tl', key: dlKey })}
-                                  >
-                                    {uping
-                                      ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Uploading…</>
-                                      : <><i className="ri-upload-2-line" aria-hidden /> Upload</>}
-                                  </button>
+                                  <span className="cev-ov-acts">
+                                    <Tooltip label="No file uploaded yet">
+                                      <button type="button" className="cev-ov-dl" disabled>
+                                        <i className="ri-download-2-line" aria-hidden /> Download
+                                      </button>
+                                    </Tooltip>
+                                    <button
+                                      type="button"
+                                      className="cev-ov-up"
+                                      disabled={uping}
+                                      onClick={() => setOvUploadDoc({ doc: d as VaultDoc, cat: row.cat as 'dd' | 'kyc' | 'tl', key: dlKey })}
+                                    >
+                                      {uping
+                                        ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Uploading…</>
+                                        : <><i className="ri-upload-2-line" aria-hidden /> Upload</>}
+                                    </button>
+                                  </span>
                                 );
                               }
                               /* A document already on file can be replaced from
