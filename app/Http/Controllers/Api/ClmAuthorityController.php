@@ -66,9 +66,23 @@ class ClmAuthorityController extends Controller
         // references). Editing stays allowed — CLM masters reference by id and
         // the legacy name-based tables are kept in sync by cascadeRename().
         if ($rows->isNotEmpty()) {
-            $usedIds   = $this->usedIdSet($user->client_id);
-            $usedNames = $this->usedNameSet($user->client_id);
-            $usedCodes = $this->usedCodeSet($user->client_id);
+            /* Cached for a minute, because building these three sets costs 33
+               queries — eight tables read in full, plus two Schema::hasTable /
+               hasColumn lookups each, and every one of those interrogates
+               information_schema across a 199-table schema. That is the bulk
+               of this endpoint, it is identical for three rows and for ten
+               thousand, and on a server where the database is a network hop
+               away each query is a round trip.
+               A minute of staleness is safe here: `in_use` only greys out the
+               delete button, and destroy() runs its own live check before it
+               deletes anything — so the worst case is a button enabled for up
+               to 60s longer than it should be, and a 409 if it is pressed.
+               Best-effort like the rest of the caching in this app: if the
+               cache store is unavailable the closure simply runs. */
+            $usage = $this->cachedUsageSets((int) $user->client_id);
+            $usedIds   = $usage['ids'];
+            $usedNames = $usage['names'];
+            $usedCodes = $usage['codes'];
             $rows->each(function ($r) use ($usedIds, $usedNames, $usedCodes) {
                 $r->in_use = isset($usedIds[(string) $r->id])
                     || isset($usedNames[mb_strtolower(trim((string) $r->name))])
@@ -319,6 +333,40 @@ class ClmAuthorityController extends Controller
     }
 
     /** Set of authority IDS referenced by the CLM document masters (for in_use). */
+    /**
+     * The three usage sets, cached together for 60 seconds.
+     *
+     * Cached as one entry rather than three so a partial hit is impossible —
+     * the `in_use` flag is derived from all three, and mixing a fresh set with
+     * two stale ones would be harder to reason about than a whole minute of
+     * consistent staleness.
+     *
+     * Keyed by tenant. Not invalidated on write: the flag is advisory, the
+     * delete path re-checks, and an explicit invalidation would have to fire
+     * from four other controllers (KYC / DD / TL / QC) plus the segment-rule
+     * screen — more coupling than a 60s window is worth.
+     */
+    private function cachedUsageSets(int $clientId): array
+    {
+        $build = fn () => [
+            'ids'   => $this->usedIdSet($clientId),
+            'names' => $this->usedNameSet($clientId),
+            'codes' => $this->usedCodeSet($clientId),
+        ];
+
+        try {
+            return \Illuminate\Support\Facades\Cache::remember(
+                'clm:auth:usage:' . $clientId,
+                now()->addSeconds(60),
+                $build
+            );
+        } catch (\Throwable $e) {
+            // A preview must never fail because the CACHE failed — same rule
+            // the CTC preview cache follows.
+            return $build();
+        }
+    }
+
     private function usedIdSet(?int $clientId): array
     {
         $used = [];
