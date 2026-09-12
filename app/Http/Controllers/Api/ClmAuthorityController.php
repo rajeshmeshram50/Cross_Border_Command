@@ -306,11 +306,25 @@ class ClmAuthorityController extends Controller
 
         // Segment Rules stores the CODE inside a JSON array — substring match
         // keeps the check portable across MySQL / Postgres / SQLite.
-        if (Schema::hasTable('clm_segment_rules')
-            && Schema::hasColumn('clm_segment_rules', 'auths_json')
-            && $code
-            && DB::table('clm_segment_rules')->where('auths_json', 'like', '%"' . $code . '"%')->exists()) {
-            $usedIn[] = 'Segment Rules';
+        /* Same check the list uses for its `in_use` flag — deliberately the
+           same method, because these two answered the same question in two
+           ways and disagreed: the list said an authority was free while this
+           refused to delete it.
+           Also now scoped to the TENANT. The old `LIKE` ran across every
+           client's rules, and an authority CODE is only unique per
+           (client, branch) — so another branch's AUTH-003 could block this
+           one's deletion. */
+        if ($code && Schema::hasTable('clm_segment_rules') && Schema::hasColumn('clm_segment_rules', 'auths_json')) {
+            $rules = DB::table('clm_segment_rules');
+            if (Schema::hasColumn('clm_segment_rules', 'client_id')) {
+                $rules->where('client_id', $clientId);
+            }
+            foreach ($rules->pluck('auths_json') as $j) {
+                if (in_array($code, self::codesInAuthsJson($j), true)) {
+                    $usedIn[] = 'Segment Rules';
+                    break;
+                }
+            }
         }
 
         return $usedIn;
@@ -412,12 +426,43 @@ class ClmAuthorityController extends Controller
             $q->where('client_id', $clientId);
         }
         foreach ($q->pluck('auths_json') as $j) {
-            $arr = is_array($j) ? $j : (json_decode((string) $j, true) ?: []);
-            if (is_array($arr)) {
-                foreach ($arr as $c) $used[(string) $c] = true;
-            }
+            foreach (self::codesInAuthsJson($j) as $c) $used[$c] = true;
         }
         return $used;
+    }
+
+    /**
+     * Every authority CODE referenced inside a segment rule's `auths_json`.
+     *
+     * Walks the structure instead of assuming a flat list. The previous version
+     * did `foreach ($arr as $c) $used[(string) $c] = true;`, which is only
+     * correct while the column holds `["AUTH-002","AUTH-012"]`. Give it a
+     * nested shape and every `$c` is an array, `(string) $c` becomes the
+     * literal "Array", and NOT ONE real code is collected — so the list
+     * reported `in_use: false` for authorities that were genuinely referenced,
+     * and the delete then refused with "in use by Segment Rules".
+     *
+     * That is the bug this fixes, and it is also why both the list flag and
+     * the delete guard now call THIS method: two checks answering the same
+     * question in two different ways is how they came to disagree.
+     */
+    private static function codesInAuthsJson($json): array
+    {
+        $arr = is_array($json) ? $json : (json_decode((string) $json, true) ?: []);
+        if (!is_array($arr)) return [];
+
+        $out = [];
+        array_walk_recursive($arr, function ($v, $k) use (&$out) {
+            // Codes appear as values in a flat list (["AUTH-002", ...]) and as
+            // KEYS in a map shape ({"AUTH-002": "M", ...}), so collect both and
+            // keep only what looks like a code.
+            foreach ([$v, $k] as $candidate) {
+                if (is_string($candidate) && preg_match('/^AUTH-\d+$/', $candidate)) {
+                    $out[$candidate] = true;
+                }
+            }
+        });
+        return array_keys($out);
     }
 
     private function nextCode(int $clientId, ?int $branchId): string
