@@ -45,7 +45,10 @@ export interface VaultDoc {
   reference?: string | null;
   authority?: string | null;
   issue_date?: string | null;
+  /** Free text from the master ("Lifetime", "1 Year") OR the uploaded date. */
   expiry?: string | null;
+  /** The uploaded expiry alone — null when none is stored. Unambiguous. */
+  expiry_date?: string | null;
   attachment?: string | null;
 
   attachment_url?: string | null;
@@ -1492,7 +1495,8 @@ export function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit, cla
   category: 'kyc' | 'dd' | 'tl' | 'td' | 'agreement';
   busy: boolean;
   onClose: () => void;
-  onSubmit: (f: File, opts?: { docName?: string; issueDate?: string; expiryDate?: string }) => void | Promise<void>;
+  /** `f` is null on a dates-only re-upload — the stored file is kept. */
+  onSubmit: (f: File | null, opts?: { docName?: string; issueDate?: string; expiryDate?: string }) => void | Promise<void>;
   /** Hook for the host vault to retune the dialog — the Consignee vault uses it
    *  to carry its own header colour and width, since each vault's header is a
    *  different gradient and a dialog launched from one should not arrive in
@@ -1527,8 +1531,20 @@ export function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit, cla
   };
   const [file, setFile] = useState<File | null>(null);
   const docName = doc.name || '';
-  const [hasExpiry, setHasExpiry] = useState(isStd && !noExpiry(doc.expiry));
-  const [expiryDate, setExpiryDate] = useState(toISO(doc.expiry));
+  /* A file is already on record, so this is a re-upload. */
+  const isReupload = !!doc.attachment;
+  /* `expiry_date` first: `expiry` falls back to the MASTER's free-text validity
+     ("1 Year", "Lifetime"), which is not a date. Seeding the picker from it
+     produced the worst case on re-upload — "1 Year" is not in the no-expiry
+     list, so the toggle came up Yes over an empty picker and Save then failed
+     with "Expiry required" on a document that had never had an expiry. */
+  const storedExpiry = toISO(doc.expiry_date) || toISO(doc.expiry);
+  const [expiryDate, setExpiryDate] = useState(storedExpiry);
+  /* On a re-upload the toggle states what is actually stored. On a FIRST
+     upload there is nothing stored, so the master's hint is the best guess. */
+  const [hasExpiry, setHasExpiry] = useState(
+    isStd && (isReupload ? !!storedExpiry : !noExpiry(doc.expiry)),
+  );
   const [issueDate, setIssueDate] = useState(toISO(doc.issue_date));
   const todayIso = new Date().toISOString().slice(0, 10);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -1545,7 +1561,10 @@ export function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit, cla
     setFile(f);
   };
   const save = () => {
-    if (!file) return;
+    /* Re-upload without picking a file = a dates-only correction. Re-selecting
+       the identical PDF just to fix a typo in a date is busywork; the server
+       keeps the file already on record. A FIRST upload still needs one. */
+    if (!file && !isReupload) return;
     if (isStd && hasExpiry && !expiryDate) { toast.error('Expiry required', 'Pick an expiry date or set Expiry to “No”.'); return; }
     // A licence cannot lapse before it was granted. The server enforces this
     // too (after_or_equal:issue_date); this is the immediate answer.
@@ -1633,7 +1652,7 @@ export function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit, cla
             </div>
           )}
           <div className="cev-reup-fld">
-            <label>Upload Document <span className="cev-reup-req">*</span></label>
+            <label>Upload Document {!isReupload && <span className="cev-reup-req">*</span>}</label>
             <input ref={inputRef} type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { pick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }} />
             {/* Locked while the upload is in flight. Cancel and Save already
                 were, but the picker was not — so a second file could be chosen
@@ -1641,14 +1660,20 @@ export function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit, cla
                 first one while showing the second. */}
             <button type="button" className={`cev-reup-drop${file ? ' has' : ''}`} disabled={busy} onClick={() => inputRef.current?.click()}>
               <i className={file ? 'ri-file-check-line' : 'ri-upload-cloud-2-line'} />
-              <span>{file ? file.name : 'Upload document (JPG / PNG / PDF, max 2 MB)'}</span>
+              {/* On a re-upload the file is optional, so the prompt says so
+                  instead of implying one must be picked before Save works. */}
+              <span>{file
+                ? file.name
+                : isReupload
+                  ? 'Replace the file (optional) — JPG / PNG / PDF, max 2 MB'
+                  : 'Upload document (JPG / PNG / PDF, max 2 MB)'}</span>
             </button>
           </div>
         </div>
         <div className="cev-reup-ft">
           <button type="button" className="cev-reup-cancel" onClick={onClose} disabled={busy}>Cancel</button>
-          <button type="button" className="cev-reup-save" disabled={!file || busy} onClick={save}>
-            {busy ? <><i className="ri-loader-4-line cev-spin" /> Uploading…</> : 'Save'}
+          <button type="button" className="cev-reup-save" disabled={(!file && !isReupload) || busy} onClick={save}>
+            {busy ? <><i className="ri-loader-4-line cev-spin" /> Saving…</> : 'Save'}
           </button>
         </div>
       </div>
@@ -1756,7 +1781,9 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           category={category}
           busy={busy}
           onClose={() => setReupOpen(false)}
-          onSubmit={async (f, opts) => { const ok = await onPick(f, opts); if (ok) setReupOpen(false); }}
+          /* No dates-only save in the supplier vault, so a null file here means
+             nothing was picked and there is nothing to do. */
+          onSubmit={async (f, opts) => { if (!f) return; const ok = await onPick(f, opts); if (ok) setReupOpen(false); }}
         />
       ))}
       {canSend && (

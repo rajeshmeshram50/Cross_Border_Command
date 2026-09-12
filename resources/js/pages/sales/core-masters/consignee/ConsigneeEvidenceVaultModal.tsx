@@ -1753,7 +1753,9 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
      read N/A. The popup owns the file picking and the type / size guards. */
   const [reupOpen, setReupOpen] = useState(false);
 
-  const doUpload = async (f: File, issueDate?: string, expiryDate?: string) => {
+  /* `f` is null on a dates-only re-upload: the row keeps the file already
+     on record and only its dates change. */
+  const doUpload = async (f: File | null, issueDate?: string, expiryDate?: string) => {
     if (!ownerId || !doc.doc_code) return;
     setBusy(true);
     onBusyChange?.(true);   // lock the vault (no tab switch / close) while uploading
@@ -1762,7 +1764,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
       fd.append('category', category);
       fd.append('doc_code', doc.doc_code);
       fd.append('doc_name', doc.name || doc.doc_code);
-      fd.append('attachment', f);
+      if (f) fd.append('attachment', f);
       // Both left out when not given — the endpoint's rules are nullable and an
       // empty string would fail their `date` check.
       if (issueDate) fd.append('issue_date', issueDate);
@@ -1772,7 +1774,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
       });
       setReupOpen(false);
       await onReload();
-      toast.success('Document uploaded', `${f.name} has been attached.`);
+      toast.success(f ? 'Document uploaded' : 'Dates saved', f ? `${f.name} has been attached.` : 'The issue and expiry dates were updated.');
     } catch (e: any) {
       toast.error('Upload failed', e?.response?.data?.message || 'The file could not be uploaded. Please try again.');
     } finally {
