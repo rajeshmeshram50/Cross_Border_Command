@@ -87,7 +87,7 @@ class SegmentDocUploadController extends Controller
         }
 
         return response()->json([
-            'data'         => $rows->map(fn ($r) => $this->shape($r))->all(),
+            'data'         => $rows->map(fn($r) => $this->shape($r))->all(),
             'by_category'  => $byCategory,
             'count'        => $rows->count(),
         ]);
@@ -118,13 +118,20 @@ class SegmentDocUploadController extends Controller
         foreach (self::CATEGORIES as $cat) {
             $byCategory[$cat] = ['total' => 0, 'mandatory' => 0, 'optional' => 0];
         }
-        $total = 0; $mand = 0; $opt = 0;
+        $total = 0;
+        $mand = 0;
+        $opt = 0;
         foreach ($rows as $r) {
             $cat = $r->category;
             if (!isset($byCategory[$cat])) continue;
             $byCategory[$cat]['total']++;
-            if ($r->requirement === 'M') { $byCategory[$cat]['mandatory']++; $mand++; }
-            else                          { $byCategory[$cat]['optional']++;  $opt++;  }
+            if ($r->requirement === 'M') {
+                $byCategory[$cat]['mandatory']++;
+                $mand++;
+            } else {
+                $byCategory[$cat]['optional']++;
+                $opt++;
+            }
             $total++;
         }
         return response()->json([
@@ -157,7 +164,8 @@ class SegmentDocUploadController extends Controller
             // preview in-browser via the row's View action. Word (doc/docx)
             // and spreadsheets are NOT accepted: browsers download Office
             // files instead of showing them, which broke the View flow.
-            'attachment'  => ['required', 'file', 'max:2048', 'mimes:pdf,jpg,jpeg,png'],
+
+            'attachment'  => ['nullable', 'file', 'max:2048', 'mimes:pdf,jpg,jpeg,png'],
         ]);
         $requirement = $data['requirement'] ?? 'O';
         $issueDate   = $data['issue_date'] ?? null;
@@ -175,21 +183,43 @@ class SegmentDocUploadController extends Controller
             ->where('doc_code', $data['doc_code'])
             ->first();
 
-        $path = $this->storeUpload($request->file('attachment'), $type, $owner->id, $data['category'], $data['doc_code']);
-        $name = $request->file('attachment')->getClientOriginalName();
+        $file = $request->file('attachment');
+
+        /* No file and nothing on record = nothing to attach. Rejected in the
+         * same shape the validator would have used, so the frontend's field
+         * handling is unchanged. */
+        if (!$file && !$existing) {
+            return response()->json([
+                'message' => 'The attachment field is required.',
+                'errors'  => ['attachment' => ['Select a file to upload.']],
+            ], 422);
+        }
+
+        $path = $file ? $this->storeUpload($file, $type, $owner->id, $data['category'], $data['doc_code']) : null;
+        $name = $file?->getClientOriginalName();
 
         if ($existing) {
-            if ($existing->attachment_path && $existing->attachment_path !== $path) {
+            /* $path guard is load-bearing: on a dates-only re-upload it is null,
+             * and "null !== the stored path" is true — which would delete the
+             * very file the row is keeping. Only a REPLACEMENT file retires the
+             * old one. */
+            if ($path && $existing->attachment_path && $existing->attachment_path !== $path) {
                 Storage::disk('public')->delete($existing->attachment_path);
             }
-            $existing->update([
+            /* Dates-only correction: keep the file that is already on record
+             * rather than blanking the row's path and name. */
+            $existing->update(array_filter([
                 'doc_name'         => $data['doc_name'],
                 'requirement'      => $requirement,
                 'attachment_path'  => $path,
                 'attachment_name'  => $name,
+                'uploaded_by'      => optional($request->user())->id,
+            ], fn($v) => $v !== null) + [
+                // Outside the filter on purpose: null is a MEANINGFUL value for
+                // these two — it is how "this document has no expiry" is stored,
+                // so a filter that drops nulls could never clear one.
                 'issue_date'       => $issueDate,
                 'expiry_date'      => $expiryDate,
-                'uploaded_by'      => optional($request->user())->id,
             ]);
             return response()->json(['data' => $this->shape($existing->fresh())], 200);
         }
@@ -364,7 +394,7 @@ class SegmentDocUploadController extends Controller
             ->whereIn('segment_id', $segmentIds)
             ->get()
             ->groupBy('segment_id')
-            ->map(fn ($g) => $g->firstWhere('document_type', $docType) ?? $g->first())
+            ->map(fn($g) => $g->firstWhere('document_type', $docType) ?? $g->first())
             ->filter()
             ->values();
 
@@ -394,7 +424,7 @@ class SegmentDocUploadController extends Controller
             'kyc' => $this->fetchMasters(ClmKycDocument::class,    array_keys($unionByCat['kyc']), $cid, $authMap),
             'dd'  => $this->fetchMasters(ClmDdDocument::class,     array_keys($unionByCat['dd']),  $cid, $authMap),
             'tl'  => $this->fetchMasters(ClmTradeLicense::class,   array_keys($unionByCat['tl']),  $cid, $authMap),
-            'td'  => $this->fetchMasters(ClmTradeDocLibrary::class,array_keys($unionByCat['td']),  $cid, $authMap),
+            'td'  => $this->fetchMasters(ClmTradeDocLibrary::class, array_keys($unionByCat['td']),  $cid, $authMap),
             'qc'  => $this->fetchMasters(ClmQcDocument::class,     array_keys($unionByCat['qc']),  $cid, $authMap),
         ];
 
@@ -404,7 +434,7 @@ class SegmentDocUploadController extends Controller
             ->where('uploadable_type', get_class($owner))
             ->where('uploadable_id', $owner->id)
             ->get()
-            ->keyBy(fn ($u) => $u->category . '::' . $u->doc_code);
+            ->keyBy(fn($u) => $u->category . '::' . $u->doc_code);
 
         // 5. Build per-bucket rows.
         $buildBucket = function (string $cat) use ($unionByCat, $masters, $uploads): array {
@@ -428,7 +458,7 @@ class SegmentDocUploadController extends Controller
                     // Prefer the expiry the user picked at upload time; fall
                     // back to the segment-rule master's generic validity text.
                     'expiry'          => optional($upload?->expiry_date)->format('d-M-Y')
-                                          ?? ($master['expiry'] ?? '—'),
+                        ?? ($master['expiry'] ?? '—'),
                     /* The UPLOADED expiry on its own, with no fallback.
                      *
                      * `expiry` above falls back to the segment-rule master's
@@ -558,7 +588,7 @@ class SegmentDocUploadController extends Controller
          * counted them. total_shipments and shipment_agreements stay strictly
          * shipment-linked, so the Case-to-Case shipment UI is unchanged. */
         $deals     = $this->buildShipmentAgreements($owner, $type, $cid, $company_dd, $owner_kyc, $trade_licenses, $id, false, $sameAsCustomer);
-        $shipments = array_values(array_filter($deals, fn ($r) => !empty($r['has_shipment'])));
+        $shipments = array_values(array_filter($deals, fn($r) => !empty($r['has_shipment'])));
 
         /* Rows the Case-to-Case tables render.
          *
@@ -627,7 +657,8 @@ class SegmentDocUploadController extends Controller
                 }
             }
             $c2c = function (string $key) use ($deals) {
-                $signed = 0; $total = 0;
+                $signed = 0;
+                $total = 0;
                 foreach ($deals as $s) {
                     $parts   = explode('/', $s[$key]['ratio'] ?? '0/0');
                     $signed += (int) ($parts[0] ?? 0);
@@ -669,9 +700,9 @@ class SegmentDocUploadController extends Controller
                 $sideRows = $type === 'consignee'
                     ? ($sameAsCustomer
                         ? array_merge(
-                            array_values(array_filter($buyerRows, fn ($r) => empty($r['pi_id']))),
+                            array_values(array_filter($buyerRows, fn($r) => empty($r['pi_id']))),
                             $consRows,
-                          )
+                        )
                         : $consRows)
                     : $buyerRows;
                 $seenInDeal = [];
@@ -700,7 +731,7 @@ class SegmentDocUploadController extends Controller
              * they genuinely belong to a deal. */
             $agrTotal  = count($agreements);
             $agrSigned = collect($agreements)
-                ->filter(fn ($a) => in_array($a['status'] ?? '', ['Signed', 'Verified'], true))
+                ->filter(fn($a) => in_array($a['status'] ?? '', ['Signed', 'Verified'], true))
                 ->count();
 
             $totalDocuments      = count($stdRows) + $c2cTd['total'] + $agrTotal;
@@ -793,7 +824,7 @@ class SegmentDocUploadController extends Controller
      */
     private function buildVendorDeals(Model $owner, int $cid, array $companyDd, array $ownerKyc, array $tradeLicenses, array $tradeDocuments): array
     {
-        $r = fn (array $rows) => [
+        $r = fn(array $rows) => [
             'd' => collect($rows)->where('status', 'Verified')->count(),
             't' => count($rows),
         ];
@@ -822,7 +853,7 @@ class SegmentDocUploadController extends Controller
         $agrLib = $this->vendorSupplierLibrary($cid, $vendorSegIds, ClmAgreementLibrary::class, 'agr_status');
         // Trade-Docs column ratio = signed-vs-total of the per-deal docs shown in
         // the drill-down (not the DCP bucket, which is empty here).
-        $tdRatio = fn (array $docs) => [
+        $tdRatio = fn(array $docs) => [
             'd' => collect($docs)->where('status', 'Signed')->count(),
             't' => count($docs),
         ];
@@ -868,8 +899,9 @@ class SegmentDocUploadController extends Controller
             ->where('model_name', 'Vendor')
             ->get()
             ->groupBy('lead_id');
-        $docCache = []; $agrCache = [];
-        $reqsFor  = fn (?int $leadId) => $leadId ? ($reqsByLead[$leadId] ?? collect()) : collect();
+        $docCache = [];
+        $agrCache = [];
+        $reqsFor  = fn(?int $leadId) => $leadId ? ($reqsByLead[$leadId] ?? collect()) : collect();
         $dealDocs = function (?int $leadId) use (&$docCache, $tdLib, $reqsFor) {
             $key = $leadId ?? 0;
             if (!array_key_exists($key, $docCache)) {
@@ -1008,7 +1040,7 @@ class SegmentDocUploadController extends Controller
             ->groupBy('lead_id');
 
         // Standard-doc ratios (shared across the party's shipments).
-        $ratioOf = fn (array $rows) => $this->ratio(collect($rows)->where('status', 'Verified')->count(), count($rows));
+        $ratioOf = fn(array $rows) => $this->ratio(collect($rows)->where('status', 'Verified')->count(), count($rows));
         $ddRatio  = $ratioOf($companyDd);
         $kycRatio = $ratioOf($ownerKyc);
         $tlRatio  = $ratioOf($tradeLicenses);
@@ -1035,7 +1067,7 @@ class SegmentDocUploadController extends Controller
         $piSigReq    = [];   // pi_id ⇒ latest COMPLETED sig (Signed + View link)
         $piActiveReq = [];   // pi_id ⇒ latest IN-PROGRESS sig (sent, remind-able)
         $piLatestReq = [];   // pi_id ⇒ latest sig of ANY status (drives the tracker
-                             //         + the display status incl. Declined/Recalled)
+        //         + the display status incl. Declined/Recalled)
         $piIds = $piByLead->flatten()->pluck('id')->all();
         if ($piIds) {
             // ALL statuses (not just completed/inprogress) so a DECLINED or
@@ -1068,7 +1100,8 @@ class SegmentDocUploadController extends Controller
         // once (else "0/3" when only 2 distinct agreements exist). Dedupe by
         // library id (+ doc type), falling back to the name.
         $dedupe = function (array $rows): array {
-            $seen = []; $out = [];
+            $seen = [];
+            $out = [];
             foreach ($rows as $r) {
                 $key = !empty($r['db_id']) ? (($r['doc_type'] ?? '') . '#' . $r['db_id']) : ('n#' . ($r['name'] ?? ''));
                 if (isset($seen[$key])) continue;
@@ -1115,7 +1148,7 @@ class SegmentDocUploadController extends Controller
                 $latestState = $latestReq ? strtolower((string) $latestReq->status) : null;
                 $piStatus = $piSigned ? 'Signed'
                     : (in_array($latestState, ['declined', 'rejected'], true) ? 'Declined'
-                    : ($latestState === 'recalled' ? 'Recalled' : 'Pending'));
+                        : ($latestState === 'recalled' ? 'Recalled' : 'Pending'));
                 // Resolve the signed-document URL the same way trade docs do, so
                 // the vault can offer a "View" link on the signed PI.
                 $signedUrl = null;
@@ -1224,7 +1257,7 @@ class SegmentDocUploadController extends Controller
                is the consignee's to sign, so it stays out of the customer's
                vault even when the two are the same company (and the other way
                round). Only agreements were reported; trade docs are untouched. */
-        /* "Same as Customer" ticked → one company → it holds the customer's
+            /* "Same as Customer" ticked → one company → it holds the customer's
            documents, exactly as it holds the customer's KYC and owners (the
            consignee form clones those at save time, and resolveOwner serves
            the customer's standard buckets for the same reason). Not ticked →
@@ -1239,12 +1272,12 @@ class SegmentDocUploadController extends Controller
            both lists under the same id and must appear once. */
             $tradeAll = ($type === 'consignee' && $ownerIsSameAsCustomer)
                 ? $dedupe(array_merge(
-                    array_values(array_filter($tradeBuyer, fn ($r) => empty($r['pi_id']))),
+                    array_values(array_filter($tradeBuyer, fn($r) => empty($r['pi_id']))),
                     $tradeCons,
-                  ))
+                ))
                 : $primary['trade'];
             $agrAll   = $primary['agr'];
-            $signed   = fn (array $d) => collect($d)->where('status', 'Signed')->count();
+            $signed   = fn(array $d) => collect($d)->where('status', 'Signed')->count();
 
             $sr++;
             $rows[] = [
@@ -1350,11 +1383,13 @@ class SegmentDocUploadController extends Controller
 
         // Ordered like ProformaInvoice::items(), so this map is a drop-in for the
         // relation the per-deal path still uses on the quotation fallback.
-        foreach (ProformaInvoiceItem::whereIn('proforma_invoice_id', $piIds)
-            ->whereNotNull('product_id')
-            ->orderBy('line_no')
-            ->orderBy('id')
-            ->get(['proforma_invoice_id', 'product_id']) as $item) {
+        foreach (
+            ProformaInvoiceItem::whereIn('proforma_invoice_id', $piIds)
+                ->whereNotNull('product_id')
+                ->orderBy('line_no')
+                ->orderBy('id')
+                ->get(['proforma_invoice_id', 'product_id']) as $item
+        ) {
             $ctx['pi_products'][(int) $item->proforma_invoice_id][] = (int) $item->product_id;
         }
         $productIds = collect($ctx['pi_products'])->flatten()->unique()->values()->all();
@@ -1362,10 +1397,12 @@ class SegmentDocUploadController extends Controller
 
         // Same tenant + not-null-segment filter the per-deal query used; the
         // soft-delete scope rides along on the model exactly as before.
-        foreach (Product::where('client_id', $cid)
-            ->whereIn('id', $productIds)
-            ->whereNotNull('segment_id')
-            ->get(['id', 'segment_id']) as $product) {
+        foreach (
+            Product::where('client_id', $cid)
+                ->whereIn('id', $productIds)
+                ->whereNotNull('segment_id')
+                ->get(['id', 'segment_id']) as $product
+        ) {
             $ctx['segment_by_product'][(int) $product->id] = (int) $product->segment_id;
         }
         $segmentIds = array_values(array_unique($ctx['segment_by_product']));
@@ -1469,7 +1506,7 @@ class SegmentDocUploadController extends Controller
             if ($productIds->isEmpty()) return $empty;
 
             $segmentIds = $productIds
-                ->map(fn ($pid) => $ctx['segment_by_product'][(int) $pid] ?? null)
+                ->map(fn($pid) => $ctx['segment_by_product'][(int) $pid] ?? null)
                 ->filter()
                 ->unique()
                 ->flip();
@@ -1484,7 +1521,7 @@ class SegmentDocUploadController extends Controller
              * happens to sit on the PI, silently reshuffling every document
              * list in the response. */
             $segments = collect($ctx['segments'])
-                ->filter(fn ($seg, $sid) => $segmentIds->has((int) $sid))
+                ->filter(fn($seg, $sid) => $segmentIds->has((int) $sid))
                 ->values();
         } else {
             $productIds = $source->items()->whereNotNull('product_id')->pluck('product_id')->filter()->unique();
@@ -1522,7 +1559,7 @@ class SegmentDocUploadController extends Controller
            the PI. */
         $partySegRaw = $partySegments;
         $partySegs = array_values(array_filter(array_map(
-            fn ($x) => mb_strtolower(trim((string) $x)),
+            fn($x) => mb_strtolower(trim((string) $x)),
             explode(',', (string) $partySegRaw)
         )));
         /* NOT narrowed to the party's own segments any more.
@@ -1602,10 +1639,13 @@ class SegmentDocUploadController extends Controller
             }
         }
         /* Party bucket first, lead-level send as the fallback. */
-        $sigFor = fn (string $docType, string $party, int $libId) =>
-            $sigIndex[$docType][$party][$libId] ?? $sigAny[$docType][$libId] ?? null;
+        $sigFor = fn(string $docType, string $party, int $libId) =>
+        $sigIndex[$docType][$party][$libId] ?? $sigAny[$docType][$libId] ?? null;
 
-        $tdBuyer = []; $tdCons = []; $agrBuyer = []; $agrCons = [];
+        $tdBuyer = [];
+        $tdCons = [];
+        $agrBuyer = [];
+        $agrCons = [];
         $seen = ['td' => ['Customer' => [], 'Consignee' => []], 'agr' => ['Customer' => [], 'Consignee' => []]];
 
         /* clm_lead_doc_needs is deliberately NOT read here.
@@ -1727,12 +1767,12 @@ class SegmentDocUploadController extends Controller
                     $n = mb_strtolower(trim((string) $needle));
                     if ($n === '') continue;
                     $q->orWhereRaw('LOWER(segment) = ?', [$n])
-                      ->orWhereRaw('LOWER(segment) LIKE ?', [$n . ',%'])
-                      ->orWhereRaw('LOWER(segment) LIKE ?', [$n . ', %'])
-                      ->orWhereRaw('LOWER(segment) LIKE ?', ['%,' . $n])
-                      ->orWhereRaw('LOWER(segment) LIKE ?', ['%, ' . $n])
-                      ->orWhereRaw('LOWER(segment) LIKE ?', ['%,' . $n . ',%'])
-                      ->orWhereRaw('LOWER(segment) LIKE ?', ['%, ' . $n . ',%']);
+                        ->orWhereRaw('LOWER(segment) LIKE ?', [$n . ',%'])
+                        ->orWhereRaw('LOWER(segment) LIKE ?', [$n . ', %'])
+                        ->orWhereRaw('LOWER(segment) LIKE ?', ['%,' . $n])
+                        ->orWhereRaw('LOWER(segment) LIKE ?', ['%, ' . $n])
+                        ->orWhereRaw('LOWER(segment) LIKE ?', ['%,' . $n . ',%'])
+                        ->orWhereRaw('LOWER(segment) LIKE ?', ['%, ' . $n . ',%']);
                 }
             })
             ->where($statusCol, $statusVal)
@@ -1760,7 +1800,7 @@ class SegmentDocUploadController extends Controller
     private function partyFlags(?string $party): array
     {
         $tokens = array_filter(array_map(
-            fn ($t) => strtolower(trim($t)),
+            fn($t) => strtolower(trim($t)),
             explode(',', (string) $party)
         ));
         // Unclassified (blank party) → applies to both.
@@ -1793,18 +1833,21 @@ class SegmentDocUploadController extends Controller
         // Completed agreement e-signatures for THIS entity → set of signed lib ids.
         $modelName = $type === 'consignee' ? 'Consignee' : 'Customer';
         $signed = [];
-        foreach (ClmSignatureRequest::where('client_id', $cid)
-            ->where('document_type', ClmSignatureRequest::DOC_AGREEMENT)
-            ->where('status', 'completed')
-            ->where('model_name', $modelName)
-            ->where('party_id', $entityId)
-            ->get(['trade_doc_ids']) as $sr) {
+        foreach (
+            ClmSignatureRequest::where('client_id', $cid)
+                ->where('document_type', ClmSignatureRequest::DOC_AGREEMENT)
+                ->where('status', 'completed')
+                ->where('model_name', $modelName)
+                ->where('party_id', $entityId)
+                ->get(['trade_doc_ids']) as $sr
+        ) {
             foreach ((is_array($sr->trade_doc_ids) ? $sr->trade_doc_ids : []) as $aid) {
                 $signed[(int) $aid] = true;
             }
         }
 
-        $rows = []; $seen = [];
+        $rows = [];
+        $seen = [];
         foreach ($segments as $seg) {
             foreach ($this->matchSegmentLibrary(ClmAgreementLibrary::query(), $cid, $seg, 'agr_status') as $a) {
                 $aid = (int) $a->id;
@@ -1889,7 +1932,7 @@ class SegmentDocUploadController extends Controller
      */
     private function supplierApplicable(?string $party): bool
     {
-        $tokens = array_filter(array_map(fn ($t) => strtolower(trim($t)), explode(',', (string) $party)));
+        $tokens = array_filter(array_map(fn($t) => strtolower(trim($t)), explode(',', (string) $party)));
         if (empty($tokens)) return true;                    // no party → all parties
         foreach ($tokens as $t) {
             if ($t === 'supplier' || str_starts_with($t, 'supplier')) return true;
@@ -1918,7 +1961,8 @@ class SegmentDocUploadController extends Controller
         $segments = ClmSegment::where('client_id', $cid)->whereIn('id', $segIds)->get();
         if ($segments->isEmpty()) return collect();
 
-        $docs = collect(); $seen = [];
+        $docs = collect();
+        $seen = [];
         foreach ($segments as $seg) {
             foreach ($this->matchSegmentLibrary($libClass::query(), $cid, $seg, $statusCol) as $m) {
                 if (isset($seen[$m->id]) || !$this->supplierApplicable($m->party)) continue;
@@ -1961,7 +2005,10 @@ class SegmentDocUploadController extends Controller
             if ($r->model_name !== 'Vendor' || $r->document_type !== $docType) continue;
             if ($partyId !== null && (int) $r->party_id !== $partyId) continue;
             $ids = is_array($r->trade_doc_ids) && $r->trade_doc_ids ? $r->trade_doc_ids : [$r->trade_doc_id];
-            foreach ((array) $ids as $id) { $id = (int) $id; if ($id && !isset($sigIndex[$id])) $sigIndex[$id] = $r; }
+            foreach ((array) $ids as $id) {
+                $id = (int) $id;
+                if ($id && !isset($sigIndex[$id])) $sigIndex[$id] = $r;
+            }
         }
 
         $rows = [];
@@ -2050,7 +2097,7 @@ class SegmentDocUploadController extends Controller
             ->whereIn('segment_id', $segmentIds)
             ->get()
             ->groupBy('segment_id')
-            ->map(fn ($g) => $g->firstWhere('document_type', $docType) ?? $g->first())
+            ->map(fn($g) => $g->firstWhere('document_type', $docType) ?? $g->first())
             ->filter()
             ->values();
 
@@ -2073,7 +2120,7 @@ class SegmentDocUploadController extends Controller
             ->where('uploadable_type', get_class($owner))
             ->where('uploadable_id', $owner->id)
             ->get()
-            ->keyBy(fn ($u) => $u->category . '::' . $u->doc_code);
+            ->keyBy(fn($u) => $u->category . '::' . $u->doc_code);
 
         $missingCodesByCat = [];
         foreach ($unionByCat as $cat => $codes) {
@@ -2088,8 +2135,10 @@ class SegmentDocUploadController extends Controller
 
         // Resolve human names for the missing docs (best-effort).
         $masterClass = [
-            'kyc' => ClmKycDocument::class,    'dd' => ClmDdDocument::class,
-            'tl'  => ClmTradeLicense::class,   'td' => ClmTradeDocLibrary::class,
+            'kyc' => ClmKycDocument::class,
+            'dd' => ClmDdDocument::class,
+            'tl'  => ClmTradeLicense::class,
+            'td' => ClmTradeDocLibrary::class,
             'qc'  => ClmQcDocument::class,
         ];
         $missing = [];
@@ -2245,7 +2294,7 @@ class SegmentDocUploadController extends Controller
 
         return Consignee::where('client_id', $cid)
             ->whereKey($consigneeId)
-            ->whereHas('customers', fn ($q) => $q->whereKey($customerId))
+            ->whereHas('customers', fn($q) => $q->whereKey($customerId))
             ->exists();
     }
 
@@ -2256,7 +2305,7 @@ class SegmentDocUploadController extends Controller
             // the Supplier form's multi-select. Union them so the vault counts
             // the docs for every selected segment; fall back to the legacy
             // scalar segment_id when the pivot is empty.
-            $ids = $owner->segments()->pluck('clm_segments.id')->map(fn ($x) => (int) $x)->unique()->values()->all();
+            $ids = $owner->segments()->pluck('clm_segments.id')->map(fn($x) => (int) $x)->unique()->values()->all();
             if (!empty($ids)) return $ids;
             return $owner->segment_id ? [(int) $owner->segment_id] : [];
         }
@@ -2266,7 +2315,7 @@ class SegmentDocUploadController extends Controller
         // customer / consignee — comma-joined name string. Empty
         // pieces drop out; the lookup is tenant-scoped.
         $names = collect(explode(',', (string) ($owner->segment ?? '')))
-            ->map(fn ($n) => trim($n))
+            ->map(fn($n) => trim($n))
             ->filter()
             ->values();
         if ($names->isEmpty()) return [];
@@ -2274,7 +2323,7 @@ class SegmentDocUploadController extends Controller
             ->where('client_id', $cid)
             ->whereIn('name', $names)
             ->pluck('id')
-            ->map(fn ($x) => (int) $x)
+            ->map(fn($x) => (int) $x)
             ->all();
     }
 
@@ -2340,7 +2389,7 @@ class SegmentDocUploadController extends Controller
         return $byCode;
     }
 
-    
+
     private function storeUpload($file, string $type, int $ownerId, string $category, string $docCode): string
     {
         $ext = $file->getClientOriginalExtension() ?: 'bin';
