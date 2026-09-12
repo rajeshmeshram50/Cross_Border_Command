@@ -25,7 +25,41 @@ class ClmAuthorityController extends Controller
         // admins/users see the whole client and may narrow via BranchSwitcher.
         $q = ClmAuthority::query()->orderBy('id', 'desc');   // newest entry first
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
-        $rows = $q->get();
+
+        /* SEARCH moves to SQL alongside the paging. Once the client holds one
+           page, filtering there searches 10 rows out of 10,000 and reports
+           "2 results" for a term that matches 300. */
+        if ($search = trim((string) $request->input('search', ''))) {
+            $like = '%' . $search . '%';
+            $q->where(function ($w) use ($like) {
+                $w->where('name', 'ilike', $like)
+                  ->orWhere('code', 'ilike', $like)
+                  ->orWhere('description', 'ilike', $like);
+            });
+        }
+
+        /* PICKER MODE (?view=options) — id/code/name/status only.
+           The KYC, DD, QC and Trade-License pages all pull this endpoint to
+           fill an authority dropdown. They need every option, so they cannot
+           page; but they do not need `description` (the bulk of the payload)
+           and they never read `in_use`. Skipping both turns a 3.8 MB picker
+           load into a few hundred KB and avoids the usage scans entirely. */
+        if ($request->input('view') === 'options') {
+            return response()->json([
+                'status' => true,
+                'data'   => $q->get(['id', 'code', 'name', 'status']),
+            ]);
+        }
+
+        /* PAGINATION — opt-in via per_page, so every existing caller that wants
+           the whole list is unchanged. */
+        $perPage = $request->filled('per_page')
+            ? min(200, max(1, (int) $request->input('per_page')))
+            : null;
+        $page  = max(1, (int) $request->input('page', 1));
+        $total = $perPage ? (clone $q)->count() : null;
+
+        $rows = $perPage ? $q->forPage($page, $perPage)->get() : $q->get();
 
         // Flag each authority that's referenced elsewhere. The frontend uses
         // `in_use` to lock the DELETE action (deleting would orphan those
@@ -45,8 +79,42 @@ class ClmAuthorityController extends Controller
         return response()->json([
             'status' => true,
             'data'   => $rows,
+            // `count` stays the rows in hand (unchanged for existing callers);
+            // `total` is the whole filtered set, which is what a pager needs.
             'count'  => $rows->count(),
+            'total'  => $total ?? $rows->count(),
+            /* The Add modal's code preview. It used to be derived in the
+               browser from the full row set; with paging the browser only
+               holds ONE page, so on page 5 it would preview a code that was
+               taken long ago. Allocated here from the same branch-scoped walk
+               store() uses, so the preview and the eventual insert agree. */
+            'next_code' => $this->nextCodePreview((int) $user->client_id, $user->branch_id ?: null),
         ]);
+    }
+
+    /**
+     * Same sequence walk as nextCode(), minus the row lock.
+     *
+     * nextCode() takes a lockForUpdate on the client row because it is
+     * allocating a code that is about to be INSERTED under a unique index.
+     * This one only feeds a preview, so taking that lock on every list request
+     * would serialise reads behind unrelated writes for no benefit. The real
+     * allocation still happens in store(), under the lock.
+     */
+    private function nextCodePreview(int $clientId, ?int $branchId): string
+    {
+        $query = ClmAuthority::where('client_id', $clientId);
+        $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
+
+        $maxN  = 0;
+        $taken = [];
+        foreach ($query->pluck('code') as $c) {
+            if (preg_match('/^AUTH-(\d+)$/', (string) $c, $m) && (int) $m[1] > $maxN) $maxN = (int) $m[1];
+            $taken[(string) $c] = true;
+        }
+        $n = $maxN;
+        do { $n++; $code = sprintf('AUTH-%03d', $n); } while (isset($taken[$code]));
+        return $code;
     }
 
     public function store(Request $request)

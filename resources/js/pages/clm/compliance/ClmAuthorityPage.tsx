@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import WorklistPager from "../../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
-import { CLM_CSS, paginate, PER_PAGE } from '../shared/clmShared';
+import { CLM_CSS, PER_PAGE, useAutoFitRows } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import Tooltip from '../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
@@ -24,37 +24,14 @@ import {
 
 type Authority = { id: number; code: string; name: string; description: string; status: 'active'|'inactive'; in_use?: boolean };
 
-/**
- * Mirrors the backend allocator in ClmAuthorityController::nextCode — walks
- * past max(existing AUTH-### suffix) + 1, skipping any taken codes. The
- * naive `rows.length + 1` preview drifts whenever the sequence has gaps
- * (after deletes, or after legacy data was consolidated).
- */
-function nextAuthorityCode(rows: { code: string }[]): string {
-  let maxN = 0;
-  const taken = new Set<string>();
-  for (const r of rows) {
-    const m = /^AUTH-(\d+)$/.exec(r.code ?? '');
-    if (m) {
-      const n = parseInt(m[1], 10);
-      if (n > maxN) maxN = n;
-    }
-    if (r.code) taken.add(r.code);
-  }
-  let n = maxN;
-  let code: string;
-  do {
-    n++;
-    code = `AUTH-${String(n).padStart(3, '0')}`;
-  } while (taken.has(code));
-  return code;
-}
 
 export default function ClmAuthorityPage() {
   const toast = useToast();
 
   const [rows, setRows]       = useState<Authority[]>([]);
   const [count, setCount]     = useState(0);
+  // Allocated server-side — the browser only holds one page and cannot derive it.
+  const [nextCode, setNextCode] = useState("AUTH-001");
   const [loading, setLoading] = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
   const [search, setSearch]   = useState('');
   const [page, setPage]       = useState(1);
@@ -63,9 +40,6 @@ export default function ClmAuthorityPage() {
   // CLM masters — KYC/DD/QC/Segment/TradeLicense).
   const [rpp, setRpp]         = useState(PER_PAGE);
   const autoFitRef            = useRef(true);
-  // fillH stretches the table card to fill the viewport so the table footer
-  // (pagination) sits at the bottom of the card, like the other CLM masters.
-  const [fillH, setFillH]     = useState<number | undefined>(undefined);
   const scrollRef             = useRef<HTMLDivElement | null>(null);
   const rootRef               = useRef<HTMLDivElement | null>(null);
 
@@ -75,47 +49,63 @@ export default function ClmAuthorityPage() {
   const [pendingDelete, setPendingDelete] = useState<Authority | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const reload = () => {
-    setLoading(true);
-    api.get<{ status: boolean; data: Authority[]; count: number }>('/clm/authorities')
-      .then(({ data }) => { setRows(data.data ?? []); setCount(data.count ?? 0); })
-      .catch(() => toast.error('Load failed', 'Could not load authorities'))
-      .finally(() => setLoading(false));
-  };
-  useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return rows;
-    const s = search.toLowerCase();
-    return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.description.toLowerCase().includes(s));
-  }, [rows, search]);
-  const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
-
-  // Dynamic pagination: pick the rows-per-page that fits between the table's
-  // top and the bottom of the viewport (until the user overrides it via the
-  // Rows-per-page dropdown), and stretch the card to cover the page. Mirrors
-  // the KYC / QC / Segment pages.
+  /* Typing is not a request — one fetch per pause, not per keystroke. */
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   useEffect(() => {
-    const recompute = () => {
-      const el = scrollRef.current;
-      if (!el) return;
-      const top = el.getBoundingClientRect().top;
-      const THEAD = 40, ROW = 46, FOOTER = 96;
-      const avail = window.innerHeight - top - THEAD - FOOTER;
-      const fit = Math.max(4, Math.floor(avail / ROW));
-      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      const fh = Math.max(0, window.innerHeight - top - 64);
-      setFillH(prev => (prev === fh ? prev : fh));
-    };
-    recompute();
-    const raf = requestAnimationFrame(recompute);
-    // Not observing the page root: the "What We Are Doing Here" box animates its
-    // height on expand/collapse, so observing the root fired this recompute every
-    // animation frame and visibly disturbed the layout. Recompute only on mount
-    // and on genuine window resizes instead.
-    window.addEventListener('resize', recompute);
-    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
-  }, [filtered.length]);
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  /* Newest-request token. A page move, a size change and a debounced search can
+     each fire while the previous request is still out; only the newest result
+     may be painted. */
+  const reqRef = useRef(0);
+
+  /* SERVER-side list. This endpoint used to return EVERY authority and the page
+     filtered and paged them in the browser — 10,000 rows is 3.8 MB of JSON and
+     ~1.7 s of server time to render ten rows. Worse, every save and delete
+     called reload(), so deleting one row re-downloaded the whole master: that
+     is the reported "main page takes 6s after deleting an authority".
+     Page, size and search now go to the API, which returns one page + a total. */
+  const reload = () => {
+    const token = ++reqRef.current;
+    setLoading(true);
+    api.get<{ status: boolean; data: Authority[]; count: number; total?: number; next_code?: string }>('/clm/authorities', {
+      params: { page, per_page: rpp, ...(debouncedSearch ? { search: debouncedSearch } : {}) },
+    })
+      .then(({ data }) => {
+        if (token !== reqRef.current) return;
+        setRows(data.data ?? []);
+        setCount(Number(data.total ?? data.count ?? 0));
+        if (data.next_code) setNextCode(data.next_code);
+      })
+      .catch(() => { if (token === reqRef.current) toast.error('Load failed', 'Could not load authorities'); })
+      .finally(() => { if (token === reqRef.current) setLoading(false); });
+  };
+  useEffect(() => { reload(); }, [page, rpp, debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* Back to page 1 when the result SET changes rather than the position in it —
+     staying on page 40 of a search with two pages renders an empty table. */
+  useEffect(() => { setPage(1); }, [debouncedSearch, rpp]);
+
+  /* `rows` IS the page — the endpoint sorted, searched and sliced it. The
+     client-side filter/paginate that used to live here would now be
+     re-filtering ten already-filtered rows. */
+  const slice    = rows;
+  const start    = (page - 1) * rpp;
+  const safePage = page;
+  const pageCount = Math.max(1, Math.ceil(count / rpp));
+
+  /* Dynamic rows-per-page — the shared hook the Clause Library and Trade
+     Document masters use, so all three behave identically.
+     The inline copy this replaces had a floor of 4: on a short viewport it
+     served four-row pages, which reads as a broken list rather than a fitted
+     one, and made the same tenant look different on every machine. The shared
+     hook floors at PER_PAGE (10) and only GROWS from there — a tall screen
+     uses the room it has, a short one still gets a full standard page.
+     It is also debounced against settled resizes, which matters more now that
+     a size change is a refetch rather than a re-slice of rows already held. */
+  const fillH = useAutoFitRows(scrollRef, autoFitRef, setRpp, [count]);
 
   const onSave = async (form: { name: string; description: string }, id?: number) => {
     try {
@@ -194,6 +184,13 @@ export default function ClmAuthorityPage() {
           </div>
         </div>
 
+        {/* The table card is PINNED to the viewport and the rows scroll inside
+            it — the behaviour DataTable gives HR Holiday under `fitToViewport`.
+            It was `minHeight: fillH`, which is only a floor: the card grew past
+            the screen and the PAGE scrolled, so the pager walked off the bottom
+            and the header row scrolled away with it. Pinning with
+            height + maxHeight and giving the rows their own scroll box keeps
+            the head and the pager still while the rows move. */}
         <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
           {slice.length === 0 && !loading ? (
             <div className="clm-empty">
@@ -202,7 +199,12 @@ export default function ClmAuthorityPage() {
               <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add Authority to create the first record.' : 'No results match the current search.'}</div>
             </div>
           ) : (
-            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
+            <div
+              className="clm-table-wrap clm-table-fill"
+              ref={scrollRef}
+              style={{ height: fillH, maxHeight: fillH, overflow: 'hidden' }}
+            >
+              <div className="clm-rows-scroll">
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -246,8 +248,11 @@ export default function ClmAuthorityPage() {
                   ))}
                 </tbody>
               </table>
-              {!loading && filtered.length > 0 && (
-                <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
+              </div>
+              {/* Outside the scroll box — the pager is how you leave a page, so
+                  it must not scroll away with the rows it pages through. */}
+              {!loading && count > 0 && (
+                <WorklistPager total={count} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
           )}
@@ -257,7 +262,7 @@ export default function ClmAuthorityPage() {
       {modalOpen && (
         <AuthorityModal
           existing={editing}
-          nextCode={nextAuthorityCode(rows)}
+          nextCode={nextCode}
           onClose={() => { setModalOpen(false); setEditing(null); }}
           onSave={(form) => onSave(form, editing?.id)}
         />

@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
-import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
+import { CLM_CSS, PER_PAGE, useAutoFitRows } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import Tooltip from '../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
@@ -30,7 +30,17 @@ export default function ClmTradeLicensesPage() {
   // Dynamic pagination: rows-per-page auto-fits the visible table height.
   const [rpp, setRpp]           = useState(PER_PAGE);
   const autoFitRef              = useRef(true);
-  const [fillH, setFillH]       = useState<number | undefined>(undefined);
+
+  /* Typing is not a request — one fetch per pause, not per keystroke. */
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  /* Newest-request token. A page move, a size change and a debounced
+     search can each be in flight together; only the newest may paint. */
+  const reqRef = useRef(0);
   const scrollRef               = useRef<HTMLDivElement | null>(null);
   const rootRef                 = useRef<HTMLDivElement | null>(null);
   const [editing, setEditing]   = useState<Tl | null>(null);
@@ -61,46 +71,50 @@ export default function ClmTradeLicensesPage() {
 
   const reload = () => {
     setLoading(true);
-    Promise.all([
-      api.get<{ status: boolean; data: Tl[]; count: number }>('/clm/trade-licenses'),
-      api.get<{ status: boolean; data: Authority[] }>('/clm/authorities'),
-    ]).then(([k, a]) => { setRows(k.data.data ?? []); setCount(k.data.count ?? 0); setAuths(a.data.data ?? []); })
+    const token = ++reqRef.current;
+    api.get<{ status: boolean; data: Tl[]; count: number; total?: number }>('/clm/trade-licenses', {
+      params: { page, per_page: rpp, ...(debouncedSearch ? { search: debouncedSearch } : {}) },
+    })
+      .then(({ data }) => {
+        if (token !== reqRef.current) return;
+        setRows(data.data ?? []);
+        setCount(Number(data.total ?? data.count ?? 0));
+      })
       .catch(() => toast.error('Load failed', 'Could not load trade licences'))
       .finally(() => setLoading(false));
   };
-  useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { reload(); }, [page, rpp, debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return rows;
-    const s = search.toLowerCase();
-    return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || (r.authority_names ?? '').toLowerCase().includes(s));
-  }, [rows, search]);
-  const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
+  /* Back to page 1 when the result SET changes rather than the position
+     in it — staying on page 9 of a search with two pages shows nothing. */
+  useEffect(() => { setPage(1); }, [debouncedSearch, rpp]);
 
-  // Dynamic pagination: pick the rows-per-page that fits between the table's
-  // top and the bottom of the viewport, and stretch the card to cover the page.
-  // Mirrors the Segment / Authority / QC / KYC / DD pages.
+  /* Authority options for the Add/Edit form's picker — mount ONLY.
+     reload() runs after every save and every delete, and it used to
+     Promise.all this alongside the list, so saving one row also
+     re-downloaded the whole authority master for a dropdown whose
+     contents had not changed. */
   useEffect(() => {
-    const recompute = () => {
-      const el = scrollRef.current;
-      if (!el) return;
-      const top = el.getBoundingClientRect().top;
-      const THEAD = 40, ROW = 46, FOOTER = 96;
-      const avail = window.innerHeight - top - THEAD - FOOTER;
-      const fit = Math.max(4, Math.floor(avail / ROW));
-      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      const fh = Math.max(0, window.innerHeight - top - 64);
-      setFillH(prev => (prev === fh ? prev : fh));
-    };
-    recompute();
-    const raf = requestAnimationFrame(recompute);
-    // Not observing the page root: the "What We Are Doing Here" box animates its
-    // height on expand/collapse, so observing the root fired this recompute every
-    // animation frame and visibly disturbed the layout. Recompute only on mount
-    // and on genuine window resizes instead.
-    window.addEventListener('resize', recompute);
-    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
-  }, [filtered.length]);
+    api.get<{ status: boolean; data: Authority[] }>('/clm/authorities', { params: { view: 'options' } })
+      .then(({ data }) => setAuths(data.data ?? []))
+      .catch(() => { /* the list's own failure toast already covers a dead API */ });
+  }, []);
+
+  /* `rows` IS the page — the endpoint sorted, searched and sliced it.
+     The client-side filter that used to live here would now be
+     re-filtering ten already-filtered rows, and reporting its own page
+     size as the result count. */
+  const slice     = rows;
+  const start     = (page - 1) * rpp;
+  const safePage  = page;
+  const pageCount = Math.max(1, Math.ceil(count / rpp));
+
+  /* Dynamic rows-per-page — the shared hook, floored at PER_PAGE (10).
+     The inline copy this replaces floored at 4, so a short viewport
+     served four-row pages and the same tenant looked different on every
+     machine. It is also debounced against settled resizes, which matters
+     now that a size change is a refetch, not a re-slice. */
+  const fillH = useAutoFitRows(scrollRef, autoFitRef, setRpp, [count]);
 
   const onSave = async (form: { name: string; authority: string }, id?: number) => {
     try {
@@ -174,7 +188,8 @@ export default function ClmTradeLicensesPage() {
               <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add Trade Licence to create the first record.' : 'No results match.'}</div>
             </div>
           ) : (
-            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
+            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ height: fillH, maxHeight: fillH, overflow: 'hidden' }}>
+              <div className="clm-rows-scroll">
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -228,8 +243,9 @@ export default function ClmTradeLicensesPage() {
                   ))}
                 </tbody>
               </table>
-              {!loading && filtered.length > 0 && (
-                <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
+              </div>
+              {!loading && count > 0 && (
+                <WorklistPager total={count} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
           )}

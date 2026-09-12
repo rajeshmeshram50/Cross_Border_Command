@@ -15,6 +15,8 @@ use Illuminate\Validation\ValidationException;
 
 class ClmKycController extends Controller
 {
+    use \App\Http\Controllers\Concerns\ChecksClmDocUsage;
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -24,22 +26,58 @@ class ClmKycController extends Controller
         // (shared) rows; sibling branches stay hidden (CBC-433/KYC).
         $q = ClmKycDocument::query()->orderByDesc('id');   // newest entry first
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
-        $rows = $q->get();
+
+        /* Search runs in SQL, alongside the paging. Once the client holds a
+           single page, filtering there searches ten rows and reports a count
+           for the page rather than the master. */
+        if ($search = trim((string) $request->input('search', ''))) {
+            $like = '%' . $search . '%';
+            /* Authority is stored by ID, but the list shows — and the old
+               client-side filter searched — the resolved NAME. Resolve the
+               term to ids so searching by authority still works. */
+            $authIds = ClmAuthority::idsMatchingName((int) $user->client_id, $search);
+            $q->where(function ($w) use ($like, $authIds) {
+                $w->where('name', 'ilike', $like)->orWhere('code', 'ilike', $like);
+                ClmAuthority::scopeStoredIdsIn($w, 'authority', $authIds);
+            });
+        }
+
+        /* PAGINATION — opt-in via per_page, so every existing caller that
+           wants the whole list is unchanged. */
+        $perPage = $request->filled('per_page')
+            ? min(200, max(1, (int) $request->input('per_page')))
+            : null;
+        $page  = max(1, (int) $request->input('page', 1));
+        $total = $perPage ? (clone $q)->reorder()->count() : null;
+
+        $rows = $perPage ? $q->forPage($page, $perPage)->get() : $q->get();
 
         // `authority` stores authority ids; expose the resolved current names so
         // the list (and any name search) shows live values.
-        $map = ClmAuthority::idNameMap($user->client_id);
+        $map = ClmAuthority::idNameMap($user->client_id, ClmAuthority::idsReferencedIn($rows->pluck('authority')));
         $rows->each(fn ($r) => $r->authority_names = ClmAuthority::displayNames($r->authority, $map));
 
         // Per-row "in use" flags so the UI can disable + explain the delete
         // action for referenced documents (mirrors the checks in destroy()).
-        $rows->each(function ($r) {
-            $labels = $this->usageCheck($r->code, $r->client_id);
+        /* Built ONCE, then matched in memory. This was a per-row
+           usageCheck() — two existence queries and four
+           Schema::hasTable/hasColumn calls for every row, so the
+           query count grew with the master. See ChecksClmDocUsage. */
+        $usage = $this->clmDocUsageSets((int) $user->client_id);
+        $rows->each(function ($r) use ($usage) {
+            $labels = $this->clmDocUsageLabels($usage, $r->code);
             $r->in_use  = !empty($labels);
-            $r->used_in = array_values($labels);
+            $r->used_in = $labels;
         });
 
-        return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
+        return response()->json([
+            'status' => true,
+            'data'   => $rows,
+            // `count` stays the rows in hand (unchanged for existing callers);
+            // `total` is the whole filtered set, which is what a pager needs.
+            'count'  => $rows->count(),
+            'total'  => $total ?? $rows->count(),
+        ]);
     }
 
     public function store(Request $request)

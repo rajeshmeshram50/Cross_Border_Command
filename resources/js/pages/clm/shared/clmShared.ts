@@ -431,6 +431,15 @@ export const CLM_CSS = `
    read as a hole punched in the card; a soft cyan tint reads as surface, the
    same family as the table head. The table keeps its own white so the rows
    stay crisp against it. */
+/* The rows' own scroll box, inside a card pinned to the viewport.
+   The card carries height + maxHeight (see useAutoFitRows' fillH) and
+   overflow:hidden; this takes the space left after the pager and scrolls the
+   rows alone, so the sticky <thead> and the pager below both stay put.
+   min-height:0 is what actually lets a flex child shrink enough to scroll —
+   without it the box grows to its content and the pin does nothing.
+   overflow-x carries a wide table sideways, as .clm-table-wrap did before. */
+.clm-rows-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; }
+.clm-rows-scroll .clm-table thead th { position: sticky; top: 0; z-index: 2; }
 .clm-table-fill { display: flex; flex-direction: column; background: linear-gradient(180deg, #fafeff, #f3fafc); }
 .clm-table-fill > .clm-table { background: #fff; }
 .clm-table-fill > .clm-pag, .clm-table-fill > .wl-pager { margin-top: auto; }
@@ -1711,11 +1720,25 @@ export function useAutoFitRows(
       const el = scrollRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      const THEAD = 40, ROW = 46, FOOTER = 96;
-      const avail = window.innerHeight - top - THEAD - FOOTER;
+
+      /* Space below the card: the app footer, MEASURED, plus an 8px gap.
+         It was a flat 64, which is not what the footer is — so the card
+         stopped well short of it and left a visible band of dead page
+         between the pager and "2026 © IGC Group".
+         Measured rather than hardcoded so it stays right at any zoom level
+         or footer height, and 15 is the fallback for a surface with no
+         footer at all (inside a modal, say). Same rule DataTable already
+         uses — see bottomReserve() in components/ui/DataTable.tsx. */
+      const footerEl = document.querySelector('footer.footer') as HTMLElement | null;
+      const footerH  = footerEl?.offsetHeight ?? 0;
+      const bottomReserve = footerH > 0 ? footerH + 8 : 15;
+
+      const THEAD = 40, ROW = 46, PAGER = 56;
+      const avail = window.innerHeight - top - THEAD - PAGER - bottomReserve;
       const fit = Math.max(PER_PAGE, Math.floor(avail / ROW));
       if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      const fh = Math.max(0, window.innerHeight - top - 64);
+
+      const fh = Math.max(0, window.innerHeight - top - bottomReserve);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
