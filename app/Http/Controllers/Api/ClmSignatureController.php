@@ -82,8 +82,8 @@ class ClmSignatureController extends Controller
         $doc   = !empty($data['agreement_id'])
             ? tap(
                 ClmAgreementLibrary::where('client_id', $user->client_id)->findOrFail($data['agreement_id']),
-                fn ($a) => $a->name = $a->title,   // alias title→name for the shared renderer
-              )
+                fn($a) => $a->name = $a->title,   // alias title→name for the shared renderer
+            )
             : ClmTradeDocLibrary::where('client_id', $user->client_id)->findOrFail($data['trade_doc_id']);
         $party = $this->loadParty($modelName, (int) $data['party_id'], $user);
         $lead  = !empty($data['lead_id'])
@@ -141,9 +141,11 @@ class ClmSignatureController extends Controller
         $decoded = json_decode($body, true);
         $zohoMsg = is_array($decoded) ? (string) ($decoded['message'] ?? '') : '';
         $low     = strtolower($zohoMsg . ' ' . $body);
-        if (str_contains($low, 'already') || str_contains($low, 'processed')
+        if (
+            str_contains($low, 'already') || str_contains($low, 'processed')
             || str_contains($low, 'signed') || str_contains($low, 'completed')
-            || str_contains($low, 'in progress') || str_contains($low, 'duplicate')) {
+            || str_contains($low, 'in progress') || str_contains($low, 'duplicate')
+        ) {
             return 'This document has already been signed or is being processed in another tab or session. Refresh the page to see its current status.';
         }
         return $zohoMsg !== ''
@@ -166,11 +168,14 @@ class ClmSignatureController extends Controller
         $data = $request->validate([
             'trade_doc_ids'        => 'required_without:agreement_ids|array|max:10',
             'trade_doc_ids.*'      => 'integer|exists:clm_trade_doc_library,id',
-            // Supplier (Vendor) agreement send — clm_agreement_library ids in
-            // place of trade-doc ids. Mutually exclusive with trade_doc_ids;
-            // runs through the SAME render → Zoho → persist flow, just tagged
-            // document_type=agreement so the vault overlays it on the
-            // Agreements drill-down instead of Trade Documents.
+            // Agreement ids (clm_agreement_library). These used to be mutually
+            // exclusive with trade_doc_ids — one request, one library — which
+            // forced the Case-to-Case panel to send a mixed selection as TWO
+            // envelopes, so a signer asked for one trade document and one
+            // agreement received two separate emails for the same deal.
+            // Both lists may now arrive together and are rendered into ONE Zoho
+            // request, the same way a bundled Purchase Order already rides
+            // along. Each list is still capped at 10.
             'agreement_ids'        => 'required_without:trade_doc_ids|array|max:10',
             'agreement_ids.*'      => 'integer|exists:clm_agreement_library,id',
             'party_id'             => 'required|integer',
@@ -217,30 +222,50 @@ class ClmSignatureController extends Controller
             ? Lead::where('client_id', $user->client_id)->find($data['lead_id'])
             : null;
 
-        // Agreement send (supplier vault) vs trade-doc send. Both libraries
-        // expose the columns renderPdf needs (content, code, header/footer
-        // config); agreements just name their title `title`, so alias it to
-        // `name` for the shared render/naming code below.
-        $isAgreement = !empty($data['agreement_ids']);
-        $idList      = $isAgreement ? $data['agreement_ids'] : ($data['trade_doc_ids'] ?? []);
-        $docs = ($isAgreement ? ClmAgreementLibrary::query() : ClmTradeDocLibrary::query())
-            ->where('client_id', $user->client_id)
-            ->whereIn('id', $idList)
-            ->get()
-            ->keyBy('id');
-        if ($isAgreement) {
-            $docs->each(function ($a) { $a->name = $a->title; });
-        }
+        /* Both libraries expose the columns renderPdf needs (content, code,
+         * header/footer config); agreements just name their title `title`, so
+         * alias it to `name` for the shared render/naming code below.
+         *
+         * A send may now carry trade documents, agreements, or BOTH. Each row
+         * is tagged with `cbc_kind` so the rest of the method — the settings
+         * keys, the persisted id split — can tell them apart after they are
+         * merged into one ordered list. */
+        $tdIds  = array_values($data['trade_doc_ids'] ?? []);
+        $agrIds = array_values($data['agreement_ids'] ?? []);
+        $isMixed = $tdIds && $agrIds;
 
-        if ($docs->isEmpty()) {
+        $tdDocs = $tdIds
+            ? ClmTradeDocLibrary::where('client_id', $user->client_id)->whereIn('id', $tdIds)->get()->keyBy('id')
+            : collect();
+        $agrDocs = $agrIds
+            ? ClmAgreementLibrary::where('client_id', $user->client_id)->whereIn('id', $agrIds)->get()->keyBy('id')
+            : collect();
+        $tdDocs->each(function ($d) {
+            $d->cbc_kind = ClmSignatureRequest::DOC_TRADE;
+        });
+        $agrDocs->each(function ($a) {
+            $a->name = $a->title;
+            $a->cbc_kind = ClmSignatureRequest::DOC_AGREEMENT;
+        });
+
+        if ($tdDocs->isEmpty() && $agrDocs->isEmpty()) {
             return response()->json(['status' => false, 'message' => 'No accessible documents in the selection.'], 422);
         }
 
         // Preserve the user's chosen order, not whatever DB order we got back.
-        $orderedDocs = collect($idList)
-            ->map(fn($id) => $docs->get($id))
+        // Trade documents lead, then agreements — the order the Case-to-Case
+        // panel lists them in.
+        $orderedDocs = collect($tdIds)->map(fn($id) => $tdDocs->get($id))
+            ->concat(collect($agrIds)->map(fn($id) => $agrDocs->get($id)))
             ->filter()
             ->values();
+
+        $docKeyOf = function ($doc) use ($isMixed): string {
+            return $isMixed ? ($doc->cbc_kind . ':' . $doc->id) : (string) $doc->id;
+        };
+        $perDocValue = function (array $map, $doc) use ($docKeyOf) {
+            return $map[$docKeyOf($doc)] ?? $map[(string) $doc->id] ?? null;
+        };
 
         // Same-party constraint — mirrors agreementSend(). A single signature
         // request must not mix a Buyer-only document with a Consignee-only or
@@ -293,10 +318,12 @@ class ClmSignatureController extends Controller
             $footerByDoc  = (array) ($data['footer_config_overrides'] ?? []);
             $contentByDoc = (array) ($data['content_overrides']       ?? []);
             foreach ($orderedDocs as $doc) {
-                $docKey         = (string) $doc->id;
-                $headerOverride = is_array($headerByDoc[$docKey]  ?? null) ? $headerByDoc[$docKey]  : null;
-                $footerOverride = is_array($footerByDoc[$docKey]  ?? null) ? $footerByDoc[$docKey]  : null;
-                $contentOver    = is_string($contentByDoc[$docKey] ?? null) ? $contentByDoc[$docKey] : null;
+                $h              = $perDocValue($headerByDoc,  $doc);
+                $f              = $perDocValue($footerByDoc,  $doc);
+                $c              = $perDocValue($contentByDoc, $doc);
+                $headerOverride = is_array($h)  ? $h : null;
+                $footerOverride = is_array($f)  ? $f : null;
+                $contentOver    = is_string($c) ? $c : null;
                 $bytes = $this->renderPdf(
                     $doc,
                     $party,
@@ -403,7 +430,7 @@ class ClmSignatureController extends Controller
             //    pass straight through — submitWithFields resolves the role.
             // cbc doc-id order MUST mirror $tempPaths order (CLM docs, then the
             // bundled PO under key 'po') so coords align to the right Zoho doc.
-            $cbcDocIdsOrdered = $orderedDocs->pluck('id')->all();
+            $cbcDocIdsOrdered = $orderedDocs->map(fn($d) => $docKeyOf($d))->all();
             if ($poDoc) $cbcDocIdsOrdered[] = 'po';
             $perDocCoords = $this->mapClientCoordsToZohoDocIds(
                 (array) ($data['document_settings'] ?? []),
@@ -428,7 +455,13 @@ class ClmSignatureController extends Controller
             // Explicit trade-doc discriminator + optional lead scope so the
             // Sales-Matrix popup can resolve this request lead-side (mirrors
             // the agreement-send path).
-            $sigReq->document_type       = $isAgreement ? ClmSignatureRequest::DOC_AGREEMENT : ClmSignatureRequest::DOC_TRADE;
+            /* A mixed envelope has no single document_type, but the column is
+             * one value and everything downstream reads it. Trade document
+             * wins when both are present, and the real per-kind split is
+             * recorded in metadata.doc_kind_ids below — which is what the
+             * Evidence Vault's status overlay reads, so BOTH documents show
+             * Sent/Signed rather than only the side that won this column. */
+            $sigReq->document_type       = $tdIds ? ClmSignatureRequest::DOC_TRADE : ClmSignatureRequest::DOC_AGREEMENT;
             $sigReq->lead_id             = $data['lead_id'] ?? null;
             $sigReq->trade_doc_id        = $orderedDocs->first()->id;
             $sigReq->trade_doc_ids       = $orderedDocs->pluck('id')->values()->all();
@@ -455,6 +488,14 @@ class ClmSignatureController extends Controller
                 ],
                 'document_settings' => $data['document_settings'] ?? null,
                 'request_uuid'      => $requestUuid,
+                /* Which library each id in trade_doc_ids came from. Present on
+                 * every send (not just mixed ones) so readers have one rule to
+                 * follow; readers fall back to document_type when it is absent,
+                 * which is every request written before this shipped. */
+                'doc_kind_ids'      => array_filter([
+                    ClmSignatureRequest::DOC_TRADE     => $orderedDocs->where('cbc_kind', ClmSignatureRequest::DOC_TRADE)->pluck('id')->values()->all(),
+                    ClmSignatureRequest::DOC_AGREEMENT => $orderedDocs->where('cbc_kind', ClmSignatureRequest::DOC_AGREEMENT)->pluck('id')->values()->all(),
+                ]),
                 // The bundled PO (if any) so the request can be resolved PO-side.
                 'purchase_order_id' => $poDoc?->id,
                 'purchase_order_code' => $poDoc?->code,
@@ -1068,7 +1109,7 @@ class ClmSignatureController extends Controller
                     'signed' => false,
                     'signed_at' => null,
                     // 1-based page numbers, in the order the boxes were placed.
-                    'placements' => array_map(fn ($b) => (int) ($b['page'] ?? 0) + 1, $boxes),
+                    'placements' => array_map(fn($b) => (int) ($b['page'] ?? 0) + 1, $boxes),
                 ];
             })->all();
             // A resend after a decline carries the edited draft — persist it so
@@ -1299,7 +1340,7 @@ class ClmSignatureController extends Controller
     /** Render a CTC contract body to a signature-ready PDF (page-shell + org sig). */
     private function renderCtcPdf(CtcContract $c, array $signers, ?array $headerOverride, ?array $footerOverride, ?string $contentOverride, string $requestUuid)
     {
-         @set_time_limit(180);
+        @set_time_limit(180);
 
         $sourceHtml = $contentOverride !== null ? $contentOverride : (string) $c->content;
         $sig = $this->ctcOrgSignatureDataUri($c);
@@ -1596,7 +1637,7 @@ class ClmSignatureController extends Controller
             trim((string) $b->city),
             trim((string) $b->state),
             trim(trim((string) $b->pincode) . ' ' . trim((string) $b->country)),
-        ], fn ($v) => $v !== '')), ', ');
+        ], fn($v) => $v !== '')), ', ');
     }
 
     /** Organisation-detail tokens filled from the SELECTED branch's own data. */
@@ -2507,8 +2548,8 @@ class ClmSignatureController extends Controller
            what makes the message actionable — "fix this address", not "an email
            failed somewhere". */
         $undeliveredTo = collect($signersOut)
-            ->filter(fn ($s) => !empty($s['delivery_failed']))
-            ->map(fn ($s) => (string) ($s['name'] ?: $s['email'] ?: 'signer'))
+            ->filter(fn($s) => !empty($s['delivery_failed']))
+            ->map(fn($s) => (string) ($s['name'] ?: $s['email'] ?: 'signer'))
             ->values()->all();
         $payload['delivery_failed']         = count($undeliveredTo) > 0;
         $payload['undelivered_recipients']  = $undeliveredTo;
@@ -2590,7 +2631,10 @@ class ClmSignatureController extends Controller
         $reqLevelReason = '';
         foreach (['reason', 'reject_reason', 'declined_reason', 'decline_reason'] as $k) {
             $rv = data_get($details, "requests.$k");
-            if (!empty($rv)) { $reqLevelReason = (string) $rv; break; }
+            if (!empty($rv)) {
+                $reqLevelReason = (string) $rv;
+                break;
+            }
         }
 
         // Locate the declining signer(s) from the per-recipient actions.
@@ -2628,7 +2672,10 @@ class ClmSignatureController extends Controller
             foreach (data_get($details, 'requests.actions', []) as $a) {
                 if (!in_array(strtolower((string) ($a['action_status'] ?? '')), ['declined', 'rejected', 'recalled'], true)) continue;
                 foreach (['action_time', 'declined_time', 'rejected_time', 'recall_time'] as $tk) {
-                    if (is_numeric($a[$tk] ?? null) && (int) $a[$tk] > 0) { $actionMs = (int) $a[$tk]; break 2; }
+                    if (is_numeric($a[$tk] ?? null) && (int) $a[$tk] > 0) {
+                        $actionMs = (int) $a[$tk];
+                        break 2;
+                    }
                 }
             }
         }
@@ -2638,12 +2685,24 @@ class ClmSignatureController extends Controller
         $changed = false;
 
         if ($isRecalled) {
-            if (!$row->recalled_at) { $row->recalled_at = $eventAt; $changed = true; }
-            if ($reason !== '' && $row->recall_reason !== $reason) { $row->recall_reason = $reason; $changed = true; }
+            if (!$row->recalled_at) {
+                $row->recalled_at = $eventAt;
+                $changed = true;
+            }
+            if ($reason !== '' && $row->recall_reason !== $reason) {
+                $row->recall_reason = $reason;
+                $changed = true;
+            }
         } else {
             $firstSighting = !$row->declined_at;
-            if ($firstSighting) { $row->declined_at = $eventAt; $changed = true; }
-            if ($reason !== '' && $row->decline_reason !== $reason) { $row->decline_reason = $reason; $changed = true; }
+            if ($firstSighting) {
+                $row->declined_at = $eventAt;
+                $changed = true;
+            }
+            if ($reason !== '' && $row->decline_reason !== $reason) {
+                $row->decline_reason = $reason;
+                $changed = true;
+            }
             /* BR-16 / section 8.8: one party declining voids the WHOLE request,
                so the counterparties who have not signed yet are stopped instead
                of being left able to complete a document that can never finish.
@@ -2673,7 +2732,10 @@ class ClmSignatureController extends Controller
                 $touched = true;
             }
             unset($s);
-            if ($touched) { $row->signers = $signers; $changed = true; }
+            if ($touched) {
+                $row->signers = $signers;
+                $changed = true;
+            }
         }
 
         if ($changed) $row->save();
@@ -2846,7 +2908,7 @@ class ClmSignatureController extends Controller
         // Stored filename: <doc code>_<customer>_declined.pdf (e.g. the PI code
         // + the customer/party name). Kept in our own storage so the file is
         // served from us — not proxied from Zoho on every click.
-        $slug = fn ($s) => trim(preg_replace('/_+/', '_', preg_replace('/[^A-Za-z0-9]+/', '_', (string) $s)), '_');
+        $slug = fn($s) => trim(preg_replace('/_+/', '_', preg_replace('/[^A-Za-z0-9]+/', '_', (string) $s)), '_');
         $party    = $row->party;
         $customer = (string) (data_get($party, 'company_name') ?: data_get($party, 'name') ?: '');
         $codeBase = (string) ($row->request_name ?: ($row->document_type . '-' . ($row->trade_doc_id ?: $row->id)));
@@ -3323,7 +3385,7 @@ class ClmSignatureController extends Controller
             trim((string) $branch->city),
             trim((string) $branch->state),
             trim(trim((string) $branch->pincode) . ' ' . trim((string) $branch->country)),
-        ], fn ($v) => $v !== '')), ', ') : '';
+        ], fn($v) => $v !== '')), ', ') : '';
 
         $values = [
             'company_name' => e((string) ($branch->name  ?? '')),
@@ -3683,8 +3745,16 @@ class ClmSignatureController extends Controller
      * is exactly the conflation this list exists to prevent.
      */
     private const UNDELIVERED_ACTION_STATUSES = [
-        'UNDELIVERED', 'NOTDELIVERED', 'NOT_DELIVERED', 'DELIVERYFAILED', 'DELIVERY_FAILED',
-        'BOUNCED', 'MAILBOUNCED', 'MAIL_BOUNCED', 'EMAILBOUNCED', 'EMAIL_BOUNCED',
+        'UNDELIVERED',
+        'NOTDELIVERED',
+        'NOT_DELIVERED',
+        'DELIVERYFAILED',
+        'DELIVERY_FAILED',
+        'BOUNCED',
+        'MAILBOUNCED',
+        'MAIL_BOUNCED',
+        'EMAILBOUNCED',
+        'EMAIL_BOUNCED',
     ];
 
     /** True when a raw Zoho action_status means the e-sign mail never landed. */
@@ -3749,9 +3819,18 @@ class ClmSignatureController extends Controller
                 && !$undelivered;
             $signed = $st === 'SIGNED';
 
-            if (($signers[$i]['action_status'] ?? null) !== $st) { $signers[$i]['action_status'] = $st; $changed = true; }
-            if ($opened && empty($signers[$i]['viewed_at'])) { $signers[$i]['viewed_at'] = $stamp; $changed = true; }
-            if ($signed && empty($signers[$i]['signed_at'])) { $signers[$i]['signed_at'] = $stamp; $changed = true; }
+            if (($signers[$i]['action_status'] ?? null) !== $st) {
+                $signers[$i]['action_status'] = $st;
+                $changed = true;
+            }
+            if ($opened && empty($signers[$i]['viewed_at'])) {
+                $signers[$i]['viewed_at'] = $stamp;
+                $changed = true;
+            }
+            if ($signed && empty($signers[$i]['signed_at'])) {
+                $signers[$i]['signed_at'] = $stamp;
+                $changed = true;
+            }
 
             /* Persist the failure so historical attempts keep it. The attempt
                trail is built from stored rows, not from a fresh Zoho call —

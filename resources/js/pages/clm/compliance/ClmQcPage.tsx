@@ -1,15 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+
+/* The Add/Edit form is code-split: its chunk downloads the first time a
+   user opens it, not on the list's first paint. Same pattern the Customer
+   and Supplier masters use for their heavy modals. */
+const QcModal = lazy(() => import('./ClmQcModal'));
 import WorklistPager from "../../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
-import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
+import { CLM_CSS, PER_PAGE, useAutoFitRows } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import Tooltip from '../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
-import { ClmSkeletonRows, SimpleDescModal, useScrollLock } from '../shared/clmCommon';
+import { clip, ClmSkeletonRows, SimpleDescModal, useScrollLock } from '../shared/clmCommon';
 import SearchClear from '../../../components/ui/SearchClear';
 
 /* Central CLM → Quality & Compliance Documents Master. 3-card faithful port. */
@@ -17,9 +22,8 @@ import SearchClear from '../../../components/ui/SearchClear';
 /* Keep toast messages concise — a QC doc / authority name can run to 100 chars,
    which wraps a success toast across several lines (reported bug). Clip the
    dynamic name to ~40 chars with an ellipsis so the toast stays a tidy line. */
-const clip = (s: string, n = 40): string => (s && s.length > n ? s.slice(0, n).trimEnd() + '…' : s);
 
-type Qc = {
+export type Qc = {
   // `issued_by` holds the authority ID; `issued_by_names` is the resolved
   // display name returned by the API.
   id: number; code: string; name: string; purpose: string; issued_by: string; issued_by_names?: string;
@@ -27,11 +31,13 @@ type Qc = {
   status: 'active'|'inactive';
   in_use?: boolean; used_in?: string[];
 };
-type Authority = { id: number; code: string; name: string };
+export type Authority = { id: number; code: string; name: string };
 
 export default function ClmQcPage() {
   const toast = useToast();
   const [rows, setRows]         = useState<Qc[]>([]);
+  // Server-reported total across ALL pages (was rows.length, which is now one page).
+  const [count, setCount]       = useState(0);
   const [auths, setAuths]       = useState<Authority[]>([]);
   const [loading, setLoading]   = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
   const [search, setSearch]     = useState('');
@@ -39,7 +45,17 @@ export default function ClmQcPage() {
   // Dynamic pagination: rows-per-page auto-fits the visible table height.
   const [rpp, setRpp]           = useState(PER_PAGE);
   const autoFitRef              = useRef(true);
-  const [fillH, setFillH]       = useState<number | undefined>(undefined);
+
+  /* Typing is not a request — one fetch per pause, not per keystroke. */
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  /* Newest-request token. A page move, a size change and a debounced
+     search can each be in flight together; only the newest may paint. */
+  const reqRef = useRef(0);
   const scrollRef               = useRef<HTMLDivElement | null>(null);
   const rootRef                 = useRef<HTMLDivElement | null>(null);
   const [editing, setEditing]   = useState<Qc | null>(null);
@@ -48,50 +64,55 @@ export default function ClmQcPage() {
   const [pendingDelete, setPendingDelete] = useState<Qc | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  /* Only the QC rows. Authorities are fetched separately, ONCE.
+     reload() used to Promise.all both, and it is called after every add and
+     every delete — so saving one QC document re-downloaded the entire
+     authority master alongside it, for a dropdown whose contents had not
+     changed. That is most of the reported 13 s add / 10.9 s delete. */
   const reload = () => {
     setLoading(true);
-    Promise.all([
-      api.get<{ status: boolean; data: Qc[] }>('/clm/qc-documents'),
-      api.get<{ status: boolean; data: Authority[] }>('/clm/authorities'),
-    ]).then(([k, a]) => { setRows(k.data.data ?? []); setAuths(a.data.data ?? []); })
+    const token = ++reqRef.current;
+    api.get<{ status: boolean; data: Qc[]; count?: number; total?: number }>('/clm/qc-documents', {
+      params: { page, per_page: rpp, ...(debouncedSearch ? { search: debouncedSearch } : {}) },
+    })
+      .then(({ data }) => {
+        if (token !== reqRef.current) return;
+        setRows(data.data ?? []);
+        setCount(Number(data.total ?? data.count ?? 0));
+      })
       .catch(() => toast.error('Load failed', 'Could not load QC documents'))
       .finally(() => setLoading(false));
   };
-  useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { reload(); }, [page, rpp, debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return rows;
-    const s = search.toLowerCase();
-    return rows.filter(r =>
-      r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) ||
-      r.purpose.toLowerCase().includes(s) || (r.issued_by_names ?? '').toLowerCase().includes(s));
-  }, [rows, search]);
-  const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
+  /* Back to page 1 when the result SET changes rather than the position
+     in it — staying on page 9 of a search with two pages shows nothing. */
+  useEffect(() => { setPage(1); }, [debouncedSearch, rpp]);
 
-  // Dynamic pagination: pick the rows-per-page that fits between the table's
-  // top and the bottom of the viewport, and stretch the card to cover the page.
-  // Mirrors the Segment / Authority pages.
+  /* Authority options for the Add/Edit form's picker — mount only. A new
+     authority added from inside that modal is appended locally by the modal
+     itself, so there is nothing here that a refetch would discover. */
   useEffect(() => {
-    const recompute = () => {
-      const el = scrollRef.current;
-      if (!el) return;
-      const top = el.getBoundingClientRect().top;
-      const THEAD = 40, ROW = 46, FOOTER = 96;
-      const avail = window.innerHeight - top - THEAD - FOOTER;
-      const fit = Math.max(4, Math.floor(avail / ROW));
-      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      const fh = Math.max(0, window.innerHeight - top - 64);
-      setFillH(prev => (prev === fh ? prev : fh));
-    };
-    recompute();
-    const raf = requestAnimationFrame(recompute);
-    // Not observing the page root: the "What We Are Doing Here" box animates its
-    // height on expand/collapse, so observing the root fired this recompute every
-    // animation frame and visibly disturbed the layout. Recompute only on mount
-    // and on genuine window resizes instead.
-    window.addEventListener('resize', recompute);
-    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
-  }, [filtered.length]);
+    api.get<{ status: boolean; data: Authority[] }>('/clm/authorities', { params: { view: 'options' } })
+      .then(({ data }) => setAuths(data.data ?? []))
+      .catch(() => { /* the list's own failure toast already covers a dead API */ });
+  }, []);
+
+  /* `rows` IS the page — the endpoint sorted, searched and sliced it.
+     The client-side filter that used to live here would now be
+     re-filtering ten already-filtered rows, and reporting its own page
+     size as the result count. */
+  const slice     = rows;
+  const start     = (page - 1) * rpp;
+  const safePage  = page;
+  const pageCount = Math.max(1, Math.ceil(count / rpp));
+
+  /* Dynamic rows-per-page — the shared hook, floored at PER_PAGE (10).
+     The inline copy this replaces floored at 4, so a short viewport
+     served four-row pages and the same tenant looked different on every
+     machine. It is also debounced against settled resizes, which matters
+     now that a size change is a refetch, not a re-slice. */
+  const fillH = useAutoFitRows(scrollRef, autoFitRef, setRpp, [count]);
 
   const onSave = async (form: Omit<Qc, 'id'|'code'|'status'>, id?: number) => {
     try {
@@ -165,7 +186,8 @@ export default function ClmQcPage() {
               <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add QC Document to create the first record.' : 'No results match the current search.'}</div>
             </div>
           ) : (
-            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
+            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ height: fillH, maxHeight: fillH, overflow: 'hidden' }}>
+              <div className="clm-rows-scroll">
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -196,15 +218,20 @@ export default function ClmQcPage() {
                   ))}
                 </tbody>
               </table>
-              {!loading && filtered.length > 0 && (
-                <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
+              </div>
+              {!loading && count > 0 && (
+                <WorklistPager total={count} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
           )}
         </div>
       </div>
 
-      {modalOpen && <QcModal existing={editing} authorities={auths} nextCode={`QC-${String(rows.length + 1).padStart(3, '0')}`} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />}
+      {modalOpen && (
+        <Suspense fallback={null}>
+          <QcModal existing={editing} authorities={auths} nextCode={`QC-${String(rows.length + 1).padStart(3, '0')}`} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />
+        </Suspense>
+      )}
       <DeleteConfirmModal
         open={!!pendingDelete}
         title="Delete QC Document"
@@ -216,156 +243,4 @@ export default function ClmQcPage() {
       />
     </div>
   );
-}
-
-export function QcModal(props: { existing: Qc | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: Omit<Qc, 'id'|'code'|'status'>) => void; }) {
-  const { existing, authorities: initialAuthorities, nextCode, onClose, onSave } = props;
-  const toast = useToast();
-  const isEdit = !!existing;
-  const [name, setName]         = useState(existing?.name ?? '');
-  const [purpose, setPurpose]   = useState(existing?.purpose ?? '');
-  const [issuedBy, setIssuedBy] = useState(existing?.issued_by ?? '');
-  // Type dropdown removed from the form — preserve the existing value on
-  // edit, default to 'cert' on add. Backend still receives doc_type.
-  const type: 'cert'|'comp'     = existing?.doc_type ?? 'cert';
-  const [qaParams, setQaParams] = useState(existing?.qa_params ?? '');
-  const [minCrit, setMinCrit]   = useState(existing?.min_criteria ?? '');
-  const [errors, setErrors]     = useState<Record<string, string>>({});
-  const [saving, setSaving]     = useState(false);
-  const [authorities, setAuthorities] = useState<Authority[]>(initialAuthorities);
-  const [quickAddOpen, setQuickAddOpen] = useState(false);
-  useEffect(() => { setAuthorities(initialAuthorities); }, [initialAuthorities]);
-
-  const handleSave = async () => {
-    // Guard at the TOP, not just `disabled` on the button — the button attribute
-    // doesn't stop an Enter-key handler or a programmatic call.
-    if (saving) return;
-    const next: Record<string, string> = {};
-    if (!name.trim())     next.name     = 'Name is required';
-    else if (name.trim().length > 255) next.name = 'Name must not be greater than 255 characters';
-    if (!purpose.trim())  next.purpose  = 'Purpose is required';
-    else if (purpose.trim().length > 500) next.purpose = 'Purpose must not be greater than 500 characters';
-    if (!issuedBy.trim()) next.issuedBy = 'Authority is required';
-    setErrors(next);
-    if (Object.keys(next).length) return;
-    setSaving(true);
-    try {
-      await Promise.resolve(onSave({
-        name: name.trim(), purpose: purpose.trim(), issued_by: issuedBy.trim(),
-        doc_type: type, qa_params: qaParams?.trim() || null, min_criteria: minCrit?.trim() || null,
-      }));
-    } catch (e: any) {
-      const apiErrors = e?.response?.data?.errors as Record<string, string[] | string> | undefined;
-      if (apiErrors) {
-        const keyMap: Record<string, string> = { issued_by: 'issuedBy' };   // backend field → inline field
-        setErrors(p => ({ ...p, ...Object.fromEntries(Object.entries(apiErrors).map(([k, v]) => [keyMap[k] ?? k, Array.isArray(v) ? v[0] : String(v)])) }));
-      }
-    } finally { setSaving(false); }
-  };
-
-  const onAddNewAuthority = async (form: { name: string; description: string }) => {
-    try {
-      const r = await api.post<{ status: boolean; data: Authority }>('/clm/authorities', form);
-      const created = r.data.data;
-      setAuthorities(prev => [...prev, created]);
-      setIssuedBy(String(created.id));
-      setErrors(p => ({ ...p, issuedBy: '' }));
-      setQuickAddOpen(false);
-      toast.success('Added', clip(created.name));
-    } catch (e: any) {
-      toast.error('Save failed', e?.response?.data?.message ?? 'Could not add authority');
-    }
-  };
-
-  return createPortal((
-    <div className="clm-modal-bd">
-      <div className="clm-modal clm-modal-wide">
-        {saving && <div className="clm-saving-veil" aria-hidden />}
-        <div className="clm-modal-head">
-          <div className="clm-modal-head-left">
-            <div className="clm-modal-head-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
-            <div>
-              <div className="clm-modal-head-title">{isEdit ? 'Edit QC Document' : 'Add QC Document'}</div>
-              <div className="clm-modal-head-sub">{isEdit ? 'Update QC document details.' : 'Register a new quality / compliance document.'}</div>
-            </div>
-          </div>
-          <button className="clm-modal-close" onClick={onClose} disabled={saving}>×</button>
-        </div>
-        <div className="clm-modal-body">
-          <div className="clm-autocode">
-            <div className="clm-autocode-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
-            <div className="clm-autocode-text">
-              <div className="clm-autocode-label">{isEdit ? 'QC Code' : 'Auto Generated Code'}</div>
-              <div className="clm-autocode-val">{isEdit ? existing!.code : nextCode}</div>
-            </div>
-            <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
-          </div>
-          <div className="clm-field">
-            <label className="clm-field-label">QC Certificate Name <span className="clm-req">*</span></label>
-            <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. ISO 9001, HACCP, GOTS" maxLength={255} value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} autoFocus />
-            <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{name.length}/255</div>
-            {errors.name && <div className="clm-err">{errors.name}</div>}
-          </div>
-          <div className="clm-field">
-            <label className="clm-field-label">Purpose <span className="clm-req">*</span></label>
-            <input className={`clm-input ${errors.purpose ? 'clm-input-err' : ''}`} placeholder="What this certificate is for…" maxLength={500} value={purpose} onChange={e => { setPurpose(e.target.value); setErrors(p => ({ ...p, purpose: '' })); }} />
-            {errors.purpose && <div className="clm-err">{errors.purpose}</div>}
-          </div>
-          <div className="clm-field">
-            <label className="clm-field-label">Issued By (Authority) <span className="clm-req">*</span></label>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <MasterSelect
-                  key={`qc-issuedBy-${authorities.length}`}
-                  value={issuedBy}
-                  invalid={!!errors.issuedBy}
-                  placeholder="— Select —"
-                  options={[
-                    ...authorities.map(a => ({ value: String(a.id), label: a.name })),
-                    ...(issuedBy && !authorities.find(a => String(a.id) === issuedBy) ? [{ value: issuedBy, label: issuedBy }] : []),
-                  ]}
-                  onChange={(v) => { setIssuedBy(v); setErrors(p => ({ ...p, issuedBy: '' })); }}
-                />
-              </div>
-              <Tooltip label="Add new authority"><button type="button" className="clm-quick-add-btn" onClick={() => setQuickAddOpen(true)} aria-label="Add new authority" disabled={saving}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              </button></Tooltip>
-            </div>
-            <div className="clm-field-hint">Pulls from Authority Master — click + to add a new authority.</div>
-            {errors.issuedBy && <div className="clm-err">{errors.issuedBy}</div>}
-          </div>
-          <div className="clm-field">
-            <label className="clm-field-label">QA Testing Parameters</label>
-            <textarea className="clm-textarea" placeholder="e.g. Moisture %, microbial count, contamination levels" value={qaParams ?? ''} maxLength={256} onChange={e => setQaParams(e.target.value.slice(0, 256))} />
-            <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{(qaParams ?? '').length}/256</div>
-          </div>
-          <div className="clm-field">
-            <label className="clm-field-label">Minimum Acceptance Criteria</label>
-            <textarea className="clm-textarea" placeholder="e.g. Moisture < 13%, zero contamination, pH 6.0–7.5" value={minCrit ?? ''} maxLength={256} onChange={e => setMinCrit(e.target.value.slice(0, 256))} />
-            <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{(minCrit ?? '').length}/256</div>
-          </div>
-        </div>
-        <div className="clm-modal-foot">
-          <button className="clm-btn-cancel" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="clm-btn-save" onClick={() => void handleSave()} disabled={saving}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-            {saving ? 'Saving…' : (isEdit ? 'Update' : 'Save')}
-          </button>
-        </div>
-      </div>
-      {quickAddOpen && (
-        <SimpleDescModal
-          title="Add New Authority"
-          namePlaceholder="e.g. Income Tax Department, DGFT, GSTN"
-          descPlaceholder="What this authority issues / regulates"
-          code={`A-${String(authorities.length + 1).padStart(3, '0')}`}
-          isEdit={false}
-          initialName=""
-          initialDesc=""
-          onClose={() => setQuickAddOpen(false)}
-          onSave={(f) => onAddNewAuthority(f)}
-        />
-      )}
-    </div>
-  ), document.body);
 }

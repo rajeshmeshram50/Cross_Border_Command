@@ -15,6 +15,8 @@ use Illuminate\Validation\ValidationException;
 
 class ClmQcController extends Controller
 {
+    use \App\Http\Controllers\Concerns\ChecksClmDocUsage;
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -23,30 +25,105 @@ class ClmQcController extends Controller
         // Branch-scoped read: own rows + client-level (shared); siblings hidden (CBC-432).
         $q = ClmQcDocument::query()->orderByDesc('id');   // newest entry first
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
-        $rows = $q->get();
+
+        /* Search in SQL, alongside the paging. Filtering a single page in the
+           browser searches ten rows out of the whole master. */
+        if ($search = trim((string) $request->input('search', ''))) {
+            $like = '%' . $search . '%';
+            /* Authority is stored by ID, but the list shows — and the old
+               client-side filter searched — the resolved NAME. Resolve the
+               term to ids so searching by authority still works. */
+            $authIds = ClmAuthority::idsMatchingName((int) $user->client_id, $search);
+            $q->where(function ($w) use ($like, $authIds) {
+                $w->where('name', 'ilike', $like)->orWhere('code', 'ilike', $like)->orWhere('purpose', 'ilike', $like);
+                ClmAuthority::scopeStoredIdsIn($w, 'issued_by', $authIds);
+            });
+        }
+
+        /* Counts describe the WHOLE scoped set, so they are aggregated in SQL
+           and not derived from the rows in hand — otherwise page 2 would report
+           its own ten rows as the totals. */
+        $counts = (clone $q)->selectRaw(
+            'COUNT(*) AS all_c,'
+            . ' COUNT(*) FILTER (WHERE doc_type = ?) AS cert_c,'
+            . ' COUNT(*) FILTER (WHERE doc_type = ?) AS comp_c',
+            [ClmQcDocument::TYPE_CERT, ClmQcDocument::TYPE_COMP]
+        )->reorder()->first();
+
+        /* PAGINATION — opt-in via per_page, so existing callers are unchanged. */
+        $perPage = $request->filled('per_page')
+            ? min(200, max(1, (int) $request->input('per_page')))
+            : null;
+        $page  = max(1, (int) $request->input('page', 1));
+        $total = (int) ($counts->all_c ?? 0);
+
+        $rows = $perPage ? $q->forPage($page, $perPage)->get() : $q->get();
 
         // `issued_by` stores authority ids; expose the resolved current names.
-        $map = ClmAuthority::idNameMap($user->client_id);
+        $map = ClmAuthority::idNameMap($user->client_id, ClmAuthority::idsReferencedIn($rows->pluck('issued_by')));
         $rows->each(fn ($r) => $r->issued_by_names = ClmAuthority::displayNames($r->issued_by, $map));
 
-        // Per-row "in use" flags so the UI can disable + explain the delete
-        // action for referenced documents (mirrors the checks in destroy()).
-        $rows->each(function ($r) use ($user) {
-            $labels = $this->usageCheck($user->client_id, $r->code, $r->name);
+        /* Per-row "in use" flags, from sets built ONCE.
+           This used to call usageCheck() inside the loop — one row, three
+           existence queries, plus six Schema::hasTable/hasColumn calls that
+           each hit information_schema. Twenty rows meant 182 queries and
+           ~560 ms locally; it scales with the row count, which is what made
+           the page take 13 s on a real dataset.
+           The three referencing tables are small and bounded, so reading each
+           ONCE and matching in memory turns the whole loop into hash lookups. */
+        $sets = $this->usageSets((int) $user->client_id);
+        $rows->each(function ($r) use ($sets) {
+            $labels = [];
+            if ($r->code && isset($sets['rules'][$r->code]))   $labels[] = 'Segment Rules';
+            if ($r->code && isset($sets['uploads'][$r->code])) $labels[] = 'Segment Doc Uploads';
+            if ($r->name && isset($sets['products'][mb_strtolower(trim((string) $r->name))])) {
+                $labels[] = 'Product QC Records';
+            }
             $r->in_use  = !empty($labels);
-            $r->used_in = array_values($labels);
+            $r->used_in = $labels;
         });
 
         return response()->json([
             'status' => true,
             'data'   => $rows,
+            'total'  => $total,
             'counts' => [
-                'all'  => $rows->count(),
-                'cert' => $rows->where('doc_type', ClmQcDocument::TYPE_CERT)->count(),
-                'comp' => $rows->where('doc_type', ClmQcDocument::TYPE_COMP)->count(),
+                'all'  => $total,
+                'cert' => (int) ($counts->cert_c ?? 0),
+                'comp' => (int) ($counts->comp_c ?? 0),
             ],
         ]);
-    } 
+    }
+
+    /**
+     * Everything that references a QC document, read once per REQUEST rather
+     * than once per row. Returns three lookup maps: codes used by segment
+     * rules, codes used by segment doc uploads, and lowercased names used by
+     * product QC records.
+     *
+     * Bounded by the size of those three tables, not by the number of QC
+     * documents on the page — which is the whole point.
+     */
+    private function usageSets(int $clientId): array
+    {
+        // Segment rules + doc uploads are shared with KYC / DD / Trade Licenses.
+        $sets = $this->clmDocUsageSets($clientId);
+
+        // QC alone also appears in product QC records, matched by NAME.
+        // product_qc_records has no client_id — scope through its product.
+        $products = [];
+        if (Schema::hasTable('product_qc_records') && Schema::hasColumn('product_qc_records', 'qc_name')) {
+            foreach (DB::table('product_qc_records')
+                       ->join('products', 'products.id', '=', 'product_qc_records.product_id')
+                       ->where('products.client_id', $clientId)
+                       ->whereNotNull('product_qc_records.qc_name')
+                       ->distinct()->pluck('product_qc_records.qc_name') as $n) {
+                $products[mb_strtolower(trim((string) $n))] = true;
+            }
+        }
+
+        return $sets + ['products' => $products];
+    }
 
     public function store(Request $request)
     {
