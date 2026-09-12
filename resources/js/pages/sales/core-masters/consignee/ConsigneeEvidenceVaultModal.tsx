@@ -1,6 +1,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
-import { ShipmentDocPanel, ShipmentDocSendForSignature, SevStat, type VaultShipmentDoc } from '../customer/CustomerEvidenceVaultModal';
+import CustomerEvidenceVaultModal, { ShipmentDocPanel, ShipmentDocSendForSignature, SevStat, type VaultShipmentDoc } from '../customer/CustomerEvidenceVaultModal';
+import { VaultReuploadPopup } from '../../../p2p/p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
+import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
+import { CLM_CSS } from '../../../clm/shared/clmShared';
 /* Shared Evidence Vault stylesheet — the same one the Customer and Supplier
    vaults load. Brings in the `.sev-stat*` ring cards used below (and the
    `.cev-*` shell the next step moves onto). Consignee markup is `.cev-*`
@@ -103,6 +106,10 @@ export interface VaultData {
    *  the two are one company, so the vault carries the customer's documents
    *  as well as its own. Sent by the API for exactly this decision. */
   same_as_customer?:      boolean;
+  /** WHO this consignee mirrors. Present only when same_as_customer is true.
+   *  The consignee row carries the customer CODE for a header chip; the vault
+   *  needs the id to fetch with, so the API names the customer outright. */
+  mirror_customer?:       MirrorCustomer | null;
   total_documents:        number;
   verified_signed:        number;
   pending:                number;
@@ -132,6 +139,33 @@ export interface ConsigneeVaultTarget {
   /* Linked customer code (e.g. C-010) so the header can show the
    * buyer-consignee relationship at a glance. */
   customerId?: string;
+  /* Optional hint: this consignee is flagged Same as Customer, and here is the
+   * customer it mirrors.
+   *
+   * A mirrored consignee never reaches the vault UI — it gets the hand-off card
+   * instead — so fetching the vault only to read one boolean off the response
+   * is a whole round trip spent on an answer the caller usually already has.
+   * A list row carries both facts. Pass them and the card renders with NO
+   * request at all.
+   *
+   * Omit them and nothing breaks: the component falls back to the response's
+   * own same_as_customer / mirror_customer, which is how callers that don't
+   * have the flag to hand (the Buyer Profile, the CTC form) still work. */
+  sameAsCustomer?: boolean;
+  mirrorCustomer?: MirrorCustomer | null;
+}
+
+/** The customer a "Same as Customer" consignee stands in for. */
+export interface MirrorCustomer {
+  id:       number;
+  code?:    string | null;
+  name?:    string | null;
+  segment?: string | null;
+  type?:    string | null;
+  risk?:    string | null;
+  country?: string | null;
+  city?:    string | null;
+  contact?: string | null;
 }
 
 interface Props {
@@ -225,6 +259,11 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
     setUploading(uploadingRef.current > 0);
   }, []);
   const [group, setGroup] = useState<GroupKey>('standard');
+  /* Mirrored consignee → the hand-off card is showing and the user pressed
+     "Open Customer Evidence Vault". Reset on close so reopening this consignee
+     lands on the card again rather than straight in the customer's vault. */
+  const [custVaultOpen, setCustVaultOpen] = useState(false);
+  useEffect(() => { if (!open) setCustVaultOpen(false); }, [open]);
   /* "+N more" segment overflow popover — a titled list (matches the CLM pages'
    * authority/segment popovers), opened on click from the header chip. */
   const [segPop, setSegPop] = useState<{ names: string[]; x: number; y: number } | null>(null);
@@ -306,8 +345,14 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
    * parent passed an override via `data` or (b) consignee has no
    * db_id. Failure leaves vaultLive at null, and the vault then renders
    * as EMPTY_VAULT rather than inventing rows. */
+  /* The caller already told us this consignee is mirrored AND named the
+     customer, so the hand-off card can render on what we have. Fetching the
+     vault here would be a round trip whose entire result the card discards —
+     and the customer's vault, one click later, fetches its own anyway. */
+  const skipFetch = !!(consignee?.sameAsCustomer && consignee?.mirrorCustomer);
+
   useEffect(() => {
-    if (!open || !consignee?.db_id || data) {
+    if (!open || !consignee?.db_id || data || skipFetch) {
       setVaultLive(null);
       return;
     }
@@ -318,7 +363,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
       .catch(() => { if (!cancelled) setVaultLive(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [open, consignee?.db_id, data]);
+  }, [open, consignee?.db_id, data, skipFetch]);
 
   /* Re-fetch signature requests — used by the open-effect and after a
    * Send so the Trade Documents tab flips to "Pending"/"Signed" without
@@ -523,18 +568,6 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
    * Signed is green, not blue. It is the settled, nothing-left-to-do state in
    * this list, exactly like Verified, and colouring it separately implied a
    * distinction that does not exist. */
-  const StatusPill = ({ s }: { s: VaultStatus }) => {
-    const tone =
-      s === 'Verified' || s === 'Signed' ? { bg: '#dcfce7', fg: '#15803d', bd: '#bbf7d0' }
-      : s === 'Expiring' ? { bg: '#fef3c7', fg: '#b45309', bd: '#fde68a' }
-      :                    { bg: '#fef2f2', fg: '#dc2626', bd: '#fecaca' };
-    return (
-      <span className="cev-pill" data-status={s} style={{ background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}` }}>
-        {s}
-      </span>
-    );
-  };
-
   const docsForTab: VaultDoc[] = tab === 'company-dd' ? vault.company_dd
     : tab === 'owner-kyc'      ? vault.owner_kyc
     : tab === 'trade-licenses' ? vault.trade_licenses
@@ -614,8 +647,99 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
    * explicit data prop). Re-fetches keep the current content visible. */
   const showSkeleton = loading && !vaultLive && !data;
 
+  /* "Same as Customer" ticked → this consignee holds no paperwork of its own.
+     Everything the vault would list is the linked customer's, read-only, and
+     every upload is refused (409). Opening the full vault on it therefore put
+     the user in front of a list they could not act on and could not tell apart
+     from the customer's own — and stripping the list out instead left a tall
+     empty dialog, which is no better.
+     So a mirrored consignee gets a short hand-off card: the note, and a button
+     through to the vault that actually owns these documents. */
+  /* Caller's hint first (it saved us the request), response second. */
+  const sameAsCustomer = consignee?.sameAsCustomer ?? !!vault.same_as_customer;
+  const mirror = consignee?.mirrorCustomer ?? vault.mirror_customer ?? null;
+
+  if (open && sameAsCustomer && !showSkeleton) {
+    /* Handed over — the customer's own vault takes the screen from here, and
+       closing it returns to the LIST, not back to this card.
+       Returning to the card was tried and reads as a glitch: the card is a
+       gateway, not a destination, so landing on it again looks like the close
+       failed and leaves the user pressing Close twice to get out. Once they
+       have been through it there is nothing left on it to come back for. */
+    if (custVaultOpen && mirror) {
+      return (
+        <CustomerEvidenceVaultModal
+          open
+          customer={{
+            id:          mirror.code ?? `C-${mirror.id}`,
+            db_id:       mirror.id,
+            company:     mirror.name ?? consignee?.company ?? '',
+            segment:     mirror.segment ?? undefined,
+            type:        mirror.type ?? undefined,
+            risk:        mirror.risk ?? undefined,
+            country:     mirror.country ?? undefined,
+            contact:     mirror.contact ?? undefined,
+            contactCity: mirror.city ?? undefined,
+          }}
+          onClose={onClose}
+        />
+      );
+    }
+    /* Its OWN overlay, not the vault's. .cev-overlay is a right-hand drawer
+       (align-items: stretch; justify-content: flex-end) built for a full-height
+       panel — a short card in it sat against the right edge, stretched. A
+       confirmation belongs in the middle of the screen. */
+    return createPortal(
+      <div
+        className="cnev-mirror-overlay"
+        role="dialog"
+        aria-modal="true"
+        onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      >
+        {/* CLM_CSS carries .clm-badge / .clm-pop — what AuthorityBadges and its
+            +N popover are drawn with. */}
+        <style>{CLM_CSS}</style>
+        <style>{CNEV_CSS}</style>
+        <div className="cnev-mirror-card" onMouseDown={(e) => e.stopPropagation()}>
+          <div className="cnev-mirror-head">
+            <span className="cnev-mirror-ico"><i className="ri-information-line" aria-hidden /></span>
+            <div>
+              <div className="cnev-mirror-title">Customer = Consignee</div>
+              <div className="cnev-mirror-sub">{consignee?.id}{consignee?.company ? ` — ${consignee.company}` : ''}</div>
+            </div>
+          </div>
+          {/* One sentence. "Refer to Customer Details" was doing the button's
+              job and doing it worse — the button actually goes there. What the
+              line has to supply is the reason, and WHICH customer, since the
+              two share a name and the header above shows the consignee's. */}
+          <div className="cnev-mirror-body">
+            Same company as{' '}
+            {mirror
+              ? <strong>{mirror.code}{mirror.name ? ` ${mirror.name}` : ''}</strong>
+              : <strong>its customer</strong>}
+            , so it keeps no documents of its own.
+          </div>
+          <div className="cnev-mirror-actions">
+            <button type="button" className="cev-btn cev-btn-light" onClick={onClose}>Close</button>
+            {/* Only offered when the API named the customer — without its id
+                there is nothing to open, and a dead button is worse than none. */}
+            {mirror && (
+              <button type="button" className="cev-btn cev-btn-dark" onClick={() => setCustVaultOpen(true)}>
+                <i className="ri-safe-2-line" aria-hidden /> Open Customer Evidence Vault
+              </button>
+            )}
+          </div>
+        </div>
+      </div>,
+      document.body,
+    );
+  }
+
   return createPortal(
     <div className="cev-overlay sev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget && !uploading) onClose(); }}>
+      {/* CLM_CSS carries .clm-badge / .clm-pop — what AuthorityBadges and its
+          +N popover in the Issuing Authority column are drawn with. */}
+      <style>{CLM_CSS}</style>
       <style>{CNEV_CSS}</style>
       {/* `sev` is the scope hook the shared stylesheet needs: every ring-card
           rule in supplier-evidence-vault.css is written as `.sev .sev-stat…`,
@@ -1326,10 +1450,59 @@ function evParseExpiry(s?: string | null): Date | null {
 }
 /* A document the API calls "Verified" is still expired if its date has passed —
    the API does not re-check that on read, so the table does it here. */
+/* Status badge — rounded rectangle, no glyph.
+ *
+ * The characters this was drawn with are emoji-class and render at a different
+ * weight and baseline on every platform, so the badges sat unevenly beside each
+ * other; the badge's own fill already carries the state.
+ *
+ * Signed is green, not blue. It is the settled, nothing-left-to-do state in
+ * this list, exactly like Verified, and colouring it separately implied a
+ * distinction that does not exist. Expired is its own darker red: Pending means
+ * "not filed yet", Expired means "filed and now worthless" — different jobs.
+ *
+ * Top-level, so the document table and the Overview popup print the same badge.
+ * It used to live inside the vault component, out of the table's reach, which
+ * is why the table had no Status column to begin with. */
+function StatusPill({ s }: { s: VaultStatus | 'Expired' }) {
+  const tone =
+    s === 'Verified' || s === 'Signed' ? { bg: '#dcfce7', fg: '#15803d', bd: '#bbf7d0' }
+    : s === 'Expiring' ? { bg: '#fef3c7', fg: '#b45309', bd: '#fde68a' }
+    : s === 'Expired'  ? { bg: '#fee2e2', fg: '#b91c1c', bd: '#fca5a5' }
+    :                    { bg: '#fef2f2', fg: '#dc2626', bd: '#fecaca' };
+  return (
+    <span className="cev-pill" data-status={s} style={{ background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}` }}>
+      {s}
+    </span>
+  );
+}
+
 function evEffectiveStatus(d: VaultDoc): VaultStatus | 'Expired' {
   const exp = evParseExpiry(d.expiry);
   if (exp) { const today = new Date(); today.setHours(0, 0, 0, 0); if (exp < today) return 'Expired'; }
   return d.status;
+}
+
+/* Hard cap on a cell's text, at the same 25 characters the Issuing Authority
+   column already uses.
+ *
+ * A CSS ellipsis only bites once the column is squeezed, and nothing was
+ * squeezing it: the table is free to grow, so a long document name or file
+ * name simply widened its column until the row ran past the card and the whole
+ * table scrolled sideways — with Actions pushed off the right edge. Cutting the
+ * text caps the column instead, and the full value stays on hover. */
+const CLIP = 25;
+const clip = (s: string): string => (s.length > CLIP ? s.slice(0, CLIP) + '…' : s);
+
+const EV_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+/* Same rendering the Supplier vault's Expiry column uses.
+   A real date prints as 12-Sep-2026; anything the parser cannot read is text
+   the catalogue supplied ("Lifetime", "Varies"), so it is passed through
+   rather than blanked. */
+function evFmtExpiry(s?: string | null): string {
+  const d = evParseExpiry(s);
+  if (!d) return s && s.trim() && s.trim() !== '-' ? s.trim() : '—';
+  return `${String(d.getDate()).padStart(2, '0')}-${EV_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
 }
 
 function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, onRowBusyChange, sameAsCustomer = false }: {
@@ -1376,7 +1549,20 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
             <th>Document Name</th>
             <th>{authorityLbl}</th>
             <th>Requirement</th>
+            {/* Expiry, as the Supplier vault carries it. Trade Documents are
+                per-deal paperwork with no validity window of their own, so the
+                column only earns its width on the standard buckets. */}
+            {/* Issue + Expiry, the document's own validity window. Trade
+                Documents are per-deal paperwork with no window of their own,
+                so neither column earns its width there. */}
+            {tab !== 'trade-documents' && <th style={{ width: 105 }}>Issue Date</th>}
+            {tab !== 'trade-documents' && <th style={{ width: 105 }}>Expiry</th>}
             <th>Attachment</th>
+            {/* Status, as the Overview popup and the Supplier vault both show
+                it. The row already knows it — the KPI rings above are summed
+                from evEffectiveStatus — so the one place reading a document's
+                own state was the only place not printing it. */}
+            <th style={{ width: 110 }}>Status</th>
             <th style={{ width: 140 }}>Actions</th>
           </tr>
         </thead>
@@ -1387,14 +1573,20 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
             <tr key={d.id}>
               <td>{i + 1}</td>
               <td className="cev-mono cev-mono-ref">{d.reference || '—'}</td>
-              {/* Single-line with a CSS ellipsis. A long name used to wrap over
-                  several lines and blow the row height out; the previous
-                  slice(0, 25) cut mid-word at a fixed character count regardless
-                  of the column's actual width. Full text stays on hover. */}
+              {/* Capped at 25 characters, not left to a CSS ellipsis: the
+                  ellipsis needs the column to be squeezed, and with two more
+                  columns on this table now there was nothing squeezing it —
+                  the name just widened its column and pushed Actions off the
+                  card. Full name on hover. */}
               <Tooltip label={d.name}>
-                <td className="cev-doc-name"><span className="cev-trunc">{d.name}</span></td>
+                <td className="cev-doc-name">{clip(d.name)}</td>
               </Tooltip>
-              <td className="cev-cell-dim">{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
+              {/* Badges, not a truncated sentence. `authority` is a comma-joined
+                  LIST, and "Supplier Ethical Sourcing…" hid both how many there
+                  were and every name after the first. AuthorityBadges shows the
+                  first as a badge plus a +N pill that opens the full list — the
+                  same control the Customer vault and the CLM masters use. */}
+              <td className="cev-cell-dim"><AuthorityBadges value={d.authority} /></td>
               <td>
                 {/* The inline styles carry the light-mode pill and are left
                     exactly as they were; the classes are what the shared sheet
@@ -1407,6 +1599,18 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                   <span className="cev-req cev-req-o" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
                 )}
               </td>
+              {tab !== 'trade-documents' && (
+                <td className="cev-cell-dim">{evFmtExpiry(d.issue_date)}</td>
+              )}
+              {/* A date already past is called out — evEffectiveStatus treats it
+                  as Expired regardless of what the API called the row, and the
+                  column should not read as calm text while the status pill
+                  beside it says otherwise. */}
+              {tab !== 'trade-documents' && (
+                <td className={evEffectiveStatus(d) === 'Expired' ? 'cev-exp-over' : 'cev-cell-dim'}>
+                  {evFmtExpiry(d.expiry)}
+                </td>
+              )}
               <td>
                 {d.attachment ? (
                   d.attachment_url ? (
@@ -1443,7 +1647,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                                 screen-capture names, exported ticket names…). The
                                 chip caps its width and ellipsises the text so the
                                 row stays one line; hover shows the full name. */}
-                            <span className="cev-attach-name cev-trunc">{d.attachment}</span>
+                            <span className="cev-attach-name">{clip(d.attachment)}</span>
                           </a>
                         </Tooltip>
                       );
@@ -1455,12 +1659,16 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                   <Tooltip label={d.attachment}>
                     <span className="cev-attach cev-attach-muted">
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                      <span className="cev-attach-name cev-trunc">{d.attachment}</span>
+                      <span className="cev-attach-name">{clip(d.attachment)}</span>
                     </span>
                   </Tooltip>
                   )
                 ) : <span className="cev-muted">Not uploaded</span>}
               </td>
+              {/* evEffectiveStatus, not d.status — a document the API still
+                  calls Verified is Expired once its date has passed, and the
+                  KPI rings above are counted the same way. */}
+              <td><StatusPill s={evEffectiveStatus(d)} /></td>
               <td>
                 <VaultRowActions doc={d} ownerType={ownerType} ownerId={ownerId} category={category} onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} onBusyChange={onRowBusyChange} sameAsCustomer={sameAsCustomer} />
               </td>
@@ -1489,7 +1697,6 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   sameAsCustomer?: boolean;
 }) {
   const toast = useToast();
-  const fileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [reminding, setReminding] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -1530,20 +1737,14 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
     finally { setDownloading(false); }
   };
 
-  const onPick = async (f: File | undefined) => {
-    if (!f || !ownerId || !doc.doc_code) return;
-    // Only PDF / JPG / PNG may be uploaded (Word / Excel are blocked so every
-    // stored attachment can be previewed in-browser via View).
-    if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) {
-      toast.error('Unsupported file type', 'Only PDF, JPG or PNG files are allowed. Word / Excel files are not supported.');
-      return;
-    }
-    // Size guard (server caps at 2048 KB) — validate up front so the user gets
-    // an immediate toast instead of a round-trip 422.
-    if (f.size > 2048 * 1024) {
-      toast.error('File too large', 'The file must be 2048 KB (2 MB) or smaller.');
-      return;
-    }
+  /* Upload goes through the same popup the Supplier vault uses: it asks for the
+     expiry before sending. Without it every upload from here stored a null
+     expiry_date, which is why the Expiry column beside these rows only ever
+     read N/A. The popup owns the file picking and the type / size guards. */
+  const [reupOpen, setReupOpen] = useState(false);
+
+  const doUpload = async (f: File, issueDate?: string, expiryDate?: string) => {
+    if (!ownerId || !doc.doc_code) return;
     setBusy(true);
     onBusyChange?.(true);   // lock the vault (no tab switch / close) while uploading
     try {
@@ -1552,9 +1753,14 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
       fd.append('doc_code', doc.doc_code);
       fd.append('doc_name', doc.name || doc.doc_code);
       fd.append('attachment', f);
+      // Both left out when not given — the endpoint's rules are nullable and an
+      // empty string would fail their `date` check.
+      if (issueDate) fd.append('issue_date', issueDate);
+      if (expiryDate) fd.append('expiry_date', expiryDate);
       await api.post(`/segment-uploads/${ownerType}/${ownerId}`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
+      setReupOpen(false);
       await onReload();
       toast.success('Document uploaded', `${f.name} has been attached.`);
     } catch (e: any) {
@@ -1567,13 +1773,19 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 
   return (
     <div className="cev-row-actions">
-      <input
-        ref={fileRef}
-        type="file"
-        hidden
-        accept=".pdf,.jpg,.jpeg,.png"
-        onChange={e => { void onPick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }}
-      />
+      {/* The popup carries its own picker, so there is no hidden input here
+          any more — the action button opens the dialog instead. */}
+      {reupOpen && (
+        <VaultReuploadPopup
+          doc={doc}
+          category={category}
+          busy={busy}
+          className="cnev-reup"
+          withIssueDate
+          onClose={() => { if (!busy) setReupOpen(false); }}
+          onSubmit={(f, opts) => doUpload(f, opts?.issueDate, opts?.expiryDate)}
+        />
+      )}
       {canSend && (
         <Tooltip label="Send for signature">
           <button
@@ -1678,7 +1890,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
         <button
           type="button"
           aria-disabled={!canReupload || busy}
-          onClick={() => { if (canReupload && !busy) fileRef.current?.click(); }}
+          onClick={() => { if (canReupload && !busy) setReupOpen(true); }}
           className={`cev-row-act cev-row-act-upload sev-row-act-txt ${(!canReupload || busy) ? 'is-disabled' : ''}`}
           aria-label={doc.attachment ? 'Re-upload' : 'Upload'}
         >
@@ -1871,6 +2083,181 @@ const CNEV_CSS = `
   display: block; min-width: 0; max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+
+/* Every cell is capped at 25 characters now, so the table no longer needs a
+   980px floor to lay out — and that floor was the last thing forcing the
+   sideways scroll that pushed Actions off the card. */
+.cnev-vault .cev-table { min-width: 0; }
+
+/* Header and body have to share ONE horizontal padding, or every column reads
+   as slightly out of line.
+   The shared sheet gives thead th 12px and tbody td 14px, so each heading sat
+   2px left of the cell under it. Text-only cells hide that; a badge does not —
+   its filled edge makes the offset plain to see, which is why it showed up as
+   soon as Requirement, Status and Issuing Authority became badges. */
+.cnev-vault .cev-table thead th { padding-left: 14px; padding-right: 14px; }
+
+/* Expiry that has already passed. */
+.cnev-vault .cev-exp-over { color: #dc2626; font-weight: 700; white-space: nowrap; }
+[data-bs-theme="dark"] .cnev-vault .cev-exp-over { color: #fca5a5; }
+
+/* Upload dialog, as launched FROM THIS VAULT.
+ *
+ * The dialog itself is shared with the Supplier vault, whose header is violet
+ * — correct there, foreign here: this vault's header is the cyan ramp, and a
+ * dialog opened from it arriving in another vault's colour reads as a
+ * different screen. Scoped to .cnev-reup, which only this vault passes, so the
+ * Supplier's copy keeps its violet.
+ *
+ * Wider too: the dialog lays Auto Code / Document Name and Issuing Authority /
+ * Expiry out in two columns, and at 640px each one was narrow enough that a
+ * real authority name ran out of room beside the date picker. */
+.cev-reup-ov.cnev-reup .cev-reup-card { max-width: 880px; }
+.cev-reup-ov.cnev-reup .cev-reup-hd {
+  background: linear-gradient(125deg, #083344 0%, #0c4a6e 25%, #0e7490 50%, #0891b2 75%, #06b6d4 100%);
+}
+.cev-reup-ov.cnev-reup .cev-reup-save {
+  background: linear-gradient(135deg, #0e7490, #0891b2);
+  box-shadow: 0 4px 12px rgba(8,145,178,.30);
+}
+/* The drop zone tints violet on hover and once a file is picked — same swap. */
+.cev-reup-ov.cnev-reup .cev-reup-drop:hover,
+.cev-reup-ov.cnev-reup .cev-reup-drop.has { border-color: #06b6d4; background: #ecfeff; color: #0e7490; }
+
+/* Dark mode for the three tints above.
+   The shared sheet already darkens .cev-reup-drop / .cev-reup-cur / the toggle,
+   but these overrides carry two class names and beat it — so without a dark
+   pair of their own, hovering the drop zone lit up a white slab on a dark
+   dialog. Same hues, held at low alpha so they read as a tint, not a panel. */
+[data-bs-theme="dark"] .cev-reup-ov.cnev-reup .cev-reup-drop:hover,
+[data-bs-theme="dark"] .cev-reup-ov.cnev-reup .cev-reup-drop.has {
+  background: rgba(6,182,212,.12); border-color: #0891b2; color: #67e8f9;
+}
+[data-bs-theme="dark"] .cev-reup-ov.cnev-reup .cev-reup-toggle button:hover:not(.on) {
+  background: rgba(6,182,212,.14); color: #67e8f9;
+}
+[data-bs-theme="dark"] .cev-reup-ov.cnev-reup .cev-reup-cur {
+  background: rgba(6,182,212,.12); border-color: rgba(6,182,212,.35); color: #67e8f9;
+}
+[data-bs-theme="dark"] .cev-reup-ov.cnev-reup .cev-reup-cur:hover { background: rgba(6,182,212,.20); }
+
+/* Expiry: the Yes / No pair and the date on ONE line.
+ *
+ * This dialog stacks the date under the toggle, which leaves the Expiry cell
+ * two rows tall while the three fields beside it are one — the grid then pulls
+ * out of line and the dialog grows for a field that needs none of it. The
+ * app's other upload dialog (SegmentRefUploadPopup, avm-expiry-row) already
+ * puts them side by side; this matches it.
+ *
+ * :has() picks out the Expiry field without depending on its position in the
+ * grid, and the date wrapper is addressed as the toggle's sibling — its 8px
+ * top margin is an inline style, so clearing it needs !important. */
+/* A grid item's default min-width is AUTO, not 0 — so a column sized 1fr still
+   refuses to go narrower than its content. The Issuing Authority value can run
+   to a couple of hundred characters, and that one cell pushed its column wide
+   enough to shove the right-hand column clean off the card: Document Name and
+   Expiry ended up outside the dialog, and .cev-reup-ro's own ellipsis never got
+   a chance to bite because the box it lives in was never squeezed.
+   minmax(0, 1fr) lets both columns shrink, which is what makes the truncation
+   work. The same is true of the Supplier's copy — left alone here. */
+.cev-reup-ov.cnev-reup .cev-reup-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.cev-reup-ov.cnev-reup .cev-reup-fld { min-width: 0; }
+/* The read-only boxes already carry text-overflow: ellipsis — and it never
+   fired, because they are flex containers and text-overflow only applies to a
+   BLOCK container's own text. So a long Issuing Authority was chopped dead
+   against the border with no "…", reading as a broken box rather than a
+   shortened value. Block + line-height keeps the 38px height and the vertical
+   centering that align-items was doing, and lets the ellipsis work. */
+.cev-reup-ov.cnev-reup .cev-reup-ro {
+  display: block; line-height: 36px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* row-gap 0, not 8. The label already carries margin-bottom: 6px from
+   .cev-reup-fld label, and a flex row-gap ADDS to it — so this field's control
+   started 14px under its label while the three around it started 6px under
+   theirs, and the Expiry row sat visibly lower than Issuing Authority beside
+   it. Column-gap is the one that separates the toggle from the date. */
+.cev-reup-ov.cnev-reup .cev-reup-fld:has(> .cev-reup-toggle) {
+  display: flex; flex-wrap: wrap; align-items: center;
+  row-gap: 0; column-gap: 8px;
+}
+.cev-reup-ov.cnev-reup .cev-reup-fld:has(> .cev-reup-toggle) > label { flex: 0 0 100%; }
+.cev-reup-ov.cnev-reup .cev-reup-fld > .cev-reup-toggle + div {
+  margin-top: 0 !important; flex: 1 1 170px; min-width: 0;
+}
+/* The date control and the Yes / No pair are one row, so they have to be the
+   same height as each other AND as the three read-only boxes around them
+   (.cev-reup-ro is 38px). The picker sizes itself from its own padding, which
+   lands a couple of pixels taller — enough to read as crooked next to the
+   toggle it sits beside. */
+.cev-reup-ov.cnev-reup .cev-reup-fld > .cev-reup-toggle + div .master-datepicker-toggle {
+  height: 38px; box-sizing: border-box;
+}
+
+/* The toggle's "on" state, the hover tint and the current-file chip are all
+   the Supplier's violet. On a cyan header they read as leftovers from another
+   dialog, so they move with the rest. */
+.cev-reup-ov.cnev-reup .cev-reup-toggle button.on { background: #0891b2; color: #fff; }
+.cev-reup-ov.cnev-reup .cev-reup-toggle button:hover:not(.on) { background: #ecfeff; color: #0e7490; }
+.cev-reup-ov.cnev-reup .cev-reup-cur {
+  background: #ecfeff; border-color: #a5f3fc; color: #0e7490;
+}
+.cev-reup-ov.cnev-reup .cev-reup-cur:hover { background: #cffafe; }
+
+/* "Customer = Consignee" hand-off card — shown INSTEAD of the vault on a
+   mirrored consignee. A short dialog, not a full-height one: it carries one
+   sentence and two buttons, so it is sized to them.
+   Its own class names, so nothing in the shared sheet (which the customer and
+   supplier vaults also read) can reach it. */
+/* Centred backdrop — same ink and blur as the vault's, different geometry. */
+.cnev-mirror-overlay {
+  position: fixed; inset: 0; z-index: 11200;
+  background: rgba(15, 23, 42, .45);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  font-family: var(--font-sans);
+  animation: cnevMirrorFade .14s ease-out;
+}
+@keyframes cnevMirrorFade { from { opacity: 0; } to { opacity: 1; } }
+
+.cnev-mirror-card {
+  width: min(520px, calc(100vw - 32px));
+  background: #fff; border-radius: 16px; overflow: hidden;
+  box-shadow: 0 24px 60px rgba(8,47,73,.28), 0 2px 8px rgba(8,47,73,.12);
+  animation: cnevMirrorIn .16s ease-out;
+}
+@keyframes cnevMirrorIn { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+.cnev-mirror-head {
+  display: flex; align-items: center; gap: 11px;
+  padding: 13px 18px;
+  background: linear-gradient(120deg, #0e7490 0%, #0891b2 55%, #06b6d4 100%);
+  color: #fff;
+}
+.cnev-mirror-ico {
+  width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.3);
+  font-size: 16px;
+}
+.cnev-mirror-title { font-size: 13.5px; font-weight: 800; letter-spacing: -.2px; }
+.cnev-mirror-sub {
+  font-size: 11px; margin-top: 1px; color: rgba(255,255,255,.85);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 380px;
+}
+.cnev-mirror-body {
+  padding: 14px 18px 12px; font-size: 12.5px; line-height: 1.5; color: #334155;
+}
+.cnev-mirror-body strong { font-weight: 700; color: #0f172a; }
+.cnev-mirror-actions {
+  display: flex; justify-content: flex-end; gap: 9px;
+  padding: 0 18px 15px;
+}
+.cnev-mirror-actions .cev-btn { display: inline-flex; align-items: center; gap: 7px; }
+[data-bs-theme="dark"] .cnev-mirror-card { background: #0f172a; }
+[data-bs-theme="dark"] .cnev-mirror-body { color: #cbd5e1; }
+[data-bs-theme="dark"] .cnev-mirror-body strong { color: #f1f5f9; }
 
 /* Reference design tints the licence / document number and quietens the
    columns either side of it, so the row reads: bold name, teal number,

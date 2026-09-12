@@ -698,7 +698,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     'owner-kyc':     'kyc',
     'trade-licence': 'tl',
   };
-  const persistSegmentRefUpload = async (refKey: string, file: File, docName: string) => {
+  const persistSegmentRefUpload = async (refKey: string, file: File, docName: string, dates?: { issueDate?: string; expiryDate?: string }) => {
     // File-type / size guard at the upload chokepoint — the picker's accept=
     // hint is bypassable, so reject a .txt / .php / .exe / oversize file
     // instantly with a clear message before it reaches the server (which
@@ -721,6 +721,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     fd.append('doc_code', doc_code);
     fd.append('doc_name', docName || doc_code);
     fd.append('attachment', file);
+    // Omitted entirely when not given — the endpoint's rules are nullable, and
+    // sending an empty string would fail their `date` check.
+    if (dates?.issueDate) fd.append('issue_date', dates.issueDate);
+    if (dates?.expiryDate) fd.append('expiry_date', dates.expiryDate);
     try {
       const { data } = await api.post(`/segment-uploads/consignee/${ownerId}`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -3862,12 +3866,129 @@ const KYC_SUB_META: Record<KycSubTab, { title: string; sub: string; nameCol: str
  * a single Upload icon; on file pick it flips to View / Download /
  * Delete using a blob URL the parent caches. Delete revokes the URL
  * and restores the initial Upload state. */
-function ConsigneeSegmentRefActions({ refKey, docName, uploads, setUploads, persistUpload, disabled = false }: {
+/* Asks for the document's expiry before the upload goes up.
+ *
+ * segment_doc_uploads has an expiry_date column and the endpoint accepts it,
+ * but this form never sent one — so every document uploaded here was stored
+ * with a null expiry, and the vault's Expiry column had nothing to print. The
+ * Supplier vault asks at exactly this moment (VaultReuploadPopup); this is the
+ * same question in this form's own styling.
+ *
+ * "No expiry" is a real answer — a PAN card does not lapse — so it is a choice
+ * rather than an empty date field the user has to guess at. */
+function ConsigneeUploadExpiryPopup({ docName, docCode, authority, category, fileName, busy, onCancel, onConfirm }: {
+  docName: string;
+  docCode: string;
+  authority?: string;
+  category: 'kyc' | 'dd' | 'tl';
+  fileName: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: (dates: { issueDate?: string; expiryDate?: string }) => void;
+}) {
+  const toast = useToast();
+  const [hasExpiry, setHasExpiry] = useState(true);
+  const [date, setDate] = useState('');
+  const [issue, setIssue] = useState('');
+  const today = new Date().toISOString().slice(0, 10);
+  const catLabel = category === 'dd' ? 'Due Diligence' : category === 'kyc' ? 'Owner KYC' : 'Trade Licence';
+
+  const save = () => {
+    if (hasExpiry && !date) {
+      toast.error('Expiry required', 'Pick an expiry date, or switch Expiry to “No”.');
+      return;
+    }
+    // A licence cannot lapse before it was granted. The server enforces this
+    // too (after_or_equal:issue_date); this is the immediate answer.
+    if (issue && hasExpiry && date && date < issue) {
+      toast.error('Dates out of order', 'The expiry date cannot be earlier than the issue date.');
+      return;
+    }
+    onConfirm({ issueDate: issue || undefined, expiryDate: hasExpiry ? date : undefined });
+  };
+
+  return createPortal(
+    <div className="acm-upx-ov" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onCancel(); }}>
+      <style>{ACM_UPX_CSS}</style>
+      <div className="acm-upx-card" role="dialog" aria-modal="true">
+        <div className="acm-upx-hd">
+          <span className="acm-upx-ico"><i className="ri-upload-cloud-2-line" /></span>
+          <div className="acm-upx-hd-t">
+            <div className="acm-upx-ttl">Upload {catLabel} Document</div>
+            <div className="acm-upx-sub">{docName}</div>
+          </div>
+        </div>
+        <div className="acm-upx-body">
+          {/* The same four facts the vault's dialog shows, so a user who has
+              seen one recognises the other. The first three are read-only —
+              they come from the segment rule, not from the person uploading. */}
+          <div className="acm-upx-grid">
+            <div className="acm-upx-fld">
+              <label>Auto Code</label>
+              <div className="acm-upx-ro acm-upx-code">{docCode || '—'}</div>
+            </div>
+            <div className="acm-upx-fld">
+              <label>Document Name</label>
+              <div className="acm-upx-ro">{docName || '—'}</div>
+            </div>
+            <div className="acm-upx-fld">
+              <label>Issuing Authority</label>
+              {/* Truncated in the box; the full list is one hover away. Some
+                  rules name half a dozen authorities. */}
+              <div className="acm-upx-ro" title={authority || undefined}>{authority && authority !== '—' ? authority : '—'}</div>
+            </div>
+            {/* When the document was granted. Optional — plenty carry no
+                meaningful issue date, and capped at today because nothing can
+                have been issued in the future. */}
+            <div className="acm-upx-fld">
+              <label>Issue Date <span className="acm-upx-hint">Optional</span></label>
+              <MasterDatePicker value={issue} maxDate={today} placeholder="Select issue date" onChange={(v: string) => setIssue(v)} />
+            </div>
+            <div className="acm-upx-fld">
+              <label>Expiry {!hasExpiry && <span className="acm-upx-hint">Has an expiry date?</span>}</label>
+              {/* Toggle and date on ONE line — same shape as the vault dialog. */}
+              <div className="acm-upx-exp">
+                <div className="acm-upx-seg">
+                  <button type="button" className={hasExpiry ? 'is-on' : ''} onClick={() => setHasExpiry(true)} disabled={busy}>Yes</button>
+                  <button type="button" className={!hasExpiry ? 'is-on' : ''} onClick={() => { setHasExpiry(false); setDate(''); }} disabled={busy}>No</button>
+                </div>
+                {hasExpiry && (
+                  <div className="acm-upx-date">
+                    {/* Can't already be expired on the day it is filed. */}
+                    {/* Floor is the LATER of today and the issue date. */}
+                    <MasterDatePicker value={date} minDate={issue && issue > today ? issue : today} placeholder="Select expiry date" onChange={(v: string) => setDate(v)} />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="acm-upx-fld">
+            <label>Upload Document <span className="acm-upx-req">*</span></label>
+            <div className="acm-upx-file"><i className="ri-file-check-line" /> {fileName}</div>
+          </div>
+        </div>
+        <div className="acm-upx-ft">
+          <button type="button" className="acm-upx-btn" onClick={onCancel} disabled={busy}>Cancel</button>
+          <button type="button" className="acm-upx-btn acm-upx-btn-go" onClick={save} disabled={busy}>
+            {busy ? 'Uploading…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function ConsigneeSegmentRefActions({ refKey, docName, docCode, authority, uploads, setUploads, persistUpload, disabled = false }: {
   refKey: string;
   docName: string;
+  /* Shown read-only in the upload dialog, so it carries the same four facts the
+     Evidence Vault's dialog does. Both come off the row being uploaded to. */
+  docCode: string;
+  authority?: string;
   uploads: Record<string, { file: File | null; url: string; name: string }>;
   setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
-  persistUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
+  persistUpload: (refKey: string, file: File, docName: string, dates?: { issueDate?: string; expiryDate?: string }) => Promise<void> | void;
   /* When true (Same as Customer on), hide the Upload / Re-upload labels
    * and show only View / Download — the consignee's segment-rule uploads
    * are mirrored read-through from the linked customer, so writing here
@@ -3885,6 +4006,15 @@ function ConsigneeSegmentRefActions({ refKey, docName, uploads, setUploads, pers
    * PNG / DOC / DOCX) AND the 2 MB cap up front, so a 50 MB junk
    * file can never reach the persist call. Server runs the same
    * check — this is the client-side bounce for immediate feedback. */
+  /* The picked file waits here while the expiry popup is open. Nothing is
+     shown in the table and nothing is sent until the question is answered, so
+     cancelling leaves the row exactly as it was. */
+  const [pending, setPending] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  // refKey is `${sub-tab}::${doc_code}` — the sub-tab half names the bucket.
+  const category: 'kyc' | 'dd' | 'tl' =
+    refKey.startsWith('company-dd') ? 'dd' : refKey.startsWith('trade-licence') ? 'tl' : 'kyc';
+
   const onPick = (f: File | undefined) => {
     if (!f) return;
     const check = isAcceptedFile(f);
@@ -3892,6 +4022,13 @@ function ConsigneeSegmentRefActions({ refKey, docName, uploads, setUploads, pers
       toast.error('File rejected', check.reason);
       return;
     }
+    setPending(f);
+  };
+
+  const commit = async (dates: { issueDate?: string; expiryDate?: string }) => {
+    const f = pending;
+    if (!f) return;
+    setSaving(true);
     setUploads(prev => {
       const existing = prev[refKey];
       if (existing?.url && existing.url.startsWith('blob:')) {
@@ -3899,7 +4036,8 @@ function ConsigneeSegmentRefActions({ refKey, docName, uploads, setUploads, pers
       }
       return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name } };
     });
-    void persistUpload(refKey, f, docName);
+    try { await persistUpload(refKey, f, docName, dates); }
+    finally { setSaving(false); setPending(null); }
   };
 
   if (!uploaded) {
@@ -3922,6 +4060,13 @@ function ConsigneeSegmentRefActions({ refKey, docName, uploads, setUploads, pers
             <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
           </label>
         </Tooltip>
+        {pending && (
+          <ConsigneeUploadExpiryPopup
+            docName={docName} docCode={docCode} authority={authority} category={category}
+            fileName={pending.name} busy={saving}
+            onCancel={() => setPending(null)} onConfirm={d => { void commit(d); }}
+          />
+        )}
       </div>
     );
   }
@@ -3944,6 +4089,13 @@ function ConsigneeSegmentRefActions({ refKey, docName, uploads, setUploads, pers
             <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
           </label>
         </Tooltip>
+      )}
+      {pending && (
+        <ConsigneeUploadExpiryPopup
+          docName={docName} docCode={docCode} authority={authority} category={category}
+          fileName={pending.name} busy={saving}
+          onCancel={() => setPending(null)} onConfirm={d => { void commit(d); }}
+        />
       )}
     </div>
   );
@@ -4022,7 +4174,7 @@ const Stage2 = ({
   loading?: boolean;
   segmentRefUploads: Record<string, { file: File | null; url: string; name: string }>;
   setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
-  persistSegmentRefUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
+  persistSegmentRefUpload: (refKey: string, file: File, docName: string, dates?: { issueDate?: string; expiryDate?: string }) => Promise<void> | void;
   /** Segment master rows (name + code) for the "S-001: Name" review display. */
   segments?: { name: string; code?: string }[];
 }) => {
@@ -4213,6 +4365,8 @@ const Stage2 = ({
                           <ConsigneeSegmentRefActions
                             refKey={refKey}
                             docName={d.name}
+                            docCode={d.code}
+                            authority={d.authority_list ?? d.authority}
                             uploads={segmentRefUploads}
                             setUploads={setSegmentRefUploads}
                             persistUpload={persistSegmentRefUpload}
@@ -4331,6 +4485,8 @@ const Stage2 = ({
                             <ConsigneeSegmentRefActions
                               refKey={refKey}
                               docName={tl.name}
+                              docCode={tl.code}
+                              authority={tl.authority_list ?? tl.authority}
                               uploads={segmentRefUploads}
                               setUploads={setSegmentRefUploads}
                               persistUpload={persistSegmentRefUpload}
@@ -6299,6 +6455,114 @@ const IconTrash = ({ size = 12 }: { size?: number }) => (
     <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
   </svg>
 );
+
+/* Expiry-on-upload popup. Its own sheet because the dialog is portalled to
+   <body>, outside the .acm-root that SCOPED_CSS hangs off. */
+const ACM_UPX_CSS = `
+.acm-upx-ov {
+  position: fixed; inset: 0; z-index: 12000;
+  background: rgba(6, 46, 40, .45);
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+  animation: acmUpxFade .14s ease-out;
+}
+@keyframes acmUpxFade { from { opacity: 0; } to { opacity: 1; } }
+.acm-upx-card {
+  width: min(720px, 100%); background: #fff; border-radius: 14px; overflow: hidden;
+  box-shadow: 0 24px 60px rgba(6,46,40,.28), 0 2px 8px rgba(6,46,40,.12);
+  font-family: var(--font-sans);
+}
+.acm-upx-hd {
+  display: flex; align-items: center; gap: 11px; padding: 14px 18px;
+  background: linear-gradient(120deg, #0f766e 0%, #0d9488 60%, #14b8a6 100%); color: #fff;
+}
+.acm-upx-ico {
+  width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0; font-size: 16px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.20); border: 1px solid rgba(255,255,255,.32);
+}
+.acm-upx-hd-t { min-width: 0; }
+.acm-upx-ttl { font-size: 14px; font-weight: 800; letter-spacing: -.2px; }
+.acm-upx-sub {
+  font-size: 11px; margin-top: 1px; color: rgba(255,255,255,.85);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.acm-upx-body { padding: 16px 18px 6px; }
+/* Two columns, like the vault's dialog: Auto Code / Document Name on one row,
+   Issuing Authority / Expiry on the next. */
+/* minmax(0,1fr), not 1fr: a grid item's default min-width is AUTO, so a long
+   Issuing Authority value would hold its column open and push the other one off
+   the card — and .acm-upx-ro's ellipsis would never trigger, because its box was
+   never squeezed. */
+.acm-upx-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 16px; }
+.acm-upx-fld { min-width: 0; margin-bottom: 12px; }
+.acm-upx-grid .acm-upx-fld { margin-bottom: 0; }
+.acm-upx-fld > label {
+  display: block; margin-bottom: 5px;
+  font-size: 11.5px; font-weight: 700; color: #334155;
+}
+.acm-upx-hint { font-weight: 500; color: #94a3b8; margin-left: 6px; }
+.acm-upx-req { color: #e11d48; }
+.acm-upx-ro {
+  padding: 9px 12px; border-radius: 8px;
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  font-size: 12.5px; color: #334155;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.acm-upx-code { font-family: 'JetBrains Mono', ui-monospace, monospace; color: #b45309; font-weight: 700; }
+.acm-upx-file {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12.5px; color: #0f766e; background: #f0fdfa;
+  border: 1.5px solid #5eead4; border-radius: 8px; padding: 11px 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.acm-upx-file i { font-size: 16px; flex-shrink: 0; }
+/* Yes / No and the date on ONE line — a stacked pair made the Expiry cell
+   twice the height of the three fields beside it and pulled the grid out. */
+.acm-upx-exp { display: flex; align-items: center; gap: 8px; }
+.acm-upx-seg { display: flex; gap: 0; flex-shrink: 0; }
+.acm-upx-seg button {
+  padding: 9px 16px; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 700;
+  background: #fff; border: 1.5px solid #e2e8f0; color: #64748b;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.acm-upx-seg button:first-child { border-radius: 8px 0 0 8px; }
+.acm-upx-seg button:last-child  { border-radius: 0 8px 8px 0; margin-left: -1.5px; }
+.acm-upx-seg button:hover:not(:disabled) { border-color: #5eead4; color: #0f766e; }
+.acm-upx-seg button.is-on { background: #0d9488; border-color: #0d9488; color: #fff; }
+.acm-upx-date { flex: 1 1 160px; min-width: 0; }
+/* Pinned to the same 38px the read-only boxes and the Yes / No pair come out
+   at — the picker sizes itself from its own padding and lands a shade taller,
+   which reads as crooked on a row of three controls. */
+.acm-upx-date .master-datepicker-toggle { height: 38px; box-sizing: border-box; }
+.acm-upx-ft {
+  display: flex; justify-content: flex-end; gap: 9px; padding: 16px 18px 16px;
+}
+.acm-upx-btn {
+  padding: 8px 16px; border-radius: 8px; cursor: pointer;
+  font: inherit; font-size: 12.5px; font-weight: 700;
+  background: #fff; border: 1.5px solid #e2e8f0; color: #475569;
+}
+.acm-upx-btn:disabled { opacity: .6; cursor: not-allowed; }
+.acm-upx-btn-go {
+  background: linear-gradient(135deg, #0f766e, #0d9488); border: none; color: #fff;
+  box-shadow: 0 4px 12px rgba(13,148,136,.30);
+}
+[data-bs-theme="dark"] .acm-upx-card { background: #0f172a; }
+[data-bs-theme="dark"] .acm-upx-fld > label { color: #cbd5e1; }
+[data-bs-theme="dark"] .acm-upx-ro { background: #1e293b; border-color: rgba(148,163,184,.30); color: #e2e8f0; }
+[data-bs-theme="dark"] .acm-upx-code { color: #fbbf24; }
+[data-bs-theme="dark"] .acm-upx-file { background: rgba(13,148,136,.12); border-color: rgba(94,234,212,.30); color: #5eead4; }
+[data-bs-theme="dark"] .acm-upx-seg button { background: #1e293b; border-color: rgba(148,163,184,.30); color: #cbd5e1; }
+/* Light-mode hover paints #0f766e text, which is near-invisible on the dark
+   surface — the hover needs its own pair, not just the resting state. */
+[data-bs-theme="dark"] .acm-upx-seg button:hover:not(:disabled):not(.is-on) {
+  background: rgba(13,148,136,.18); border-color: rgba(94,234,212,.45); color: #5eead4;
+}
+[data-bs-theme="dark"] .acm-upx-seg button.is-on { background: rgba(13,148,136,.20); border-color: #5eead4; color: #5eead4; }
+[data-bs-theme="dark"] .acm-upx-btn { background: #1e293b; border-color: rgba(148,163,184,.30); color: #cbd5e1; }
+`;
 
 /* ─── Scoped CSS ─── */
 const SCOPED_CSS = `

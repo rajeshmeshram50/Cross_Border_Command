@@ -129,10 +129,16 @@
     border-radius: 12px;
     box-shadow: 0 12px 32px rgba(0,0,0,0.16);
     padding: 10px;
-    /* Sits above every in-app modal — EpModal overlays (5000), the Add
-       Customer modal (10000), and its document sub-modals (10001+) — so
-       the portalled date picker is never trapped behind a modal backdrop. */
-    z-index: 11100 !important;
+    /* Sits above every in-app modal, so the portalled calendar is never
+       trapped behind a backdrop: EpModal overlays (5000), the Add Customer
+       modal (10000) and its document sub-modals (10001+), the Evidence Vault
+       (11200) and the upload dialog it launches (100000).
+       This was 11100, chosen before the vault stack existed — the vault and
+       its upload dialog both outrank it, so a date picker opened inside them
+       rendered BEHIND the dialog and read as "the calendar doesn't open".
+       A calendar belongs above whatever dialog it was opened from; there is
+       nothing it can wrongly cover. */
+    z-index: 100100 !important;
   }
   html[data-bs-theme="dark"] .master-datepicker-popup,
   html[data-layout-mode="dark"] .master-datepicker-popup,

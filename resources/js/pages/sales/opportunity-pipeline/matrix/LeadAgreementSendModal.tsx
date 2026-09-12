@@ -1349,14 +1349,35 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
               <div className="lasm-empty">No trade documents configured for this lead's PI segments yet.</div>
             ) : (() => {
               const rows = tdBuckets[tdTab];
+              /* The PI belongs to the CUSTOMER, so it appears only on the tabs
+                 a customer-side document appears on: the flat list (Customer =
+                 Consignee) and Customer Documents. Declared up here because the
+                 paging below counts it. */
+              const piOnThisTab = tdTab === 'all' || tdTab === 'buyer';
               // Paginate 5 per page (Evidence Vault style). Select-all still
               // operates on the full group, only the display is paged.
               const TD_PER_PAGE = tdPerPage;
-              const tdTotalPages = Math.max(1, Math.ceil(rows.length / TD_PER_PAGE));
+              /* The Proforma Invoice is a row of this list, so it is one of the
+                 items being paged.
+               *
+                 It used to sit outside the pager entirely — pinned above the
+                 rows on every page — and the pager counted only the catalogue
+                 behind it. The tab then showed three rows over "Showing 1-2 of
+                 2" (QA #42). It is now the FIRST item of the list: page one
+                 gives it a slot and takes one fewer catalogue row, so every
+                 number on screen counts the same set. */
+              const hasPi = !!payload.pi_document && piOnThisTab;
+              const piSlot = hasPi ? 1 : 0;
+              const tdTotal = rows.length + piSlot;
+              const tdTotalPages = Math.max(1, Math.ceil(tdTotal / TD_PER_PAGE));
               const tdSafePage = Math.min(tdPage, tdTotalPages);
-              const pagedTd = rows.slice((tdSafePage - 1) * TD_PER_PAGE, tdSafePage * TD_PER_PAGE);
-              const tdFirst = rows.length === 0 ? 0 : (tdSafePage - 1) * TD_PER_PAGE + 1;
-              const tdLast = Math.min(tdSafePage * TD_PER_PAGE, rows.length);
+              /* Page 1 spends one of its slots on the PI; later pages do not,
+                 so their window into `rows` is shifted back by that slot. */
+              const tdStart = Math.max(0, (tdSafePage - 1) * TD_PER_PAGE - piSlot);
+              const tdTake  = TD_PER_PAGE - (tdSafePage === 1 ? piSlot : 0);
+              const pagedTd = rows.slice(tdStart, tdStart + tdTake);
+              // The PI leads page one only — it is an item, not a header.
+              const showPiRow = hasPi && tdSafePage === 1;
               // Already out-for / back-from signature → not re-sendable. Mirrors
               // the per-row `tdSent` check below so "select all" can't pick up a
               // doc that's already been sent and queue it for a second send.
@@ -1370,12 +1391,11 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
               /* Is the PI still sendable? Same rule as a trade doc: a live
                  or finished signing round means it can't be queued again. */
               const piSigStatus = payload.pi_document?.signature_request?.status ?? null;
-              /* The PI is only pinned to the customer-side tabs (see the row
-                 below), so on the others it is not on screen and must stay out
+              /* The PI shows only on the customer-side tabs (piOnThisTab, set
+                 above), so on the others it is not on screen and must stay out
                  of the select-all arithmetic — otherwise "select all" on the
                  Consignee tab would quietly tick a row nobody can see, and the
                  header checkbox could never reach its "all" state. */
-              const piOnThisTab = tdTab === 'all' || tdTab === 'buyer';
               const piSendable  = !!payload.pi_document && piOnThisTab
                 && !(!!piSigStatus && !['draft', 'recalled', 'superseded'].includes(piSigStatus));
               /* Select-all must agree with what the header checkbox visually
@@ -1483,10 +1503,9 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                         className={`lasm-tab ${tdTab === key ? 'is-on' : ''}`}
                         onClick={() => setTdTab(key)}
                       >
-                        {/* The Proforma Invoice row is rendered outside the pager, so it
-                            was outside this count too — Customer Documents read "0" while
-                            showing the PI sitting in it. The badge counts what the tab
-                            displays, so the PI is added to the tab that displays it. */}
+                        {/* The badge counts what the tab lists, which includes the
+                            Proforma Invoice on the tab that carries it. Same total
+                            the pager below prints, so the two always agree. */}
                         {label}<span className="lasm-tab-count">
                           {tdBuckets[key].length + (payload.pi_document && key === 'buyer' ? 1 : 0)}
                         </span>
@@ -1499,7 +1518,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                   {/* Same reasoning as the outer guard: on a tab that carries the
                       pinned PI row, the group is not empty even with no catalogue
                       documents in it. */}
-                  {rows.length === 0 && !(payload.pi_document && piOnThisTab) ? (
+                  {tdTotal === 0 ? (
                     <div className="lasm-td-empty">No trade documents in this group.</div>
                   ) : (<>
                     <div className="lasm-td-scroll">
@@ -1541,7 +1560,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                             Consignee 0" still showed a row. Its counting stays
                             exactly as it was: this row is outside the pager by
                             design, so no count changes here. */}
-                        {payload.pi_document && piOnThisTab && (() => {
+                        {/* payload.pi_document repeated so TypeScript narrows it for
+                            the body below — showPiRow is a boolean and carries no
+                            narrowing of its own. */}
+                        {showPiRow && payload.pi_document && (() => {
                           const pd  = payload.pi_document;
                           const sig = pd.signature_request;
                           const sent = !!sig && !['draft', 'recalled', 'superseded'].includes(sig.status);
@@ -1697,13 +1719,11 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                 1, 2, 3 down the page instead of restarting. The
                                 PI sits outside the pager, so it is present on
                                 every page and the offset applies throughout. */}
-                            {/* The +1 offset accounts for the PI row above, so it has to
-                                ask whether that row is RENDERED here — not merely whether
-                                a PI exists. The PI row only appears on All and Customer
-                                (piOnThisTab); on Consignee and Customer + Consignee it
-                                does not, yet the offset was applied anyway, so those tabs
-                                opened numbered 2, 3, 4 with no row 1 anywhere. */}
-                            <td>{(tdSafePage - 1) * TD_PER_PAGE + i + 1 + (payload.pi_document && piOnThisTab ? 1 : 0)}</td>
+                            {/* Position in the WHOLE list, where the PI is item 0 on the
+                                tabs that carry it. tdStart already accounts for the slot
+                                it takes on page one, so this is the same arithmetic on
+                                every page and on every tab. */}
+                            <td>{tdStart + i + piSlot + 1}</td>
                             <td>
                               {(() => { const nm = td.title || td.name || ''; const long = nm.length > 25; return <Tooltip label={nm} disabled={!long}><div className="lasm-doc-name">{long ? nm.slice(0, 25) + '…' : nm}</div></Tooltip>; })()}
                               <div className="lasm-doc-sub">{td.reference}</div>
@@ -1817,9 +1837,9 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
 
                     {/* Pagination footer — same WorklistPager (Rows-per-page +
                         page/total + arrows) used on the Customer / master lists. */}
-                    {rows.length > 0 && (
+                    {tdTotal > 0 && (
                       <WorklistPager
-                        total={rows.length}
+                        total={tdTotal}
                         page={tdSafePage}
                         pageSize={tdPerPage}
                         onPage={setTdPage}
