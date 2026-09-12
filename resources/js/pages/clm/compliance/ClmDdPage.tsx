@@ -69,7 +69,19 @@ export default function ClmDdPage() {
       .catch(() => toast.error('Load failed', 'Could not load DD documents'))
       .finally(() => setLoading(false));
   };
-  useEffect(() => { reload(); }, [page, rpp, debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* Coalesced, not fired per change.
+     On mount this effect runs with the default rows-per-page, and a moment
+     later useAutoFitRows measures the viewport and changes it — so every page
+     load used to cost TWO requests, one of which was thrown away. That was
+     free while paging happened in the browser; now that the row count is a
+     query parameter it is a second round trip, and on a slow server it
+     doubles the time to first table.
+     A short timer lets the count settle before anything is asked for, and it
+     also absorbs fast clicks through the pager. */
+  useEffect(() => {
+    const t = setTimeout(() => { reload(); }, 60);
+    return () => clearTimeout(t);
+  }, [page, rpp, debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Back to page 1 when the result SET changes rather than the position
      in it — staying on page 9 of a search with two pages shows nothing. */
