@@ -595,9 +595,25 @@ export default function SalesCustomers() {
           </button>
           <div className="smc-search ui-search-abs">
             <i className="ri-search-line smc-search-icon" />
+            {/* Chrome was dropping the customer's email in here after Add
+                Customer was saved (QA #8) — intermittently, which is what
+                autofill looks like. Nothing in this page ever writes to `q`;
+                the browser filled the field, its input event reached onChange,
+                and the value landed in state for real.
+                Chrome IGNORES autocomplete="off" on a field it classifies as
+                contact info, and this one invites that: no name, and a
+                placeholder with the word "email" in it. autocomplete
+                ="new-password" is the token it does honour — the same one this
+                app already uses to keep autofill off other plain-text fields —
+                and type="search" plus an explicit name keep its heuristics away
+                from the field in the first place. The data-* pair does the same
+                for LastPass and Dashlane. */}
             <input
-              type="text"
-              autoComplete="off"
+              type="search"
+              name="customer-list-search"
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-form-type="other"
               placeholder="Search by name, ID, company, email, segment..."
               value={q}
               onChange={(e) => onSearch(e.target.value)}

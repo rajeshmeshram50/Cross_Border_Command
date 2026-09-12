@@ -3887,7 +3887,12 @@ function ConsigneeUploadExpiryPopup({ docName, docCode, authority, category, fil
   onConfirm: (dates: { issueDate?: string; expiryDate?: string }) => void;
 }) {
   const toast = useToast();
-  const [hasExpiry, setHasExpiry] = useState(true);
+  /* Starts on "No", the way the Evidence Vault's dialog does for a document
+     with no expiry on file. Starting on "Yes" put an empty required date in
+     front of every upload: press Save and it refuses with "Expiry required",
+     so the user had to click No first on every document that does not expire.
+     Nothing is lost by asking — clicking Yes reveals the picker. */
+  const [hasExpiry, setHasExpiry] = useState(false);
   const [date, setDate] = useState('');
   const [issue, setIssue] = useState('');
   const today = new Date().toISOString().slice(0, 10);
@@ -3942,7 +3947,7 @@ function ConsigneeUploadExpiryPopup({ docName, docCode, authority, category, fil
                 have been issued in the future. */}
             <div className="acm-upx-fld">
               <label>Issue Date <span className="acm-upx-hint">Optional</span></label>
-              <MasterDatePicker value={issue} maxDate={today} placeholder="Select issue date" onChange={(v: string) => setIssue(v)} disabled={busy} />
+              <MasterDatePicker value={issue} maxDate={today} placeholder="Select issue date" onChange={(v: string) => setIssue(v)} disabled={busy} popupClassName="acm-upx-cal" />
             </div>
             <div className="acm-upx-fld">
               <label>Expiry {!hasExpiry && <span className="acm-upx-hint">Has an expiry date?</span>}</label>
@@ -3956,7 +3961,7 @@ function ConsigneeUploadExpiryPopup({ docName, docCode, authority, category, fil
                   <div className="acm-upx-date">
                     {/* Can't already be expired on the day it is filed. */}
                     {/* Floor is the LATER of today and the issue date. */}
-                    <MasterDatePicker value={date} minDate={issue && issue > today ? issue : today} placeholder="Select expiry date" onChange={(v: string) => setDate(v)} disabled={busy} />
+                    <MasterDatePicker value={date} minDate={issue && issue > today ? issue : today} placeholder="Select expiry date" onChange={(v: string) => setDate(v)} disabled={busy} popupClassName="acm-upx-cal" />
                   </div>
                 )}
               </div>
@@ -6549,6 +6554,13 @@ const ACM_UPX_CSS = `
   background: linear-gradient(135deg, #0f766e, #0d9488); border: none; color: #fff;
   box-shadow: 0 4px 12px rgba(13,148,136,.30);
 }
+/* This dialog sits at z-index 12000; the date picker's global z-index is
+   11100, so its calendar opened BEHIND the dialog and looked like nothing
+   happened. Raised for calendars opened from in here only, via the picker's
+   own popupClassName hook — the global value stays where it is, which is what
+   the Evidence Vault's dialog does too (.cev-reup-cal). */
+.master-datepicker-popup.acm-upx-cal { z-index: 12010 !important; }
+
 [data-bs-theme="dark"] .acm-upx-card { background: #0f172a; }
 [data-bs-theme="dark"] .acm-upx-fld > label { color: #cbd5e1; }
 [data-bs-theme="dark"] .acm-upx-ro { background: #1e293b; border-color: rgba(148,163,184,.30); color: #e2e8f0; }
