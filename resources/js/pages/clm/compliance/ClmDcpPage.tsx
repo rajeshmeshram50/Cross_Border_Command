@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import { Suspense, lazy, type ComponentProps, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import WorklistPager from "../../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
@@ -19,10 +19,14 @@ import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../../master/masterFormKit';
 import ClmDcpFilterModal, { type DcpFilters, countDcpFilters } from './ClmDcpFilterModal';
 import AuthorityBadges from './AuthorityBadges';
-import { KycModal } from './ClmKycPage';
-import { DdModal } from './ClmDdPage';
-import { QcModal } from './ClmQcPage';
-import { TlModal } from './ClmTradeLicensesPage';
+/* The four document forms, code-split.
+   These were plain imports FROM THE MASTER PAGES, which dragged each entire
+   page — table, toolbar, pager, shimmer and all their dependencies — into
+   this chunk, four times over, to reuse four modals. */
+const KycModal = lazy(() => import('./ClmKycModal'));
+const DdModal  = lazy(() => import('./ClmDdModal'));
+const QcModal  = lazy(() => import('./ClmQcModal'));
+const TlModal  = lazy(() => import('./ClmTlModal'));
 import SearchClear from '../../../components/ui/SearchClear';
 
 /* Central CLM → Document Control Panel.
@@ -1237,25 +1241,35 @@ function SegmentRuleModal(props: {
         </div>
       </div>
 
+      {/* One Suspense per form — each chunk arrives only when its category's
+          Add button is pressed, so opening the DCP costs none of them. */}
       {addOpen && activeCat === 'kyc' && (
+        <Suspense fallback={null}>
         <KycModal existing={null} authorities={boot.authorities}
           nextCode={`KYC-${String(boot.kyc.length + 1).padStart(3, '0')}`}
           onClose={() => setAddOpen(false)} onSave={(f) => addDocViaModal(f)} />
+        </Suspense>
       )}
       {addOpen && activeCat === 'dd' && (
+        <Suspense fallback={null}>
         <DdModal existing={null} authorities={boot.authorities}
           nextCode={`DD-${String(boot.dd.length + 1).padStart(3, '0')}`}
           onClose={() => setAddOpen(false)} onSave={(f) => addDocViaModal(f)} />
+        </Suspense>
       )}
       {addOpen && activeCat === 'tl' && (
+        <Suspense fallback={null}>
         <TlModal existing={null} authorities={boot.authorities}
           nextCode={`TL-${String(boot.tl.length + 1).padStart(3, '0')}`}
           onClose={() => setAddOpen(false)} onSave={(f) => addDocViaModal(f)} />
+        </Suspense>
       )}
       {addOpen && activeCat === 'qc' && (
+        <Suspense fallback={null}>
         <QcModal existing={null} authorities={boot.authorities}
           nextCode={`QC-${String(boot.qc.length + 1).padStart(3, '0')}`}
           onClose={() => setAddOpen(false)} onSave={(f) => addDocViaModal(f)} />
+        </Suspense>
       )}
     </div>
   ), document.body);
