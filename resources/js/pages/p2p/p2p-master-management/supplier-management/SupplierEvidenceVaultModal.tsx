@@ -1507,12 +1507,23 @@ export function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit, cla
 
   const isStd = category === 'kyc' || category === 'dd' || category === 'tl';
   const noExpiry = (s?: string | null) => !s || /^(lifetime|n\/a|—|-|varies|)$/i.test(s.trim());
+  /* The dates the API sends back are formatted 'd-M-Y' — "14-Mar-2025" — and
+     neither pattern below matches a month spelled in letters, so every saved
+     date parsed to '' and the dialog opened blank on a re-upload. Worse for
+     Expiry: "13-Mar-2027" is not in the no-expiry list, so the toggle came up
+     Yes over an empty picker, and saving then failed on "Expiry required".
+     The Date fallback reads that format, so what was stored comes back. */
   const toISO = (s?: string | null) => {
     if (!s) return '';
     const t = s.trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
     const m = t.match(/^(\d{2})[/-](\d{2})[/-](\d{4})$/);
-    return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    const d = new Date(t);
+    if (isNaN(d.getTime())) return '';
+    // Built from the LOCAL parts, not toISOString() — that converts to UTC and
+    // can roll the date back a day for anyone east of Greenwich.
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
   const [file, setFile] = useState<File | null>(null);
   const docName = doc.name || '';
@@ -1584,14 +1595,14 @@ export function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit, cla
               {withIssueDate && (
                 <div className="cev-reup-fld">
                   <label>Issue Date <span className="cev-reup-hint">Optional</span></label>
-                  <MasterDatePicker value={issueDate} onChange={setIssueDate} placeholder="Select issue date" maxDate={todayIso} popupClassName="cev-reup-cal" />
+                  <MasterDatePicker value={issueDate} onChange={setIssueDate} placeholder="Select issue date" maxDate={todayIso} popupClassName="cev-reup-cal" disabled={busy} />
                 </div>
               )}
               <div className="cev-reup-fld">
                 <label>Expiry <span className="cev-reup-hint">Has an expiry date?</span></label>
                 <div className="cev-reup-toggle">
-                  <button type="button" className={hasExpiry ? 'on' : ''} onClick={() => setHasExpiry(true)}>Yes</button>
-                  <button type="button" className={!hasExpiry ? 'on' : ''} onClick={() => { setHasExpiry(false); setExpiryDate(''); }}>No</button>
+                  <button type="button" className={hasExpiry ? 'on' : ''} disabled={busy} onClick={() => setHasExpiry(true)}>Yes</button>
+                  <button type="button" className={!hasExpiry ? 'on' : ''} disabled={busy} onClick={() => { setHasExpiry(false); setExpiryDate(''); }}>No</button>
                 </div>
                 {/* Floor is the LATER of today and the issue date — an expiry
                     that predates its own issue date is not a valid range.
@@ -1599,20 +1610,36 @@ export function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit, cla
                     the floor it always had.
                     popupClassName raises this calendar above the dialog (see
                     .cev-reup-cal); the picker's global z-index is left alone. */}
-                {hasExpiry && <div style={{ marginTop: 8 }}><MasterDatePicker value={expiryDate} onChange={setExpiryDate} placeholder="Select expiry date" minDate={withIssueDate && issueDate && issueDate > todayIso ? issueDate : todayIso} popupClassName="cev-reup-cal" /></div>}
+                {hasExpiry && <div style={{ marginTop: 8 }}><MasterDatePicker value={expiryDate} onChange={setExpiryDate} placeholder="Select expiry date" minDate={withIssueDate && issueDate && issueDate > todayIso ? issueDate : todayIso} popupClassName="cev-reup-cal" disabled={busy} /></div>}
               </div>
+              {/* Current File fills the cell beside Expiry.
+                  With the Issue Date field on, the grid holds five fields, so
+                  the last row had Expiry on the left and an empty cell on the
+                  right while this sat full-width underneath. Only in that mode:
+                  without Issue Date the grid is four fields in two even rows
+                  and there is no gap to fill. */}
+              {withIssueDate && doc.attachment && (
+                <div className="cev-reup-fld">
+                  <label>Current File</label>
+                  <a className="cev-reup-cur" href={doc.attachment_url ?? undefined} target="_blank" rel="noreferrer"><i className="ri-file-text-line" /><span>{doc.attachment}</span></a>
+                </div>
+              )}
             </div>
           )}
-          {doc.attachment && (
+          {(!withIssueDate || !isStd) && doc.attachment && (
             <div className="cev-reup-fld">
               <label>Current File</label>
-              <a className="cev-reup-cur" href={doc.attachment_url} target="_blank" rel="noreferrer"><i className="ri-file-text-line" /><span>{doc.attachment}</span></a>
+              <a className="cev-reup-cur" href={doc.attachment_url ?? undefined} target="_blank" rel="noreferrer"><i className="ri-file-text-line" /><span>{doc.attachment}</span></a>
             </div>
           )}
           <div className="cev-reup-fld">
             <label>Upload Document <span className="cev-reup-req">*</span></label>
             <input ref={inputRef} type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { pick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }} />
-            <button type="button" className={`cev-reup-drop${file ? ' has' : ''}`} onClick={() => inputRef.current?.click()}>
+            {/* Locked while the upload is in flight. Cancel and Save already
+                were, but the picker was not — so a second file could be chosen
+                mid-request, and the dialog would then close having saved the
+                first one while showing the second. */}
+            <button type="button" className={`cev-reup-drop${file ? ' has' : ''}`} disabled={busy} onClick={() => inputRef.current?.click()}>
               <i className={file ? 'ri-file-check-line' : 'ri-upload-cloud-2-line'} />
               <span>{file ? file.name : 'Upload document (JPG / PNG / PDF, max 2 MB)'}</span>
             </button>

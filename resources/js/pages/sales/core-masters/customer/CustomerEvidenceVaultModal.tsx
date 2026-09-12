@@ -1060,7 +1060,7 @@ export function SevStat(props: {
  * Auto Code, Document Name and Issuing Authority stay read-only: they come from
  * the segment rule's master row, and editing them here would let one party's
  * upload disagree with the catalogue every other screen reads. */
-function VaultUploadPopup({ doc, category, busy, onClose, onSubmit }: {
+export function VaultUploadPopup({ doc, category, busy, onClose, onSubmit }: {
   doc: VaultDoc;
   category: 'kyc' | 'dd' | 'tl';
   busy: boolean;

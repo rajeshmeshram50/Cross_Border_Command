@@ -2566,36 +2566,65 @@ export function prewarmQpiMasters(): void {
  * dedupe and writes `qpiMastersCache` on success. */
 function loadQpiMasters(branch: string): Promise<LoadedMasters> {
   if (qpiMastersInFlight) return qpiMastersInFlight;
-  qpiMastersInFlight = Promise.all([
-    api.get('/master/currencies').catch(() => ({ data: [] })),
-    api.get('/master/incoterms').catch(() => ({ data: [] })),
-    /* Loading and Discharge are SEPARATE masters (master_port_of_loading /
-     * master_port_of_discharge) with different rows — discharge additionally
-     * carries country + city. Only port_of_loading used to be fetched, and its
-     * list was fed to BOTH dropdowns, so Port of Discharge silently offered the
-     * loading ports and every discharge port the user had created was
-     * unreachable. */
-    api.get('/master/port_of_loading').catch(() => ({ data: [] })),
-    api.get('/master/port_of_discharge').catch(() => ({ data: [] })),
-    api.get('/master/countries').catch(() => ({ data: [] })),
-    api.get('/customers', { params: { tab: 'all' } }).catch(() => ({ data: { data: [] } })),
-    api.get('/consignees').catch(() => ({ data: { data: [] } })),
-    api.get('/master/bank_accounts').catch(() => ({ data: [] })),
-    api.get('/sales/leads', { params: { per_page: 50 } }).catch(() => ({ data: { data: [] } })),
-    /* /master/state_codes + /master/states used to be fetched here to build the
-     * State Code dropdown. State Code is now read straight off the selected
-     * customer, so both are gone — /master/states alone was ~1800 rows. */
-    api.get('/products', { params: { per_page: 200, status: 'active' } }).catch(() => ({ data: { data: [] } })),
-    api.get('/sales/gst-home-state').catch(() => ({ data: {} })),
-  ]).then(([cur, inco, port, portDis, ctry, cust, cons, bank, lead, prod, home]): LoadedMasters => {
-    const next = shapeQpiMasters(cur, inco, port, portDis, ctry, cust, cons, bank, lead, prod, home);
-    qpiMastersCache    = { data: next, branchId: branch, loadedAt: Date.now() };
-    qpiMastersInFlight = null;
-    return next;
-  }).catch((err): never => {
-    qpiMastersInFlight = null;
-    throw err;
-  });
+  /* ONE request for every list this form needs.
+   *
+   * This was eleven parallel GETs — currencies, incoterms, both port masters,
+   * countries, customers, consignees, bank accounts, leads, products and the
+   * GST home state. Parallel here, but the server takes them one at a time and
+   * each pays a full framework bootstrap before it reaches a query, so the user
+   * waited for eleven bootstraps: ~7.6s locally to fill a form holding a few
+   * hundred rows.
+   *
+   * /sales/qpi/master-bundle runs the same eleven endpoints in process and
+   * returns their payloads verbatim under named keys, so each slice below is
+   * byte-identical to what its own call returned and shapeQpiMasters is
+   * unchanged. It wraps them back into { data } because that is the axios
+   * envelope that function has always been handed.
+   *
+   * Failure handling is preserved rather than dropped: every call used to carry
+   * its own .catch falling back to an empty list, so one dead endpoint left the
+   * rest of the form usable. The server catches per list and sends null for a
+   * failed one; `pick` turns null — and a failure of the bundle request itself —
+   * back into that same empty fallback. */
+  /* Two requests, in parallel, instead of the eleven this used to fire.
+     They are split by the KIND of data rather than to save a round trip:
+     master-bundle is tenant working data (customers, consignees, leads,
+     products, bank accounts), geo-bundle is the global country master plus
+     this branch's GST state code. See QuotationController. */
+  const grab = (url: string) => api
+    .get(url)
+    .then(r => (r.data ?? {}) as Record<string, unknown>)
+    .catch(() => ({} as Record<string, unknown>));
+
+  qpiMastersInFlight = Promise
+    .all([grab('/sales/qpi/master-bundle'), grab('/sales/qpi/geo-bundle')])
+    .then(([bundle, geo]): LoadedMasters => {
+      const b = { ...bundle, ...geo };
+      const pick = <T,>(key: string, fallback: T) => ({ data: (b[key] ?? fallback) as T });
+      const list  = <T,>(key: string) => pick<T[]>(key, [] as T[]);
+      const paged = (key: string) => pick<{ data: unknown[] }>(key, { data: [] });
+
+      const next = shapeQpiMasters(
+        list('currencies'),
+        list('incoterms'),
+        list('port_of_loading'),
+        list('port_of_discharge'),
+        list('countries'),
+        paged('customers'),
+        paged('consignees'),
+        list('bank_accounts'),
+        paged('leads'),
+        paged('products'),
+        pick('gst_home_state', {}),
+      );
+      qpiMastersCache    = { data: next, branchId: branch, loadedAt: Date.now() };
+      qpiMastersInFlight = null;
+      return next;
+    })
+    .catch((err): never => {
+      qpiMastersInFlight = null;
+      throw err;
+    });
   return qpiMastersInFlight;
 }
 

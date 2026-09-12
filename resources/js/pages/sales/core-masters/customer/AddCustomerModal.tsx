@@ -11,6 +11,7 @@ import { Shimmer, ShimmerTableRows } from '../../../../components/ui/Shimmer';
 import { downloadFile } from '../../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { useToast } from '../../../../contexts/ToastContext';
+import { VaultUploadPopup, type VaultStatus } from './CustomerEvidenceVaultModal';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { useRuledSegments, type SegDocType } from '../../../../hooks/useRuledSegments';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
@@ -980,7 +981,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     'owner-kyc':     'kyc',
     'trade-licence': 'tl',
   };
-  const persistSegmentRefUpload = async (refKey: string, file: File, docName: string) => {
+  const persistSegmentRefUpload = async (refKey: string, file: File, docName: string, opts?: { issueDate?: string; expiryDate?: string }) => {
     // File-type / size guard at the single upload chokepoint — the `accept=`
     // hint on the picker is bypassable (users can switch to "All files"), so a
     // .txt / .php / .exe could otherwise reach the server. Reject it instantly
@@ -1002,6 +1003,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     fd.append('category', category);
     fd.append('doc_code', doc_code);
     fd.append('doc_name', docName || doc_code);
+    if (opts?.issueDate)  fd.append('issue_date', opts.issueDate);
+    if (opts?.expiryDate) fd.append('expiry_date', opts.expiryDate);
     fd.append('attachment', file);
     try {
       const { data } = await api.post(`/segment-uploads/customer/${ownerId}`, fd, {
@@ -3721,12 +3724,17 @@ function SegmentRequiredBanner({ segmentName, label, rows }: {
  * by a blob URL the parent component holds onto. Delete revokes the
  * URL and drops the entry from the upload map, returning the cell to
  * its initial Upload state. */
-function SegmentRefRowActions({ refKey, docName, uploads, setUploads, persistUpload }: {
+function SegmentRefRowActions({ refKey, docName, docCode, authority, expiry, category, uploads, setUploads, persistUpload }: {
   refKey: string;
   docName: string;
+  /** Shown read-only in the upload popup, exactly as the Evidence Vault does. */
+  docCode: string;
+  authority?: string | null;
+  expiry?: string | null;
+  category: 'kyc' | 'dd' | 'tl';
   uploads: Record<string, { file: File | null; url: string; name: string }>;
   setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
-  persistUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
+  persistUpload: (refKey: string, file: File, docName: string, opts?: { issueDate?: string; expiryDate?: string }) => Promise<void> | void;
 }) {
   const toast = useToast();
   const uploaded = uploads[refKey];
@@ -3740,12 +3748,13 @@ function SegmentRefRowActions({ refKey, docName, uploads, setUploads, persistUpl
    * 50 MB junk file can never reach the persist call. The server
    * runs the same check (mimes + max size) — this is just the early
    * client-side bounce so the user gets immediate feedback. */
-  const onPick = (f: File | undefined) => {
-    if (!f) return;
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const onPick = (f: File | undefined, opts?: { issueDate?: string; expiryDate?: string }): boolean => {
+    if (!f) return false;
     const err = validateUpload(f, 'doc');
     if (err) {
       toast.error('File rejected', err);
-      return;
+      return false;
     }
     setUploads(prev => {
       const existing = prev[refKey];
@@ -3754,23 +3763,50 @@ function SegmentRefRowActions({ refKey, docName, uploads, setUploads, persistUpl
       }
       return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name } };
     });
-    void persistUpload(refKey, f, docName);
+    void persistUpload(refKey, f, docName, opts);
+    return true;
   };
+
+
+  /* The Evidence Vault's upload popup. A document attached while creating the
+     customer now carries the same issued / expiry dates one attached from the
+     vault does — both write the same segment_doc_uploads row, and the two paths
+     used to disagree: the vault captured dates, this stage could not. */
+  const popup = uploadOpen ? (
+    <VaultUploadPopup
+      doc={{
+        id: 0,
+        name: docName,
+        reference: docCode,
+        doc_code: docCode,
+        authority: authority ?? null,
+        expiry: expiry ?? null,
+        attachment: uploaded?.name ?? null,
+        attachment_url: uploaded?.url ?? null,
+        status: (uploaded ? 'Verified' : 'Pending') as VaultStatus,
+      }}
+      category={category}
+      busy={false}
+      onClose={() => setUploadOpen(false)}
+      onSubmit={(f, opts) => { if (onPick(f, opts)) setUploadOpen(false); }}
+    />
+  ) : null;
 
   if (!uploaded) {
     return (
       <div className="acm-row-actions">
+        {popup}
         <Tooltip label="Upload">
-          <label className="acm-doc-action acm-doc-action-upload" aria-label="Upload" style={{ cursor: 'pointer' }}>
+          <button type="button" className="acm-doc-action acm-doc-action-upload" aria-label="Upload" onClick={() => setUploadOpen(true)}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
-          </label>
+          </button>
         </Tooltip>
       </div>
     );
   }
   return (
     <div className="acm-row-actions">
+      {popup}
       <Tooltip label={`View ${uploaded.name}`}>
         <a href={uploaded.url} target="_blank" rel="noreferrer" className="acm-doc-action acm-doc-action-view" aria-label="View">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -3782,10 +3818,9 @@ function SegmentRefRowActions({ refKey, docName, uploads, setUploads, persistUpl
         </a>
       </Tooltip>
       <Tooltip label="Re-upload (replace file)">
-        <label className="acm-doc-action acm-doc-action-upload" aria-label="Re-upload" style={{ cursor: 'pointer' }}>
+        <button type="button" className="acm-doc-action acm-doc-action-upload" aria-label="Re-upload" onClick={() => setUploadOpen(true)}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
-        </label>
+        </button>
       </Tooltip>
     </div>
   );
@@ -3817,7 +3852,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
     setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
     /** Fires the actual POST /segment-uploads/customer/{id} so the
      *  Evidence Vault sees the attachment. */
-    persistSegmentRefUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
+    persistSegmentRefUpload: (refKey: string, file: File, docName: string, opts?: { issueDate?: string; expiryDate?: string }) => Promise<void> | void;
     /** True only when the parent customer has a db_id (i.e. has been saved). */
     customerSaved: boolean;
     onEditDoc:     (id:number) => void;
@@ -4016,6 +4051,10 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                           <SegmentRefRowActions
                             refKey={`${sub}::${dl.code}`}
                             docName={dl.name}
+                            docCode={dl.code}
+                            authority={dl.authority}
+                            expiry={dl.expiry}
+                            category={sub === 'owner-kyc' ? 'kyc' : sub === 'trade-licence' ? 'tl' : 'dd'}
                             uploads={segmentRefUploads}
                             setUploads={setSegmentRefUploads}
                             persistUpload={persistSegmentRefUpload}
