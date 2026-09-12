@@ -7,6 +7,7 @@ import Tooltip from '../../../components/ui/Tooltip';
 import { useToast } from '../../../contexts/ToastContext';
 import { downloadFile } from '../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../utils/resolveFileUrl';
+import { VaultUploadPopup } from '../core-masters/customer/CustomerEvidenceVaultModal';
 import type { VaultData, VaultDoc, VaultStatus } from '../core-masters/customer/CustomerEvidenceVaultModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -593,7 +594,7 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
   sameAsCustomer?: boolean;
 }) {
   const toast = useToast();
-  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const category: 'kyc' | 'dd' | 'tl' | 'td' = tab === 'company-dd' ? 'dd' : tab === 'owner-kyc' ? 'kyc' : tab === 'trade-licenses' ? 'tl' : 'td';
   const canViewOrDownload = !!doc.attachment_url;
@@ -615,8 +616,10 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
     finally { setDling(false); }
   };
 
-  const onPick = async (f: File | undefined) => {
-    if (!f || !ownerId || !doc.doc_code) return;
+  /* Returns whether the upload succeeded, so the popup closes only on success
+     and a rejected file leaves the user's other entries in place. */
+  const onPick = async (f: File | undefined, opts?: { issueDate?: string; expiryDate?: string }): Promise<boolean> => {
+    if (!f || !ownerId || !doc.doc_code) return false;
 
     // Validate on the FRONTEND before uploading so the user gets an immediate
     // toast instead of a silent 422 (the server enforces the same rules:
@@ -626,11 +629,11 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
     const ext = (f.name.split('.').pop() || '').toLowerCase();
     if (!VAULT_ALLOWED.includes(ext)) {
       toast.error('Invalid file type', 'Please upload a PDF, JPG, JPEG or PNG file.');
-      return;
+      return false;
     }
     if (f.size > VAULT_MAX_KB * 1024) {
       toast.error('File too large', `The file must be ${VAULT_MAX_KB} KB (2 MB) or smaller.`);
-      return;
+      return false;
     }
 
     setBusy(true);
@@ -639,15 +642,19 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
       fd.append('category', category);
       fd.append('doc_code', doc.doc_code);
       fd.append('doc_name', doc.name || doc.doc_code);
+      if (opts?.issueDate)  fd.append('issue_date', opts.issueDate);
+      if (opts?.expiryDate) fd.append('expiry_date', opts.expiryDate);
       fd.append('attachment', f);
       await api.post(`/segment-uploads/${ownerType}/${ownerId}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       await onReload();
       toast.success('Uploaded', `${f.name} attached.`);
+      return true;
     } catch (e: any) {
       // Surface the server error too (belt-and-suspenders) instead of failing silently.
       const errs = e?.response?.data?.errors as Record<string, string[]> | undefined;
       const msg = errs?.attachment?.[0] || e?.response?.data?.message || 'Could not upload the file. Please try again.';
       toast.error('Upload failed', msg);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -655,8 +662,18 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
 
   return (
     <div className="lev-row-actions">
-      <input ref={fileRef} type="file" hidden accept=".pdf,.jpg,.jpeg,.png"
-             onChange={e => { void onPick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }} />
+      {/* Same upload popup the Customer Evidence Vault uses, so a document
+          collected from the Sales Matrix carries its issued / expiry dates too.
+          It replaced a bare file dialog, which could capture neither. */}
+      {uploadOpen && (
+        <VaultUploadPopup
+          doc={doc}
+          category={category as 'kyc' | 'dd' | 'tl'}
+          busy={busy}
+          onClose={() => setUploadOpen(false)}
+          onSubmit={async (f, opts) => { if (await onPick(f, opts)) setUploadOpen(false); }}
+        />
+      )}
       <Tooltip label={canViewOrDownload ? `View ${doc.attachment}` : 'No attachment yet'}>
         <a href={canViewOrDownload ? doc.attachment_url! : undefined} target={canViewOrDownload ? '_blank' : undefined} rel="noreferrer"
            aria-disabled={!canViewOrDownload} className={`lev-act lev-act-view ${!canViewOrDownload ? 'is-disabled' : ''}`}
@@ -678,7 +695,7 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
                     toast.warning('Upload not allowed', 'This consignee is “Same as Customer” — you cannot upload a file here. Upload it on the linked customer instead.');
                     return;
                   }
-                  fileRef.current?.click();
+                  setUploadOpen(true);
                 }}
                 className={`lev-act lev-act-upload ${(sameAsCustomer || !canReupload || busy) ? 'is-disabled' : ''}`} aria-label={doc.attachment ? 'Re-upload' : 'Upload'}>
           {busy
