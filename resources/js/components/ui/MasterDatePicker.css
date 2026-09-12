@@ -131,7 +131,10 @@
     padding: 10px;
     /* Sits above every in-app modal — EpModal overlays (5000), the Add
        Customer modal (10000), and its document sub-modals (10001+) — so
-       the portalled date picker is never trapped behind a modal backdrop. */
+       the portalled date picker is never trapped behind a modal backdrop.
+       A dialog that outranks this (the Evidence Vault's upload popup sits at
+       100000) raises its OWN calendars through the picker's popupClassName
+       hook rather than pushing this number up for everyone. */
     z-index: 11100 !important;
   }
   html[data-bs-theme="dark"] .master-datepicker-popup,

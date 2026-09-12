@@ -1483,12 +1483,25 @@ function clipFileName(s: string, max = 42): string {
   return s.slice(0, Math.max(1, max - ext.length - 1)) + '…' + ext;
 }
 
-function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
+/* Exported so the Consignee vault asks the same question in the same words.
+   Its upload used to fire the moment a file was picked, with no expiry — so
+   every document it stored had a null expiry_date and the Expiry column beside
+   it could only ever read N/A. Two copies of this dialog would have drifted. */
+export function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit, className, withIssueDate = false }: {
   doc: VaultDoc;
   category: 'kyc' | 'dd' | 'tl' | 'td' | 'agreement';
   busy: boolean;
   onClose: () => void;
-  onSubmit: (f: File, opts?: { docName?: string; expiryDate?: string }) => void | Promise<void>;
+  onSubmit: (f: File, opts?: { docName?: string; issueDate?: string; expiryDate?: string }) => void | Promise<void>;
+  /** Hook for the host vault to retune the dialog — the Consignee vault uses it
+   *  to carry its own header colour and width, since each vault's header is a
+   *  different gradient and a dialog launched from one should not arrive in
+   *  another's. Left off, the Supplier's violet is unchanged. */
+  className?: string;
+  /** Ask for the document's ISSUE date as well (QA #78, #80).
+   *  Opt-in: the Consignee vault turns it on, the Supplier's copy is untouched
+   *  until it asks for the same. */
+  withIssueDate?: boolean;
 }) {
   const toast = useToast();
 
@@ -1505,6 +1518,8 @@ function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
   const docName = doc.name || '';
   const [hasExpiry, setHasExpiry] = useState(isStd && !noExpiry(doc.expiry));
   const [expiryDate, setExpiryDate] = useState(toISO(doc.expiry));
+  const [issueDate, setIssueDate] = useState(toISO(doc.issue_date));
+  const todayIso = new Date().toISOString().slice(0, 10);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const pick = (f: File | undefined) => {
     if (!f) return;
@@ -1521,10 +1536,21 @@ function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
   const save = () => {
     if (!file) return;
     if (isStd && hasExpiry && !expiryDate) { toast.error('Expiry required', 'Pick an expiry date or set Expiry to “No”.'); return; }
-    void onSubmit(file, isStd ? { docName, expiryDate: hasExpiry ? expiryDate : undefined } : undefined);
+    // A licence cannot lapse before it was granted. The server enforces this
+    // too (after_or_equal:issue_date); this is the immediate answer.
+    if (isStd && withIssueDate && issueDate && hasExpiry && expiryDate && expiryDate < issueDate) {
+      toast.error('Dates out of order', 'The expiry date cannot be earlier than the issue date.');
+      return;
+    }
+    void onSubmit(file, isStd
+      ? { docName, issueDate: withIssueDate ? (issueDate || undefined) : undefined, expiryDate: hasExpiry ? expiryDate : undefined }
+      : undefined);
   };
+  /* No inline <style> here — CEV_REUP_CSS moved into
+     supplier-evidence-vault.css. The className hook stays: it is how the
+     Consignee vault recolours this dialog to match its own header. */
   return createPortal(
-    <div className="cev-reup-ov" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+    <div className={`cev-reup-ov${className ? ` ${className}` : ''}`} onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div className="cev-reup-card" role="dialog" aria-modal="true">
         <div className="cev-reup-hd">
           <div className="cev-reup-hd-l">
@@ -1551,13 +1577,29 @@ function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
                 <label>Issuing Authority</label>
                 <div className="cev-reup-ro">{doc.authority && doc.authority !== '—' ? doc.authority : '—'}</div>
               </div>
+              {/* Issue date — when the document was granted. Optional: plenty
+                  of documents carry no meaningful one, and every row already on
+                  file predates the field. Capped at today; the future is not a
+                  date a certificate can have been issued on. */}
+              {withIssueDate && (
+                <div className="cev-reup-fld">
+                  <label>Issue Date <span className="cev-reup-hint">Optional</span></label>
+                  <MasterDatePicker value={issueDate} onChange={setIssueDate} placeholder="Select issue date" maxDate={todayIso} popupClassName="cev-reup-cal" />
+                </div>
+              )}
               <div className="cev-reup-fld">
                 <label>Expiry <span className="cev-reup-hint">Has an expiry date?</span></label>
                 <div className="cev-reup-toggle">
                   <button type="button" className={hasExpiry ? 'on' : ''} onClick={() => setHasExpiry(true)}>Yes</button>
                   <button type="button" className={!hasExpiry ? 'on' : ''} onClick={() => { setHasExpiry(false); setExpiryDate(''); }}>No</button>
                 </div>
-                {hasExpiry && <div style={{ marginTop: 8 }}><MasterDatePicker value={expiryDate} onChange={setExpiryDate} placeholder="Select expiry date" minDate={new Date().toISOString().slice(0, 10)} popupClassName="cev-reup-cal" /></div>}
+                {/* Floor is the LATER of today and the issue date — an expiry
+                    that predates its own issue date is not a valid range.
+                    Gated on withIssueDate so a caller that never opted in keeps
+                    the floor it always had.
+                    popupClassName raises this calendar above the dialog (see
+                    .cev-reup-cal); the picker's global z-index is left alone. */}
+                {hasExpiry && <div style={{ marginTop: 8 }}><MasterDatePicker value={expiryDate} onChange={setExpiryDate} placeholder="Select expiry date" minDate={withIssueDate && issueDate && issueDate > todayIso ? issueDate : todayIso} popupClassName="cev-reup-cal" /></div>}
               </div>
             </div>
           )}

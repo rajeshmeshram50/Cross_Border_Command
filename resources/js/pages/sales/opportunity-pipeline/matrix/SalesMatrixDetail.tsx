@@ -226,6 +226,13 @@ export default function SalesMatrixDetail() {
    * customer has more than one. Null/single ⇒ the modal shows just the
    * one `leadVaultTarget`. */
   const [leadVaultConsignees, setLeadVaultConsignees] = useState<LeadVaultTarget[] | null>(null);
+  /* The consignee the user was on when the Same-as-Customer note sent them to
+     the customer's vault. Held so the customer view can offer the way back —
+     the two parties are the same company there, so without a trail the user
+     cannot tell they moved, let alone how to return. Null on every other
+     route into the vault. */
+  const [leadVaultBackTo, setLeadVaultBackTo] = useState<LeadVaultTarget | null>(null);
+
 
   const [productAddOpen, setProductAddOpen] = useState(false);
   const [productDirectoryOpen, setProductDirectoryOpen] = useState(false);
@@ -971,6 +978,32 @@ export default function SalesMatrixDetail() {
     return false;
   };
 
+  /* Point the Evidence Vault at the lead's CUSTOMER — DD / KYC / Trade Licence
+     in tabs, built from the eager-loaded customer row.
+   *
+     Two callers: the CLM panel's "Customer Details" row, and the
+     Same-as-Customer note inside the vault itself, whose button sends the user
+     here rather than leaving them to go and find that row. One definition so
+     the two cannot drift into opening slightly different targets.
+   *
+     Declared after `header` / `serverHeader`, which it reads. */
+  const openCustomerVault = (backTo: LeadVaultTarget | null = null) => {
+    const row = (serverHeader.customerRow ?? {}) as Record<string, unknown>;
+    setLeadVaultBackTo(backTo);
+    setLeadVaultTarget({
+      ownerType:   'customer',
+      id:          (row.customer_code as string) || header.customerCode || `C-${String(serverHeader.customerId).padStart(3, '0')}`,
+      db_id:       serverHeader.customerId ?? undefined,
+      company:     (row.company_name as string) || header.customer,
+      type:        (row.type    as string | undefined) ?? undefined,
+      segment:     (row.segment as string | undefined) ?? undefined,
+      country:     (row.country as string | undefined) ?? header.country,
+      risk:        (row.risk    as string | undefined) ?? undefined,
+      contact:     (row.contact_person as string | undefined) ?? (row.primary_contact as string | undefined) ?? undefined,
+      contactCity: (row.city as string | undefined) ?? undefined,
+    });
+  };
+
   /* Stage 3 onwards belongs to a QUALIFIED lead (QA #31).
    *
    * Stage 2 is where the lead is judged. Everything after it — sourcing
@@ -1367,23 +1400,7 @@ export default function SalesMatrixDetail() {
                 disabled={customerAddOpen || !!manageConsigneesTarget}
                 onClick={() => {
                   if (customerAddOpen || manageConsigneesTarget) return;
-                  /* Open the standalone Evidence Vault popup — DD / KYC /
-                   * Trade License / Trade Documents in tabs with the
-                   * send-for-signature action for any missing / unsigned
-                   * doc. Built from the eager-loaded customer row. */
-                  const row = serverHeader.customerRow as Record<string, unknown>;
-                  setLeadVaultTarget({
-                    ownerType:   'customer',
-                    id:          (row.customer_code as string) || header.customerCode || `C-${String(serverHeader.customerId).padStart(3, '0')}`,
-                    db_id:       serverHeader.customerId ?? undefined,
-                    company:     (row.company_name as string) || header.customer,
-                    type:        (row.type    as string | undefined) ?? undefined,
-                    segment:     (row.segment as string | undefined) ?? undefined,
-                    country:     (row.country as string | undefined) ?? header.country,
-                    risk:        (row.risk    as string | undefined) ?? undefined,
-                    contact:     (row.contact_person as string | undefined) ?? (row.primary_contact as string | undefined) ?? undefined,
-                    contactCity: (row.city as string | undefined) ?? undefined,
-                  });
+                  openCustomerVault();
                 }}
               />
             )}
@@ -2003,6 +2020,18 @@ export default function SalesMatrixDetail() {
         consignees={leadVaultConsignees}
         mappedConsigneeId={serverHeader.consigneeId}
         scopeCustomerId={serverHeader.customerId}
+        /* Offered only when there IS a customer to open — on a lead with none
+           mapped the note has nowhere to send anyone. The consignee currently
+           on screen rides along so the customer view can offer the way back. */
+        onOpenCustomer={serverHeader.customerId
+          ? () => openCustomerVault(leadVaultTarget)
+          : undefined}
+        onBack={leadVaultBackTo
+          ? () => { setLeadVaultTarget(leadVaultBackTo); setLeadVaultBackTo(null); }
+          : undefined}
+        backLabel={leadVaultBackTo
+          ? `${leadVaultBackTo.id}${leadVaultBackTo.company ? ` ${leadVaultBackTo.company}` : ''}`
+          : undefined}
         onClose={() => {
           /* Refresh BOTH party tallies, not just the one whose vault was
            * open. A "Same as Customer" consignee mirrors the customer's
@@ -2015,6 +2044,7 @@ export default function SalesMatrixDetail() {
           setConsRefreshTick(t => t + 1);
           setLeadVaultTarget(null);
           setLeadVaultConsignees(null);
+          setLeadVaultBackTo(null);
         }}
       />
     </div>

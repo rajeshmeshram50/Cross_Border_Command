@@ -54,6 +54,24 @@ interface Props {
    * customer's segment (the one driving the lead) via the vault endpoint's
    * scope_customer_id param. Ignored for a customer target. */
   scopeCustomerId?: number | null;
+  /* Re-point this vault at the lead's CUSTOMER.
+   *
+   * A Same-as-Customer consignee shows a note and no documents, because the
+   * documents are the customer's. Telling the user to "refer to Customer
+   * Details" and then leaving them to find it themselves is half an answer —
+   * with this the note carries the button that takes them there.
+   *
+   * A callback rather than something worked out in here: the parent already
+   * knows how to open the customer's vault (it is the same CLM Details row the
+   * note names), and reusing it keeps one definition of that target. */
+  onOpenCustomer?: () => void;
+  /* Set only while this vault is showing the customer AFTER the note's button
+   * sent the user here from a consignee. Renders the way back, and makes the
+   * footer button return there instead of dismissing the whole vault — the
+   * user came to read one thing, not to leave. */
+  onBack?: () => void;
+  /** What the back button names, e.g. "CN-021 wasefghj". */
+  backLabel?: string;
 }
 
 /* Trade Documents are no longer shown here — they now live segment-wise in
@@ -82,7 +100,7 @@ function TabSvg({ name }: { name: TabIcon }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>;
 }
 
-export default function LeadEvidenceVaultModal({ open, target, onClose, consignees, mappedConsigneeId, scopeCustomerId }: Props) {
+export default function LeadEvidenceVaultModal({ open, target, onClose, consignees, mappedConsigneeId, scopeCustomerId, onOpenCustomer, onBack, backLabel }: Props) {
   const toast = useToast();
   const [tab, setTab] = useState<TabKey>('company-dd');
   const [vaultLive, setVaultLive] = useState<VaultData | null>(null);
@@ -337,7 +355,7 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
           × button, the footer's Close Vault, or Escape. Prevents losing the
           view on an accidental outside click. */}
       <div className="lev-backdrop">
-        <div className="lev-modal" role="dialog" aria-modal="true" aria-label="Evidence Vault">
+        <div className="lev-modal" role="dialog" aria-modal="true" aria-label={`${ownerType === 'consignee' ? 'Consignee' : 'Customer'} Evidence Vault`}>
 
           {/* ── HERO ── */}
           <div className="lev-hero">
@@ -350,7 +368,17 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
                   </svg>
                 </div>
                 <div className="lev-hero-text">
-                  <div className="lev-hero-eyebrow">EVIDENCE VAULT</div>
+                  {/* The eyebrow names the PARTY, not just the screen.
+                      "EVIDENCE VAULT" over a company name left the two vaults
+                      looking identical, and the only thing separating them was
+                      the code chip on the far right (C-010 vs CN-021) — which
+                      is doing far too much work, because a Same-as-Customer
+                      consignee and its customer share the company name outright
+                      and the title reads the same on both. */}
+                  <div className="lev-hero-eyebrow">
+                    <span className="lev-hero-party">{ownerType === 'consignee' ? 'Consignee' : 'Customer'}</span>
+                    Evidence Vault
+                  </div>
                   <h1 className="lev-hero-name">{view.company || view.id}</h1>
                 </div>
               </div>
@@ -369,12 +397,45 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
                   {view.contact && (<><span className="lev-dot" /><span>{view.contact}</span></>)}
                   {view.contactCity && (<><span className="lev-dot" /><span>{view.contactCity}</span></>)}
                 </div>
-                <button className="lev-hero-close" type="button" onClick={onClose} title="Close" aria-label="Close">
+                {/* Reached here from a consignee → closing hands the user back
+                    to it, not out of the vault altogether. They opened the
+                    consignee and were sent on to read one thing; dropping them
+                    on the page behind would lose where they were. */}
+                <button
+                  className="lev-hero-close"
+                  type="button"
+                  onClick={onBack ?? onClose}
+                  title={onBack ? `Back to ${backLabel}` : 'Close'}
+                  aria-label={onBack ? `Back to ${backLabel}` : 'Close'}
+                >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
               </div>
             </div>
           </div>
+
+          {/* ── ARRIVED FROM A CONSIGNEE ──
+              Says whose vault this is and offers the way back.
+              Both are needed. A mirrored consignee is the SAME company as its
+              customer, so the header reads the same name either side of the
+              jump ("wasefghj" here, "wasefghj" there) and only the tiny code
+              chip changes — from this screen alone there is no telling which
+              party you are looking at, or that you moved at all. */}
+          {onBack && (
+            <div className="lev-from-strip">
+              {/* Only the ONE thing the hero does not already say.
+                  It used to open with "Viewing Customer documents — C-010
+                  wasefghj", which the party pill, the title and the code chip
+                  directly above had all just said. What is genuinely new here
+                  is the trail: where the user came from, and so where closing
+                  will put them back. No button — the ✕ and the footer already
+                  do that. */}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+              <span>Opened from <strong>{backLabel}</strong> — closing returns there</span>
+            </div>
+          )}
 
           {/* ── CONSIGNEE STRIP ──
               Only when the lead's customer has more than one consignee.
@@ -427,15 +488,38 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
               same-as-customer (ConsigneeController::assertSingleMirrorPerCustomer
               enforces that), so the note follows the selected tab and appears
               on that consignee alone. The others show nothing. */}
+          {/* Rendered inside `.lev-body`, the same gradient panel the document
+              table sits in on every other consignee, and as a bordered card
+              like that table's. As a flat full-bleed strip it read as an
+              unfinished banner with the dialog ending abruptly under it — this
+              way the mirrored consignee looks like the same screen as its
+              siblings, just with one card in it instead of a table. */}
           {sameAsCustomer && (
-            <div className="lev-mirror-note" role="note">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
-              </svg>
-              <span>
-                <strong>Customer = Consignee.</strong> If you want to make any changes or view
-                the documents, refer to <strong>Customer Details</strong>.
-              </span>
+            <div className="lev-body">
+              <div className="lev-mirror-card" role="note">
+                <span className="lev-mirror-ico" aria-hidden>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+                  </svg>
+                </span>
+                <div className="lev-mirror-title">Customer = Consignee</div>
+                {/* One sentence. The title already names the situation and the
+                    button already names the way out, so this only has to supply
+                    the reason connecting them. */}
+                <p className="lev-mirror-text">
+                  Same company as its customer, so it keeps no documents of its own.
+                </p>
+                {/* Only when the parent gave us somewhere to go. A button that
+                    names a destination it cannot reach is worse than no button. */}
+                {onOpenCustomer && (
+                  <button type="button" className="lev-mirror-cta" onClick={onOpenCustomer}>
+                    Open Customer Documents
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -561,9 +645,16 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 {exporting ? 'Exporting…' : 'Export All'}
               </button>
-              <button type="button" className="lev-footer-btn primary" onClick={onClose}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="20 6 9 17 4 12"/></svg>
-                Close Vault
+              {/* Came here from a consignee → this button hands the user back
+                  to it rather than dismissing everything, and says so. The ✕ in
+                  the header still closes the vault outright. */}
+              <button type="button" className="lev-footer-btn primary" onClick={onBack ?? onClose}>
+                {onBack ? (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="20 6 9 17 4 12"/></svg>
+                )}
+                {onBack ? `Back to ${backLabel ?? 'Consignee'}` : 'Close Vault'}
               </button>
             </div>
           </div>
@@ -755,7 +846,17 @@ const LEV_CSS = `
 }
 .lev-hero-avatar svg { width: 20px; height: 20px; stroke: #fff; display: block; }
 .lev-hero-text { flex: 1 1 auto; min-width: 0; }
-.lev-hero-eyebrow { font-size: 9.5px; font-weight: 800; color: rgba(255,255,255,.85); letter-spacing: .16em; text-transform: uppercase; margin-bottom: 1px; }
+.lev-hero-eyebrow { display: flex; align-items: center; gap: 6px; font-size: 9.5px; font-weight: 800; color: rgba(255,255,255,.62); letter-spacing: .16em; text-transform: uppercase; margin-bottom: 2px; }
+/* The party word is the ANSWER to "whose vault is this", so it is the bright
+   half of the line and the words "Evidence Vault" dim behind it. A boxed pill
+   here fought the company name directly below it for attention — this reads
+   as one line with one emphasis. */
+.lev-hero-party { color: #fff; }
+.lev-hero-party::after {
+  content: ''; display: inline-block; vertical-align: middle;
+  width: 3px; height: 3px; border-radius: 50%; margin: 0 0 2px 7px;
+  background: rgba(255,255,255,.45);
+}
 .lev-hero-name { font-size: 16px; font-weight: 800; color: #fff; letter-spacing: -.3px; margin: 0; line-height: 1.15; text-shadow: 0 1px 3px rgba(0,0,0,.12); }
 /* Right cluster — identity chips + close button beside each other, in white
    so they read on the saturated violet. */
@@ -819,18 +920,66 @@ const LEV_CSS = `
 /* Inactive-but-mapped tab gets an emerald ring so it stands out even when
    another consignee tab is the one being viewed. */
 .lev-cons-tab.mapped:not(.active) { border-color: #10b981; box-shadow: 0 0 0 1px rgba(16,185,129,.35); }
-/* "Same as Customer" note. Amber, not red — nothing is wrong here, the user
-   is simply being pointed at the party that owns these documents. */
-.lev-mirror-note {
-  display: flex; align-items: flex-start; gap: 9px;
-  padding: 10px 18px; background: #FFFBEB; border-bottom: 1px solid #FDE68A;
-  font-size: 12.5px; line-height: 1.45; color: #92400E;
+/* "Same as Customer" card.
+   Violet, the vault's own family — an amber panel read as a warning on a
+   violet screen, and nothing is wrong here: the user is simply being pointed
+   at the party that owns these documents.
+   Same border / radius / shadow recipe as .lev-table-card so the mirrored
+   consignee reads as the same screen as its siblings. Centred, because the
+   card IS the content: there is no table beside it to align a left edge to. */
+.lev-mirror-card {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: 7px; padding: 18px 22px 16px;
+  background: linear-gradient(135deg, #FAFBFF 0%, #F5F3FF 100%);
+  border: 1px solid #E9D5FF; border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(15,23,42,.04), 0 8px 18px rgba(15,23,42,.05);
 }
-.lev-mirror-note svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; color: #D97706; }
-.lev-mirror-note strong { font-weight: 800; color: #78350F; }
-[data-bs-theme="dark"] .lev-mirror-note { background: rgba(245,158,11,.12); border-bottom-color: rgba(251,191,36,.30); color: #FCD34D; }
-[data-bs-theme="dark"] .lev-mirror-note strong { color: #FDE68A; }
-[data-bs-theme="dark"] .lev-mirror-note svg { color: #FBBF24; }
+.lev-mirror-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 9px;
+  background: #EDE9FE; border: 1px solid #DDD6FE; color: #6D28D9;
+}
+.lev-mirror-ico svg { width: 16px; height: 16px; }
+.lev-mirror-title { font-size: 13px; font-weight: 800; color: #4C1D95; letter-spacing: -.2px; }
+.lev-mirror-text {
+  margin: 0; max-width: 430px;
+  font-size: 12px; line-height: 1.5; color: #64748B;
+}
+.lev-mirror-text strong { font-weight: 800; color: #4C1D95; }
+/* Same gradient as the footer's primary button — one violet, one call to
+   action, so the two do not read as different kinds of button. */
+.lev-mirror-cta {
+  margin-top: 4px;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 15px; border-radius: 8px; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 700; white-space: nowrap;
+  background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); color: #fff; border: none;
+  box-shadow: 0 4px 12px rgba(124,58,237,.30), inset 0 1px 0 rgba(255,255,255,.20);
+  transition: filter .15s, transform .12s, box-shadow .15s;
+}
+.lev-mirror-cta svg { width: 13px; height: 13px; color: currentColor; }
+.lev-mirror-cta:hover { filter: brightness(1.07); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(180,83,9,.34); }
+.lev-mirror-cta:active { transform: none; }
+[data-bs-theme="dark"] .lev-mirror-cta { background: linear-gradient(135deg, #F59E0B, #D97706); color: #1c1410; }
+
+/* Trail strip — shown only when the vault was reached from a consignee.
+   Deliberately quiet: one short line under a hero that already carries the
+   party, the name and the code. */
+.lev-from-strip {
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 18px;
+  background: #FAF8FF; border-bottom: 1px solid #EDE9FE;
+  font-size: 11.5px; color: #7C6BA8;
+}
+.lev-from-strip svg { width: 12px; height: 12px; flex-shrink: 0; opacity: .8; }
+.lev-from-strip strong { font-weight: 700; color: #5B21B6; }
+[data-bs-theme="dark"] .lev-from-strip { background: rgba(124,58,237,.10); border-bottom-color: rgba(167,139,250,.22); color: #A99BC9; }
+[data-bs-theme="dark"] .lev-from-strip strong { color: #C4B5FD; }
+[data-bs-theme="dark"] .lev-mirror-card { background: rgba(124,58,237,.10); border-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .lev-mirror-ico { background: rgba(124,58,237,.20); border-color: rgba(167,139,250,.35); color: #C4B5FD; }
+[data-bs-theme="dark"] .lev-mirror-title { color: #DDD6FE; }
+[data-bs-theme="dark"] .lev-mirror-text { color: #94A3B8; }
+[data-bs-theme="dark"] .lev-mirror-text strong { color: #DDD6FE; }
 [data-bs-theme="dark"] .lev-cons-strip { background: rgba(124,58,237,.10); border-bottom-color: rgba(167,139,250,.30); }
 [data-bs-theme="dark"] .lev-cons-tab.mapped:not(.active) { border-color: #34d399; box-shadow: 0 0 0 1px rgba(52,211,153,.40); }
 [data-bs-theme="dark"] .lev-cons-strip-lbl { color: #c4b5fd; }

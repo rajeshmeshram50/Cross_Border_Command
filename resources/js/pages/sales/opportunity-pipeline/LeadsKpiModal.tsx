@@ -120,6 +120,16 @@ export default function LeadsKpiModal(props: {
 
   useEffect(() => {
     if (!open) return;
+    /* Drop the previous answer before asking a new question.
+     *
+     * `total` survived between opens, so the header printed the LAST KPI's
+     * figure while this one loaded — click Assigned after Total Leads and it
+     * opened claiming 274 records before settling on its own number. On a
+     * first open it printed the seeded 0 instead ("0 records found" over a
+     * loading table), which reads as an empty bucket rather than a busy one.
+     * Both are the same fault: a number shown before it is known. */
+    setLeads([]);
+    setTotal(0);
     setLoading(true);
     const params: Record<string, unknown> = {
       status: 'all',
@@ -179,7 +189,11 @@ export default function LeadsKpiModal(props: {
             </div>
             <div>
               <div className="lkm-head-title">{title}</div>
-              <div className="lkm-head-sub">{total} record{total === 1 ? '' : 's'} found</div>
+              {/* No count until there IS one. "0 records found" over a table
+                  that is still loading states the opposite of what is true. */}
+              <div className="lkm-head-sub">
+                {loading ? 'Loading records…' : <>{total} record{total === 1 ? '' : 's'} found</>}
+              </div>
             </div>
           </div>
           <button className="lkm-close" onClick={onClose} aria-label="Close">
@@ -255,9 +269,13 @@ export default function LeadsKpiModal(props: {
         {/* ── Pagination ─────────────────────────────────────────── */}
         <div className="lkm-pag">
           <span className="lkm-pag-info">
-            {total === 0
-              ? 'No records'
-              : <>Showing <strong>{startIdx + 1}–{endIdx}</strong> of <strong>{total}</strong></>}
+            {/* "No records" is an ANSWER, and while the rows are still loading
+                there isn't one — same reason the header holds its count back. */}
+            {loading
+              ? 'Loading…'
+              : total === 0
+                ? 'No records'
+                : <>Showing <strong>{startIdx + 1}–{endIdx}</strong> of <strong>{total}</strong></>}
           </span>
           <div className="lkm-pag-ctrl">
             <span className="lkm-pag-range">{safePage} / {pages}</span>

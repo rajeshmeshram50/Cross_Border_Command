@@ -560,6 +560,15 @@ export default function SalesConsignee() {
                   contact: c.contact,
                   contactCity: c.countryDetail,
                   customerId: c.customerId,
+                  /* A mirrored consignee gets a hand-off card, not the vault.
+                     This row already knows both facts the card needs, so
+                     passing them saves the vault fetch whose whole result the
+                     card would throw away. `customers` carries every mapped
+                     customer; the mirrored one is the row's own customer_id. */
+                  sameAsCustomer: c.same_as_customer,
+                  mirrorCustomer: c.same_as_customer
+                    ? ((c.customers ?? []).find((m: any) => Number(m?.id) === Number(c.customer_db_id)) ?? null)
+                    : null,
                 })}
               >
                 <i className="ri-archive-line" />
