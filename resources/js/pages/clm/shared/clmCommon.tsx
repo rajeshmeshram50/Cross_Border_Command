@@ -71,6 +71,18 @@ export function useScrollLock(active: boolean) {
  *   validateClmDuplicate  — case-insensitive uniqueness against an existing
  *                            list of rows, excluding the row being edited
  * ───────────────────────────────────────────────────────────────────────── */
+/**
+ * Clip a name for use inside a toast.
+ *
+ * A document or authority name can run to 100+ characters, which wraps a
+ * success toast across several lines. Lives here rather than on a page because
+ * both the master page and its (now separately chunked) modal need it — and a
+ * value import from the page would put the whole page back in the modal's
+ * chunk, which is exactly what splitting them was for.
+ */
+export const clip = (s: string, n = 40): string =>
+  (s && s.length > n ? s.slice(0, n).trimEnd() + '…' : s);
+
 export const CLM_NAME_MAX = 100;
 export const CLM_DESC_MAX = 255;
 const CLM_SQL_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi;
