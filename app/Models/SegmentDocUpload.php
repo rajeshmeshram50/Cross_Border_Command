@@ -23,11 +23,12 @@ class SegmentDocUpload extends Model
         'uploadable_type', 'uploadable_id',
         'client_id',
         'category', 'doc_code', 'doc_name', 'requirement',
-        'attachment_path', 'attachment_name', 'expiry_date',
+        'attachment_path', 'attachment_name', 'issue_date', 'expiry_date',
         'uploaded_by',
     ];
 
     protected $casts = [
+        'issue_date'  => 'date',
         'expiry_date' => 'date',
     ];
 

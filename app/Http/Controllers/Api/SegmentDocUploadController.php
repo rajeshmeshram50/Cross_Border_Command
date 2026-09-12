@@ -144,9 +144,8 @@ class SegmentDocUploadController extends Controller
             'doc_code'    => ['required', 'string', 'max:32'],
             'doc_name'    => ['required', 'string', 'max:255'],
             'requirement' => ['nullable', Rule::in(['M', 'O'])],
-            // Optional expiry date from the upload popup's Yes/No toggle.
-            // Absent / null ⇒ the document carries no expiry.
-            'expiry_date' => ['nullable', 'date'],
+            'issue_date'  => ['nullable', 'date'],
+            'expiry_date' => ['nullable', 'date', 'after_or_equal:issue_date'],
             // 2 MB cap + restricted to PDF / JPG / JPEG / PNG only — these all
             // preview in-browser via the row's View action. Word (doc/docx)
             // and spreadsheets are NOT accepted: browsers download Office
@@ -155,6 +154,7 @@ class SegmentDocUploadController extends Controller
         ]);
         $requirement = $data['requirement'] ?? 'O';
         $expiryDate  = $data['expiry_date'] ?? null;
+        $issueDate   = $data['issue_date'] ?? null;
 
         // Re-upload semantics: if a row already exists for the same
         // (entity, category, doc_code) tuple, drop its previous file
@@ -179,6 +179,7 @@ class SegmentDocUploadController extends Controller
                 'requirement'      => $requirement,
                 'attachment_path'  => $path,
                 'attachment_name'  => $name,
+                'issue_date'       => $issueDate,
                 'expiry_date'      => $expiryDate,
                 'uploaded_by'      => optional($request->user())->id,
             ]);
@@ -195,6 +196,7 @@ class SegmentDocUploadController extends Controller
             'requirement'     => $requirement,
             'attachment_path' => $path,
             'attachment_name' => $name,
+            'issue_date'      => $issueDate,
             'expiry_date'     => $expiryDate,
             'uploaded_by'     => optional($request->user())->id,
         ]);
@@ -385,11 +387,22 @@ class SegmentDocUploadController extends Controller
                     'name'            => $master['name'] ?? $code,
                     'reference'       => $master['code'] ?? $code,
                     'authority'       => $master['authority'] ?? null,
-                    'issue_date'      => null,
+                    // Was hard-coded null until segment_doc_uploads grew the
+                    // column; it now reports what the uploader entered.
+                    'issue_date'      => optional($upload?->issue_date)->format('d-M-Y'),
                     // Prefer the expiry the user picked at upload time; fall
                     // back to the segment-rule master's generic validity text.
                     'expiry'          => optional($upload?->expiry_date)->format('d-M-Y')
                                           ?? ($master['expiry'] ?? '—'),
+                    /* The UPLOADED expiry on its own, with no fallback.
+                     *
+                     * `expiry` above falls back to the segment-rule master's
+                     * validity text, which is free prose — "Lifetime", "2
+                     * years", "Varies". That is the right thing for the upload
+                     * popup, which uses it to decide whether to pre-tick "has
+                     * an expiry date", but it cannot be printed in a date
+                     * column. This key is the date or nothing. */
+                    'expiry_date'     => optional($upload?->expiry_date)->format('d-M-Y'),
                     'attachment'      => $upload?->attachment_name,
                     'attachment_url'  => $upload?->attachment_url,
                     'status'          => $upload ? 'Verified' : 'Pending',
@@ -2310,6 +2323,7 @@ class SegmentDocUploadController extends Controller
             'attachment_path' => $row->attachment_path,
             'attachment_url'  => $row->attachment_url,
             'attachment_name' => $row->attachment_name,
+            'issue_date'      => optional($row->issue_date)->format('Y-m-d'),
             'expiry_date'     => optional($row->expiry_date)->format('Y-m-d'),
             'uploaded_by'     => $row->uploaded_by,
             'created_at'      => optional($row->created_at)->toIso8601String(),

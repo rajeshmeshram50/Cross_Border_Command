@@ -1525,7 +1525,6 @@ function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
   };
   return createPortal(
     <div className="cev-reup-ov" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
-      <style>{CEV_REUP_CSS}</style>
       <div className="cev-reup-card" role="dialog" aria-modal="true">
         <div className="cev-reup-hd">
           <div className="cev-reup-hd-l">
@@ -1558,7 +1557,7 @@ function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
                   <button type="button" className={hasExpiry ? 'on' : ''} onClick={() => setHasExpiry(true)}>Yes</button>
                   <button type="button" className={!hasExpiry ? 'on' : ''} onClick={() => { setHasExpiry(false); setExpiryDate(''); }}>No</button>
                 </div>
-                {hasExpiry && <div style={{ marginTop: 8 }}><MasterDatePicker value={expiryDate} onChange={setExpiryDate} placeholder="Select expiry date" minDate={new Date().toISOString().slice(0, 10)} /></div>}
+                {hasExpiry && <div style={{ marginTop: 8 }}><MasterDatePicker value={expiryDate} onChange={setExpiryDate} placeholder="Select expiry date" minDate={new Date().toISOString().slice(0, 10)} popupClassName="cev-reup-cal" /></div>}
               </div>
             </div>
           )}
@@ -1589,59 +1588,6 @@ function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
   );
 }
 
-const CEV_REUP_CSS = `
-.cev-reup-ov { position:fixed; inset:0; z-index:100000; background:rgba(15,23,42,.5); display:flex; align-items:center; justify-content:center; padding:16px; }
-.cev-reup-card { width:100%; max-width:640px; background:#fff; border-radius:16px; overflow:hidden; box-shadow:0 24px 60px rgba(8,40,60,.32); font-family:'DM Sans',system-ui,sans-serif; }
-.cev-reup-hd { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:16px 18px; background:linear-gradient(120deg,#6d28d9,#7c3aed 55%,#8b5cf6); color:#fff; }
-.cev-reup-hd-l { display:flex; align-items:center; gap:12px; min-width:0; }
-.cev-reup-hd-ico { width:40px; height:40px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.18); color:#fff; font-size:20px; }
-.cev-reup-ttl { font-size:15px; font-weight:800; }
-.cev-reup-sub { font-size:12px; opacity:.85; margin-top:2px; }
-.cev-reup-x { background:rgba(255,255,255,.18); border:none; color:#fff; width:30px; height:30px; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
-.cev-reup-x:hover:not(:disabled) { background:rgba(255,255,255,.3); }
-.cev-reup-bd { padding:18px; display:flex; flex-direction:column; gap:16px; }
-.cev-reup-fld label { display:block; font-size:11px; font-weight:700; letter-spacing:0; text-transform:none; color:#3b0764; margin-bottom:6px; }
-.cev-reup-req { color:#dc2626; }
-.cev-reup-cur { display:inline-flex; align-items:center; gap:7px; max-width:100%; padding:8px 12px; border-radius:9px; background:#f5f3ff; border:1px solid #ddd6fe; color:#6d28d9; font-size:12.5px; font-weight:600; text-decoration:none; }
-.cev-reup-cur span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.cev-reup-cur:hover { background:#ede9fe; }
-.cev-reup-none { font-size:12.5px; color:#94a3b8; font-style:italic; }
-.cev-reup-drop { width:100%; display:flex; align-items:center; gap:9px; padding:12px 14px; border-radius:10px; border:1.5px dashed #cbd5e1; background:#f8fafc; color:#64748b; font-family:inherit; font-size:12.5px; font-weight:600; cursor:pointer; text-align:left; }
-.cev-reup-drop:hover { border-color:#8b5cf6; background:#faf5ff; color:#6d28d9; }
-.cev-reup-drop.has { border-style:solid; border-color:#8b5cf6; background:#faf5ff; color:#6d28d9; }
-.cev-reup-drop i { font-size:18px; flex-shrink:0; }
-.cev-reup-drop span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.cev-reup-ft { display:flex; justify-content:flex-end; gap:10px; padding:14px 18px; border-top:1px solid #eef2f7; }
-.cev-reup-cancel { padding:9px 18px; border-radius:9px; border:1.5px solid #e2e8f0; background:#fff; color:#475569; font-family:inherit; font-size:12.5px; font-weight:700; cursor:pointer; }
-.cev-reup-cancel:hover:not(:disabled) { background:#f8fafc; }
-.cev-reup-save { display:inline-flex; align-items:center; gap:7px; padding:9px 22px; border-radius:9px; border:none; background:linear-gradient(135deg,#6d28d9,#7c3aed 55%,#8b5cf6); color:#fff; font-family:inherit; font-size:12.5px; font-weight:700; cursor:pointer; }
-.cev-reup-save:disabled, .cev-reup-cancel:disabled { opacity:.55; cursor:not-allowed; }
-[data-bs-theme="dark"] .cev-reup-card { background:#0f2731; }
-[data-bs-theme="dark"] .cev-reup-drop { background:#16303b; border-color:#2a4a56; color:#9db3c1; }
-[data-bs-theme="dark"] .cev-reup-cur { background:rgba(139,92,246,.14); border-color:rgba(139,92,246,.35); color:#c4b5fd; }
-[data-bs-theme="dark"] .cev-reup-ft { border-top-color:#1c3a45; }
-[data-bs-theme="dark"] .cev-reup-cancel { background:#16303b; border-color:#2a4a56; color:#9db3c1; }
-/* Rich fields (standard docs): Auto Code · Document Name · Issuing Authority · Expiry. */
-.cev-reup-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-.cev-reup-ro { height:38px; padding:0 12px; border-radius:10px; background:#f7f4ff; border:1px solid #e4dcf7; color:#495057; font-family:inherit; font-size:13px; font-weight:400; display:flex; align-items:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; box-sizing:border-box; }
-.cev-reup-in { width:100%; height:38px; padding:5px 12px; border-radius:10px; border:1px solid #e4dcf7; background:#f7f4ff; font-family:inherit; font-size:13px; font-weight:400; color:#495057; box-sizing:border-box; transition:border-color .18s ease, box-shadow .18s ease; }
-.cev-reup-in:focus { outline:none; border-color:#7c3aed; box-shadow:0 0 0 3px rgba(124,58,237,.12); background:#fff; }
-.cev-reup-hint { font-size:11px; font-weight:500; text-transform:none; letter-spacing:0; color:#94a3b8; margin-left:6px; }
-.cev-reup-toggle { display:inline-flex; height:38px; border:1.5px solid #e9e2f7; background:#faf8ff; border-radius:9px; overflow:hidden; }
-.cev-reup-toggle button { min-width:46px; padding:0 15px; border:none; border-right:1.5px solid #e9e2f7; background:transparent; color:#6b7280; font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; transition:background .14s, color .14s; }
-.cev-reup-toggle button:last-child { border-right:0; }
-.cev-reup-toggle button:hover { background:#f1ebfe; color:#7c3aed; }
-.cev-reup-toggle button.on { background:#7c3aed; color:#fff; }
-.cev-mono { font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace; }
-[data-bs-theme="dark"] .cev-reup-ro { background:#16303b; border-color:#2a4a56; color:#cbd5e1; }
-[data-bs-theme="dark"] .cev-reup-in { background:#16303b; border-color:#2a4a56; color:#e2e8f0; }
-[data-bs-theme="dark"] .cev-reup-toggle { border-color:#2a4a56; }
-[data-bs-theme="dark"] .cev-reup-toggle button { background:#16303b; color:#9db3c1; }
-[data-bs-theme="dark"] .cev-reup-fld label { color:#c4b5fd; }
-[data-bs-theme="dark"] .cev-reup-none { color:#7c93a8; }
-[data-bs-theme="dark"] .cev-reup-cancel:hover:not(:disabled) { background:#1c3a45; }
-@media (max-width:560px) { .cev-reup-grid { grid-template-columns:1fr; } }
-`;
 
 function OvStatusPill({ s }: { s: VaultStatus | 'Expired' }) {
   const tone = s === 'Verified' || s === 'Signed' ? ['#ecfdf5', '#059669', '#6ee7b7', '#10b981']
