@@ -19,6 +19,8 @@ import SalesDocSendForSignatureModal from '../../opportunity-pipeline/matrix/sta
 import '../../../p2p/p2p-master-management/supplier-management/supplier-evidence-vault.css';
 export type VaultStatus = 'Verified' | 'Pending' | 'Expiring' | 'Signed';
 
+export type ShipmentSendParty = 'buyer' | 'consignee' | 'both';
+
 export interface VaultDoc {
   id: number;
   db_id?: number | null;
@@ -187,7 +189,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
   const [loading, setLoading] = useState(false);
   const [signatureRows, setSignatureRows] = useState<SigReqRow[]>([]);
   const [sendDocIds, setSendDocIds] = useState<number[] | null>(null);
-  const [shipSend, setShipSend] = useState<{ leadId: number; doc: VaultShipmentDoc; docs?: VaultShipmentDoc[]; party: 'buyer' | 'consignee' } | null>(null);
+  const [shipSend, setShipSend] = useState<{ leadId: number; doc: VaultShipmentDoc; docs?: VaultShipmentDoc[]; party: ShipmentSendParty } | null>(null);
   const [piSend, setPiSend] = useState<{ leadId: number; doc: VaultShipmentDoc } | null>(null);
 
   useEffect(() => {
@@ -1590,9 +1592,9 @@ function ShipmentTable({ rows, kind, filter, onSend, onBulkSend, activeSend }: {
   /* The Customer =/≠ Consignee switch now lives above the tab row, next to the
      other vault-level controls, so this only reads the value. */
   filter: 'buyer-eq-consignee' | 'buyer-neq-consignee';
-  onSend?: (leadId: number, doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
-  onBulkSend?: (leadId: number, docs: VaultShipmentDoc[], party: 'buyer' | 'consignee') => void;
-  activeSend?: { leadId: number; doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null;
+  onSend?: (leadId: number, doc: VaultShipmentDoc, party: ShipmentSendParty) => void;
+  onBulkSend?: (leadId: number, docs: VaultShipmentDoc[], party: ShipmentSendParty) => void;
+  activeSend?: { leadId: number; doc: VaultShipmentDoc; party: ShipmentSendParty } | null;
 }) {
   const [openId, setOpenId] = useState<number | null>(null);
   /* Flipping the switch swaps the whole row set, so a row left expanded from
@@ -1699,14 +1701,14 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
      the customer and the consignee, and the tabs below say whose documents are
      on screen, so repeating it was noise. */
   buyer: VaultShipmentDoc[]; consignee: VaultShipmentDoc[]; buyerIsConsignee: boolean;
-  onSend?: (doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
+  onSend?: (doc: VaultShipmentDoc, party: ShipmentSendParty) => void;
   /* Opt-in. Supplying it turns on the select column and the bulk bar; the
      Consignee vault shares this panel and passes nothing, so it is unchanged. */
-  onBulkSend?: (docs: VaultShipmentDoc[], party: 'buyer' | 'consignee') => void;
+  onBulkSend?: (docs: VaultShipmentDoc[], party: ShipmentSendParty) => void;
 
   primaryParty?: 'buyer' | 'consignee';
   hideBuyerTab?: boolean;
-  pendingSend?: { doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null;
+  pendingSend?: { doc: VaultShipmentDoc; party: ShipmentSendParty } | null;
   showType?: boolean;
 }) {
   const toast = useToast();
@@ -1747,7 +1749,19 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
      into a single Zoho envelope, so the signer gets one email listing every
      document ticked here. Used only to word the tooltip. */
   const mixedKinds = new Set(chosen.map(d => (d.doc_type === 'agreement' ? 'agreement' : 'trade'))).size > 1;
-  const bulkParty = (d: VaultShipmentDoc): 'buyer' | 'consignee' => (buyer.includes(d) ? 'buyer' : 'consignee');
+  /* Who this row's signature request is addressed to.
+   *
+   * Array membership alone can't answer it on the Both tab: those rows are
+   * built by intersecting the two lists and taken from `buyer`, so
+   * `buyer.includes(d)` is true for every one of them and the send went to the
+   * customer by itself. The tab is what carries the intent, so read it first.
+   *
+   * buyerIsConsignee shipments never show the tabs — one party signs — so they
+   * keep falling through to membership. */
+  const sendParty = (d: VaultShipmentDoc): ShipmentSendParty =>
+    (!buyerIsConsignee && activeParty === 'both') ? 'both'
+      : buyer.includes(d) ? 'buyer' : 'consignee';
+  const bulkParty = sendParty;
   const toggle    = (d: VaultShipmentDoc) =>
     setPicked(prev => prev.includes(docKey(d)) ? prev.filter(k => k !== docKey(d)) : [...prev, docKey(d)]);
 
@@ -1863,7 +1877,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
                       return (
                         <Tooltip label={isSending ? 'Sending…' : 'Send for signature'}>
                         <button type="button" aria-label="Send" disabled={isSending}
-                          onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')}
+                          onClick={() => onSend(d, sendParty(d))}
                           className={docActClass('send')}>
                           {isSending
                             ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 12, display: 'inline-block' }} aria-hidden />
@@ -1877,7 +1891,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
                       return (
                         <Tooltip label={isSending ? 'Sending…' : 'Send the Proforma Invoice for signature'}>
                         <button type="button" aria-label="Send for Signature" disabled={isSending}
-                          onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')}
+                          onClick={() => onSend(d, sendParty(d))}
                           className={docActClass('send')}>
                           {isSending
                             ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 12, display: 'inline-block' }} aria-hidden />
@@ -1891,7 +1905,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
                       return (
                         <Tooltip label={isSending ? 'Sending…' : `Re-send for signature (${d.status.toLowerCase()})`}>
                         <button type="button" aria-label="Resend for Signature" disabled={isSending}
-                          onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')}
+                          onClick={() => onSend(d, sendParty(d))}
                           className={docActClass('send')}>
                           {isSending
                             ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 12, display: 'inline-block' }} aria-hidden />
@@ -1950,13 +1964,21 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
      present, is the whole batch a bulk send picked — both underlying flows take
      a list already (trade docs by id, agreements as rows), so a batch needs no
      new endpoint. */
-  target: { leadId: number; doc: VaultShipmentDoc; docs?: VaultShipmentDoc[]; party: 'buyer' | 'consignee' } | null;
+  target: { leadId: number; doc: VaultShipmentDoc; docs?: VaultShipmentDoc[]; party: ShipmentSendParty } | null;
   onClose: () => void;
   onSent: () => void;
 }) {
   const toast = useToast();
   const [agr, setAgr] = useState<AgreementContext | null>(null);
-  const [td,  setTd]  = useState<{ ids: number[]; leadId: number; modelName: 'Customer' | 'Consignee'; customer: SendForSignatureCustomer | null } | null>(null);
+  /* `signers` is set ONLY for a Both send. Left null, the wizard keeps its
+     original single-signer behaviour, which is what every single-party bucket
+     and standalone vault send still wants. */
+  const [td,  setTd]  = useState<{
+    ids: number[]; leadId: number;
+    modelName: 'Customer' | 'Consignee';
+    customer: SendForSignatureCustomer | null;
+    signers?: AgreementSigner[] | null;
+  } | null>(null);
   /* Agreements travelling in the SAME envelope as the trade documents.
      A mixed batch used to run in two rounds — trade documents first, agreements
      after — because a signature request was one request to one library. The
@@ -2035,7 +2057,21 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
         }
 
         if (tdBatch.length) {
+          /* A Both document is co-signed: the customer AND the consignee each
+             get their own recipient and their own signature box, exactly as
+             the Sales Matrix "Buyer + Consignee" tab already sends them. The
+             wizard switches into role mode as soon as this list is non-empty.
+
+             The primary `customer` below stays the buyer — it is what names the
+             request and addresses the envelope; the roles carry the signing. */
+          const both = target.party === 'both';
           const p = target.party === 'consignee' ? cons : cust;
+          const tradeSigners: AgreementSigner[] | null = both
+            ? [
+                { role: 'buyer',     name: cust?.name ?? '⚠ Customer not mapped',  email: cust?.email ?? null },
+                { role: 'consignee', name: cons?.name ?? '⚠ Consignee not mapped', email: cons?.email ?? null },
+              ]
+            : null;
           /* Both kinds ticked → ONE envelope. The agreements are handed to the
              trade-doc modal as extra rows rather than queued behind it, so they
              are previewed and positioned in the same pass and posted together
@@ -2048,6 +2084,7 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
             leadId: target.leadId,
             modelName: target.party === 'consignee' ? 'Consignee' : 'Customer',
             customer: p ? { id: String(p.code ?? p.id), db_id: p.id, company: p.name, email: p.email } : null,
+            signers: tradeSigners,
           });
         } else if (agrCtx) {
           setAgr(agrCtx);
@@ -2087,6 +2124,10 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
         mode="trade-doc"
         multiBox
         modelName={td?.modelName ?? 'Customer'}
+        /* Role mode takes precedence over multiBox when this is set, so a Both
+           send renders one signature box per party instead of several boxes
+           for one signer. Null everywhere else, leaving multiBox in charge. */
+        tradeSigners={td?.signers ?? null}
         customer={td?.customer ?? null}
         leadId={td?.leadId ?? null}
         preselectedDocIds={td?.ids}

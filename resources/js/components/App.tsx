@@ -21,6 +21,7 @@ import VelzonShell from '../velzon/VelzonShell';
 import AccessDenied from './AccessDenied';
 import { canAccessPath } from '../utils/routeAccess';
 import { FEATURE_FLAGS } from '../constants';
+import AppErrorBoundary from './AppErrorBoundary';
 const Login = lazyPage(() => import('../pages/auth/Login'));
 const ForgotPassword = lazyPage(() => import('../pages/auth/ForgotPassword'));
 const VerifyOTP = lazyPage(() => import('../pages/auth/VerifyOTP'));
@@ -783,7 +784,7 @@ function DashboardRoutes({ user }: { user: any }) {
             {!routeAllowed ? (
               <AccessDenied />
             ) : (
-            /* One boundary for every page route. Each page below is a lazy()
+            /* One boundary for every page route. Each page below is a lazyPage()
                chunk; this is the only thing that has to catch their suspend.
 
                `key` is the fix for "switching pages shows the OLD page, then
@@ -1100,7 +1101,16 @@ export default function App() {
                       location. Placed above <Router /> so it covers every
                       route: dashboard, auth and public onboarding alike. */}
                   <ScrollToTop />
-                  <Router />
+                  {/* Catches anything the route tree throws during render.
+                      Without it a single failure — most often a lazy chunk
+                      that a deploy removed while the tab sat open — unmounted
+                      the whole app and left a blank white page. Inside the
+                      router so the boundary is remounted with the tree, and
+                      above <Router /> so it covers dashboard, auth and the
+                      public onboarding routes alike. */}
+                  <AppErrorBoundary>
+                    <Router />
+                  </AppErrorBoundary>
                 </BrowserRouter>
                 {/* CookieBanner reads privacy.cookie + the user's prior
                     accept state. Hidden when disabled or already accepted. */}

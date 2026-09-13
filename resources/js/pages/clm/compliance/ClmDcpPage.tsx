@@ -1,4 +1,4 @@
-import { Suspense, lazy, type ComponentProps, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, type ComponentProps, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import WorklistPager from "../../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
@@ -23,11 +23,12 @@ import AuthorityBadges from './AuthorityBadges';
    These were plain imports FROM THE MASTER PAGES, which dragged each entire
    page — table, toolbar, pager, shimmer and all their dependencies — into
    this chunk, four times over, to reuse four modals. */
-const KycModal = lazy(() => import('./ClmKycModal'));
-const DdModal  = lazy(() => import('./ClmDdModal'));
-const QcModal  = lazy(() => import('./ClmQcModal'));
-const TlModal  = lazy(() => import('./ClmTlModal'));
+const KycModal = lazyPage(() => import('./ClmKycModal'));
+const DdModal  = lazyPage(() => import('./ClmDdModal'));
+const QcModal  = lazyPage(() => import('./ClmQcModal'));
+const TlModal  = lazyPage(() => import('./ClmTlModal'));
 import SearchClear from '../../../components/ui/SearchClear';
+import { lazyPage } from '../../../utils/lazyPage';
 
 /* Central CLM → Document Control Panel.
  *

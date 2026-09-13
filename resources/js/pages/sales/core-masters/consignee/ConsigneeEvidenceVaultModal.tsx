@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
-import CustomerEvidenceVaultModal, { ShipmentDocPanel, ShipmentDocSendForSignature, SevStat, type VaultShipmentDoc } from '../customer/CustomerEvidenceVaultModal';
+import CustomerEvidenceVaultModal, { ShipmentDocPanel, ShipmentDocSendForSignature, SevStat, type VaultShipmentDoc, type ShipmentSendParty } from '../customer/CustomerEvidenceVaultModal';
 import { VaultReuploadPopup } from '../../../p2p/p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
 import { CLM_CSS } from '../../../clm/shared/clmShared';
@@ -308,7 +308,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
 
   /* Shipment Send-for-Signature — launches the preview + signature-box wizard
    * for one not-yet-sent shipment document. */
-  const [shipSend, setShipSend] = useState<{ leadId: number; doc: VaultShipmentDoc; docs?: VaultShipmentDoc[]; party: 'buyer' | 'consignee' } | null>(null);
+  const [shipSend, setShipSend] = useState<{ leadId: number; doc: VaultShipmentDoc; docs?: VaultShipmentDoc[]; party: ShipmentSendParty } | null>(null);
   // PI row → Sales-Matrix Q/PI Send-for-Signature modal (routed by doc.pi_id).
   const [piSend, setPiSend] = useState<{ leadId: number; doc: VaultShipmentDoc } | null>(null);
 
@@ -1950,13 +1950,13 @@ function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend }: {
   kind: 'trade' | 'agreement' | 'both';
   /** Sends every ticked document on one deal in a single action. Passing it is
    *  what turns the panel's tick column on — the panel owns the selection. */
-  onBulkSend?: (leadId: number, docs: VaultShipmentDoc[], party: 'buyer' | 'consignee') => void;
+  onBulkSend?: (leadId: number, docs: VaultShipmentDoc[], party: ShipmentSendParty) => void;
   /** Launches Send-for-Signature for one shipment doc (lead + doc + party). */
-  onSend?: (leadId: number, doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
+  onSend?: (leadId: number, doc: VaultShipmentDoc, party: ShipmentSendParty) => void;
   /** The send currently being prepared, so its row's button can spin. This was
    *  never wired here (the customer vault has always passed it), so clicking
    *  Send in the consignee vault left the button looking untouched. */
-  activeSend?: { leadId: number; doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null;
+  activeSend?: { leadId: number; doc: VaultShipmentDoc; party: ShipmentSendParty } | null;
 }) {
   const [openId, setOpenId] = useState<number | null>(null);
   /* Consignee vault shows ALL shipments — no Buyer = / ≠ Consignee split at the

@@ -14100,7 +14100,19 @@
   }
   .pay-page > .pay-tablearea {
     flex: 1;
-    min-height: 0;
+    /* A FLOOR, not 0. (#9)
+       With min-height:0 the table area was free to be squeezed to nothing: on
+       a laptop window with Cycle History expanded, the hero, the cycle rail,
+       the KPI row, the tab rail and the tab's own banner filled the shell, the
+       remainder rounded down to a few pixels, and Salary Setup rendered its
+       banner and search box with an invisible table underneath — the roster had
+       loaded (the tab badge was counting it) but no row could be seen.
+
+       .pay-top is `flex: 0 1 auto` with its own scrollbar, so it yields first
+       and scrolls internally; the table keeps a workable height instead of the
+       two fighting over the same pixels. Below the shell's own 560px floor the
+       page scrolls again, which is the escape hatch for very short windows. */
+    min-height: 300px;
     display: flex;
     flex-direction: column;
   }

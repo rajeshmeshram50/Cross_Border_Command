@@ -1062,7 +1062,28 @@ class AttendanceController extends Controller
             $exitCompleted = $emp->exit
                 && !$emp->exit->rehired_at
                 && (string) ($emp->exit->exit_case_status ?? 'Open') === 'Closed';
-            $hasLeft       = $exitCompleted || ($emp->deleted_at !== null);
+
+            /* Notice runs UNTIL the last working day, and not one day past it.
+             *
+             * "Has left" was decided purely by the exit case being Closed, but
+             * the status pill a few lines up flips to 'Exited' the moment the
+             * viewed date is past the last working day, whatever the case
+             * status. HR closes the case days or weeks after the person walks
+             * out, and in that gap the card said both things at once: an
+             * 'Exited' pill beside "On notice till 10 Sep 2026" — a date
+             * already in the past — and no "Left" date anywhere, because
+             * exitedOn was still null.
+             *
+             * Comparing against the VIEWED date, not today, is what keeps the
+             * audit view honest: open 5 Sep for the same employee and the last
+             * working day is still ahead, so they correctly read as serving
+             * notice on that day.
+             *
+             * The #13 distinction this preserves is the one that matters —
+             * someone still working out their notice is never labelled as
+             * gone — it just stops applying once the day itself has passed. */
+            $noticeElapsed = $exitIso !== null && $date > $exitIso;
+            $hasLeft       = $exitCompleted || ($emp->deleted_at !== null) || $noticeElapsed;
             $exitedOnIso   = $hasLeft ? ($exitIso ?? $emp->deleted_at?->toDateString()) : null;
             $noticeUntil   = (!$hasLeft && $exitIso !== null) ? $exitIso : null;
             // Approved leave wins over an "Absent" reading (no attendance row).

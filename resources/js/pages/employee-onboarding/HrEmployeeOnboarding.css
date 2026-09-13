@@ -467,7 +467,18 @@
         .onb-ee-input { width: 100%; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; }
         .onb-ee-input::placeholder { color: #9ca3af; }
         .onb-ee-input:focus { outline: none; border-color: #7c5cfc; box-shadow: 0 0 0 3px rgba(124,92,252,0.15); }
-        .onb-ee-input.is-readonly { background: #f5f1ff; border-color: #d6c9ff; color: #5a3fd1; font-weight: 600; }
+        /* Same green as every other system-filled field. (#138)
+           This one was purple (#f5f1ff / #d6c9ff, bold violet text) while the
+           ten AUTO fields on the initiate form and the auto-fetched fields on
+           the provisioning form were all green, so the SAME idea — the system
+           filled this, you cannot edit it — arrived in two different colours
+           depending on which stage the user happened to be on. The comment
+           further down states the rule this now follows: the green tint is this
+           form's signal for "auto-filled / locked", and nothing else may paint
+           a field. It also had no dark-mode rule at all, so the pale violet
+           survived into the dark theme; folding it into the shared selector
+           below fixes that in the same move. */
+        .onb-ee-input.is-readonly { border-color: #b6e4be; background: #f5fcf6; }
         [data-bs-theme="dark"] .onb-ee-input { background: var(--vz-card-bg); border-color: var(--vz-border-color); color: var(--vz-body-color); }
         [data-bs-theme="dark"] .onb-ee-input::placeholder { color: var(--vz-secondary-color); }
         .onb-ee-footer { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 22px 18px; background: var(--vz-secondary-bg, #f7f8fc); border-top: 1px solid var(--vz-border-color); }
@@ -847,13 +858,26 @@
         .onb-init-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #374151; margin: 0 0 5px; display: flex; align-items: center; gap: 5px; }
         [data-bs-theme="dark"] .onb-init-label { color: var(--vz-body-color); }
         .onb-init-label .req { color: #f06548; font-weight: 700; }
-        .onb-init-label .auto {
+        /* Scoped to BOTH label classes. (#138)
+           The badge was defined only under .onb-init-label, so the same
+           <span className="auto">AUTO</span> placed on an .onb-ee-label rendered
+           as bare unstyled text — which is how an inconsistency here turns into
+           a worse one rather than a fix. */
+        .onb-init-label .auto,
+        .onb-ee-label .auto {
           font-size: 8.5px; padding: 1px 6px; border-radius: 4px;
           background: #d6f4e3; color: #108548;
           letter-spacing: 0.04em; font-weight: 700;
+          text-transform: uppercase;
         }
+        /* .onb-init-label is a flex row with a gap, which spaces the badge for
+           free; .onb-ee-label is display:block, so the badge needs its own
+           offset or it butts straight against the label text. */
+        .onb-ee-label .auto { display: inline-block; margin-left: 5px; vertical-align: middle; }
         [data-bs-theme="dark"] .onb-init-label .auto,
-        [data-layout-mode="dark"] .onb-init-label .auto {
+        [data-layout-mode="dark"] .onb-init-label .auto,
+        [data-bs-theme="dark"] .onb-ee-label .auto,
+        [data-layout-mode="dark"] .onb-ee-label .auto {
           background: rgba(16,185,129,0.18) !important;
           color: #6ee7b7 !important;
         }
@@ -1480,7 +1504,9 @@
         [data-bs-theme="dark"] .onb-init-input.is-autofilled,
         [data-layout-mode="dark"] .onb-init-input.is-autofilled,
         [data-bs-theme="dark"] .onb-prov-input.is-autofetched,
-        [data-layout-mode="dark"] .onb-prov-input.is-autofetched { background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.40); }
+        [data-layout-mode="dark"] .onb-prov-input.is-autofetched,
+        [data-bs-theme="dark"] .onb-ee-input.is-readonly,
+        [data-layout-mode="dark"] .onb-ee-input.is-readonly { background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.40); }
 
         /* The green tint is this form's signal for "auto-filled / locked", so
            nothing ELSE may paint a field. Chrome does exactly that on any field

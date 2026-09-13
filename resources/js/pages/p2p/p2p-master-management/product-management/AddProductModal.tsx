@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import './product-management.css';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
@@ -16,14 +16,15 @@ import { bustAllMasterBundles } from '../../../../utils/bustMasterBundles';
 import { MasterRecordModal } from '../../../master/MasterRecordModal';
 import { formatProductCode } from '../../../../utils/formatProductCode';
 import type { SupplierScope } from '../supplier-management/SupplierScopeGate';
+import { lazyPage } from '../../../../utils/lazyPage';
 
 /* The full Add Supplier wizard, reachable from the "+" beside Supplier Name in
    the Map Supplier popup — the same component (and the same Domestic /
    International gate in front of it) the Supplier master opens, so a supplier
    added mid-mapping is a complete supplier, not a thin stub. Lazy so the
    product form doesn't carry the vendor wizard's bundle unless it's asked for. */
-const SupplierScopeGate = lazy(() => import('../supplier-management/SupplierScopeGate'));
-const AddVendorModal    = lazy(() => import('../supplier-management/AddVendorModal'));
+const SupplierScopeGate = lazyPage(() => import('../supplier-management/SupplierScopeGate'));
+const AddVendorModal    = lazyPage(() => import('../supplier-management/AddVendorModal'));
 
 export type VendorEntry = {
   id: string;

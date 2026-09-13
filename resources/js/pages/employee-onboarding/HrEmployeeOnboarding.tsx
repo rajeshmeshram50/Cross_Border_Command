@@ -1400,7 +1400,11 @@ function EditEmployeeModal({ isOpen, onClose, emp }: { isOpen: boolean; onClose:
                 <input className="onb-ee-input" value={mobile} onChange={e => setMobile(e.target.value)} placeholder="+91 XXXXX XXXXX" />
               </Col>
               <Col md={4}>
-                <label className="onb-ee-label">Employee ID</label>
+                {/* Carries the AUTO badge like every other system-filled
+                    field — the same Employee ID on the initiate form has one,
+                    and without it this read as an ordinary input the user was
+                    simply unable to type into. (#138) */}
+                <label className="onb-ee-label">Employee ID <span className="auto">AUTO</span></label>
                 <input className="onb-ee-input is-readonly" value={empId} readOnly />
               </Col>
             </Row>

@@ -43,17 +43,17 @@ interface Props {
 const fmtINR = (n: number) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n);
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
-// A standard 50 / 30 / 20 split derived from a monthly gross.
-const splitFromGross = (gross: number): SalaryComponent[] => {
-  const basic = Math.round(gross * 0.5);
-  const hra = Math.round(gross * 0.3);
-  const special = Math.max(0, gross - basic - hra);
-  return [
-    { code: 'basic', label: 'Basic Salary', amount: basic },
-    { code: 'hra', label: 'House Rent Allowance', amount: hra },
-    { code: 'special', label: 'Special Allowance', amount: special },
-  ];
-};
+/* The whole monthly gross on Basic, and nothing else — the same rule as
+   utils/salaryBreakup.ts seedBreakup(). (#9 / #147)
+
+   This was a 50 / 30 / 20 Basic / HRA / Special split, so opening the modal for
+   an employee with no structure, or typing a CTC into an empty breakup,
+   invented a House Rent Allowance and a Special Allowance nobody had agreed —
+   which then saved and appeared in payroll. Allowances are now added
+   deliberately; Basic carries the balance until they are. */
+const splitFromGross = (gross: number): SalaryComponent[] => [
+  { code: 'basic', label: 'Basic Salary', amount: Math.max(0, Math.round(gross)) },
+];
 
 /**
  * Create / revise an employee's salary structure (Rule 5 + Rule 19). Saving
