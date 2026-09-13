@@ -673,48 +673,27 @@ function DashboardRoutes({ user }: { user: any }) {
   const onboardingPending = user.user_type === 'employee' && !!user.onboarding_pending;
   const onboardingPages = ['/inbox', '/profile'];
 
-  /* Dashboard stats preload — fires once when this routes wrapper mounts
-   * (i.e. immediately after successful login). Warms the sessionStorage
-   * cache for the dashboard the user is about to land on, so the very
-   * first dashboard paint reads from cache and feels instant. Skips when
-   * the cache is already populated (rare — happens only if the user
-   * navigated back to login without closing the tab).
+  /* The dashboard-stats preload that used to live here is GONE.
    *
-   * Idle-scheduled so it never competes with the splash render or the
-   * initial route resolution. Fire-and-forget — any error keeps the
-   * dashboard's own on-mount fetch as the fallback.
+   * It fired on every login and warmed the stats cache for a dashboard the
+   * user might visit. What it actually cost, measured:
    *
-   * Cache variants used:
-   *   super_admin → 'admin'
-   *   client_admin / branch_user → 'client' (the default branch slice)
+   *   /dashboard/client-stats, cold cache … 110 queries
+   *
+   * Locally that is 147 ms, so it looked free. On the deployment every query
+   * is a network hop and the same call takes 8.5 s — the single slowest thing
+   * on any page. It was paid on the Case-to-Case list, the Sales Matrix,
+   * everywhere, for data none of those screens show.
+   *
+   * And it rarely bought anything: the server-side cache it warms lives for
+   * 60 SECONDS (Cache::remember in DashboardController::clientStats). Unless
+   * the user opened the dashboard within a minute of logging in, the whole
+   * 8.5 s was spent and then expired unused.
+   *
+   * Nothing is lost by dropping it. Every dashboard already fetches its own
+   * stats on mount and writes the same sessionStorage cache — this comment's
+   * predecessor called that "the fallback"; it is simply the path now.
    */
-  useEffect(() => {
-    const variant = user.user_type === 'super_admin' ? 'admin' : 'client';
-    const endpoint = user.user_type === 'super_admin'
-      ? '/dashboard/admin-stats'
-      : '/dashboard/client-stats';
-    const warm = () => {
-      // Inline imports to keep the splash bundle small.
-      Promise.all([
-        import('../pages/dashboard/dashboardStatsCache'),
-      ]).then(([cache]) => {
-        if (cache.readDashboardStats(variant)) return;
-        api.get(endpoint)
-          .then(res => cache.writeDashboardStats(variant, res.data))
-          .catch(() => { /* silent — dashboard's own fetch covers it */ });
-      });
-    };
-    const w = window as Window & {
-      requestIdleCallback?: (cb: () => void) => number;
-      cancelIdleCallback?: (h: number) => void;
-    };
-    const handle = w.requestIdleCallback ? w.requestIdleCallback(warm) : window.setTimeout(warm, 800);
-    return () => {
-      if (w.requestIdleCallback) w.cancelIdleCallback?.(handle);
-      else window.clearTimeout(handle);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user.user_type]);
 
   // Show splash on first login
   if (!splashDone) {

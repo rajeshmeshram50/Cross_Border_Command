@@ -14,7 +14,7 @@ import {
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import { VersionHistoryModal, AgreementTimelineModal, type CtcVersion, type CtcSigner } from './clmCtcModals';
-import { ShimmerTable } from '../../../components/ui/Shimmer';
+import { ShimmerTable, ShimmerDocumentPrep } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
 import SearchClear from '../../../components/ui/SearchClear';
 
@@ -258,12 +258,14 @@ export default function ClmAgreementsSentPage() {
       {/* Whole-page lock while a contract is downloading or its history is
           loading — block every other action (edit, other rows, tabs, download)
           until it finishes and can't be cut off. */}
-      {(downloadingId !== null || lifecycleBusy !== null) && createPortal(
-        <div style={{ position: 'fixed', inset: 0, zIndex: 2000000, background: 'rgba(8,47,73,.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 15, fontFamily: 'var(--font-sans)' }}>
-          <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#67e8f9" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'awsSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-          <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>{downloadingId !== null ? 'Preparing your download…' : 'Loading…'}</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.72)' }}>Please wait — don't leave this page.</div>
-        </div>, document.body)}
+      {(downloadingId !== null || lifecycleBusy !== null) && (
+        <ShimmerDocumentPrep
+          title={downloadingId !== null ? 'Preparing your download…' : 'Loading…'}
+          note={downloadingId !== null
+            ? "Large agreements can take a moment — please don't leave this page."
+            : "Fetching this agreement's history — please don't leave this page."}
+        />
+      )}
 
       {/* HEADER STRIP */}
       <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', minHeight: 64, border: `1px solid ${t.dark ? 'rgba(6,182,212,.25)' : 'rgba(6,182,212,.3)'}`, borderRadius: 14, background: t.dark ? '#102234' : 'linear-gradient(110deg,#ecfffe 0%,#cffafe 25%,#a5f3fc 55%,#67e8f9 80%,#22d3ee 100%)', boxShadow: t.dark ? '0 2px 10px rgba(6,182,212,.1)' : '0 2px 0 rgba(255,255,255,.88) inset,0 4px 18px rgba(6,182,212,.2)' }}>

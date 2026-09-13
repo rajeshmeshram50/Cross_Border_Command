@@ -756,12 +756,30 @@ export default function ClmBuyerProfilePage() {
   };
   const openConsVault = (r: ConsRow, tab: VaultTab) => {
     if (!r.db_id) return;
+    /* A Same-as-Customer consignee never shows a vault — it shows the hand-off
+       card pointing at the customer it mirrors. The card needs that customer,
+       and this page already holds every buyer row, so resolve it here and the
+       modal can render with no request at all.
+       Without the hint the modal had to fetch the vault purely to read one
+       boolean off the response, which is why the full skeleton flashed on
+       screen before the card replaced it. A lookup miss (the customer sits
+       outside this profile) leaves the hint null and the old fetch path runs. */
+    const mirrorRow = r.same_as_customer ? bp.buyers.find((b) => b.id === r.cid) : undefined;
     setConsVaultTab(tab);
     setConsVault({
       id: r.id, db_id: r.db_id, company: r.name, segment: r.seg, country: r.country, customerId: r.cid,
       contact: r.contact ?? undefined,
       contactCity: r.city ?? undefined,
       risk: r.risk ?? undefined,
+      sameAsCustomer: r.same_as_customer,
+      mirrorCustomer: mirrorRow?.db_id
+        ? {
+            id: mirrorRow.db_id, code: mirrorRow.id, name: mirrorRow.name,
+            segment: mirrorRow.seg.join(', '), type: mirrorRow.type ?? null,
+            risk: mirrorRow.risk ?? null, country: mirrorRow.country,
+            city: mirrorRow.city ?? null, contact: mirrorRow.contact ?? null,
+          }
+        : null,
     });
   };
   // Open the buyer (customer) Evidence Vault from a transaction row. Reuses the

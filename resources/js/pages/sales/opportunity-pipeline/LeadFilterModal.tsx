@@ -522,24 +522,35 @@ export const LFM_CSS = `
 }
 
 .lfm-modal {
-  /* Height follows the ACTIVE category instead of being pinned at 480px.
-     A flat height meant Lead Type (2 options) got exactly as much box as
-     Customer (hundreds), so stepping from a long category to a short one
-     left the options pane half empty and the popup never gave the space
-     back (QA #264). Now a short category shrinks the popup and a long one
-     lets it grow to 84vh, so more options are visible before scrolling.
-     The floor is the left category menu — it has six fixed rows plus the
-     Apply / Reset footer, and that is what stops the popup collapsing. */
-  width: min(94vw, 720px); height: auto; max-height: min(84vh, 640px);
+  /* Height is PINNED, not content-driven. Letting it follow the active
+     category meant the popup resized on every category switch — Segment
+     (dozens of options) opened tall, Country (three) snapped short — so
+     the box jumped under the cursor and Apply / Reset moved with it.
+     A fixed frame keeps the chrome still and hands the overflow to the
+     options list, which scrolls instead. Viewport-capped so it still
+     fits on short screens.
+     The floor is set by the left column, which does not scroll and is
+     clipped rather than shrunk: the tallest caller (Lead Filter, six menu
+     rows) needs about 390px for the label, the rows and the Apply / Reset
+     footer, plus roughly 67px of header — so ~457px is the hard limit and
+     500px leaves a small safety margin. Do not go lower without compacting
+     the menu rows first. */
+  width: min(94vw, 720px); height: min(74vh, 500px); max-height: min(74vh, 500px);
   background: #fff; border-radius: 22px; box-shadow: 0 24px 60px rgba(var(--lfm-c-rgb),.18), 0 8px 24px rgba(15,23,42,.20);
-  overflow: hidden; display: flex; flex-direction: column; position: relative;
+  overflow: hidden; display: flex; flex-direction: column;
   animation: lfm-pop .18s ease-out;
 }
 @keyframes lfm-pop { from { transform: scale(.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
 /* ── Header strip ── */
+/* flex-shrink:0 is load-bearing. The header is a flex item of the modal
+ * column, so by default it is squeezable — and once a long category (Segment,
+ * Customer) pushed the content past the modal's height, flexbox took the
+ * space back out of the HEADER, crushing its padding and clipping the title.
+ * Short categories fit, so the damage only showed on the long ones. The
+ * options list is the only child that may give ground. */
 .lfm-head {
-  position: relative;
+  position: relative; flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
   padding: 14px 20px;
   background: linear-gradient(135deg, var(--lfm-c-700) 0%, var(--lfm-c-600) 60%, var(--lfm-c-500) 100%);
@@ -585,65 +596,47 @@ export const LFM_CSS = `
 /* flex-basis AUTO, not 0. With the modal on height:auto, a body declared
    flex:1 (basis 0%) contributes nothing to the modal's content height and
    the popup collapses to its header. */
-/* Categories run ACROSS THE TOP, not down the side (QA #41 / #264).
- *
- * As a left column the menu was six fixed rows plus the Apply / Reset pair —
- * ~350px — and that column, not the options, set the popup's height. Platform
- * and Lead Type carry ONE option each, so those categories opened with ~250px
- * of empty pane under a single checkbox, and no amount of trimming the rows
- * closed it: the column always wins.
- * Stacked, nothing competes with the options for height, so the popup is
- * exactly as tall as the category being shown and the gap is gone.
- *
- * The shape itself is not new — it is the layout this modal already switched to
- * under 720px, now used at every width. Every rule here is on the shared
- * lfm-* classes, so the Lead, Party and DCP filters change together and stay
- * identical to each other, which is the point of sharing the sheet. */
-.lfm-body {
-  flex: 1 1 auto; display: flex; flex-direction: column;
-  min-height: 0; background: #f8fafc;
-  /* Clears the pinned action bar below. */
-  padding-bottom: 58px;
-}
+.lfm-body { flex: 1 1 auto; display: flex; min-height: 0; background: #f8fafc; }
 
 /* ── Sidebar ── */
-/* Every fixed pixel in this column is a pixel of blank space in the options
-   pane beside it, because the column is what sets the popup's height and the
-   options rarely fill it — Platform and Lead Type carry ONE option each
-   (QA #41 / #264). Trimmed as far as the design allows: the rows still read
-   as rows and the buttons still read as buttons. */
 .lfm-left {
-  width: 100%; flex-shrink: 0;
+  width: 178px; flex-shrink: 0;
   background: #fff;
-  border-bottom: 1px solid #e2e8f0;
+  border-right: 1px solid #e2e8f0;
   display: flex; flex-direction: column;
-  padding: 10px 20px 12px;
+  padding: 12px 12px 6px;
 }
 .lfm-left-label {
   font-size: 10px; font-weight: 700; color: #94a3b8;
   letter-spacing: .15em; text-transform: uppercase;
   padding: 0 10px 8px;
 }
-.lfm-menu { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; }
+.lfm-menu { display: flex; flex-direction: column; gap: 4px; }
 .lfm-menu-item {
   display: flex; align-items: center; gap: 9px;
-  padding: 6px 11px; border-radius: 8px;
+  padding: 7px 11px; border-radius: 8px;
   border: 1.5px solid transparent;
   background: transparent;
   font: inherit; font-size: 11.5px; font-weight: 600; color: #475569;
   cursor: pointer; text-align: left;
-  transition: background .15s, border-color .15s, color .15s;
+  /* Text colour snaps with the icon so an interrupted switch never leaves
+   * a facet in a washed-out half-state. */
+  transition: background-color .15s, border-color .15s;
 }
 .lfm-menu-item:hover { background: #f1f5f9; color: #0f172a; }
+/* Fill + glyph colour deliberately snap (only border/shadow animate).
+ * The active rule paints a gradient, and background-image cannot be
+ * interpolated: it vanishes on frame 1 while background-color would still
+ * be easing out of transparent, leaving a blank white tile with an
+ * invisible white glyph. On a slow page that half-state freezes mid-way
+ * and the previously-picked facet reads as an empty box. */
 .lfm-menu-ico {
-  width: 22px; height: 22px; border-radius: 7px; flex-shrink: 0;
+  width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  background: #fff; border: 1.5px solid #e2e8f0; color: #64748b;
-  transition: all .15s;
+  background: #f8fafc; border: 1.5px solid #e2e8f0; color: #64748b;
+  transition: border-color .15s, box-shadow .15s;
 }
-/* No flex:1 in a row — that stretched every chip to fill the strip. They size
-   to their own label now, and wrap when the row runs out. */
-.lfm-menu-label { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lfm-menu-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lfm-menu-dot {
   width: 7px; height: 7px; border-radius: 50%; background: var(--lfm-c-600); flex-shrink: 0;
   box-shadow: 0 0 0 3px rgba(var(--lfm-c-rgb),.18);
@@ -661,27 +654,23 @@ export const LFM_CSS = `
   border-color: var(--lfm-c-200);
   color: var(--lfm-c-700); font-weight: 700;
 }
+/* background-color is set alongside the gradient so the tile still has a
+ * solid cyan fill the instant the gradient is dropped on de-select. */
 .lfm-menu-item.on .lfm-menu-ico {
-  background: linear-gradient(135deg, var(--lfm-c-500), var(--lfm-c-600));
+  background-color: var(--lfm-c-600);
+  background-image: linear-gradient(135deg, var(--lfm-c-500), var(--lfm-c-600));
   border-color: var(--lfm-c-600); color: #fff;
   box-shadow: 0 4px 12px rgba(var(--lfm-c-rgb),.30);
 }
 
-/* Action bar, pinned to the bottom of the MODAL.
-   In the DOM it still sits inside .lfm-left — all four modals nest it there —
-   so it is positioned out of flow rather than moved, which keeps this a
-   stylesheet change and leaves every caller's markup alone.
-   row-reverse: the markup is Apply then Reset, and reversing puts Apply on the
-   right where a primary action belongs, without touching the JSX. */
+/* Same reasoning as the header: Apply / Reset must keep their full height
+ * when the category menu runs long, so they are not squeezable either. */
 .lfm-left-foot {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
-  display: flex; flex-direction: row-reverse; justify-content: flex-start;
-  align-items: center; gap: 12px;
-  margin-top: 0; padding: 11px 20px;
-  background: #fff; border-top: 1px solid #e2e8f0;
+  margin-top: auto; padding-top: 12px; flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 10px;
 }
 .lfm-btn {
-  padding: 8px 14px; border-radius: 10px;
+  padding: 9px 14px; border-radius: 10px;
   font: inherit; font-size: 12.5px; font-weight: 700;
   cursor: pointer; border: none; transition: all .15s;
 }
@@ -699,10 +688,10 @@ export const LFM_CSS = `
 .lfm-btn-reset:hover { color: var(--lfm-c-600); }
 
 /* ── Right pane ── */
-/* flex-basis AUTO, not 0. In the stacked body a basis-0 pane contributes
-   nothing to the modal's content height and collapses to its padding. */
-.lfm-right { flex: 1 1 auto; display: flex; flex-direction: column; padding: 12px 20px; min-width: 0; gap: 10px; background: #fff; }
-.lfm-search-wrap { position: relative; }
+.lfm-right { flex: 1; display: flex; flex-direction: column; padding: 12px 20px; min-width: 0; gap: 10px; background: #fff; }
+/* Not squeezable — a long option list must not steal height from the
+ * search field above it; the list itself absorbs the overflow. */
+.lfm-search-wrap { position: relative; flex-shrink: 0; }
 .lfm-search-ico {
   position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
   color: #94a3b8; pointer-events: none;
@@ -718,10 +707,23 @@ export const LFM_CSS = `
 .lfm-search:hover { border-color: #cbd5e1; }
 .lfm-search:focus { background: #fff; border-color: var(--lfm-c-600); box-shadow: 0 0 0 3px rgba(var(--lfm-c-rgb),.15); }
 
-/* Sized by its own options (basis auto) so a short category doesn't hold open
-   a tall empty pane, and free to shrink + scroll once the modal hits 84vh —
-   which is what a long category like Customer does. */
-.lfm-options { flex: 0 1 auto; min-height: 0; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 4px; scrollbar-width: thin; scrollbar-color: #d1d5db transparent; }
+/* Grows to fill the pinned frame so the scroll track always ends at the
+ * bottom of the popup, whatever the category holds.
+ *
+ * The gutter pair matters: scrollbar-gutter reserves the 8px track even
+ * when a category is short enough not to scroll, and the negative right
+ * margin bleeds that reserved strip into the pane's own padding. Without
+ * both, the cards sat 12px narrower than the search field above them and
+ * changed width between categories depending on whether a scrollbar had
+ * appeared — Segment (scrolls) rendered narrower than Country (does not).
+ * Now the cards line up with the search field and keep one width. */
+.lfm-options {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  scrollbar-gutter: stable;
+  margin-right: -12px; padding-right: 4px; padding-bottom: 2px;
+  display: flex; flex-direction: column; gap: 4px;
+  scrollbar-width: thin; scrollbar-color: #d1d5db transparent;
+}
 .lfm-options::-webkit-scrollbar { width: 8px; }
 .lfm-options::-webkit-scrollbar-track { background: transparent; }
 .lfm-options::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
@@ -805,15 +807,14 @@ export const LFM_CSS = `
 /* ── Dark mode ── */
 [data-bs-theme="dark"] .lfm-modal { background: #0f172a; color: #e2e8f0; }
 [data-bs-theme="dark"] .lfm-body  { background: #0b1220; }
-[data-bs-theme="dark"] .lfm-left  { background: #0f172a; border-bottom-color: #1e293b; }
-[data-bs-theme="dark"] .lfm-left-foot { background: #0f172a; border-top-color: #1e293b; }
+[data-bs-theme="dark"] .lfm-left  { background: #0f172a; border-right-color: #1e293b; }
 [data-bs-theme="dark"] .lfm-right { background: #0f172a; }
 [data-bs-theme="dark"] .lfm-left-label { color: #94a3b8; }
 [data-bs-theme="dark"] .lfm-menu-item { color: #cbd5e1; }
 [data-bs-theme="dark"] .lfm-menu-item:hover { background: rgba(var(--lfm-c-rgb),.10); color: var(--lfm-c-050); }
 [data-bs-theme="dark"] .lfm-menu-ico { background: #1e293b; border-color: #334155; color: #94a3b8; }
 [data-bs-theme="dark"] .lfm-menu-item.on { background: rgba(var(--lfm-c-rgb),.18); border-color: rgba(var(--lfm-c-200-rgb),.45); color: var(--lfm-c-200); }
-[data-bs-theme="dark"] .lfm-menu-item.on .lfm-menu-ico { background: linear-gradient(135deg,var(--lfm-c-500),var(--lfm-c-600)); border-color: rgba(var(--lfm-c-200-rgb),.6); color: #fff; }
+[data-bs-theme="dark"] .lfm-menu-item.on .lfm-menu-ico { background-color: var(--lfm-c-600); background-image: linear-gradient(135deg,var(--lfm-c-500),var(--lfm-c-600)); border-color: rgba(var(--lfm-c-200-rgb),.6); color: #fff; }
 [data-bs-theme="dark"] .lfm-btn-reset { color: #94a3b8; }
 [data-bs-theme="dark"] .lfm-btn-reset:hover { color: var(--lfm-c-200); }
 [data-bs-theme="dark"] .lfm-search { background: #1e293b; border-color: #334155; color: #e2e8f0; }
@@ -834,13 +835,20 @@ export const LFM_CSS = `
 [data-bs-theme="dark"] .lfm-preset-divider::after { background: #1e293b; }
 
 /* ── Tablet — sidebar collapses to top row, options stack ── */
-/* The sidebar-to-strip switch this block used to make is the default now, so
-   only the genuinely narrow-screen adjustments are left. */
 @media (max-width: 720px) {
-  .lfm-modal { max-height: 92vh; width: 95vw; }
-  .lfm-left  { padding: 10px 14px 12px; }
-  .lfm-left-foot { padding: 11px 14px; }
-  .lfm-right { padding: 12px 14px; max-height: 60vh; }
+  .lfm-modal { height: 92vh; max-height: 92vh; width: 95vw; }
+  .lfm-body  { flex-direction: column; }
+  .lfm-left  {
+    width: 100%; flex-direction: column; padding: 12px;
+    border-right: none; border-bottom: 1px solid #e2e8f0;
+  }
+  [data-bs-theme="dark"] .lfm-left { border-bottom-color: #1e293b; }
+  .lfm-menu { flex-direction: row; flex-wrap: wrap; }
+  .lfm-menu-item { flex: 1 0 auto; min-width: 130px; }
+  .lfm-left-foot { padding-top: 10px; }
+  /* min-height:0 (not a vh cap) so the pane shrinks inside the pinned
+   * frame and the options list keeps ownership of the scroll. */
+  .lfm-right { padding: 14px 16px; min-height: 0; }
 }
 
 /* ── Phone — single-column date picker, edge-to-edge modal ── */

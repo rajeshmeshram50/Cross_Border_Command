@@ -11,7 +11,7 @@ import api from '../../../api';
 import { type AtaContract, inits, pad2, PER_PAGE } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import WorklistPager from '../../../components/ui/WorklistPager';
-import { ShimmerTable } from '../../../components/ui/Shimmer';
+import { ShimmerTable, ShimmerDocumentPrep, ShimmerDocumentPage } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
 import { useIsClipped } from '../../../components/ui/DataTable';
 
@@ -271,6 +271,11 @@ export default function ClmAgreementsToApprovePage() {
         <StatCard t={t} accent="#ef4444,#dc2626" border="#FEE2E2" titleColor="#7F1D1D" tag="Rejected" tagBg="#FEE2E2" tagColor="#DC2626" value={counts.rejected} label="Rejected" sub="Sent back or declined"
           icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>} />
       </div>
+
+      {/* Building the agreement PDF is a server-side render that can run for
+          tens of seconds on a table-heavy contract, and the row button alone
+          gave no sign of it. Same overlay the other two CTC pages use. */}
+      {dlId !== null && <ShimmerDocumentPrep />}
 
       {/* FILTER TABS + TABLE */}
       <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#A5F3FC'}`, boxShadow: '0 1px 4px rgba(6,182,212,.08)', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
@@ -994,7 +999,14 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
             away); the inner div is the only thing that scrolls a long page. */}
         <div style={{ flex: 1, minHeight: 0, position: 'relative', background: t.dark ? 'radial-gradient(circle at 50% 0%, #14233a, #0b1220)' : 'radial-gradient(circle at 50% 0%, #eef4f8, #d8e2ea)' }}>
           <div ref={stageRef} style={{ position: 'absolute', inset: 0, overflowY: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '20px 64px' }}>
-            {loading && <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: t.dark ? '#cbd5e1' : '#475569' }}><span className="spinner-border text-info" role="status" aria-hidden="true" /><span style={{ fontSize: 12, fontWeight: 600 }}>Loading agreement…</span></div>}
+            {/* The viewer is waiting on the same server-side render the download
+                uses, so it shows the page building rather than a bare spinner. */}
+            {loading && (
+              <div role="status" aria-live="polite" aria-label="Loading agreement" style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: t.dark ? '#cbd5e1' : '#475569' }}>
+                <ShimmerDocumentPage width={300} />
+                <span style={{ fontSize: 12, fontWeight: 600 }}>Loading agreement… large ones can take a moment</span>
+              </div>
+            )}
             {error && <div style={{ alignSelf: 'center', textAlign: 'center', color: '#dc2626', fontWeight: 600, fontSize: 12.5 }}>Could not load the agreement PDF.</div>}
             {!loading && !error && (
               <div className="ata-paper" style={{ width: '100%', maxWidth: 620, borderRadius: 6, overflow: 'hidden', boxShadow: '0 12px 40px rgba(8,3,28,.35)', background: '#fff' }}>

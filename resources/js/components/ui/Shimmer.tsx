@@ -6,6 +6,7 @@
  * 0×0 invisible divs and made every shimmer disappear.
  */
 import React from 'react';
+import { createPortal } from 'react-dom';
 
 const card: React.CSSProperties = {
   background: 'var(--shim-card-bg, #fff)',
@@ -868,5 +869,99 @@ export function ShimmerDashboard() {
         <ShimmerList count={5} />
       </div>
     </div>
+  );
+}
+
+/* ── Document sheet ─────────────────────────────────────────────────────
+ * An A4-proportioned page drawing itself in: letterhead, body copy, a
+ * clause table and a signature block. Used on its own inside a viewer
+ * that is waiting for a PDF, and by ShimmerDocumentPrep below.
+ */
+export function ShimmerDocumentPage({ width = 248 }: { width?: number | string }) {
+  const line = (w: string | number, h = 7) => <Shimmer width={w} height={h} radius={3} />;
+  return (
+    <div
+      style={{
+        ...card,
+        width, maxWidth: '80vw', aspectRatio: '1 / 1.414',
+        padding: 18, display: 'flex', flexDirection: 'column', gap: 11,
+        boxShadow: '0 18px 50px rgba(0,0,0,.28)',
+      }}
+    >
+      {/* letterhead */}
+      <div style={{ ...row, gap: 10 }}>
+        <Shimmer width={30} height={30} radius={8} />
+        <div style={{ ...stack(5), flex: 1 }}>
+          {line('72%', 8)}
+          {line('45%', 6)}
+        </div>
+      </div>
+      <Shimmer height={1} radius={0} />
+
+      {/* body copy */}
+      <div style={stack(6)}>
+        {line('100%')}{line('94%')}{line('97%')}{line('62%')}
+      </div>
+
+      {/* the clause table — the part that actually makes these PDFs slow */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 4 }}>
+        {Array.from({ length: 9 }).map((_, i) => (
+          <Shimmer key={i} height={11} radius={3} />
+        ))}
+      </div>
+
+      <div style={stack(6)}>
+        {line('100%')}{line('88%')}
+      </div>
+
+      {/* signature block, pushed to the foot of the page */}
+      <div style={{ ...stack(6), marginTop: 'auto' }}>
+        <Shimmer width="46%" height={22} radius={4} />
+        {line('34%', 6)}
+      </div>
+    </div>
+  );
+}
+
+/* ── Document preparation overlay ───────────────────────────────────────
+ * For a download the server has to BUILD the file before it can stream a
+ * single byte, so the wait is dead air: no progress events, no partial
+ * content. The CTC agreement PDFs are the slow case — dompdf lays out
+ * every page, and a table-heavy agreement costs tens of seconds the first
+ * time (afterwards it is served from the render cache).
+ *
+ * Indeterminate on purpose. A percentage bar would have to be invented,
+ * because the bytes all arrive at the end. Drawing the page as it is
+ * assembled says "your document is being built" without lying about how
+ * far along it is.
+ *
+ * Self-portalling so callers don't each repeat the fixed-overlay markup;
+ * raise `zIndex` when it has to clear a modal that is already open.
+ */
+export function ShimmerDocumentPrep({
+  title = 'Preparing your download…',
+  note  = "Large agreements can take a moment — please don't leave this page.",
+  zIndex = 2000000,
+}: { title?: string; note?: string; zIndex?: number }) {
+  return createPortal(
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label={title}
+      style={{
+        position: 'fixed', inset: 0, zIndex,
+        background: 'rgba(15,7,50,.58)',
+        backdropFilter: 'blur(2px)', WebkitBackdropFilter: 'blur(2px)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        gap: 16, padding: 24, fontFamily: 'var(--font-sans)',
+      }}
+    >
+      <ShimmerDocumentPage />
+      <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>{title}</div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.72)', maxWidth: 340 }}>{note}</div>
+      </div>
+    </div>,
+    document.body,
   );
 }

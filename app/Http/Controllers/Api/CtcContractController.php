@@ -1653,6 +1653,45 @@ class CtcContractController extends Controller
             return $this->renderVersionDocx($processedHtml, $row->title, ($row->code ?: 'CTC') . '-v' . $v);
         }
 
+        /* Serve a previously rendered copy when nothing that reaches the page
+         * has changed.
+         *
+         * Measured on real rows: the dompdf render IS the request. CTC-006
+         * (697 KB of HTML) took 56.8s of a 57.5s request; CTC-004 (876 KB)
+         * 5.6s of 5.7s. Only 7 queries either way, so there is no SQL to
+         * tune here. Size is not the driver — CTC-006 is the SMALLER of the
+         * two and ten times slower because it carries 300 tables / 10,800
+         * cells, and dompdf's table layout degrades sharply on cell count.
+         *
+         * A version entry is a frozen historical snapshot, so the same bytes
+         * get rebuilt from scratch on every click. The fingerprint below
+         * covers every value the blade actually reads — $generatedDate,
+         * $requestId, $signers and $party appear only in its docblock, never
+         * in its output, which is why a date does not belong in the key.
+         * Change the content, the approval signature, an org/party token, the
+         * header, the footer or the logo and the key changes with it, so a
+         * stale file can never be served. */
+        $fingerprint = sha1(implode("\0", [
+            $processedHtml,
+            json_encode($headerConfig),
+            json_encode($footerConfig),
+            $headerLogoBase64,
+            (string) $row->title,
+            (string) ($row->name ?? ''),
+            (string) ($client?->org_name ?? ''),
+        ]));
+
+        $fileName  = ($row->code ?: 'CTC') . '-v' . $v . '.pdf';
+        $cacheDir  = 'ctc-version-pdf/' . $row->id;
+        $cachePath = $cacheDir . '/v' . $v . '-' . $fingerprint . '.pdf';
+        // Private disk on purpose — these are executed legal documents and
+        // must stay behind the auth middleware, never under /storage.
+        $disk = Storage::disk('local');
+
+        if ($disk->exists($cachePath)) {
+            return response()->download($disk->path($cachePath), $fileName, ['Content-Type' => 'application/pdf']);
+        }
+
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.clm-signature-document', [
             'document'         => $row,
             'party'            => null,
@@ -1667,7 +1706,26 @@ class CtcContractController extends Controller
             'headerLogoBase64' => $headerLogoBase64,
         ])->setPaper('a4')->setOption('isPhpEnabled', true);
 
-        return $pdf->download(($row->code ?: 'CTC') . '-v' . $v . '.pdf');
+        $bytes = $pdf->output();
+
+        /* Best-effort: a disk that is full or read-only must not turn a
+         * working download into a 500, so the write is never fatal. Older
+         * renders of THIS version are dropped first, which keeps the cache
+         * at one file per version instead of one per edit. */
+        try {
+            foreach ($disk->files($cacheDir) as $old) {
+                if (str_starts_with(basename($old), 'v' . $v . '-')) $disk->delete($old);
+            }
+            $disk->put($cachePath, $bytes);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return response()->streamDownload(
+            fn () => print($bytes),
+            $fileName,
+            ['Content-Type' => 'application/pdf']
+        );
     }
 
     /**
