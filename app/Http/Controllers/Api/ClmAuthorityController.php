@@ -289,18 +289,18 @@ class ClmAuthorityController extends Controller
 
         // id-based CLM masters — token-match the id within the comma-joined col.
         foreach ($this->idUsageTables() as $t) {
-            if (!Schema::hasTable($t['table']) || !Schema::hasColumn($t['table'], $t['col'])) continue;
+            if (!$this->schemaHas($t["table"], $t["col"])) continue;
             $q = DB::table($t['table'])->where($t['col'], 'like', '%' . $id . '%');
-            if (Schema::hasColumn($t['table'], 'client_id')) $q->where('client_id', $clientId);
+            if ($this->schemaHas($t["table"], "client_id")) $q->where('client_id', $clientId);
             $hit = $q->pluck($t['col'])->contains(fn ($v) => ClmAuthority::storedContainsId($v, $id));
             if ($hit) $usedIn[] = $t['label'];
         }
 
         // name-based legacy tables — exact name match (scoped where possible).
         foreach ($this->nameUsageTables() as $t) {
-            if (!Schema::hasTable($t['table']) || !Schema::hasColumn($t['table'], $t['col'])) continue;
+            if (!$this->schemaHas($t["table"], $t["col"])) continue;
             $q = DB::table($t['table'])->where($t['col'], $name);
-            if (Schema::hasColumn($t['table'], 'client_id')) $q->where('client_id', $clientId);
+            if ($this->schemaHas($t["table"], "client_id")) $q->where('client_id', $clientId);
             if ($q->exists()) $usedIn[] = $t['label'];
         }
 
@@ -314,9 +314,9 @@ class ClmAuthorityController extends Controller
            client's rules, and an authority CODE is only unique per
            (client, branch) — so another branch's AUTH-003 could block this
            one's deletion. */
-        if ($code && Schema::hasTable('clm_segment_rules') && Schema::hasColumn('clm_segment_rules', 'auths_json')) {
+        if ($code && $this->schemaHas('clm_segment_rules', 'auths_json')) {
             $rules = DB::table('clm_segment_rules');
-            if (Schema::hasColumn('clm_segment_rules', 'client_id')) {
+            if ($this->schemaHas('clm_segment_rules', 'client_id')) {
                 $rules->where('client_id', $clientId);
             }
             foreach ($rules->pluck('auths_json') as $j) {
@@ -339,9 +339,9 @@ class ClmAuthorityController extends Controller
         if ($oldName === $newName) return;
 
         foreach ($this->nameUsageTables() as $t) {
-            if (!Schema::hasTable($t['table']) || !Schema::hasColumn($t['table'], $t['col'])) continue;
+            if (!$this->schemaHas($t["table"], $t["col"])) continue;
             $q = DB::table($t['table'])->where($t['col'], $oldName);
-            if (Schema::hasColumn($t['table'], 'client_id')) $q->where('client_id', $clientId);
+            if ($this->schemaHas($t["table"], "client_id")) $q->where('client_id', $clientId);
             $q->update([$t['col'] => $newName]);
         }
     }
@@ -381,13 +381,64 @@ class ClmAuthorityController extends Controller
         }
     }
 
+    /**
+     * Does `$table` exist AND have `$column`? Answered from ONE query.
+     *
+     * These checks are defensive — the referencing tables come from this app's
+     * own migrations, but a half-migrated environment should degrade rather
+     * than fatal. The cost, though, was absurd: every Schema::hasTable /
+     * hasColumn call is its own round trip to information_schema, this
+     * controller makes fifteen of them, and the schema has 199 tables. That is
+     * 24 queries per list request spent asking Postgres whether the app's own
+     * tables exist.
+     *
+     * One query now fetches every (table, column) pair that matters and the
+     * answers are served from memory for the rest of the request. Static, not
+     * cached, deliberately: it must never be stale across a deployment, and a
+     * single query per request is already cheap enough that caching it would
+     * add a failure mode for no gain.
+     */
+    private function schemaHas(string $table, string $column): bool
+    {
+        static $map = null;
+
+        if ($map === null) {
+            $tables = array_values(array_unique(array_merge(
+                array_column($this->idUsageTables(), 'table'),
+                array_column($this->nameUsageTables(), 'table'),
+                ['clm_segment_rules']
+            )));
+
+            $map = [];
+            try {
+                $rows = DB::table('information_schema.columns')
+                    ->whereRaw('table_schema = current_schema()')
+                    ->whereIn('table_name', $tables)
+                    ->get(['table_name', 'column_name']);
+                foreach ($rows as $r) {
+                    $map[$r->table_name . '.' . $r->column_name] = true;
+                }
+            } catch (\Throwable $e) {
+                // Fall back to the per-call behaviour rather than wrongly
+                // reporting that nothing exists, which would silently blank
+                // every in_use flag.
+                $map = false;
+            }
+        }
+
+        if ($map === false) {
+            return Schema::hasTable($table) && Schema::hasColumn($table, $column);
+        }
+        return isset($map[$table . '.' . $column]);
+    }
+
     private function usedIdSet(?int $clientId): array
     {
         $used = [];
         foreach ($this->idUsageTables() as $t) {
-            if (!Schema::hasTable($t['table']) || !Schema::hasColumn($t['table'], $t['col'])) continue;
+            if (!$this->schemaHas($t["table"], $t["col"])) continue;
             $q = DB::table($t['table'])->whereNotNull($t['col']);
-            if ($clientId && Schema::hasColumn($t['table'], 'client_id')) $q->where('client_id', $clientId);
+            if ($clientId && $this->schemaHas($t["table"], "client_id")) $q->where('client_id', $clientId);
             foreach ($q->pluck($t['col']) as $v) {
                 foreach (explode(',', (string) $v) as $tok) {
                     $tok = trim($tok);
@@ -403,9 +454,9 @@ class ClmAuthorityController extends Controller
     {
         $used = [];
         foreach ($this->nameUsageTables() as $t) {
-            if (!Schema::hasTable($t['table']) || !Schema::hasColumn($t['table'], $t['col'])) continue;
+            if (!$this->schemaHas($t["table"], $t["col"])) continue;
             $q = DB::table($t['table'])->whereNotNull($t['col'])->distinct();
-            if ($clientId && Schema::hasColumn($t['table'], 'client_id')) $q->where('client_id', $clientId);
+            if ($clientId && $this->schemaHas($t["table"], "client_id")) $q->where('client_id', $clientId);
             foreach ($q->pluck($t['col']) as $v) {
                 $p = mb_strtolower(trim((string) $v));
                 if ($p !== '') $used[$p] = true;
@@ -418,11 +469,11 @@ class ClmAuthorityController extends Controller
     private function usedCodeSet(?int $clientId): array
     {
         $used = [];
-        if (!Schema::hasTable('clm_segment_rules') || !Schema::hasColumn('clm_segment_rules', 'auths_json')) {
+        if (!$this->schemaHas('clm_segment_rules', 'auths_json')) {
             return $used;
         }
         $q = DB::table('clm_segment_rules');
-        if ($clientId && Schema::hasColumn('clm_segment_rules', 'client_id')) {
+        if ($clientId && $this->schemaHas('clm_segment_rules', 'client_id')) {
             $q->where('client_id', $clientId);
         }
         foreach ($q->pluck('auths_json') as $j) {
