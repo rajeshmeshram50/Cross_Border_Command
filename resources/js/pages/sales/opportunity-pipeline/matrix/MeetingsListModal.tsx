@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -52,18 +52,50 @@ export default function MeetingsListModal({
   const [pendingDelete, setPendingDelete] = useState<Meeting | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const refresh = () => {
+  /* Identifies the in-flight load. Bumped by every refresh and by closing
+   * the modal, so a response (or its held-back paint, below) that is no
+   * longer the current one is dropped instead of overwriting fresher rows. */
+  const reqRef = useRef(0);
+
+  /* This endpoint answers in ~10 ms, so a skeleton put up and taken down on
+   * the response is drawn and destroyed inside one frame — correct, and
+   * completely invisible. Holding it briefly is what makes the state legible
+   * rather than a flicker. Same value the Leads worksheet uses. */
+  const SKELETON_MIN_MS = 450;
+
+  const refresh = async () => {
     if (!oppId) return;
+    const token = ++reqRef.current;
+    const since = Date.now();
     setLoading(true);
-    api.get<Meeting[]>('/sales/meetings', { params: { scope: 'mine', search: oppId } })
-      .then(({ data }) => setRows((data ?? []).filter(m => m.opp_id === oppId)))
-      .catch(() => toast.error('Load failed', 'Could not load meetings'))
-      .finally(() => setLoading(false));
+    /* Held back until the skeleton has served its minimum time. Committing
+     * the rows here and lowering `loading` later would paint the new list
+     * behind the placeholders that are still up. */
+    let commit: (() => void) | null = null;
+    try {
+      const { data } = await api.get<Meeting[]>('/sales/meetings', { params: { scope: 'mine', search: oppId } });
+      const next = (data ?? []).filter(m => m.opp_id === oppId);
+      commit = () => setRows(next);
+    } catch {
+      toast.error('Load failed', 'Could not load meetings');
+    } finally {
+      if (reqRef.current === token) {
+        const left = SKELETON_MIN_MS - (Date.now() - since);
+        const paint = () => {
+          // Re-checked on the timer too: the modal can close while it waits.
+          if (reqRef.current !== token) return;
+          commit?.();
+          setLoading(false);
+        };
+        if (left > 0) setTimeout(paint, left);
+        else paint();
+      }
+    }
   };
 
   useEffect(() => {
-    if (!open) { setRows([]); setAddOpen(false); return; }
-    refresh();
+    if (!open) { reqRef.current++; setRows([]); setAddOpen(false); return; }
+    void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, oppId]);
 
@@ -172,7 +204,36 @@ export default function MeetingsListModal({
                 </thead>
                 <tbody>
                   {loading && (
-                    <tr><td colSpan={7} className="mlm-status">Loading meetings…</td></tr>
+                    /* Placeholder rows in the real column layout, not a
+                       "Loading…" line: the line gave the list no shape and
+                       read as an empty table, which is what "there is no
+                       shimmer" was describing (QA #21).
+
+                       Count follows the rows already on screen so a refresh
+                       after adding a meeting holds the card's height instead
+                       of collapsing to one line and springing back. Floor 3
+                       on first open (nothing to measure), ceiling 8 so a long
+                       list does not become a wall of placeholders. */
+                    Array.from({ length: Math.min(Math.max(rows.length, 3), 8) }).map((_, i) => (
+                      <tr key={`mlm-sk-${i}`} className="mlm-skel-row">
+                        <td><span className="mlm-skel" style={{ width: 22 }} /></td>
+                        <td><span className="mlm-skel mlm-skel-pill" style={{ width: 68 }} /></td>
+                        <td>
+                          <span className="mlm-skel" style={{ width: 130 }} />
+                          <span className="mlm-skel mlm-skel-sub" style={{ width: 84 }} />
+                        </td>
+                        <td>
+                          <span className="mlm-skel" style={{ width: 78 }} />
+                          <span className="mlm-skel mlm-skel-sub" style={{ width: 92 }} />
+                        </td>
+                        <td><span className="mlm-skel mlm-skel-pill" style={{ width: 76 }} /></td>
+                        <td><span className="mlm-skel mlm-skel-pill" style={{ width: 88 }} /></td>
+                        <td>
+                          <span className="mlm-skel mlm-skel-btn" style={{ width: 58 }} />
+                          <span className="mlm-skel mlm-skel-btn" style={{ width: 30 }} />
+                        </td>
+                      </tr>
+                    ))
                   )}
                   {!loading && rows.length === 0 && (
                     <tr>
@@ -181,7 +242,7 @@ export default function MeetingsListModal({
                       </td>
                     </tr>
                   )}
-                  {rows.map((m, i) => (
+                  {!loading && rows.map((m, i) => (
                     <tr key={m.id}>
                       <td><span className="mlm-num">{i + 1}</span></td>
                       <td>
@@ -253,7 +314,7 @@ export default function MeetingsListModal({
         defaultCustomer={defaultCustomer}
         defaultContact={defaultContact}
         defaultEmail={defaultEmail}
-        onClose={() => { setAddOpen(false); refresh(); }}
+        onClose={() => { setAddOpen(false); void refresh(); }}
       />
 
       {/* Themed delete confirmation */}
@@ -419,6 +480,34 @@ const MLM_CSS = `
   color: #94a3b8; font-style: italic; font-size: 12px;
 }
 
+/* Loading shimmer. Tinted to the violet the rest of this dialog uses rather
+   than the neutral grey the Leads worksheet runs, so the placeholders read as
+   part of the same table. (No backticks in here: this block is a template
+   literal.) */
+.mlm-skel-row td { vertical-align: middle; }
+.mlm-skel-row:hover { background: transparent; }
+.mlm-skel {
+  display: block; height: 10px; border-radius: 4px;
+  background: linear-gradient(90deg, #ede9fe 0%, #faf5ff 50%, #ede9fe 100%);
+  background-size: 200% 100%;
+  animation: mlm-shimmer 1.1s ease-in-out infinite;
+}
+.mlm-skel + .mlm-skel { margin-top: 5px; }
+.mlm-skel-sub  { height: 8px; opacity: .72; }
+.mlm-skel-pill { height: 16px; border-radius: 999px; }
+.mlm-skel-btn  { display: inline-block; height: 22px; border-radius: 7px; }
+/* Action buttons sit side by side, so undo the stacking margin the
+   two-line cells above rely on. */
+.mlm-skel-btn + .mlm-skel-btn { margin-top: 0; margin-left: 6px; }
+@keyframes mlm-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+/* A user who asked for no motion gets the bar without the sweep. */
+@media (prefers-reduced-motion: reduce) {
+  .mlm-skel { animation: none; background: #ede9fe; }
+}
+
 /* ── Dark mode ── */
 [data-bs-theme="dark"] .mlm-modal { background: #14102a; }
 [data-bs-theme="dark"] .mlm-body  { background: #1a1538; }
@@ -460,6 +549,14 @@ const MLM_CSS = `
 [data-bs-theme="dark"] .mlm-status-pp   { background: rgba(59, 130, 246, .16); border-color: rgba(147, 197, 253, .40); color: #93c5fd; }
 [data-bs-theme="dark"] .mlm-status-cncl { background: rgba(239, 68, 68, .14);  border-color: rgba(252, 165, 165, .40); color: #fca5a5; }
 [data-bs-theme="dark"] .mlm-status      { color: rgba(196, 181, 253, .55); }
+[data-bs-theme="dark"] .mlm-skel {
+  background: linear-gradient(90deg, rgba(124, 58, 237, .20) 0%, rgba(167, 139, 250, .34) 50%, rgba(124, 58, 237, .20) 100%);
+  background-size: 200% 100%;
+}
+[data-bs-theme="dark"] .mlm-skel-row:hover { background: transparent; }
+@media (prefers-reduced-motion: reduce) {
+  [data-bs-theme="dark"] .mlm-skel { background: rgba(124, 58, 237, .22); }
+}
 [data-bs-theme="dark"] .mlm-row-btn-done {
   background: rgba(34, 197, 94, .16); border-color: rgba(74, 222, 128, .40); color: #86efac;
 }

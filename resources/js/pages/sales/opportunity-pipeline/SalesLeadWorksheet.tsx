@@ -275,9 +275,10 @@ export default function SalesLeadWorksheet() {
    * which reads as "the shimmer does not work". Holding it for a moment makes
    * the state legible instead of flickering the table.
    *
-   * Only set by startNewQuery, so it applies to a tab / filter change and not
-   * to pagination or a background reload — those keep the dim and stay as
-   * fast as the server is. */
+   * Set by every path that poses a NEW question — a tab / filter change
+   * (startNewQuery), a committed search, a rows-per-page change — and by none
+   * that merely re-asks the current one. Paging and the post-action reload
+   * keep the dim and stay as fast as the server is. */
   const skeletonSinceRef = useRef<number | null>(null);
   const SKELETON_MIN_MS = 450;
   const [total, setTotal]       = useState(0);
@@ -525,9 +526,37 @@ export default function SalesLeadWorksheet() {
     document.head.appendChild(link);
   }, []);
 
-  // Debounce the search box so we only refetch ~250ms after the user stops typing.
+  /* Last search text actually handed to the fetch. Lets the timer tell a real
+   * change from one that lands back on the same text (typing and undoing it
+   * inside the debounce window), so only a real one disturbs the table. */
+  const lastQRef = useRef('');
+
+  /* Debounce the search box so we only refetch ~250ms after the user stops
+   * typing — and treat the committed search as a NEW question, the way a tab
+   * switch is.
+   *
+   * It used to only move `debouncedQ`, leaving the previous search's answer
+   * sitting in `rows`. That made the skeleton condition (loading && no rows)
+   * false, so searching just dimmed the old rows to 55% — the white-looking
+   * wash over results that no longer answer what was typed. Clearing them
+   * first puts the shimmer up and is also honest: those rows belong to the
+   * previous search.
+   *
+   * Everything lands in ONE commit — rows cleared, loading raised, page reset
+   * and the new term — so the fetch effect runs once, with page 1 and the new
+   * term together. `setPage(1)` used to sit on the input's onChange, which
+   * fired a whole extra request on the first keystroke (old term, page 1) and
+   * flashed the dim before the shimmer. */
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedQ(q), 250);
+    const t = setTimeout(() => {
+      if (lastQRef.current === q) return;
+      lastQRef.current = q;
+      setLeads([]);
+      setLoading(true);
+      setPage(1);
+      skeletonSinceRef.current = Date.now();
+      setDebouncedQ(q);
+    }, 250);
     return () => clearTimeout(t);
   }, [q]);
 
@@ -624,9 +653,11 @@ export default function SalesLeadWorksheet() {
    * opacity — read as "the shimmer is not working". Dropping the rows first
    * is also honest: they belong to the tab you just left.
    *
-   * Deliberately NOT called for pagination or the background reload after an
-   * action: there the table is answering the same question and a full
-   * skeleton flash would be worse than the dim.
+   * Deliberately NOT called for the background reload after a create / assign
+   * / delete: there the table is answering the same question and a full
+   * skeleton flash would be worse than the dim. Paging and rows-per-page DO
+   * clear, via goToPage / changeRowsPerPage — they keep the selection this
+   * one drops, which is why they do not call through here.
    *
    * setLoading(true) goes with the clear, in the SAME batch. fetchLeads only
    * raises it once the effect runs, which left one painted frame holding
@@ -638,6 +669,53 @@ export default function SalesLeadWorksheet() {
     setLoading(true);
     setPage(1);
     setSelected(new Set());
+    skeletonSinceRef.current = Date.now();
+  };
+
+  /* Rows-per-page is a NEW question, not a background refresh.
+   *
+   * It used to fall through to the plain refetch path, so the table kept the
+   * old rows and just dimmed them to 55% — a white-looking wash over a row
+   * count that was about to change wholesale anyway. Clearing the rows first
+   * puts the shimmer up instead, and because setRpp lands in the same batch
+   * the skeleton is drawn at the NEW page size (up to the 25-row cap), so the
+   * card does not sit at the old height and then jump when the data lands.
+   *
+   * Selection is deliberately kept (unlike startNewQuery): resizing the page
+   * doesn't change WHICH leads exist, so ticked rows should survive it.
+   *
+   * Only wired to the select. The viewport auto-fit at mount sets rpp through
+   * its own setRpp and must stay silent. */
+  const changeRowsPerPage = (n: number) => {
+    autoFitRef.current = false;
+    setRpp(n);
+    setPage(1);
+    setLeads([]);
+    setLoading(true);
+    skeletonSinceRef.current = Date.now();
+  };
+
+  /* Paging replaces the rows wholesale, so it gets the skeleton too.
+   *
+   * It used to just move `page` and let the refetch dim the old slice to 55%
+   * — which reads as the table going white rather than loading, and the rows
+   * it was dimming were the ones you had just navigated away from. Clearing
+   * them puts the shimmer up at the current page size, so the card holds its
+   * height across the hop.
+   *
+   * Selection survives, like a rows-per-page change: moving between pages
+   * doesn't change which leads exist, and the bulk bar deliberately counts
+   * across pages.
+   *
+   * Clamped here rather than in the buttons so a stale `page` (one past the
+   * end after a filter shrank the list) can't ask the server for a page that
+   * isn't there. */
+  const goToPage = (next: number) => {
+    const target = Math.min(Math.max(1, next), pages);
+    if (target === safePage) return;
+    setPage(target);
+    setLeads([]);
+    setLoading(true);
     skeletonSinceRef.current = Date.now();
   };
 
@@ -1098,9 +1176,9 @@ export default function SalesLeadWorksheet() {
             autoComplete="off"
             placeholder="Search anything — ID, name, phone, email, product, country…"
             value={q}
-            onChange={e => { setQ(e.target.value); setPage(1); }}
+            onChange={e => setQ(e.target.value)}
           />
-          <SearchClear show={q} onClear={() => { setQ(''); setPage(1); }} />
+          <SearchClear show={q} onClear={() => setQ('')} />
         </div>
       </div>
 
@@ -1394,18 +1472,18 @@ export default function SalesLeadWorksheet() {
           <div className="lwp-pag-right">
             <div className="lwp-rows-sel">
               Rows per page:
-              <select value={rpp} onChange={e => { autoFitRef.current = false; setRpp(parseInt(e.target.value, 10)); setPage(1); }}>
+              <select value={rpp} onChange={e => changeRowsPerPage(parseInt(e.target.value, 10))}>
                 {[...new Set([rpp, ...ROWS_PER_PAGE_OPTIONS])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
               </select>
             </div>
             <span className="lwp-pag-range">{safePage} / {pages}</span>
             <div className="lwp-page-nav">
-              <button className="lwp-pg-btn" disabled={safePage <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>
+              <button className="lwp-pg-btn" disabled={safePage <= 1} onClick={() => goToPage(safePage - 1)}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <polyline points="15 18 9 12 15 6" />
                 </svg>
               </button>
-              <button className="lwp-pg-btn" disabled={safePage >= pages || total === 0} onClick={() => setPage(p => Math.min(pages, p + 1))}>
+              <button className="lwp-pg-btn" disabled={safePage >= pages || total === 0} onClick={() => goToPage(safePage + 1)}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
@@ -2164,8 +2242,14 @@ const SCOPED_CSS = `
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
-/* Dim existing rows during a background refetch (page change, etc.)
-   so the user sees "fresh data is on the way" without a jarring blank. */
+/* Dim existing rows during a background refresh — the reload that follows a
+   create / assign / delete, which re-asks the SAME question, so the rows under
+   the dim are still the right answer.
+
+   Every path that poses a NEW question (tab, sub-tab, filter, search,
+   rows-per-page, paging) clears the rows instead and shows the skeleton: there
+   the old rows are the PREVIOUS answer, and dimming them read as the table
+   going pale rather than loading. */
 .lwp-root .lwp-tbody-refetching {
   opacity: 0.55;
   pointer-events: none;
