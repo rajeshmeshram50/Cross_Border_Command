@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, lazy, Suspense } from 'react';
+import { useState, useEffect, createContext, useContext, Suspense } from 'react';
 import api from '../api';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useParams, useNavigationType } from 'react-router-dom';
 import { Provider as ReduxProvider } from 'react-redux';
@@ -20,116 +20,118 @@ import VelzonShell from '../velzon/VelzonShell';
 import AccessDenied from './AccessDenied';
 import { canAccessPath } from '../utils/routeAccess';
 import { FEATURE_FLAGS } from '../constants';
-const Login = lazy(() => import('../pages/auth/Login'));
-const ForgotPassword = lazy(() => import('../pages/auth/ForgotPassword'));
-const VerifyOTP = lazy(() => import('../pages/auth/VerifyOTP'));
-const ResetPassword = lazy(() => import('../pages/auth/ResetPassword'));
-const AdminDashboard = lazy(() => import('../pages/dashboard/AdminDashboard'));
-const ClientDashboard = lazy(() => import('../pages/dashboard/ClientDashboard'));
-const BranchDashboard = lazy(() => import('../pages/dashboard/BranchDashboard'));
-const EmployeeDashboard = lazy(() => import('../pages/dashboard/EmployeeDashboard'));
-const Clients = lazy(() => import('../pages/client/Clients'));
-const ClientForm = lazy(() => import('../pages/client/ClientForm'));
-const Branches = lazy(() => import('../pages/branch/Branches'));
-const UsersPage = lazy(() => import('../pages/UsersPage'));
-const Plans = lazy(() => import('../pages/plan/Plans'));
-const Payments = lazy(() => import('../pages/Payments'));
+const Login = lazyWithRetry(() => import('../pages/auth/Login'));
+const ForgotPassword = lazyWithRetry(() => import('../pages/auth/ForgotPassword'));
+const VerifyOTP = lazyWithRetry(() => import('../pages/auth/VerifyOTP'));
+const ResetPassword = lazyWithRetry(() => import('../pages/auth/ResetPassword'));
+const AdminDashboard = lazyWithRetry(() => import('../pages/dashboard/AdminDashboard'));
+const ClientDashboard = lazyWithRetry(() => import('../pages/dashboard/ClientDashboard'));
+const BranchDashboard = lazyWithRetry(() => import('../pages/dashboard/BranchDashboard'));
+const EmployeeDashboard = lazyWithRetry(() => import('../pages/dashboard/EmployeeDashboard'));
+const Clients = lazyWithRetry(() => import('../pages/client/Clients'));
+const ClientForm = lazyWithRetry(() => import('../pages/client/ClientForm'));
+const Branches = lazyWithRetry(() => import('../pages/branch/Branches'));
+const UsersPage = lazyWithRetry(() => import('../pages/UsersPage'));
+const Plans = lazyWithRetry(() => import('../pages/plan/Plans'));
+const Payments = lazyWithRetry(() => import('../pages/Payments'));
 // [Integration Subscriptions] Parked pending R&D — re-enable with the route below.
-// const IntegrationSubscriptions = lazy(() => import('../pages/IntegrationSubscriptions'));
-const Permissions = lazy(() => import('../pages/permission/Permissions'));
-const Settings = lazy(() => import('../pages/Settings'));
-const Profile = lazy(() => import('../pages/Profile'));
-const AddPlan = lazy(() => import('../pages/plan/AddPlan'));
-const BranchForm = lazy(() => import('../pages/branch/BranchForm'));
-const BranchView = lazy(() => import('../pages/branch/BranchView'));
-const PlanSelection = lazy(() => import('../pages/plan/PlanSelection'));
-const ClientView = lazy(() => import('../pages/client/ClientView'));
-const ClientBranches = lazy(() => import('../pages/client/ClientBranches'));
-const ClientPermissions = lazy(() => import('../pages/client/ClientPermissions'));
-const ClientPayments = lazy(() => import('../pages/client/ClientPayments'));
-const ClientSettings = lazy(() => import('../pages/client/ClientSettings'));
-const MasterDashboard = lazy(() => import('../pages/MasterDashboard'));
-const MasterPage = lazy(() => import('../pages/master/MasterPage'));
-const SalesCustomers = lazy(() => import('../pages/sales/core-masters/customer/SalesCustomers'));
-const SalesConsignee = lazy(() => import('../pages/sales/core-masters/consignee/SalesConsignee'));
-const SalesLeadAckMaster = lazy(() => import('../pages/sales/core-masters/lead-ack/SalesLeadAckMaster'));
-const SalesLeadWorksheet = lazy(() => import('../pages/sales/opportunity-pipeline/SalesLeadWorksheet'));
-const LeadDistributionPage = lazy(() => import('../pages/sales/opportunity-pipeline/AssignedLeadsModal'));
-const SalesLeadsDetails = lazy(() => import('../pages/sales/opportunity-pipeline/SalesLeadsDetails'));
-const SalesTodo = lazy(() => import('../pages/sales/insights-productivity/SalesTodo'));
-const SalesQPI = lazy(() => import('../pages/sales/opportunity-pipeline/SalesQPI'));
-const DeveloperShipments = lazy(() => import('../pages/developers/DeveloperShipments'));
-const SalesSignTracker = lazy(() => import('../pages/sales/opportunity-pipeline/SalesSignTracker'));
-const SalesP2PSummary = lazy(() => import('../pages/sales/opportunity-pipeline/SalesP2PSummary'));
-const SalesMatrixDetail = lazy(() => import('../pages/sales/opportunity-pipeline/matrix/SalesMatrixDetail'));
-const Products = lazy(() => import('../pages/p2p/p2p-master-management/product-management/Products'));
-const ProductView = lazy(() => import('../pages/p2p/p2p-master-management/product-management/ProductView'));
-const Vendors = lazy(() => import('../pages/p2p/p2p-master-management/supplier-management/Vendors'));
-const SalesDiagnosis = lazy(() => import('../pages/sales/insights-productivity/SalesDiagnosis'));
-const SalesResolutionCenter = lazy(() => import('../pages/sales/insights-productivity/SalesResolutionCenter'));
-const SalesAnalytics = lazy(() => import('../pages/sales/insights-productivity/SalesAnalytics'));
-const SalesPerformance = lazy(() => import('../pages/sales/insights-productivity/SalesPerformance'));
-const ClmStubPage = lazy(() => import('../pages/clm/shared/ClmStubPage'));
-const ClmAnalyticsPage = lazy(() => import('../pages/clm/command-center/ClmAnalyticsPage'));
-const ClmSegmentPage = lazy(() => import('../pages/clm/compliance/ClmSegmentPage'));
-const ClmAuthorityPage = lazy(() => import('../pages/clm/compliance/ClmAuthorityPage'));
-const ClmKycPage = lazy(() => import('../pages/clm/compliance/ClmKycPage'));
-const ClmDdPage = lazy(() => import('../pages/clm/compliance/ClmDdPage'));
-const ClmTradeLicensesPage = lazy(() => import('../pages/clm/compliance/ClmTradeLicensesPage'));
-const ClmQcPage = lazy(() => import('../pages/clm/compliance/ClmQcPage'));
-const ClmTradeDocumentsPage = lazy(() => import('../pages/clm/document-masters/ClmTradeDocumentsPage'));
-const ClmTncPage = lazy(() => import('../pages/clm/document-masters/ClmTncPage'));
-const ClmAgreementsPage = lazy(() => import('../pages/clm/document-masters/ClmAgreementsPage'));
-const ClmClauseLibraryPage = lazy(() => import('../pages/clm/document-masters/ClmClauseLibraryPage'));
-const ClmDcpPage = lazy(() => import('../pages/clm/compliance/ClmDcpPage'));
-const ClmBuyerProfilePage = lazy(() => import('../pages/clm/operations/ClmBuyerProfilePage'));
-const ClmSupplierProfilePage = lazy(() => import('../pages/clm/operations/ClmSupplierProfilePage'));
-const ClmDiagnosisResolutionPage = lazy(() => import('../pages/clm/command-center/ClmDiagnosisResolutionPage'));
-const ClmRegulatoryDefenseFilePage = lazy(() => import('../pages/clm/command-center/ClmRegulatoryDefenseFilePage'));
-const ClmCaseToCasePage = lazy(() => import('../pages/clm/operations/ClmCaseToCasePage'));
-const ClmAgreementsSentPage = lazy(() => import('../pages/clm/operations/ClmAgreementsSentPage'));
-const ClmAgreementsToApprovePage = lazy(() => import('../pages/clm/operations/ClmAgreementsToApprovePage'));
-const HrDashboard = lazy(() => import('../pages/hrms/HrDashboard'));
-const HrOverview = lazy(() => import('../pages/hrms/HrOverview'));
-const HrEmployees = lazy(() => import('../pages/hrms/HrEmployees'));
-const HrRecruitment = lazy(() => import('../pages/recruitment/HrRecruitment'));
-const HrCandidates = lazy(() => import('../pages/recruitment/HrCandidates'));
-const HrExitManagement = lazy(() => import('../pages/hrms/HrExitManagement'));
-const HrAttendance = lazy(() => import('../pages/hrms/HrAttendance'));
-const HrLeave = lazy(() => import('../pages/hrms/HrLeave'));
-const HrLeavePlans = lazy(() => import('../pages/hrms/HrLeavePlans'));
-const HrLeaveApprovals = lazy(() => import('../pages/hrms/HrLeaveApprovals'));
-const HrHoliday = lazy(() => import('../pages/hrms/HrHoliday'));
-const HrPIP = lazy(() => import('../pages/hrms/HrPIP'));
-const HrExpenseManagement = lazy(() => import('../pages/hrms/HrExpenseManagement'));
-const HrPayroll = lazy(() => import('../pages/hrms/HrPayroll'));
-const HrBroadcastCentre = lazy(() => import('../pages/hrms/HrBroadcastCentre'));
-const HrDocumentTemplates = lazy(() => import('../pages/hrms/HrDocumentTemplates'));
-const HrCustomFields = lazy(() => import('../pages/hrms/HrCustomFields'));
-const HrBiometricDevices = lazy(() => import('../pages/hrms/HrBiometricDevices'));
-const TemplateFormPage = lazy(() => import('../pages/hrms/doc-templates/TemplateForm'));
-const GenerateDocument = lazy(() => import('../pages/hrms/doc-templates/GenerateDocument'));
-const HrEmployeeOnboarding = lazy(() => import('../pages/employee-onboarding/HrEmployeeOnboarding'));
-const EmployeePermissions = lazy(() => import('../pages/employee/EmployeePermissions'));
-const EmployeeProfile = lazy(() => import('../pages/employee/EmployeeProfile'));
+// const IntegrationSubscriptions = lazyWithRetry(() => import('../pages/IntegrationSubscriptions'));
+const Permissions = lazyWithRetry(() => import('../pages/permission/Permissions'));
+const Settings = lazyWithRetry(() => import('../pages/Settings'));
+const Profile = lazyWithRetry(() => import('../pages/Profile'));
+const AddPlan = lazyWithRetry(() => import('../pages/plan/AddPlan'));
+const BranchForm = lazyWithRetry(() => import('../pages/branch/BranchForm'));
+const BranchView = lazyWithRetry(() => import('../pages/branch/BranchView'));
+const PlanSelection = lazyWithRetry(() => import('../pages/plan/PlanSelection'));
+const ClientView = lazyWithRetry(() => import('../pages/client/ClientView'));
+const ClientBranches = lazyWithRetry(() => import('../pages/client/ClientBranches'));
+const ClientPermissions = lazyWithRetry(() => import('../pages/client/ClientPermissions'));
+const ClientPayments = lazyWithRetry(() => import('../pages/client/ClientPayments'));
+const ClientSettings = lazyWithRetry(() => import('../pages/client/ClientSettings'));
+const MasterDashboard = lazyWithRetry(() => import('../pages/MasterDashboard'));
+const MasterPage = lazyWithRetry(() => import('../pages/master/MasterPage'));
+const SalesCustomers = lazyWithRetry(() => import('../pages/sales/core-masters/customer/SalesCustomers'));
+const SalesConsignee = lazyWithRetry(() => import('../pages/sales/core-masters/consignee/SalesConsignee'));
+const SalesLeadAckMaster = lazyWithRetry(() => import('../pages/sales/core-masters/lead-ack/SalesLeadAckMaster'));
+const SalesLeadWorksheet = lazyWithRetry(() => import('../pages/sales/opportunity-pipeline/SalesLeadWorksheet'));
+const LeadDistributionPage = lazyWithRetry(() => import('../pages/sales/opportunity-pipeline/AssignedLeadsModal'));
+const SalesLeadsDetails = lazyWithRetry(() => import('../pages/sales/opportunity-pipeline/SalesLeadsDetails'));
+const SalesTodo = lazyWithRetry(() => import('../pages/sales/insights-productivity/SalesTodo'));
+const SalesQPI = lazyWithRetry(() => import('../pages/sales/opportunity-pipeline/SalesQPI'));
+const DeveloperShipments = lazyWithRetry(() => import('../pages/developers/DeveloperShipments'));
+const SalesSignTracker = lazyWithRetry(() => import('../pages/sales/opportunity-pipeline/SalesSignTracker'));
+const SalesP2PSummary = lazyWithRetry(() => import('../pages/sales/opportunity-pipeline/SalesP2PSummary'));
+const SalesMatrixDetail = lazyWithRetry(() => import('../pages/sales/opportunity-pipeline/matrix/SalesMatrixDetail'));
+const Products = lazyWithRetry(() => import('../pages/p2p/p2p-master-management/product-management/Products'));
+const ProductView = lazyWithRetry(() => import('../pages/p2p/p2p-master-management/product-management/ProductView'));
+const Vendors = lazyWithRetry(() => import('../pages/p2p/p2p-master-management/supplier-management/Vendors'));
+const SalesDiagnosis = lazyWithRetry(() => import('../pages/sales/insights-productivity/SalesDiagnosis'));
+const SalesResolutionCenter = lazyWithRetry(() => import('../pages/sales/insights-productivity/SalesResolutionCenter'));
+const SalesAnalytics = lazyWithRetry(() => import('../pages/sales/insights-productivity/SalesAnalytics'));
+const SalesPerformance = lazyWithRetry(() => import('../pages/sales/insights-productivity/SalesPerformance'));
+const ClmStubPage = lazyWithRetry(() => import('../pages/clm/shared/ClmStubPage'));
+const ClmAnalyticsPage = lazyWithRetry(() => import('../pages/clm/command-center/ClmAnalyticsPage'));
+const ClmSegmentPage = lazyWithRetry(() => import('../pages/clm/compliance/ClmSegmentPage'));
+const ClmAuthorityPage = lazyWithRetry(() => import('../pages/clm/compliance/ClmAuthorityPage'));
+const ClmKycPage = lazyWithRetry(() => import('../pages/clm/compliance/ClmKycPage'));
+const ClmDdPage = lazyWithRetry(() => import('../pages/clm/compliance/ClmDdPage'));
+const ClmTradeLicensesPage = lazyWithRetry(() => import('../pages/clm/compliance/ClmTradeLicensesPage'));
+const ClmQcPage = lazyWithRetry(() => import('../pages/clm/compliance/ClmQcPage'));
+const ClmTradeDocumentsPage = lazyWithRetry(() => import('../pages/clm/document-masters/ClmTradeDocumentsPage'));
+const ClmTncPage = lazyWithRetry(() => import('../pages/clm/document-masters/ClmTncPage'));
+const ClmAgreementsPage = lazyWithRetry(() => import('../pages/clm/document-masters/ClmAgreementsPage'));
+const ClmClauseLibraryPage = lazyWithRetry(() => import('../pages/clm/document-masters/ClmClauseLibraryPage'));
+const ClmDcpPage = lazyWithRetry(() => import('../pages/clm/compliance/ClmDcpPage'));
+const ClmBuyerProfilePage = lazyWithRetry(() => import('../pages/clm/operations/ClmBuyerProfilePage'));
+const ClmSupplierProfilePage = lazyWithRetry(() => import('../pages/clm/operations/ClmSupplierProfilePage'));
+const ClmDiagnosisResolutionPage = lazyWithRetry(() => import('../pages/clm/command-center/ClmDiagnosisResolutionPage'));
+const ClmRegulatoryDefenseFilePage = lazyWithRetry(() => import('../pages/clm/command-center/ClmRegulatoryDefenseFilePage'));
+const ClmCaseToCasePage = lazyWithRetry(() => import('../pages/clm/operations/ClmCaseToCasePage'));
+const ClmAgreementsSentPage = lazyWithRetry(() => import('../pages/clm/operations/ClmAgreementsSentPage'));
+const ClmAgreementsToApprovePage = lazyWithRetry(() => import('../pages/clm/operations/ClmAgreementsToApprovePage'));
+const HrDashboard = lazyWithRetry(() => import('../pages/hrms/HrDashboard'));
+const HrOverview = lazyWithRetry(() => import('../pages/hrms/HrOverview'));
+const HrEmployees = lazyWithRetry(() => import('../pages/hrms/HrEmployees'));
+const HrRecruitment = lazyWithRetry(() => import('../pages/recruitment/HrRecruitment'));
+const HrCandidates = lazyWithRetry(() => import('../pages/recruitment/HrCandidates'));
+const HrExitManagement = lazyWithRetry(() => import('../pages/hrms/HrExitManagement'));
+const HrAttendance = lazyWithRetry(() => import('../pages/hrms/HrAttendance'));
+const HrLeave = lazyWithRetry(() => import('../pages/hrms/HrLeave'));
+const HrLeavePlans = lazyWithRetry(() => import('../pages/hrms/HrLeavePlans'));
+const HrLeaveApprovals = lazyWithRetry(() => import('../pages/hrms/HrLeaveApprovals'));
+const HrHoliday = lazyWithRetry(() => import('../pages/hrms/HrHoliday'));
+const HrPIP = lazyWithRetry(() => import('../pages/hrms/HrPIP'));
+const HrExpenseManagement = lazyWithRetry(() => import('../pages/hrms/HrExpenseManagement'));
+const HrPayroll = lazyWithRetry(() => import('../pages/hrms/HrPayroll'));
+const HrBroadcastCentre = lazyWithRetry(() => import('../pages/hrms/HrBroadcastCentre'));
+const HrDocumentTemplates = lazyWithRetry(() => import('../pages/hrms/HrDocumentTemplates'));
+const HrCustomFields = lazyWithRetry(() => import('../pages/hrms/HrCustomFields'));
+const HrBiometricDevices = lazyWithRetry(() => import('../pages/hrms/HrBiometricDevices'));
+const TemplateFormPage = lazyWithRetry(() => import('../pages/hrms/doc-templates/TemplateForm'));
+const GenerateDocument = lazyWithRetry(() => import('../pages/hrms/doc-templates/GenerateDocument'));
+const HrEmployeeOnboarding = lazyWithRetry(() => import('../pages/employee-onboarding/HrEmployeeOnboarding'));
+const EmployeePermissions = lazyWithRetry(() => import('../pages/employee/EmployeePermissions'));
+const EmployeeProfile = lazyWithRetry(() => import('../pages/employee/EmployeeProfile'));
 import { Shimmer, ShimmerTable, ShimmerEmployeeProfile } from './ui/Shimmer';
-const PublicOnboarding = lazy(() => import('../pages/PublicOnboarding'));
-const ClockIn = lazy(() => import('../pages/ClockIn'));
-const ModuleStubPage = lazy(() => import('../pages/ModuleStubPage'));
-const P2pBulkSourcing = lazy(() => import('../pages/p2p/procurement-management/bulk-sourcing/P2pBulkSourcing'));
-const PurchaseOrder = lazy(() => import('../pages/p2p/procurement-management/purchase-order/PurchaseOrder'));
-const DevTools = lazy(() => import('../pages/dev-tools/DevTools'));
-const SupplierPurchaseInvoice = lazy(() => import('../pages/p2p/purchase-management/supplier-purchase-invoice/SupplierPurchaseInvoice'));
-const DebitNote = lazy(() => import('../pages/p2p/purchase-management/debit-note/DebitNote'));
-const InventoryPutAway = lazy(() => import('../pages/inventory/InventoryPutAway'));
-const InventoryStickers = lazy(() => import('../pages/inventory/InventoryStickers'));
-const ScanLanding = lazy(() => import('../pages/inventory/ScanLanding'));
-const InventoryScanDevices = lazy(() => import('../pages/inventory/InventoryScanDevices'));
-const InventoryScanLog = lazy(() => import('../pages/inventory/InventoryScanLog'));
-const MyTeam = lazy(() => import('../pages/MyTeam'));
-const Documentation = lazy(() => import('../pages/Documentation'));
-const Inbox = lazy(() => import('../pages/Inbox'));
-const Gmail = lazy(() => import('../pages/Gmail'));
+import { lazyWithRetry } from '../utils/lazyWithRetry';
+import AppErrorBoundary from './AppErrorBoundary';
+const PublicOnboarding = lazyWithRetry(() => import('../pages/PublicOnboarding'));
+const ClockIn = lazyWithRetry(() => import('../pages/ClockIn'));
+const ModuleStubPage = lazyWithRetry(() => import('../pages/ModuleStubPage'));
+const P2pBulkSourcing = lazyWithRetry(() => import('../pages/p2p/procurement-management/bulk-sourcing/P2pBulkSourcing'));
+const PurchaseOrder = lazyWithRetry(() => import('../pages/p2p/procurement-management/purchase-order/PurchaseOrder'));
+const DevTools = lazyWithRetry(() => import('../pages/dev-tools/DevTools'));
+const SupplierPurchaseInvoice = lazyWithRetry(() => import('../pages/p2p/purchase-management/supplier-purchase-invoice/SupplierPurchaseInvoice'));
+const DebitNote = lazyWithRetry(() => import('../pages/p2p/purchase-management/debit-note/DebitNote'));
+const InventoryPutAway = lazyWithRetry(() => import('../pages/inventory/InventoryPutAway'));
+const InventoryStickers = lazyWithRetry(() => import('../pages/inventory/InventoryStickers'));
+const ScanLanding = lazyWithRetry(() => import('../pages/inventory/ScanLanding'));
+const InventoryScanDevices = lazyWithRetry(() => import('../pages/inventory/InventoryScanDevices'));
+const InventoryScanLog = lazyWithRetry(() => import('../pages/inventory/InventoryScanLog'));
+const MyTeam = lazyWithRetry(() => import('../pages/MyTeam'));
+const Documentation = lazyWithRetry(() => import('../pages/Documentation'));
+const Inbox = lazyWithRetry(() => import('../pages/Inbox'));
+const Gmail = lazyWithRetry(() => import('../pages/Gmail'));
 
 /* Route-transition fallback.
  *
@@ -782,7 +784,7 @@ function DashboardRoutes({ user }: { user: any }) {
             {!routeAllowed ? (
               <AccessDenied />
             ) : (
-            /* One boundary for every page route. Each page below is a lazy()
+            /* One boundary for every page route. Each page below is a lazyWithRetry()
                chunk; this is the only thing that has to catch their suspend.
 
                `key` is the fix for "switching pages shows the OLD page, then
@@ -1099,7 +1101,16 @@ export default function App() {
                       location. Placed above <Router /> so it covers every
                       route: dashboard, auth and public onboarding alike. */}
                   <ScrollToTop />
-                  <Router />
+                  {/* Catches anything the route tree throws during render.
+                      Without it a single failure — most often a lazy chunk
+                      that a deploy removed while the tab sat open — unmounted
+                      the whole app and left a blank white page. Inside the
+                      router so the boundary is remounted with the tree, and
+                      above <Router /> so it covers dashboard, auth and the
+                      public onboarding routes alike. */}
+                  <AppErrorBoundary>
+                    <Router />
+                  </AppErrorBoundary>
                 </BrowserRouter>
                 {/* CookieBanner reads privacy.cookie + the user's prior
                     accept state. Hidden when disabled or already accepted. */}

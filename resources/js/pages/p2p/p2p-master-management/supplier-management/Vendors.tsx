@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardBody, Col, Row } from 'reactstrap';
@@ -16,6 +16,7 @@ import {
   writeVendorMasterBundle,
 } from './vendorBundleCache';
 import './supplier-management.css';
+import { lazyWithRetry } from '../../../../utils/lazyWithRetry';
 
 /* LAZY, not static. These three are only ever rendered behind a click, but a
    static import pulls them into the module graph the moment the list route
@@ -29,11 +30,11 @@ import './supplier-management.css';
    MappedProductsViewPopup is a named export of AddVendorModal, so it is
    mapped onto .default — both specifiers resolve to the SAME module, so the
    wizard chunk is fetched once and shared, not twice. */
-const AddVendorModal = lazy(() => import('./AddVendorModal'));
-const MappedProductsViewPopup = lazy(() =>
+const AddVendorModal = lazyWithRetry(() => import('./AddVendorModal'));
+const MappedProductsViewPopup = lazyWithRetry(() =>
   import('./AddVendorModal').then(m => ({ default: m.MappedProductsViewPopup })));
-const SupplierScopeGate = lazy(() => import('./SupplierScopeGate'));
-const SupplierEvidenceVaultModal = lazy(() => import('./SupplierEvidenceVaultModal'));
+const SupplierScopeGate = lazyWithRetry(() => import('./SupplierScopeGate'));
+const SupplierEvidenceVaultModal = lazyWithRetry(() => import('./SupplierEvidenceVaultModal'));
 
 /* Hover-prefetch. Making the wizard lazy moves its ~45 KB (gzipped) off page
    load, but it has to arrive sometime — and 'sometime' would otherwise be
@@ -41,7 +42,7 @@ const SupplierEvidenceVaultModal = lazy(() => import('./SupplierEvidenceVaultMod
    the same import ~300ms early, so the chunk is usually cached by the time the
    click lands. Fire-and-forget: the import is idempotent and React.lazy reuses
    the very same promise, so an in-flight prefetch is awaited rather than
-   repeated, and a failure here is retried by lazy() at render time. */
+   repeated, and a failure here is retried by lazyWithRetry() at render time. */
 const warmVendorWizard = () => { void import('./AddVendorModal'); };
 
 /* ────────────────────────────────────────────────────────────────────────────

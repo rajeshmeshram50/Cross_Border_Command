@@ -1,4 +1,4 @@
-import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties } from 'react';
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties } from 'react';
 import './SalesConsignee.css';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
@@ -28,10 +28,11 @@ import PartyFilterModal, {
 // The two heavy consignee modals are code-split — their chunks download only
 // when first opened, not on the list's first paint. (DeleteConfirmModal stays
 // eager: it's a small shared dialog and should appear instantly.)
-const AddConsigneeModal = lazy(() => import('./AddConsigneeModal'));
-const ConsigneeEvidenceVaultModal = lazy(() => import('./ConsigneeEvidenceVaultModal'));
+const AddConsigneeModal = lazyWithRetry(() => import('./AddConsigneeModal'));
+const ConsigneeEvidenceVaultModal = lazyWithRetry(() => import('./ConsigneeEvidenceVaultModal'));
 import { readCustomerMasterBundle, writeCustomerMasterBundle } from '../customer/customerBundleCache';
 import SearchClear from '../../../../components/ui/SearchClear';
+import { lazyWithRetry } from '../../../../utils/lazyWithRetry';
 const RISK_COLORS: Record<string, { bg: string; color: string; dot: string }> = {
   'Low':    { bg:'rgba(34,197,94,0.12)',  color:'#16a34a', dot:'#10b981' },
   'Medium': { bg:'rgba(245,158,11,0.14)', color:'#d97706', dot:'#f59e0b' },

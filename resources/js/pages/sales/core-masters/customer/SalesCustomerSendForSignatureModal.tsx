@@ -2325,12 +2325,17 @@ export default function SalesCustomerSendForSignatureModal({
               </button>
             )}
             {step === 2 && (() => {
-              // Block Send when any applicable party on the agreement
-              // is missing from the lead (e.g. Buyer+Consignee
-              // agreement on a lead with no consignee). The backend
-              // would 422 anyway; client gating gives clearer
-              // feedback up front. Trade-doc path isn't affected
-              // because `unmapped` is always empty there.
+              // Block Send when an applicable party has no email to send to
+              // (e.g. a Buyer+Consignee document on a lead whose consignee is
+              // unmapped, or mapped with no primary contact). The backend
+              // would 422 anyway; client gating gives clearer feedback up
+              // front, naming the party in the tooltip.
+              //
+              // Gated on roleMode, NOT on agreement mode: a Buyer + Consignee
+              // TRADE-DOC send is role mode too (the Sales Matrix "Both" tab
+              // and the Evidence Vault "Both" tab both take that path), so
+              // this covers those as well. Single-signer trade-doc sends leave
+              // `unmapped` empty and are unaffected.
               const unmapped = roleMode
                 ? roleSigners.filter(s => !s.email)
                 : [];

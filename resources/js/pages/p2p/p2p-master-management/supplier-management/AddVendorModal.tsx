@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
@@ -30,10 +30,11 @@ import {
   bustVendorMasterBundle,
 } from './vendorBundleCache';
 import './add-vendor-modal.css';
+import { lazyWithRetry } from '../../../../utils/lazyWithRetry';
 
 /* Lazy: the product wizard is a big chunk and most mappings pick an existing
    product, so it should not be downloaded with this modal. */
-const AddProductModal = lazy(() => import('../product-management/AddProductModal'));
+const AddProductModal = lazyWithRetry(() => import('../product-management/AddProductModal'));
 
 function validateContactNumber(value: string, label = 'Contact No', isIndia = false): string {
   const v = (value ?? '').trim();
