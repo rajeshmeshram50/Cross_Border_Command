@@ -10,9 +10,10 @@ import api from '../api';
 import '../pages/employee/EmployeeProfile.css';
 
 /* `monthly` is the salary structure's own figure for the component, before the
-   join/exit pro-ration that produces `amount`. Present only on earnings lines
-   built by payroll; absent on hand-made lines, in which case the two are the
-   same number and only one column is shown. (#133) */
+   join/exit pro-ration that produces `amount`. Still accepted so existing
+   callers compile unchanged, but no longer rendered: the slip shows one amount
+   per component — what was actually paid — and explains how it was reached in
+   the `payBasis` notes instead. (#141, supersedes the two-column #133) */
 export interface PayslipLine { label: string; amount: number; monthly?: number }
 
 export interface PayslipEmployee {
@@ -94,12 +95,13 @@ export interface PayslipViewerModalProps {
    *  table, because that is where the reader is looking when they notice the
    *  line is absent. Empty/undefined renders nothing. (#130) */
   notices?: string[];
-  /** Server-supplied workings behind the "This Cycle" column — the rule the
+  /** Server-supplied workings behind each component's amount — the rule the
    *  component figures follow, plus the case-specific factors recorded on the
    *  slip (mid-cycle salary revision blended across rates, join/exit
    *  pro-ration, holidays credited, late-mark LOP). Shown under the Earnings
-   *  table, because that is the column being questioned. The value was
-   *  displayed with no way to validate it. (#141) */
+   *  table: with the Monthly/This Cycle pairing gone, this is the only thing
+   *  that explains how the amount was derived, so it carries the validation
+   *  the reader needs. (#141) */
   payBasis?: string[];
   /** When set, Download/Print hit the real server PDF for this payslip.
    *  Without it the buttons fall back to a toast (legacy EmployeeProfile use). */
@@ -416,15 +418,14 @@ export default function PayslipViewerModal({
   const totalDeductions = round2(deductions.reduce((s, r) => s + r.amount, 0));
   const netPay          = round2(totalEarnings - totalDeductions);
 
-  /* Was this cycle pro-rated for a mid-month join or exit? Decided from the
-     lines themselves rather than from a date: if any component was paid at less
-     than its monthly figure, the amounts on screen are NOT the monthly ones and
-     the column must not claim they are. A rupee of tolerance absorbs rounding
-     on the pro-ration multiply. (#133) */
-  const isProrated = shownEarnings.some(
-    r => r.monthly !== undefined && Math.abs(r.monthly - r.amount) > 1,
-  );
-  const totalMonthly = round2(shownEarnings.reduce((s, r) => s + (r.monthly ?? r.amount), 0));
+  /* #141: the slip used to show the structure's "Monthly" figure beside a
+     "This Cycle" one whenever the two diverged. Readers could not tell how the
+     cycle figure was derived from the monthly one, so the pair raised more
+     questions than it answered. The payslip now states a single number per
+     component — what was actually paid this cycle — and the `payBasis` notes
+     under the table carry the derivation in words. `PayslipLine.monthly` is
+     still accepted by the props so callers need no change; it is simply no
+     longer rendered. */
 
   return createPortal(
     <div
@@ -675,15 +676,14 @@ export default function PayslipViewerModal({
                     </div>
                     <table className="ep-pay-table">
                       <thead>
-                        {/* Two columns only when the cycle was pro-rated. The
-                            single column was headed "Monthly" while carrying the
-                            pro-rated figure, so a mid-month joiner's payslip
-                            contradicted Stage 4 – Compensation with no way to
-                            reconcile the two. (#133) */}
+                        {/* One amount column, always. It carries what was
+                            actually paid for the cycle, so it is headed neither
+                            "Monthly" (untrue on a pro-rated slip) nor "This
+                            Cycle" (the ambiguous pairing #141 asked us to
+                            drop). */}
                         <tr>
                           <th>Component</th>
-                          {isProrated && <th className="text-end">Monthly</th>}
-                          <th className="text-end">{isProrated ? 'This Cycle' : 'Monthly'}</th>
+                          <th className="text-end">Amount</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -708,15 +708,6 @@ export default function PayslipViewerModal({
                                   </div>
                                 )}
                               </td>
-                              {isProrated && (
-                                /* The structure's figure. Falls back to the
-                                   paid amount for lines that are not pro-rated
-                                   at all (overtime, bonus), so the column never
-                                   invents a monthly value for them. */
-                                <td className="text-end" style={{ color: 'var(--vz-secondary-color)' }}>
-                                  ₹{inr(r.monthly ?? r.amount)}
-                                </td>
-                              )}
                               <td className="text-end fw-semibold">₹{inr(r.amount)}</td>
                             </tr>
                           );
@@ -725,16 +716,11 @@ export default function PayslipViewerModal({
                       <tfoot>
                         <tr style={{ background: 'rgba(16,185,129,0.06)' }}>
                           <td className="fw-bold" style={{ color: '#108548' }}>Total Earnings</td>
-                          {isProrated && (
-                            <td className="text-end" style={{ color: 'var(--vz-secondary-color)' }}>
-                              ₹{inr(totalMonthly)}
-                            </td>
-                          )}
                           <td className="text-end fw-bold" style={{ color: '#108548' }}>₹{inr(totalEarnings)}</td>
                         </tr>
                       </tfoot>
                     </table>
-                    {/* How "This Cycle" was arrived at. Directly under the
+                    {/* How the amount was arrived at. Directly under the
                         table it explains, same treatment as the Deductions
                         notes. (#141) */}
                     {payBasis.map(n => (
@@ -762,11 +748,10 @@ export default function PayslipViewerModal({
                     <table className="ep-pay-table">
                       <thead>
                         {/* Matches the earnings header. A deduction is always
-                            this cycle's figure — PF rides on the days actually
-                            paid and Loss of Pay exists only within the cycle —
-                            so "Monthly" was never the right word for a
-                            pro-rated slip. (#133) */}
-                        <tr><th>Component</th><th className="text-end">{isProrated ? 'This Cycle' : 'Monthly'}</th></tr>
+                            the cycle's own figure — PF rides on the days
+                            actually paid and Loss of Pay exists only within the
+                            cycle — so "Monthly" was never right here either. */}
+                        <tr><th>Component</th><th className="text-end">Amount</th></tr>
                       </thead>
                       <tbody>
                         {deductions.map(r => (

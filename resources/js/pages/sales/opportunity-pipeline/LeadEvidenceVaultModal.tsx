@@ -685,7 +685,6 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
   sameAsCustomer?: boolean;
 }) {
   const toast = useToast();
-  const fileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const category: 'kyc' | 'dd' | 'tl' | 'td' = tab === 'company-dd' ? 'dd' : tab === 'owner-kyc' ? 'kyc' : tab === 'trade-licenses' ? 'tl' : 'td';
   const canViewOrDownload = !!doc.attachment_url;
@@ -715,31 +714,23 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
      No className: this vault's header is violet, which is the dialog's own
      default. The popup owns the picker and the type / size guards. */
   const [reupOpen, setReupOpen] = useState(false);
-  /* CONSIGNEE only. This same component also drives the CLM panel's "Customer
-     Details" row, and the issue-date work is scoped to the consignee — so the
-     customer keeps the straight-to-picker upload it has always had. */
-  const useUploadPopup = ownerType === 'consignee';
+  /* BOTH parties, not just the consignee.
+   *
+   * This was consignee-only, on the reasoning that the issue-date work was
+   * scoped there and the customer could keep its straight-to-picker upload.
+   * But the two write the SAME segment_doc_uploads row and the same three
+   * buckets, so the split meant a document filed against a customer stored a
+   * null issue and expiry date while the identical document filed against a
+   * consignee stored both — and the Customer Evidence Vault, which now has
+   * Issued Date and Expired At columns, showed em dashes for anything uploaded
+   * from here. One upload path, one set of fields.
+   *
+   * The direct file-picker branch went with it: the dialog owns the picker and
+   * the type / size guards, so nothing is left for it to do. */
 
-  /* Customer path: straight from the file picker, exactly as before. The
-     dialog owns these guards for the consignee path, so they live here only
-     for the side that still uploads without it. */
-  const onPickDirect = async (f: File | undefined) => {
-    if (!f || !ownerId || !doc.doc_code) return;
-    const VAULT_ALLOWED = ['pdf', 'jpg', 'jpeg', 'png'];
-    const VAULT_MAX_KB = 2048;
-    const ext = (f.name.split('.').pop() || '').toLowerCase();
-    if (!VAULT_ALLOWED.includes(ext)) {
-      toast.error('Invalid file type', 'Please upload a PDF, JPG, JPEG or PNG file.');
-      return;
-    }
-    if (f.size > VAULT_MAX_KB * 1024) {
-      toast.error('File too large', `The file must be ${VAULT_MAX_KB} KB (2 MB) or smaller.`);
-      return;
-    }
-    await doUpload(f);
-  };
-
-  const doUpload = async (f: File, issueDate?: string, expiryDate?: string) => {
+  /* `f` is null on a dates-only re-upload: the row keeps the file already
+     on record and only its dates change. */
+  const doUpload = async (f: File | null, issueDate?: string, expiryDate?: string) => {
     if (!ownerId || !doc.doc_code) return;
     setBusy(true);
     try {
@@ -747,7 +738,7 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
       fd.append('category', category);
       fd.append('doc_code', doc.doc_code);
       fd.append('doc_name', doc.name || doc.doc_code);
-      fd.append('attachment', f);
+      if (f) fd.append('attachment', f);
       // Left out when not given — the endpoint's rules are nullable, and an
       // empty string would fail their `date` check.
       if (issueDate) fd.append('issue_date', issueDate);
@@ -755,7 +746,7 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
       await api.post(`/segment-uploads/${ownerType}/${ownerId}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       setReupOpen(false);
       await onReload();
-      toast.success('Uploaded', `${f.name} attached.`);
+      toast.success(f ? 'Uploaded' : 'Saved', f ? `${f.name} attached.` : 'Dates updated.');
     } catch (e: any) {
       // Surface the server error too (belt-and-suspenders) instead of failing silently.
       const errs = e?.response?.data?.errors as Record<string, string[]> | undefined;
@@ -768,13 +759,7 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
 
   return (
     <div className="lev-row-actions">
-      {/* Customer keeps the plain hidden-input picker; only the consignee goes
-          through the dialog. */}
-      {!useUploadPopup && (
-        <input ref={fileRef} type="file" hidden accept=".pdf,.jpg,.jpeg,.png"
-               onChange={e => { void onPickDirect(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }} />
-      )}
-      {reupOpen && useUploadPopup && (
+      {reupOpen && (
         <VaultReuploadPopup
           doc={doc}
           category={category}
@@ -806,8 +791,7 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
                     toast.warning('Upload not allowed', 'This consignee is “Same as Customer” — you cannot upload a file here. Upload it on the linked customer instead.');
                     return;
                   }
-                  if (useUploadPopup) setReupOpen(true);
-                  else fileRef.current?.click();
+                  setReupOpen(true);
                 }}
                 className={`lev-act lev-act-upload ${(sameAsCustomer || !canReupload || busy) ? 'is-disabled' : ''}`} aria-label={doc.attachment ? 'Re-upload' : 'Upload'}>
           {busy
