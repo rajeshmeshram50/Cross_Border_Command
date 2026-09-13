@@ -2044,8 +2044,21 @@ export default function SalesCustomerSendForSignatureModal({
                       })()}
                       {/* multiBox: ONE signer signs in several places — render
                           EVERY box on the page at once (Signature 1/2/3), the
-                          active one draggable, the rest clickable to select. */}
-                      {multiBox && activeDocId && wrapWidthPx > 0 && (() => {
+                          active one draggable, the rest clickable to select.
+
+                          !roleMode is required, not tidiness. multiBox is a
+                          prop the callers set up front, while roleMode is
+                          resolved from the document ("the ONE resolved signer"
+                          is what every caller's own comment assumes). A doc
+                          that turns out to be multi-party — Customer +
+                          Consignee — satisfies both, so this branch used to
+                          paint a "Signature 1" box ON TOP of the per-role
+                          boxes above. Same z-index, later in the DOM, so it
+                          won the pointer: pressing the Customer box grabbed
+                          this overlay instead and the box would not move,
+                          while the Consignee box (not covered) dragged fine.
+                          In role mode the per-role branch owns the preview. */}
+                      {multiBox && !roleMode && activeDocId && wrapWidthPx > 0 && (() => {
                         const pxPerPt = wrapWidthPx / A4_W;
                         const visiblePage = viewPage;
                         const arr = multiBoxes[activeDocId] ?? seedBoxes(activeDocId);
