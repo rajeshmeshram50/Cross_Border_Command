@@ -101,7 +101,7 @@ Three login paths, all returning the same Sanctum token:
 
 **Forgot password:** OTP flow — `send-otp` → `verify-otp` → `reset`. Old passwords blocked by `PasswordHistory`.
 
-**Session model:** Sanctum tokens stored in `localStorage`. **Idle timeout 30 min** enforced by `IdleTimeout.tsx`. There is NO refresh token — token lives until logout or 401.
+**Session model:** Sanctum tokens stored in `localStorage`. **Idle timeout 2 hours** (`SESSION_TIMEOUT_HOURS` in `constants.ts`) enforced by `IdleTimeout.tsx`, and only when Settings → Security → Session Timeout is ON. There is NO refresh token — token lives until logout or 401.
 
 **Public PDF links** (`/api/sales/quotations/{id}/view`, `/api/sales/proforma-invoices/{id}/view`) use Laravel's `signed` middleware; URLs are generated at email-send time and **expire after 60 days**.
 
@@ -394,7 +394,7 @@ resources/js/
 4. **Customer → Consignee mirror** — `ConsigneeKycMirror` deep-clones KYC docs; if you edit either model's schema, update the mirror.
 5. **Signed PDF URLs expire after 60 days** — generated at email-send time; do not regenerate without notifying the customer.
 6. **Public onboarding rate limit: 30 req/min/IP** — don't lower this; it's the only thing protecting the 64-char token from brute-force.
-7. **Idle timeout: 30 min** in `IdleTimeout.tsx`.
+7. **Idle timeout: 2 hours** — the single source is `SESSION_TIMEOUT_HOURS` in `constants.ts`; `IdleTimeout.tsx`, the Settings toggle label and the sign-out toast all derive from it. Do not re-hardcode it.
 8. **Branch switcher auto-injection** — Axios injects `branch_id` on GETs. When writing new GET endpoints, decide explicitly whether they're branch-scoped or not, and handle a missing/zero `branch_id` correctly.
 9. **Tenant isolation** — never trust `client_id` from request body; always derive from `auth()->user()`.
 10. **DOCX template placeholders** — `HrTemplateDocxRenderer` and CLM agreement/trade-doc renderers replace `{{placeholder}}` tokens. Special chars, line breaks, and tables are known fragile areas.

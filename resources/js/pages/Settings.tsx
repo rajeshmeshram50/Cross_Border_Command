@@ -4,6 +4,7 @@ import {
   Card, CardBody, Col, Row, Input, Label, TabContent, TabPane, Form, FormGroup, Button,
 } from 'reactstrap';
 import api from '../api';
+import { SESSION_TIMEOUT_LABEL } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useSettings } from '../contexts/SettingsContext';
@@ -489,7 +490,7 @@ export default function Settings() {
                   </SubSection>
                   <SubSection icon="ri-lock-2-line" title="Access Control" desc="Protect accounts and sessions" color={currentTab.color}>
                     <ToggleRow icon="ri-shield-user-line"   id="ipWhite"     label="IP Whitelisting"          desc="Restrict access to specific IP addresses"   color={currentTab.color} checked={data.security.ipWhite}     onChange={v => patch('security', { ipWhite: v })} />
-                    <ToggleRow icon="ri-timer-line"         id="sessTimeout" label="Session Timeout (30 min)" desc="Auto logout after 30 minutes of inactivity" color={currentTab.color} checked={data.security.sessTimeout} onChange={v => patch('security', { sessTimeout: v })} />
+                    <ToggleRow icon="ri-timer-line"         id="sessTimeout" label={`Session Timeout (${SESSION_TIMEOUT_LABEL})`} desc={`Auto logout after ${SESSION_TIMEOUT_LABEL} of inactivity`} color={currentTab.color} checked={data.security.sessTimeout} onChange={v => patch('security', { sessTimeout: v })} />
                     <ToggleRow icon="ri-lock-password-line" id="bruteForce"  label="Brute Force Protection"   desc="Lock account after 5 failed login attempts" color={currentTab.color} checked={data.security.bruteForce}  onChange={v => patch('security', { bruteForce: v })} />
                   </SubSection>
                 </TabPane>

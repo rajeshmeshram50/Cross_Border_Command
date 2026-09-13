@@ -1115,7 +1115,7 @@ export default function App() {
                 {/* CookieBanner reads privacy.cookie + the user's prior
                     accept state. Hidden when disabled or already accepted. */}
                 <CookieBanner />
-                {/* Auto-logout after 30 min idle when security.sessTimeout is ON */}
+                {/* Auto-logout after SESSION_TIMEOUT_HOURS idle when security.sessTimeout is ON */}
                 <IdleTimeout />
               </SettingsProvider>
             </AuthProvider>
