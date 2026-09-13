@@ -8,7 +8,6 @@ import PayrollRunModal, { type PayrollRunIssue, type PayrollSandwichItem, type P
 import SalaryStructureModal, { type SalaryEmployeeLite } from '../../components/SalaryStructureModal';
 import PaymentDisbursementModal from '../../components/PaymentDisbursementModal';
 import { useToast } from '../../contexts/ToastContext';
-import { useConfirm } from '../../contexts/ConfirmContext';
 import { Shimmer } from '../../components/ui/Shimmer';
 import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import api from '../../api';
@@ -255,7 +254,6 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; pr
 
 export default function HrPayroll() {
   const toast = useToast();
-  const confirm = useConfirm();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -417,6 +415,10 @@ export default function HrPayroll() {
 
   const [paySlipRow, setPaySlipRow] = useState<PayrollRow | null>(null);
   const [payslipBreakup, setPayslipBreakup] = useState<{ earnings: PayslipLine[]; deductions: PayslipLine[] } | null>(null);
+  /* Whether THIS user may run/approve payroll, as decided by the server
+     (PayrollController::canManage). Read-only viewers see the button disabled
+     and told why, instead of a live-looking button that 403s. (CBC #16) */
+  const [canManage, setCanManage] = useState(true);
   const [payslipNotices, setPayslipNotices] = useState<string[]>([]);
   /** Workings behind the "This Cycle" column, shown under Earnings. (#141) */
   const [payslipBasis, setPayslipBasis] = useState<string[]>([]);
@@ -767,20 +769,32 @@ export default function HrPayroll() {
      422 is the first news of the lock. Recording it here turns that one failed
      click into the same Reopen button rather than a dead end. */
   const [lockedFallback, setLockedFallback] = useState<string | null>(null);
-  const canReopenCycle =
+  const canReopenCycle = canManage && (
     (runLockedCycle && cycle?.can_reopen !== false && cycle?.run_status !== 'paid')
-    || (!!cycle && lockedFallback === cycle.key);
-  /* The selected cycle is the month we are currently IN, so it has not ended.
-     Runnable (see runPayroll), but the button says so rather than looking
-     identical to a finished month. (CBC #14) */
+    || (!!cycle && lockedFallback === cycle.key));
+  /* The selected cycle is the month we are currently IN, so it has NOT ended.
+     Not runnable. (CBC #14)
+
+     This used to be runnable with a warning tooltip — loss of pay counted only
+     up to today — which meant a run generated on the 11th priced a whole month
+     off eleven days of attendance, and the resulting payslips looked final. A
+     month can only be processed once it is over and its attendance is complete;
+     Aug becomes runnable on 1 Sep. */
   const isOpenCurrentCycle = (() => {
     if (!cycle || isFutureCycle) return false;
     const n = new Date();
     return cycle.year === n.getFullYear() && cycle.month === n.getMonth() + 1;
   })();
-  const cycleLocked = isFutureCycle || !!blockedByCycle || runLockedCycle;
-  const cycleLockReason = isFutureCycle
+  /* No permission outranks every other reason: a viewer cannot act on the
+     cycle whatever state it is in, and telling them "complete July first" when
+     they could not run July either would be misleading. (CBC #16) */
+  const cycleLocked = !canManage || isFutureCycle || isOpenCurrentCycle || !!blockedByCycle || runLockedCycle;
+  const cycleLockReason = !canManage
+    ? 'You do not have permission to run payroll. Ask an administrator for the Payroll "edit" or "approve" permission on your account.'
+    : isFutureCycle
     ? `${cycle?.label} hasn't started yet — a future cycle has no attendance to process.`
+    : isOpenCurrentCycle
+      ? `${cycle?.label} is still in progress — payroll can be run once the month ends and attendance is final.`
     : blockedByCycle
       ? `Complete the ${blockedByCycle} payroll first — cycles must be processed in order.`
       : runLockedCycle
@@ -889,24 +903,59 @@ export default function HrPayroll() {
     }
   }, [location.state, location.pathname, rows, navigate]);
 
+  /* Sequence number for /payroll loads. (CBC #18)
+   *
+   * Switching months fired a request and kept the PREVIOUS month's rows,
+   * period and run on screen until it answered, so the page showed August's
+   * figures under a September heading while the table shimmered beneath them.
+   *
+   * Worse, nothing tied a response to the request that asked for it. Clicking
+   * Aug → Sep → Aug left three in flight, and whichever answered LAST won —
+   * not whichever was selected. The same race hit the loader: the first
+   * response to land called setLoading(false) while a later request was still
+   * running, so the shimmer stopped over half-loaded data. That is the
+   * "incomplete data, correct after the shimmer" this ticket describes.
+   *
+   * Every load now takes a ticket. A response applies only if its ticket is
+   * still the newest, and only that response clears the loader — a superseded
+   * one resolves into nothing. */
+  const loadSeq = useRef(0);
+
   const reloadCycle = useMemo(() => () => {
     const c = cycleMonths.find(m => m.key === cycleKey);
     const month = c?.month;
     const year  = c?.year;
+    const seq = ++loadSeq.current;
+    /* Clear before fetching so no stale month is ever on screen next to the
+       new month's label. The tiles and the table both read these, and both
+       already render their own loading state from `loading`. */
+    setRows([]);
+    setPeriodMeta(null);
+    setRunMeta(null);
     setLoading(true);
     return api.get('/payroll', { params: month && year ? { month, year } : {} })
       .then(res => {
+        if (seq !== loadSeq.current) return;      // superseded by a newer switch
         const d = res.data?.data ?? {};
         setRows(Array.isArray(d.rows) ? d.rows : []);
         setPeriodMeta(d.period ?? null);
         setRunMeta(d.run ?? null);
+        /* Defaults to TRUE when the key is absent so an older API (or a cached
+           response from before `can` existed) leaves the button exactly as it
+           was — the server still refuses an unauthorised run either way. (CBC #16) */
+        setCanManage(d.can?.manage !== false);
       })
       .catch(err => {
+        if (seq !== loadSeq.current) return;
         setRows([]);
         const msg = err?.response?.data?.message || 'Could not load payroll for this cycle.';
         toast.error('Load failed', msg);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        // Only the newest request owns the loader; an older one finishing must
+        // not stop the shimmer over data still being fetched.
+        if (seq === loadSeq.current) setLoading(false);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cycleKey, cycleMonths]);
 
@@ -922,6 +971,16 @@ export default function HrPayroll() {
 
   const runPayroll = async () => {
     if (busy) return;
+    /* Defence in depth. The button is already disabled without the permission,
+       but this path is also reachable from the Reopen branch and a keyboard
+       activation, and a silent no-op is what #16 was about. */
+    if (!canManage) {
+      toast.error(
+        'Not allowed',
+        'You do not have permission to run payroll. Ask an administrator for the Payroll "edit" or "approve" permission.',
+      );
+      return;
+    }
     const month = cycle?.month, year = cycle?.year;
     if (!month || !year) { toast.error('Run failed', 'Select a valid cycle first.'); return; }
     if (isFutureCycle) {
@@ -929,41 +988,30 @@ export default function HrPayroll() {
       return;
     }
 
-    /* Running a month that has NOT ENDED is allowed, but never by accident.
-     * (CBC #14)
+    /* A month that has NOT ENDED cannot be run. (CBC #14)
      *
-     * The engine supports it deliberately — loss of pay is capped to the days
-     * that have actually elapsed, which is why a mid-month run does not dock
-     * anyone for days still to come, and it is what makes same-month payday
-     * possible. What was missing is that the button gave no sign the month is
-     * still open: Run looked identical on the 3rd and on the 30th, so a cycle
-     * could be generated off a third of a month's attendance without anyone
-     * intending it.
+     * This was previously a confirmation rather than a block: the engine caps
+     * loss of pay to the days actually elapsed, which made same-month payday
+     * possible, and the dialog warned that the figures would move. In practice
+     * that produced finished-looking payslips priced off a third of a month's
+     * attendance, and nothing downstream distinguished them from a complete
+     * cycle. A month is now processable only once it is over — Aug becomes
+     * runnable on 1 Sep.
      *
-     * A confirmation, not a block: blocking would remove same-month payroll for
-     * every tenant and make the elapsed-days capping dead code. */
+     * The server enforces the same rule (guardPeriodComplete), so this is the
+     * early, explanatory half of it rather than the whole guard. The
+     * elapsed-days capping still applies to a cycle that ends mid-way for a
+     * leaver, so it is not dead code. */
     const now = new Date();
-    const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
-    if (isCurrentMonth) {
+    if (year === now.getFullYear() && month === now.getMonth() + 1) {
       const lastDay = new Date(year, month, 0).getDate();
-      const elapsed = now.getDate();
-      const ok = await confirm({
-        title: `${cycle.label} has not ended yet`,
-        message: (
-          <>
-            Today is day <strong>{elapsed} of {lastDay}</strong>, so attendance for this month is
-            not final. Loss of pay is counted only up to today and will change as the rest of the
-            month is recorded — re-run the cycle before approving it.
-            <br /><br />
-            Run payroll for <strong>{cycle.label}</strong> anyway?
-          </>
-        ),
-        tone: 'warning',
-        confirmLabel: 'Run anyway',
-        cancelLabel: 'Cancel',
-        icon: 'calendar-event-line',
-      });
-      if (!ok) return;
+      toast.error(
+        `${cycle.label} has not ended yet`,
+        `Today is day ${now.getDate()} of ${lastDay}. Payroll can be run once the month is over and `
+        + `attendance is final — ${cycle.label} becomes runnable on `
+        + `${new Date(year, month, 1).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}.`,
+      );
+      return;
     }
 
     setBusy(true);
@@ -1447,7 +1495,14 @@ export default function HrPayroll() {
         return (
           <div className="d-flex flex-column align-items-end" style={{ lineHeight: 1.25 }}>
             <span
-              className={`fs-13 ${provisional ? 'fw-semibold' : 'fw-bold'}`}
+              /* One weight for every row. The settled/provisional split used to
+                 ride on fw-bold vs fw-semibold as well as the colour and the
+                 "Provisional" caption below — so a single Ready row among
+                 Pending ones read as arbitrarily bolder than its neighbours
+                 (#20). The dim colour and the caption still carry the meaning;
+                 the weight now matches Gross Earnings and Deductions beside
+                 it, which have always been fw-semibold. */
+              className="fs-13 fw-semibold"
               style={provisional ? { color: 'var(--vz-secondary-color)' } : undefined}
               title={provisional
                 ? `Provisional — this slip is ${r.status}. The figure is a live calculation and can change once the exception is resolved.`
@@ -1994,6 +2049,13 @@ export default function HrPayroll() {
     <>
       <MasterFormStyles />
       <div className="pay-page">
+        {/* #22 — the page owns the viewport, so the table card below never
+            scrolls out of reach. Everything down to the KPI strip lives in this
+            box: it holds its natural height while there is room and scrolls
+            inside itself on a short window, instead of pushing the tab rail and
+            the table's search / filters / header off the bottom of the screen
+            and taking the whole window's scrollbar with it. */}
+        <div className="pay-top">
 
       <div className="frm-cstrip mb-3">
         <span className="frm-cstrip-accent" />
@@ -2038,10 +2100,7 @@ export default function HrPayroll() {
             disabled={busy || (cycleLocked && !canReopenCycle)}
             title={canReopenCycle
               ? `${cycle.label} is already ${cycle.run_status} but not disbursed — reopen it to run payroll again.`
-              : (cycleLockReason
-                  ?? (isOpenCurrentCycle
-                        ? `${cycle.label} is still in progress — attendance is not final. You can run it; loss of pay counts only up to today.`
-                        : undefined))}
+              : cycleLockReason}
             style={{
               padding: '10px 18px',
               fontSize: 13,
@@ -2371,6 +2430,7 @@ export default function HrPayroll() {
           );
         })}
       </Row>
+        </div>
 
       <Row className="g-2 align-items-center mb-3">
         <Col xs={12}>
@@ -2436,6 +2496,11 @@ export default function HrPayroll() {
           </div>
         </Col>
       </Row>
+        {/* Flex remainder. The tables carry `fitToViewport`, which measures
+            from their own top down to the footer — inside this box that is
+            exactly the space left under the tab rail, so the card fills it and
+            the rows scroll within their own body. */}
+        <div className="pay-tablearea">
 
       {/* Shared list tables (components/ui/DataTable) — search, the
           Department / Status pickers, sortable headers and the rows-per-page
@@ -2632,6 +2697,7 @@ export default function HrPayroll() {
             </>
           )}
 
+        </div>
       </div>
 
       <PaymentDisbursementModal

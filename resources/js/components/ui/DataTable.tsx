@@ -219,6 +219,28 @@ export default function DataTable<T extends object>({
   const [manualSize, setManualSize] = useState<number | null>(null);
   const pageSize = manualSize ?? pageSizeProp ?? autoSize ?? DEFAULT_PAGE_SIZE;
 
+  /* Rows-per-page is a listbox we draw ourselves, not a native <select>.
+     The native one hands its option list to the OS: it is unstyled, ignores
+     the dark theme, and — because the pager sits on the last line of the card
+     — the list dropped over the rows at whatever offset the platform chose,
+     never lined up with the field it belongs to (#19). Drawn here it opens
+     UPWARDS from the field, left edges flush, inside the card's own chrome. */
+  const [sizeOpen, setSizeOpen] = useState(false);
+  const sizeRef = useRef<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    if (!sizeOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!sizeRef.current?.contains(e.target as Node)) setSizeOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSizeOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [sizeOpen]);
+
   const [sorting, setSorting] = useState<SortingState>(initialSort ?? []);
   const [globalFilter, setGlobalFilter] = useState('');
   useEffect(() => { if (!isSearchControlled) setGlobalFilter(ownQuery); }, [ownQuery, isSearchControlled]);
@@ -737,14 +759,35 @@ export default function DataTable<T extends object>({
             <div className="tc-wl-right">
               <span className="tc-wl-rows">
                 Rows per page:
-                <select
-                  value={pageSize}
-                  onChange={e => { setManualSize(parseInt(e.target.value, 10)); setPageIndex(0); }}
-                >
-                  {[...new Set([pageSize, ...pageSizeOptions])].sort((a, b) => a - b).map(n => (
-                    <option key={n} value={n}>{n}</option>
-                  ))}
-                </select>
+                <span className="tc-wl-rows-sel" ref={sizeRef}>
+                  <button
+                    type="button"
+                    className="tc-wl-rows-btn"
+                    aria-haspopup="listbox"
+                    aria-expanded={sizeOpen}
+                    aria-label={`Rows per page: ${pageSize}`}
+                    onClick={() => setSizeOpen(o => !o)}
+                  >
+                    {pageSize}
+                    <i className={sizeOpen ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'} />
+                  </button>
+                  {sizeOpen && (
+                    <span className="tc-wl-rows-menu" role="listbox" aria-label="Rows per page">
+                      {[...new Set([pageSize, ...pageSizeOptions])].sort((a, b) => a - b).map(n => (
+                        <button
+                          key={n}
+                          type="button"
+                          role="option"
+                          aria-selected={n === pageSize}
+                          className={n === pageSize ? 'is-on' : undefined}
+                          onClick={() => { setManualSize(n); setPageIndex(0); setSizeOpen(false); }}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </span>
+                  )}
+                </span>
               </span>
               <span className="tc-wl-range">{pageIndex + 1} / {pageCount}</span>
               <div className="tc-wl-nav">

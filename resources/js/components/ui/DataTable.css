@@ -849,6 +849,23 @@
 [data-layout-mode="dark"] .dt-root .tc-wl-rows select { color: #ddd6fe; background: transparent; }
 [data-bs-theme="dark"] .dt-root .tc-wl-rows select option,
 [data-layout-mode="dark"] .dt-root .tc-wl-rows select option { background-color: #1f1b3a; color: #ddd6fe; }
+/* Same dark treatment for the drawn rows-per-page listbox that replaced the
+   native <select> (#19). Duplicated onto [data-layout-mode] for the same
+   reason every rule above it is: Velzon sets one attribute, Bootstrap the
+   other, and a card can be under either. */
+[data-bs-theme="dark"] .dt-root .tc-wl-rows-btn,
+[data-layout-mode="dark"] .dt-root .tc-wl-rows-btn { color: #ddd6fe; }
+[data-bs-theme="dark"] .dt-root .tc-wl-rows-menu,
+[data-layout-mode="dark"] .dt-root .tc-wl-rows-menu {
+  background: #1f1b3a; border-color: rgba(167, 139, 250, .42);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .45);
+}
+[data-bs-theme="dark"] .dt-root .tc-wl-rows-menu button,
+[data-layout-mode="dark"] .dt-root .tc-wl-rows-menu button { color: #c4b5fd; }
+[data-bs-theme="dark"] .dt-root .tc-wl-rows-menu button:hover,
+[data-layout-mode="dark"] .dt-root .tc-wl-rows-menu button:hover { background: rgba(124, 92, 252, .22); color: #fff; }
+[data-bs-theme="dark"] .dt-root .tc-wl-rows-menu button.is-on,
+[data-layout-mode="dark"] .dt-root .tc-wl-rows-menu button.is-on { background: #7c5cfc; color: #fff; }
 [data-bs-theme="dark"] .dt-root .tc-wl-btn,
 [data-layout-mode="dark"] .dt-root .tc-wl-btn {
   background: rgba(var(--dt-a-rgb), .18);
