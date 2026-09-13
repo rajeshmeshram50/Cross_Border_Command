@@ -37,6 +37,29 @@ export default function Login({ onForgotPassword }: LoginProps) {
   const [orgPrompt, setOrgPrompt] = useState<{ organizations: LoginOrg[]; message?: string; retry: (clientId: number | null) => Promise<void> } | null>(null);
   const [orgBusy, setOrgBusy] = useState(false);
 
+  /* Say WHY the user is looking at a login form they didn't ask for.
+   *
+   * api.ts writes `cbc_last_auth_error` whenever a 401 forces a logout — the
+   * usual cause being a tab left idle until its token expired. Nothing read
+   * that key, so the user was simply thrown back to /login mid-task with no
+   * explanation, which reads as the app having crashed.
+   *
+   * Cleared on read: it explains THIS redirect only, and must not resurface on
+   * the next manual visit to /login. Wrapped in try/catch because storage
+   * access throws in private-browsing modes, and a diagnostic must never be
+   * the thing that breaks sign-in. */
+  useEffect(() => {
+    let stale: string | null = null;
+    try {
+      stale = localStorage.getItem('cbc_last_auth_error');
+      if (stale) localStorage.removeItem('cbc_last_auth_error');
+    } catch { /* no storage — nothing to explain */ }
+    if (!stale) return;
+    toast.warning('Session expired', 'You were signed out for security. Please sign in again.');
+    // toast identity is stable for the life of the provider; run once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Common handling for a final (non-org-prompt) login result.
   const applyResult = (result: LoginResult, failTitle: string) => {
     if (result.success) {
