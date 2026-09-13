@@ -34,17 +34,27 @@ export const ZERO_OK_CODES = ['pf', 'esi', 'special'];
 export const MAX_COMP_AMOUNT = 99999999.99;
 export const MAX_COMP_LABEL  = 120;
 
-/** 50 / 30 / 20 split of the monthly gross. Basic at 50% is the Code on Wages,
- *  2019 floor; Special carries the remainder so the three always total the CTC. */
+/** The whole monthly gross on Basic Salary, and nothing else. (#9 / #147)
+ *
+ *  This used to seed a 50 / 30 / 20 Basic / HRA / Special split the moment an
+ *  Annual CTC was typed, so entering ₹6,00,000 on the Employee form silently
+ *  produced a House Rent Allowance and a Special Allowance that nobody had
+ *  agreed. Those rows then saved to the structure and turned up as real
+ *  components in payroll — the config-side half of "Special Allowance is
+ *  calculated even when it is not configured".
+ *
+ *  Seeding Basic alone states only what the CTC itself already says: this is
+ *  the monthly gross. Every allowance is now something HR adds deliberately,
+ *  and `absorbIntoSpecial` / the balance rules fund it out of Basic so the
+ *  total still lands on the CTC.
+ *
+ *  Basic at 100% clears the Code on Wages, 2019 floor (Basic + DA >= 50% of
+ *  total remuneration) by a wide margin, so the seeded state is compliant as
+ *  well as honest. */
 export const seedBreakup = (monthlyGross: number): SalBreakComp[] => {
   const g = Math.max(0, Math.round(monthlyGross));
-  const basic = Math.round(g * 0.5);
-  const hra = Math.round(g * 0.3);
-  const special = Math.max(0, g - basic - hra);
   return [
-    { code: 'basic',   label: 'Basic Salary',          amount: basic },
-    { code: 'hra',     label: 'House Rent Allowance',   amount: hra },
-    { code: 'special', label: 'Special Allowance',      amount: special },
+    { code: 'basic', label: 'Basic Salary', amount: g },
   ];
 };
 
