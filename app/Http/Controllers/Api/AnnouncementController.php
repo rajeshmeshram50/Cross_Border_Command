@@ -671,6 +671,6 @@ class AnnouncementController extends Controller
             }
         }
         return 'ANN-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
-    }
+    } 
 }
  

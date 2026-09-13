@@ -1245,7 +1245,7 @@ class PayrollController extends Controller
         $data['company'] = $this->pdf->letterhead($slip);
         $data['period_label'] = $this->periodLabelFor($slip);
         $data['notices'] = $this->slipNotices($slip, $data['deductionsBreakup'] ?? []);
-        /* The workings behind the "This Cycle" column, shown under EARNINGS —
+        /* The workings behind the component amounts, shown under EARNINGS —
          * the table the reader is questioning. Separate from `notices`, which
          * explains the Deductions side. (#141) */
         $data['payBasis'] = $this->payBasisNotices($slip);
@@ -1349,7 +1349,7 @@ class PayrollController extends Controller
 
 
     /**
-     * The workings behind the "This Cycle" column. (#141)
+     * The workings behind each component's amount. (#141)
      *
      * Two parts, in the order a reader needs them:
      *   1. The rule — components carry the pay window's rate; attendance is
@@ -1377,7 +1377,7 @@ class PayrollController extends Controller
 
         $num = fn ($v) => rtrim(rtrim(number_format((float) $v, 2, '.', ''), '0'), '.');
 
-        $basis = 'This Cycle is each component at the rate in force during this pay window. '
+        $basis = 'Each component is shown at the rate in force during this pay window. '
             . 'Attendance is not applied to the component lines — absence is charged once, '
             . 'as the Loss of Pay deduction';
         if ($lopDays > 0) {
@@ -1514,8 +1514,8 @@ class PayrollController extends Controller
              * carries the rest, and the table above is the full record. */
             $shown = array_slice($moved, 0, 6);
             $more  = count($moved) - count($shown);
-            $out[] = 'Monthly is the salary structure rate; This Cycle is what this window pays. '
-                . 'Lines that differ: ' . implode(', ', $shown)
+            $out[] = 'These components are paid at something other than the salary structure rate '
+                . '(structure rate → paid this window): ' . implode(', ', $shown)
                 . ($more > 0 ? ', and ' . $more . ' more' : '')
                 . '. The reason is stated below — a mid-cycle revision is blended across the rates that were '
                 . 'in force, and a join or exit inside the window is pro-rated to the days employed.';
