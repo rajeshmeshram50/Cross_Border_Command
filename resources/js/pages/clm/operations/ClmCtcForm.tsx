@@ -304,12 +304,6 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
     }
     catch { /* keep last snapshot */ }
   };
-  // Poll for approver / signer activity while we sit on a review/signing stage.
-  useEffect(() => {
-    if (!workingId || stage < 2) return;
-    const iv = window.setInterval(() => { refreshRecord(); }, 10000);
-    return () => window.clearInterval(iv);
-  }, [workingId, stage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const approval = String((record?.approval_status as string) ?? (sentForApproval ? 'pending' : ''));
   // Counterparty e-sign decline (if any) — surfaced on the editor while the
@@ -327,6 +321,44 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
     const allSigned = recs.length > 0 && recs.every(r => r.signed);
     return allSigned || String(record?.status ?? '') === 'signed' || (Number(record?.stage) || 0) >= 4;
   })();
+  /* Poll for approver / signer activity while we sit on a review/signing stage.
+   *
+   * This tick is expensive in a way the interval hides: once the contract is
+   * linked to Zoho it goes to /sync-signature, and that endpoint blocks on a
+   * live call out to Zoho Sign before it answers. Measured on the deployment
+   * it runs 4.6-4.8 s and returns ~140 kB, every single time. At a flat 10 s
+   * that is a 4.7 s external round trip and 140 kB of contract JSON roughly
+   * every other tick, for as long as the page stays open — which is what was
+   * saturating the tab while a download was trying to get through.
+   *
+   * Four guards, none of which change what the tracker ends up showing:
+   *   · in-flight  — a tick never starts while the previous one is still out,
+   *                  so a slow Zoho can no longer stack requests on itself
+   *   · hidden tab — nothing is on screen to update, so nothing is fetched;
+   *                  a refresh fires on the way back so the view is current
+   *   · settled    — once every recipient has signed (or the contract is
+   *                  signed/stored) there is no further signer activity to
+   *                  learn about, and the poll has nothing left to do
+   *   · 20 s       — an e-signature does not change on a 10 s cadence, and a
+   *                  4.7 s request on a 10 s timer is close to always-on
+   */
+  const pollBusy = useRef(false);
+  useEffect(() => {
+    if (!workingId || stage < 2 || signedLock) return;
+
+    const tick = async () => {
+      if (pollBusy.current || document.visibilityState === 'hidden') return;
+      pollBusy.current = true;
+      try { await refreshRecord(); } finally { pollBusy.current = false; }
+    };
+
+    const iv = window.setInterval(tick, 20000);
+    // Coming back to the tab should not wait out the rest of the interval.
+    const onVisible = () => { if (document.visibilityState === 'visible') tick(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { window.clearInterval(iv); document.removeEventListener('visibilitychange', onVisible); };
+  }, [workingId, stage, signedLock]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const signedDocUrl = String((record?.signed_document_url as string) ?? '');
   // The DRAFT itself is editable only in three states: a fresh draft never sent
   // for approval, an internally-rejected draft, or one the counterparty declined.

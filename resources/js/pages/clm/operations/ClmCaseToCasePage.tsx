@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import api from '../../../api';
@@ -6,7 +7,7 @@ import { type CtcContract, inits, PER_PAGE } from './clmOpsData';
 import ClmCtcForm from './ClmCtcForm';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import { VersionHistoryModal, AgreementTimelineModal, type CtcVersion, type CtcSigner } from './clmCtcModals';
-import { Shimmer, ShimmerDocumentPrep } from '../../../components/ui/Shimmer';
+import { Shimmer } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
 import SearchClear from '../../../components/ui/SearchClear';
 
@@ -264,7 +265,12 @@ export default function ClmCaseToCasePage() {
           downloading — the PDF / Zoho certificate can take a while to generate
           server-side, so block every other action (create, tab switch, other
           rows) until it finishes and can't be cut off. */}
-      {(downloadingId !== null || certId !== null) && <ShimmerDocumentPrep />}
+      {(downloadingId !== null || certId !== null) && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2000000, background: 'rgba(15,7,50,.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 15, fontFamily: 'var(--font-sans)' }}>
+          <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'ctcSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+          <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>Preparing your download…</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.72)' }}>Large agreements can take a moment — please don't leave this page.</div>
+        </div>, document.body)}
 
       {/* CARD 1 — HEADER STRIP */}
       <div style={{ background: t.dark ? '#1c1438' : 'linear-gradient(110deg,#F5F3FF 0%,#EDE9FE 22%,#DDD6FE 50%,#C4B5FD 78%,#A78BFA 100%)', borderRadius: 14, border: `1px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.2)'}`, boxShadow: '0 2px 12px rgba(109,40,217,.1)', overflow: 'hidden' }}>
