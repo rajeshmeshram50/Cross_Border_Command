@@ -161,7 +161,12 @@ function useCpCompliance(cps: CP[], nonce = 0): Record<string, CpComp> {
       if (!type || !id) return;
       const k = cpKey(cp);
       setMap(m => (m[k] && !m[k].loading ? m : { ...m, [k]: { percent: 0, complete: false, total: 0, done: 0, loading: true } }));
-      api.get(`/segment-uploads/${type}/${id}/vault`)
+      /* ring=1 — the five numbers computeCpComp() reads, without the document
+         arrays it throws away. Same keys, same arithmetic, same displayed
+         ratio (checked against the full response on every party in the
+         database); the response drops from ~3.5 kB to ~0.15 kB. This was the
+         slowest request on the draft form at 3.24 s on the deployment. */
+      api.get(`/segment-uploads/${type}/${id}/vault`, { params: { ring: 1 } })
         .then(res => { if (!alive) return; const v = ((res.data?.data ?? res.data) ?? {}) as Record<string, unknown>; setMap(m => ({ ...m, [k]: { ...computeCpComp(v), loading: false } })); })
         .catch(() => { if (alive) setMap(m => ({ ...m, [k]: { percent: 0, complete: false, total: 0, done: 0, loading: false } })); });
     });

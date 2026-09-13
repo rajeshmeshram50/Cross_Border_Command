@@ -603,6 +603,49 @@ class SegmentDocUploadController extends Controller
          * genuine shipment count and stays on $shipments. */
         $ctcRows   = in_array($type, ['customer', 'consignee'], true) ? $deals : $shipments;
 
+        /* ring=1 — the counterparty completion ring on the CTC draft form, and
+         * nothing else.
+         *
+         * ClmCtcForm's useCpCompliance() opens this vault for every counter
+         * party on the Agreement Draft Workspace just to print "10/16 docs" in
+         * the card header. It reads five numbers: the two core_* counts, each
+         * deal's trade-doc and agreement ratio, and the vendor deals' td ratio.
+         * Every document array below — and the entire counting block that
+         * follows — is built, serialised, shipped and dropped by that caller.
+         * On the deployment the request measured 3.24 s, the slowest on the
+         * page by a wide margin (the three ?light=1 lookups beside it ran
+         * ~1.3 s each).
+         *
+         * NOT tally=1, which already exists directly above. tally answers with
+         * the core_* counts alone, and the ring adds the per-deal terms on top
+         * of them — dropping those changes the number the user sees. Checked
+         * across all 90 parties in this database: six of them differ, e.g.
+         * customer #10 reads 11/19 with the deals and 7/8 without. So this
+         * mode keeps the ratios and discards only what the ring never reads.
+         *
+         * The keys mirror the full response exactly, so computeCpComp() runs
+         * unchanged against either shape. */
+        if ($request->boolean('ring')) {
+            $ringDeals = in_array($type, ['supplier', 'vendor'], true) && $cid
+                ? $this->buildVendorDeals($owner, $cid, $company_dd, $owner_kyc, $trade_licenses, $trade_documents)['with_shipment']
+                : [];
+
+            return response()->json([
+                'data' => [
+                    'core_total_documents' => $coreMandatory->count(),
+                    'core_verified_signed' => $coreVerified,
+                    'shipment_agreements'  => array_map(fn ($s) => [
+                        'has_shipment' => $s['has_shipment'] ?? null,
+                        'trade_docs'   => ['ratio' => $s['trade_docs']['ratio'] ?? '0/0'],
+                        'agreement'    => ['ratio' => $s['agreement']['ratio'] ?? '0/0'],
+                    ], array_values($ctcRows)),
+                    'vendor_with_shipment' => array_map(fn ($d) => [
+                        'ratios' => ['td' => $d['ratios']['td'] ?? null],
+                    ], array_values($ringDeals)),
+                ],
+            ]);
+        }
+
         // ── Header KPIs ─────────────────────────────────────────────────────
         // Customer/Consignee vaults have two document families:
         //   • Standard  = Company DD + Owner KYC + Trade Licences (one-time docs)
