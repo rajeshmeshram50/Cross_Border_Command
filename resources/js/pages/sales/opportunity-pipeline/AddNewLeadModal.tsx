@@ -444,173 +444,182 @@ export default function AddNewLeadModal(props: {
             </span>
           </label>
 
-          {/* Customer Information */}
-          <div className="anl-section-label">
-            <span className="anl-section-icon">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-            </span>
-            Customer Information
-          </div>
-          <div className="anl-grid-3">
-            <Field label="Customer Name" required error={errors.customerName}>
-              {useExisting ? (
+
+          <div className={`anl-fill-zone${customerFetching ? ' is-loading' : ''}`}>
+            {customerFetching && (
+              <div className="anl-fill-overlay" role="status" aria-live="polite">
+                <span className="anl-fill-spinner" aria-hidden="true" />
+                <span>Loading customer details…</span>
+              </div>
+            )}
+            {/* Customer Information */}
+            <div className="anl-section-label">
+              <span className="anl-section-icon">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+              </span>
+              Customer Information
+            </div>
+            <div className="anl-grid-3">
+              <Field label="Customer Name" required error={errors.customerName}>
+                {useExisting ? (
+                  <div className="master-field">
+                    <i className="ri-user-line master-field-icon" />
+                    <MasterSelect
+                      value={pickedCustomerId}
+                      onChange={(v) => { void onPickExisting(v); }}
+                      placeholder={customersLoading ? 'Loading customers…' : 'Select a customer'}
+                      /* Domestic (India) vs International pill on each option, so
+                         the customer's scope is obvious in the picker. Country may
+                         arrive as a name ("India") or ISO ("IN") — treat both as
+                         domestic; blank country shows no badge. */
+                      options={customerOpts.map(c => {
+                        const cy = c.country.trim().toLowerCase();
+                        const badge = !cy ? undefined
+                          : (cy === 'india' || cy === 'in')
+                            ? { text: 'Domestic', tone: 'green' as const, title: 'India — domestic' }
+                            : { text: 'International', tone: 'violet' as const, title: `${c.country} — international` };
+                        return { value: c.id, label: `${c.id} — ${c.company || c.legalName}`, badge };
+                      })}
+                      disabled={customersLoading || customerFetching}
+                    />
+                  </div>
+                ) : (
+                  <TextInput
+                    value={values.customerName}
+                    onChange={(v) => set('customerName', v)}
+                    placeholder="e.g. GreenHarvest Global"
+                    iconLeft="ri-user-line"
+                    error={!!errors.customerName}
+                  />
+                )}
+              </Field>
+              <Field label="Mobile Number" required error={errors.mobileNumber}>
+                <TextInput
+                  value={values.mobileNumber}
+                  onChange={(v) => set('mobileNumber', isIndiaMobile ? digitsOnly(v).slice(0, 10) : digitsOnly(v))}
+                  placeholder={isIndiaMobile ? '10-digit mobile' : '10-15 digit number'}
+                  iconLeft={isIndiaMobile ? undefined : 'ri-smartphone-line'}
+                  prefix={isIndiaMobile ? '+91' : undefined}
+                  inputMode="numeric"
+                  maxLength={isIndiaMobile ? 10 : 15}
+                  error={!!errors.mobileNumber}
+                  disabled={lockCustomer}
+                />
+              </Field>
+              <Field label="Customer Email" required error={errors.customerEmail}>
+                <TextInput
+                  value={values.customerEmail}
+                  onChange={(v) => set('customerEmail', v)}
+                  placeholder="Enter email address"
+                  iconLeft="ri-mail-line"
+                  error={!!errors.customerEmail}
+                  disabled={lockCustomer}
+                />
+              </Field>
+              <Field label="Company Name">
+                <TextInput
+                  value={values.companyName}
+                  onChange={(v) => set('companyName', v)}
+                  placeholder="Enter company name"
+                  iconLeft="ri-briefcase-line"
+                  disabled={lockCustomer}
+                />
+              </Field>
+              <div className="anl-col-span-2">
+                <Field label="Customer Address">
+                  <TextInput
+                    value={values.customerAddress}
+                    onChange={(v) => set('customerAddress', v)}
+                    placeholder="Enter complete address"
+                    iconLeft="ri-map-pin-line"
+                    disabled={lockCustomer}
+                  />
+                </Field>
+              </div>
+            </div>
+
+            {/* Location Details */}
+            <div className="anl-section-label">
+              <span className="anl-section-icon">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z" />
+                  <circle cx="12" cy="10" r="3" />
+                </svg>
+              </span>
+              Location Details
+            </div>
+            <div className="anl-grid-4">
+              <Field label="Customer City" required error={errors.customerCity}>
+                <TextInput
+                  value={values.customerCity}
+                  onChange={(v) => set('customerCity', v)}
+                  placeholder="Enter city"
+                  iconLeft="ri-building-2-line"
+                  error={!!errors.customerCity}
+                  disabled={lockCustomer}
+                />
+              </Field>
+              {/* invalid prop tints the MasterSelect trigger's border red
+                  — same affordance the City TextInput already had so all
+                  four required Location-Details fields look consistent
+                  when the form is submitted with gaps. */}
+              <Field label="Country" required error={errors.country}>
                 <div className="master-field">
-                  <i className="ri-user-line master-field-icon" />
+                  <i className="ri-earth-line master-field-icon" />
                   <MasterSelect
-                    value={pickedCustomerId}
-                    onChange={(v) => { void onPickExisting(v); }}
-                    placeholder={customersLoading ? 'Loading customers…' : 'Select a customer'}
-                    /* Domestic (India) vs International pill on each option, so
-                       the customer's scope is obvious in the picker. Country may
-                       arrive as a name ("India") or ISO ("IN") — treat both as
-                       domestic; blank country shows no badge. */
-                    options={customerOpts.map(c => {
-                      const cy = c.country.trim().toLowerCase();
-                      const badge = !cy ? undefined
-                        : (cy === 'india' || cy === 'in')
-                          ? { text: 'Domestic', tone: 'green' as const, title: 'India — domestic' }
-                          : { text: 'International', tone: 'violet' as const, title: `${c.country} — international` };
-                      return { value: c.id, label: `${c.id} — ${c.company || c.legalName}`, badge };
-                    })}
-                    disabled={customersLoading || customerFetching}
+                    value={values.country}
+                    onChange={(v) => {
+                      // Picking a new country resets State because the
+                      // previous state probably belongs to the old country.
+                      setValues(prev => ({ ...prev, country: v, state: '' }));
+                      setErrors(prev => {
+                        const n = { ...prev }; delete n.country; delete n.state;
+                        /* PIN and ZIP are different rules, so the code already
+                           typed has to be re-judged against the NEW country —
+                           otherwise a valid "SL7 1TB" survives a switch to India
+                           (and a 6-digit PIN keeps a stale error after leaving). */
+                        const pinMsg = pinError(values.pincode, v);
+                        if (pinMsg) n.pincode = pinMsg; else delete n.pincode;
+                        return n;
+                      });
+                    }}
+                    placeholder="Select country"
+                    options={countryOpts.map(c => ({ value: c, label: c }))}
+                    invalid={!!errors.country}
+                    disabled={lockCustomer}
                   />
                 </div>
-              ) : (
+              </Field>
+              <Field label="State" required error={errors.state}>
+                <div className="master-field">
+                  <i className="ri-map-2-line master-field-icon" />
+                  <MasterSelect
+                    value={values.state}
+                    onChange={(v) => set('state', v)}
+                    placeholder={values.country ? 'Select state' : 'Select country first'}
+                    options={stateOpts.map(s => ({ value: s, label: s }))}
+                    disabled={lockCustomer || !values.country}
+                    invalid={!!errors.state}
+                  />
+                </div>
+              </Field>
+              {/* Last in the row, after Country/State: its label and rule are
+                  derived from the country, so it reads as a consequence of the
+                  fields before it rather than something to fill in blind. */}
+              <Field label={pinLabel(values.country)} error={errors.pincode}>
                 <TextInput
-                  value={values.customerName}
-                  onChange={(v) => set('customerName', v)}
-                  placeholder="e.g. GreenHarvest Global"
-                  iconLeft="ri-user-line"
-                  error={!!errors.customerName}
-                />
-              )}
-            </Field>
-            <Field label="Mobile Number" required error={errors.mobileNumber}>
-              <TextInput
-                value={values.mobileNumber}
-                onChange={(v) => set('mobileNumber', isIndiaMobile ? digitsOnly(v).slice(0, 10) : digitsOnly(v))}
-                placeholder={isIndiaMobile ? '10-digit mobile' : '10-15 digit number'}
-                iconLeft={isIndiaMobile ? undefined : 'ri-smartphone-line'}
-                prefix={isIndiaMobile ? '+91' : undefined}
-                inputMode="numeric"
-                maxLength={isIndiaMobile ? 10 : 15}
-                error={!!errors.mobileNumber}
-                disabled={lockCustomer}
-              />
-            </Field>
-            <Field label="Customer Email" required error={errors.customerEmail}>
-              <TextInput
-                value={values.customerEmail}
-                onChange={(v) => set('customerEmail', v)}
-                placeholder="Enter email address"
-                iconLeft="ri-mail-line"
-                error={!!errors.customerEmail}
-                disabled={lockCustomer}
-              />
-            </Field>
-            <Field label="Company Name">
-              <TextInput
-                value={values.companyName}
-                onChange={(v) => set('companyName', v)}
-                placeholder="Enter company name"
-                iconLeft="ri-briefcase-line"
-                disabled={lockCustomer}
-              />
-            </Field>
-            <div className="anl-col-span-2">
-              <Field label="Customer Address">
-                <TextInput
-                  value={values.customerAddress}
-                  onChange={(v) => set('customerAddress', v)}
-                  placeholder="Enter complete address"
-                  iconLeft="ri-map-pin-line"
+                  value={values.pincode}
+                  onChange={(v) => set('pincode', pinSanitize(v, values.country))}
+                  placeholder={pinPlaceholder(values.country)}
+                  inputMode={isDomesticCountry(values.country) ? 'numeric' : 'text'}
+                  maxLength={pinMaxLen(values.country)}
                   disabled={lockCustomer}
                 />
               </Field>
             </div>
-          </div>
-
-          {/* Location Details */}
-          <div className="anl-section-label">
-            <span className="anl-section-icon">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z" />
-                <circle cx="12" cy="10" r="3" />
-              </svg>
-            </span>
-            Location Details
-          </div>
-          <div className="anl-grid-4">
-            <Field label="Customer City" required error={errors.customerCity}>
-              <TextInput
-                value={values.customerCity}
-                onChange={(v) => set('customerCity', v)}
-                placeholder="Enter city"
-                iconLeft="ri-building-2-line"
-                error={!!errors.customerCity}
-                disabled={lockCustomer}
-              />
-            </Field>
-            {/* invalid prop tints the MasterSelect trigger's border red
-                — same affordance the City TextInput already had so all
-                four required Location-Details fields look consistent
-                when the form is submitted with gaps. */}
-            <Field label="Country" required error={errors.country}>
-              <div className="master-field">
-                <i className="ri-earth-line master-field-icon" />
-                <MasterSelect
-                  value={values.country}
-                  onChange={(v) => {
-                    // Picking a new country resets State because the
-                    // previous state probably belongs to the old country.
-                    setValues(prev => ({ ...prev, country: v, state: '' }));
-                    setErrors(prev => {
-                      const n = { ...prev }; delete n.country; delete n.state;
-                      /* PIN and ZIP are different rules, so the code already
-                         typed has to be re-judged against the NEW country —
-                         otherwise a valid "SL7 1TB" survives a switch to India
-                         (and a 6-digit PIN keeps a stale error after leaving). */
-                      const pinMsg = pinError(values.pincode, v);
-                      if (pinMsg) n.pincode = pinMsg; else delete n.pincode;
-                      return n;
-                    });
-                  }}
-                  placeholder="Select country"
-                  options={countryOpts.map(c => ({ value: c, label: c }))}
-                  invalid={!!errors.country}
-                  disabled={lockCustomer}
-                />
-              </div>
-            </Field>
-            <Field label="State" required error={errors.state}>
-              <div className="master-field">
-                <i className="ri-map-2-line master-field-icon" />
-                <MasterSelect
-                  value={values.state}
-                  onChange={(v) => set('state', v)}
-                  placeholder={values.country ? 'Select state' : 'Select country first'}
-                  options={stateOpts.map(s => ({ value: s, label: s }))}
-                  disabled={lockCustomer || !values.country}
-                  invalid={!!errors.state}
-                />
-              </div>
-            </Field>
-            {/* Last in the row, after Country/State: its label and rule are
-                derived from the country, so it reads as a consequence of the
-                fields before it rather than something to fill in blind. */}
-            <Field label={pinLabel(values.country)} error={errors.pincode}>
-              <TextInput
-                value={values.pincode}
-                onChange={(v) => set('pincode', pinSanitize(v, values.country))}
-                placeholder={pinPlaceholder(values.country)}
-                inputMode={isDomesticCountry(values.country) ? 'numeric' : 'text'}
-                maxLength={pinMaxLen(values.country)}
-                disabled={lockCustomer}
-              />
-            </Field>
           </div>
         </div>
 
@@ -815,6 +824,31 @@ const SCOPED_CSS = `
    running. (No backticks in here: this block is a template literal.) */
 .anl-body[inert] { opacity: .6; cursor: wait; user-select: none; }
 
+/* Existing-customer auto-fill in flight. The fields underneath keep their
+   layout (so the modal does not jump) but are dimmed and sealed off behind
+   a translucent sheet carrying the spinner, which is what tells the user
+   the blanks are about to be filled rather than left empty.
+   (No backticks in here: this block is a template literal.) */
+.anl-fill-zone { position: relative; display: flex; flex-direction: column; gap: 14px; }
+.anl-fill-zone.is-loading > *:not(.anl-fill-overlay) {
+  opacity: .4; pointer-events: none; user-select: none;
+}
+.anl-fill-overlay {
+  position: absolute; inset: -6px -10px; z-index: 5;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.66);
+  font-size: 12.5px; font-weight: 700; letter-spacing: .2px; color: #0e7490;
+  cursor: wait;
+}
+.anl-fill-spinner {
+  width: 20px; height: 20px;
+  border: 2.5px solid rgba(8, 145, 178, 0.22);
+  border-top-color: #0891b2;
+  border-radius: 50%;
+  animation: anl-spin 0.6s linear infinite;
+}
+
 /* Existing-customer toggle — green border to flag this as the "shortcut"
    row that pulls saved customer records, distinct from the cyan form
    below it. */
@@ -1005,6 +1039,8 @@ const SCOPED_CSS = `
 
 [data-bs-theme="dark"] .anl-modal { background: #0c1f2e; color: #cffafe; box-shadow: 0 30px 80px rgba(0,0,0,0.75); }
 [data-bs-theme="dark"] .anl-body  { background: linear-gradient(180deg, #0e2940 0%, #0c1f2e 100%); }
+[data-bs-theme="dark"] .anl-fill-overlay { background: rgba(12, 31, 46, 0.72); color: #67e8f9; }
+[data-bs-theme="dark"] .anl-fill-spinner { border-color: rgba(103, 232, 249, 0.22); border-top-color: #22d3ee; }
 [data-bs-theme="dark"] .anl-foot  { background: #0e2940; border-top-color: #102a3a; }
 [data-bs-theme="dark"] .anl-input { background: #102a3a; border-color: rgba(34, 211, 238, 0.22); color: #cffafe; }
 [data-bs-theme="dark"] .anl-input:hover { border-color: rgba(34, 211, 238, 0.40); }

@@ -46,6 +46,20 @@ Route::middleware('throttle:120,1')->group(function () {
     Route::post                  ('/iclock/devicecmd',  [\App\Http\Controllers\Api\EsslDeviceController::class, 'devicecmd']);
 });
 
+// ── Missing build assets must 404, never fall through to the SPA ────────────
+// Vite fingerprints every chunk and a new build deletes the previous ones.
+// Apache serves assets that exist straight off disk (public/.htaccess only
+// rewrites to index.php when !-f), so a request reaches Laravel ONLY when the
+// file is gone — which is exactly what a browser tab holding a pre-deploy
+// index.html asks for.
+//
+// Without this, the catch-all below answers that .js request with the welcome
+// view: 200 + Content-Type text/html. The browser refuses it ("Expected a
+// JavaScript-or-Wasm module script"), the dynamic import rejects, and React
+// unmounts to a white screen. 404 is the honest status and stops HTML being
+// cached under a .js URL. resources/js/utils/lazyPage.ts does the recovery.
+Route::get('/build/{path}', fn () => abort(404))->where('path', '.*');
+
 // SPA Fallback - serve index.html for all non-API routes
 // This enables proper URL routing for React Router
 // The route order ensures API routes (handled in api.php) take precedence

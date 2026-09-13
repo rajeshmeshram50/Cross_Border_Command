@@ -504,7 +504,13 @@ function ClauseLibModal(props: {
     return () => document.removeEventListener('selectionchange', remember);
   }, []);
 
-  const fmt = (cmd: string, val?: string) => {
+  /* Put the caret back where the user left it, then run `cmds`.
+   *
+   * Shared by fmt() and clearFormatting(): both need the original range live
+   * before execCommand fires, and clearFormatting needs to issue SEVERAL
+   * commands against that one range — restoring per command would re-apply
+   * the stale saved range on top of what the previous command just changed. */
+  const withSelection = (cmds: () => void) => {
     const el = editorRef.current;
     if (!el) return;
     el.focus();
@@ -515,11 +521,34 @@ function ClauseLibModal(props: {
       sel.removeAllRanges();
       sel.addRange(savedRange.current);
     }
-    document.execCommand(cmd, false, val);
+    cmds();
     // Typing is not the only way content appears — formatting counts too, so
     // clear a standing "content required" error the same way onInput does.
     setErrors(p => (p.content ? { ...p, content: '' } : p));
   };
+
+  const fmt = (cmd: string, val?: string) =>
+    withSelection(() => { document.execCommand(cmd, false, val); });
+
+  /* Clear formatting.
+   *
+   * `removeFormat` alone is not enough — it strips INLINE marks only (bold,
+   * italic, colour, font size). Headings, quotes, lists and links are block
+   * or anchor level and survive it untouched, so a plain removeFormat button
+   * appears to do nothing on exactly the content people reach for it with.
+   *
+   * So: drop any list the selection sits in (toggling the command off is the
+   * only way execCommand unwraps an <ul>/<ol>), strip inline marks, remove
+   * anchors, then force the block back to a plain <p> to undo headings and
+   * blockquotes. Order matters — formatBlock last, or the list toggle would
+   * re-wrap the paragraph it just produced. */
+  const clearFormatting = () => withSelection(() => {
+    if (document.queryCommandState('insertUnorderedList')) document.execCommand('insertUnorderedList');
+    if (document.queryCommandState('insertOrderedList'))   document.execCommand('insertOrderedList');
+    document.execCommand('removeFormat');
+    document.execCommand('unlink');
+    document.execCommand('formatBlock', false, '<p>');
+  });
 
   const handleSave = async () => {
     const next: Record<string, string> = {};
@@ -652,6 +681,12 @@ function ClauseLibModal(props: {
               <span className="clm-editor-tb-divider" />
               <button type="button" className="clm-editor-tb-btn" title="Undo" onClick={() => fmt('undo')}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg></button>
               <button type="button" className="clm-editor-tb-btn" title="Redo" onClick={() => fmt('redo')}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg></button>
+              <span className="clm-editor-tb-divider" />
+              {/* Clear formatting. Filled icon (the standard "format clear" T
+                  with a strike) rather than the stroked outlines above — it is
+                  the glyph users recognise for this action, and a stroked
+                  version of it is unreadable at 12px. */}
+              <button type="button" className="clm-editor-tb-btn" title="Clear formatting" onClick={clearFormatting}><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3.27 5 2 6.27l6.97 6.97L6.5 19h3l1.57-3.66L16.73 21 18 19.73 3.55 5.27 3.27 5ZM6 5v.18L8.82 8h2.4l-.72 1.68 2.1 2.1L14.21 8H20V5H6Z"/></svg></button>
             </div>
             <ClauseRichEditor ref={editorRef} initialHTML={initialContent} onInput={() => setErrors(p => (p.content ? { ...p, content: '' } : p))} />
             <div className="clm-editor-foot">

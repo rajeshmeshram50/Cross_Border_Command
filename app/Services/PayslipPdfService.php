@@ -138,21 +138,20 @@ class PayslipPdfService
     /** Normalised earnings/deductions component lists. */
     private function lines($components, $fallbackTotal, string $fallbackLabel): array
     {
+        /* Same two presentation rules the API applies, from the same place,
+         * so the PDF cannot drift from the slip on screen: drop components the
+         * structure does not fund (#147), then absorb sub-paisa rounding
+         * residue so the lines add up to the stated total (#10).
+         *
+         * Deductions come through deductionLines() and are deliberately left
+         * alone — a statutory head at zero is a substantive statement. */
+        $lines = \App\Support\PayslipLines::reconciledTo(
+            \App\Support\PayslipLines::withoutUnfunded((array) $components),
+            (float) $fallbackTotal,
+        );
+
         $out = [];
-        foreach ((array) $components as $c) {
-            /* Skip a component the structure does not fund, so the PDF agrees
-             * with the on-screen slip and the API's earningsBreakup. Both the
-             * paid amount and the structure's monthly figure must be zero —
-             * the same rule PayrollService applies when building the lines, so
-             * a funded component that pro-rates to nothing still prints. (#147)
-             *
-             * Only reached for EARNINGS in practice: deductions come through
-             * deductionLines(), which is deliberately unfiltered because a
-             * statutory head at ₹0 is meaningful. */
-            if (round((float) ($c['amount'] ?? 0), 2) == 0.0
-                && round((float) ($c['monthly'] ?? 0), 2) == 0.0) {
-                continue;
-            }
+        foreach ($lines as $c) {
             $out[] = ['label' => $c['label'] ?? 'Component', 'amount' => (float) ($c['amount'] ?? 0)];
         }
         if (empty($out) && (float) $fallbackTotal > 0) {

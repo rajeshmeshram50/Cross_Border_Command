@@ -1166,6 +1166,41 @@ tbody tr:nth-child(10) {
   padding: 4px 12px; border-radius: 20px;
 }
 .tc-wl-rows select { border: none; background: transparent; font-family: inherit; font-size: 11.5px; color: var(--tcwl-accent, #7c3aed); font-weight: 700; cursor: pointer; outline: none; }
+/* Rows-per-page listbox (components/ui/DataTable renders it; the old native
+   <select> is kept styled above for the tables that still use one). The menu
+   opens UPWARDS — the pager is the last line of the card, so downwards would
+   run off it — and its left edge is flush with the trigger, which is what the
+   OS list never managed. (#19) */
+.tc-wl-rows-sel { position: relative; display: inline-flex; }
+.tc-wl-rows-btn {
+  display: inline-flex; align-items: center; gap: 1px;
+  border: none; background: transparent; padding: 0 0 0 1px;
+  font-family: inherit; font-size: 11.5px; font-weight: 700;
+  color: var(--tcwl-accent, #7c3aed); cursor: pointer; outline: none; line-height: 1.6;
+}
+.tc-wl-rows-btn i { font-size: 13px; line-height: 1; }
+.tc-wl-rows-menu {
+  position: absolute; bottom: calc(100% + 8px); left: -10px; z-index: 20;
+  display: flex; flex-direction: column; min-width: 64px; padding: 4px;
+  background: #fff; border: 1.5px solid var(--tcwl-border, #ddd6fe); border-radius: 10px;
+  box-shadow: 0 10px 26px rgba(17, 12, 46, .16), 0 2px 6px rgba(17, 12, 46, .08);
+}
+.tc-wl-rows-menu button {
+  border: none; background: transparent; border-radius: 7px;
+  padding: 5px 12px; text-align: left;
+  font-family: inherit; font-size: 11.5px; font-weight: 700;
+  color: var(--tcwl-text, #6d28d9); cursor: pointer;
+}
+.tc-wl-rows-menu button:hover { background: var(--tcwl-band, #f3efff); }
+.tc-wl-rows-menu button.is-on { background: var(--tcwl-accent, #7c3aed); color: #fff; }
+[data-bs-theme="dark"] .tc-wl-rows-btn { color: #ddd6fe; }
+[data-bs-theme="dark"] .tc-wl-rows-menu {
+  background: #1f1b3a; border-color: var(--tcwl-border-dark, rgba(167, 139, 250, .42));
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .45);
+}
+[data-bs-theme="dark"] .tc-wl-rows-menu button { color: #c4b5fd; }
+[data-bs-theme="dark"] .tc-wl-rows-menu button:hover { background: rgba(124, 92, 252, .22); color: #fff; }
+[data-bs-theme="dark"] .tc-wl-rows-menu button.is-on { background: #7c5cfc; color: #fff; }
 .tc-wl-range {
   font-size: 11.5px; font-weight: 800; color: #fff;
   background: var(--tcwl-range-bg, linear-gradient(135deg, #8b5cf6 0%, #7c3aed 55%, #5b21b6 100%));
