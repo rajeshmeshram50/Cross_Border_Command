@@ -14056,3 +14056,55 @@
   background: rgba(16, 185, 129, 0.18);
   color: #6ee7b7;
 }
+
+/* ── Payroll page shell (#22) ──────────────────────────────────────────────
+   The complaint was that the Payroll Processing card scrolled away with the
+   page, taking its search box, the Department / Status pickers and the table
+   header with it. The card already sizes itself to the viewport
+   (DataTable's `fitToViewport`), but that only holds while there is room left
+   under it — on a laptop-height window the hero strip, the KPI row and the
+   cycle rail above it ate the whole screen, the fit hit its 240px floor, and
+   the WINDOW grew a scrollbar. Scrolling it then moved everything, header
+   included.
+
+   So the page takes the viewport itself and hands the scrolling inwards:
+     · .pay-top      — hero + cycle rail + KPIs. Shrinks and scrolls INSIDE
+                       itself when it cannot fit, so it can never push the rest
+                       off-screen.
+     · the tab rail  — natural height, always visible, between the two.
+     · .pay-tablearea— the remainder; the DataTable fills it and its rows
+                       scroll in their own body under a sticky header.
+   Only from lg up: on a phone the page is a single column and a normal page
+   scroll is the right behaviour there. */
+@media (min-width: 992px) {
+  .pay-page {
+    display: flex;
+    flex-direction: column;
+    /* The fixed Velzon topbar plus .page-content's 8px padding top and bottom.
+       min-height keeps a very short window usable — below that the page
+       scrolls again rather than crushing the table to nothing. */
+    height: calc(100vh - var(--vz-header-height, 70px) - 16px);
+    min-height: 560px;
+    overflow: hidden;
+  }
+  .pay-page > .pay-top {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    /* Room for the cycle chips' shadow and the KPI cards' lift, which a
+       flush overflow box would otherwise clip. */
+    padding: 2px 2px 0;
+    margin: -2px -2px 0;
+    scrollbar-width: thin;
+  }
+  .pay-page > .pay-tablearea {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  /* The tabs' wrappers and the per-tab fragments sit between .pay-tablearea
+     and the card, so the flex remainder has to be passed down to it. */
+  .pay-page > .pay-tablearea > .dt-root { flex: 1; min-height: 0; }
+}

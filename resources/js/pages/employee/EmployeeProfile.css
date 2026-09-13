@@ -1113,6 +1113,84 @@
         }
         .ep-pay-footer a { color: #6366f1; text-decoration: none; font-weight: 600; }
 
+        /* ── Payslip viewer tones (#21) ───────────────────────────────────
+           The KPI tiles, the EARNINGS / DEDUCTIONS headers, their total rows
+           and the two note boxes all carried their colours as INLINE styles.
+           Inline wins over any theme rule, so in dark mode the viewer kept
+           painting pastel cards with near-black ink on a charcoal page — the
+           one part of the payroll flow that never followed the theme. The
+           colours live here now, keyed off data-tone, with a dark branch. */
+        .ep-pay-kpi[data-tone="indigo"] { background: rgba(99,102,241,0.10); }
+        .ep-pay-kpi[data-tone="teal"]   { background: rgba(10,179,156,0.10); }
+        .ep-pay-kpi[data-tone="amber"]  { background: rgba(245,158,11,0.10); }
+        .ep-pay-kpi[data-tone="violet"] { background: rgba(124,92,252,0.10); }
+        .ep-pay-kpi[data-tone="indigo"] .ep-pay-kpi-value { color: #4338ca; }
+        .ep-pay-kpi[data-tone="teal"]   .ep-pay-kpi-value { color: #0a8a78; }
+        .ep-pay-kpi[data-tone="amber"]  .ep-pay-kpi-value { color: #a16207; }
+        .ep-pay-kpi[data-tone="violet"] .ep-pay-kpi-value { color: #6d28d9; }
+        .ep-pay-kpi-note {
+          margin-top: 2px; font-size: 9px; font-weight: 600;
+          letter-spacing: .01em; color: #5e7888;
+        }
+        .ep-pay-table-head[data-tone="earn"] { color: #108548; }
+        .ep-pay-table-head[data-tone="ded"]  { color: #b91c1c; }
+        .ep-pay-table-head[data-tone="earn"] .ep-pay-dot { background: #10b981; }
+        .ep-pay-table-head[data-tone="ded"]  .ep-pay-dot { background: #ef4444; }
+        .ep-pay-total[data-tone="earn"] { background: rgba(16,185,129,0.06); }
+        .ep-pay-total[data-tone="ded"]  { background: rgba(239,68,68,0.06); }
+        .ep-pay-total[data-tone="earn"] td { color: #108548; }
+        .ep-pay-total[data-tone="ded"]  td { color: #b91c1c; }
+        .ep-pay-note {
+          margin: 8px 10px 10px; padding: 7px 9px; border-radius: 7px;
+          font-size: 10px; line-height: 1.45;
+        }
+        .ep-pay-note[data-tone="calc"] { background: #eef7f2; border: 1px solid #bfe3d2; color: #12634a; }
+        .ep-pay-note[data-tone="warn"] { background: #fdf3d6; border: 1px solid #f0d990; color: #7a5300; }
+        .ep-pay-warn-text { font-size: 10.5px; color: #b45309; margin-top: 1px; }
+        .ep-pay-prov-badge {
+          font-size: 9px; font-weight: 800; letter-spacing: 0.08em;
+          color: #a06f00; background: #fdf3d6; border: 1px solid #f0d990;
+          border-radius: 999px; padding: 2px 8px;
+        }
+
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-kpi[data-tone="indigo"] { background: rgba(99,102,241,0.18); }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-kpi[data-tone="teal"]   { background: rgba(10,179,156,0.18); }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-kpi[data-tone="amber"]  { background: rgba(245,158,11,0.18); }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-kpi[data-tone="violet"] { background: rgba(124,92,252,0.20); }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-kpi[data-tone="indigo"] .ep-pay-kpi-value { color: #a5b4fc; }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-kpi[data-tone="teal"]   .ep-pay-kpi-value { color: #5eead4; }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-kpi[data-tone="amber"]  .ep-pay-kpi-value { color: #fcd34d; }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-kpi[data-tone="violet"] .ep-pay-kpi-value { color: #c4b5fd; }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-kpi-note { color: #9aa7b8; }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-table-head[data-tone="earn"] { color: #6ee7b7; }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-table-head[data-tone="ded"]  { color: #fca5a5; }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-total[data-tone="earn"] { background: rgba(16,185,129,0.14); }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-total[data-tone="ded"]  { background: rgba(239,68,68,0.14); }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-total[data-tone="earn"] td { color: #6ee7b7; }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-total[data-tone="ded"]  td { color: #fca5a5; }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-note[data-tone="calc"] {
+          background: rgba(16,185,129,0.12); border-color: rgba(110,231,183,0.34); color: #a7f3d0;
+        }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-note[data-tone="warn"] {
+          background: rgba(245,158,11,0.14); border-color: rgba(252,211,77,0.34); color: #fde68a;
+        }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-warn-text { color: #fcd34d; }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-prov-badge {
+          background: rgba(245,158,11,0.16); border-color: rgba(252,211,77,0.38); color: #fcd34d;
+        }
+        /* Surfaces the viewer inherits rather than sets: the preview ground and
+           the payslip's own card chrome. --vz-body-bg already flips, but the
+           table card sits on it at the same lightness in dark mode, so the two
+           merged into one flat sheet with no card edge. */
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-preview { background: #191c24; }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-table-card { background: #222831; border-color: rgba(255,255,255,0.09); }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-table th { background: rgba(255,255,255,0.04); border-bottom-color: rgba(255,255,255,0.09); }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-table td { border-bottom-color: rgba(255,255,255,0.07); }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-table-head { border-bottom-color: rgba(255,255,255,0.09); }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-footer { background: rgba(255,255,255,0.04); }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-shell,
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .ep-pay-sidebar { background: #222831; }
+
         @media (max-width: 991.98px) {
           .ep-pay-body { grid-template-columns: 1fr; }
           .ep-pay-sidebar { border-right: none; border-bottom: 1px solid var(--vz-border-color); }

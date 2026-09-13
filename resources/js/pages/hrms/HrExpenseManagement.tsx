@@ -5,20 +5,20 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
    already render null while closed, so they are also only MOUNTED while open
    below — a lazy component that is always rendered fetches its chunk
    immediately and saves nothing. */
-const ExpenseSettlementModal = lazyWithRetry(() => import('../../components/ExpenseSettlementModal'));
-const BatchPaymentModal = lazyWithRetry(() => import('../../components/BatchPaymentModal'));
+const ExpenseSettlementModal = lazyPage(() => import('../../components/ExpenseSettlementModal'));
+const BatchPaymentModal = lazyPage(() => import('../../components/BatchPaymentModal'));
 /* Spend Analytics chart. recharts is ~250 KB and the card it lives in is
    COLLAPSED by default, so the library was downloaded on every visit to draw
    something nobody had opened. Its own module = its own chunk, fetched the
    first time the card is expanded. */
-const ExpenseSpendChart = lazyWithRetry(() => import('./ExpenseSpendChart'));
+const ExpenseSpendChart = lazyPage(() => import('./ExpenseSpendChart'));
 
 /* Hover-prefetch. Splitting these off keeps them out of the page load, but it
    also means the FIRST click pays for the download. Warming on hover spends
    that time while the pointer is still travelling to the button, so the click
    itself stays instant. import() de-duplicates and caches the same promise,
    so hovering repeatedly costs nothing and a failed warm is simply retried by
-   lazyWithRetry() at render time. */
+   lazyPage() at render time. */
 const warmSettlementModal = () => { void import('../../components/ExpenseSettlementModal'); };
 const warmBatchModal      = () => { void import('../../components/BatchPaymentModal'); };
 const warmSpendChart      = () => { void import('./ExpenseSpendChart'); };
@@ -33,7 +33,7 @@ import { advanceRequestColumns, advanceRequestsMinWidth, DeclineReasonModal, ADV
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import DataTable from '../../components/ui/DataTable';
 import '../../../css/expense.css';
-import { lazyWithRetry } from '../../utils/lazyWithRetry';
+import { lazyPage } from '../../utils/lazyPage';
 
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';

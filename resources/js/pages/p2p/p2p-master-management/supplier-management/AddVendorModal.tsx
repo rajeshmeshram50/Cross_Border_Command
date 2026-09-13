@@ -30,11 +30,11 @@ import {
   bustVendorMasterBundle,
 } from './vendorBundleCache';
 import './add-vendor-modal.css';
-import { lazyWithRetry } from '../../../../utils/lazyWithRetry';
+import { lazyPage } from '../../../../utils/lazyPage';
 
 /* Lazy: the product wizard is a big chunk and most mappings pick an existing
    product, so it should not be downloaded with this modal. */
-const AddProductModal = lazyWithRetry(() => import('../product-management/AddProductModal'));
+const AddProductModal = lazyPage(() => import('../product-management/AddProductModal'));
 
 function validateContactNumber(value: string, label = 'Contact No', isIndia = false): string {
   const v = (value ?? '').trim();

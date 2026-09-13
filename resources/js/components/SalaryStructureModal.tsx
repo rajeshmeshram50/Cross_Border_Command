@@ -249,6 +249,15 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   const SALARY_SLACK = 12;
   const overSalary = salaryDiff > SALARY_SLACK;
   const underSalary = salaryDiff < -SALARY_SLACK;
+  /* Whether the breakup annualises to the CTC EXACTLY, as opposed to merely
+     within the save tolerance. (#17)
+     A monthly figure times twelve frequently cannot hit an annual CTC at all:
+     ₹4,00,000 ÷ 12 is ₹33,333.33recurring, so a whole-rupee split of ₹33,333
+     annualises to ₹3,99,996 and is ₹4 short by arithmetic, not by mistake.
+     That is fine to SAVE — which is what SALARY_SLACK is for — but it is not a
+     match, and the banner used to claim it was while the tile directly above
+     it read "≈ ₹3,99,996 / year". The two states are now told apart. */
+  const salaryExact = salaryAnnual > 0 && salaryDiff === 0;
 
   /* All three boxes are editable (#88).
    *
@@ -303,19 +312,40 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
          would hide that. */
       if (customTotal > monthly) return prev;
 
-      const special = Math.max(0, monthly - customTotal - basic - hra);
+      /* Re-split only the components the structure ACTUALLY HAS. (#147)
+       *
+       * This used to add a Special Allowance row whenever the remainder was
+       * positive and no such row existed. So an employee deliberately set up
+       * on Basic alone — the whole CTC in one component, with the hint under
+       * the row reading "Basic Salary balances automatically" — grew a Special
+       * Allowance the moment anyone touched the Annual CTC, and Basic was
+       * simultaneously knocked down to 50%. A component nobody configured
+       * appeared, was saved to the structure, and then showed up in payroll:
+       * the config-side source of the same complaint.
+       *
+       * The remainder now goes to whichever balance row the structure already
+       * has — Special when present, otherwise Basic — which is exactly the
+       * rule rebalanceEarnings() below applies when a row is edited. HRA is
+       * rewritten to 30% only if it exists. No row is ever created here. */
+      const hasSpecial = prev.some(c => c.code === 'special');
+      const hasHra     = prev.some(c => c.code === 'hra');
+      const hraAmt     = hasHra ? hra : 0;
+
       const next = prev.map(c => {
-        if (c.code === 'basic') return { ...c, amount: basic };
-        if (c.code === 'hra') return { ...c, amount: hra };
-        if (c.code === 'special') return { ...c, amount: special };
+        if (c.code === 'hra') return { ...c, amount: hraAmt };
+        if (c.code === 'basic') {
+          // Basic is the balance row when there is no Special to absorb it.
+          return { ...c, amount: hasSpecial ? basic : Math.max(0, monthly - customTotal - hraAmt) };
+        }
+        if (c.code === 'special') {
+          return { ...c, amount: Math.max(0, monthly - customTotal - basic - hraAmt) };
+        }
         return c;
       });
-      /* A structure with no 'special' row cannot absorb the remainder, so the
-         gross would fall short of the CTC by exactly that amount. Add the row
-         back rather than leaving the form in a state it reports as invalid. */
-      if (special > 0 && !next.some(c => c.code === 'special')) {
-        next.push({ code: 'special', label: 'Special Allowance', amount: special });
-      }
+
+      /* No Basic and no Special to land the remainder on — every row is a
+         custom one. Leave them exactly as typed; the over/short banner reports
+         the gap, which beats inventing a component to paper over it. */
       return next;
     });
   };
@@ -867,12 +897,27 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                 </button>
               </div>
             )}
-            {/* Within the rounding slack counts as matching, so the seeded
-                split does not read as "₹4 over". */}
-            {salaryAnnual > 0 && !overSalary && !underSalary && (
+            {/* Exact — the only case that may claim a match. */}
+            {salaryExact && (
               <div className="ssm-verdict ssm-verdict--ok">
                 <i className="ri-checkbox-circle-line" />
                 <span className="ssm-verdict-text">Breakup matches the Annual CTC.</span>
+              </div>
+            )}
+            {/* Off by rounding only: saveable, but NOT a match, so it says what
+                the figure actually is instead of a green tick. (#17) */}
+            {salaryAnnual > 0 && !salaryExact && !overSalary && !underSalary && (
+              <div className="ssm-verdict ssm-verdict--info">
+                <i className="ri-information-line" />
+                <span className="ssm-verdict-text">
+                  Breakup annualises to <b>₹{fmtINR(breakupAnnual)}</b> — ₹{fmtINR(Math.abs(salaryDiff))}
+                  {' '}{salaryDiff > 0 ? 'over' : 'under'} the Annual CTC of ₹{fmtINR(salaryAnnual)}.
+                  {' '}A monthly figure × 12 cannot always land on the CTC exactly; this is within the
+                  {' '}rounding tolerance and can be saved.
+                </span>
+                <button type="button" className="ssm-verdict-fix" onClick={balanceToBasic}>
+                  <i className="ri-scales-3-line" /> Balance to Basic
+                </button>
               </div>
             )}
 
@@ -1197,8 +1242,11 @@ function SalaryModalStyles() {
       .ssm-verdict-text { flex: 1 1 auto; line-height: 1.45; }
       .ssm-verdict--err { background: #fdecea; border-color: #f5c0b5; color: #b1401d; }
       .ssm-verdict--ok  { background: #e7f6ef; border-color: #b6e2ce; color: #0a6f47; }
+      /* Neither pass nor fail: accurate, saveable, and deliberately not green. */
+      .ssm-verdict--info { background: #eef4fd; border-color: #c3d7f5; color: #1d4e89; }
       [data-bs-theme="dark"] .ssm-verdict--err { background: rgba(177,64,29,0.16); border-color: rgba(240,101,72,0.34); color: #fda192; }
       [data-bs-theme="dark"] .ssm-verdict--ok  { background: rgba(10,135,84,0.16);  border-color: rgba(10,179,156,0.34); color: #7ddfbf; }
+      [data-bs-theme="dark"] .ssm-verdict--info { background: rgba(29,78,137,0.20); border-color: rgba(99,153,224,0.34); color: #a8c9f0; }
       .ssm-verdict-fix {
         flex-shrink: 0;
         display: inline-flex; align-items: center; gap: 5px;

@@ -23,12 +23,12 @@ import AuthorityBadges from './AuthorityBadges';
    These were plain imports FROM THE MASTER PAGES, which dragged each entire
    page — table, toolbar, pager, shimmer and all their dependencies — into
    this chunk, four times over, to reuse four modals. */
-const KycModal = lazyWithRetry(() => import('./ClmKycModal'));
-const DdModal  = lazyWithRetry(() => import('./ClmDdModal'));
-const QcModal  = lazyWithRetry(() => import('./ClmQcModal'));
-const TlModal  = lazyWithRetry(() => import('./ClmTlModal'));
+const KycModal = lazyPage(() => import('./ClmKycModal'));
+const DdModal  = lazyPage(() => import('./ClmDdModal'));
+const QcModal  = lazyPage(() => import('./ClmQcModal'));
+const TlModal  = lazyPage(() => import('./ClmTlModal'));
 import SearchClear from '../../../components/ui/SearchClear';
-import { lazyWithRetry } from '../../../utils/lazyWithRetry';
+import { lazyPage } from '../../../utils/lazyPage';
 
 /* Central CLM → Document Control Panel.
  *

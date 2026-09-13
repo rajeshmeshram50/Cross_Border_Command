@@ -470,7 +470,7 @@ export default function PayslipViewerModal({
                 <h5 className="mb-0 fw-bold d-inline-flex align-items-center gap-2 align-self-start" style={{ fontSize: 13, lineHeight: 1.3 }}>
                   Payslip Viewer
                   {provisional && (
-                    <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', color: '#a06f00', background: '#fdf3d6', border: '1px solid #f0d990', borderRadius: 999, padding: '2px 8px' }}>
+                    <span className="ep-pay-prov-badge">
                       PROVISIONAL
                     </span>
                   )}
@@ -612,16 +612,16 @@ export default function PayslipViewerModal({
                      PAY-06), it was just named as if it were the month. Now the
                      month's own length is shown as well, and the payable figure
                      says what it is. */
-                  { label: 'Days in Month', value: lastDayOfMonth(month, year), tint: 'rgba(99,102,241,0.10)', fg: '#4338ca' },
-                  { label: 'Payable Days', value: workingDays, tint: 'rgba(99,102,241,0.10)',  fg: '#4338ca' },
-                  { label: 'Days Present', value: daysPresent, tint: 'rgba(10,179,156,0.10)',  fg: '#0a8a78' },
+                  { label: 'Days in Month', value: lastDayOfMonth(month, year), tone: 'indigo' },
+                  { label: 'Payable Days', value: workingDays, tone: 'indigo' },
+                  { label: 'Days Present', value: daysPresent, tone: 'teal' },
                   /* Loss of Pay can exceed the days missed, because the
                      late-mark rule (BR-01) charges pay in days for days that
                      WERE worked. Paid Days is an attendance figure and no
                      longer absorbs that penalty (#114), so without this note a
                      fully-present employee reads "Payable 25 / Paid 25 / Loss
                      of Pay 1" with nothing joining the three up. */
-                  { label: 'Loss of Pay',  value: lossOfPay,   tint: 'rgba(245,158,11,0.10)',  fg: '#a16207',
+                  { label: 'Loss of Pay',  value: lossOfPay,   tone: 'amber',
                     note: lateLopDays && lateLopDays > 0
                       ? `incl. ${lateLopDays} for late marks`
                       : undefined },
@@ -640,27 +640,32 @@ export default function PayslipViewerModal({
                      the caption was wrong, so only the caption changes; no
                      figure moves. Mirrors the "incl. …" note on Loss of Pay
                      directly above, so the two read as a matched pair. (#131) */
-                  { label: 'Paid Days',    value: paidDays,    tint: 'rgba(10,179,156,0.10)',  fg: '#0a8a78',
+                  { label: 'Paid Days',    value: paidDays,    tone: 'teal',
                     note: weekOffDays > 0 ? `excl. ${weekOffDays} week-off${weekOffDays === 1 ? '' : 's'} (not docked)` : undefined,
                     hint: weekOffDays > 0
                       ? `${weekOffDays} week-off day${weekOffDays === 1 ? '' : 's'} fall in this month. They are not counted in Paid Days and are not deducted either — salary is calculated on working days, which exclude them.`
                       : undefined },
                   ...(overtimeApplicable
-                    ? [{ label: 'OT Hours', value: otHoursLabel, tint: 'rgba(124,92,252,0.10)', fg: '#6d28d9' }]
+                    ? [{ label: 'OT Hours', value: otHoursLabel, tone: 'violet' }]
                     : []),
                 ].map(k => (
                   <div
                     className="ep-pay-kpi"
                     key={k.label}
-                    style={{ background: k.tint }}
+                    /* Tone, not a literal tint/foreground pair. The pastel fill
+                       and the deep ink that went with it were written inline,
+                       so they survived into dark mode and the strip stayed a
+                       row of near-black numbers on near-black tiles. The tone
+                       resolves in CSS and flips with the theme. (#21) */
+                    data-tone={k.tone}
                     /* The tile is small, so the caption has to be short. The
                        full sentence lives here for anyone who wants it. (#131) */
                     title={('hint' in k && k.hint) ? k.hint : undefined}
                   >
                     <div className="ep-pay-kpi-label">{k.label}</div>
-                    <div className="ep-pay-kpi-value" style={{ color: k.fg }}>{k.value}</div>
+                    <div className="ep-pay-kpi-value">{k.value}</div>
                     {'note' in k && k.note && (
-                      <div style={{ marginTop: 2, fontSize: 9, fontWeight: 600, color: '#5e7888', letterSpacing: '.01em' }}>{k.note}</div>
+                      <div className="ep-pay-kpi-note">{k.note}</div>
                     )}
                   </div>
                 ))}
@@ -670,9 +675,9 @@ export default function PayslipViewerModal({
               <Row className="g-2 mb-2">
                 <Col md={6}>
                   <div className="ep-pay-table-card">
-                    <div className="ep-pay-table-head">
-                      <span className="ep-pay-dot" style={{ background: '#10b981' }} />
-                      <span style={{ color: '#108548' }}>EARNINGS</span>
+                    <div className="ep-pay-table-head" data-tone="earn">
+                      <span className="ep-pay-dot" />
+                      <span>EARNINGS</span>
                     </div>
                     <table className="ep-pay-table">
                       <thead>
@@ -702,7 +707,7 @@ export default function PayslipViewerModal({
                                   </div>
                                 )}
                                 {isOt && otHoursDiffer && (
-                                  <div style={{ fontSize: 10.5, color: '#b45309', marginTop: 1 }}>
+                                  <div className="ep-pay-warn-text">
                                     Attendance now shows {num(overtimeDetectedHours)} hr — this slip was priced on
                                     {' '}{num(otPaidHours)} hr when the run was generated.
                                   </div>
@@ -714,9 +719,9 @@ export default function PayslipViewerModal({
                         })}
                       </tbody>
                       <tfoot>
-                        <tr style={{ background: 'rgba(16,185,129,0.06)' }}>
-                          <td className="fw-bold" style={{ color: '#108548' }}>Total Earnings</td>
-                          <td className="text-end fw-bold" style={{ color: '#108548' }}>₹{inr(totalEarnings)}</td>
+                        <tr className="ep-pay-total" data-tone="earn">
+                          <td className="fw-bold">Total Earnings</td>
+                          <td className="text-end fw-bold">₹{inr(totalEarnings)}</td>
                         </tr>
                       </tfoot>
                     </table>
@@ -726,12 +731,8 @@ export default function PayslipViewerModal({
                     {payBasis.map(n => (
                       <div
                         key={n}
-                        className="d-flex align-items-start gap-2"
-                        style={{
-                          margin: '8px 10px 10px', padding: '7px 9px', borderRadius: 7,
-                          background: '#eef7f2', border: '1px solid #bfe3d2',
-                          color: '#12634a', fontSize: 10, lineHeight: 1.45,
-                        }}
+                        className="d-flex align-items-start gap-2 ep-pay-note"
+                        data-tone="calc"
                       >
                         <i className="ri-calculator-line" style={{ fontSize: 12, flexShrink: 0, marginTop: 1 }} />
                         <span>{n}</span>
@@ -741,9 +742,9 @@ export default function PayslipViewerModal({
                 </Col>
                 <Col md={6}>
                   <div className="ep-pay-table-card">
-                    <div className="ep-pay-table-head">
-                      <span className="ep-pay-dot" style={{ background: '#ef4444' }} />
-                      <span style={{ color: '#b91c1c' }}>DEDUCTIONS</span>
+                    <div className="ep-pay-table-head" data-tone="ded">
+                      <span className="ep-pay-dot" />
+                      <span>DEDUCTIONS</span>
                     </div>
                     <table className="ep-pay-table">
                       <thead>
@@ -762,9 +763,9 @@ export default function PayslipViewerModal({
                         ))}
                       </tbody>
                       <tfoot>
-                        <tr style={{ background: 'rgba(239,68,68,0.06)' }}>
-                          <td className="fw-bold" style={{ color: '#b91c1c' }}>Total Deductions</td>
-                          <td className="text-end fw-bold" style={{ color: '#b91c1c' }}>₹{inr(totalDeductions)}</td>
+                        <tr className="ep-pay-total" data-tone="ded">
+                          <td className="fw-bold">Total Deductions</td>
+                          <td className="text-end fw-bold">₹{inr(totalDeductions)}</td>
                         </tr>
                       </tfoot>
                     </table>
@@ -774,12 +775,8 @@ export default function PayslipViewerModal({
                     {notices.map(n => (
                       <div
                         key={n}
-                        className="d-flex align-items-start gap-2"
-                        style={{
-                          margin: '8px 10px 10px', padding: '7px 9px', borderRadius: 7,
-                          background: '#fdf3d6', border: '1px solid #f0d990',
-                          color: '#7a5300', fontSize: 10, lineHeight: 1.45,
-                        }}
+                        className="d-flex align-items-start gap-2 ep-pay-note"
+                        data-tone="warn"
                       >
                         <i className="ri-information-line" style={{ fontSize: 12, flexShrink: 0, marginTop: 1 }} />
                         <span>{n}</span>

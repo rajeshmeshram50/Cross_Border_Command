@@ -20,13 +20,13 @@ import PartyFilterModal, {
   CUSTOMER_FACETS,
   type PartyFilters,
 } from '../PartyFilterModal';
-import { lazyWithRetry } from '../../../../utils/lazyWithRetry';
+import { lazyPage } from '../../../../utils/lazyPage';
 
 // Heavy modals are code-split: their chunks (and TipTap/face-api/pdf deps)
 // download only when first opened, not on the customer list's first paint.
-const AddCustomerModal = lazyWithRetry(() => import('./AddCustomerModal'));
-const CustomerConsigneesModal = lazyWithRetry(() => import('./CustomerConsigneesModal'));
-const CustomerEvidenceVaultModal = lazyWithRetry(() => import('./CustomerEvidenceVaultModal'));
+const AddCustomerModal = lazyPage(() => import('./AddCustomerModal'));
+const CustomerConsigneesModal = lazyPage(() => import('./CustomerConsigneesModal'));
+const CustomerEvidenceVaultModal = lazyPage(() => import('./CustomerEvidenceVaultModal'));
 
 /* A segment pill that reveals its full name on hover — but ONLY when the label
  * is actually cut by .smc-seg's 150px cap. The clip is measured from the DOM

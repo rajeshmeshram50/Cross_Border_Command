@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSelectionLock } from '../../../hooks/useSelectionLock';
+import { ShimmerTableRows } from '../../../components/ui/Shimmer';
 
 /* Locks scroll while a modal is mounted so the page behind the overlay can't
  * scroll-chain. Locks BOTH <html> and <body> — the viewport scroll is owned by
@@ -151,12 +152,16 @@ export function findClmDuplicate<T extends { id?: string | number; name?: string
  * CLM masters match the rest of the app instead of using a one-off look.
  * Keeps CLM table cell padding via `clm-skel-cell`.
  * ───────────────────────────────────────────────────────────────────────── */
-export function ClmSkeletonRows(_props: { cols: number; rows?: number }) {
-  // Shimmer disabled across CLM masters by request — render nothing while the
-  // table loads (empty tbody until data arrives). Re-enable by returning
-  // <ShimmerTableRows rows={rows} cols={cols} cellClassName="clm-skel-cell" keyPrefix="clm-shim" />.
-  void _props;
-  return null;
+export function ClmSkeletonRows({ cols, rows = 10 }: { cols: number; rows?: number }) {
+  // Returning null here left the tbody empty while the first page loaded, so
+  // the table rendered as a header and a footer with a blank band between them
+  // — which reads as a broken page rather than a loading one. Render the
+  // shimmer instead, the same way ClmClauseLibraryPage does.
+  //
+  // `rows` defaults to 10 because that is the default page size; callers that
+  // know their own rows-per-page should pass it so the skeleton is exactly as
+  // tall as the table it is standing in for (no layout jump on arrival).
+  return <ShimmerTableRows rows={rows} cols={cols} cellClassName="clm-skel-cell" keyPrefix="clm-shim" />;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────

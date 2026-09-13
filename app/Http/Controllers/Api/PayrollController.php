@@ -159,6 +159,34 @@ class PayrollController extends Controller
             ], 422);
         }
 
+        /* A period that has started but NOT ENDED is equally unprocessable.
+         * (CBC #14)
+         *
+         * Only the future was guarded, so the month in progress ran like any
+         * other: on 11 Sep a Sep run priced the whole month off eleven days of
+         * attendance and produced payslips that looked final. Loss of pay is
+         * capped to the elapsed days, so nobody was over-docked — but every
+         * figure on the slip was provisional while nothing said so.
+         *
+         * The rule is now the plain one HR expects: a month is payable once it
+         * is over. Aug becomes runnable on 1 Sep. Enforced here rather than in
+         * the UI alone, since /payroll/run is reachable directly.
+         *
+         * Derived from period_end where it exists, falling back to the month of
+         * period_start, so a non-calendar cycle is judged on its own end date. */
+        $end = $period->period_end
+            ? ($period->period_end instanceof Carbon
+                ? $period->period_end->copy()
+                : Carbon::parse($period->period_end))
+            : $start->copy()->endOfMonth();
+
+        if ($end->endOfDay()->isFuture()) {
+            return response()->json([
+                'message' => "Payroll for {$period->label} cannot be processed until the period ends on "
+                    . "{$end->format('d M Y')} — attendance for the month is not complete yet.",
+            ], 422);
+        }
+
         return null;
     }
 
@@ -472,7 +500,7 @@ class PayrollController extends Controller
         $pfNotices = $this->pfNoticeMap($slips, $run, $period);
         // Structure gross per employee, so slips generated before the monthly
         // line data still caption the contractual CTC correctly. (#134)
-        $structureGross = $this->structureGrossMap($slips);
+        $structureGross = $this->structureGrossMap($slips, $period);
         // Weekly offs per employee for the Biometric Input column. (CBC #7)
         $weekOffs = $this->weekOffDaysMap($slips, $period);
         // Holidays per employee, so Absent does not swallow them. (CBC #8)
@@ -515,12 +543,28 @@ class PayrollController extends Controller
             $rows = $rows->concat($pending)->values();
         }
 
+        /* What this caller is allowed to DO, told to the screen. (CBC #16)
+         *
+         * Every write endpoint here is gated on canManage(), but the SPA was
+         * never told the verdict, so it drew Run Payroll fully enabled for
+         * everyone. A user without the permission clicked a live-looking green
+         * button and got a 403 the page swallowed — the button appeared frozen,
+         * with no disabled styling and nothing saying why.
+         *
+         * Sending the verdict lets the button disable itself and explain,
+         * instead of the user discovering the rule by clicking. The server
+         * checks are unchanged and remain the enforcement; this is only so the
+         * UI can stop lying about what is available. */
         return response()->json([
             'data' => [
                 'period'  => $this->serializePeriod($period, $run),
                 'run'     => $run ? $this->serializeRun($run) : null,
                 'rows'    => $rows,
                 'counts'  => $this->counts($rows),
+                'can'     => [
+                    'manage' => $this->canManage($request),
+                    'export' => $this->canExport($request),
+                ],
             ],
         ]);
     }
@@ -2219,21 +2263,51 @@ class PayrollController extends Controller
      * Only used as a fallback for payslips generated before the components
      * carried their own monthly figure — see serializePayslip(). (#134)
      */
-    private function structureGrossMap($slips): array
+    private function structureGrossMap($slips, $period = null): array
     {
         $empIds = $slips->pluck('employee_id')->filter()->unique()->values();
         if ($empIds->isEmpty()) {
             return [];
         }
 
-        return \App\Models\SalaryStructure::whereIn('employee_id', $empIds)
-            ->where('status', 'active')
-            // Same tie-break as PayrollService::activeStructure() (QA #96) —
-            // duplicate version=1 rows exist from an old seeder.
-            ->orderBy('version')->orderBy('id')
-            ->pluck('monthly_gross', 'employee_id')
-            ->map(fn ($g) => (float) $g)
-            ->all();
+        /* The structure in force DURING THIS PERIOD, not the one in force today.
+         * (CBC #15)
+         *
+         * This used to take `status = 'active'` with no date filter at all, so
+         * it always returned the employee's CURRENT salary. Raise someone's CTC
+         * in September and every earlier month's Payroll Processing row
+         * re-captioned itself with the new figure — a previous month's payroll
+         * appearing to have been calculated on a salary that did not exist yet.
+         *
+         * Only legacy slips (generated before payslip lines carried their own
+         * `monthly` figure) read this map, which is why the stored money never
+         * moved and only the CTC caption was wrong. That still made the screen
+         * state something untrue about a closed month.
+         *
+         * Resolution mirrors PayrollService::activeStructure(): superseded rows
+         * count, because the version that priced an old cycle is superseded by
+         * definition; drafts and not-yet-effective revisions do not. Ordered so
+         * the winning row is written LAST into the map — effective_from, then
+         * version, then 'active' ahead of 'superseded' on a tie, then id — the
+         * same precedence activeStructure() applies in reverse. */
+        $asOf = $period
+            ? Carbon::parse($period->period_end ?? Carbon::create((int) $period->year, (int) $period->month, 1)->endOfMonth())
+            : Carbon::now();
+
+        $out = [];
+        \App\Models\SalaryStructure::whereIn('employee_id', $empIds)
+            ->whereIn('status', ['active', 'superseded'])
+            ->whereDate('effective_from', '<=', $asOf)
+            ->orderBy('effective_from')
+            ->orderBy('version')
+            ->orderByRaw("CASE WHEN status = 'active' THEN 1 ELSE 0 END")
+            ->orderBy('id')
+            ->get(['employee_id', 'monthly_gross'])
+            ->each(function ($s) use (&$out) {
+                $out[$s->employee_id] = (float) $s->monthly_gross;
+            });
+
+        return $out;
     }
 
     /** Maps a Payslip into the shape the SPA's PayrollRow already consumes. */
@@ -2414,11 +2488,13 @@ class PayrollController extends Controller
              * Deductions are deliberately NOT filtered — a statutory head at
              * ₹0 is a substantive statement (PF out of scope, ESI above the
              * ceiling) and #130's notices explain those. */
-            $row['earningsBreakup']   = collect($p->earnings ?: [])
-                ->reject(fn ($l) => round((float) ($l['amount'] ?? 0), 2) == 0.0
-                    && round((float) ($l['monthly'] ?? 0), 2) == 0.0)
-                ->values()
-                ->all();
+            /* Zeros out first, THEN the rounding residue — reconciling before
+               the filter could park the paisa on a line about to be dropped,
+               which would take the residue with it. (#147 then #10) */
+            $row['earningsBreakup'] = \App\Support\PayslipLines::reconciledTo(
+                \App\Support\PayslipLines::withoutUnfunded($p->earnings ?: []),
+                (float) $p->gross_earnings,
+            );
             $row['deductionsBreakup'] = $p->deductions ?: [];
 
             /* Overtime — surfaced only for employees the employee master marks

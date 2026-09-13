@@ -3,7 +3,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 /* The Add/Edit form is code-split: its chunk downloads the first time a
    user opens it, not on the list's first paint. Same pattern the Customer
    and Supplier masters use for their heavy modals. */
-const DdModal = lazyWithRetry(() => import('./ClmDdModal'));
+const DdModal = lazyPage(() => import('./ClmDdModal'));
 import WorklistPager from "../../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../../api';
@@ -17,7 +17,7 @@ import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 import { MasterMultiSelect } from '../../../components/ui/MasterMultiSelect';
 import { ClmSkeletonRows, SimpleDescModal, useScrollLock } from '../shared/clmCommon';
 import SearchClear from '../../../components/ui/SearchClear';
-import { lazyWithRetry } from '../../../utils/lazyWithRetry';
+import { lazyPage } from '../../../utils/lazyPage';
 
 /* Central CLM → Due Diligence Master. 3-card faithful port. */
 

@@ -16,7 +16,7 @@ import {
   writeVendorMasterBundle,
 } from './vendorBundleCache';
 import './supplier-management.css';
-import { lazyWithRetry } from '../../../../utils/lazyWithRetry';
+import { lazyPage } from '../../../../utils/lazyPage';
 
 /* LAZY, not static. These three are only ever rendered behind a click, but a
    static import pulls them into the module graph the moment the list route
@@ -30,11 +30,11 @@ import { lazyWithRetry } from '../../../../utils/lazyWithRetry';
    MappedProductsViewPopup is a named export of AddVendorModal, so it is
    mapped onto .default — both specifiers resolve to the SAME module, so the
    wizard chunk is fetched once and shared, not twice. */
-const AddVendorModal = lazyWithRetry(() => import('./AddVendorModal'));
-const MappedProductsViewPopup = lazyWithRetry(() =>
+const AddVendorModal = lazyPage(() => import('./AddVendorModal'));
+const MappedProductsViewPopup = lazyPage(() =>
   import('./AddVendorModal').then(m => ({ default: m.MappedProductsViewPopup })));
-const SupplierScopeGate = lazyWithRetry(() => import('./SupplierScopeGate'));
-const SupplierEvidenceVaultModal = lazyWithRetry(() => import('./SupplierEvidenceVaultModal'));
+const SupplierScopeGate = lazyPage(() => import('./SupplierScopeGate'));
+const SupplierEvidenceVaultModal = lazyPage(() => import('./SupplierEvidenceVaultModal'));
 
 /* Hover-prefetch. Making the wizard lazy moves its ~45 KB (gzipped) off page
    load, but it has to arrive sometime — and 'sometime' would otherwise be
@@ -42,7 +42,7 @@ const SupplierEvidenceVaultModal = lazyWithRetry(() => import('./SupplierEvidenc
    the same import ~300ms early, so the chunk is usually cached by the time the
    click lands. Fire-and-forget: the import is idempotent and React.lazy reuses
    the very same promise, so an in-flight prefetch is awaited rather than
-   repeated, and a failure here is retried by lazyWithRetry() at render time. */
+   repeated, and a failure here is retried by lazyPage() at render time. */
 const warmVendorWizard = () => { void import('./AddVendorModal'); };
 
 /* ────────────────────────────────────────────────────────────────────────────

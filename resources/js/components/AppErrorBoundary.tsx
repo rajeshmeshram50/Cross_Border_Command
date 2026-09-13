@@ -18,7 +18,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 type Props = { children: ReactNode };
 type State = { error: Error | null };
 
-/** A chunk that 404s after a deploy — see utils/lazyWithRetry. */
+/** A chunk that 404s after a deploy — see utils/lazyPage. */
 function isStaleChunkError(err: Error): boolean {
   const m = `${err?.name ?? ''} ${err?.message ?? ''}`;
   return /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Failed to load module script|ChunkLoadError/i.test(m);
@@ -41,9 +41,10 @@ export default class AppErrorBoundary extends Component<Props, State> {
   }
 
   private reload = () => {
-    /* Clear the auto-reload stamp first so lazyWithRetry treats this as a
-       fresh start: a person deliberately clicking Reload should not be
-       silently refused by the cooldown that exists to stop machine loops. */
+    /* Clear lazyPage's auto-reload stamp first (same RELOAD_KEY) so it
+       treats this as a fresh start: a person deliberately clicking Reload
+       should not be refused by the cooldown that exists to stop machine
+       loops. */
     try { sessionStorage.removeItem('cbc_chunk_reload_at'); } catch {}
     window.location.reload();
   };
