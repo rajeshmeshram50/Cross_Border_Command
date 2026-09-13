@@ -2399,7 +2399,26 @@ class PayrollController extends Controller
         ];
 
         if ($full) {
-            $row['earningsBreakup']   = $p->earnings ?: [];
+            /* Drop earning lines the structure never funded. (#147)
+             *
+             * PayrollService stops writing these, but slips generated before
+             * that already carry a stored "Special Allowance ₹0.00" row, and a
+             * finalized cycle is not regenerated to tidy up its presentation.
+             * Filtering on read means the fix shows on history too, without
+             * touching a single stored figure.
+             *
+             * Both the paid amount and the structure's monthly figure must be
+             * zero, matching the rule in PayrollService: a funded component
+             * whose pro-rated amount rounds to nothing on a late joiner's slip
+             * is still a component they are paid, and stays on the slip.
+             * Deductions are deliberately NOT filtered — a statutory head at
+             * ₹0 is a substantive statement (PF out of scope, ESI above the
+             * ceiling) and #130's notices explain those. */
+            $row['earningsBreakup']   = collect($p->earnings ?: [])
+                ->reject(fn ($l) => round((float) ($l['amount'] ?? 0), 2) == 0.0
+                    && round((float) ($l['monthly'] ?? 0), 2) == 0.0)
+                ->values()
+                ->all();
             $row['deductionsBreakup'] = $p->deductions ?: [];
 
             /* Overtime — surfaced only for employees the employee master marks

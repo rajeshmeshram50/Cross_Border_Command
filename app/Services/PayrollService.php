@@ -1967,6 +1967,28 @@ class PayrollService
             $code = (string) ($c['code'] ?? 'comp');
             // Blend-safe: the structure's figure, not the re-weighted one.
             $full = $structureMonthly[$code] ?? round((float) ($c['amount'] ?? 0), 2);
+
+            /* A component the structure does not fund is not a payslip line.
+             *
+             * Salary Setup treats ₹0 as a real answer for Special Allowance
+             * (salaryBreakup.ts ZERO_OK_CODES) — it is the residual head, so it
+             * lands on zero the moment Basic, HRA and HR's own rows use up the
+             * whole CTC, and removing it in the UI folds its amount into Basic
+             * rather than deleting the row. Either way the structure keeps a
+             * `special` row worth nothing, and payroll was rendering it as
+             * "Special Allowance ₹0.00" on the slip — a component the employee's
+             * breakup does not configure, shown as though it were paid. (#147)
+             *
+             * Both figures have to be zero before the line is dropped: the
+             * pro-rated amount alone goes to zero for a joiner whose window is
+             * empty, and suppressing a funded component there would hide pay
+             * that the structure genuinely carries. A line worth nothing on
+             * both counts contributes nothing to the sum, so the reconcile
+             * below and Total Earnings are untouched by its absence. */
+            if ($full == 0.0 && round((float) ($c['amount'] ?? 0), 2) == 0.0) {
+                continue;
+            }
+
             $earnings[] = [
                 'code'   => $code,
                 'label'  => $c['label'] ?? 'Component',

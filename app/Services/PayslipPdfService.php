@@ -140,6 +140,19 @@ class PayslipPdfService
     {
         $out = [];
         foreach ((array) $components as $c) {
+            /* Skip a component the structure does not fund, so the PDF agrees
+             * with the on-screen slip and the API's earningsBreakup. Both the
+             * paid amount and the structure's monthly figure must be zero —
+             * the same rule PayrollService applies when building the lines, so
+             * a funded component that pro-rates to nothing still prints. (#147)
+             *
+             * Only reached for EARNINGS in practice: deductions come through
+             * deductionLines(), which is deliberately unfiltered because a
+             * statutory head at ₹0 is meaningful. */
+            if (round((float) ($c['amount'] ?? 0), 2) == 0.0
+                && round((float) ($c['monthly'] ?? 0), 2) == 0.0) {
+                continue;
+            }
             $out[] = ['label' => $c['label'] ?? 'Component', 'amount' => (float) ($c['amount'] ?? 0)];
         }
         if (empty($out) && (float) $fallbackTotal > 0) {

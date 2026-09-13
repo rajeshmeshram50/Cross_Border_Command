@@ -801,46 +801,41 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // Salary timeline + Revise Salary / View Breakdown modals (Payment Details
   // sub-tab). Timeline is defined here so both the inline list and the
   // breakdown modal stay in sync.
-  const SALARY_TIMELINE = [
-    { id: 'sal-1', dateShort: '01-Nov-2025', annual: 302400, current: true  },
-    { id: 'sal-2', dateShort: '23-May-2025', annual: 222000, current: false },
-    { id: 'sal-3', dateShort: '27-Jan-2025', annual: 72000,  current: false },
-  ];
-  function makeBreakdown(annual: number) {
-    const monthly = annual / 12;
-    // 40% / 20% / remainder split — same rule the HRMS reference uses.
-    const basic   = Math.round(monthly * 0.40);
-    const hra     = Math.round(monthly * 0.20);
-    const special = Math.round(monthly - basic - hra);
-    const totalMonthly = basic + hra + special;
-    // Net pay ≈ gross − PF (12% of basic) − TDS (rough). Mirrors the screenshot
-    // ratio (₹22,176 / ₹25,200 ≈ 0.88 of monthly gross).
-    const netPay  = Math.round(totalMonthly * 0.88);
-    return {
-      rows: [
-        { label: 'Basic Salary',                  monthly: basic,   annual: basic * 12   },
-        { label: 'House Rent Allowance (HRA)',    monthly: hra,     annual: hra * 12     },
-        { label: 'Special Allowance',             monthly: special, annual: special * 12 },
-      ],
-      totalMonthly,
-      totalAnnual: totalMonthly * 12,
-      netPay,
-    };
-  }
+  /* The hard-coded SALARY_TIMELINE demo history and the makeBreakdown()
+     40/20/remainder splitter that used to live here are gone. Between them
+     they showed an employee with no salary structure a fictional pay history
+     and a fabricated Basic / HRA / Special Allowance breakup. Everything on
+     this screen now comes from the employee's real salary versions. (#147) */
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [breakdownRowId, setBreakdownRowId] = useState<string>('sal-1');
-  // Breakdown modal — prefer the REAL salary version's components; fall back
-  // to the mock makeBreakdown only when no real structure exists.
+  // Breakdown modal — driven entirely by the employee's real salary versions.
   const breakdownVersion = salaryVersions.find((v: any) => String(v.id) === breakdownRowId) || salaryVersions[0];
-  const breakdownRow   = realTimeline.find(r => r.id === breakdownRowId) || realTimeline[0] || SALARY_TIMELINE[0];
+  /* No structure on file means no figures — not invented ones. (#147)
+   *
+   * This used to fall back to `SALARY_TIMELINE`, a hard-coded demo history
+   * (₹302,400 / ₹222,000 / ₹72,000 on fixed 2025 dates), and run its annual
+   * figure through a 40/20/remainder split that manufactured a Basic, an HRA
+   * and a Special Allowance. An employee with no salary structure therefore
+   * showed HR a complete, confident, entirely fictional pay breakup — the same
+   * fabricated-Special-Allowance defect as the payroll one, but with the whole
+   * package invented rather than a single line.
+   *
+   * The empty shape below renders the modal's own "nothing on file" state, so
+   * the screen says what is true: this employee has no salary structure yet. */
+  const breakdownRow   = realTimeline.find(r => r.id === breakdownRowId) || realTimeline[0] || null;
   const breakdownData  = breakdownVersion ? {
-    rows: (breakdownVersion.earnings || []).map((c: any) => ({
-      label: c.label, monthly: Number(c.amount) || 0, annual: (Number(c.amount) || 0) * 12,
-    })),
+    rows: (breakdownVersion.earnings || [])
+      /* Drop components the structure does not fund, matching what payroll
+         now does with the payslip lines. A Special Allowance sitting at ₹0
+         because Basic + HRA absorbed the whole CTC is not a pay component. */
+      .filter((c: any) => (Number(c.amount) || 0) !== 0)
+      .map((c: any) => ({
+        label: c.label, monthly: Number(c.amount) || 0, annual: (Number(c.amount) || 0) * 12,
+      })),
     totalMonthly: Number(breakdownVersion.monthly_gross) || 0,
     totalAnnual: Math.round((Number(breakdownVersion.monthly_gross) || 0) * 12),
     netPay: Math.round((Number(breakdownVersion.monthly_gross) || 0) * 0.88),
-  } : makeBreakdown(breakdownRow.annual);
+  } : { rows: [] as any[], totalMonthly: 0, totalAnnual: 0, netPay: 0 };
 
   // Submit New Expense Claim modal — opens from "+ Raise New Claim" in the
   // Expense Details tab. Two modes: Expense Claim (orange) and Advance
@@ -3249,10 +3244,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               <div className="ep-bd-eyebrow">SALARY DETAILS</div>
               <h4 className="text-white fw-bold mb-1 ep-fs-20">
                 Salary Breakdown for{' '}
-                <span className="ep-bd-annum">₹{breakdownRow.annual.toLocaleString('en-IN')} / Annum</span>
+                <span className="ep-bd-annum">
+                  {breakdownRow ? `₹${breakdownRow.annual.toLocaleString('en-IN')} / Annum` : 'no structure on file'}
+                </span>
               </h4>
               <small className="ep-bd-subhead">
-                Pay Group: <strong>Default</strong> · Structure: <strong>Class A</strong> · Effective: <strong>{breakdownRow.dateShort}</strong>
+                {breakdownRow
+                  ? <>Pay Group: <strong>Default</strong> · Structure: <strong>Class A</strong> · Effective: <strong>{breakdownRow.dateShort}</strong></>
+                  : 'No salary structure has been saved for this employee yet.'}
               </small>
             </div>
             <button type="button" className="ep-bd-close" onClick={() => setBreakdownOpen(false)} aria-label="Close">
@@ -3279,6 +3278,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </tr>
                 </thead>
                 <tbody>
+                  {breakdownData.rows.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="text-center text-muted" style={{ padding: '18px 8px', fontSize: 12 }}>
+                        No salary structure on file for this employee.
+                      </td>
+                    </tr>
+                  )}
                   {breakdownData.rows.map((r: any) => (
                     <tr key={r.label}>
                       <td>{r.label}</td>
@@ -3324,8 +3330,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
             <div className="position-relative ep-pl-22">
               <div className="ep-bd-history-line" />
-              {(realTimeline.length ? realTimeline : SALARY_TIMELINE).map(s => {
-                const active = s.id === breakdownRow.id;
+              {realTimeline.length === 0 && (
+                <div className="text-muted" style={{ fontSize: 12 }}>
+                  No salary versions yet — add a salary structure to build the history.
+                </div>
+              )}
+              {realTimeline.map(s => {
+                const active = s.id === breakdownRow?.id;
                 return (
                   <button
                     key={s.id}
