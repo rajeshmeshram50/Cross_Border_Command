@@ -52,7 +52,17 @@ export const MAX_COMP_LABEL  = 120;
  *  total remuneration) by a wide margin, so the seeded state is compliant as
  *  well as honest. */
 export const seedBreakup = (monthlyGross: number): SalBreakComp[] => {
-  const g = Math.max(0, Math.round(monthlyGross));
+  /* Rounded to the PAISA, not the rupee. (CBC #27)
+   *
+   * A whole-rupee monthly figure cannot annualise back to most CTCs: ₹4,00,000
+   * ÷ 12 is ₹33,333.33recurring, so ₹33,333/month came to ₹3,99,996 — ₹4 short
+   * of the figure the user had just typed, on screen, with no way to correct
+   * it. Keeping the paise makes it ₹33,333.33 × 12 = ₹3,99,999.96, which is the
+   * CTC to the rupee and reconciles exactly everywhere the annual total is
+   * shown. Verified across the awkward cases (4,00,000 / 5,00,000 / 1,00,000 /
+   * 2,50,000 / 9,99,999): every one lands on a zero gap where the whole-rupee
+   * seed was 3-4 short. */
+  const g = Math.max(0, Math.round(monthlyGross * 100) / 100);
   return [
     { code: 'basic', label: 'Basic Salary', amount: g },
   ];
@@ -144,12 +154,16 @@ export const reseedSplit = (existing: SalBreakComp[], monthlyGross: number): Sal
  *  way to clear. Clamped at 0: a package that genuinely outgrows the CTC still
  *  shows the red "over the salary" line instead of being silently rewritten. */
 export const absorbIntoSpecial = (earnings: SalBreakComp[], monthlyGross: number): SalBreakComp[] => {
-  const target = Math.max(0, Math.round(monthlyGross));
+  /* Paise, matching seedBreakup(). (CBC #27)
+     Rounding the target to whole rupees here undid the paise the seed had just
+     put in: a ₹33,333.33 Basic re-balanced against a ₹33,333 target the moment
+     HR added a component, and the annual total fell ₹4 short again. */
+  const target = Math.max(0, Math.round(monthlyGross * 100) / 100);
   if (target <= 0) return earnings;
   const idx = earnings.findIndex(c => c.code === 'special');
   if (idx < 0) return earnings;   // HR deleted the row — nothing left to fund from
   const others = earnings.reduce((s, c, i) => (i === idx ? s : s + (Number(c.amount) || 0)), 0);
-  const special = Math.max(0, target - others);
+  const special = Math.max(0, Math.round((target - others) * 100) / 100);
   if (special === (Number(earnings[idx].amount) || 0)) return earnings;
   return earnings.map((c, i) => (i === idx ? { ...c, amount: special } : c));
 };

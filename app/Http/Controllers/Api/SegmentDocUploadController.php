@@ -693,10 +693,25 @@ class SegmentDocUploadController extends Controller
              * listing two, and made the Buyer Profile's cell read 1/1 instead of
              * 1 of 2. Rows are concatenated the same way the trade-document list
              * beside them already is. */
+            /* Each row is stamped with the deal it came from.
+             *
+             * These lists are deliberately NOT de-duplicated across deals — the
+             * same library document required by two shipments is two separate
+             * obligations, signed once on each. Without the stamp the reader
+             * just saw the same title twice with nothing to tell the copies
+             * apart, which reads as a duplicate row rather than two pieces of
+             * work. The keys are additive (`$r + [...]`), so a row that already
+             * carries them keeps its own. */
+            $dealTag = fn(array $s): array => [
+                'deal_shipment_id'    => $s['shipment_id'] ?? null,
+                'deal_opportunity_id' => $s['opportunity_id'] ?? null,
+                'deal_has_shipment'   => (bool) ($s['has_shipment'] ?? false),
+            ];
+
             foreach ($deals as $s) {
                 $rows = $type === 'consignee' ? ($s['agreements_consignee'] ?? []) : ($s['agreements_buyer'] ?? []);
                 foreach ($rows as $r) {
-                    $agreements[] = $r;
+                    $agreements[] = $r + $dealTag($s);
                 }
             }
             $c2c = function (string $key) use ($deals) {
@@ -753,7 +768,10 @@ class SegmentDocUploadController extends Controller
                     $k = ($r['db_id'] ?? 'x') . '|' . ($r['name'] ?? '');
                     if (isset($seenInDeal[$k])) continue;
                     $seenInDeal[$k] = true;
-                    $c2cTradeRows[] = $r;
+                    // Stamped with its deal — see $dealTag above. De-duplication
+                    // is per deal only, so a document required on two deals
+                    // appears twice here, once under each.
+                    $c2cTradeRows[] = $r + $dealTag($s);
                 }
             }
             $trade_documents = $c2cTradeRows;

@@ -423,9 +423,9 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                 <span>Duration</span>
               </div>
               <div
-                className="d-inline-flex"
                 role="group"
-                style={{ border: '1px solid var(--vz-border-color)', borderRadius: 8, overflow: 'hidden', background: 'var(--vz-light, #f1f3f6)' }}
+                className="d-inline-flex lvr-daymode"
+                style={{ border: '1px solid var(--vz-border-color)', borderRadius: 8, overflow: 'hidden' }}
               >
                 <button
                   type="button"
@@ -436,10 +436,12 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                   style={{
                     padding: '6px 18px', border: 'none', fontWeight: 600, fontSize: 13,
                     cursor: isToday ? 'not-allowed' : 'pointer',
-                    background: dayMode === 'full' ? '#fff' : 'transparent',
-                    color: isToday ? '#aab2bd' : dayMode === 'full' ? '#212529' : '#6b7280',
                     boxShadow: dayMode === 'full' ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
                   }}
+                  /* Active-segment colours live in the stylesheet (.lvr-daymode)
+                     so dark mode can repaint them — inline #fff kept the
+                     selected pill a white block on the dark drawer. (CBC #13) */
+                  className={`lvr-daymode-btn${dayMode === 'full' ? ' is-on' : ''}${isToday ? ' is-off' : ''}`}
                 >
                   Full day
                 </button>
@@ -452,10 +454,12 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                   style={{
                     padding: '6px 18px', border: 'none', fontWeight: 600, fontSize: 13,
                     cursor: (singleDay && allowHalf) ? 'pointer' : 'not-allowed',
-                    background: dayMode === 'custom' ? '#fff' : 'transparent',
-                    color: (!singleDay || !allowHalf) ? '#aab2bd' : dayMode === 'custom' ? '#212529' : '#6b7280',
                     boxShadow: dayMode === 'custom' ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
                   }}
+                  /* Active-segment colours live in the stylesheet (.lvr-daymode)
+                     so dark mode can repaint them — inline #fff kept the
+                     selected pill a white block on the dark drawer. (CBC #13) */
+                  className={`lvr-daymode-btn${dayMode === 'custom' ? ' is-on' : ''}${(!singleDay || !allowHalf) ? ' is-off' : ''}`}
                 >
                   Custom
                 </button>

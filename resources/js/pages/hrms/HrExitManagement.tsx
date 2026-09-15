@@ -6115,12 +6115,22 @@ function apiToExitRow(e: any): EmployeeRow {
     // Only a PREFILL for the notice-period settlement — HR confirms/overrides
     // the figure there, so a payload without salary just means an empty field
     // rather than a broken stage.
-    /* Monthly BASIC — what the notice-period settlement is priced on. Mirrors
-       PayrollService::resolveCompensation()'s fallback split (basic = 50% of
-       monthly gross) so the exit and payroll agree on the same figure. */
+    /* Monthly GROSS — the full package, not half of it. (CBC #6)
+       This halved the monthly figure to derive BASIC, but the field it
+       prefills is labelled "Monthly Gross" and the server resolver behind the
+       same field (ExitController::resolveMonthlyGross) returns the whole
+       gross. So whenever this fallback was used — before the exit record has
+       loaded, or for an employee with no salary structure — the stage showed
+       half the employee's salary under a Gross heading, and the per-day rate
+       and payable derived from it were half too. On a ₹3,99,996 package that
+       is the ₹16,666.50 this ticket reports, against a true gross of
+       ₹33,333.
+       Notice recovery is a charge against the whole package the employee
+       would have earned during the notice they did not serve, which is why
+       the server prices it on gross; this now agrees with it. */
     monthlySalary: (() => {
       const a = Number(e.annual_salary);
-      return Number.isFinite(a) && a > 0 ? Math.round((a / 12) * 0.5 * 100) / 100 : null;
+      return Number.isFinite(a) && a > 0 ? Math.round((a / 12) * 100) / 100 : null;
     })(),
     probationEndIso: e.probation_end_date ? String(e.probation_end_date).slice(0, 10) : null,
     dateOfJoiningIso: e.date_of_joining ? String(e.date_of_joining).slice(0, 10) : null,

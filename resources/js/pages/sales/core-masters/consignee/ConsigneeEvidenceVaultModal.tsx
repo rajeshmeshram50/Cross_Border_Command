@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
-import CustomerEvidenceVaultModal, { ShipmentDocPanel, ShipmentDocSendForSignature, SevStat, type VaultShipmentDoc, type ShipmentSendParty } from '../customer/CustomerEvidenceVaultModal';
+import CustomerEvidenceVaultModal, { ShipmentDocPanel, ShipmentDocSendForSignature, SevStat, sumRatios, type VaultShipmentDoc, type ShipmentSendParty } from '../customer/CustomerEvidenceVaultModal';
 import { VaultReuploadPopup } from '../../../p2p/p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
 import { CLM_CSS } from '../../../clm/shared/clmShared';
@@ -305,6 +305,15 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   /* Signing tracker launched from an overview row. Held here rather than in
      the row because the overview table is rebuilt on every shipment switch. */
   const [ovTrack, setOvTrack] = useState<{ id: number; code: string } | null>(null);
+  /* Upload straight from the Standard Documents overview.
+   *
+   * A row with no file on record showed a Download button that could never do
+   * anything — disabled, next to a "Pending" pill saying precisely why. The
+   * action the row actually needs is the upload, so a Pending standard row
+   * offers that instead. Case-to-Case rows are signature envelopes, not
+   * uploads, and keep Resend / Track / Download. */
+  const [ovUpload, setOvUpload] = useState<{ doc: VaultDoc; category: 'kyc' | 'dd' | 'tl' } | null>(null);
+  const [ovUploadBusy, setOvUploadBusy] = useState(false);
 
   /* Shipment Send-for-Signature — launches the preview + signature-box wizard
    * for one not-yet-sent shipment document. */
@@ -598,14 +607,20 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   /* Tab badge count. Trade Documents / Agreements are shipment-wise, so
    * their badge reflects the real number of trade docs / agreements across
    * all shipments (sum of each shipment's ratio total), not the standard KPI. */
-  const shippedRows = vault.shipment_agreements.filter(r => r.has_shipment !== false);
+  /* Same split as the Customer vault: the server resolves per-DEAL rows for a
+     consignee and sums every Case-to-Case figure over ALL of them, so counting
+     from the shipped subset put a 0 on the cards while the document list below
+     them was not empty. Total Shipments keeps the server's real shipment count.
+     has_shipment is optional, so undefined still counts as shipped. */
+  const dealRows    = vault.shipment_agreements;
+  const shippedRows = dealRows.filter(r => r.has_shipment !== false);
   const ratioTotal = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[1] ?? p[0], 10) || 0; };
   const shipmentDocCount = (key: 'trade_docs' | 'agreement') =>
-    shippedRows.reduce((acc, r) => acc + ratioTotal(r[key].ratio), 0);
+    dealRows.reduce((acc, r) => acc + ratioTotal(r[key].ratio), 0);
   /* The Case-to-Case tab covers trade documents AND agreements now, so its
      badge totals both — the same sum the Customer vault's single tab shows.
      Counting only trade docs here would under-report the tab's own list.
-     Summed over shippedRows, the same set shipmentDocDone() and the table
+     Summed over dealRows, the same set shipmentDocDone() and the table
      itself read, or the ratio would be a subset over a whole. */
   const tabCount = (t: typeof TABS[number]): number =>
     t.key === 'trade-documents'
@@ -634,7 +649,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
      signed half comes from the ratio's numerator rather than an attachment. */
   const ratioDone = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[0], 10) || 0; };
   const shipmentDocDone = (key: 'trade_docs' | 'agreement') =>
-    shippedRows.reduce((acc, r) => acc + ratioDone(r[key].ratio), 0);
+    dealRows.reduce((acc, r) => acc + ratioDone(r[key].ratio), 0);
   const tdTotal  = shipmentDocCount('trade_docs');
   const tdDone   = shipmentDocDone('trade_docs');
   const agrTotal = shipmentDocCount('agreement');
@@ -926,7 +941,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
             </div>
             <div className="cev-section-right">
               {(tab === 'shipment-agreements' || tab === 'trade-documents') ? (
-                <span className="cev-sec-pill cev-sec-pill-docs">{vault.total_shipments} Shipments</span>
+                <span className="cev-sec-pill cev-sec-pill-docs">{dealRows.length} Transactions</span>
               ) : (
                 <>
                   {statusTally.Verified > 0 && <span className="cev-sec-pill cev-sec-pill-ok"><span className="cev-sec-dot" />Verified {statusTally.Verified}</span>}
@@ -941,7 +956,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           </div>
 
           {(tab === 'shipment-agreements' || tab === 'trade-documents')
-            ? <ShipmentTable rows={shippedRows} kind="both"
+            ? <ShipmentTable rows={dealRows} kind="both"
                              onSend={(leadId, doc, party) => { if (doc.pi_id) setPiSend({ leadId, doc }); else setShipSend({ leadId, doc, party }); }}
                              activeSend={shipSend ?? (piSend ? { ...piSend, party: 'consignee' as const } : null)}
                              onBulkSend={(leadId, docs, party) => { if (docs.length) setShipSend({ leadId, doc: docs[0], docs, party }); }} />
@@ -1087,8 +1102,15 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
            if it were the whole case-to-case set. */
         const activeShip    = isStd ? null : (shipsWithDocs.find((r) => r.id === ovShip) ?? null);
         const picking       = !isStd && !activeShip;
+        /* Standard rows carry the bucket they came from. Merging the three
+           lists loses it otherwise, and the upload endpoint needs the category
+           to file the file against the right document. */
         const docs: (VaultDoc | VaultShipmentDoc)[] = isStd
-          ? [...vault.company_dd, ...vault.owner_kyc, ...vault.trade_licenses]
+          ? [
+              ...vault.company_dd.map((d) => ({ ...d, ovCat: 'dd' as const })),
+              ...vault.owner_kyc.map((d) => ({ ...d, ovCat: 'kyc' as const })),
+              ...vault.trade_licenses.map((d) => ({ ...d, ovCat: 'tl' as const })),
+            ]
           : (activeShip ? shipDocsOf(activeShip) : []);
         const shipLabel = (r: VaultShipmentRow) => (r.has_shipment === false ? 'Not shipped' : r.shipment_id);
 
@@ -1206,15 +1228,27 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                           />
                         </th>
                       )}
-                      <th style={{ width: 64 }}>SR NO</th>
+                      {/* table-layout is fixed, so these widths are the whole
+                          story — a column that declares less than its content
+                          needs does not grow, it pushes the table past the
+                          dialog and hands the list a horizontal scrollbar.
+                          The standard list carries TWO action buttons
+                          (Download + Upload / Re-upload), so ACTION needs the
+                          same room the Customer vault gives it; the other
+                          columns give that room back. */}
+                      <th style={{ width: isStd ? 54 : 64 }}>SR NO</th>
                       <th>DOCUMENT NAME</th>
-                      <th style={{ width: 130 }}>STATUS</th>
-                      <th style={{ width: isStd ? 130 : 230 }}>ACTION</th>
+                      {/* Dates belong to one-time company documents; a per-deal
+                          row has no issue / expiry of its own. */}
+                      {isStd && <th style={{ width: 104 }}>ISSUED DATE</th>}
+                      {isStd && <th style={{ width: 104 }}>EXPIRED AT</th>}
+                      <th style={{ width: isStd ? 112 : 130 }}>STATUS</th>
+                      <th style={{ width: isStd ? 196 : 230 }}>ACTION</th>
                     </tr>
                   </thead>
                   <tbody>
                     {docs.length === 0 ? (
-                      <tr><td colSpan={isStd ? 4 : 5} className="cev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
+                      <tr><td colSpan={isStd ? 6 : 5} className="cev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
                     ) : docs.map((d, i) => {
                       const absIdx = i;
                       const raw = isStd ? (d as VaultDoc).attachment_url : (d as VaultShipmentDoc).signed_url;
@@ -1240,13 +1274,28 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                             );
                           })()}
                           <td className="cev-ov-num">{absIdx + 1}</td>
-                          {/* 35 to match the shipment doc panel — the Document
-                              Name column is the widest here too, and a full PI
-                              name ("Proforma Invoice (PI/2026-27/29)") is 32
-                              characters, so 25 hid the PI number itself. */}
-                          <Tooltip label={d.name} disabled={(d.name || '').length <= 35}>
-                            <td className="cev-ov-name">{(d.name || '').length > 35 ? (d.name || '').slice(0, 35) + '…' : d.name}</td>
-                          </Tooltip>
+                          {/* 20 on the standard list, which now also carries
+                              Issued Date, Expired At and a two-button action
+                              cell — at 35 the row outgrew the dialog and the
+                              whole table went to a horizontal scrollbar. The
+                              per-deal list keeps 35: it has no date columns and
+                              a full PI name ("Proforma Invoice (PI/2026-27/29)")
+                              is 32 characters, so cutting shorter would hide the
+                              PI number itself. Full name stays on the tooltip
+                              either way. */}
+                          {(() => {
+                            const cap = isStd ? 20 : 35;
+                            const nm = d.name || '';
+                            return (
+                              <Tooltip label={nm} disabled={nm.length <= cap}>
+                                <td className="cev-ov-name">{nm.length > cap ? nm.slice(0, cap) + '…' : nm}</td>
+                              </Tooltip>
+                            );
+                          })()}
+                          {/* Same formatter the vault's own tables use, so a
+                              missing date reads identically in both places. */}
+                          {isStd && <td className="cev-cell-dim">{evFmtDateCell((d as VaultDoc).issue_date)}</td>}
+                          {isStd && <td className="cev-cell-dim">{evFmtDateCell((d as VaultDoc).expiry)}</td>}
                           <td><StatusPill s={d.status as VaultStatus} /></td>
                           <td>
                             <div className="sev-ov-acts">
@@ -1328,6 +1377,28 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                                 </Tooltip>
                               );
                             })()}
+                            {/* Upload / Re-upload, beside Download rather than
+                                instead of it, so the pair sits at the same x on
+                                every row — same arrangement as the Customer
+                                vault's overview. Per-deal rows get no upload:
+                                their file comes back signed from Zoho. */}
+                            {isStd && (d as VaultDoc).doc_code && consignee?.db_id && (
+                              <Tooltip label={url ? `Replace the file on ${d.name}` : `Upload ${d.name}`}>
+                                <button
+                                  type="button"
+                                  className={url ? 'cev-ov-up cev-ov-reup' : 'cev-ov-up'}
+                                  disabled={ovUploadBusy}
+                                  onClick={() => setOvUpload({
+                                    doc: d as VaultDoc,
+                                    category: ((d as VaultDoc & { ovCat?: 'kyc' | 'dd' | 'tl' }).ovCat) ?? 'dd',
+                                  })}
+                                >
+                                  {url
+                                    ? <><i className="ri-refresh-line" aria-hidden /> Re-upload</>
+                                    : <><i className="ri-upload-2-line" aria-hidden /> Upload</>}
+                                </button>
+                              </Tooltip>
+                            )}
                             </div>
                           </td>
                         </tr>
@@ -1379,6 +1450,45 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           sigId={ovTrack.id}
           code={ovTrack.code}
           onClose={() => setOvTrack(null)}
+        />
+      )}
+
+      {/* Upload / Re-upload started from the overview. Outside the overview
+          block for the same reason the tracker above is: that panel re-renders
+          on every tick, which would tear the dialog down mid-upload. */}
+      {ovUpload && (
+        <VaultReuploadPopup
+          doc={ovUpload.doc}
+          category={ovUpload.category}
+          busy={ovUploadBusy}
+          className="cnev-reup"
+          withIssueDate
+          onClose={() => { if (!ovUploadBusy) setOvUpload(null); }}
+          onSubmit={async (f, opts) => {
+            if (!consignee?.db_id || !ovUpload.doc.doc_code) return;
+            setOvUploadBusy(true);
+            try {
+              const fd = new FormData();
+              fd.append('category', ovUpload.category);
+              fd.append('doc_code', ovUpload.doc.doc_code);
+              fd.append('doc_name', ovUpload.doc.name || ovUpload.doc.doc_code);
+              if (f) fd.append('attachment', f);
+              // Left out when absent: the endpoint's rules are nullable and an
+              // empty string fails their `date` check.
+              if (opts?.issueDate) fd.append('issue_date', opts.issueDate);
+              if (opts?.expiryDate) fd.append('expiry_date', opts.expiryDate);
+              await api.post(`/segment-uploads/consignee/${consignee.db_id}`, fd, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+              });
+              setOvUpload(null);
+              await reloadVault();
+              toast.success(f ? 'Document uploaded' : 'Dates saved', f ? `${f.name} has been attached.` : 'The issue and expiry dates were updated.');
+            } catch (e: any) {
+              toast.error('Upload failed', e?.response?.data?.message || 'The file could not be uploaded. Please try again.');
+            } finally {
+              setOvUploadBusy(false);
+            }
+          }}
         />
       )}
 
@@ -1968,7 +2078,12 @@ function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend }: {
      is present, and each expanded row marks its own kind (showType), which
      is what the two separate tabs used to convey. */
   const isAgreement = kind === 'agreement' || kind === 'both';
-  const COLS = isAgreement ? 11 : 10;
+  /* 'both' is the mode whose expanded row already lists trade documents and
+     agreements together, so the two ratio columns collapse into one to match
+     it — same as the Customer vault's table. Two columns over one combined
+     list read as though the row carried two separate sets. */
+  const merged = kind === 'both';
+  const COLS = isAgreement && !merged ? 11 : 10;
   return (
     <>
       {/* No Customer = / ≠ Consignee tabs in the consignee vault — it always
@@ -1987,8 +2102,8 @@ function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend }: {
               <th>Due Dil.</th>
               <th>KYC</th>
               <th>Trade Lic.</th>
-              <th>Trade Docs</th>
-              {isAgreement && <th>Agreement</th>}
+              <th>{merged ? 'Trade Docs & Agreements' : 'Trade Docs'}</th>
+              {isAgreement && !merged && <th>Agreement</th>}
             </tr>
           </thead>
           <tbody>
@@ -2020,8 +2135,8 @@ function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend }: {
                     <td><Ratio r={r.due_dil} /></td>
                     <td><Ratio r={r.kyc} /></td>
                     <td><Ratio r={r.trade_lic} /></td>
-                    <td><Ratio r={r.trade_docs} /></td>
-                    {isAgreement && <td><Ratio r={r.agreement} /></td>}
+                    <td><Ratio r={merged ? sumRatios(r.trade_docs, r.agreement) : r.trade_docs} /></td>
+                    {isAgreement && !merged && <td><Ratio r={r.agreement} /></td>}
                   </tr>
                   {open && (
                     <tr className="cev-ship-expand">
@@ -2309,6 +2424,10 @@ const CNEV_CSS = `
 .cnev-ov .cev-ov-name {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* The action cell holds two buttons on the standard list. Without this they
+   were free to lay out wider than the column and spill past the dialog edge. */
+.cnev-ov .sev-ov-acts { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; min-width: 0; }
+.cnev-ov .sev-ov-acts > * { flex: 0 0 auto; }
 
 .cev-mono-ref { color: #0e7490; font-weight: 600; }
 .cev-cell-dim { color: #64748b; white-space: nowrap; }

@@ -454,18 +454,30 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
 
   const tabMeta = TABS.find(t => t.key === tab) ?? TABS[0];
 
-  /* Case-to-Case is about shipments, so an opportunity that has not raised one
-     yet does not belong in it. Those rows rendered as "Not shipped" with every
-     ratio at 0/x and nothing to expand, while the section pill — which reads
-     the server's total_shipments — already excluded them, so the list and the
-     count contradicted each other. One filtered list now feeds the table, the
-     overview picker and every count derived from them. has_shipment is
-     optional, so undefined still counts as shipped. */
-  const shippedRows = vault.shipment_agreements.filter(r => r.has_shipment !== false);
+  /* TWO populations, deliberately kept apart — folding them into one is what
+     printed a zero over a list that was not empty.
+     ·  dealRows    — every transaction the server resolved for this party.
+     ·  shippedRows — only those that have actually raised a shipment order.
+
+     The server sends per-DEAL rows on purpose for a customer / consignee, and
+     sums every Case-to-Case figure it returns (trade_documents_count,
+     agreements_count, total_documents, verified, pending) over ALL of them.
+     Counting here from the shipped subset instead meant a party whose deals
+     carry a PI and its paperwork but no shipment order yet — which is most of
+     them early on — showed 0 on every card while the API said 8 and the Buyer
+     Profile cell said 10. The card contradicted the document list beside it.
+
+     Total Shipments stays on the server's own shipment count: that one really
+     is asking how many shipments exist, and the answer really can be zero
+     while there is paperwork outstanding.
+
+     has_shipment is optional, so undefined still counts as shipped. */
+  const dealRows    = vault.shipment_agreements;
+  const shippedRows = dealRows.filter(r => r.has_shipment !== false);
 
   const ratioTotal = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[1] ?? p[0], 10) || 0; };
   const shipmentDocCount = (key: 'trade_docs' | 'agreement') =>
-    shippedRows.reduce((acc, r) => acc + ratioTotal(r[key].ratio), 0);
+    dealRows.reduce((acc, r) => acc + ratioTotal(r[key].ratio), 0);
   const tabCount = (t: typeof TABS[number]): number =>
     t.key === 'trade-documents'     ? shipmentDocCount('trade_docs') + shipmentDocCount('agreement')
     : t.key === 'shipment-agreements' ? shipmentDocCount('agreement')
@@ -483,7 +495,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
 
   const ratioDone = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[0], 10) || 0; };
   const shipmentDocDone = (key: 'trade_docs' | 'agreement') =>
-    shippedRows.reduce((acc, r) => acc + ratioDone(r[key].ratio), 0);
+    dealRows.reduce((acc, r) => acc + ratioDone(r[key].ratio), 0);
   const tdTotal  = shipmentDocCount('trade_docs');
   const tdDone   = shipmentDocDone('trade_docs');
   const agrTotal = shipmentDocCount('agreement');
@@ -664,7 +676,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
             </div>
             <div className="cev-section-right">
               {tab === 'trade-documents' ? (
-                <span className="cev-sec-pill cev-sec-pill-docs">{vault.total_shipments} Shipments</span>
+                <span className="cev-sec-pill cev-sec-pill-docs">{dealRows.length} Transactions</span>
               ) : (
                 <>
                   {counts.Uploaded > 0 && <span className="cev-sec-pill cev-sec-pill-ok"><span className="cev-sec-dot" />Uploaded {counts.Uploaded}</span>}
@@ -675,7 +687,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
           </div>
 
           {tab === 'trade-documents'
-            ? <ShipmentTable rows={shippedRows} kind="both" filter={shipmentFilter}
+            ? <ShipmentTable rows={dealRows} kind="both" filter={shipmentFilter}
                              onSend={(leadId, doc, party) => { if (doc.pi_id) setPiSend({ leadId, doc }); else setShipSend({ leadId, doc, party }); }}
                              onBulkSend={(leadId, docs, party) => { if (docs.length) setShipSend({ leadId, doc: docs[0], docs, party }); }}
                              activeSend={shipSend ?? (piSend ? { ...piSend, party: 'buyer' } : null)} />

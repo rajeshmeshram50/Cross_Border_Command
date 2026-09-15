@@ -784,18 +784,21 @@ export default function HrRecruitment() {
         recruitments={recruitments}
         prefillFromHr={createPrefillFromHr}
         onClose={() => { setCreateOpen(false); setCreatePrefillFromHr(null); }}
-        onSaved={(row) => {
-          setRecruitments(prev => {
-            const idx = prev.findIndex(r => String(r.id) === String(row.id));
-            if (idx >= 0) {
-              const next = [...prev];
-              next[idx] = row;
-              return next;
-            }
-            return [row, ...prev];
-          });
+        onSaved={() => {
           setCreateOpen(false);
           setCreatePrefillFromHr(null);
+          /* Refetch rather than patch the row in place. (#7)
+             The list is fetched per TAB (`status: tab`), so on the Expired tab
+             the array IS the Expired page. Writing the saved row back into it
+             left a recruitment whose deadline had just been pushed into the
+             future — reopened to 'In Progress' by the server's
+             reconcileExpiryStatus() — still sitting under Expired, and the tab
+             counts come from a separate /recruitments/stats call that was not
+             refreshed either. Both corrected themselves on a manual reload,
+             which is exactly what the ticket describes.
+             One refetch settles the row's placement, the pagination total and
+             every tab count together. */
+          fetchRecruitments();
         }}
       />
 
@@ -815,12 +818,15 @@ export default function HrRecruitment() {
           try {
             const { data } = await api.put(`/recruitments/${cancelTarget.id}`, payload);
             const row = apiToRow(data);
-            setRecruitments(prev => prev.map(r => String(r.id) === String(row.id) ? row : r));
             toast.success(
               isComplete ? 'Recruitment completed' : 'Recruitment cancelled',
               `${row.code || row.id} has been moved to ${isComplete ? 'Completed' : 'Cancelled'}.`,
             );
             setCancelTarget(null);
+            /* Same reason as the save path above (#7): the row has changed tab,
+               so patching it into the current tab's array contradicted the
+               toast that had just said it moved. */
+            fetchRecruitments();
           } catch (err: any) {
             const fieldErr = err?.response?.data?.errors?.status?.[0];
             const message  = fieldErr || err?.response?.data?.message || 'Please try again.';

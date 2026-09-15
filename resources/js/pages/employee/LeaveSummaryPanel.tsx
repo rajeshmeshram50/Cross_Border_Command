@@ -5,6 +5,7 @@ import { Modal, ModalBody } from 'reactstrap';
 // modal + toaster, same as every other destructive action in the product.
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import {
   employeeBalancesApi,
@@ -39,6 +40,11 @@ const TYPE_PALETTE: Record<string, { ring: string; track: string; bg: string; fg
   unpaid: { ring: '#6b7280', track: '#eef2f6', bg: '#eef2f6', fg: '#374151' },
   default: { ring: '#7c5cfc', track: '#ece6ff', bg: '#ece6ff', fg: '#5a3fd1' },
 };
+/* The donut's unfilled arc is a pale tint of the ring colour. On the dark
+   card that pale tint reads as a bright ring, so dark mode uses a faint white
+   wash instead. (CBC #13) */
+const DARK_DONUT_TRACK = 'rgba(255,255,255,0.10)';
+
 const toneFor = (t: ApiEmployeeBalanceType) => {
   const k = (t.name || '').toLowerCase();
   if (k.includes('sick')) return TYPE_PALETTE.sick;
@@ -83,6 +89,8 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
   const onProbation = isOnProbation(probationEndDate);
   const confirm = useConfirm();
   const toast   = useToast();
+  const { theme } = useTheme();
+  const darkTheme = theme === 'dark';
   const [requests, setRequests] = useState<ApiLeaveRequest[]>([]);
   const [balances, setBalances] = useState<ApiEmployeeBalanceResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -274,6 +282,11 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
         .lsp-danger { color: #dc2626; }
         :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .lsp-danger { color: #fca5a5; }
         :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .lsp-accent { color: #c4b5fd; }
+
+        .lsp-txn--credit { background: #d1fae5; color: #065f46; }
+        .lsp-txn--debit  { background: #fee2e2; color: #b91c1c; }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .lsp-txn--credit { background: rgba(16,185,129,0.18) !important; color: #6ee7b7 !important; }
+        :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .lsp-txn--debit  { background: rgba(239,68,68,0.18) !important;  color: #fca5a5 !important; }
 
         .lsp-avatar { background: #ece6ff; }
         :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .lsp-avatar { background: rgba(124,92,252,0.22); }
@@ -481,7 +494,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
                     </button>
                   </div>
                   <div className="d-flex justify-content-center my-2">
-                    <Donut size={140} stroke={14} percent={pct} ring={tone.ring} track={tone.track}>
+                    <Donut size={140} stroke={14} percent={pct} ring={tone.ring} track={darkTheme ? DARK_DONUT_TRACK : tone.track}>
                       {t.unlimited ? (
                         <>
                           <div className="fw-bold" style={{ fontSize: 14 }}>Unlimited</div>
@@ -716,11 +729,13 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
                       <tr key={i}>
                         <td style={{ padding: '10px 14px' }}>{tx.date}</td>
                         <td style={{ padding: '10px 14px' }}>
-                          <span className="rec-pill" style={{
-                            background: tx.change.startsWith('+') ? '#d1fae5' : '#fee2e2',
-                            color: tx.change.startsWith('+') ? '#065f46' : '#b91c1c',
-                            fontSize: 11,
-                          }}>{tx.change}</span>
+                          {/* Credit / debit pill — palette lives in .lsp-txn-*
+                              so the dark rules can repaint it; inline colours
+                              stayed light-on-light in dark mode. (CBC #13) */}
+                          <span
+                            className={`rec-pill lsp-txn ${tx.change.startsWith('+') ? 'lsp-txn--credit' : 'lsp-txn--debit'}`}
+                            style={{ fontSize: 11 }}
+                          >{tx.change}</span>
                         </td>
                         <td style={{ padding: '10px 14px' }}>{fmtDays(tx.balance)}</td>
                         <td style={{ padding: '10px 14px' }} className="text-muted">{tx.reason}</td>
