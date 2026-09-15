@@ -56,7 +56,7 @@ class CustomerController extends Controller
                 ->with(['primaryAddress:id,customer_id,is_primary,country,cp_contact,cp_email'])
                 ->orderByDesc('id')
                 ->get(['id', 'customer_code', 'company_name'])
-                ->map(fn (Customer $c) => [
+                ->map(fn(Customer $c) => [
                     'id'      => $c->customer_code ?: ('C-' . str_pad((string) $c->id, 3, '0', STR_PAD_LEFT)),
                     'db_id'   => $c->id,
                     'company' => $c->company_name,
@@ -1338,16 +1338,14 @@ class CustomerController extends Controller
             // their DCP rule (mandatory or optional) — a segment with no docs
             // attached has nothing to drive the customer's KYC/DD/TL/QC stage,
             // so it must not appear in the Customer Segment picker.
-            $segmentIdsWithDocs = DB::table('clm_segment_rules')
-                ->when($user, fn($q) => $q->where('client_id', $user->client_id))
-                ->whereRaw('(COALESCE(mandatory_count, 0) + COALESCE(optional_count, 0)) > 0')
-                ->distinct()
-                ->pluck('segment_id')
-                ->all();
+            $ruleQuery = \App\Models\ClmSegmentRule::query()
+                ->whereRaw('(COALESCE(mandatory_count, 0) + COALESCE(optional_count, 0)) > 0');
+            $scope($ruleQuery);
+            $segmentCodesWithDocs = $ruleQuery->distinct()->pluck('segment_code')->filter()->all();
             $segments = Segments::query()
                 ->whereRaw('LOWER(status) = ?', ['active'])
                 ->tap($scope)
-                ->whereIn('id', $segmentIdsWithDocs ?: [0])
+                ->whereIn('code', $segmentCodesWithDocs ?: [''])
                 ->orderBy('id')
                 ->get(['id', 'name', 'code']);
 

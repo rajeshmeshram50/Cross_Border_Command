@@ -1056,7 +1056,16 @@ class HrDocumentSignatureController extends Controller
      * (ModuleDependencies::MAP — hr.doc_templates depends on hr.employee, not
      * the reverse), so holding Employee alone left this closed.
      */
-    private const READ_OTHERS_MODULES = ['hr.doc_templates', 'hr.employee'];
+    /* `hr.documents` ("Document & Evidence") added when CBC #13 and QA #25 —
+     * the same defect reported twice — were fixed in parallel and merged.
+     *
+     * It is the module an admin actually ticks when they mean "this person
+     * handles other people's documents", and Anushka's report was precisely
+     * that granting it changed nothing. The other two stay: anyone holding
+     * them can read these documents today, and dropping either would trade one
+     * regression for another. The union is deliberate — both fixes' cases pass,
+     * neither is narrowed. */
+    private const READ_OTHERS_MODULES = ['hr.documents', 'hr.doc_templates', 'hr.employee'];
 
     /**
      * May this employee-tier login read OTHER employees' signature runs?
