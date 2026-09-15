@@ -1495,14 +1495,17 @@ export default function HrPayroll() {
         return (
           <div className="d-flex flex-column align-items-end" style={{ lineHeight: 1.25 }}>
             <span
-              /* One weight for every row. The settled/provisional split used to
-                 ride on fw-bold vs fw-semibold as well as the colour and the
-                 "Provisional" caption below — so a single Ready row among
-                 Pending ones read as arbitrarily bolder than its neighbours
-                 (#20). The dim colour and the caption still carry the meaning;
-                 the weight now matches Gross Earnings and Deductions beside
-                 it, which have always been fw-semibold. */
-              className="fs-13 fw-semibold"
+              /* Plain weight, one for every row.
+                 #20 first levelled the settled/provisional split onto a single
+                 fw-semibold. That removed the row-to-row difference but left
+                 the column still reading as the emphasised one: Gross Earnings
+                 and Deductions carry a colour (green / red) which lightens
+                 them, while Net Pay is the only money figure in near-black, so
+                 at the same 600 weight it looked bold beside them. Dropping to
+                 the ordinary body weight settles it against the rest of the
+                 row. The dim colour and the "Provisional" caption still carry
+                 the settled/provisional meaning on their own. */
+              className="fs-13"
               style={provisional ? { color: 'var(--vz-secondary-color)' } : undefined}
               title={provisional
                 ? `Provisional — this slip is ${r.status}. The figure is a live calculation and can change once the exception is resolved.`
@@ -1837,7 +1840,11 @@ export default function HrPayroll() {
         id: 'netPayable',
         accessorFn: (r: PayrollRow) => r.earnings - totalDeductionsOf(r),
         meta: { width: '9%', align: 'right' },
-        cell: info => <span className="fs-13 fw-bold" style={{ color: '#108548' }}>₹{fmtINR(info.row.original.earnings - totalDeductionsOf(info.row.original))}</span>,
+        /* 600, not fw-bold's 700 — the same weight as Total Deductions beside
+           it. The two are a pair, and one of them printing heavier made Net
+           Payable read as the emphasised column rather than the other half of
+           the sum. Component columns stay at the plain body weight. */
+        cell: info => <span className="fs-13" style={{ color: '#108548', fontWeight: 600 }}>₹{fmtINR(info.row.original.earnings - totalDeductionsOf(info.row.original))}</span>,
       },
       {
         header: () => <div className="text-center">Status</div>,
