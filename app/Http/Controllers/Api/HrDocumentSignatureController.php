@@ -1000,6 +1000,24 @@ class HrDocumentSignatureController extends Controller
     {
         if (!$user || $user->user_type !== 'employee') return;
 
+        /* Permission is a THIRD way to pass, alongside subject and signer.
+         *
+         * Without it this function answered one question — "is this document
+         * yours?" — and `user_type === 'employee'` is not "an outsider", it is
+         * "has an employees row", which HR staff do too. So the people whose
+         * JOB is other people's documents were refused by the same rule meant
+         * to stop a colleague reading someone's warning letter, and no grant
+         * could change it because no grant was ever consulted here.
+         *
+         * index() was already conditioned on this grant (see the note there);
+         * this path was missed in that change, which is why the symptom looked
+         * so strange: with the grant the documents LISTED and then 403'd on
+         * click. Two gates, one taught about permissions and one not (QA #25).
+         *
+         * The privacy rule itself is unchanged — an employee holding neither
+         * grant still falls through to the subject/signer checks below. */
+        if ($this->mayReadOthersDocuments($user)) return;
+
         $ownEmployeeId = Employee::where('user_id', $user->id)->value('id');
         if ($ownEmployeeId && (int) $row->employee_id === (int) $ownEmployeeId) return;
 
@@ -1024,17 +1042,30 @@ class HrDocumentSignatureController extends Controller
     {
         if (!$user) return false;
 
-        $moduleId = \App\Models\Module::where('slug', 'hr.doc_templates')->value('id');
-        // No module row means the tenant never had the feature broken out into
-        // grants; fall back to the same admin tiers HrDocumentTemplateController
-        // waves through in that case rather than locking HR out of their own
-        // screen.
-        if (!$moduleId) {
+        /* EITHER grant opens this.
+         *
+         * `hr.documents` ("Document & Evidence") is the Evidence Vault
+         * permission — the one an admin ticks when they mean "this person
+         * handles other people's documents". It was not being consulted at
+         * all, so the permission that was configured had no effect and a
+         * different, unrelated one silently decided access (QA #25).
+         *
+         * `hr.doc_templates` stays accepted rather than being swapped out:
+         * anyone holding it can read these documents today, and removing that
+         * would trade one regression for another. */
+        $moduleIds = \App\Models\Module::whereIn('slug', ['hr.documents', 'hr.doc_templates'])
+            ->pluck('id');
+
+        // Neither module row exists — the tenant never had the feature broken
+        // out into grants; fall back to the same admin tiers
+        // HrDocumentTemplateController waves through in that case rather than
+        // locking HR out of their own screen.
+        if ($moduleIds->isEmpty()) {
             return in_array($user->user_type, ['client_admin', 'branch_user'], true);
         }
 
         return \App\Models\Permission::where('user_id', $user->id)
-            ->where('module_id', $moduleId)
+            ->whereIn('module_id', $moduleIds)
             ->where('can_view', true)
             ->exists();
     }

@@ -14080,23 +14080,43 @@
   .pay-page {
     display: flex;
     flex-direction: column;
-    /* The fixed Velzon topbar plus .page-content's 8px padding top and bottom.
-       min-height keeps a very short window usable — below that the page
-       scrolls again rather than crushing the table to nothing. */
-    height: calc(100vh - var(--vz-header-height, 70px) - 16px);
-    min-height: 560px;
-    overflow: hidden;
+    /* A FLOOR, not a fixed height.
+     *
+     * This used to be `height: calc(100vh - …)` with `overflow: hidden`, which
+     * locked the page to exactly one screen. Something then had to give on a
+     * short window, and .pay-top was elected — which is how the header, cycle
+     * rail and KPI tiles ended up inside a nested scrollbar.
+     *
+     * min-height keeps the table filling the screen when there IS room, while
+     * letting the page grow past the viewport and scroll normally when there
+     * is not. No section is hidden inside another scroller. */
+    min-height: calc(100vh - var(--vz-header-height, 70px) - 16px);
   }
   .pay-page > .pay-top {
-    flex: 0 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    /* Room for the cycle chips' shadow and the KPI cards' lift, which a
-       flush overflow box would otherwise clip. */
+    /* NOT `flex: 0 1 auto` + `overflow-y: auto` any more.
+     *
+     * That made this box the one that yields: on a laptop window it shrank and
+     * grew its own scrollbar, so the page header, the Cycle History rail and
+     * the KPI tiles — the three things people open Payroll to read — slid out
+     * of view inside a nested scroller while the table below stayed put.
+     *
+     * `flex: none` pins it to its natural height. Nothing in here scrolls, and
+     * nothing in here can be squeezed away; the table area takes what is left
+     * and the WHOLE PAGE scrolls once the shell's height is exceeded (see the
+     * .pay-page rule above, which no longer locks the viewport).
+     *
+     * This is a deliberate reversal of part of QA #22, which made .pay-top
+     * yield precisely so the table's search / filters / sticky header could
+     * never be pushed off-screen. Those controls now scroll with the page
+     * again. The three summary sections staying visible was judged the more
+     * important of the two. */
+    flex: none;
+    overflow: visible;
+    /* Kept from the scrolling version: the 2px inset still gives the cycle
+       chips' shadow and the KPI cards' hover-lift room to paint, and the
+       matching negative margin keeps the layout position identical. */
     padding: 2px 2px 0;
     margin: -2px -2px 0;
-    scrollbar-width: thin;
   }
   .pay-page > .pay-tablearea {
     flex: 1;

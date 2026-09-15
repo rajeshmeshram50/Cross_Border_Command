@@ -2525,7 +2525,21 @@ export default function HrPayroll() {
                  these tables is the only one on its tab, so it owns the space
                  left under whatever the tab renders above it. */
               fitToViewport
+              /* Floor the auto-fit at 10 rows.
+                 The fit sizes the card to the viewport space left BELOW it, and
+                 on this page ~490px is already spent above the table: the page
+                 header, the Cycle History strip, the four KPI cards, the tab bar
+                 and the toolbar. What remains hits the 240px floor inside
+                 DataTable, which has room for one row and so clamps to the
+                 default minimum of 2 — a 219-row payroll rendered two at a time,
+                 with no way to scroll to the rest.
+                 minAutoRows is the prop DataTable documents for precisely this
+                 ("pages with a tall header above the table can raise this so the
+                 table never collapses to 2 rows on a big screen"). Set per table
+                 HERE rather than changing the shared default, which 23 other
+                 pages depend on. */
               autoFitRows
+              minAutoRows={10}
               minWidth={1500}
               loading={loading}
               searchValue={q}
@@ -2588,6 +2602,7 @@ export default function HrPayroll() {
                 className="pay-tbl-att"
                 fitToViewport
                 autoFitRows
+                minAutoRows={10}
                 /* +130px for the Weekly Off column, so the row still has its
                    real width to scroll to instead of compacting. (CBC #7) */
                 minWidth={1230}
@@ -2645,6 +2660,7 @@ export default function HrPayroll() {
                 className="pay-tbl-report"
                 fitToViewport
                 autoFitRows
+                minAutoRows={10}
                 minWidth={1900}
                 loading={loading}
                 searchValue={q}
@@ -2681,6 +2697,7 @@ export default function HrPayroll() {
                 accent="violet"
                 fitToViewport
                 autoFitRows
+                minAutoRows={10}
                 /* Floor raised 1100 → 1200 so the Action column's 12% still
                    clears the Set Salary pill on a narrow window; below that the
                    wrapper scrolls horizontally instead of crushing the button. */
