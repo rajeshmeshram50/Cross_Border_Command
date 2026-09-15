@@ -275,8 +275,27 @@ class ClmSegmentRuleController extends Controller
             return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
         }
 
-        $ruleQuery = ClmSegmentRule::where('client_id', $cid)
-            ->where('segment_id', $segmentId);
+        // Resolve the segment inside the caller's branch scope, then match its
+        // rule by segment_CODE rather than the denormalised segment_id.
+        //
+        // segment_id is nullable and was, until recently, derived from a
+        // client-wide code lookup; because codes restart at SG-001 per branch,
+        // rules in a newer branch can carry a sibling branch's segment_id. This
+        // endpoint feeds Stage 2's KYC/DD/TL/QC lists, so an id mismatch showed
+        // the user an empty document set for a segment whose DCP rule exists.
+        // Matching on the code repairs those rows without a data migration.
+        $segQuery = ClmSegment::whereKey($segmentId);
+        MasterVisibility::applyReadScope($segQuery, $user, $user->branch_id ?: null);
+        $segment = $segQuery->first();
+
+        $ruleQuery = ClmSegmentRule::query();
+        MasterVisibility::applyReadScope($ruleQuery, $user, $user->branch_id ?: null);
+        $segment
+            ? $ruleQuery->where('segment_code', $segment->code)
+            // Segment not visible to this user — match nothing rather than
+            // falling back to a client-wide id scan.
+            : $ruleQuery->whereRaw('1 = 0');
+
         $reqType = $request->query('document_type');
         if (in_array($reqType, ClmSegmentRule::DOC_TYPE_VALUES, true)) {
             $ruleQuery->where('document_type', $reqType);
