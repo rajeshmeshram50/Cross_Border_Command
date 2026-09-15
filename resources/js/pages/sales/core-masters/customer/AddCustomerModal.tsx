@@ -3262,11 +3262,12 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                   the singular name. */}
               <MasterMultiSelect
                 value={form.coSeg}
-                /* Descending by code (SG-018 → SG-001) so the newest segments
-                   sit at the top. numeric-aware so SG-18 sorts above SG-2. */
+
                 options={[...masters.segments]
+                  .filter(o => !unruledSegments.includes(o.name) || (form.coSeg ?? []).includes(o.name))
                   .sort((a, b) => (b.code ?? '').localeCompare(a.code ?? '', undefined, { numeric: true }))
                   .map(o => ({ value: o.name, label: o.code ? `${o.code}: ${o.name}` : o.name }))}
+                emptyText="No segment has a Document Control Panel rule yet"
                 placeholder="Select segment"
                 invalid={!!errors.coSeg}
                 onChange={vs => {

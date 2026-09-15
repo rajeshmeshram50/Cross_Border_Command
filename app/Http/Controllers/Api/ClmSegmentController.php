@@ -14,7 +14,7 @@ use Illuminate\Validation\Rule;
 
 class ClmSegmentController extends Controller
 {
-   
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -36,7 +36,7 @@ class ClmSegmentController extends Controller
             $r->in_use  = !empty($labels);
             $r->used_in = array_values($labels);
         });
- 
+
         return response()->json([
             'status' => true,
             'data'   => $rows,
@@ -60,8 +60,14 @@ class ClmSegmentController extends Controller
         if ($rows->isEmpty()) return [];
         $ids    = $rows->pluck('id')->all();
         $names  = $rows->pluck('name')->all();
-        $idByName = [];
-        foreach ($rows as $r) { $idByName[$r->name] = $r->id; }
+        // name => [segment rows]. A LIST, not one id: two branches under the
+        // same client may each own a segment called "Rice", and a
+        // name => single-id map silently dropped whichever came second, so
+        // that segment could never be flagged at all.
+        $segsByName = [];
+        foreach ($rows as $r) {
+            $segsByName[$r->name][] = $r;
+        }
 
         $map = [];
         $addById = function ($segId, $label) use (&$map, $ids) {
@@ -70,11 +76,14 @@ class ClmSegmentController extends Controller
             if (!isset($map[$segId])) $map[$segId] = [];
             if (!in_array($label, $map[$segId], true)) $map[$segId][] = $label;
         };
-        $addByName = function ($name, $label) use (&$map, $idByName) {
-            if (!isset($idByName[$name])) return;
-            $segId = $idByName[$name];
-            if (!isset($map[$segId])) $map[$segId] = [];
-            if (!in_array($label, $map[$segId], true)) $map[$segId][] = $label;
+
+        $addByName = function ($name, $refClientId, $refBranchId, $label, $scoped = true) use (&$map, $segsByName) {
+            foreach ($segsByName[$name] ?? [] as $seg) {
+                if ($scoped && !self::referenceMayPointAt($seg, $refClientId, $refBranchId)) continue;
+                $segId = (int) $seg->id;
+                if (!isset($map[$segId])) $map[$segId] = [];
+                if (!in_array($label, $map[$segId], true)) $map[$segId][] = $label;
+            }
         };
 
         // ── id-based reference tables ──
@@ -93,31 +102,103 @@ class ClmSegmentController extends Controller
         // master_vendor_directory stores segment as a string id OR the name.
         if (Schema::hasTable('master_vendor_directory') && Schema::hasColumn('master_vendor_directory', 'segment_id')) {
             $strIds = array_map('strval', $ids);
+            [$refCols, $refScoped] = $this->referenceStampColumns('master_vendor_directory');
             $vals = DB::table('master_vendor_directory')
                 ->where(function ($q) use ($strIds, $names) {
                     $q->whereIn('segment_id', $strIds)->orWhereIn('segment_id', $names);
-                })->distinct()->pluck('segment_id');
+                })
+                ->select(array_merge(['segment_id'], $refCols))->distinct()->get();
             foreach ($vals as $v) {
-                if (in_array((string) $v, $strIds, true)) $addById((int) $v, 'Vendor Directory');
-                else $addByName($v, 'Vendor Directory');
+                if (in_array((string) $v->segment_id, $strIds, true)) $addById((int) $v->segment_id, 'Vendor Directory');
+                else $addByName($v->segment_id, $v->client_id ?? null, $v->branch_id ?? null, 'Vendor Directory', $refScoped);
             }
         }
 
         // ── name-based reference tables (store the segment NAME) ──
-        foreach ([
-            ['customers', 'segment', 'Customers'],
-            ['consignees', 'segment', 'Consignees'],
-            ['clm_tnc_library', 'segment', 'T&C Library'],
-            ['clm_agreement_library', 'segment', 'Agreement Library'],
-        ] as [$table, $col, $label]) {
+        // Each row is read with its own client_id / branch_id stamp so the
+        // match can be confined to segments that row could actually have been
+        // pointing at (see referenceMayPointAt).
+        foreach (
+            [
+                ['customers', 'segment', 'Customers'],
+                ['consignees', 'segment', 'Consignees'],
+                ['clm_tnc_library', 'segment', 'T&C Library'],
+                ['clm_agreement_library', 'segment', 'Agreement Library'],
+            ] as [$table, $col, $label]
+        ) {
             if (Schema::hasTable($table) && Schema::hasColumn($table, $col)) {
-                foreach (DB::table($table)->whereIn($col, $names)->distinct()->pluck($col) as $nm) {
-                    $addByName($nm, $label);
+                [$refCols, $refScoped] = $this->referenceStampColumns($table);
+                $refs = DB::table($table)->whereIn($col, $names)
+                    ->select(array_merge([$col], $refCols))->distinct()->get();
+                foreach ($refs as $ref) {
+                    $addByName($ref->$col, $ref->client_id ?? null, $ref->branch_id ?? null, $label, $refScoped);
                 }
             }
         }
 
         return $map;
+    }
+
+    /**
+     * Which tenant-stamp columns a reference table actually carries, plus
+     * whether it carries enough of them to be scoped at all. A table with no
+     * client_id cannot be placed in a tenant, so it stays unscoped (old
+     * behaviour) rather than having every match silently discarded.
+     *
+     * @return array{0: string[], 1: bool}
+     */
+    private function referenceStampColumns(string $table): array
+    {
+        $cols = [];
+        $hasClient = Schema::hasColumn($table, 'client_id');
+        if ($hasClient) $cols[] = 'client_id';
+        if (Schema::hasColumn($table, 'branch_id')) $cols[] = 'branch_id';
+        return [$cols, $hasClient];
+    }
+
+    /**
+     * Could a record stamped ($refClientId, $refBranchId) be referring to this
+     * segment by name? Answers "who can see this segment", because a record can
+     * only name a segment its author could pick:
+     *
+     *   - global segment (client_id NULL)      → anyone
+     *   - client-level segment (branch_id NULL) → any branch of that client
+     *   - branch segment                        → that branch, plus the
+     *       client-level users (branch_id NULL) who see every branch
+     *
+     * A sibling branch is NOT in that set — branches are isolated peers
+     * (MasterVisibility) — which is the whole point: its records must not make
+     * this branch's identically-named segment look "in use".
+     */
+    private static function referenceMayPointAt($seg, $refClientId, $refBranchId): bool
+    {
+        $segClient = $seg->client_id === null ? null : (int) $seg->client_id;
+        if ($segClient === null) return true;
+
+        $refClient = $refClientId === null ? null : (int) $refClientId;
+        if ($refClient !== $segClient) return false;
+
+        $segBranch = $seg->branch_id === null ? null : (int) $seg->branch_id;
+        if ($segBranch === null) return true;
+
+        $refBranch = $refBranchId === null ? null : (int) $refBranchId;
+        return $refBranch === null || $refBranch === $segBranch;
+    }
+
+    /**
+     * Query-builder form of referenceMayPointAt(), for the one-row-at-a-time
+     * checks in destroy(). Applies nothing when the table has no client_id —
+     * same fallback as referenceStampColumns().
+     */
+    private function scopeToSegment($q, string $table, $seg): void
+    {
+        if (!Schema::hasColumn($table, 'client_id') || $seg->client_id === null) return;
+        $q->where('client_id', $seg->client_id);
+
+        if (!Schema::hasColumn($table, 'branch_id') || $seg->branch_id === null) return;
+        $q->where(function ($w) use ($seg) {
+            $w->where('branch_id', $seg->branch_id)->orWhereNull('branch_id');
+        });
     }
 
     /**
@@ -227,9 +308,11 @@ class ClmSegmentController extends Controller
         // Regulatory classification is frozen once the segment is referenced,
         // since compliance structures (DCP rules, required docs) get built
         // against it. An unused segment can still be re-classified.
-        if (isset($data['regulatory_status'])
+        if (
+            isset($data['regulatory_status'])
             && $data['regulatory_status'] !== $row->regulatory_status
-            && !empty($usedIn)) {
+            && !empty($usedIn)
+        ) {
             $msg = 'This segment is in use by ' . implode(', ', $usedIn) . " — its regulatory status can't be changed.";
             return response()->json([
                 'status'  => false,
@@ -300,11 +383,14 @@ class ClmSegmentController extends Controller
                 $parts = array_map('trim', explode(',', (string) $r->segment));
                 $changed = false;
                 foreach ($parts as $i => $p) {
-                    if ($p !== '' && strcasecmp($p, $old) === 0) { $parts[$i] = $new; $changed = true; }
+                    if ($p !== '' && strcasecmp($p, $old) === 0) {
+                        $parts[$i] = $new;
+                        $changed = true;
+                    }
                 }
                 if ($changed) {
                     DB::table($table)->where('id', $r->id)
-                        ->update(['segment' => implode(', ', array_filter($parts, fn ($p) => $p !== ''))]);
+                        ->update(['segment' => implode(', ', array_filter($parts, fn($p) => $p !== ''))]);
                 }
             }
         }
@@ -329,40 +415,61 @@ class ClmSegmentController extends Controller
         // doesn't crash in environments that haven't run a particular
         // migration yet (e.g. staging without consolidate-segments).
         $usedIn = [];
-        if (Schema::hasTable('clm_segment_rules')
-            && DB::table('clm_segment_rules')->where('segment_id', $row->id)->exists()) {
+        if (
+            Schema::hasTable('clm_segment_rules')
+            && DB::table('clm_segment_rules')->where('segment_id', $row->id)->exists()
+        ) {
             $usedIn[] = 'Segment Rules';
         }
-        if (Schema::hasTable('vendors')
+        if (
+            Schema::hasTable('vendors')
             && Schema::hasColumn('vendors', 'segment_id')
-            && DB::table('vendors')->where('segment_id', $row->id)->exists()) {
+            && DB::table('vendors')->where('segment_id', $row->id)->exists()
+        ) {
             $usedIn[] = 'Vendors';
         }
-        if (Schema::hasTable('products')
+        if (
+            Schema::hasTable('products')
             && Schema::hasColumn('products', 'segment_id')
-            && DB::table('products')->where('segment_id', $row->id)->exists()) {
+            && DB::table('products')->where('segment_id', $row->id)->exists()
+        ) {
             $usedIn[] = 'Products';
         }
-        if (Schema::hasTable('customers')
+        if (
+            Schema::hasTable('customers')
             && Schema::hasColumn('customers', 'segment_id')
-            && DB::table('customers')->where('segment_id', $row->id)->exists()) {
+            && DB::table('customers')->where('segment_id', $row->id)->exists()
+        ) {
             $usedIn[] = 'Customers';
         }
         // Some legacy tables store segment as a string (name or id-as-string).
-        if (Schema::hasTable('master_vendor_directory')
+        // The id arm is exact, so it stays unscoped; the name arm is ambiguous
+        // across tenants and gets the same scoping as the tables below.
+        if (
+            Schema::hasTable('master_vendor_directory')
             && Schema::hasColumn('master_vendor_directory', 'segment_id')
             && DB::table('master_vendor_directory')
-                ->where(function ($q) use ($row) {
-                    $q->where('segment_id', (string) $row->id)
-                      ->orWhere('segment_id', $row->name);
-                })
-                ->exists()) {
+            ->where(function ($q) use ($row) {
+                $q->where('segment_id', (string) $row->id)
+                    ->orWhere(function ($w) use ($row) {
+                        $w->where('segment_id', $row->name);
+                        $this->scopeToSegment($w, 'master_vendor_directory', $row);
+                    });
+            })
+            ->exists()
+        ) {
             $usedIn[] = 'Vendor Directory';
         }
 
         // String-typed `segment` columns — these store the segment NAME
         // (case-sensitive match — the segment name itself is the canonical
         // string key these tables capture).
+        //
+        // Confined to this segment's own tenant scope. A name is unique only
+        // within a scope, so an unscoped match let a sibling branch's records
+        // — or another client's entirely — hold this segment hostage: the
+        // delete was refused, and update() reuses the same map, so the name and
+        // regulatory status were locked on a segment nobody had used yet.
         $nameStringTables = [
             ['table' => 'customers',              'col' => 'segment', 'label' => 'Customers'],
             ['table' => 'consignees',             'col' => 'segment', 'label' => 'Consignees'],
@@ -370,11 +477,10 @@ class ClmSegmentController extends Controller
             ['table' => 'clm_agreement_library',  'col' => 'segment', 'label' => 'Agreement Library'],
         ];
         foreach ($nameStringTables as $t) {
-            if (Schema::hasTable($t['table'])
-                && Schema::hasColumn($t['table'], $t['col'])
-                && DB::table($t['table'])->where($t['col'], $row->name)->exists()) {
-                $usedIn[] = $t['label'];
-            }
+            if (!Schema::hasTable($t['table']) || !Schema::hasColumn($t['table'], $t['col'])) continue;
+            $q = DB::table($t['table'])->where($t['col'], $row->name);
+            $this->scopeToSegment($q, $t['table'], $row);
+            if ($q->exists()) $usedIn[] = $t['label'];
         }
 
         if (!empty($usedIn)) {
