@@ -131,12 +131,45 @@ class ClmSegmentRuleController extends Controller
             ], 409);
         }
 
+        /* Reject a code that resolves to nothing the caller can see, instead of
+         * saving a rule with a null segment_id. Checked BEFORE the transaction
+         * so the per-client lock is not taken for a request that cannot
+         * succeed. Same fail-closed rule the rest of this module follows: a
+         * filter that cannot be satisfied narrows to nothing, it does not widen
+         * or silently pass. */
+        if (!$this->resolveSegment($user, $data['segment_code'])) {
+            $msg = "Segment {$data['segment_code']} was not found in your branch. Pick a segment from the list.";
+            return response()->json([
+                'status'  => false,
+                'message' => $msg,
+                'errors'  => ['segment_code' => [$msg]],
+            ], 422);
+        }
+
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
             $code = $this->nextRuleCode($user->client_id);
 
-            $segment = ClmSegment::where('client_id', $user->client_id)
-                ->where('code', $data['segment_code'])->first();
+            /* Resolve the code inside the caller's OWN scope — the same scope
+             * the picker offered it from, and the same one the duplicate check
+             * above already uses.
+             *
+             * Scoping by client alone was silently corrupting data. Segment
+             * codes are allocated PER BRANCH (nextCode($clientId, $branchId)),
+             * so every branch restarts at SG-001 and each code exists once per
+             * branch. Client 2 holds SG-001 twice: id 3 "Ethanol" in branch 6
+             * and id 37 "Coffee" in branch 7. A branch-7 user picking their own
+             * "Coffee" sent code SG-001, this lookup matched BOTH rows, and
+             * ->first() took branch 6's — so the rule saved with branch_id 7
+             * and segment_id 3, pointing at another branch's segment.
+             *
+             * Nothing surfaced it: the rule list shows the CODE, which still
+             * read SG-001 and looked right. It only appeared much later, as an
+             * empty Segment dropdown on the Customer form — that query asks
+             * which segments have documents configured, got branch 6's ids
+             * back, and correctly refused them for a branch-7 user. Four rules
+             * (SR-026 … SR-029) were written this way before it was caught. */
+            $segment = $this->resolveSegment($user, $data['segment_code']);
 
             [$mand, $opt] = $this->countSelections($data['doc_selections']);
 
@@ -195,7 +228,10 @@ class ClmSegmentRuleController extends Controller
 
         $row->update([
             'segment_code'      => $data['segment_code'],
-            'segment_id'        => ClmSegment::where('client_id', $user->client_id)->where('code', $data['segment_code'])->value('id'),
+            // Same branch-scoped resolution as store(). An edit that re-points
+            // the rule at another segment could otherwise reintroduce the
+            // cross-branch id on a row that was already correct.
+            'segment_id'        => $this->resolveSegment($user, $data['segment_code'])?->id,
             'regulatory_status' => $data['regulatory_status'],
             'document_type'     => $data['document_type'],
             'auths_json'        => $data['auths'] ?? [],
@@ -365,6 +401,39 @@ class ClmSegmentRuleController extends Controller
      * still exists — which throws a unique-constraint violation on save.
      * Caller must already hold the client row lock.
      */
+    /**
+     * Resolve a submitted `segment_code` to the segment the CALLER can see.
+     *
+     * Segment codes are allocated per branch (nextCode($clientId, $branchId)),
+     * so every branch restarts at SG-001 and a code is unique only within its
+     * branch. Client 2 holds SG-001 twice: id 3 "Ethanol" (branch 6) and id 37
+     * "Coffee" (branch 7).
+     *
+     * The old lookup filtered on client_id alone, matched both, and took
+     * whichever ->first() returned — branch 6's. A branch-7 user picking their
+     * own "Coffee" therefore saved a rule with branch_id 7 and segment_id 3,
+     * pointing at a segment from a branch they cannot even see. Nothing showed
+     * it: the rule list renders the CODE, which still read SG-001. It only
+     * surfaced later as an empty Segment dropdown on the Customer form, because
+     * that query asks which segments have documents configured, received branch
+     * 6's ids, and then correctly refused them for a branch-7 user.
+     *
+     * Scoped through MasterVisibility so this matches the picker the code came
+     * from, and the duplicate check in store() which was already scoped this
+     * way — the two were inconsistent in the same method.
+     *
+     * Returns null when the code resolves to nothing in scope. Callers treat
+     * that as a rejection rather than storing a null segment_id: a rule that
+     * points at no segment drives no document requirements, so it would be a
+     * silently useless row.
+     */
+    private function resolveSegment($user, string $code): ?ClmSegment
+    {
+        $q = ClmSegment::query()->where('code', $code);
+        MasterVisibility::applyReadScope($q, $user, $user->branch_id ?: null);
+        return $q->first();
+    }
+
     private function nextRuleCode(int $clientId): string
     {
         $codes = ClmSegmentRule::where('client_id', $clientId)->pluck('rule_code')->all();

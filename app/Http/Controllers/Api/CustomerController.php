@@ -1339,7 +1339,23 @@ class CustomerController extends Controller
             // attached has nothing to drive the customer's KYC/DD/TL/QC stage,
             // so it must not appear in the Customer Segment picker.
             $segmentIdsWithDocs = DB::table('clm_segment_rules')
-                ->when($user, fn($q) => $q->where('client_id', $user->client_id))
+                /* Condition on the CLIENT, not on the user existing.
+                 *
+                 * `when($user, ...)` asks "is somebody logged in?" — and a
+                 * super_admin is. But they belong to no client, so the closure
+                 * fired with a null and built `WHERE client_id = NULL`, which in
+                 * SQL matches no rows at all (NULL is not equal to anything,
+                 * including itself). The id list came back empty, the
+                 * `?: [0]` fallback below turned that into `whereIn('id', [0])`,
+                 * and the Customer form's Segment picker was empty for the one
+                 * account that is supposed to see everything.
+                 *
+                 * Keyed on client_id, a super_admin skips the filter entirely
+                 * and gets every client's rules — which applyReadScope() below
+                 * already permits for that tier, so the two now agree. 29 of 30
+                 * logins were unaffected, which is why this looked like an
+                 * environment problem rather than an account one. */
+                ->when($user?->client_id, fn($q) => $q->where('client_id', $user->client_id))
                 ->whereRaw('(COALESCE(mandatory_count, 0) + COALESCE(optional_count, 0)) > 0')
                 ->distinct()
                 ->pluck('segment_id')
