@@ -3264,7 +3264,6 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 value={form.coSeg}
 
                 options={[...masters.segments]
-                  .filter(o => !unruledSegments.includes(o.name) || (form.coSeg ?? []).includes(o.name))
                   .sort((a, b) => (b.code ?? '').localeCompare(a.code ?? '', undefined, { numeric: true }))
                   .map(o => ({ value: o.name, label: o.code ? `${o.code}: ${o.name}` : o.name }))}
                 emptyText="No segment has a Document Control Panel rule yet"

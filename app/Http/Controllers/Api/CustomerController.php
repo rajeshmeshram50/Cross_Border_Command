@@ -1338,12 +1338,16 @@ class CustomerController extends Controller
             // their DCP rule (mandatory or optional) — a segment with no docs
             // attached has nothing to drive the customer's KYC/DD/TL/QC stage,
             // so it must not appear in the Customer Segment picker.
-            $segmentIdsWithDocs = DB::table('clm_segment_rules')
-                ->when($user, fn($q) => $q->where('client_id', $user->client_id))
-                ->whereRaw('(COALESCE(mandatory_count, 0) + COALESCE(optional_count, 0)) > 0')
-                ->distinct()
-                ->pluck('segment_id')
-                ->all();
+            // Branch-scoped through the SAME gate as the segment query below.
+            // Client-wide, this pulled in sibling branches' rules, so a rule
+            // that (before the branch-scoped code lookup in
+            // ClmSegmentRuleController) had latched onto another branch's
+            // segment could make that segment appear in a branch that had
+            // configured nothing.
+            $ruleQuery = \App\Models\ClmSegmentRule::query()
+                ->whereRaw('(COALESCE(mandatory_count, 0) + COALESCE(optional_count, 0)) > 0');
+            $scope($ruleQuery);
+            $segmentIdsWithDocs = $ruleQuery->distinct()->pluck('segment_id')->filter()->all();
             $segments = Segments::query()
                 ->whereRaw('LOWER(status) = ?', ['active'])
                 ->tap($scope)

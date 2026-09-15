@@ -110,6 +110,18 @@ class ClmSegmentRuleController extends Controller
         ]);
     }
 
+    /**
+     * Resolve a segment CODE to its id within the caller's own branch scope.
+     * Codes are unique per (client, branch), never per client, so this must
+     * never fall back to a client-wide match.
+     */
+    private function resolveSegmentId($user, string $segmentCode): ?int
+    {
+        $q = ClmSegment::where('code', $segmentCode);
+        MasterVisibility::applyReadScope($q, $user, $user->branch_id ?: null);
+        return $q->value('id');
+    }
+
     public function store(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -135,15 +147,21 @@ class ClmSegmentRuleController extends Controller
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
             $code = $this->nextRuleCode($user->client_id);
 
-            $segment = ClmSegment::where('client_id', $user->client_id)
-                ->where('code', $data['segment_code'])->first();
+            // Branch-scoped, like the duplicate guard above. Segment codes
+            // restart at SG-001 in every branch (nextCode() is branch-scoped),
+            // so a client-wide lookup by code resolves to whichever branch
+            // created its SG-001 first — a new branch's rule then stored the
+            // OLDER branch's segment_id, and /customers/master-bundle (which
+            // intersects branch-visible segments with rule segment_ids) served
+            // the new branch an empty segment list.
+            $segmentId = $this->resolveSegmentId($user, $data['segment_code']);
 
             [$mand, $opt] = $this->countSelections($data['doc_selections']);
 
             return ClmSegmentRule::create([
                 'client_id'         => $user->client_id,
                 'branch_id'         => $user->branch_id,   // branch-owned; null for client-level users → shared
-                'segment_id'        => $segment?->id,
+                'segment_id'        => $segmentId,
                 'segment_code'      => $data['segment_code'],
                 'rule_code'         => $code,
                 'regulatory_status' => $data['regulatory_status'],
@@ -195,7 +213,8 @@ class ClmSegmentRuleController extends Controller
 
         $row->update([
             'segment_code'      => $data['segment_code'],
-            'segment_id'        => ClmSegment::where('client_id', $user->client_id)->where('code', $data['segment_code'])->value('id'),
+            // Same branch-scoped resolution as store() — see the note there.
+            'segment_id'        => $this->resolveSegmentId($user, $data['segment_code']),
             'regulatory_status' => $data['regulatory_status'],
             'document_type'     => $data['document_type'],
             'auths_json'        => $data['auths'] ?? [],
