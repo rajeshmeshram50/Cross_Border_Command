@@ -4429,6 +4429,18 @@
 .cev-skel-thead  { border-radius: 0; }
 .cev-skel-row    { border-radius: 8px; }
 
+/* Placeholders keep their declared heights (QA #14).
+ *
+ * .cev-skel is a column flex container, so every child is shrinkable by
+ * default. The placeholder stack adds up to more than the modal body on a
+ * shorter viewport, and flex answered that by squeezing all of them — the
+ * 66px section came out a few pixels tall, and the shimmer sweeping across
+ * that sliver read as a blue line travelling under the loader. The container
+ * already clips (overflow: hidden), so holding the real heights simply hides
+ * the overflow instead of deforming every tile. */
+.cev-skel > *,
+.cev-skel-table > * { flex-shrink: 0; }
+
 /* A sweeping highlight is decoration; hold it still for anyone who has asked
  * the OS to stop moving things. The tiles keep their gradient, so the page
  * still reads as "not loaded yet". */

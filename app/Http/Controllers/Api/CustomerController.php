@@ -56,7 +56,7 @@ class CustomerController extends Controller
                 ->with(['primaryAddress:id,customer_id,is_primary,country,cp_contact,cp_email'])
                 ->orderByDesc('id')
                 ->get(['id', 'customer_code', 'company_name'])
-                ->map(fn (Customer $c) => [
+                ->map(fn(Customer $c) => [
                     'id'      => $c->customer_code ?: ('C-' . str_pad((string) $c->id, 3, '0', STR_PAD_LEFT)),
                     'db_id'   => $c->id,
                     'company' => $c->company_name,
@@ -1338,32 +1338,14 @@ class CustomerController extends Controller
             // their DCP rule (mandatory or optional) — a segment with no docs
             // attached has nothing to drive the customer's KYC/DD/TL/QC stage,
             // so it must not appear in the Customer Segment picker.
-            $segmentIdsWithDocs = DB::table('clm_segment_rules')
-                /* Condition on the CLIENT, not on the user existing.
-                 *
-                 * `when($user, ...)` asks "is somebody logged in?" — and a
-                 * super_admin is. But they belong to no client, so the closure
-                 * fired with a null and built `WHERE client_id = NULL`, which in
-                 * SQL matches no rows at all (NULL is not equal to anything,
-                 * including itself). The id list came back empty, the
-                 * `?: [0]` fallback below turned that into `whereIn('id', [0])`,
-                 * and the Customer form's Segment picker was empty for the one
-                 * account that is supposed to see everything.
-                 *
-                 * Keyed on client_id, a super_admin skips the filter entirely
-                 * and gets every client's rules — which applyReadScope() below
-                 * already permits for that tier, so the two now agree. 29 of 30
-                 * logins were unaffected, which is why this looked like an
-                 * environment problem rather than an account one. */
-                ->when($user?->client_id, fn($q) => $q->where('client_id', $user->client_id))
-                ->whereRaw('(COALESCE(mandatory_count, 0) + COALESCE(optional_count, 0)) > 0')
-                ->distinct()
-                ->pluck('segment_id')
-                ->all();
+            $ruleQuery = \App\Models\ClmSegmentRule::query()
+                ->whereRaw('(COALESCE(mandatory_count, 0) + COALESCE(optional_count, 0)) > 0');
+            $scope($ruleQuery);
+            $segmentCodesWithDocs = $ruleQuery->distinct()->pluck('segment_code')->filter()->all();
             $segments = Segments::query()
                 ->whereRaw('LOWER(status) = ?', ['active'])
                 ->tap($scope)
-                ->whereIn('id', $segmentIdsWithDocs ?: [0])
+                ->whereIn('code', $segmentCodesWithDocs ?: [''])
                 ->orderBy('id')
                 ->get(['id', 'name', 'code']);
 

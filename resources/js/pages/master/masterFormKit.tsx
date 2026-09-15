@@ -55,6 +55,7 @@ export function MasterMultiSelect({
   lockedValues,
   disabledValues,
   disabledHint,
+  emptyText,
   renderBadges,
   onOpen,
 }: {
@@ -83,6 +84,7 @@ export function MasterMultiSelect({
   /* Short reason appended to a disabled option's tooltip, e.g. "no document
      rule defined yet". */
   disabledHint?: string;
+  emptyText?: string;
   /* Fired when the dropdown OPENS. Use it to re-fetch options that can go
      stale while the form sits open — e.g. the free-asset list, where another
      user may have claimed a device since this form was mounted. */
@@ -312,7 +314,7 @@ export function MasterMultiSelect({
           <div className="master-select-list" style={{ maxHeight: 203 }}>
             {filtered.length === 0 ? (
               <div className="master-select-empty">
-                {options.length === 0 ? 'No options' : 'No results'}
+                {options.length === 0 ? (emptyText ?? 'No options') : 'No results'}
               </div>
             ) : filtered.map(opt => {
               const checked = selectedSet.has(opt.value);
