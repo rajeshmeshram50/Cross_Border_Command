@@ -340,6 +340,41 @@ class SalaryStructureController extends Controller
             }
         }
 
+        /* A revision may not be back-dated BEHIND an existing version. (CBC #9)
+         *
+         * activeStructure() resolves a cycle to the version with the latest
+         * effective_from on or before it — correct, and what keeps a closed
+         * month priced on the terms that were in force then. But nothing
+         * stopped a NEW revision being saved with an effective date earlier
+         * than a version that already exists, and the modal seeds that date
+         * from the JOINING date, so it was the default path rather than a
+         * corner case.
+         *
+         * The result is a version that is flagged active, shown as current by
+         * Salary Setup and the Employee form, and yet can never price a cycle:
+         * an older row dated later always wins. Reported as payroll ignoring an
+         * edited breakup — a structure changed to two components kept paying
+         * three, because payroll was still reading the superseded version.
+         *
+         * Rejecting it here keeps one timeline: each revision starts on or
+         * after the one before it. Same-day is allowed — that is a correction
+         * to the current terms, and the version number breaks the tie. */
+        $latestExisting = SalaryStructure::where('employee_id', $employee->id)
+            ->whereIn('status', ['active', 'superseded'])
+            ->orderByDesc('effective_from')
+            ->first();
+
+        if ($latestExisting && $latestExisting->effective_from) {
+            $latestIso = Carbon::parse($latestExisting->effective_from)->startOfDay();
+            if ($effective->lt($latestIso)) {
+                throw ValidationException::withMessages(['effective_from' =>
+                    'This employee already has a salary version effective '
+                    . $latestIso->format('j M Y')
+                    . '. A new revision cannot start before it, or payroll would keep using the older'
+                    . ' version — choose ' . $latestIso->format('j M Y') . ' or later.']);
+            }
+        }
+
         $horizon = Carbon::now()->startOfDay()->addYear();
         if ($effective->gt($horizon)) {
             throw ValidationException::withMessages(['effective_from' =>
