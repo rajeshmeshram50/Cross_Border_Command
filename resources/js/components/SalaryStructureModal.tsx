@@ -52,7 +52,8 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
    which then saved and appeared in payroll. Allowances are now added
    deliberately; Basic carries the balance until they are. */
 const splitFromGross = (gross: number): SalaryComponent[] => [
-  { code: 'basic', label: 'Basic Salary', amount: Math.max(0, Math.round(gross)) },
+  // Paise, not whole rupees — same reason as seedBreakup(). (CBC #27)
+  { code: 'basic', label: 'Basic Salary', amount: Math.max(0, Math.round(gross * 100) / 100) },
 ];
 
 /**
@@ -84,6 +85,22 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
      re-seed the whole breakup from zero on every keystroke. */
   const [annualCtc, setAnnualCtc] = useState('');
 
+  /* The earliest date a new revision may take effect. (CBC #9)
+   *
+   * A revision dated before an existing version can never price a cycle —
+   * activeStructure() resolves to the version with the latest effective_from on
+   * or before the cycle, so the older row keeps winning while the new one sits
+   * flagged 'active' and unused. That is how an edited breakup appeared to be
+   * ignored by payroll. The server rejects it; this keeps the picker from
+   * offering the invalid range in the first place.
+   *
+   * Falls back to the joining date when the employee has no structure yet. */
+  const minEffective = useMemo(() => {
+    const dates = [employee?.date_of_joining, employee?.effective_from].filter(Boolean) as string[];
+    if (!dates.length) return undefined;
+    return dates.reduce((a, b) => (a > b ? a : b));
+  }, [employee?.date_of_joining, employee?.effective_from]);
+
   const grossSeed = useMemo(() => {
     if (!employee) return 0;
     return employee.monthly_gross || (employee.annual_salary ? Math.round(employee.annual_salary / 12) : 0);
@@ -98,7 +115,10 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
        date"), and this screen was the one place that ignored it and opened on
        whatever today happened to be. Falls back to today only when the record
        carries no joining date. */
-    setEffectiveFrom(employee.date_of_joining || todayISO());
+    /* Seeded from the latest version's date, not the joining date, when one
+       exists — seeding the joining date silently back-dated every revision
+       behind the versions already on file. (CBC #9, refining #87) */
+    setEffectiveFrom(minEffective || employee.date_of_joining || todayISO());
     setNote('');
     /* Seed the CTC from whatever the employee is on today, so opening the modal
        and saving without touching it is a no-op rather than a silent change.
@@ -160,6 +180,22 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   }, [open, employee]);
 
   const grossTotal = useMemo(() => earnings.reduce((s, c) => s + (Number(c.amount) || 0), 0), [earnings]);
+  /* An earning carrying money but no NAME. (#9 follow-up)
+   *
+   * The gross tile and the CTC verdict count every row, while save() posts only
+   * rows with a label — so a nameless "+ Add" row holding 25,000 made the modal
+   * read "Monthly Gross 50,000 / Breakup matches the Annual CTC", then sent
+   * 25,000 and came back with "Total earnings come to 300,000, which is 300,000
+   * short of the Annual CTC of 600,000. Add the 300,000 back". The money was
+   * never missing; the row simply had no name, which that message cannot say.
+   *
+   * Caught here so the user is told the actual problem, and the two figures can
+   * never disagree in the first place. A row with no name AND no amount is
+   * someone part-way through adding one and stays silent. */
+  const unnamedFunded = useMemo(
+    () => earnings.some(c => !c.label.trim() && (Number(c.amount) || 0) !== 0),
+    [earnings],
+  );
   const dedTotal = useMemo(() => deductions.reduce((s, c) => s + (Number(c.amount) || 0), 0), [deductions]);
 
   /* Live PF estimate — 12% of BASIC on the statutory basis, mirroring
@@ -490,6 +526,16 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   const save = async () => {
     const clean = earnings.filter(c => c.label.trim() && c.amount >= 0);
     if (!clean.length) { toast.error('Add earnings', 'Add at least one earning component.'); return; }
+    /* Before the CTC comparison, not after: an unnamed row is why the totals
+       disagree, and letting it through produced a server error about a missing
+       ₹3,00,000 when nothing was missing. (#9 follow-up) */
+    if (unnamedFunded) {
+      toast.error(
+        'Name every earning',
+        'A component with an amount needs a name — an unnamed row is not saved, so the breakup would fall short of the Annual CTC. Name it, or clear its amount to remove it.',
+      );
+      return;
+    }
     if (grossTotal <= 0) { toast.error('Invalid salary', 'Total earnings must be greater than zero.'); return; }
     /* Annual CTC is required and must be a positive number within the column's
        range (#101). The number input stops most bad entries, but it does not
@@ -760,13 +806,17 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                 <MasterDatePicker
                   value={effectiveFrom}
                   onChange={setEffectiveFrom}
-                  minDate={employee.date_of_joining || undefined}
+                  minDate={minEffective || undefined}
                   maxDate={todayISO()}
                   placeholder="Select date"
                 />
                 <span className="ssm-hint">
-                  {employee.date_of_joining
-                    ? `Defaults to the joining date (${new Date(employee.date_of_joining).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}). Cannot be earlier than that, or in the future.`
+                  {minEffective
+                    ? `Cannot start before ${new Date(minEffective).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`
+                      + `${employee.effective_from && minEffective === employee.effective_from
+                            ? ' — the current version starts then, and payroll would keep using it'
+                            : ' (the joining date)'}`
+                      + ', or in the future.'
                     : 'No joining date on the employee record, so today is used.'}
                 </span>
               </div>
@@ -885,7 +935,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
             {/* The CTC verdict, as a banner of its own. Either direction blocks
                 the save, so both read the same way and both offer the one-click
                 correction. */}
-            {salaryAnnual > 0 && (overSalary || underSalary) && (
+            {!unnamedFunded && salaryAnnual > 0 && (overSalary || underSalary) && (
               <div className="ssm-verdict ssm-verdict--err">
                 <i className="ri-error-warning-line" />
                 <span className="ssm-verdict-text">
@@ -897,8 +947,20 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                 </button>
               </div>
             )}
+            {/* An unnamed funded row makes every figure above provisional: it
+                is counted in the gross but will not be saved, so neither a
+                match nor a shortfall can be asserted yet. (#9 follow-up) */}
+            {unnamedFunded && (
+              <div className="ssm-verdict ssm-verdict--err">
+                <i className="ri-error-warning-line" />
+                <span className="ssm-verdict-text">
+                  An earning has an amount but no name. It will not be saved — name it, or clear its
+                  amount to remove the row.
+                </span>
+              </div>
+            )}
             {/* Exact — the only case that may claim a match. */}
-            {salaryExact && (
+            {!unnamedFunded && salaryExact && (
               <div className="ssm-verdict ssm-verdict--ok">
                 <i className="ri-checkbox-circle-line" />
                 <span className="ssm-verdict-text">Breakup matches the Annual CTC.</span>
@@ -906,7 +968,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
             )}
             {/* Off by rounding only: saveable, but NOT a match, so it says what
                 the figure actually is instead of a green tick. (#17) */}
-            {salaryAnnual > 0 && !salaryExact && !overSalary && !underSalary && (
+            {!unnamedFunded && salaryAnnual > 0 && !salaryExact && !overSalary && !underSalary && (
               <div className="ssm-verdict ssm-verdict--info">
                 <i className="ri-information-line" />
                 <span className="ssm-verdict-text">

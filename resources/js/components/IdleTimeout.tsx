@@ -2,16 +2,20 @@ import { useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { useToast } from '../contexts/ToastContext';
+import { SESSION_TIMEOUT_MS, SESSION_TIMEOUT_LABEL } from '../constants';
 
 /**
- * Auto-logout after 2 hours of inactivity when Settings → Security →
- * "Session Timeout" is ON. Listens for mouse / keyboard / touch / scroll
- * events to detect activity; resets the timer on any.
+ * Auto-logout after SESSION_TIMEOUT_HOURS of inactivity when Settings →
+ * Security → "Session Timeout" is ON. Listens for mouse / keyboard / touch /
+ * scroll events to detect activity; resets the timer on any.
+ *
+ * The window itself lives in constants.ts, not here — this file used to own a
+ * local constant that drifted to five hours while every label in the app still
+ * said something else.
  *
  * Mount-once component — must live INSIDE Auth + Settings providers so it
  * can read both. Renders nothing.
  */
-const TIMEOUT_MS = 5 * 60 * 60 * 1000; // 5 hours
 
 export default function IdleTimeout() {
   const { user, logout } = useAuth();
@@ -27,9 +31,9 @@ export default function IdleTimeout() {
     const reset = () => {
       if (timerRef.current) window.clearTimeout(timerRef.current);
       timerRef.current = window.setTimeout(async () => {
-        toast.info('Signed out', 'Your session timed out after 2 hours of inactivity.');
+        toast.info('Signed out', `Your session timed out after ${SESSION_TIMEOUT_LABEL} of inactivity.`);
         await logout();
-      }, TIMEOUT_MS);
+      }, SESSION_TIMEOUT_MS);
     };
 
     // Activity sensors — passive listeners so we don't impact scroll perf

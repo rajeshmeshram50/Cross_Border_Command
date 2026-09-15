@@ -1346,8 +1346,14 @@ function CandidateFormModal({
       const qual = qualification.trim();
       if (!/[A-Za-z]/.test(qual)) {
         errs.qualification = 'Qualification must contain letters';
-      } else if (!/^[A-Za-z0-9 .,/&()+-]+$/.test(qual)) {
-        errs.qualification = 'Qualification can only contain letters, numbers, spaces and . , / & ( ) + -';
+      /* Kept in step with HiringRequestController's rule. (CBC #26)
+         Apostrophes, %, : and ; are ordinary in a qualification — "Bachelor's
+         degree", "60% aggregate", "Specialisation: Finance" — and the curly
+         apostrophe and dashes arrive whenever someone pastes from Word. A
+         client rule stricter than the server's is the worse half of the two:
+         it blocks the entry before the server ever gets a say. */
+      } else if (!/^[A-Za-z0-9 .,/&()+\-'\u2019%:;\u2013\u2014]+$/.test(qual)) {
+        errs.qualification = "Qualification can only contain letters, numbers, spaces and . , / & ( ) + - ' % : ;";
       }
     }
 

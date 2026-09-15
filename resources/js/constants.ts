@@ -14,6 +14,26 @@ export const FEATURE_FLAGS = {
   hrAttendance: true,    // HR · Time & Pay · Attendance
 };
 
+/* Idle auto-logout window — ONE source of truth.
+ *
+ * This was previously hardcoded in four places and every one of them had
+ * drifted: the Settings toggle promised "30 min", IdleTimeout's own comment
+ * and its toast said "2 hours", and the constant it actually used was FIVE
+ * hours. A user who turned the setting on got a fifth of the protection the
+ * label offered, and nothing in the code contradicted the wrong labels.
+ *
+ * So the number and the words people read are derived from the same value
+ * here. Change SESSION_TIMEOUT_HOURS and the timer, the toggle label, the
+ * description and the sign-out toast all follow.
+ *
+ * Matches SESSION_LIFETIME=120 (minutes) in .env, which governs Laravel's
+ * session for the web routes. NOTE that Sanctum tokens are separate and do
+ * not expire (config/sanctum.php → 'expiration' => null); this timer is what
+ * actually ends an idle session in the SPA. */
+export const SESSION_TIMEOUT_HOURS = 2;
+export const SESSION_TIMEOUT_MS    = SESSION_TIMEOUT_HOURS * 60 * 60 * 1000;
+export const SESSION_TIMEOUT_LABEL = `${SESSION_TIMEOUT_HOURS} hours`;
+
 // Masters the super admin actually uses. Tenant-scoped masters (everything
 // else) stay available to client/branch users via the standard per-module
 // permission flags in `perms[id].can_view`.

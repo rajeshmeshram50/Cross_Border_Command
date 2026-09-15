@@ -8,6 +8,8 @@ use App\Models\Employee;
 use App\Models\HrDocumentSignature;
 use App\Models\HrDocumentTemplate;
 use App\Models\HrGeneratedDocument;
+use App\Models\Module;
+use App\Models\Permission;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -1000,6 +1002,28 @@ class HrDocumentSignatureController extends Controller
     {
         if (!$user || $user->user_type !== 'employee') return;
 
+        /* A GRANTED permission outranks the subject/signer rule. (CBC #13)
+         *
+         * The rule below exists to stop an ordinary employee opening a
+         * colleague's document by putting its id in the URL, and it still does
+         * that. But it keyed on the TIER alone, and an HR person's login is
+         * very often employee-tier — so HR, holding the Document Templates
+         * permission and looking at the Policies & Agreements list, could see a
+         * document it had itself produced and then be refused the download of
+         * it. Access was decided by who the document was about rather than by
+         * what the user is allowed to do, which is this ticket's complaint.
+         *
+         * Checked against the same module and Permission rows
+         * HrGeneratedDocumentController::authorize() uses, so the two screens
+         * cannot disagree about who may read a document. can_view is the right
+         * flag: this is a read, and a user who may list these documents may
+         * open them. Tenant and branch scoping are already applied by
+         * applyScope() before this runs, so a grant never reaches across an
+         * organisation or a branch. */
+        /* Same helper the list uses, so "it appears in my vault" and "I may
+         * open it" can never disagree (CBC #25). */
+        if ($this->mayReadOthersDocuments($user)) return;
+
         $ownEmployeeId = Employee::where('user_id', $user->id)->value('id');
         if ($ownEmployeeId && (int) $row->employee_id === (int) $ownEmployeeId) return;
 
@@ -1013,28 +1037,49 @@ class HrDocumentSignatureController extends Controller
     /* ───── HELPERS ───── */
 
     /**
+     * Modules whose view grant means "this login is HR staff, not a bystander".
+     *
+     * `hr.doc_templates` is the authoring grant — whoever may build templates
+     * and send documents may read the runs they produce.
+     *
+     * `hr.employee` joins it because it is the grant that opens somebody
+     * else's profile at all, Evidence Vault included
+     * (EmployeeController::authorize()). Keying document visibility on the
+     * templates grant ALONE meant an HR login configured with Employee access
+     * could open a colleague's vault, see their uploaded documents — those are
+     * only tenant-scoped — and find Organizational Documents empty, because
+     * this list quietly repinned the query to the VIEWER's own runs. The
+     * documents missing were exactly the ones a HOD or branch user had
+     * created, which is what made it look like a creator-hierarchy rule
+     * (CBC #25). Nothing here is hierarchical: it is one grant that the
+     * dependency map never implies from the other
+     * (ModuleDependencies::MAP — hr.doc_templates depends on hr.employee, not
+     * the reverse), so holding Employee alone left this closed.
+     */
+    private const READ_OTHERS_MODULES = ['hr.doc_templates', 'hr.employee'];
+
+    /**
      * May this employee-tier login read OTHER employees' signature runs?
      *
-     * True when they hold view rights on the HR Document Templates module —
-     * the same grant that lets them open the templates and send documents in
-     * the first place, so it is already the line between "HR staff" and
-     * "everybody else" everywhere else in this feature.
+     * True when they hold view rights on any module in
+     * self::READ_OTHERS_MODULES. Tenant and branch scoping are applied by
+     * applyScope() separately, so a grant never reaches across organisations.
      */
     private function mayReadOthersDocuments(?User $user): bool
     {
         if (!$user) return false;
 
-        $moduleId = \App\Models\Module::where('slug', 'hr.doc_templates')->value('id');
-        // No module row means the tenant never had the feature broken out into
+        $moduleIds = \App\Models\Module::whereIn('slug', self::READ_OTHERS_MODULES)->pluck('id');
+        // No module rows means the tenant never had the feature broken out into
         // grants; fall back to the same admin tiers HrDocumentTemplateController
         // waves through in that case rather than locking HR out of their own
         // screen.
-        if (!$moduleId) {
+        if ($moduleIds->isEmpty()) {
             return in_array($user->user_type, ['client_admin', 'branch_user'], true);
         }
 
         return \App\Models\Permission::where('user_id', $user->id)
-            ->where('module_id', $moduleId)
+            ->whereIn('module_id', $moduleIds)
             ->where('can_view', true)
             ->exists();
     }

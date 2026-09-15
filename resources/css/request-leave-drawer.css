@@ -518,3 +518,18 @@
   background: rgba(255,255,255,0.06);
   border-color: rgba(255,255,255,0.20);
 }
+
+/* Duration segmented control (Full day / Custom). The selected segment was an
+   inline #fff, which stayed a white block on the dark drawer. (CBC #13) */
+.lvr-daymode { background: var(--vz-light, #f1f3f6); }
+.lvr-daymode-btn.is-on  { background: #fff; color: #212529; }
+.lvr-daymode-btn:not(.is-on) { background: transparent; color: #6b7280; }
+.lvr-daymode-btn.is-off { color: #aab2bd; }
+[data-bs-theme="dark"] .lvr-daymode,
+[data-layout-mode="dark"] .lvr-daymode { background: rgba(255,255,255,0.06); }
+[data-bs-theme="dark"] .lvr-daymode-btn.is-on,
+[data-layout-mode="dark"] .lvr-daymode-btn.is-on { background: #2c333b; color: #e9ecef; }
+[data-bs-theme="dark"] .lvr-daymode-btn:not(.is-on),
+[data-layout-mode="dark"] .lvr-daymode-btn:not(.is-on) { color: #9aa4b2; }
+[data-bs-theme="dark"] .lvr-daymode-btn.is-off,
+[data-layout-mode="dark"] .lvr-daymode-btn.is-off { color: #6b7684; }

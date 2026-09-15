@@ -478,7 +478,21 @@ class HiringRequestController extends Controller
             // Must hold at least one letter and only qualification-safe chars —
             // rejects special-character junk (bug #32). Matches the candidate
             // qualification validator.
-            'required_qualification' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9 .,\/&()+\-]*$/', 'regex:/[A-Za-z]/'],
+            /* Apostrophes, %, : and ; are ordinary in a qualification and were
+             * being rejected. (CBC #26)
+             *
+             * "Bachelor's degree", "B.Tech (CSE) - 60% aggregate" and
+             * "Specialisation: Finance" are all normal entries the old allowlist
+             * refused, with no way for the user to express them. The curly
+             * apostrophe and the en/em dashes are included because pasting from
+             * Word or a job portal produces them, and a paste that looks
+             * identical on screen must not fail where the typed form passes.
+             *
+             * Still an allowlist, deliberately: markup and shell characters
+             * stay rejected, which is what the rule is for. The companion
+             * /[A-Za-z]/ check still requires a real word, so punctuation alone
+             * cannot be saved. */
+            'required_qualification' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9 .,\/&()+\-\x27\x{2019}%:;\x{2013}\x{2014}]*$/u', 'regex:/[A-Za-z]/'],
             'preferred_profile'      => 'nullable|string|max:191',
 
             // Section 4 — Business Justification was removed from the

@@ -4,6 +4,7 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import api from '../../../api';
 import Tooltip from '../../../components/ui/Tooltip';
+import { ShimmerTableRows } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
 import { downloadFile } from '../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../utils/resolveFileUrl';
@@ -573,7 +574,7 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
                 </thead>
                 <tbody>
                   {loading && docsForTab.length === 0 ? (
-                    <tr><td colSpan={6} className="lev-empty">Loading documents…</td></tr>
+                    <ShimmerTableRows rows={3} cols={6} cellClassName="lev-skel-cell" keyPrefix="lev-shim" />
                   ) : docsForTab.length === 0 ? (
                     <tr><td colSpan={6} className="lev-empty">No documents in this bucket yet.</td></tr>
                   ) : pagedDocs.map((d, i) => (
@@ -1107,6 +1108,9 @@ const LEV_CSS = `
 .lev-doc-table tbody tr { transition: background .15s ease; }
 .lev-doc-table tbody tr:hover td { background: #FAFBFF; }
 .lev-empty { text-align: center; padding: 30px 14px; color: #94A3B8; font-style: italic; }
+/* Same box as a real row, so the shimmer table is exactly as tall as the
+   loaded one. */
+.lev-skel-cell { padding: 9px 14px; }
 .lev-doc-name { font-weight: 700; color: #0F172A; }
 .lev-doc-license { font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace; color: #5b21b6; font-weight: 700; font-size: 12.5px; }
 .lev-doc-att { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 8px; background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; font-size: 11.5px; font-weight: 700; cursor: pointer; text-decoration: none; transition: all .15s ease; }

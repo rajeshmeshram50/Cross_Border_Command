@@ -90,6 +90,23 @@ const STEPS = [
 // Length bounds for the Trade Document Title. Min keeps users from saving a
 // 1-2 char placeholder title; max stops a runaway string overflowing the field
 // (and the downstream library list / DOCX header).
+/* Stacking floor for the two "block everything" overlays (upload/convert,
+ * download, save).
+ *
+ * They used to render INSIDE .tdw-overlay at zIndex 50 — which is 50 within
+ * that element's stacking context, not 50 on the page. The modal itself sits
+ * at 200000 and the Full Page editor shell at 210000, and Full Page portals
+ * itself to document.body (see the createPortal at the end of the editor
+ * shell). So in Full Page mode the whole modal — spinner included — was
+ * painted UNDER the editor, and uploading a Word file looked like nothing was
+ * happening (QA #8). The upload button lives in that editor's toolbar, so Full
+ * Page is exactly where people hit it.
+ *
+ * Both overlays now portal to document.body above the Full Page shell. Keep
+ * this ABOVE .tdw-editor-shell-full (210000) and below MasterSelect's
+ * portalled menu (250000), which must stay clickable over the plain modal. */
+const TDW_BLOCKING_Z = 220000;
+
 const TITLE_MIN = 3;
 const TITLE_MAX = 150;
 
@@ -711,8 +728,8 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       {/* Full overlay while a Word file is uploaded/converted or a PDF/DOCX is
           generated — all are slow for a big/table-rich document, so a clear
           page loader (with a 0→100% ring for downloads) beats a button spinner. */}
-      {(docxUploading || dl) && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,30,42,.5)', backdropFilter: 'blur(2px)' }}>
+      {(docxUploading || dl) && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: TDW_BLOCKING_Z, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,30,42,.5)', backdropFilter: 'blur(2px)' }}>
           <div style={{ width: 300, background: '#fff', borderRadius: 18, padding: '26px 24px 22px', textAlign: 'center', boxShadow: '0 24px 60px rgba(8,40,60,.32)' }}>
             {dl ? (
               <TdwProgressRing value={dl.progress} />
@@ -725,19 +742,23 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
             <div style={{ fontSize: 12.5, fontWeight: 500, color: '#5e7888', marginTop: 6, lineHeight: 1.5 }}>Please wait — a large file can take a few seconds.</div>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#0e7490', marginTop: 8 }}>Max 1,000,000 characters (~1 MB)</div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* While a Save is in flight, lock the WHOLE modal — the button spinner
           alone didn't stop the user from editing fields or switching steps
-          mid-save. This overlay captures every pointer event until it resolves. */}
-      {saving && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,30,42,.32)', backdropFilter: 'blur(1.5px)', cursor: 'wait' }}>
+          mid-save. This overlay captures every pointer event until it resolves.
+          Portalled for the same reason as the upload overlay above: Full Page
+          renders on document.body and would otherwise cover it. */}
+      {saving && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: TDW_BLOCKING_Z, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,30,42,.32)', backdropFilter: 'blur(1.5px)', cursor: 'wait' }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12, background: '#fff', borderRadius: 14, padding: '14px 22px', boxShadow: '0 18px 44px rgba(8,40,60,.28)' }}>
             <svg className="tdw-spin" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
             <span style={{ fontSize: 14, fontWeight: 700, color: '#0c2c3a' }}>Saving…</span>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       <div className="tdw-shell">

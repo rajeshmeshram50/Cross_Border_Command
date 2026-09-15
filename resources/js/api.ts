@@ -213,7 +213,19 @@ api.interceptors.response.use(
         } catch {}
         localStorage.removeItem('cbc_token');
         localStorage.removeItem('cbc_user');
-        window.location.reload();
+        /* Go straight to /login instead of reloading the page we are on.
+         *
+         * reload() re-requested the PROTECTED url (e.g. /clm/trade-documents),
+         * so the whole app booted, resolved that route, downloaded its chunk —
+         * and only then discovered there was no token and redirected to /login.
+         * All of that work was for a page the user is no longer allowed to see,
+         * and it is a window in which a chunk fetch can fail and leave a blank
+         * page instead of a login form. Typical trigger: a tab left idle until
+         * the token expires, then any click.
+         *
+         * replace(), not assign(): the dead protected url must not stay in
+         * history, or Back lands on it and bounces the user straight out again. */
+        window.location.replace('/login');
       }
     }
     /* Ours, not the network's — hold the caller's promise open instead of
