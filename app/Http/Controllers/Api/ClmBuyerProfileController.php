@@ -635,7 +635,25 @@ class ClmBuyerProfileController extends Controller
             $tdSigSet  = $separateConsignee
                 ? ($tdSigByLead[$lid]['Customer'] ?? [])
                 : (($tdSigByLead[$lid]['Customer'] ?? []) + ($tdSigByLead[$lid]['Consignee'] ?? []));
-            $tdBuyer   = $docProgress($applicTd, $tdPartyById, $tdSigSet, $separateConsignee ? 'buyer' : 'any');
+            /* 'buyer' in BOTH cases, and the same-as-customer half of that is
+               the fix.
+             *
+               This used to widen to 'any' when the consignee IS the customer,
+               on the reasoning that such a party's vault shows both sides, so
+               the cell should total both. Measured against the vault it does
+               not: the Customer Evidence Vault counts the BUYER-applicable set
+               only, and files the consignee-side documents on the consignee
+               (which has its own row, its own vault, and its own cell here).
+               Widening therefore added every Consignee-only trade document on
+               top of a set the vault never showed, and the row read higher
+               than the panel it links to — C-018 showed 10 against a vault of
+               8, C-014 showed 7 against 5, the surplus being exactly the
+               Consignee-only documents in those segments.
+               The consignee side is untouched: $tdConsDeal above still uses
+               'any' for a same-as-customer consignee, because THAT vault does
+               merge both sets. One entity, two roles, each counted where it is
+               filed. */
+            $tdBuyer   = $docProgress($applicTd, $tdPartyById, $tdSigSet, 'buyer');
             if ($pi) {
                 $tdBuyer['t'] += 1;
                 if (isset($piSignedIds[(int) $pi->id])) $tdBuyer['d'] += 1;

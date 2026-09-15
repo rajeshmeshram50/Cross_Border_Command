@@ -23,6 +23,28 @@ export type DocCategory = 'kyc' | 'dd' | 'tl' | 'td' | 'agr';
 /** Normalised list-row shape the card renders, regardless of source bucket. */
 type DocItem = { name: string; sub: string; status: VaultStatus };
 
+/* Which deal a per-transaction row belongs to.
+ *
+ * Trade documents and agreements are listed once PER DEAL, not once per
+ * library document — the same document required on two shipments is two
+ * obligations, signed separately on each. Both copies carried the same title
+ * and an empty sub-line, so the list looked like it was repeating itself.
+ * Naming the deal is what separates them.
+ *
+ * Shows the SHIPMENT ID, because that is the column the vault's own
+ * transaction table leads with and therefore the code the reader is matching
+ * against. The opportunity is the fallback for a deal with no shipment code
+ * at all. Standard one-time documents (KYC / DD / licences) belong to the
+ * company rather than a deal and carry no stamp, so they keep the authority
+ * line they had. */
+type DealStamped = { deal_shipment_id?: string | null; deal_opportunity_id?: string | null; deal_has_shipment?: boolean };
+
+function dealLabel(row: DealStamped, fallback: string): string {
+  const shp = row.deal_shipment_id ?? '';
+  const opp = row.deal_opportunity_id ?? '';
+  return shp || opp || fallback;
+}
+
 const CATEGORY_META: Record<DocCategory, { label: string; sub: string }> = {
   kyc: { label: 'OWNER KYC DETAILS',       sub: 'Owner identity, address & photograph proofs' },
   dd:  { label: 'COMPANY DUE DILIGENCE',   sub: 'Licenses, statutory documents & compliance proofs' },
@@ -49,7 +71,7 @@ function itemsFor(vault: VaultData, category: DocCategory): DocItem[] {
     // read "0 of 0" for parties without a shipment order (CBC #66).
     return (vault.agreements ?? []).map((a) => ({
       name: a.name,
-      sub: a.authority || '—',
+      sub: dealLabel(a as DealStamped, a.authority || '—'),
       status: (a.status === 'Signed' || a.status === 'Verified') ? a.status : 'Pending',
     }));
   }
@@ -60,7 +82,9 @@ function itemsFor(vault: VaultData, category: DocCategory): DocItem[] {
     : vault.trade_documents;
   return (bucket ?? []).map((d) => ({
     name: d.name,
-    sub: d.authority || '—',
+    // Only the per-deal bucket carries a stamp; KYC / DD / licences fall back
+    // to their issuing authority, which is what identifies those.
+    sub: dealLabel(d as DealStamped, d.authority || '—'),
     status: d.status,
   }));
 }
