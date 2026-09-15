@@ -145,6 +145,11 @@ const wosNeqData: WosNeqRow[] = [
 ];
 
 const BP_PER_PAGE = 10;
+/* Width of the first-segment chip's column, in px. The "+N" badge sits AFTER
+   this box, so fixing the box is what makes every badge start at the same x
+   down the Segment column. The chip itself still draws at its natural width
+   inside the box and ellipses when it runs past it. */
+const SEG_CHIP_COL = 150;
 const WS_PER_PAGE = 10;
 const WOS_PER_PAGE = 10;
 
@@ -166,8 +171,23 @@ function useDynamicPerPage(
       const el = ref.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      const avail = window.innerHeight - top - footer - gap;
-      const rows = Math.floor(avail / rowHeight);
+
+      /* Both of these were flat numbers, and both were wrong often enough to
+         leave a band of empty card under the last row (QA #19).
+         · The app footer is measured, not assumed 56 — the same rule the CLM
+           masters' useAutoFitRows already follows, and the reason Segment
+           Master fills its page while this one stopped short.
+         · A row is measured from a row that is actually on screen. These rows
+           carry segment pills and progress bars, so 46 is only the floor; a
+           taller real row meant the count was computed against a height no row
+           has, and the table asked for fewer rows than the space holds. */
+      const footerEl = document.querySelector('footer.footer') as HTMLElement | null;
+      const footerH  = footerEl ? footerEl.offsetHeight : footer;
+      const sampleRow = el.querySelector('tbody tr') as HTMLElement | null;
+      const rowH = Math.max(rowHeight, sampleRow?.getBoundingClientRect().height || 0);
+
+      const avail = window.innerHeight - top - footerH - gap;
+      const rows = Math.floor(avail / rowH);
       setPerPage(Number.isFinite(rows) ? Math.max(min, rows) : BP_PER_PAGE);
     };
     calc();
@@ -202,6 +222,86 @@ function useFillHeight(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   return h;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * useFillAndFit — the Segment Master list-view recipe, ported here.
+ *
+ * useDynamicPerPage and useFillHeight measured DIFFERENT elements (the table
+ * wrap vs the card), so the height the card asked for and the row count the
+ * table rendered never agreed — which is what left a band of empty card under
+ * the last row. This does what Segment Master does: take ONE measurement, put
+ * a HARD height on the card, and derive the row count from that same height
+ * minus the pieces that are not rows.
+ *
+ * The hard height matters: `minHeight` alone leaves the card at its content
+ * height, so the pager floats up instead of pinning to the bottom. Segment
+ * hit the same wall and settled on height + maxHeight.
+ * ────────────────────────────────────────────────────────────────────────── */
+function useFillAndFit(
+  cardRef: React.RefObject<HTMLElement>,
+  { min = 240, gap = 14, rowHeight = 46, minRows = 4, deps = [] as unknown[] } = {},
+): { fillH: number | undefined; perPage: number } {
+  const [fillH, setFillH]     = useState<number | undefined>(undefined);
+  const [perPage, setPerPage] = useState(BP_PER_PAGE);
+
+  useEffect(() => {
+    const recompute = () => {
+      const el = cardRef.current;
+      if (!el) return;
+
+      /* Measure against the SCROLLER, not the window. The shell is a fixed
+         header + fixed footer with a single scroller between them
+         (Layouts/index.tsx: #layout-wrapper is 100dvh / overflow:hidden and
+         .main-content is the only thing that scrolls), so window.innerHeight
+         is not the space this card actually gets.
+         The offset is taken inside the scroller's own content — rect.top plus
+         scrollTop — so the number does not move when the user scrolls. Reading
+         the viewport-relative top alone made the card grow every time it was
+         re-measured while scrolled down, which is what pushed the page into an
+         outer scroll. */
+      const scroller = (el.closest('.main-content') as HTMLElement | null);
+      const box      = scroller ?? document.documentElement;
+      const offsetInScroller = scroller
+        ? el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
+        : el.getBoundingClientRect().top;
+      const avail = Math.max(min, Math.round(box.clientHeight - offsetInScroller - gap));
+      setFillH(prev => (prev === avail ? prev : avail));
+
+      /* Rows come out of the SAME number. Everything that is not a row is
+         measured off the real DOM: the card header carries a search box that
+         wraps on narrow screens, and these rows carry segment pills, so
+         `rowHeight` is only a floor. */
+      const headH  = (el.firstElementChild as HTMLElement | null)?.getBoundingClientRect().height ?? 0;
+      const theadH = (el.querySelector('thead') as HTMLElement | null)?.getBoundingClientRect().height ?? 44;
+      const pagerH = (el.querySelector('.wl-pager') as HTMLElement | null)?.getBoundingClientRect().height ?? 52;
+      const sample = el.querySelector('tbody tr') as HTMLElement | null;
+      const rowH   = Math.max(rowHeight, sample?.getBoundingClientRect().height || 0);
+      const fit    = Math.max(minRows, Math.floor((avail - headH - theadH - pagerH) / rowH));
+      setPerPage(prev => (prev === fit ? prev : fit));
+    };
+
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    /* The header strip and the analytics box take their final height after the
+       first paint. A single pass measures the card too low and under-counts the
+       rows, so the table stops short. */
+    const settle1 = setTimeout(recompute, 220);
+    const settle2 = setTimeout(recompute, 520);
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const onResize = () => { if (t) clearTimeout(t); t = setTimeout(recompute, 140); };
+    window.addEventListener('resize', onResize);
+    return () => {
+      if (t) clearTimeout(t);
+      window.removeEventListener('resize', onResize);
+      cancelAnimationFrame(raf);
+      clearTimeout(settle1);
+      clearTimeout(settle2);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  return { fillH, perPage };
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -672,14 +772,16 @@ export default function ClmBuyerProfilePage() {
   // the pager's "Rows per page" selector (when set) overrides the auto-fit.
   const [bpManualSize, setBpManualSize] = useState<number | null>(null);
   const [consManualSize, setConsManualSize] = useState<number | null>(null);
-  const bpDynamicSize = useDynamicPerPage(buyerTableRef, { deps: [bpaTab, partyAnalyticsOpen] });
-  const consDynamicSize = useDynamicPerPage(consTableRef, { deps: [bpaTab, partyAnalyticsOpen] });
+  /* Customer and Consignee list cards — ONE measurement drives both the card
+     height and the row count (see useFillAndFit), so the rows end exactly at
+     the pager instead of leaving a band of empty card under the last row
+     (QA #74). The Transaction card still runs the older split hooks. */
+  const { fillH: buyerCardFill, perPage: bpDynamicSize } =
+    useFillAndFit(buyerCardRef, { deps: [bpaTab, partyAnalyticsOpen] });
+  const { fillH: consCardFill, perPage: consDynamicSize } =
+    useFillAndFit(consCardRef, { deps: [bpaTab, partyAnalyticsOpen] });
   const bpPerPage = bpManualSize ?? bpDynamicSize;
   const consPerPage = consManualSize ?? consDynamicSize;
-  // Stretch each list card to the bottom of the viewport so its pager footer
-  // pins to the bottom of the screen.
-  const buyerCardFill = useFillHeight(buyerCardRef, { deps: [bpaTab, partyAnalyticsOpen] });
-  const consCardFill = useFillHeight(consCardRef, { deps: [bpaTab, partyAnalyticsOpen] });
   // Transaction-wise tables (ws/wos · eq/neq): one card holds the active table,
   // so a single dynamic page size drives whichever is visible.
   const txnCardRef = useRef<HTMLDivElement>(null);
@@ -829,12 +931,28 @@ export default function ClmBuyerProfilePage() {
     const segs = names.map((s) => s.trim()).filter(Boolean);
     if (segs.length === 0) return <span style={{ fontSize: '10px', color: '#94a3b8' }}>—</span>;
     const extra = segs.length - 1;
-    return <>
-      <Tooltip label={segs[0]}><span style={{ display: 'inline-block', verticalAlign: 'middle', fontSize: '9.5px', fontWeight: 600, color: '#0e7490', background: '#ecfeff', border: '1px solid #a5f3fc', padding: '2px 9px', borderRadius: '20px', whiteSpace: 'nowrap', lineHeight: 1.6 }}>{segs[0].length > 30 ? `${segs[0].slice(0, 30)}…` : segs[0]}</span></Tooltip>
+    /* QA #17 — one flex row, not two loose inline chips.
+       The tag was inline-block on vertical-align:middle while the +N badge is
+       inline-flex sitting on the BASELINE, so the two never shared a centre
+       line, and the only space between them was the whitespace in the JSX —
+       which collapses differently depending on the tag's own line box. A flex
+       row with align-items:center and an explicit gap makes both constant down
+       the whole column. */
+    return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, verticalAlign: 'middle', maxWidth: '100%' }}>
+      {/* The chip sits in a FIXED-width box so the "+N" badge always starts at
+          the same x. Before this the badge simply followed the chip's own
+          width, so a short name like "foods" kept its badge near the left edge
+          while a long one pushed its badge far right — the badges never formed
+          a column. Truncation is now done by CSS at the box edge rather than by
+          slicing at 30 characters, which is what ties it to the alignment; the
+          full name stays on the tooltip. */}
+      <span style={{ width: SEG_CHIP_COL, flexShrink: 0, display: 'inline-flex', alignItems: 'center', minWidth: 0 }}>
+        <Tooltip label={segs[0]}><span style={{ display: 'inline-block', maxWidth: SEG_CHIP_COL, fontSize: '9.5px', fontWeight: 600, color: '#0e7490', background: '#ecfeff', border: '1px solid #a5f3fc', padding: '2px 9px', borderRadius: '20px', whiteSpace: 'nowrap', lineHeight: 1.6, overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }}>{segs[0]}</span></Tooltip>
+      </span>
       {extra > 0 && (
         <Tooltip label="View all segments"><button type="button" onClick={(e) => toggleSegPop(e, key, segs)} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, cursor: 'pointer', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)', border: 'none', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>
       )}
-    </>;
+    </span>;
   };
 
   // ── Live data from GET /clm/buyer-profile ──
@@ -1405,7 +1523,7 @@ export default function ClmBuyerProfilePage() {
                   up against the Analytics card above. Restores the same spacing
                   the top-level cards have. Same pattern the Supplier Profile
                   page uses for its nested cards. */}
-              <div ref={buyerCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: buyerCardFill }}>
+              <div ref={buyerCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: buyerCardFill }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.3)' }}>
@@ -1413,9 +1531,8 @@ export default function ClmBuyerProfilePage() {
                     </div>
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Customer List</div>
-                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{buyerListTotal} customers registered across all segments</div>
+                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{buyerSearch.trim() ? `${buyerListTotal} of ${buyerTotal} customers match` : 'Registered across all segments'}</div>
                     </div>
-                    <span style={{ fontSize: '8px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.22)', padding: '3px 10px', borderRadius: '20px', letterSpacing: '.02em' }}>{buyerListTotal} records</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px', height: '38px', padding: '0 12px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)' }}>
@@ -1444,7 +1561,7 @@ export default function ClmBuyerProfilePage() {
                     <thead>
                       <tr style={txnTableHeaderRow}>
                         {['SR No', 'Customer ID', 'Company Name', 'Segment', 'Country', 'Consignees', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Total Shipments', 'Agreements', 'Action'].map((h, i) => (
-                          <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
+                          <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' || h === 'Segment' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
                         ))}
                       </tr>
                     </thead>
@@ -1459,8 +1576,12 @@ export default function ClmBuyerProfilePage() {
                             <td style={{ padding: '9px 12px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '11px', fontWeight: 700, color: '#0891b2' }}>{(buyerPageSafe - 1) * bpPerPage + i + 1}</span></td>
                             <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{r.id}</span></td>
                             <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
-                            <td style={{ padding: '9px 11px', textAlign: 'center', verticalAlign: 'middle', minWidth: '140px' }}>
-                              <div style={{ display: 'inline-flex', flexWrap: 'nowrap', gap: '4px', justifyContent: 'center', alignItems: 'center' }}>
+                            <td style={{ padding: '9px 11px', textAlign: 'left', verticalAlign: 'middle', minWidth: '196px' }}>
+                              {/* QA #72 — the cell was centred, so a row carrying a "+N"
+                                  badge pushed its chip left of the rows without one and the
+                                  column never showed a straight edge. Left-aligned (header
+                                  too) so every tag starts at the same x. */}
+                              <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', justifyContent: 'flex-start', alignItems: 'center' }}>
                                 {renderSegCell(`buyer-${r.id}`, r.seg)}
                               </div>
                             </td>
@@ -1500,7 +1621,7 @@ export default function ClmBuyerProfilePage() {
             <div>
               {/* marginTop:8px — see the Customer List card above; same nested
                   wrapper, same missing gap under the Analytics card. */}
-              <div ref={consCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: consCardFill }}>
+              <div ref={consCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: consCardFill }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.3)' }}>
@@ -1508,9 +1629,8 @@ export default function ClmBuyerProfilePage() {
                     </div>
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Consignee List</div>
-                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{consListTotal} consignees registered across all customers</div>
+                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{consSearch.trim() ? `${consListTotal} of ${consTotal} consignees match` : 'Registered across all customers'}</div>
                     </div>
-                    <span style={{ fontSize: '8px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.22)', padding: '3px 10px', borderRadius: '20px', letterSpacing: '.02em' }}>{consListTotal} records</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px', height: '38px', padding: '0 12px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)' }}>
@@ -1539,7 +1659,7 @@ export default function ClmBuyerProfilePage() {
                     <thead>
                       <tr style={txnTableHeaderRow}>
                         {['SR No', 'Consignee ID', 'Customer ID', 'Company Name', 'Segment', 'Country', 'Customer', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Total Shipments', 'Agreements', 'Action'].map((h, i) => (
-                          <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
+                          <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' || h === 'Segment' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
                         ))}
                       </tr>
                     </thead>
@@ -1563,8 +1683,12 @@ export default function ClmBuyerProfilePage() {
                             <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0e7490', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{r.id}</span></td>
                             <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.06)', border: '1px solid rgba(6,182,212,.14)', padding: '2px 7px', borderRadius: '5px' }}>{r.cid}</span></td>
                             <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
-                            <td style={{ padding: '9px 11px', textAlign: 'center', verticalAlign: 'middle', minWidth: '140px' }}>
-                              <div style={{ display: 'inline-flex', flexWrap: 'nowrap', gap: '4px', justifyContent: 'center', alignItems: 'center' }}>
+                            <td style={{ padding: '9px 11px', textAlign: 'left', verticalAlign: 'middle', minWidth: '196px' }}>
+                              {/* QA #72 — the cell was centred, so a row carrying a "+N"
+                                  badge pushed its chip left of the rows without one and the
+                                  column never showed a straight edge. Left-aligned (header
+                                  too) so every tag starts at the same x. */}
+                              <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', justifyContent: 'flex-start', alignItems: 'center' }}>
                                 {renderSegCell(`cons-${r.id}`, r.seg.split(','))}
                               </div>
                             </td>
@@ -1737,29 +1861,37 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
           <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
             <thead>
               <tr style={txnTableHeaderRow}>
-                {['SR No', 'Consignee ID', 'Customer ID', 'Company Name', 'Segment', 'Country', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Total Shipments', 'Agreements'].map((h, i) => (
-                  <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
+                {/* Trade Docs and Agreements are shown as ONE column here — the
+                    same pairing the Evidence Vault uses ("Trade Documents &
+                    Agreements"). Only this modal is merged; the list tables on
+                    the page behind it still carry the two separately. */}
+                {['SR No', 'Consignee ID', 'Customer ID', 'Company Name', 'Segment', 'Country', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs & Agreements', 'Total Shipments'].map((h, i) => (
+                  <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' || h === 'Segment' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td colSpan={12} style={{ padding: '30px', textAlign: 'center', fontSize: 12.5, color: '#64748b' }}>No consignees mapped to this customer yet.</td></tr>
+                <tr><td colSpan={11} style={{ padding: '30px', textAlign: 'center', fontSize: 12.5, color: '#64748b' }}>No consignees mapped to this customer yet.</td></tr>
               ) : rows.map((r, i) => (
                 <tr key={r.id} style={{ background: i % 2 === 0 ? '#fff' : 'rgba(240,253,255,.45)', borderBottom: '1px solid rgba(6,182,212,.07)' }}>
                   <td style={{ padding: '9px 12px', textAlign: 'center' }}><span style={{ fontSize: '11px', fontWeight: 700, color: '#0891b2' }}>{i + 1}</span></td>
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0e7490', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{r.id}</span></td>
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.06)', border: '1px solid rgba(6,182,212,.14)', padding: '2px 7px', borderRadius: '5px' }}>{r.cid}</span></td>
                   <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
-                  <td style={{ padding: '9px 11px', textAlign: 'center', minWidth: '140px' }}>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'center', alignItems: 'center' }}>
+                  <td style={{ padding: '9px 11px', textAlign: 'left', minWidth: '140px' }}>
+                    {/* QA #72 — same left edge as the list tables, so the Segment
+                        column reads identically wherever it appears. */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'flex-start', alignItems: 'center' }}>
                       <SegCell names={r.seg.split(',')} sc={r.sc} sb={r.sb} />
                     </div>
                   </td>
                   <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{r.country}</td>
-                  <ProgCell obj={r.kyc} /><ProgCell obj={r.dd} /><ProgCell obj={r.tl} /><ProgCell obj={r.td} />
+                  <ProgCell obj={r.kyc} /><ProgCell obj={r.dd} /><ProgCell obj={r.tl} />
+                  {/* Combined progress: both counters are done/total pairs over the
+                      same party, so they add up cleanly into one bar. */}
+                  <ProgCell obj={{ d: r.td.d + r.agr.d, t: r.td.t + r.agr.t }} />
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><NumBadge n={r.ship} /></td>
-                  <ProgCell obj={r.agr} />
                 </tr>
               ))}
             </tbody>
@@ -1822,28 +1954,33 @@ function ConsigneeCustomerModal({ consignee, customers, onClose }: { consignee: 
           <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
             <thead>
               <tr style={txnTableHeaderRow}>
-                {['Customer ID', 'Company Name', 'Segment', 'Country', 'Consignees', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Total Shipments', 'Agreements'].map((h, i) => (
-                  <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
+                {/* Trade Docs and Agreements merged into one column, matching the
+                    Consignees modal and the Evidence Vault's "Trade Documents &
+                    Agreements" pairing. The list tables behind still keep them apart. */}
+                {['Customer ID', 'Company Name', 'Segment', 'Country', 'Consignees', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs & Agreements', 'Total Shipments'].map((h, i) => (
+                  <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' || h === 'Segment' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {customers.length === 0 ? (
-                <tr><td colSpan={11} style={{ padding: '30px', textAlign: 'center', fontSize: 12.5, color: '#64748b' }}>None of this consignee's mapped customers are in the current list scope.</td></tr>
+                <tr><td colSpan={10} style={{ padding: '30px', textAlign: 'center', fontSize: 12.5, color: '#64748b' }}>None of this consignee's mapped customers are in the current list scope.</td></tr>
               ) : customers.map((customer) => (
                 <tr key={customer.id} style={{ background: '#fff', borderBottom: '1px solid rgba(6,182,212,.07)' }}>
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{customer.id}</span></td>
                   <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{customer.name}</td>
-                  <td style={{ padding: '9px 11px', textAlign: 'center', minWidth: '140px' }}>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'center', alignItems: 'center' }}>
+                  <td style={{ padding: '9px 11px', textAlign: 'left', minWidth: '140px' }}>
+                    {/* QA #72 — same left edge as the list tables, so the Segment
+                        column reads identically wherever it appears. */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'flex-start', alignItems: 'center' }}>
                       <SegCell names={customer.seg} sc={customer.sc} sb={customer.sb} />
                     </div>
                   </td>
                   <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{customer.country}</td>
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><NumBadge n={customer.cn} /></td>
-                  <ProgCell obj={customer.kyc} /><ProgCell obj={customer.dd} /><ProgCell obj={customer.tl} /><ProgCell obj={customer.td} />
+                  <ProgCell obj={customer.kyc} /><ProgCell obj={customer.dd} /><ProgCell obj={customer.tl} />
+                  <ProgCell obj={{ d: customer.td.d + customer.agr.d, t: customer.td.t + customer.agr.t }} />
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><NumBadge n={customer.ship} /></td>
-                  <ProgCell obj={customer.agr} />
                 </tr>
               ))}
             </tbody>
