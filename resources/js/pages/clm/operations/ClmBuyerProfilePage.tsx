@@ -8,6 +8,7 @@ import Tooltip from '../../../components/ui/Tooltip';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import { ShimmerTableRows } from '../../../components/ui/Shimmer';
 import WorklistPager from '../../../components/ui/WorklistPager';
+import { PER_PAGE, useAutoFitRows } from '../shared/clmShared';
 import SearchClear from '../../../components/ui/SearchClear';
 
 /*
@@ -225,86 +226,6 @@ function useFillHeight(
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
- * useFillAndFit — the Segment Master list-view recipe, ported here.
- *
- * useDynamicPerPage and useFillHeight measured DIFFERENT elements (the table
- * wrap vs the card), so the height the card asked for and the row count the
- * table rendered never agreed — which is what left a band of empty card under
- * the last row. This does what Segment Master does: take ONE measurement, put
- * a HARD height on the card, and derive the row count from that same height
- * minus the pieces that are not rows.
- *
- * The hard height matters: `minHeight` alone leaves the card at its content
- * height, so the pager floats up instead of pinning to the bottom. Segment
- * hit the same wall and settled on height + maxHeight.
- * ────────────────────────────────────────────────────────────────────────── */
-function useFillAndFit(
-  cardRef: React.RefObject<HTMLElement>,
-  { min = 240, gap = 14, rowHeight = 46, minRows = 4, deps = [] as unknown[] } = {},
-): { fillH: number | undefined; perPage: number } {
-  const [fillH, setFillH]     = useState<number | undefined>(undefined);
-  const [perPage, setPerPage] = useState(BP_PER_PAGE);
-
-  useEffect(() => {
-    const recompute = () => {
-      const el = cardRef.current;
-      if (!el) return;
-
-      /* Measure against the SCROLLER, not the window. The shell is a fixed
-         header + fixed footer with a single scroller between them
-         (Layouts/index.tsx: #layout-wrapper is 100dvh / overflow:hidden and
-         .main-content is the only thing that scrolls), so window.innerHeight
-         is not the space this card actually gets.
-         The offset is taken inside the scroller's own content — rect.top plus
-         scrollTop — so the number does not move when the user scrolls. Reading
-         the viewport-relative top alone made the card grow every time it was
-         re-measured while scrolled down, which is what pushed the page into an
-         outer scroll. */
-      const scroller = (el.closest('.main-content') as HTMLElement | null);
-      const box      = scroller ?? document.documentElement;
-      const offsetInScroller = scroller
-        ? el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
-        : el.getBoundingClientRect().top;
-      const avail = Math.max(min, Math.round(box.clientHeight - offsetInScroller - gap));
-      setFillH(prev => (prev === avail ? prev : avail));
-
-      /* Rows come out of the SAME number. Everything that is not a row is
-         measured off the real DOM: the card header carries a search box that
-         wraps on narrow screens, and these rows carry segment pills, so
-         `rowHeight` is only a floor. */
-      const headH  = (el.firstElementChild as HTMLElement | null)?.getBoundingClientRect().height ?? 0;
-      const theadH = (el.querySelector('thead') as HTMLElement | null)?.getBoundingClientRect().height ?? 44;
-      const pagerH = (el.querySelector('.wl-pager') as HTMLElement | null)?.getBoundingClientRect().height ?? 52;
-      const sample = el.querySelector('tbody tr') as HTMLElement | null;
-      const rowH   = Math.max(rowHeight, sample?.getBoundingClientRect().height || 0);
-      const fit    = Math.max(minRows, Math.floor((avail - headH - theadH - pagerH) / rowH));
-      setPerPage(prev => (prev === fit ? prev : fit));
-    };
-
-    recompute();
-    const raf = requestAnimationFrame(recompute);
-    /* The header strip and the analytics box take their final height after the
-       first paint. A single pass measures the card too low and under-counts the
-       rows, so the table stops short. */
-    const settle1 = setTimeout(recompute, 220);
-    const settle2 = setTimeout(recompute, 520);
-    let t: ReturnType<typeof setTimeout> | null = null;
-    const onResize = () => { if (t) clearTimeout(t); t = setTimeout(recompute, 140); };
-    window.addEventListener('resize', onResize);
-    return () => {
-      if (t) clearTimeout(t);
-      window.removeEventListener('resize', onResize);
-      cancelAnimationFrame(raf);
-      clearTimeout(settle1);
-      clearTimeout(settle2);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-
-  return { fillH, perPage };
-}
-
-/* ──────────────────────────────────────────────────────────────────────────
  * Scoped CSS (extracted from the prototype)
  * ────────────────────────────────────────────────────────────────────────── */
 const BP_CSS = `
@@ -313,7 +234,16 @@ const BP_CSS = `
  * card sat twice as far from the top of the page as it did from the card below
  * it. Pulling 8px back makes the space above the header strip match the gap
  * beneath it. */
-.seg-page { background: #F4F6FB; min-height: calc(100vh - 56px); padding: 8px; margin-top: -8px; display:flex; flex-direction:column; gap:8px; font-family: var(--font-sans); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+/* min-height is 100% of the scroller, NOT calc(100vh - 56px).
+   The shell puts a fixed header and a fixed footer OUTSIDE the scroller
+   (Layouts/index.tsx), so this page gets 100vh minus BOTH of them. The
+   header is two rows tall (logo/search + nav), nowhere near the 56px that
+   was being subtracted, so the page reserved ~150px more than it is given
+   and the whole shell picked up a second, outer scrollbar that no amount
+   of table sizing could remove. 100% fills exactly what the scroller
+   offers — and where the chain has no definite height it simply resolves
+   to auto, which is content height, so it cannot over-reserve either. */
+.seg-page { background: #F4F6FB; min-height: 100%; padding: 8px; margin-top: -8px; display:flex; flex-direction:column; gap:8px; font-family: var(--font-sans); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
 .seg-page-card {
   background: #fff;
   border: 1px solid rgba(6,182,212,.2);
@@ -772,14 +702,24 @@ export default function ClmBuyerProfilePage() {
   // the pager's "Rows per page" selector (when set) overrides the auto-fit.
   const [bpManualSize, setBpManualSize] = useState<number | null>(null);
   const [consManualSize, setConsManualSize] = useState<number | null>(null);
-  /* Customer and Consignee list cards — ONE measurement drives both the card
-     height and the row count (see useFillAndFit), so the rows end exactly at
-     the pager instead of leaving a band of empty card under the last row
-     (QA #74). The Transaction card still runs the older split hooks. */
-  const { fillH: buyerCardFill, perPage: bpDynamicSize } =
-    useFillAndFit(buyerCardRef, { deps: [bpaTab, partyAnalyticsOpen] });
-  const { fillH: consCardFill, perPage: consDynamicSize } =
-    useFillAndFit(consCardRef, { deps: [bpaTab, partyAnalyticsOpen] });
+  /* Dynamic pagination — the SHARED hook the CLM masters use
+     (clmShared/useAutoFitRows), not a local copy.
+     *
+     * This page used to carry its own measurement, and it floored the page at
+     * 4 rows; the shared one floors at PER_PAGE (10) and only grows from there,
+     * which is the whole point of that floor — see its comment: "the old floor
+     * was 4, which served four-row pages on a laptop and made the same tenant
+     * look different on every machine". Sharing it also means a fix to the
+     * measurement lands on every CLM list at once instead of drifting here.
+     *
+     * autoFitRef goes false the moment the user picks a size in the pager, so a
+     * manual choice is never overwritten by the next resize. */
+  const [bpDynamicSize, setBpDynamicSize] = useState(PER_PAGE);
+  const [consDynamicSize, setConsDynamicSize] = useState(PER_PAGE);
+  const buyerAutoFitRef = useRef(true);
+  const consAutoFitRef = useRef(true);
+  const buyerCardFill = useAutoFitRows(buyerCardRef, buyerAutoFitRef, setBpDynamicSize, [bpaTab, partyAnalyticsOpen]);
+  const consCardFill = useAutoFitRows(consCardRef, consAutoFitRef, setConsDynamicSize, [bpaTab, partyAnalyticsOpen]);
   const bpPerPage = bpManualSize ?? bpDynamicSize;
   const consPerPage = consManualSize ?? consDynamicSize;
   // Transaction-wise tables (ws/wos · eq/neq): one card holds the active table,
@@ -1523,7 +1463,7 @@ export default function ClmBuyerProfilePage() {
                   up against the Analytics card above. Restores the same spacing
                   the top-level cards have. Same pattern the Supplier Profile
                   page uses for its nested cards. */}
-              <div ref={buyerCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: buyerCardFill }}>
+              <div ref={buyerCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: buyerCardFill, maxHeight: buyerCardFill }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.3)' }}>
@@ -1611,7 +1551,7 @@ export default function ClmBuyerProfilePage() {
                     </tbody>
                   </table>
                 </div>
-                <WorklistPager total={buyerListTotal} page={buyerPageSafe} pageSize={bpPerPage} onPage={setBuyerPage} onPageSize={(n) => { setBpManualSize(n); setBuyerPage(1); }} className="bp-wl" />
+                <WorklistPager total={buyerListTotal} page={buyerPageSafe} pageSize={bpPerPage} onPage={setBuyerPage} onPageSize={(n) => { buyerAutoFitRef.current = false; setBpManualSize(n); setBuyerPage(1); }} className="bp-wl" />
               </div>
             </div>
           )}
@@ -1621,7 +1561,7 @@ export default function ClmBuyerProfilePage() {
             <div>
               {/* marginTop:8px — see the Customer List card above; same nested
                   wrapper, same missing gap under the Analytics card. */}
-              <div ref={consCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: consCardFill }}>
+              <div ref={consCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: consCardFill, maxHeight: consCardFill }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.3)' }}>
@@ -1718,7 +1658,7 @@ export default function ClmBuyerProfilePage() {
                     </tbody>
                   </table>
                 </div>
-                <WorklistPager total={consListTotal} page={consPageSafe} pageSize={consPerPage} onPage={setConsPage} onPageSize={(n) => { setConsManualSize(n); setConsPage(1); }} className="bp-wl" />
+                <WorklistPager total={consListTotal} page={consPageSafe} pageSize={consPerPage} onPage={setConsPage} onPageSize={(n) => { consAutoFitRef.current = false; setConsManualSize(n); setConsPage(1); }} className="bp-wl" />
               </div>
             </div>
           )}

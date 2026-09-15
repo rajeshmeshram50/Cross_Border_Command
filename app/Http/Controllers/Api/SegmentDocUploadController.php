@@ -590,18 +590,25 @@ class SegmentDocUploadController extends Controller
         $deals     = $this->buildShipmentAgreements($owner, $type, $cid, $company_dd, $owner_kyc, $trade_licenses, $id, false, $sameAsCustomer);
         $shipments = array_values(array_filter($deals, fn($r) => !empty($r['has_shipment'])));
 
-        /* Rows the Case-to-Case tables render.
+        /* Rows the Case-to-Case tables render — AND the single source every
+         * Case-to-Case figure on this response is summed from.
          *
-         * Every Case-to-Case figure on this response — trade_documents_count,
-         * agreements_count, total_documents, verified, pending — is summed from
-         * $deals below, but the tables were handed $shipments. A deal that has
-         * a PI and its applicable paperwork but no shipment order yet therefore
-         * counted towards the KPI and the tab badge while having no row to
-         * render: the Agreements tab came up empty under a non-zero count
-         * (QA #2, consignee vault). The tables are per DEAL — the tab itself
-         * says "PER DEAL" — so they get $deals. The Total Shipments KPI is a
-         * genuine shipment count and stays on $shipments. */
-        $ctcRows   = in_array($type, ['customer', 'consignee'], true) ? $deals : $shipments;
+         * Case-to-Case is per TRANSACTION: a deal with no shipment order is not
+         * a transaction yet, so it neither renders a row nor counts towards
+         * trade_documents_count / agreements_count / total_documents /
+         * verified / pending. Product decision, 15 Sep — a "Not shipped" row
+         * showing in the vault was reported as wrong.
+         *
+         * This deliberately reverses the earlier direction (0f5dd8e0, and the
+         * 12 Sep buildShipmentAgreements change), which had widened these to
+         * every deal so that a party with a PI but no shipment order stopped
+         * reading 0 against a non-zero Buyer Profile cell. The Buyer Profile's
+         * td/agr columns are narrowed to shipment-linked leads in the same
+         * change, so the two still agree — which was the point of that work.
+         *
+         * Everything below reads $ctcRows, never $deals: one source is what
+         * keeps the tiles, the tab badge and the rows from disagreeing. */
+        $ctcRows   = $shipments;
 
         /* ring=1 — the counterparty completion ring on the CTC draft form, and
          * nothing else.
@@ -708,16 +715,16 @@ class SegmentDocUploadController extends Controller
                 'deal_has_shipment'   => (bool) ($s['has_shipment'] ?? false),
             ];
 
-            foreach ($deals as $s) {
+            foreach ($ctcRows as $s) {
                 $rows = $type === 'consignee' ? ($s['agreements_consignee'] ?? []) : ($s['agreements_buyer'] ?? []);
                 foreach ($rows as $r) {
                     $agreements[] = $r + $dealTag($s);
                 }
             }
-            $c2c = function (string $key) use ($deals) {
+            $c2c = function (string $key) use ($ctcRows) {
                 $signed = 0;
                 $total = 0;
-                foreach ($deals as $s) {
+                foreach ($ctcRows as $s) {
                     $parts   = explode('/', $s[$key]['ratio'] ?? '0/0');
                     $signed += (int) ($parts[0] ?? 0);
                     $total  += (int) ($parts[1] ?? 0);
@@ -742,7 +749,7 @@ class SegmentDocUploadController extends Controller
              * per-deal ratios the same way — the same library document on two
              * deals is two obligations. */
             $c2cTradeRows = [];
-            foreach ($deals as $s) {
+            foreach ($ctcRows as $s) {
                 $buyerRows = $s['trade_docs_buyer']     ?? [];
                 $consRows  = $s['trade_docs_consignee'] ?? [];
                 /* Same rule as the ratio in buildShipmentAgreements(), and it

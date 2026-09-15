@@ -712,11 +712,29 @@ class ClmBuyerProfileController extends Controller
                     $dealAgrSignedByConsignee[(int) $cons->id][(int) $sid] = true;
                 }
             }
-            $addTd($tdByCustomer, (int) $cust->id, $tdBuyer);
-            $addTd($agrByCustomer, (int) $cust->id, $agrBuyer);
-            if ($cons) {
-                $addTd($tdByConsignee, (int) $cons->id, $tdConsDeal);
-                $addTd($agrByConsignee, (int) $cons->id, $agrConsDeal);
+            /* SHIPMENT-LINKED deals only.
+             *
+             * Case-to-Case documents are per TRANSACTION, and a deal with no
+             * shipment order is not a transaction yet — the Evidence Vault does
+             * not render it and does not count it (see $ctcRows in
+             * SegmentDocUploadController). Counting it here is what produced
+             * the "0/2 outside, nothing inside" mismatch: the cell advertised
+             * paperwork the vault gave the user no way to reach.
+             *
+             * Deliberately narrower than before (product decision, 15 Sep). The
+             * earlier direction widened the VAULT to match this column instead;
+             * that is now reversed on both sides so they still agree.
+             *
+             * Only the td/agr columns are gated. The transaction tables below
+             * keep listing every deal — they have their own shipped / not
+             * shipped split and are not part of this count. */
+            if ($hasShip) {
+                $addTd($tdByCustomer, (int) $cust->id, $tdBuyer);
+                $addTd($agrByCustomer, (int) $cust->id, $agrBuyer);
+                if ($cons) {
+                    $addTd($tdByConsignee, (int) $cons->id, $tdConsDeal);
+                    $addTd($agrByConsignee, (int) $cons->id, $agrConsDeal);
+                }
             }
 
             if ($hasShip && $separateConsignee) {
