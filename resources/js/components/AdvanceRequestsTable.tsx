@@ -120,6 +120,21 @@ const STATUS_TONE: Record<AdvanceRequestRow['status'], { bg: string; fg: string;
   rejected: { bg: '#fdd9ea', fg: '#a02960', dot: '#ef4444', label: 'Rejected' },
 };
 
+/* Every status pill in this grid is drawn with a hard-coded light tint, so in
+   dark mode they read as white blocks sitting in the row (QA #177). Map the
+   light tint to a tone class so the dark overrides below can repaint them,
+   without having to rewrite each call site's colours. */
+const PILL_TONE_CLASS: Record<string, string> = {
+  '#d6f4e3': 'adv-pill--green',
+  '#fde8c4': 'adv-pill--amber',
+  '#fef3c7': 'adv-pill--amber',
+  '#fdd9d6': 'adv-pill--red',
+  '#fee2e2': 'adv-pill--red',
+  '#eef2ff': 'adv-pill--indigo',
+  '#e0e7ff': 'adv-pill--indigo',
+};
+const pillClass = (bg: string) => `adv-pill ${PILL_TONE_CLASS[bg.toLowerCase()] ?? ''}`.trim();
+
 const RECOVERY_LABEL: Record<string, string> = {
   emi:        'EMI',
   lumpsum:    'Lump Sum',
@@ -145,6 +160,16 @@ export const ADVANCE_BADGE_CSS = `
 [data-layout-mode="dark"] .adv-status-badge--approved { background: rgba(34,197,94,0.13) !important;  color: #86efac !important; box-shadow: inset 0 0 0 1px rgba(34,197,94,0.26); }
 [data-bs-theme="dark"] .adv-status-badge--rejected,
 [data-layout-mode="dark"] .adv-status-badge--rejected { background: rgba(244,63,94,0.13) !important;  color: #fda4af !important; box-shadow: inset 0 0 0 1px rgba(244,63,94,0.26); }
+/* Payout / Confirmation / Recovery / Zoho pills — same washes as the status
+   badge so no column keeps a light tint in dark mode. */
+[data-bs-theme="dark"] .adv-pill--green,
+[data-layout-mode="dark"] .adv-pill--green  { background: rgba(34,197,94,0.13) !important;  color: #86efac !important; box-shadow: inset 0 0 0 1px rgba(34,197,94,0.26); }
+[data-bs-theme="dark"] .adv-pill--amber,
+[data-layout-mode="dark"] .adv-pill--amber  { background: rgba(245,158,11,0.13) !important; color: #fcd34d !important; box-shadow: inset 0 0 0 1px rgba(245,158,11,0.26); }
+[data-bs-theme="dark"] .adv-pill--red,
+[data-layout-mode="dark"] .adv-pill--red    { background: rgba(244,63,94,0.13) !important;  color: #fda4af !important; box-shadow: inset 0 0 0 1px rgba(244,63,94,0.26); }
+[data-bs-theme="dark"] .adv-pill--indigo,
+[data-layout-mode="dark"] .adv-pill--indigo { background: rgba(129,140,248,0.15) !important; color: #c7d2fe !important; box-shadow: inset 0 0 0 1px rgba(129,140,248,0.28); }
 /* Confirm / decline dialogs were still a white card over the dark grid. */
 [data-bs-theme="dark"] .adv-dialog,
 [data-layout-mode="dark"] .adv-dialog { background: #1e2329 !important; color: #e2e8f0 !important; }
@@ -508,7 +533,7 @@ export function advanceRequestColumns({
         const t = PAY_TONE[ps];
         return (
           <span
-            className="d-inline-flex align-items-center gap-1 fw-semibold"
+            className={`d-inline-flex align-items-center gap-1 fw-semibold ${pillClass(t.bg)}`}
             style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: t.bg, color: t.fg }}
           >
             <i className={t.icon} />
@@ -534,7 +559,7 @@ export function advanceRequestColumns({
         }
         const isCompany = (r.used_for || 'self') === 'company';
         const pillEl = (icon: string, label: string, bg: string, fg: string) => (
-          <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: bg, color: fg }}>
+          <span className={`d-inline-flex align-items-center gap-1 fw-semibold ${pillClass(bg)}`} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: bg, color: fg }}>
             <i className={icon} /> {label}
           </span>
         );
@@ -600,7 +625,7 @@ export function advanceRequestColumns({
       cell: (info: any) => {
         const r = info.row.original;
         const pill = (icon: string, label: string, bg: string, fg: string) => (
-          <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: bg, color: fg }}>
+          <span className={`d-inline-flex align-items-center gap-1 fw-semibold ${pillClass(bg)}`} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: bg, color: fg }}>
             <i className={icon} /> {label}
           </span>
         );
@@ -645,7 +670,7 @@ export function advanceRequestColumns({
         };
         const t = tone[z];
         return (
-          <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: t.bg, color: t.fg }}>
+          <span className={`d-inline-flex align-items-center gap-1 fw-semibold ${pillClass(t.bg)}`} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: t.bg, color: t.fg }}>
             <i className={t.icon} /> {t.label}
           </span>
         );
