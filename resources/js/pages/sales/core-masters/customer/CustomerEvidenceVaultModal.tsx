@@ -788,7 +788,11 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
               ...vault.trade_licenses.map((d) => ({ doc: d, cat: 'tl' as const })),
             ]
           : (activeShip ? shipDocsOf(activeShip).map((d) => ({ doc: d, cat: null })) : []);
-        const shipLabel = (r: VaultShipmentRow) => (r.has_shipment === false ? 'Not shipped' : r.shipment_id);
+        /* A transaction with no shipment has no shipment code to show (QA #75),
+           so the picker and its header fall back to the opportunity — which is
+           what identifies that deal — instead of labelling it with a shipment
+           state it does not have. */
+        const shipLabel = (r: VaultShipmentRow) => (r.has_shipment === false ? (r.opportunity_id || '—') : r.shipment_id);
         const title = isStd
           ? 'Standard Documents — Overview'
           : (activeShip ? `Case to Case — ${shipLabel(activeShip)}` : 'Case to Case Documents & Agreements — Overview');
@@ -1663,8 +1667,15 @@ function ShipmentTable({ rows, kind, filter, onSend, onBulkSend, activeSend }: {
                       <span style={{ display: 'inline-block', transition: 'transform .18s', transform: open ? 'rotate(90deg)' : 'none', color: '#0891b2', fontWeight: 800 }}>▸</span>
                     </td>
                     <td>{i + 1}</td>
+                    {/* Shipment ID only where a shipment exists (QA #75).
+                        A deal with no shipment order has no shipment status to
+                        report, so the cell stays empty rather than inventing a
+                        "Not shipped" state and dressing it as a status chip —
+                        the Opportunity ID beside it already identifies the row.
+                        The Total Shipments KPI counts the real ones, so the two
+                        keep agreeing. */}
                     <td>{r.has_shipment === false
-                      ? <span className="cev-chip-pill" style={{ opacity: .55 }} title="No shipment order raised for this deal yet">● Not shipped</span>
+                      ? <span style={{ color: '#9ca3af' }}>—</span>
                       : <span className="cev-chip-pill">● {r.shipment_id}</span>}</td>
                     <td><span className="cev-chip-pill cev-chip-pill-warm">● {r.opportunity_id}</span></td>
                     <td>

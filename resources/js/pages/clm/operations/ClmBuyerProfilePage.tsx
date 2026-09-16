@@ -879,14 +879,16 @@ export default function ClmBuyerProfilePage() {
        row with align-items:center and an explicit gap makes both constant down
        the whole column. */
     return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, verticalAlign: 'middle', maxWidth: '100%' }}>
-      {/* The chip sits in a FIXED-width box so the "+N" badge always starts at
-          the same x. Before this the badge simply followed the chip's own
-          width, so a short name like "foods" kept its badge near the left edge
-          while a long one pushed its badge far right — the badges never formed
-          a column. Truncation is now done by CSS at the box edge rather than by
-          slicing at 30 characters, which is what ties it to the alignment; the
-          full name stays on the tooltip. */}
-      <span style={{ width: SEG_CHIP_COL, flexShrink: 0, display: 'inline-flex', alignItems: 'center', minWidth: 0 }}>
+      {/* maxWidth, not a fixed width.
+          A fixed 150px box lined the "+N" badges up in a column, but it also
+          held that width open for a short name — "Processed Foods" left most
+          of the box empty and threw its badge a long way from the chip it
+          belongs to. A cap keeps the part that mattered: every name longer
+          than the cap still truncates at the same x, so those badges still
+          line up, while a short name lets its badge sit right beside it.
+          Truncation is done by CSS at the box edge, not by slicing the string,
+          and the full name stays on the tooltip. */}
+      <span style={{ maxWidth: SEG_CHIP_COL, flexShrink: 1, display: 'inline-flex', alignItems: 'center', minWidth: 0 }}>
         <Tooltip label={segs[0]}><span style={{ display: 'inline-block', maxWidth: SEG_CHIP_COL, fontSize: '9.5px', fontWeight: 600, color: '#0e7490', background: '#ecfeff', border: '1px solid #a5f3fc', padding: '2px 9px', borderRadius: '20px', whiteSpace: 'nowrap', lineHeight: 1.6, overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }}>{segs[0]}</span></Tooltip>
       </span>
       {extra > 0 && (
@@ -949,20 +951,33 @@ export default function ClmBuyerProfilePage() {
   const buyerTotal = scopedBuyers.length;
   // Compliant buyer = KYC + DD + Trade License all fully completed.
   const buyerCompliant = scopedBuyers.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
-  const buyerKyc = scopedBuyers.filter((r) => r.kyc.d < r.kyc.t).length;
-  const buyerDd = scopedBuyers.filter((r) => r.dd.d < r.dd.t).length;
-  const buyerTl = scopedBuyers.filter((r) => r.tl.d < r.tl.t).length;
-  const buyerTd = scopedBuyers.filter((r) => r.td.d < r.td.t).length;
-  const buyerAgr = scopedBuyers.filter((r) => r.agr.d < r.agr.t).length;
+  /* These cards count DOCUMENTS still outstanding, not parties that have some.
+   *
+     "Trade Documents Pending 01" used to mean "one consignee has something
+     pending", which reads as "one document" and cannot be reconciled with the
+     list underneath — the row on screen showed 0/0 while the card said 1,
+     because the pending one was a different row further down. The label names
+     a document, so the number is a document count.
+     Summing across parties is safe here, unlike the transaction cards: each
+     party owns its own documents, so nothing is counted twice. */
+  const partyPending = <T extends { kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog }>(
+    rows: T[], pick: (r: T) => Prog,
+  ) => rows.reduce((acc, r) => acc + Math.max(0, pick(r).t - pick(r).d), 0);
+
+  const buyerKyc = partyPending(scopedBuyers, (r) => r.kyc);
+  const buyerDd  = partyPending(scopedBuyers, (r) => r.dd);
+  const buyerTl  = partyPending(scopedBuyers, (r) => r.tl);
+  const buyerTd  = partyPending(scopedBuyers, (r) => r.td);
+  const buyerAgr = partyPending(scopedBuyers, (r) => r.agr);
 
   // ── derived consignee analytics ──
   const consTotal = scopedCons.length;
   const consCompliant = scopedCons.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
-  const consKyc = scopedCons.filter((r) => r.kyc.d < r.kyc.t).length;
-  const consDd = scopedCons.filter((r) => r.dd.d < r.dd.t).length;
-  const consTl = scopedCons.filter((r) => r.tl.d < r.tl.t).length;
-  const consTd = scopedCons.filter((r) => r.td.d < r.td.t).length;
-  const consAgr = scopedCons.filter((r) => r.agr.d < r.agr.t).length;
+  const consKyc = partyPending(scopedCons, (r) => r.kyc);
+  const consDd  = partyPending(scopedCons, (r) => r.dd);
+  const consTl  = partyPending(scopedCons, (r) => r.tl);
+  const consTd  = partyPending(scopedCons, (r) => r.td);
+  const consAgr = partyPending(scopedCons, (r) => r.agr);
 
   // ── derived transaction (opportunity) analytics ──
   // Count only the transactions of the ACTIVE shipment tab so the metrics match
@@ -973,12 +988,35 @@ export default function ClmBuyerProfilePage() {
     ? [...wosEqData, ...wosNeqData]
     : [...wsEqData, ...wsNeqData];
   const txnTotal = allTxn.length;
-  const txnCompliant = allTxn.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
+  /* All FIVE families, not three.
+   *
+     Trade Documents and Agreements were left out of the test, so a
+     transaction counted as fully compliant while its own Trade Docs cell read
+     0/2 and its Agreements cell 0/3 — and the two cards to the right of this
+     one were reporting exactly those pending items at the same time. The
+     panel contradicted itself: "Fully Compliant 3" over "Trade Documents
+     Pending 2, Agreements Pending 3" on a three-row table. A row is compliant
+     only when nothing is outstanding on it. */
+  const txnCompliant = allTxn.filter((r) =>
+    r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t
+    && r.td.d === r.td.t && r.agr.d === r.agr.t).length;
   const txnKyc = allTxn.filter((r) => r.kyc.d < r.kyc.t).length;
   const txnDd = allTxn.filter((r) => r.dd.d < r.dd.t).length;
   const txnTl = allTxn.filter((r) => r.tl.d < r.tl.t).length;
-  const txnTd = allTxn.filter((r) => r.td.d < r.td.t).length;
-  const txnAgr = allTxn.filter((r) => r.agr.d < r.agr.t).length;
+  /* Trade Documents / Agreements Pending count DOCUMENTS, not transactions —
+     "how many are still unsigned", which is the number someone acting on this
+     panel actually needs. Two transactions each missing two documents is four
+     pieces of work, and the card used to call that "2".
+     Safe to sum here precisely because these two families are per-transaction:
+     each deal carries its own. The three cards to the left stay on transaction
+     counts for the opposite reason — KYC, Due Diligence and Trade Licences are
+     the CUSTOMER's one-time documents, so the same pending document reappears
+     on every one of that customer's transactions and adding them up would
+     report one missing PAN card as two, or five. */
+  const sumPending = (pick: (r: typeof allTxn[number]) => { d: number; t: number }) =>
+    allTxn.reduce((acc, r) => acc + Math.max(0, pick(r).t - pick(r).d), 0);
+  const txnTd = sumPending((r) => r.td);
+  const txnAgr = sumPending((r) => r.agr);
 
   /* Case-insensitive search across Company Name, Customer/Consignee ID,
    * Segment and Country. Buyer segments are an array; consignee segment is a
@@ -1471,7 +1509,7 @@ export default function ClmBuyerProfilePage() {
                     </div>
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Customer List</div>
-                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{buyerSearch.trim() ? `${buyerListTotal} of ${buyerTotal} customers match` : 'Registered across all segments'}</div>
+                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{buyerSearch.trim() ? `${buyerListTotal} of ${buyerTotal} customers match` : `${buyerListTotal} registered across all segments`}</div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1569,7 +1607,7 @@ export default function ClmBuyerProfilePage() {
                     </div>
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Consignee List</div>
-                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{consSearch.trim() ? `${consListTotal} of ${consTotal} consignees match` : 'Registered across all customers'}</div>
+                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{consSearch.trim() ? `${consListTotal} of ${consTotal} consignees match` : `${consListTotal} registered across all customers`}</div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
