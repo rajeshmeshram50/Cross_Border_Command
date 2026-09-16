@@ -880,7 +880,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                 <table className="cev-ov-table">
                   {/* Issued / Expired mirror the tab tables, so the overview
                       lists the same facts about a document as the bucket it
-                      came from. Per-deal rows carry neither, and show em dashes. */}
+                      came from. Per-deal rows carry neither, and read N/A. */}
                   <thead><tr><th style={{ width: 58 }}>SR NO</th><th>DOCUMENT NAME</th><th style={{ width: 116 }}>ISSUED DATE</th><th style={{ width: 116 }}>EXPIRED AT</th><th style={{ width: 118 }}>STATUS</th><th style={{ width: 190 }}>ACTION</th></tr></thead>
                   <tbody>
                     {docs.length === 0 ? (
@@ -900,14 +900,21 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                           <td>
                             {isStd && (d as VaultDoc).issue_date
                               ? <span className="cev-date">{(d as VaultDoc).issue_date}</span>
-                              : <span style={{ color: '#9ca3af' }}>—</span>}
+                              : <span className="cev-na">N/A</span>}
                           </td>
                           <td>
                             {isStd && (d as VaultDoc).expiry_date
                               ? <span className="cev-date cev-date-expiry">{(d as VaultDoc).expiry_date}</span>
-                              : <span style={{ color: '#9ca3af' }}>—</span>}
+                              : <span className="cev-na">N/A</span>}
                           </td>
-                          <td><StatusPill s={d.status as VaultStatus} /></td>
+                          {/* Standard and case-to-case rows share this list but
+                              not their status vocabulary, so each gets the badge
+                              built for it — no cast across the two. */}
+                          <td>
+                            {isStd
+                              ? <StatusPill s={d.status as VaultStatus} />
+                              : <ShipmentStatusPill status={(d as VaultShipmentDoc).status} />}
+                          </td>
                           <td>
                             {(() => {
                               const dlKey = `${activeShip?.id ?? 'std'}-${absIdx}`;
@@ -1339,21 +1346,21 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                   </Tooltip>
                 ) : <span style={{ color: '#9ca3af' }}>—</span>}
               </td>
-              {/* Captured on upload; blank for documents that carry no issue
+              {/* Captured on upload; N/A for documents that carry no issue
                   date, and for everything uploaded before the field existed. */}
               <td>
                 {d.issue_date
                   ? <span className="cev-date">{d.issue_date}</span>
-                  : <span style={{ color: '#9ca3af' }}>—</span>}
+                  : <span className="cev-na">N/A</span>}
               </td>
               {/* Expiry of the UPLOADED document. `expiry` is not used here: it
                   falls back to the master's free-text validity ("Lifetime",
-                  "2 years"), which is not a date. No date on file → em dash.
+                  "2 years"), which is not a date. No date on file → N/A.
                   Past dates read red and the next 30 days amber, reusing the
                   chip the Attachment column's dates already use. */}
               <td>
                 {(() => {
-                  if (!d.expiry_date) return <span style={{ color: '#9ca3af' }}>—</span>;
+                  if (!d.expiry_date) return <span className="cev-na">N/A</span>;
                   const due = new Date(d.expiry_date);
                   const days = Number.isNaN(due.getTime())
                     ? null
@@ -1708,6 +1715,29 @@ function ShipmentTable({ rows, kind, filter, onSend, onBulkSend, activeSend }: {
   );
 }
 
+/* Status badge for a CASE-TO-CASE (per-deal) document.
+ *
+ * These carry their own vocabulary — Draft / Pending / Declined / Recalled
+ * beside Signed and Expired — which is not VaultStatus, so they cannot share
+ * the standard documents' StatusPill: everything StatusPill does not recognise
+ * falls into its red branch. The overview list cast them across anyway
+ * (`d.status as VaultStatus`), so a Draft came out the same alarming red as a
+ * Declined there, and amber with a dot one click away in the shipment panel —
+ * the same document wearing two badges. One component now, used by both, and
+ * typed to the shipment vocabulary so the cast cannot come back. */
+export function ShipmentStatusPill({ status }: { status: VaultShipmentDoc['status'] }) {
+  const tone = status === 'Signed'
+    ? { fg: '#059669', bg: '#ecfdf5', bd: '#a7f3d0' }
+    : (status === 'Declined' || status === 'Expired')
+      ? { fg: '#dc2626', bg: '#fef2f2', bd: '#fecaca' }
+      : { fg: '#d97706', bg: '#fffbeb', bd: '#fde68a' };
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}`, whiteSpace: 'nowrap' }}>
+      ● {status}
+    </span>
+  );
+}
+
 export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, onBulkSend, primaryParty = 'buyer', hideBuyerTab = false, pendingSend, showType = false }: {
   /* No party name here: the shipment row this panel expands from already names
      the customer and the consignee, and the tabs below say whose documents are
@@ -1791,8 +1821,6 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
     } finally { setBusy(null); }
   };
 
-  const stTone = (s: string) => s === 'Signed' ? '#059669' : (s === 'Declined' || s === 'Expired') ? '#dc2626' : '#d97706';
-
   return (
     <div className="cev-sdp" style={{ padding: '12px 16px 16px' }}>
       {/* Same control as the Customer = / ≠ Consignee switch above the matrix:
@@ -1872,12 +1900,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
                       : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>}
                   </td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', color: '#475569' }}>{d.uploaded_on}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'center' }}>{(() => {
-                    const fg = stTone(d.status);
-                    const bg = d.status === 'Signed' ? '#ecfdf5' : (d.status === 'Declined' || d.status === 'Expired') ? '#fef2f2' : '#fffbeb';
-                    const bd = d.status === 'Signed' ? '#a7f3d0' : (d.status === 'Declined' || d.status === 'Expired') ? '#fecaca' : '#fde68a';
-                    return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: bg, color: fg, border: `1px solid ${bd}`, whiteSpace: 'nowrap' }}>● {d.status}</span>;
-                  })()}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'center' }}><ShipmentStatusPill status={d.status} /></td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                     {d.signed_url && (
                       <Tooltip label="View signed document">
