@@ -4,6 +4,12 @@ import * as pdfjsLib from 'pdfjs-dist';
 import PdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
 import api from '../../../api';
 import { useTheme } from '../../../contexts/ThemeContext';
+/* The house tooltip, not the browser's `title`. A native title waits ~1s,
+   renders in the OS chrome (so it ignores the app theme entirely), cannot be
+   styled, and on a disabled control does not appear at all — which is exactly
+   where the explanation matters most. This one is portalled to <body>, so the
+   toolbar's overflow cannot clip it. */
+import Tooltip from '../../../components/ui/Tooltip';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorker as unknown as string;
 
@@ -268,8 +274,15 @@ export default function CtcLivePreview({
   const border = dark ? 'rgba(124,58,237,.25)' : '#EDE9FE';
   const fg = dark ? '#c4b5fd' : '#6D28D9';
 
+  /* 5px corners and a real border on every control in this bar.
+     Borderless tinted buttons sit on a tinted toolbar, so at a glance the row
+     read as one block with some darker patches in it rather than as three
+     separate things you can press. A defined edge is what makes a button look
+     pressable; the radius is small on purpose so they read as controls rather
+     than pills. */
   const navBtn = (disabled: boolean): React.CSSProperties => ({
-    width: 28, height: 28, borderRadius: 7, border: 'none', flexShrink: 0,
+    width: 28, height: 28, borderRadius: 5, flexShrink: 0, boxSizing: 'border-box',
+    border: `1.5px solid ${dark ? 'rgba(167,139,250,.55)' : '#5B21B6'}`,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.35 : 1,
     color: '#fff', background: 'linear-gradient(135deg,#6D28D9,#7C3AED)',
@@ -293,77 +306,74 @@ export default function CtcLivePreview({
           {status === 'loading' && (
             <svg className="ctc-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={fg} strokeWidth="2.6" strokeLinecap="round" style={{ marginLeft: 4 }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
           )}
-          {/* ONE labelled control, always present in manual mode, that states
-              which of the two states you are in.
-              A bare ↻ icon could not do this: it looks identical whether the
-              preview is current or four edits behind, so the user had no way
-              to know whether pressing it was necessary. Here the button IS the
-              status — amber and clickable when the draft has moved on, muted
-              and disabled when there is nothing to do. */}
-          {manualRefresh && status !== 'loading' && (
-            <button
-              type="button"
-              onClick={() => { if (stale) void render(); }}
-              disabled={!stale}
-              title={stale
-                ? 'The draft has changed — update the preview (Ctrl+S)'
-                : 'Preview matches the draft'}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 6,
-                padding: '3px 9px', borderRadius: 999,
-                border: `1px solid ${stale ? (dark ? 'rgba(245,158,11,.5)' : '#FCD34D') : 'transparent'}`,
-                background: stale ? (dark ? 'rgba(245,158,11,.18)' : '#FEF3C7') : 'transparent',
-                color: stale ? (dark ? '#FCD34D' : '#92400E') : (dark ? 'rgba(255,255,255,.38)' : '#9CA3AF'),
-                fontSize: 9, fontWeight: 800, letterSpacing: '.02em', whiteSpace: 'nowrap',
-                cursor: stale ? 'pointer' : 'default', fontFamily: 'inherit',
-              }}
-            >
-              {stale ? (
-                <>
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
-                  UPDATE PREVIEW · CTRL+S
-                </>
-              ) : (
-                <>
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                  UP TO DATE
-                </>
-              )}
-            </button>
-          )}
+          {/* The status pill that used to live here has been folded into the
+              refresh control on the right. Two controls for one action — a
+              labelled pill beside the title AND a bare icon at the far end of
+              the same bar — read as two different things, and the icon gave no
+              clue whether pressing it was necessary. One labelled button now
+              carries both the action and the state. */}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <button type="button" style={navBtn(activePage <= 1)} disabled={activePage <= 1} onClick={() => goto(activePage - 1)} title="Previous page">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
-          </button>
+          <Tooltip label={activePage <= 1 ? 'Already on the first page' : 'Previous page'} position="bottom">
+            <button type="button" style={navBtn(activePage <= 1)} disabled={activePage <= 1} onClick={() => goto(activePage - 1)}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
+            </button>
+          </Tooltip>
           <span style={{ fontSize: 10, fontWeight: 700, color: fg, minWidth: 54, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>
             {numPages ? `${activePage} / ${numPages}` : '—'}
           </span>
-          <button type="button" style={navBtn(activePage >= numPages)} disabled={activePage >= numPages} onClick={() => goto(activePage + 1)} title="Next page">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
-          </button>
+          <Tooltip label={activePage >= numPages ? 'Already on the last page' : 'Next page'} position="bottom">
+            <button type="button" style={navBtn(activePage >= numPages)} disabled={activePage >= numPages} onClick={() => goto(activePage + 1)}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
+            </button>
+          </Tooltip>
+          {/* The ONE control for this action: refresh icon + the word for what
+              it does. The label is constant so the button never renames itself
+              under the cursor; the STATE is carried by colour and tooltip —
+              amber when the draft has moved on and the preview needs updating,
+              muted violet when it already matches. It stays clickable either
+              way, because a manual re-render is always a reasonable thing to
+              ask for and a dead button invites a second click somewhere else. */}
+          <Tooltip
+            position="bottom"
+            label={status === 'loading'
+              ? 'Rendering the preview…'
+              : (manualRefresh
+                ? (stale
+                  ? 'The draft has changed — update the preview (Ctrl+S)'
+                  : 'Preview matches the draft — refresh anyway (Ctrl+S)')
+                : 'Refresh the preview now')}
+          >
           <button
             type="button"
             style={{
               ...navBtn(status === 'loading'),
-              // Amber while stale so the control the user needs is the one that
-              // stands out, matching the badge beside the title.
+              width: 'auto', gap: 5, padding: '0 10px',
               background: (manualRefresh && stale && status !== 'loading')
                 ? (dark ? 'rgba(245,158,11,.28)' : '#FDE68A')
                 : (dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'),
-              color: fg,
+              // Border tracks the state with the fill, so the amber "needs
+              // updating" signal survives on a screen where the tint alone is
+              // too faint to notice.
+              border: `1.5px solid ${(manualRefresh && stale && status !== 'loading')
+                ? (dark ? 'rgba(245,158,11,.75)' : '#D97706')
+                : (dark ? 'rgba(167,139,250,.55)' : '#7C3AED')}`,
+              color: (manualRefresh && stale && status !== 'loading')
+                ? (dark ? '#FCD34D' : '#92400E')
+                : fg,
+              fontSize: 10, fontWeight: 800, letterSpacing: '.02em', whiteSpace: 'nowrap',
+              fontFamily: 'inherit',
             }}
             disabled={status === 'loading'}
             onClick={() => void render()}
-            title={status === 'loading'
-              ? 'Rendering…'
-              : (manualRefresh ? 'Refresh preview (Ctrl+S)' : 'Refresh preview now')}
             aria-busy={status === 'loading'}
           >
             {status === 'loading'
               ? <svg className="ctc-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
               : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>}
+            {status === 'loading' ? 'Updating…' : 'Update Preview'}
           </button>
+          </Tooltip>
         </div>
       </div>
 

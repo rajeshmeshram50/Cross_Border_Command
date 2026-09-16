@@ -828,8 +828,12 @@ export default function Vendors() {
          comes out at or below zero and the card collapses to nothing. Which is
          exactly what it did: tabs, Filter, then the footer, with no table.
          Below 820px the page scrolls the way a page normally does: the card is
-         content-height and shows a fixed number of rows. */
-      if (window.innerWidth <= 820) return;
+         content-height and shows a fixed number of rows.
+
+         The min-height applied below is cleared on the way out — an inline
+         style set while the window was wide would otherwise survive the resize
+         down and pin a phone-width card to a desktop height. */
+      if (window.innerWidth <= 820) { el.style.minHeight = ''; return; }
 
       const top = el.getBoundingClientRect().top;
       const THEAD = 42, ROW = 54, PAGER = 56;
@@ -871,16 +875,29 @@ export default function Vendors() {
          fit is worth a request. */
       const fit = Math.max(10, Math.floor(avail / ROW));
       if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      /* The card is CONTENT-HEIGHT — never stretched to the viewport.
-         It used to carry minHeight: cardH, on the reasoning that a short list
-         should still cover the page. What that actually produced was a blank
-         white half-screen between the last row and the pager, in three
-         everyday cases: a hand-picked page size of 5, the last page of a set
-         (4 rows where 10 fit), and any search that narrowed the result.
-         The stretch is redundant anyway. `fit` above is derived from cardH, so
-         a full page already fills the screen on its own; the stretch only ever
-         applied to pages that were NOT full — precisely the ones it made look
-         broken. cardH is still computed, purely to size that row count. */
+
+      /* MIN height, so the card runs down to 8px above the app footer — the
+         same rule the HRMS tables get from DataTable's fitToViewport.
+         (components/ui/DataTable.tsx, the `size()` effect.)
+
+         This was removed once, because on a short page it leaves whitespace
+         between the last row and the pager. That was the wrong trade to make,
+         and DataTable had already settled it the other way (QA #59): without a
+         floor, an empty or narrowed list collapses to its content and leaves a
+         screen-tall dead gap between the card and the page footer — which is
+         the state in the bug report, a 90px card stranded above 350px of
+         nothing. Whitespace INSIDE a card that reaches the footer reads as an
+         empty table; a card that stops a third of the way down the page reads
+         as the page failing to load.
+
+         MIN rather than a fixed height on purpose: a manually chosen
+         rows-per-page larger than the fit must be free to push past the
+         viewport and let the PAGE scroll, instead of hiding the extra rows
+         behind an inner scrollbar. Leftover space lands in the flex column and
+         the pager — `.sl-table-scroll > .wl-pager { margin-top:auto }` — is
+         carried to the bottom edge with it. */
+      const h = `${cardH}px`;
+      if (el.style.minHeight !== h) el.style.minHeight = h;
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
