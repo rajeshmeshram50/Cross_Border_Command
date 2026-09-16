@@ -1483,7 +1483,7 @@ function Stage1(p: {
                     <span style={{ fontSize: 8, fontWeight: 700, color: t.dark ? '#a78bfa' : '#C4B5FD', letterSpacing: '.05em' }}>{'{{PLACEHOLDER}}'}</span>
                   </div>
                 </div>
-                {phOpen && <ClmInsertPlaceholderModal open={phOpen} hideProductTab counterparties={p.cps.map(c => ({ name: c.name, code: String(c.sourceId ?? ''), role: (c.sourceType || c.badge || '').toLowerCase(), type: c.sourceType, id: c.sourceId }))} onClose={() => setPhOpen(false)} onInsert={tok => { const isHtml = /^\s*</.test(tok); toast.success(isHtml ? 'Inserted' : 'Placeholder added', isHtml ? 'Added to the agreement draft.' : tok); if (isHtml) insertHtml(tok); else insertText(tok); }} />}
+                {phOpen && <ClmInsertPlaceholderModal open={phOpen} hideProductTab counterparties={p.cps.map(c => ({ name: c.name, code: String(c.sourceId ?? ''), role: (c.sourceType || c.badge || '').toLowerCase(), type: c.sourceType, id: c.sourceId, dbId: c.sourceDbId }))} onClose={() => setPhOpen(false)} onInsert={tok => { const isHtml = /^\s*</.test(tok); toast.success(isHtml ? 'Inserted' : 'Placeholder added', isHtml ? 'Added to the agreement draft.' : tok); if (isHtml) insertHtml(tok); else insertText(tok); }} />}
                 {clauseOpen && <ClmClauseInsertPanel onClose={() => setClauseOpen(false)} onInsert={html => insertHtml(html)} />}
                 {/* DOCX conversion lock — blocks the whole surface (incl. the modal's
                     close button) so a long import can't be cut off mid-flight. */}

@@ -42,6 +42,28 @@ class RecruitmentController extends Controller
     private const PRIORITIES       = ['Critical', 'High', 'Medium', 'Low'];
     private const STATUSES         = ['In Progress', 'Completed', 'Cancelled', 'Expired'];
 
+    /* Characters a job title / role may carry. (CBC #150)
+     *
+     * Was `[A-Za-z0-9 .,\-\/]` — letters, digits and four marks — which reads
+     * as "no special characters" but in practice refused ordinary job titles:
+     * "Sr. Engineer (R&D)", "Manager - Sales & Marketing", "Analyst, L&D",
+     * "Driver's Supervisor" all failed, and the error said only "No special
+     * characters", so there was nothing to tell the user which mark was the
+     * problem or that a title like theirs was never going to be accepted.
+     *
+     * Widened to the set already trusted on the qualification fields —
+     * & ( ) + apostrophes (straight and curly), % : ; and en/em dashes — so
+     * the two halves of the same form stop disagreeing about what a normal
+     * word looks like. Still no < > { } [ ] \ | " ` ~ = * # @ $ ^, which is
+     * what the rule is actually guarding against, and a separate rule
+     * requires at least one letter so punctuation alone cannot pass.
+     *
+     * Kept identical to TITLE_RE in HrRecruitment.tsx — the SPA validates
+     * first, and a client rule looser than the server's produces a 422 the
+     * form cannot attach to a field. */
+    private const TITLE_REGEX = 'regex:/^[A-Za-z0-9 .,\/&()+\-\x27\x{2019}%:;\x{2013}\x{2014}]+$/u';
+    private const HAS_LETTER  = 'regex:/[A-Za-z]/';
+
     /* ─────────────────────────────────────────────────────────────────
      *  LIST / SHOW / NEXT-CODE
      * ───────────────────────────────────────────────────────────────── */
@@ -586,11 +608,11 @@ class RecruitmentController extends Controller
         $req = fn (string $extra = '') => ($isUpdate ? 'sometimes|' : '') . 'required' . ($extra ? "|{$extra}" : '');
 
         return $request->validate([
-            // Reject special characters (@ # $ % ^ & * ( ) …). Only letters,
-            // numbers, spaces and basic title punctuation (- . , /) allowed.
+            // Letters, digits and ordinary title punctuation — see TITLE_REGEX
+            // for what is allowed and why. Must contain a letter.
             'job_title'         => array_values(array_filter([
                 $isUpdate ? 'sometimes' : null, 'required', 'string', 'max:191',
-                'regex:/^[A-Za-z0-9 .,\-\/]+$/',
+                self::TITLE_REGEX, self::HAS_LETTER,
             ])),
             'department_id'     => ($isUpdate ? 'sometimes|' : '') . 'required|integer|exists:master_departments,id',
             'designation_id'    => ($isUpdate ? 'sometimes|' : '') . 'required|integer|exists:master_designations,id',

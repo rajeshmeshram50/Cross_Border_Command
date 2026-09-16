@@ -589,24 +589,16 @@ function RegularizationDetailModal({ row, onClose }: { row: ApiRegularization | 
     return () => { stale = true; };
   }, [row]);
 
-  /* useIsDark() MUST be called above the `if (!row)` bail-out.
-   *
-   * It is a hook (useState + useEffect) wearing a helper's clothes, and it
-   * used to be called INSIDE the statusTone() line below the early return.
-   * So a closed modal (row === null) ran 3 hooks and left; opening one ran 5.
-   * React counts hooks per render and refuses a render that grows the list —
-   * "Rendered more hooks than during the previous render" (minified error
-   * #310), which the page error boundary then showed as "Something went
-   * wrong" over the whole Attendance screen the moment a regularization row
-   * was opened.
-   *
-   * Reading the theme before the bail-out costs one MutationObserver on a
-   * modal that is not open, and buys an unconditional hook order. */
-  const isDark = useIsDark();
+  /* Hooks must run on every render of this component, including the one where
+     `row` is null and the dialog renders nothing. `useIsDark` is a hook, so
+     reading it below the early return changed the hook count between the closed
+     and open states and React tore the tree down — the "Something went wrong"
+     screen the approver saw the moment they pressed View. */
+  const dark = useIsDark();
 
   if (!row) return null;
 
-  const tone      = statusTone(row.status, isDark);
+  const tone      = statusTone(row.status, dark);
   const requested = (row.punches ?? []).map(p => punchPair12h(p.in, p.out));
   const originals = to12h(row.original_display).split(',').map(t => t.trim()).filter(Boolean);
 

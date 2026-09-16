@@ -39,8 +39,11 @@ class CtcContractController extends Controller
     private function fmt($d): string
     {
         if (!$d) return '—';
-        try { return \Illuminate\Support\Carbon::parse($d)->setTimezone(self::DISPLAY_TZ)->format('d M Y'); }
-        catch (\Throwable $e) { return '—'; }
+        try {
+            return \Illuminate\Support\Carbon::parse($d)->setTimezone(self::DISPLAY_TZ)->format('d M Y');
+        } catch (\Throwable $e) {
+            return '—';
+        }
     }
 
     /**
@@ -183,7 +186,7 @@ class CtcContractController extends Controller
                 ? [['name' => $c->primary_approver_name, 'status' => $c->approval_status ?: 'pending']]
                 : [];
         }
-        return array_map(fn ($a) => [
+        return array_map(fn($a) => [
             'name'   => $a['name'] ?? '—',
             'status' => $a['status'] ?? 'pending',
         ], $approvers);
@@ -275,13 +278,15 @@ class CtcContractController extends Controller
            conversation that cannot go anywhere as if it still needed them.
            Resubmit opens a fresh round, and a query still open then surfaces
            against that one. */
-        if (!empty($ordered)
+        if (
+            !empty($ordered)
             && $ordered[0]['status'] !== 'rejected'
-            && $this->hasMyOpenClarification($c, $approverEmail, $approverName)) {
+            && $this->hasMyOpenClarification($c, $approverEmail, $approverName)
+        ) {
             $ordered[0]['status'] = 'clarification';
         }
 
-        return collect($ordered)->map(fn ($r) => [
+        return collect($ordered)->map(fn($r) => [
             'id'             => $c->code,
             'dbId'           => $c->id,
             'title'          => $c->title,
@@ -309,7 +314,7 @@ class CtcContractController extends Controller
 
     private function cpNames(CtcContract $c): array
     {
-        return collect($this->resolveCounterparties($c))->map(fn ($x) => $x['name'] ?? '')->filter()->values()->all();
+        return collect($this->resolveCounterparties($c))->map(fn($x) => $x['name'] ?? '')->filter()->values()->all();
     }
 
     /**
@@ -376,7 +381,8 @@ class CtcContractController extends Controller
     private function assertCounterpartyCategories(?array $cps): void
     {
         $rows     = is_array($cps) ? $cps : [];
-        $customer = null; $consignee = null;
+        $customer = null;
+        $consignee = null;
         foreach ($rows as $cp) {
             if (!is_array($cp)) continue;
             $label = $this->cpRoleLabel($cp);
@@ -413,8 +419,13 @@ class CtcContractController extends Controller
         return array_map(function ($cp) use ($c) {
             $type = strtolower((string) ($cp['source_type'] ?? ''));
             $id   = $cp['source_id'] ?? null;
-            if ($id === null || $id === '' || $type === '') return $cp;
-            $live = $this->liveParty($type, $id, (int) $c->client_id);
+            // The picker stores the party's numeric PK alongside its display
+            // code; the PK is the only reference that means one company, so it
+            // leads. See partyByRef().
+            $dbId = $cp['source_db_id'] ?? null;
+            if ($type === '') return $cp;
+            if (($id === null || $id === '') && ($dbId === null || $dbId === '')) return $cp;
+            $live = $this->liveParty($type, $id, (int) $c->client_id, $dbId, $c->branch_id);
             return $live ? array_merge($cp, $live) : $cp;
         }, $cps);
     }
@@ -427,22 +438,46 @@ class CtcContractController extends Controller
      * would otherwise fail to resolve and surface as an empty / "Not Applicable"
      * company name in Stage 2 and in the {{consignee.*}} placeholders.
      */
-    private function resolvePartyRow($q, $id, string $codeCol)
+    private function resolvePartyRow($q, $id, string $codeCol, $branchId = null)
     {
-        if (is_numeric($id)) return $q->find($id);
+        if (is_numeric($id)) return (clone $q)->find($id);
+
+        if ($branchId !== null) {
+            $row = (clone $q)->where($codeCol, $id)->where('branch_id', $branchId)->first();
+            if ($row) return $row;
+        }
         $row = (clone $q)->where($codeCol, $id)->first();
         if ($row) return $row;
         return preg_match('/(\d+)\s*$/', (string) $id, $m) ? (clone $q)->find((int) $m[1]) : null;
     }
 
+    /**
+     * Resolve a counterparty to its live row, PK first.
+     *
+     * `source_db_id` is the party's numeric primary key, captured by the
+     * counterparty picker at the moment the user chose the company. It is the
+     * only reference on a stored counterparty that identifies exactly one row.
+     * `source_id` is the DISPLAY code, which repeats across branches, so it is
+     * the fallback -- used for counterparties saved before the picker recorded
+     * the PK, and branch-scoped by resolvePartyRow() when it is.
+     */
+    private function partyByRef($q, $id, string $codeCol, $dbId = null, $branchId = null)
+    {
+        if ($dbId !== null && $dbId !== '' && (int) $dbId > 0) {
+            $row = (clone $q)->find((int) $dbId);
+            if ($row) return $row;
+        }
+        return $this->resolvePartyRow($q, $id, $codeCol, $branchId);
+    }
+
     /** Current name/country/phone/email for a party reference, or null if it no longer exists. */
-    private function liveParty(string $type, $id, int $clientId): ?array
+    private function liveParty(string $type, $id, int $clientId, $dbId = null, $branchId = null): ?array
     {
         if ($type === 'buyer' || $type === 'customer') {
             // source_id is the customer_code (e.g. "C-009"), not the numeric PK —
             // resolve by code, falling back to the id (numeric or "C-NNN" form).
             $q = \App\Models\Customer::where('client_id', $clientId)->with('primaryAddress');
-            $row = $this->resolvePartyRow($q, $id, 'customer_code');
+            $row = $this->partyByRef($q, $id, 'customer_code', $dbId, $branchId);
             if (!$row) return null;
             $a = $row->primaryAddress;
             return [
@@ -457,7 +492,7 @@ class CtcContractController extends Controller
         }
         if ($type === 'consignee') {
             $q = \App\Models\Consignee::where('client_id', $clientId)->with('primaryAddress');
-            $row = $this->resolvePartyRow($q, $id, 'consignee_code');
+            $row = $this->partyByRef($q, $id, 'consignee_code', $dbId, $branchId);
             if (!$row) return null;
             $a = $row->primaryAddress;
             return [
@@ -470,7 +505,7 @@ class CtcContractController extends Controller
         }
         if ($type === 'supplier' || $type === 'vendor') {
             $q = \App\Models\Vendor::where('client_id', $clientId)->with('primaryAddress');
-            $row = $this->resolvePartyRow($q, $id, 'vendor_code');
+            $row = $this->partyByRef($q, $id, 'vendor_code', $dbId, $branchId);
             if (!$row) return null;
             $a = $row->primaryAddress;
             return [
@@ -490,22 +525,22 @@ class CtcContractController extends Controller
      * placeholders can be resolved against real data. Returns [model, name]
      * or [null, ''] when the reference can't be resolved.
      */
-    private function livePartyModel(string $type, $id, int $clientId): array
+    private function livePartyModel(string $type, $id, int $clientId, $dbId = null, $branchId = null): array
     {
         $type = strtolower($type);
         if ($type === 'buyer' || $type === 'customer') {
             $q = \App\Models\Customer::where('client_id', $clientId)->with('primaryAddress');
-            $row = $this->resolvePartyRow($q, $id, 'customer_code');
+            $row = $this->partyByRef($q, $id, 'customer_code', $dbId, $branchId);
             return $row ? [$row, 'Customer'] : [null, ''];
         }
         if ($type === 'consignee') {
             $q = \App\Models\Consignee::where('client_id', $clientId)->with('primaryAddress');
-            $row = $this->resolvePartyRow($q, $id, 'consignee_code');
+            $row = $this->partyByRef($q, $id, 'consignee_code', $dbId, $branchId);
             return $row ? [$row, 'Consignee'] : [null, ''];
         }
         if ($type === 'supplier' || $type === 'vendor') {
             $q = \App\Models\Vendor::where('client_id', $clientId)->with('primaryAddress');
-            $row = $this->resolvePartyRow($q, $id, 'vendor_code');
+            $row = $this->partyByRef($q, $id, 'vendor_code', $dbId, $branchId);
             return $row ? [$row, 'Vendor'] : [null, ''];
         }
         return [null, ''];
@@ -521,8 +556,10 @@ class CtcContractController extends Controller
         foreach ((is_array($row->counterparties) ? $row->counterparties : []) as $cp) {
             $type = (string) ($cp['source_type'] ?? '');
             $id   = $cp['source_id'] ?? null;
-            if ($id === null || $id === '' || $type === '') continue;
-            [$model, $modelName] = $this->livePartyModel($type, $id, (int) $row->client_id);
+            $dbId = $cp['source_db_id'] ?? null;
+            if ($type === '') continue;
+            if (($id === null || $id === '') && ($dbId === null || $dbId === '')) continue;
+            [$model, $modelName] = $this->livePartyModel($type, $id, (int) $row->client_id, $dbId, $row->branch_id);
             if ($model) $html = ClmSignatureController::replacePartyNamespaceTokens($html, $model, $modelName);
         }
         return $html;
@@ -620,7 +657,7 @@ class CtcContractController extends Controller
     {
         $approvers = array_values($c->approvers ?? []);
         $total     = count($approvers);
-        $approved  = collect($approvers)->filter(fn ($a) => (($a['status'] ?? 'pending')) === 'approved')->count();
+        $approved  = collect($approvers)->filter(fn($a) => (($a['status'] ?? 'pending')) === 'approved')->count();
         return [$approved, $total];
     }
 
@@ -677,7 +714,8 @@ class CtcContractController extends Controller
     /* ── Case to Case Contracts list ── */
     public function index(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
 
         // Branch-scope the list the same way as the approver picker: a branch
         // user only ever sees their OWN branch's contracts; a tenant-level
@@ -686,35 +724,37 @@ class CtcContractController extends Controller
         $branchFilter = ($user->branch_id ?: null) ?: ($request->integer('branch_id') ?: null);
 
         $rows = CtcContract::where('client_id', $user->client_id)
-            ->when($branchFilter, fn ($q) => $q->where('branch_id', $branchFilter))
+            ->when($branchFilter, fn($q) => $q->where('branch_id', $branchFilter))
             ->orderByDesc('id')->get()
-            ->map(fn ($c) => $this->shapeList($c));
+            ->map(fn($c) => $this->shapeList($c));
         return response()->json(['status' => true, 'data' => $rows]);
     }
 
     /* ── Agreements We Sent (mine) ── */
     public function sentIndex(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $rows = CtcContract::where('client_id', $user->client_id)
             ->where('created_by', $user->id)
             ->orderByDesc('id')->get()
-            ->map(fn ($c) => $this->shapeSent($c));
+            ->map(fn($c) => $this->shapeSent($c));
         return response()->json(['status' => true, 'data' => $rows]);
     }
 
     /* ── Agreements To Approve (I'm an approver) ── */
     public function toApproveIndex(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $email = strtolower((string) $user->email);
         $rows = CtcContract::where('client_id', $user->client_id)
             ->where(function ($w) use ($email) {
                 $w->whereJsonContains('approver_emails', $email)
-                  ->orWhere('primary_approver_email', $email);
+                    ->orWhere('primary_approver_email', $email);
             })
             ->orderByDesc('id')->get()
-            ->flatMap(fn ($c) => $this->approvalRoundsShaped($c, $user->name ?? '', $user->email ?? ''))
+            ->flatMap(fn($c) => $this->approvalRoundsShaped($c, $user->name ?? '', $user->email ?? ''))
             // One row per CTC — keep only the latest round (rounds come back
             // newest-first, so the first occurrence of each code is the latest).
             ->unique('id')
@@ -747,7 +787,7 @@ class CtcContractController extends Controller
             trim((string) $b->city),
             trim((string) $b->state),
             trim(trim((string) $b->pincode) . ' ' . trim((string) $b->country)),
-        ], fn ($v) => $v !== '')), ', ');
+        ], fn($v) => $v !== '')), ', ');
     }
 
     /** Organisation-detail tokens filled from the SELECTED branch's own data. */
@@ -782,7 +822,9 @@ class CtcContractController extends Controller
             $ext  = strtolower(pathinfo($path, PATHINFO_EXTENSION) ?: 'png');
             $mime = in_array($ext, ['jpg', 'jpeg']) ? 'image/jpeg' : ($ext === 'webp' ? 'image/webp' : 'image/png');
             return "data:$mime;base64,$data";
-        } catch (\Throwable $e) { return null; }
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**
@@ -794,30 +836,31 @@ class CtcContractController extends Controller
      */
     public function contactPersons(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $type = strtolower((string) $request->query('type'));
         $id   = $request->query('id');
         if ($id === null || $id === '') return response()->json(['status' => true, 'data' => []]);
 
         if ($type === 'buyer' || $type === 'customer') {
-            $row = $this->resolvePartyRow(\App\Models\Customer::where('client_id', $user->client_id)->with('addresses'), $id, 'customer_code');
+            $row = $this->resolvePartyRow(\App\Models\Customer::where('client_id', $user->client_id)->with('addresses'), $id, 'customer_code', $user->branch_id);
             return response()->json(['status' => true, 'data' => $this->mapCpAddresses($row)]);
         }
         if ($type === 'consignee') {
-            $row = $this->resolvePartyRow(\App\Models\Consignee::where('client_id', $user->client_id)->with('addresses'), $id, 'consignee_code');
+            $row = $this->resolvePartyRow(\App\Models\Consignee::where('client_id', $user->client_id)->with('addresses'), $id, 'consignee_code', $user->branch_id);
             return response()->json(['status' => true, 'data' => $this->mapCpAddresses($row)]);
         }
         if ($type === 'supplier' || $type === 'vendor') {
             $q = \App\Models\Vendor::where('client_id', $user->client_id)->with('addresses');
-            $row = $this->resolvePartyRow($q, $id, 'vendor_code');
+            $row = $this->resolvePartyRow($q, $id, 'vendor_code', $user->branch_id);
             if (!$row) return response()->json(['status' => true, 'data' => []]);
-            $contacts = collect($row->addresses ?? [])->map(fn ($a) => [
+            $contacts = collect($row->addresses ?? [])->map(fn($a) => [
                 'name'        => $a->contact_name,
                 'email'       => $a->email,
                 'designation' => $a->designation,
                 'phone'       => $a->contact_no,
                 'is_primary'  => (bool) $a->is_primary,
-            ])->filter(fn ($c) => $c['name'] || $c['email'])->values()->all();
+            ])->filter(fn($c) => $c['name'] || $c['email'])->values()->all();
             return response()->json(['status' => true, 'data' => $contacts]);
         }
         return response()->json(['status' => true, 'data' => []]);
@@ -827,18 +870,19 @@ class CtcContractController extends Controller
     private function mapCpAddresses($row): array
     {
         if (!$row) return [];
-        return collect($row->addresses ?? [])->map(fn ($a) => [
+        return collect($row->addresses ?? [])->map(fn($a) => [
             'name'        => $a->cp_name,
             'email'       => $a->cp_email,
             'designation' => $a->cp_designation,
             'phone'       => $a->cp_contact,
             'is_primary'  => (bool) $a->is_primary,
-        ])->filter(fn ($c) => $c['name'] || $c['email'])->values()->all();
+        ])->filter(fn($c) => $c['name'] || $c['email'])->values()->all();
     }
 
     public function show(Request $request, int $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $row = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
         // Surface the branch signature+stamp so the SPA can drop it onto the
         // {{signature}} placeholder once the agreement is approved.
@@ -870,13 +914,14 @@ class CtcContractController extends Controller
      */
     public function placeholderValues(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
-        [$model, $modelName] = $this->livePartyModel((string) $request->query('type', ''), $request->query('id'), (int) $user->client_id);
+        $user = $request->user();
+        if (!$user) abort(401);
+        [$model, $modelName] = $this->livePartyModel((string) $request->query('type', ''), $request->query('id'), (int) $user->client_id, $request->query('db_id'), $user->branch_id);
         if (!$model) return response()->json(['status' => true, 'data' => []]);
 
         $addr   = $model->primaryAddress;
         $vendor = $modelName === 'Vendor';
-        $scalar = static fn ($v) => $v === null ? '' : (is_object($v) ? (string) ($v->name ?? '') : (string) $v);
+        $scalar = static fn($v) => $v === null ? '' : (is_object($v) ? (string) ($v->name ?? '') : (string) $v);
         $country = $scalar($addr?->country);
         $state   = $scalar($addr?->state);
         $pin     = $scalar($vendor ? ($addr?->pincode ?? null) : ($addr?->pin ?? null));
@@ -926,7 +971,8 @@ class CtcContractController extends Controller
      */
     public function approverCandidates(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
 
         // Approvers must belong to the SAME branch as the contract. Always scope
         // to the caller's OWN branch when they have one (branch users / employees)
@@ -955,7 +1001,7 @@ class CtcContractController extends Controller
         // decision-makers and stay eligible regardless of explicit grants.
         $clmUserIds = \App\Models\Permission::whereIn('user_id', $candidates->pluck('id'))
             ->where('can_view', true)
-            ->whereHas('module', fn ($m) => $m->where('slug', 'like', 'clm.%'))
+            ->whereHas('module', fn($m) => $m->where('slug', 'like', 'clm.%'))
             ->pluck('user_id')->unique()->flip();
 
         // Designation + Department come from each candidate's linked Employee row
@@ -968,8 +1014,8 @@ class CtcContractController extends Controller
         // BRANCH first, then employees — and alphabetical within each.
         $order = ['branch_user' => 0, 'employee' => 1];
         $rows = $candidates
-            ->filter(fn ($u) => $u->user_type === 'branch_user' || $clmUserIds->has($u->id))
-            ->sortBy(fn ($u) => [$order[$u->user_type] ?? 9, strtolower($u->name ?? '')])
+            ->filter(fn($u) => $u->user_type === 'branch_user' || $clmUserIds->has($u->id))
+            ->sortBy(fn($u) => [$order[$u->user_type] ?? 9, strtolower($u->name ?? '')])
             ->values()
             ->map(function ($u) use ($employees) {
                 $emp = $employees->get($u->id);
@@ -990,7 +1036,8 @@ class CtcContractController extends Controller
     /* ── Create (Submit & Send for Approval from the add form) ── */
     public function store(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
 
         $data = $request->validate([
@@ -1019,7 +1066,7 @@ class CtcContractController extends Controller
         // Each approver carries its own decision so the contract only counts
         // as approved once EVERY selected approver has approved (see approve()).
         // `status` starts 'pending'; `acted_at` stamps when they decide.
-        $approvers = collect($data['approvers'] ?? [])->map(fn ($a) => [
+        $approvers = collect($data['approvers'] ?? [])->map(fn($a) => [
             'name'      => (string) ($a['name'] ?? ''),
             'email'     => strtolower((string) ($a['email'] ?? '')),
             'role'      => (string) ($a['role'] ?? ''),
@@ -1039,7 +1086,7 @@ class CtcContractController extends Controller
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
             $seq  = CtcContract::withTrashed()
                 ->where('client_id', $user->client_id)
-                ->when($user->branch_id, fn ($q) => $q->where('branch_id', $user->branch_id), fn ($q) => $q->whereNull('branch_id'))
+                ->when($user->branch_id, fn($q) => $q->where('branch_id', $user->branch_id), fn($q) => $q->whereNull('branch_id'))
                 ->count() + 1;
             $code = sprintf('CTC-%03d', $seq);
 
@@ -1094,7 +1141,8 @@ class CtcContractController extends Controller
 
     public function update(Request $request, int $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
 
         $data = $request->validate([
@@ -1117,7 +1165,8 @@ class CtcContractController extends Controller
 
     public function destroy(Request $request, int $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
         $row->delete();
         return response()->json(['status' => true]);
@@ -1137,7 +1186,8 @@ class CtcContractController extends Controller
      */
     public function approve(Request $request, int $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
 
         $email     = strtolower((string) $user->email);
@@ -1176,7 +1226,7 @@ class CtcContractController extends Controller
         $row->approvers = $approvers;
 
         $total    = count($approvers);
-        $approved = collect($approvers)->filter(fn ($a) => ($a['status'] ?? 'pending') === 'approved')->count();
+        $approved = collect($approvers)->filter(fn($a) => ($a['status'] ?? 'pending') === 'approved')->count();
 
         /* Derived, not assigned — see deriveApprovalStatus().
            This used to set 'approved' or 'pending' outright, which meant an
@@ -1210,7 +1260,8 @@ class CtcContractController extends Controller
 
     public function reject(Request $request, int $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
         if (!$this->isApprover($row, $user)) {
             return response()->json(['status' => false, 'message' => 'You are not an approver for this agreement.'], 403);
@@ -1243,7 +1294,8 @@ class CtcContractController extends Controller
 
     public function clarify(Request $request, int $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
         if (!$this->isApprover($row, $user)) {
             return response()->json(['status' => false, 'message' => 'You are not an approver for this agreement.'], 403);
@@ -1302,11 +1354,11 @@ class CtcContractController extends Controller
         }
 
         $open = collect($row->clarifications ?? [])
-            ->contains(fn ($c) => trim((string) ($c['response'] ?? '')) === '');
+            ->contains(fn($c) => trim((string) ($c['response'] ?? '')) === '');
         if ($open) return 'clarification';
 
         if (!empty($approvers)) {
-            $approved = collect($approvers)->filter(fn ($a) => ($a['status'] ?? 'pending') === 'approved')->count();
+            $approved = collect($approvers)->filter(fn($a) => ($a['status'] ?? 'pending') === 'approved')->count();
             if ($approved >= count($approvers)) return 'approved';
         }
 
@@ -1316,7 +1368,8 @@ class CtcContractController extends Controller
     /** Sender responds to the latest open clarification. */
     public function respond(Request $request, int $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
         $data = $request->validate(['response' => 'required|string|max:2000']);
         $thread = $row->clarifications ?? [];
@@ -1362,7 +1415,8 @@ class CtcContractController extends Controller
      */
     public function resubmit(Request $request, int $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
 
         $data = $request->validate([
@@ -1406,14 +1460,14 @@ class CtcContractController extends Controller
         if (array_key_exists('days_to_approve', $data))  $row->days_to_approve = $data['days_to_approve'];
         if (array_key_exists('reminder_days', $data))    $row->reminder_days = $data['reminder_days'];
 
-        $wasDeclined = collect($row->signing_recipients ?? [])->contains(fn ($r) => !empty($r['declined']));
+        $wasDeclined = collect($row->signing_recipients ?? [])->contains(fn($r) => !empty($r['declined']));
 
         // Approvers: when the edit form supplies a new list, replace it
         // (rebuilding approver_emails + primary); otherwise keep the existing
         // approvers. Either way, reset every approver's decision so the
         // all-must-approve gate starts over for this fresh round.
         if (!empty($data['approvers'])) {
-            $approvers = collect($data['approvers'])->map(fn ($a) => [
+            $approvers = collect($data['approvers'])->map(fn($a) => [
                 'name'      => (string) ($a['name'] ?? ''),
                 'email'     => strtolower((string) ($a['email'] ?? '')),
                 'role'      => (string) ($a['role'] ?? ''),
@@ -1462,7 +1516,8 @@ class CtcContractController extends Controller
      */
     public function sendForSigning(Request $request, int $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
 
         if ($row->approval_status !== 'approved') {
@@ -1478,7 +1533,7 @@ class CtcContractController extends Controller
             'days_to_sign'           => 'nullable|integer|min:1|max:365',
         ]);
 
-        $recipients = collect($data['recipients'])->map(fn ($r) => [
+        $recipients = collect($data['recipients'])->map(fn($r) => [
             'name'      => (string) ($r['name'] ?? ''),
             'email'     => strtolower((string) ($r['email'] ?? '')),
             'role'      => (string) ($r['role'] ?? ''),
@@ -1504,7 +1559,8 @@ class CtcContractController extends Controller
      */
     public function recordSignature(Request $request, int $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
 
         $data = $request->validate([
@@ -1520,21 +1576,31 @@ class CtcContractController extends Controller
 
         $stamp = now()->format('d M Y H:i');
         if (!empty($data['all'])) {
-            foreach ($recipients as &$r) { if (empty($r['signed'])) { $r['signed'] = true; $r['signed_at'] = $stamp; } }
+            foreach ($recipients as &$r) {
+                if (empty($r['signed'])) {
+                    $r['signed'] = true;
+                    $r['signed_at'] = $stamp;
+                }
+            }
             unset($r);
         } elseif (array_key_exists('index', $data) && $data['index'] !== null && isset($recipients[$data['index']])) {
             $recipients[$data['index']]['signed'] = true;
             $recipients[$data['index']]['signed_at'] = $stamp;
         } elseif (!empty($data['email'])) {
             $email = strtolower($data['email']);
-            foreach ($recipients as &$r) { if (($r['email'] ?? '') === $email) { $r['signed'] = true; $r['signed_at'] = $stamp; } }
+            foreach ($recipients as &$r) {
+                if (($r['email'] ?? '') === $email) {
+                    $r['signed'] = true;
+                    $r['signed_at'] = $stamp;
+                }
+            }
             unset($r);
         } else {
             return response()->json(['status' => false, 'message' => 'Specify which recipient signed.'], 422);
         }
 
         $row->signing_recipients = $recipients;
-        $allSigned = collect($recipients)->every(fn ($r) => !empty($r['signed']));
+        $allSigned = collect($recipients)->every(fn($r) => !empty($r['signed']));
         if ($allSigned) {
             $row->cp_signed_date = now();
             $this->pushVersion($row, 'Agreement signed by all parties', 'Signed', $user->name ?? '');
@@ -1550,11 +1616,12 @@ class CtcContractController extends Controller
      */
     public function moveToRepository(Request $request, int $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
 
         $recipients = array_values($row->signing_recipients ?? []);
-        $allSigned  = count($recipients) > 0 && collect($recipients)->every(fn ($r) => !empty($r['signed']));
+        $allSigned  = count($recipients) > 0 && collect($recipients)->every(fn($r) => !empty($r['signed']));
         if (!$allSigned) {
             return response()->json(['status' => false, 'message' => 'All parties must sign before moving to the repository.'], 422);
         }
@@ -1571,7 +1638,8 @@ class CtcContractController extends Controller
     /** GET /clm/ctc-contracts/{id}/versions — version history list. */
     public function versions(Request $request, int $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
         return response()->json(['status' => true, 'data' => $this->istEntries($row->versions ?? [])]);
     }
@@ -1589,7 +1657,8 @@ class CtcContractController extends Controller
         @ini_set('memory_limit', '1024M');
         @set_time_limit(300);
 
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
 
         $versions = array_values($row->versions ?? []);
@@ -1641,8 +1710,12 @@ class CtcContractController extends Controller
         $headerLogoBase64 = '';
         foreach (array_filter([$headerConfig['logo_path'] ?? null, $urlPath, $client?->logo]) as $path) {
             try {
-                if (Storage::disk('public')->exists($path)) { $headerLogoBase64 = base64_encode(Storage::disk('public')->get($path)); break; }
-            } catch (\Throwable $e) { /* try next candidate */ }
+                if (Storage::disk('public')->exists($path)) {
+                    $headerLogoBase64 = base64_encode(Storage::disk('public')->get($path));
+                    break;
+                }
+            } catch (\Throwable $e) { /* try next candidate */
+            }
         }
 
         // Make the document title reflect the version for the blade heading.
@@ -1722,7 +1795,7 @@ class CtcContractController extends Controller
         }
 
         return response()->streamDownload(
-            fn () => print($bytes),
+            fn() => print($bytes),
             $fileName,
             ['Content-Type' => 'application/pdf']
         );
@@ -1794,8 +1867,12 @@ class CtcContractController extends Controller
         $headerLogoBase64 = '';
         foreach (array_filter([$headerConfig['logo_path'] ?? null, $urlPath, $client?->logo]) as $path) {
             try {
-                if (Storage::disk('public')->exists($path)) { $headerLogoBase64 = base64_encode(Storage::disk('public')->get($path)); break; }
-            } catch (\Throwable $e) { /* try next candidate */ }
+                if (Storage::disk('public')->exists($path)) {
+                    $headerLogoBase64 = base64_encode(Storage::disk('public')->get($path));
+                    break;
+                }
+            } catch (\Throwable $e) { /* try next candidate */
+            }
         }
 
         // A lightweight stand-in document when the contract isn't saved yet, so
@@ -1855,7 +1932,7 @@ class CtcContractController extends Controller
         ])->setPaper('a4')->setOption('isPhpEnabled', true);
 
         // Inline so the frontend can pull it as a blob and paint it with pdf.js.
-                $bytes = $pdf->output();
+        $bytes = $pdf->output();
         /* Skip absurd blobs: the store here is a database text column, and a
            multi-megabyte base64 row per preview is not worth the write. */
         if (strlen($bytes) <= 5 * 1024 * 1024) {

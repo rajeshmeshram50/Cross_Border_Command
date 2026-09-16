@@ -47,6 +47,40 @@ class HiringRequestController extends Controller
     private const REQUEST_TYPES      = ['New Position', 'Replacement Hiring', 'Backfill', 'Expansion Hiring', 'Intern Requirement', 'Urgent Temporary Support'];
     private const STATUSES           = ['Draft', 'Submitted', 'Under Review', 'Approved', 'Sent Back', 'Rejected'];
 
+    /* Characters a job title / role may carry. (CBC #150)
+     *
+     * Was `[A-Za-z0-9 .,\-\/]` — letters, digits and four marks — which reads
+     * as "no special characters" but in practice refused ordinary job titles:
+     * "Sr. Engineer (R&D)", "Manager - Sales & Marketing", "Analyst, L&D",
+     * "Driver's Supervisor" all failed, and the error said only "No special
+     * characters", so there was nothing to tell the user which mark was the
+     * problem or that a title like theirs was never going to be accepted.
+     *
+     * Widened to the set already trusted on the qualification fields —
+     * & ( ) + apostrophes (straight and curly), % : ; and en/em dashes — so
+     * the two halves of the same form stop disagreeing about what a normal
+     * word looks like. Still no < > { } [ ] \ | " ` ~ = * # @ $ ^, which is
+     * what the rule is actually guarding against, and a separate rule
+     * requires at least one letter so punctuation alone cannot pass.
+     *
+     * Kept identical to TITLE_RE in HrRecruitment.tsx — the SPA validates
+     * first, and a client rule looser than the server's produces a 422 the
+     * form cannot attach to a field. */
+    private const TITLE_REGEX = 'regex:/^[A-Za-z0-9 .,\/&()+\-\x27\x{2019}%:;\x{2013}\x{2014}]+$/u';
+    private const HAS_LETTER  = 'regex:/[A-Za-z]/';
+
+    /* As TITLE_REGEX, plus '#' and square brackets — see the qualification
+     * rule below. Kept identical to QUAL_RE in HrRecruitment.tsx. */
+    private const QUAL_REGEX = 'regex:/^[A-Za-z0-9 .,\/&()+\-\x27\x{2019}%:;\x{2013}\x{2014}#\[\]]+$/u';
+    /* A qualification needs a letter OR a digit, not a letter.
+     *
+     * The letters-only guard rejected "10+2" — the Higher Secondary
+     * qualification named that way on most Indian CVs, and one of the most
+     * common answers this field can be given. It is still enough to refuse
+     * punctuation on its own ("---", "###"), which is all the guard is for.
+     * (CBC #151) */
+    private const HAS_ALNUM = 'regex:/[A-Za-z0-9]/';
+
     /* ─────────────────────────────────────────────────────────────────
      *  LIST / SHOW / NEXT-CODE
      * ───────────────────────────────────────────────────────────────── */
@@ -457,8 +491,8 @@ class HiringRequestController extends Controller
             // mirrors RecruitmentController's job_title rule so validation is
             // consistent across both modules. nullable in draft/update mode
             // skips the regex when the field is left blank.
-            'title'             => [$isUpdate || $isDraft ? 'nullable' : 'required', 'string', 'max:191', 'regex:/^[A-Za-z0-9 .,\-\/]+$/'],
-            'job_role'          => [$isUpdate || $isDraft ? 'nullable' : 'required', 'string', 'max:191', 'regex:/^[A-Za-z0-9 .,\-\/]+$/'],
+            'title'             => [$isUpdate || $isDraft ? 'nullable' : 'required', 'string', 'max:191', self::TITLE_REGEX, self::HAS_LETTER],
+            'job_role'          => [$isUpdate || $isDraft ? 'nullable' : 'required', 'string', 'max:191', self::TITLE_REGEX, self::HAS_LETTER],
             'department_id'     => [$isUpdate || $isDraft ? 'nullable' : 'required', 'integer', 'exists:master_departments,id'],
             'team'              => 'nullable|string|max:100',
             'requested_by_name' => 'nullable|string|max:150',
@@ -492,7 +526,12 @@ class HiringRequestController extends Controller
              * stay rejected, which is what the rule is for. The companion
              * /[A-Za-z]/ check still requires a real word, so punctuation alone
              * cannot be saved. */
-            'required_qualification' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9 .,\/&()+\-\x27\x{2019}%:;\x{2013}\x{2014}]*$/u', 'regex:/[A-Za-z]/'],
+            /* Qualifications carry two marks a job title does not: '#' for the
+             * C# / F# family, and square brackets, which HR uses to qualify a
+             * degree ("B.Tech [CSE]"). Both were refused, so a real
+             * qualification could not be typed and the message said only that
+             * special characters were not allowed. (CBC #151) */
+            'required_qualification' => ['nullable', 'string', 'max:100', self::QUAL_REGEX, self::HAS_ALNUM],
             'preferred_profile'      => 'nullable|string|max:191',
 
             // Section 4 — Business Justification was removed from the

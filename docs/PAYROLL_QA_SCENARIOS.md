@@ -1201,11 +1201,10 @@ outright.
 - **Verified — two different outcomes, know which you are testing:**
   - No structure **and** no annual salary → **On Hold**, hold reason
     `Missing salary structure`, ₹0, blocking exception. Correct.
-  - No structure **but** an annual salary on the employee → **paid**, from a
-    derived 50/30/20 split (₹1,00,416.67 here), flagged **Pending Review** with
-    `No salary structure on file — auto-derived from annual salary`. Deliberate
-    fallback, but it means a half-configured employee **can be paid without any
-    approved structure** — worth a ticket if your process requires one.
+  - No structure **but** an annual salary on the employee → also **On Hold**
+    since CBC #148, hold reason `Missing salary structure`, ₹0, blocking
+    exception. This previously paid ₹1,00,416.67 from a derived 50/30/20
+    split — see the note below the tally.
 
 #### Verified end-to-end — full tally sheet
 
@@ -1222,8 +1221,8 @@ only variable.
 | S6 | **Superseded** version still in force | ₹1,00,416.67 | ₹1,00,216.67 | Ready | — |
 | S7 | Superseded + **future** active revision | ₹1,00,416.67 | ₹1,00,216.67 | Ready | — |
 | S8 | Two versions, later one in force | ₹1,00,416.67 | ₹1,00,216.67 | Ready | — |
-| S9 | No structure but **annual salary** set | ₹1,00,416.67 | ₹1,00,216.67 | Pending Review | — |
-| S10 | Draft structure **+ annual salary** | ₹1,00,416.67 | ₹1,00,216.67 | Pending Review | — |
+| S9 | No structure but **annual salary** set | ₹0 | ₹0 | **On Hold** | Missing salary structure |
+| S10 | Draft structure **+ annual salary** | ₹0 | ₹0 | **On Hold** | Salary structure is still a draft |
 | S11 | Annual salary of **zero** | ₹0 | ₹0 | **On Hold** | Missing salary structure |
 
 S6–S8 are the version-resolution cases and all behave: payroll uses the version
@@ -1254,14 +1253,33 @@ identifies which:
 
 Behaviour is otherwise unchanged: still On Hold, still ₹0, still blocking.
 
-> **The gap to know about (S9/S10):** an employee with **no structure at all**
-> but an `annual_salary` on their record is **not held** — payroll derives a
-> 50/30/20 split and pays them, flagged Pending Review. A draft structure does
-> not change that (S10): the draft is ignored and the annual salary is used. So
-> "no active salary structure" only stops payroll when there is no annual salary
-> either. Deliberate, but if your process requires an approved structure before
-> anyone is paid, this is the hole — and note the employee is paid on a *derived*
-> split that may not match their real terms.
+#### Closed — the derived 50/30/20 split is gone (CBC #148)
+
+S9/S10 used to be the one hole in Rule 5: an employee with **no structure at
+all** but an `annual_salary` on their record was **not** held — payroll derived
+a 50/30/20 Basic / HRA / Special split and paid it, flagged Pending Review, and
+a draft structure did not change that (S10). The slip then itemised an HRA and a
+Special Allowance that appear in no breakup anywhere in the app. Those are not
+cosmetic: HRA carries a tax exemption and PF rides on basic, so the invented
+ratio decided a statutory deduction and the employee's taxable pay.
+
+No structure now **holds**, exactly as its four siblings S1–S4 already did:
+
+| Case | Status | Hold reason |
+|---|---|---|
+| S9 · No structure, annual salary set | **On Hold** | Missing salary structure |
+| S10 · Draft structure + annual salary | **On Hold** | Salary structure is still a draft |
+
+The S9 detail names the actual cause rather than the old (and plainly untrue)
+"no annual salary on file": *"No salary structure on file. The annual salary of
+₹3,36,000.00 on the employee record is a total, not a breakup — payroll cannot
+decide how it splits into Basic, HRA and allowances. Save an active salary
+structure (Compensation → Salary Setup) and regenerate."*
+
+**Re-test note:** an employee who was being paid off the derived split will now
+appear On Hold on the next generate. That is the fix working, not a regression —
+publish a salary structure for them and regenerate. Employees who already have a
+structure are untouched, to the paisa.
 
 ### PAY-27 · Salary revision mid-cycle — **S1**
 - **Precondition:** ₹40,000 → ₹50,000 effective 15-Aug.
