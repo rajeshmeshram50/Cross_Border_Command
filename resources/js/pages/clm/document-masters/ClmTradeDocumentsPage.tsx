@@ -156,7 +156,16 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
         </button>
       </div>
 
-      <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
+      {/* `loading ||` is load-bearing. Bare .clm-tab-body is the EMPTY-STATE box:
+          90px tall, flex-centred, overflow hidden. `has-data` is what turns it
+          back into a normal display:block container for the table. Keyed on
+          slice.length alone it was false during a first load, so the skeleton
+          table was dropped into a centred flex box and shrank to its 880px
+          min-width with white space either side — the table looked detached
+          from the page. Key it on what is actually being RENDERED (skeleton or
+          rows), not on whether data has arrived. Same fix ClmClauseLibraryPage
+          already carries as `showTable`. */}
+      <div className={`clm-tab-body ${loading || slice.length > 0 ? 'has-data' : ''}`}>
         {slice.length === 0 && !loading ? (
           <div className="clm-empty">
             <div className="clm-empty-ico">{ICO.bTrade}</div>
@@ -377,7 +386,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
         </button>
       </div>
 
-      <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
+      <div className={`clm-tab-body ${loading || slice.length > 0 ? 'has-data' : ''}`}>
         {slice.length === 0 && !loading ? (
           <div className="clm-empty">
             <div className="clm-empty-ico">{ICO.bTrade}</div>

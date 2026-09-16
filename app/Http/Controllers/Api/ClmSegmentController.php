@@ -476,11 +476,36 @@ class ClmSegmentController extends Controller
             ['table' => 'clm_tnc_library',        'col' => 'segment', 'label' => 'T&C Library'],
             ['table' => 'clm_agreement_library',  'col' => 'segment', 'label' => 'Agreement Library'],
         ];
-        foreach ($nameStringTables as $t) {
-            if (!Schema::hasTable($t['table']) || !Schema::hasColumn($t['table'], $t['col'])) continue;
-            $q = DB::table($t['table'])->where($t['col'], $row->name);
-            $this->scopeToSegment($q, $t['table'], $row);
-            if ($q->exists()) $usedIn[] = $t['label'];
+        /* A name shared with a sibling segment makes these checks meaningless.
+         *
+         * These tables record the segment NAME, so when two segments in one
+         * tenant carry the same name a match cannot say WHICH of them a record
+         * meant — and the check blamed both. Branch 2 creating a segment that
+         * branch 1 already has by name could therefore never delete it, even
+         * brand new with no rule attached and nothing pointing at it.
+         * scopeToSegment() handles this when the segment belongs to a branch,
+         * but a client-level segment has no branch_id to scope by, so it fell
+         * through to a tenant-wide name match.
+         *
+         * Skipping the name checks is safe precisely BECAUSE the reference is
+         * by name: the sibling keeps that name, so every record still resolves
+         * to a live segment afterwards and nothing is orphaned. The id-based
+         * checks above (rules, vendors, products, customers.segment_id) are
+         * exact and still apply — they are what actually protects a segment
+         * that is genuinely in use. */
+        $sharesNameWithSibling = ClmSegment::query()
+            ->where('client_id', $row->client_id)
+            ->whereKeyNot($row->id)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower(trim((string) $row->name))])
+            ->exists();
+
+        if (!$sharesNameWithSibling) {
+            foreach ($nameStringTables as $t) {
+                if (!Schema::hasTable($t['table']) || !Schema::hasColumn($t['table'], $t['col'])) continue;
+                $q = DB::table($t['table'])->where($t['col'], $row->name);
+                $this->scopeToSegment($q, $t['table'], $row);
+                if ($q->exists()) $usedIn[] = $t['label'];
+            }
         }
 
         if (!empty($usedIn)) {
