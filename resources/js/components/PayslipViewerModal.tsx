@@ -72,6 +72,18 @@ export interface PayslipViewerModalProps {
    *  again. */
   overtimeRate?: number | null;
   overtimeRateName?: string | null;
+  /** Which salary structure version priced this cycle, resolved server-side
+   *  from the pay window (NOT the version current today — payroll prices a
+   *  month on the version that was in force during it). Undefined on slips
+   *  whose employee has no structure, in which case the cell is omitted. */
+  salaryVersion?: number | null;
+  /** That version's effective date, shown under the version number so the
+   *  reader can line it up against the revision history. */
+  salaryVersionFrom?: string | null;
+  /** EVERY version in force during the window. More than one means a revision
+   *  landed mid-month and the pay is a day-weighted blend of both, so naming a
+   *  single version would be misleading. */
+  salaryVersions?: number[];
   recentMonths?: PayslipRecentEntry[];
   companyName?: string;
   companyMeta?: string;
@@ -132,6 +144,13 @@ const lastDayOfMonth = (fullMonth: string, year: number | string): number => {
 };
 
 // Indian financial year (Apr–Mar) of the payslip's own period, e.g.
+/** ISO date → "23 May 2024". Short enough to sit under the version number. */
+const longDate = (iso?: string | null): string => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
 // January 2027 → "2026-27". Mirrors PayrollPeriod::financialYearFor(). (PAY-49)
 const financialYearOf = (fullMonth: string, year: number | string): string => {
   const idx = MONTH_FULL.indexOf(fullMonth as typeof MONTH_FULL[number]);
@@ -173,6 +192,9 @@ export default function PayslipViewerModal({
   overtimeRateName,
   notices = [],
   payBasis = [],
+  salaryVersion,
+  salaryVersionFrom,
+  salaryVersions = [],
   recentMonths = [],
   companyName = '',
   companyMeta = '',
@@ -589,10 +611,29 @@ export default function PayslipViewerModal({
                     { label: 'Department',    value: employee.department },
                     { label: 'Pay Period',    value: `${month.slice(0,3)} ${year}` },
                     { label: 'Financial Year', value: financialYearOf(month, year) },
+                    /* Which salary version this month was priced on. (#salary-history)
+                       Answers the question a payslip cannot otherwise answer:
+                       why these figures differ from the ones Salary Setup shows
+                       today. Dropped entirely when the server could not resolve
+                       a version, rather than printing an empty cell. */
+                    ...(salaryVersion
+                      ? [{
+                          label: 'Salary Version',
+                          value: (salaryVersions && salaryVersions.length > 1
+                            ? `v${salaryVersions[0]} → v${salaryVersions[salaryVersions.length - 1]}`
+                            : `v${salaryVersion}`),
+                          sub: (salaryVersions && salaryVersions.length > 1
+                            ? 'blended mid-month'
+                            : (salaryVersionFrom ? `from ${longDate(salaryVersionFrom)}` : undefined)),
+                        }]
+                      : []),
                   ].map(c => (
                     <div className="ep-pay-identity-cell" key={c.label}>
                       <div className="ep-pay-identity-label">{c.label}</div>
                       <div className="ep-pay-identity-value">{c.value}</div>
+                      {'sub' in c && c.sub && (
+                        <div className="ep-pay-identity-label" style={{ marginTop: 2, opacity: .8 }}>{c.sub}</div>
+                      )}
                     </div>
                   ))}
                 </div>

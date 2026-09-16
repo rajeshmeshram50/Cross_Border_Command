@@ -426,6 +426,10 @@ export default function HrPayroll() {
   const [payslipNotices, setPayslipNotices] = useState<string[]>([]);
   /** Workings behind the "This Cycle" column, shown under Earnings. (#141) */
   const [payslipBasis, setPayslipBasis] = useState<string[]>([]);
+  /* Which salary version priced the open payslip. Server-resolved from the
+     pay window, so it answers "why does this slip disagree with Salary
+     Setup" without the reader cross-checking dates by hand. */
+  const [payslipVersion, setPayslipVersion] = useState<{ version?: number | null; from?: string | null; all: number[] }>({ all: [] });
   const [payslipFinal, setPayslipFinal] = useState<boolean | undefined>(undefined);
   const [payslipRecent, setPayslipRecent] = useState<{ label: string; now?: boolean; payslipId?: number; status?: string }[]>([]);
   const [payslipCompany, setPayslipCompany] = useState<{ name: string; meta: string; initials: string; hrEmail: string } | null>(null);
@@ -463,7 +467,7 @@ export default function HrPayroll() {
      * payslip's breakup, day counts and overtime stayed on screen while the new
      * month loaded, and any field the new response does not set kept the old
      * value indefinitely. Clearing here covers both entry points. (QA #94) */
-    setPayslipBreakup(null); setPayslipNotices([]); setPayslipBasis([]);
+    setPayslipBreakup(null); setPayslipNotices([]); setPayslipBasis([]); setPayslipVersion({ all: [] });
     setPayslipDays(null);
     setPayslipOt(null);
     setPayslipFinal(undefined);
@@ -489,6 +493,11 @@ export default function HrPayroll() {
         // not in force when this slip was finalized. (#130)
         setPayslipNotices(Array.isArray(d.notices) ? d.notices : []);
         setPayslipBasis(Array.isArray(d.payBasis) ? d.payBasis : []);
+        setPayslipVersion({
+          version: typeof d.salaryVersion === 'number' ? d.salaryVersion : null,
+          from:    d.salaryVersionFrom ?? null,
+          all:     Array.isArray(d.salaryVersions) ? d.salaryVersions : [],
+        });
         setPayslipDays({
           present: typeof d.present === 'number' ? d.present : undefined,
           lopDays: typeof d.lopDays === 'number' ? d.lopDays : undefined,
@@ -549,7 +558,7 @@ export default function HrPayroll() {
       return;
     }
     setPaySlipRow(row);
-    setPayslipBreakup(null); setPayslipNotices([]); setPayslipBasis([]);
+    setPayslipBreakup(null); setPayslipNotices([]); setPayslipBasis([]); setPayslipVersion({ all: [] });
     setPayslipFinal(undefined);
     setPayslipCompany(null);
     setActivePayslipId(row.payslip_id);
@@ -574,7 +583,7 @@ export default function HrPayroll() {
     }
   };
   const selectRecent = (entry: { payslipId?: number }) => loadPayslipDetail(entry.payslipId);
-  const closePayslip = () => { setPaySlipRow(null); setPayslipBreakup(null); setPayslipNotices([]); setPayslipBasis([]); setPayslipFinal(undefined); setPayslipRecent([]); setPayslipCompany(null); setActivePayslipId(undefined); setPayslipDays(null); };
+  const closePayslip = () => { setPaySlipRow(null); setPayslipBreakup(null); setPayslipNotices([]); setPayslipBasis([]); setPayslipVersion({ all: [] }); setPayslipFinal(undefined); setPayslipRecent([]); setPayslipCompany(null); setActivePayslipId(undefined); setPayslipDays(null); };
 
   const [runOpen, setRunOpen] = useState(false);
   const [proceeding, setProceeding] = useState(false);
@@ -2841,6 +2850,9 @@ export default function HrPayroll() {
             deductions={deductions}
             notices={payslipNotices}
             payBasis={payslipBasis}
+            salaryVersion={payslipVersion.version}
+            salaryVersionFrom={payslipVersion.from}
+            salaryVersions={payslipVersion.all}
             /* Per-employee only. The old chain fell back to the cycle's
                company-wide figure and then to a hardcoded 26, either of which
                puts a number next to Paid Days that was never computed on the

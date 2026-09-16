@@ -715,9 +715,36 @@ class SalaryStructureController extends Controller
          * even when every amount on the form is untouched. Only checked when
          * the caller actually sent the field, matching the write-back's own
          * array_key_exists() rule. */
-        if (array_key_exists('pf_type', $data)) {
-            $submitted = $pf ? ($data['pf_type'] ?: 'statutory') : null;
-            if ($submitted !== $employee->pf_type) return false;
+        if ($pf && array_key_exists('pf_type', $data)) {
+            /* Both sides normalised, because NULL and 'statutory' are the same
+             * PF base — the write-back itself stores `$data['pf_type'] ?: 'statutory'`
+             * and PayrollService falls back to statutory on an empty column.
+             *
+             * Comparing them raw rejected an unchanged save for 20 of the 38
+             * employees on this database: PF on, employee.pf_type never
+             * populated, and the form's dropdown defaulting to Statutory. Every
+             * one of them would have collected a fresh version on every save
+             * while nothing about their pay changed.
+             *
+             * Only checked while PF is ON. With PF off the column is dead
+             * weight — payroll never reads it — so the write-back clearing a
+             * stale 'statutory' is housekeeping, not a revision. That was the
+             * other 4 failures, in the opposite direction. */
+            $normalise = fn ($v) => strtolower(trim((string) $v)) ?: 'statutory';
+            if ($normalise($data['pf_type']) !== $normalise($employee->pf_type)) return false;
+        }
+        /* The agreed Annual CTC, which this form writes to employee.annual_salary.
+         *
+         * It is NOT implied by the components. The breakup only has to total the
+         * CTC to within SALARY_ROUNDING_SLACK (a rupee a month), so HR can edit
+         * the CTC by a few rupees, leave every component untouched, and pass
+         * validation — a real change to the figure of record that identical
+         * earnings would have hidden. Skipped when the caller sends no CTC at
+         * all, matching the write-back's own rule. */
+        if (array_key_exists('annual_ctc', $data) && $data['annual_ctc'] !== null) {
+            if (round((float) $data['annual_ctc'], 2) !== round((float) ($employee->annual_salary ?? 0), 2)) {
+                return false;
+            }
         }
 
         // Same terms starting on a different day IS a revision — the window moves.
@@ -736,7 +763,19 @@ class SalaryStructureController extends Controller
             $code  = trim((string) ($l['code'] ?? ''));
             $label = trim((string) ($l['label'] ?? $l['name'] ?? ''));
             if ($code === '' && $label === '') continue;
-            $out[] = mb_strtolower($code !== '' ? $code : $label)
+            /* Drop the 'pf' row from BOTH sides.
+             *
+             * The form injects a Provident Fund line client-side (12% of basic,
+             * read-only) purely so HR can see it, then strips it before posting —
+             * payroll recomputes PF from pf_applicable + the employee's PF Type
+             * and never reads this row. Older saves did store it, so a structure
+             * written before that strip carries a 'pf' line the form can no
+             * longer send. Comparing it would make those employees fail the
+             * no-change check forever and collect a new version on every save,
+             * which is the very bug this guard exists to stop. PF itself is
+             * still compared — as the flag and the type, which is where it
+             * actually lives. */
+            if (strcasecmp($code, 'pf') === 0) continue;            $out[] = mb_strtolower($code !== '' ? $code : $label)
                 . '|' . mb_strtolower($label)
                 . '|' . number_format((float) ($l['amount'] ?? 0), 2, '.', '');
         }

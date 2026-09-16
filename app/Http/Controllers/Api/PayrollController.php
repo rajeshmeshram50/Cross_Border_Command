@@ -1293,6 +1293,8 @@ class PayrollController extends Controller
          * the table the reader is questioning. Separate from `notices`, which
          * explains the Deductions side. (#141) */
         $data['payBasis'] = $this->payBasisNotices($slip);
+        // Which salary version priced this cycle — see salaryVersionFor().
+        $data += $this->salaryVersionFor($slip);
         return response()->json(['data' => $data]);
     }
 
@@ -2263,6 +2265,74 @@ class PayrollController extends Controller
      * Only used as a fallback for payslips generated before the components
      * carried their own monthly figure — see serializePayslip(). (#134)
      */
+    /**
+     * Which salary structure version priced this payslip.
+     *
+     * A payslip is priced on the version that was IN FORCE during its pay
+     * window, not the one that is current today — PayrollService::activeStructure()
+     * resolves that at run time, and Rule 19 keeps the old row rather than
+     * overwriting it. So "July says ₹68,412 but Salary Setup says ₹75,000"
+     * has an answer, and until now the slip did not carry it: the reader had
+     * to open the revision history in another screen and match dates by eye.
+     *
+     * Resolution deliberately mirrors structureGrossMap() — superseded rows
+     * count (the version that priced an old cycle is superseded by definition),
+     * drafts and not-yet-effective revisions do not, and ties break on
+     * effective_from, then version, then active-over-superseded, then id.
+     *
+     * A revision dated INSIDE the window means TWO versions priced the month —
+     * blendCompensation() pays a day-weighted average of both. Naming only one
+     * of them would be a worse answer than naming none, so `salaryVersions`
+     * lists every version in force during the window and the viewer shows the
+     * range.
+     *
+     * Derived on read rather than stored. The alternative is a
+     * payslips.salary_structure_id column, which would be the stronger record
+     * for an audit; this returns the same answer for every slip already in the
+     * database instead of only ones generated from now on.
+     */
+    private function salaryVersionFor(Payslip $slip): array
+    {
+        $period = $slip->period ?: PayrollPeriod::find($slip->payroll_period_id);
+        if (!$period || !$slip->employee_id) {
+            return ['salaryVersion' => null, 'salaryVersionFrom' => null, 'salaryVersions' => []];
+        }
+
+        $winStart = Carbon::parse($period->period_start
+            ?? Carbon::create((int) $period->year, (int) $period->month, 1))->startOfDay();
+        $winEnd   = Carbon::parse($period->period_end
+            ?? Carbon::create((int) $period->year, (int) $period->month, 1)->endOfMonth())->endOfDay();
+
+        $rows = \App\Models\SalaryStructure::where('employee_id', $slip->employee_id)
+            ->whereIn('status', ['active', 'superseded'])
+            ->whereDate('effective_from', '<=', $winEnd)
+            ->orderBy('effective_from')
+            ->orderBy('version')
+            ->orderByRaw("CASE WHEN status = 'active' THEN 1 ELSE 0 END")
+            ->orderBy('id')
+            ->get(['id', 'version', 'effective_from']);
+
+        if ($rows->isEmpty()) {
+            return ['salaryVersion' => null, 'salaryVersionFrom' => null, 'salaryVersions' => []];
+        }
+
+        /* In force DURING the window = the one the month opened on (the last
+         * version effective on or before the first day), plus every revision
+         * that took effect inside it. */
+        $opener = $rows->last(fn ($r) => Carbon::parse($r->effective_from)->lte($winStart));
+        $inside = $rows->filter(fn ($r) => Carbon::parse($r->effective_from)->gt($winStart));
+
+        $used = collect([$opener])->filter()->concat($inside)->unique('id')->values();
+        // No opener means the employee's first structure began mid-month; the
+        // month is then priced on that one alone from its start date.
+        $primary = $used->last() ?: $rows->last();
+
+        return [
+            'salaryVersion'     => (int) $primary->version,
+            'salaryVersionFrom' => Carbon::parse($primary->effective_from)->toDateString(),
+            'salaryVersions'    => $used->pluck('version')->map(fn ($v) => (int) $v)->values()->all(),
+        ];
+    }
     private function structureGrossMap($slips, $period = null): array
     {
         $empIds = $slips->pluck('employee_id')->filter()->unique()->values();
