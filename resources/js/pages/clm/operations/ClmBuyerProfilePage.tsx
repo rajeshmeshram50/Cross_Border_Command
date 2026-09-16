@@ -879,14 +879,16 @@ export default function ClmBuyerProfilePage() {
        row with align-items:center and an explicit gap makes both constant down
        the whole column. */
     return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, verticalAlign: 'middle', maxWidth: '100%' }}>
-      {/* The chip sits in a FIXED-width box so the "+N" badge always starts at
-          the same x. Before this the badge simply followed the chip's own
-          width, so a short name like "foods" kept its badge near the left edge
-          while a long one pushed its badge far right — the badges never formed
-          a column. Truncation is now done by CSS at the box edge rather than by
-          slicing at 30 characters, which is what ties it to the alignment; the
-          full name stays on the tooltip. */}
-      <span style={{ width: SEG_CHIP_COL, flexShrink: 0, display: 'inline-flex', alignItems: 'center', minWidth: 0 }}>
+      {/* maxWidth, not a fixed width.
+          A fixed 150px box lined the "+N" badges up in a column, but it also
+          held that width open for a short name — "Processed Foods" left most
+          of the box empty and threw its badge a long way from the chip it
+          belongs to. A cap keeps the part that mattered: every name longer
+          than the cap still truncates at the same x, so those badges still
+          line up, while a short name lets its badge sit right beside it.
+          Truncation is done by CSS at the box edge, not by slicing the string,
+          and the full name stays on the tooltip. */}
+      <span style={{ maxWidth: SEG_CHIP_COL, flexShrink: 1, display: 'inline-flex', alignItems: 'center', minWidth: 0 }}>
         <Tooltip label={segs[0]}><span style={{ display: 'inline-block', maxWidth: SEG_CHIP_COL, fontSize: '9.5px', fontWeight: 600, color: '#0e7490', background: '#ecfeff', border: '1px solid #a5f3fc', padding: '2px 9px', borderRadius: '20px', whiteSpace: 'nowrap', lineHeight: 1.6, overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }}>{segs[0]}</span></Tooltip>
       </span>
       {extra > 0 && (
@@ -1507,7 +1509,7 @@ export default function ClmBuyerProfilePage() {
                     </div>
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Customer List</div>
-                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{buyerSearch.trim() ? `${buyerListTotal} of ${buyerTotal} customers match` : 'Registered across all segments'}</div>
+                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{buyerSearch.trim() ? `${buyerListTotal} of ${buyerTotal} customers match` : `${buyerListTotal} registered across all segments`}</div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1605,7 +1607,7 @@ export default function ClmBuyerProfilePage() {
                     </div>
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Consignee List</div>
-                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{consSearch.trim() ? `${consListTotal} of ${consTotal} consignees match` : 'Registered across all customers'}</div>
+                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{consSearch.trim() ? `${consListTotal} of ${consTotal} consignees match` : `${consListTotal} registered across all customers`}</div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
