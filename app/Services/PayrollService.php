@@ -1483,9 +1483,21 @@ class PayrollService
                 ->first(['status', 'effective_from', 'monthly_gross']);
 
             [$holdReason, $detail] = match (true) {
+                /* An annual salary on the employee record is NOT a breakup, and
+                 * since CBC #148 it is no longer treated as one — payroll will
+                 * not invent a Basic / HRA / Special split to spend it. Say so,
+                 * rather than the old "no annual salary on file", which was
+                 * plainly contradicted by the figure sitting on the employee's
+                 * own Compensation tab and read as payroll failing to see it. */
                 $anyStructure === null => [
                     'Missing salary structure',
-                    'No salary structure and no annual salary on file — nothing to pay.',
+                    ((float) ($employee->annual_salary ?? 0) > 0
+                        ? 'No salary structure on file. The annual salary of ₹'
+                            . number_format((float) $employee->annual_salary, 2)
+                            . ' on the employee record is a total, not a breakup — payroll cannot'
+                            . ' decide how it splits into Basic, HRA and allowances.'
+                            . ' Save an active salary structure (Compensation → Salary Setup) and regenerate.'
+                        : 'No salary structure and no annual salary on file — nothing to pay.'),
                 ],
                 (float) $anyStructure->monthly_gross <= 0 => [
                     'Salary structure has no value',
@@ -2926,33 +2938,47 @@ class PayrollService
             ];
         }
 
-        // Fallback: derive a standard 50/30/20 split from annual salary.
-        $annual = (float) ($employee->annual_salary ?? 0);
-        if ($annual <= 0) {
-            return [0, 0, [], [], false, false, true];
-        }
-        $exceptions = $this->withException(
-            $exceptions,
-            'warning',
-            'No salary structure on file — auto-derived from annual salary (Basic/HRA/Special).'
-        );
-        $gross   = round($annual / 12, 2);
-        $basic   = round($gross * 0.5, 2);
-        $hra     = round($gross * 0.3, 2);
-        $special = round($gross - $basic - $hra, 2);
+        /* No structure — nothing to price. The employee is HELD by the Rule 26
+         * gate on the caller ($gross <= 0), not paid on a guess. (CBC #148)
+         *
+         * This used to derive a 50/30/20 Basic / HRA / Special split from
+         * `employees.annual_salary`, and that split was the payslip: an
+         * employee whose Compensation tab configures only a Basic — or nothing
+         * at all — was issued a slip itemising a House Rent Allowance and a
+         * Special Allowance that appear in no breakup anywhere in the app.
+         * Verified before the change: annual ₹3,36,000 with no structure
+         * produced Basic ₹14,000 + HRA ₹8,400 + Special ₹5,600.
+         *
+         * Those are not display artefacts. HRA carries a tax exemption and PF
+         * rides on basic, so the ratio decides both the employee's taxable pay
+         * and a statutory deduction — the engine was choosing them on the
+         * employee's behalf from a single annual figure that says nothing about
+         * any of it. A warning exception was attached, but the run was still
+         * payable and the slip still printed the invented heads as though HR
+         * had agreed them.
+         *
+         * Holding is what Rule 5 ("an active salary structure is mandatory")
+         * already means everywhere else: a structure that is a draft,
+         * future-dated, or priced at ₹0 all hold today (PAY-26 S1–S4). An
+         * employee with no structure at all was the single case that paid
+         * anyway, and it paid the least-verifiable numbers of the lot. The
+         * remedy is the same two-minute action as its four siblings — publish a
+         * salary structure and regenerate — and the hold names it.
+         *
+         * The flags still come off the employee record, because the caller
+         * reads them whether or not anything is payable.
+         *
+         * Knock-on, and intended: overtimeRateForMonth() prices OT off this
+         * basic, so a structureless employee now rates OT at ₹0 instead of off
+         * an invented basic. There is no agreed basic to price it from. */
         return [
-            $gross,
-            $basic,
-            [
-                ['code' => 'basic',   'label' => 'Basic Salary',           'amount' => $basic],
-                ['code' => 'hra',     'label' => 'House Rent Allowance',   'amount' => $hra],
-                ['code' => 'special', 'label' => 'Special Allowance',      'amount' => $special],
-            ],
+            0,
+            0,
+            [],
             [],
             (bool) $employee->pf_eligible,
-            // Honour the employee's own "ESI Applicable" flag (onboarding
-            // Stage 4 / Compensation). The ₹21k gross ceiling is still
-            // enforced separately where ESI is actually computed.
+            // The ₹21k gross ceiling is still enforced separately where ESI is
+            // actually computed.
             strtolower((string) ($employee->esi_applicable ?? '')) === 'yes',
             true,
         ];

@@ -160,12 +160,38 @@ const ucFirst = (s: string): string => {
   if (c === upper) return s;                 // already capital / not a letter
   return s.slice(0, i) + upper + s.slice(i + 1);
 };
+/* Characters a job title / role may carry. (CBC #150)
+ *
+ * MUST stay identical to TITLE_REGEX in RecruitmentController and
+ * HiringRequestController. The old client rule allowed only `. , - /`, so
+ * "Sr. Engineer (R&D)" and "Manager - Sales & Marketing" were refused here,
+ * before a request was ever sent — and the message said only "No special
+ * characters", which named neither the offending mark nor the fact that no
+ * amount of retyping would help. Ampersands, brackets, apostrophes, + and %
+ * are ordinary in a job title, and the qualification field on this same form
+ * already accepted every one of them.
+ *
+ * A client rule LOOSER than the server's is the other failure mode: the form
+ * submits, the server returns 422, and the message has no field to attach to.
+ * Keep the two in step. */
+const TITLE_RE = /^[A-Za-z0-9 .,/&()+\-'’%:;–—]+$/;
+/* Punctuation alone is not a title — the server applies the same guard. */
+const HAS_LETTER_RE = /[A-Za-z]/;
+const TITLE_MSG = "Use letters, numbers and . , - / & ( ) + '";
+/* Qualifications carry two marks a job title does not: '#' (C#, F#, .NET) and
+ * square brackets, which HR uses to qualify a degree — "B.Tech [CSE]". Both
+ * were refused here AND on the server, so the field genuinely could not hold
+ * some real qualifications. Mirrors QUAL_REGEX in HiringRequestController.
+ * (CBC #151) */
+const QUAL_RE = /^[A-Za-z0-9 .,/&()+\-'’%:;–—#[\]]+$/;
+const QUAL_MSG = "Use letters, numbers and . , - / & ( ) + # [ ] '";
+
 const shortenServerError = (msg: string): string => {
   const m = msg.toLowerCase();
   if (m.includes('required'))                                   return 'Required';
   if (m.includes('already been taken') || m.includes('unique')) return 'Already exists';
   if (m.includes('integer') || m.includes('whole number'))      return 'Whole numbers only';
-  if (m.includes('special characters') || m.includes('format') || m.includes('regex')) return 'No special characters';
+  if (m.includes('special characters') || m.includes('format') || m.includes('regex')) return TITLE_MSG;
   if (m.includes('must be a number') || m.includes('numeric'))  return 'Enter a number';
   if (m.includes('after'))                                      return 'Date is too early';
   if (m.includes('before'))                                     return 'Date is too late';
@@ -933,12 +959,11 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
 
   const validate = (): RaiseErrors => {
     const e: RaiseErrors = {};
-    const titleRe = /^[A-Za-z0-9 .,\-\/]+$/;
-    const titleMsg = 'No special characters';
+    const badTitle = (v: string) => !TITLE_RE.test(v) || !HAS_LETTER_RE.test(v);
     if (!title.trim())          e.title          = 'Required';
-    else if (!titleRe.test(title.trim())) e.title = titleMsg;
+    else if (badTitle(title.trim())) e.title      = TITLE_MSG;
     if (!jobRole.trim())        e.jobRole        = 'Required';
-    else if (!titleRe.test(jobRole.trim())) e.jobRole = titleMsg;
+    else if (badTitle(jobRole.trim())) e.jobRole  = TITLE_MSG;
     if (!departmentId)          e.department     = 'Required';
     if (targetDate) {
       const tomorrow = new Date(); tomorrow.setHours(0, 0, 0, 0); tomorrow.setDate(tomorrow.getDate() + 1);
@@ -977,14 +1002,37 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
 
     if (!requiredExp)           e.requiredExp    = 'Required';
 
+    /* Kept in step with HiringRequestController's rule for this field, which is
+     * deliberately wider than the plain title / job_role allowlist:
+     *   regex:/^[A-Za-z0-9 .,\/&()+\-\x27\x{2019}%:;\x{2013}\x{2014}]*$/u
+     *
+     * The apostrophe is the one that mattered: "Bachelor's degree" is the
+     * ordinary way to write this field and the form rejected it outright while
+     * the SERVER would have accepted it (QA #26). The curly quote and the en/em
+     * dashes are here for the reason the server states — Word and job portals
+     * substitute them silently, so a paste that looks identical on screen must
+     * not fail where typing passes. `%` `:` `;` cover "60% marks" and
+     * "Qualification: B.E.".
+     *
+     * Still an allowlist: markup and shell characters stay rejected, and the
+     * /[A-Za-z]/ check above still demands a real word, so punctuation alone
+     * cannot pass.
+     *
+     * Max is 100, not 255 — the server rule is max:100, so 255 here let someone
+     * type 150 characters, clear the form, and take a 422 from the API with no
+     * field-level explanation. */
     const rq = requiredQual.trim();
     if (!rq)                  e.requiredQual = 'Required';
     else if (rq.length < 2)   e.requiredQual = 'Min 2 characters';
-    else if (rq.length > 255) e.requiredQual = 'Max 255 characters';
-    else if (!/[A-Za-z]/.test(rq))
-      e.requiredQual = 'Must contain letters';
-    else if (!/^[A-Za-z0-9 .,/&()+\-]+$/.test(rq))
-      e.requiredQual = 'No special characters';
+    /* Max is 100, not 255 — the server rule is max:100 (HiringRequestController),
+       so a higher cap here just trades a field-level message for a bare 422. */
+    else if (rq.length > 100) e.requiredQual = 'Max 100 characters';
+    /* A letter OR a digit — "10+2" is a real qualification and the
+       letters-only rule rejected it. Mirrors HAS_ALNUM on the server. */
+    else if (!/[A-Za-z0-9]/.test(rq))
+      e.requiredQual = 'Must contain letters or numbers';
+    else if (!QUAL_RE.test(rq))
+      e.requiredQual = QUAL_MSG;
     return e;
   };
 
@@ -2282,8 +2330,8 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     const jobTitleTrim = jobTitle.trim();
     if (!jobTitleTrim) {
       e.jobTitle = 'Required';
-    } else if (!/^[A-Za-z0-9 .,\-/]+$/.test(jobTitleTrim)) {
-      e.jobTitle = 'No special characters';
+    } else if (!TITLE_RE.test(jobTitleTrim) || !HAS_LETTER_RE.test(jobTitleTrim)) {
+      e.jobTitle = TITLE_MSG;
     }
     if (!departmentId)           e.department      = 'Required';
     if (!designationId)          e.designation     = 'Required';

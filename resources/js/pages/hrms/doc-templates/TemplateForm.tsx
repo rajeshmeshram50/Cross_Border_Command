@@ -516,12 +516,18 @@ export default function TemplateFormPage() {
         : await api.post(url, payload);
       toast.success(asDraft ? 'Saved as draft' : (editing ? 'Template updated' : 'Template created'),
         `${data.code || data.id} saved.`);
-      // After a successful create, swap to the edit URL so the DOCX
-      // download/upload buttons (which need a saved row) light up.
-      if (!editing && data?.id) {
+      /* After a successful DRAFT create, swap to the edit URL so the DOCX
+         download/upload buttons (which need a saved row) light up — the user
+         is still working, they just now have a row to hang files off.
+         `asDraft` is the part that was missing: without it this branch caught
+         EVERY new template, so Publish saved the row, redirected to
+         .../{id}/edit and left the user sitting on Step 3 of a wizard they had
+         just finished. The list was unreachable except by pressing Back. */
+      if (!editing && data?.id && asDraft) {
         navigate(`/hr/doc-templates/${data.id}/edit`, { replace: true, state: { step } });
         setEditing(data);
       } else if (!asDraft) {
+        // Publish (new) or Update (existing) — the wizard is done, go to the list.
         navigate('/hr/doc-templates');
       }
       /* A draft save STAYS on the form. It used to navigate back to the list,

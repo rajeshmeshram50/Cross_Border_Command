@@ -589,9 +589,16 @@ function RegularizationDetailModal({ row, onClose }: { row: ApiRegularization | 
     return () => { stale = true; };
   }, [row]);
 
+  /* Hooks must run on every render of this component, including the one where
+     `row` is null and the dialog renders nothing. `useIsDark` is a hook, so
+     reading it below the early return changed the hook count between the closed
+     and open states and React tore the tree down — the "Something went wrong"
+     screen the approver saw the moment they pressed View. */
+  const dark = useIsDark();
+
   if (!row) return null;
 
-  const tone      = statusTone(row.status, useIsDark());
+  const tone      = statusTone(row.status, dark);
   const requested = (row.punches ?? []).map(p => punchPair12h(p.in, p.out));
   const originals = to12h(row.original_display).split(',').map(t => t.trim()).filter(Boolean);
 

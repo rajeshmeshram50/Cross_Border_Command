@@ -476,6 +476,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
              the payable WORKING days or the two cannot be compared. #114 */
           working: d.workingDays ?? d.totalMonthDays, present: d.present, paid: d.paidDays, lop: d.lopDays,
           weekOff: d.weekOffDays, lateLop: d.lateLopDays,
+          /* Which salary version priced this month — the slip is costed on
+             the version in force during its window, not the one current
+             today, and without this the two look like a mismatch. */
+          salaryVersion: typeof d.salaryVersion === 'number' ? d.salaryVersion : null,
+          salaryVersionFrom: d.salaryVersionFrom ?? null,
+          salaryVersions: Array.isArray(d.salaryVersions) ? d.salaryVersions : [],
         });
       })
       .catch(() => { /* keep prior */ })
@@ -3213,6 +3219,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         earnings={viewSlip?.earnings || []}
         deductions={viewSlip?.deductions || []}
         notices={viewSlip?.notices || []}
+        salaryVersion={viewSlip?.salaryVersion}
+        salaryVersionFrom={viewSlip?.salaryVersionFrom}
+        salaryVersions={viewSlip?.salaryVersions || []}
         payBasis={viewSlip?.payBasis || []}
         workingDays={viewSlip?.working}
         daysPresent={viewSlip?.present}

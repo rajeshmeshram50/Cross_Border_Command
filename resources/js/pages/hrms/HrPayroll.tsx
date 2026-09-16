@@ -6,6 +6,7 @@ import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
 import PayslipViewerModal, { type PayslipLine } from '../../components/PayslipViewerModal';
 import PayrollRunModal, { type PayrollRunIssue, type PayrollSandwichItem, type PayrollExcludedItem } from '../../components/PayrollRunModal';
 import SalaryStructureModal, { type SalaryEmployeeLite } from '../../components/SalaryStructureModal';
+import SalaryHistoryModal from '../../components/SalaryHistoryModal';
 import PaymentDisbursementModal from '../../components/PaymentDisbursementModal';
 import { useToast } from '../../contexts/ToastContext';
 import { Shimmer } from '../../components/ui/Shimmer';
@@ -347,6 +348,9 @@ export default function HrPayroll() {
   const [roster, setRoster] = useState<SalaryEmployeeLite[]>([]);
   const [rosterLoading, setRosterLoading] = useState(false);
   const [salaryEmp, setSalaryEmp] = useState<SalaryEmployeeLite | null>(null);
+  /* Separate state from salaryEmp: History is read-only and Revise is not, so
+     opening one must never be mistaken for opening the other. */
+  const [historyEmp, setHistoryEmp] = useState<SalaryEmployeeLite | null>(null);
 
   /* Salary Setup is a tab inside a CYCLE, so its roster has to be fetched for
      that cycle. It used to be fetched bare, which listed every active employee
@@ -422,6 +426,10 @@ export default function HrPayroll() {
   const [payslipNotices, setPayslipNotices] = useState<string[]>([]);
   /** Workings behind the "This Cycle" column, shown under Earnings. (#141) */
   const [payslipBasis, setPayslipBasis] = useState<string[]>([]);
+  /* Which salary version priced the open payslip. Server-resolved from the
+     pay window, so it answers "why does this slip disagree with Salary
+     Setup" without the reader cross-checking dates by hand. */
+  const [payslipVersion, setPayslipVersion] = useState<{ version?: number | null; from?: string | null; all: number[] }>({ all: [] });
   const [payslipFinal, setPayslipFinal] = useState<boolean | undefined>(undefined);
   const [payslipRecent, setPayslipRecent] = useState<{ label: string; now?: boolean; payslipId?: number; status?: string }[]>([]);
   const [payslipCompany, setPayslipCompany] = useState<{ name: string; meta: string; initials: string; hrEmail: string } | null>(null);
@@ -459,7 +467,7 @@ export default function HrPayroll() {
      * payslip's breakup, day counts and overtime stayed on screen while the new
      * month loaded, and any field the new response does not set kept the old
      * value indefinitely. Clearing here covers both entry points. (QA #94) */
-    setPayslipBreakup(null); setPayslipNotices([]); setPayslipBasis([]);
+    setPayslipBreakup(null); setPayslipNotices([]); setPayslipBasis([]); setPayslipVersion({ all: [] });
     setPayslipDays(null);
     setPayslipOt(null);
     setPayslipFinal(undefined);
@@ -485,6 +493,11 @@ export default function HrPayroll() {
         // not in force when this slip was finalized. (#130)
         setPayslipNotices(Array.isArray(d.notices) ? d.notices : []);
         setPayslipBasis(Array.isArray(d.payBasis) ? d.payBasis : []);
+        setPayslipVersion({
+          version: typeof d.salaryVersion === 'number' ? d.salaryVersion : null,
+          from:    d.salaryVersionFrom ?? null,
+          all:     Array.isArray(d.salaryVersions) ? d.salaryVersions : [],
+        });
         setPayslipDays({
           present: typeof d.present === 'number' ? d.present : undefined,
           lopDays: typeof d.lopDays === 'number' ? d.lopDays : undefined,
@@ -545,7 +558,7 @@ export default function HrPayroll() {
       return;
     }
     setPaySlipRow(row);
-    setPayslipBreakup(null); setPayslipNotices([]); setPayslipBasis([]);
+    setPayslipBreakup(null); setPayslipNotices([]); setPayslipBasis([]); setPayslipVersion({ all: [] });
     setPayslipFinal(undefined);
     setPayslipCompany(null);
     setActivePayslipId(row.payslip_id);
@@ -570,7 +583,7 @@ export default function HrPayroll() {
     }
   };
   const selectRecent = (entry: { payslipId?: number }) => loadPayslipDetail(entry.payslipId);
-  const closePayslip = () => { setPaySlipRow(null); setPayslipBreakup(null); setPayslipNotices([]); setPayslipBasis([]); setPayslipFinal(undefined); setPayslipRecent([]); setPayslipCompany(null); setActivePayslipId(undefined); setPayslipDays(null); };
+  const closePayslip = () => { setPaySlipRow(null); setPayslipBreakup(null); setPayslipNotices([]); setPayslipBasis([]); setPayslipVersion({ all: [] }); setPayslipFinal(undefined); setPayslipRecent([]); setPayslipCompany(null); setActivePayslipId(undefined); setPayslipDays(null); };
 
   const [runOpen, setRunOpen] = useState(false);
   const [proceeding, setProceeding] = useState(false);
@@ -1984,11 +1997,12 @@ export default function HrPayroll() {
       header: () => <div className="text-center">Action</div>,
       id: '__actions',
       enableSorting: false,
-      /* 12%, not 8%: the "Set Salary" pill measures ~115px and the cell clips
+      /* Raised 12% -> 17% when History joined Revise in this cell.
+           Not 8%: the "Set Salary" pill measures ~115px and the cell clips
          (no `wrap`, so the td's overflow:hidden cuts it) the moment the column
          is narrower than its content — at the table's 1200px floor 8% was only
          ~96px, which is exactly how the label lost its tail at the table edge. */
-      meta: { width: '12%', align: 'center' },
+      meta: { width: '17%', align: 'center' },
       cell: info => {
         const emp = info.row.original;
         /* Someone on their way out is not a candidate for a salary revision —
@@ -1997,19 +2011,39 @@ export default function HrPayroll() {
            shows (payroll must pay them until they leave); the action does not. */
         const exiting = !!emp.exit_in_progress;
         return (
-          <button
-            type="button"
-            className="onb-vault-btn"
-            disabled={exiting}
-            style={exiting ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-            title={exiting
-              ? `Exit in progress${emp.exit_last_working_day ? ` — last working day ${emp.exit_last_working_day}` : ''}. Settle this in Exit Management, not here.`
-              : undefined}
-            onClick={() => { if (!exiting) setSalaryEmp(emp); }}
-          >
-            <i className={`me-1 ${exiting ? 'ri-lock-line' : (emp.has_structure ? 'ri-edit-line' : 'ri-add-line')}`} style={{ fontSize: 13 }} />
-            {exiting ? 'Exiting' : (emp.has_structure ? 'Revise' : 'Set Salary')}
-          </button>
+          <div className="d-inline-flex align-items-center gap-1">
+            <button
+              type="button"
+              className="onb-vault-btn"
+              disabled={exiting}
+              style={exiting ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+              title={exiting
+                ? `Exit in progress${emp.exit_last_working_day ? ` — last working day ${emp.exit_last_working_day}` : ''}. Settle this in Exit Management, not here.`
+                : undefined}
+              onClick={() => { if (!exiting) setSalaryEmp(emp); }}
+            >
+              <i className={`me-1 ${exiting ? 'ri-lock-line' : (emp.has_structure ? 'ri-edit-line' : 'ri-add-line')}`} style={{ fontSize: 13 }} />
+              {exiting ? 'Exiting' : (emp.has_structure ? 'Revise' : 'Set Salary')}
+            </button>
+
+            {/* History — read-only, and only where there is something to read:
+                an employee with no structure has no versions, so the button
+                would open an empty panel.
+                Deliberately NOT disabled during an exit. Reading what someone
+                was paid is exactly what a full & final needs, and it changes
+                nothing — only Revise is withheld from them. */}
+            {emp.has_structure && (
+              <button
+                type="button"
+                className="onb-vault-btn"
+                title="Salary revision history — every version with its breakup"
+                aria-label="Salary revision history"
+                onClick={() => setHistoryEmp(emp)}
+              >
+                <i className="ri-history-line" style={{ fontSize: 13 }} />
+              </button>
+            )}
+          </div>
         );
       },
     },
@@ -2739,6 +2773,14 @@ export default function HrPayroll() {
         onSaved={loadRoster}
       />
 
+      {/* Read-only companion to the Revise modal. No onSaved — it writes
+          nothing, so the roster never needs reloading after it closes. */}
+      <SalaryHistoryModal
+        open={!!historyEmp}
+        employee={historyEmp}
+        onClose={() => setHistoryEmp(null)}
+      />
+
       <PayrollRunModal
         open={runOpen}
         onClose={() => setRunOpen(false)}
@@ -2808,6 +2850,9 @@ export default function HrPayroll() {
             deductions={deductions}
             notices={payslipNotices}
             payBasis={payslipBasis}
+            salaryVersion={payslipVersion.version}
+            salaryVersionFrom={payslipVersion.from}
+            salaryVersions={payslipVersion.all}
             /* Per-employee only. The old chain fell back to the cycle's
                company-wide figure and then to a hardcoded 26, either of which
                puts a number next to Paid Days that was never computed on the

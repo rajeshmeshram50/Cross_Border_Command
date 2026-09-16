@@ -49,8 +49,13 @@ function AuthorityCell({ value }: { value?: string[] | string | null }) {
   // the rest scroll.
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', maxWidth: '100%' }}>
+      {/* inline-BLOCK, not inline-flex: text-overflow has no effect on a flex
+          container, so the name was hard-clipped mid-character ("Income Tax
+          Department (I") with no ellipsis to say it had been cut. As a block
+          box the ellipsis applies to the text itself, and the full name stays
+          on the tooltip. (QA #62) */}
       <Tooltip label={first}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 600, color: dark ? '#6ee7b7' : '#0f766e', background: dark ? 'rgba(16,185,129,.16)' : '#ecfdf5', border: `1px solid ${dark ? 'rgba(16,185,129,.30)' : '#a7f3d0'}`, borderRadius: 12, padding: '2px 10px' }}>{first}</span>
+        <span style={{ display: 'inline-block', verticalAlign: 'middle', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 600, color: dark ? '#6ee7b7' : '#0f766e', background: dark ? 'rgba(16,185,129,.16)' : '#ecfdf5', border: `1px solid ${dark ? 'rgba(16,185,129,.30)' : '#a7f3d0'}`, borderRadius: 12, padding: '2px 10px' }}>{first}</span>
       </Tooltip>
       {extra > 0 && (
         <button

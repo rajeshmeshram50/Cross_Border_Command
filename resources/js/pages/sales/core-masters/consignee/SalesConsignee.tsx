@@ -561,6 +561,8 @@ export default function SalesConsignee() {
                   contact: c.contact,
                   contactCity: c.countryDetail,
                   customerId: c.customerId,
+                  // Every mapped customer, for the header's "C-208 +2" badge.
+                  customers: c.customers,
                   /* A mirrored consignee gets a hand-off card, not the vault.
                      This row already knows both facts the card needs, so
                      passing them saves the vault fetch whose whole result the

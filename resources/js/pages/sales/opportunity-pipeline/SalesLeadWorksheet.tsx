@@ -985,6 +985,14 @@ export default function SalesLeadWorksheet() {
       );
       toast.success('Converted', `${data.converted} lead(s) moved to Qualified`);
       clearSelection();
+      /* Converting moves leads BETWEEN buckets, so the tab badges are now
+       * wrong — but tab / search / filters / per-page are all unchanged, so
+       * fetchLeads would run with with_counts=0 and the server would send no
+       * counts at all. Clearing the signature forces one, the same way the
+       * IndiaMart sync does. Without it the rows refreshed (the converted
+       * ones gone) while "Disqualified Leads (3)" sat above an emptier table
+       * until the user switched tabs. */
+      countSigRef.current = '';
       fetchLeads();
     } catch (e: any) {
       toast.error('Convert failed', e?.response?.data?.message ?? 'Could not convert leads');
@@ -1002,6 +1010,8 @@ export default function SalesLeadWorksheet() {
       await api.post('/sales/leads/convert-to-qualified', { lead_ids: [ctqLead.id] });
       toast.success('Converted', `${ctqLead.oppId} moved to Qualified`);
       setCtqLead(null);
+      // Same bucket move as the bulk path — force the counts to come back.
+      countSigRef.current = '';
       fetchLeads();
     } catch (e: any) {
       toast.error('Convert failed', e?.response?.data?.message ?? 'Could not convert lead');

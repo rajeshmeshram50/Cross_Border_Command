@@ -1412,7 +1412,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                   <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
                 )}
               </td>
-              <td>{evFmtExpiry(d.expiry)}</td>
+              <td><VaultDateBadge value={d.expiry} kind="expiry" /></td>
               <td>
                 {d.attachment_url ? (
                   <a href={d.attachment_url} target="_blank" rel="noreferrer" className="cev-attach"><i className="ri-download-2-line" /> {d.attachment || 'View'}</a>
@@ -1449,6 +1449,35 @@ function evFmtExpiry(s?: string | null): string {
   const d = evParseExpiry(s);
   if (!d) return s && s.trim() && s.trim() !== '-' ? s.trim() : '—';
   return `${String(d.getDate()).padStart(2, '0')}-${EV_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+}
+
+/* Date cell for the Evidence Vault tables. Exported because the Consignee
+   vault renders the same columns and must not drift from this.
+ *
+ * Plain text read as ordinary filler next to the Requirement and Status pills
+ * the same row carries, and an em dash for "no date" looked like a rendering
+ * gap rather than a stated fact — so the value gets the chip the Customer
+ * vault already gives it, and its absence reads N/A, centred.
+ *
+ * kind="expiry" also tones the chip: already past → red, within 30 days →
+ * amber, with the day count on hover. Free-text validity out of the catalogue
+ * ("Lifetime", "Varies") parses to no date, so it stays a neutral chip with no
+ * tone and no tooltip — it is a rule, not a deadline. */
+export function VaultDateBadge({ value, kind = 'issue' }: { value?: string | null; kind?: 'issue' | 'expiry' }) {
+  const text = evFmtExpiry(value);
+  if (!text || text === '—') return <span className="cev-na">N/A</span>;
+  if (kind !== 'expiry') return <span className="cev-date">{text}</span>;
+
+  const due = evParseExpiry(value);
+  if (!due) return <span className="cev-date cev-date-expiry">{text}</span>;
+  const days = Math.ceil((due.getTime() - Date.now()) / 86400000);
+  const tone = days < 0 ? 'pending' : days <= 30 ? 'expiring' : undefined;
+  const note = days < 0 ? `Expired ${Math.abs(days)} day(s) ago` : `Expires in ${days} day(s)`;
+  return (
+    <Tooltip label={note}>
+      <span className="cev-date cev-date-expiry" data-status={tone}>{text}</span>
+    </Tooltip>
+  );
 }
 
 function evExpiryIso(s?: string | null): string {

@@ -1293,6 +1293,8 @@ class PayrollController extends Controller
          * the table the reader is questioning. Separate from `notices`, which
          * explains the Deductions side. (#141) */
         $data['payBasis'] = $this->payBasisNotices($slip);
+        // Which salary version priced this cycle — see salaryVersionFor().
+        $data += $this->salaryVersionFor($slip);
         return response()->json(['data' => $data]);
     }
 
@@ -1565,11 +1567,58 @@ class PayrollController extends Controller
                 . 'in force, and a join or exit inside the window is pro-rated to the days employed.';
         }
 
+        /* Why PAID DAYS can exceed DAYS PRESENT. (CBC #149)
+         *
+         * A cycle generated while its month is still running charges loss of
+         * pay only up to today (the elapsed-days cap, #134) — so a September
+         * slip generated on the 4th reads "Days Present 0" beside "Paid Days
+         * 27", because the 27 unelapsed days have not been worked yet and are
+         * not docked. The two numbers are computed on different bases and the
+         * slip stated neither, so the pairing reads as the slip having drawn
+         * its days from somewhere else entirely — reported as September
+         * showing the previous month's attendance. It does not: Days Present
+         * counts only attendance dated inside this period, and was 0 because
+         * nothing had been recorded yet.
+         *
+         * Only stated when the gap is real (present < paid) and attendance is
+         * actually the reason — a pro-rated or held slip has its own note and
+         * must not collect a second, competing explanation.
+         *
+         * present_days is nullable on slips generated before the column
+         * existed; those get no note rather than a note built on a guess. */
+        $present = $slip->present_days === null ? null : (float) $slip->present_days;
+        if ($present !== null && $working > 0 && $paid > $present + 0.005) {
+            $inProgress = false;
+            foreach ((array) ($slip->exceptions ?? []) as $e) {
+                if (stripos((string) ($e['reason'] ?? ''), 'still in progress') !== false) {
+                    $inProgress = true;
+                    break;
+                }
+            }
+            $label   = $this->periodLabelFor($slip);
+            $counted = 'Days Present counts only attendance recorded inside ' . $label
+                . ' (' . $num($present) . ') — it is never carried over from another month.';
+            $out[] = $inProgress
+                ? $counted . ' Paid Days (' . $num($paid) . ') is higher because this cycle was generated'
+                    . ' while the month was still running: days that have not happened yet cannot be worked,'
+                    . ' so they are not charged as loss of pay. Re-run payroll once the month is complete'
+                    . ' and both figures settle.'
+                : $counted . ' Paid Days (' . $num($paid) . ') is a different count: it also credits approved'
+                    . ' leave, holidays and — on the calendar basis — weekly offs, none of which produce a'
+                    . ' punch, which is why the two differ.';
+        }
+
         /* The factors recorded when the run was generated. Matched on the
          * phrases PayrollService writes, so a note it stops emitting simply
-         * stops appearing here rather than showing a stale explanation. */
+         * stops appearing here rather than showing a stale explanation.
+         *
+         * 'still in progress' and 'No attendance recorded' were both missing:
+         * the engine wrote them onto the slip and nothing ever displayed them,
+         * so the two cases most likely to make a reader doubt the figures were
+         * the two the slip explained least. (CBC #149) */
         $wanted = ['blended', 'pro-rated', 'prorated', 'Priced on the salary structure',
-                   'holiday', 'late mark', 'late marks'];
+                   'holiday', 'late mark', 'late marks',
+                   'still in progress', 'No attendance recorded'];
         foreach ((array) ($slip->exceptions ?? []) as $e) {
             $reason = (string) ($e['reason'] ?? '');
             if ($reason === '') {
@@ -2263,6 +2312,74 @@ class PayrollController extends Controller
      * Only used as a fallback for payslips generated before the components
      * carried their own monthly figure — see serializePayslip(). (#134)
      */
+    /**
+     * Which salary structure version priced this payslip.
+     *
+     * A payslip is priced on the version that was IN FORCE during its pay
+     * window, not the one that is current today — PayrollService::activeStructure()
+     * resolves that at run time, and Rule 19 keeps the old row rather than
+     * overwriting it. So "July says ₹68,412 but Salary Setup says ₹75,000"
+     * has an answer, and until now the slip did not carry it: the reader had
+     * to open the revision history in another screen and match dates by eye.
+     *
+     * Resolution deliberately mirrors structureGrossMap() — superseded rows
+     * count (the version that priced an old cycle is superseded by definition),
+     * drafts and not-yet-effective revisions do not, and ties break on
+     * effective_from, then version, then active-over-superseded, then id.
+     *
+     * A revision dated INSIDE the window means TWO versions priced the month —
+     * blendCompensation() pays a day-weighted average of both. Naming only one
+     * of them would be a worse answer than naming none, so `salaryVersions`
+     * lists every version in force during the window and the viewer shows the
+     * range.
+     *
+     * Derived on read rather than stored. The alternative is a
+     * payslips.salary_structure_id column, which would be the stronger record
+     * for an audit; this returns the same answer for every slip already in the
+     * database instead of only ones generated from now on.
+     */
+    private function salaryVersionFor(Payslip $slip): array
+    {
+        $period = $slip->period ?: PayrollPeriod::find($slip->payroll_period_id);
+        if (!$period || !$slip->employee_id) {
+            return ['salaryVersion' => null, 'salaryVersionFrom' => null, 'salaryVersions' => []];
+        }
+
+        $winStart = Carbon::parse($period->period_start
+            ?? Carbon::create((int) $period->year, (int) $period->month, 1))->startOfDay();
+        $winEnd   = Carbon::parse($period->period_end
+            ?? Carbon::create((int) $period->year, (int) $period->month, 1)->endOfMonth())->endOfDay();
+
+        $rows = \App\Models\SalaryStructure::where('employee_id', $slip->employee_id)
+            ->whereIn('status', ['active', 'superseded'])
+            ->whereDate('effective_from', '<=', $winEnd)
+            ->orderBy('effective_from')
+            ->orderBy('version')
+            ->orderByRaw("CASE WHEN status = 'active' THEN 1 ELSE 0 END")
+            ->orderBy('id')
+            ->get(['id', 'version', 'effective_from']);
+
+        if ($rows->isEmpty()) {
+            return ['salaryVersion' => null, 'salaryVersionFrom' => null, 'salaryVersions' => []];
+        }
+
+        /* In force DURING the window = the one the month opened on (the last
+         * version effective on or before the first day), plus every revision
+         * that took effect inside it. */
+        $opener = $rows->last(fn ($r) => Carbon::parse($r->effective_from)->lte($winStart));
+        $inside = $rows->filter(fn ($r) => Carbon::parse($r->effective_from)->gt($winStart));
+
+        $used = collect([$opener])->filter()->concat($inside)->unique('id')->values();
+        // No opener means the employee's first structure began mid-month; the
+        // month is then priced on that one alone from its start date.
+        $primary = $used->last() ?: $rows->last();
+
+        return [
+            'salaryVersion'     => (int) $primary->version,
+            'salaryVersionFrom' => Carbon::parse($primary->effective_from)->toDateString(),
+            'salaryVersions'    => $used->pluck('version')->map(fn ($v) => (int) $v)->values()->all(),
+        ];
+    }
     private function structureGrossMap($slips, $period = null): array
     {
         $empIds = $slips->pluck('employee_id')->filter()->unique()->values();

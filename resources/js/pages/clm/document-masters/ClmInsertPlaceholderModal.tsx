@@ -128,7 +128,7 @@ interface Props {
      set. Each CP becomes its own tab; its placeholder tokens use the token
      group of the role it was referred as (buyer→customer, consignee→consignee,
      supplier→supplier), so a buyer referred as a supplier inserts {{supplier.*}}. */
-  counterparties?: { name: string; code: string; role: string; type?: string; id?: string | number }[];
+  counterparties?: { name: string; code: string; role: string; type?: string; id?: string | number; dbId?: number }[];
   /* Restrict which party tabs (customer/consignee/supplier) are shown, based on
      the document's applicable party: a Customer/Consignee document exposes the
      Customer + Consignee tabs; a Supplier document exposes only Supplier. When
@@ -260,9 +260,9 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
     if (!open || !cpMode) return;
     const cp = cpTabs[Math.min(cpIdx, cpTabs.length - 1)]?.cp;
     if (!cp || !cp.type || cp.id == null || cp.id === '') return;
-    const key = `${cp.type}:${cp.id}`;
+    const key = `${cp.type}:${cp.dbId ?? cp.id}`;
     if (valuesCache[key]) return;
-    api.get('/clm/ctc-contracts/placeholder-values', { params: { type: cp.type, id: cp.id } })
+    api.get('/clm/ctc-contracts/placeholder-values', { params: { type: cp.type, id: cp.id, db_id: cp.dbId } })
       .then(r => setValuesCache(prev => ({ ...prev, [key]: (r.data?.data ?? {}) as Record<string, string> })))
       .catch(() => setValuesCache(prev => ({ ...prev, [key]: {} })));
   }, [open, cpMode, cpIdx]); // eslint-disable-line react-hooks/exhaustive-deps

@@ -102,11 +102,6 @@ export default function HrExitManagement() {
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [tab, setTab]             = useState<'active' | 'in-progress' | 'exited'>('active');
-  /* Drill-in from the Missing Exit Details tile. It is NOT a fourth tab: those
-     records live inside Active and stay counted there, so this narrows the
-     Active tab rather than replacing it, and the tab strip keeps 'active'
-     highlighted. Any tab click clears it. (CBC #133) */
-  const [missingOnly, setMissingOnly] = useState(false);
   const [search, setSearch]       = useState('');
 
   /* Paging, tabs and search are the SERVER's job now. The page used to fetch
@@ -156,7 +151,7 @@ export default function HrExitManagement() {
   /* KPI tiles + tab badges. Separate from the list because they describe the
      whole roster, not the page — counting the 25 rows on screen would report
      "Total Employees 25" on a tenant of 500. */
-  const [counts, setCounts] = useState({ total: 0, active: 0, inProgress: 0, exited: 0, missing: 0 });
+  const [counts, setCounts] = useState({ total: 0, active: 0, inProgress: 0, exited: 0, blacklisted: 0 });
   /* The tiles shimmer on their OWN request, not the table's. They come from
      /employees/exit-stats now, which lands independently of the list — tying
      the shimmer to the list meant the cards showed a real-looking 0 until the
@@ -202,7 +197,7 @@ export default function HrExitManagement() {
         view: 'exit',
         page: page + 1,              // the API counts from 1, DataTable from 0
         per_page: perPage,
-        exit_status: missingOnly && tab === 'active' ? 'missing' : tab,
+        exit_status: tab,
         ...(debouncedSearch ? { search: debouncedSearch } : {}),
       },
     })
@@ -217,7 +212,7 @@ export default function HrExitManagement() {
       })
       .catch(() => { if (token === listReqRef.current) { setEmployees([]); setTotal(0); } })
       .finally(() => { if (token === listReqRef.current) setListLoading(false); });
-  }, [page, perPage, tab, missingOnly, debouncedSearch]);
+  }, [page, perPage, tab, debouncedSearch]);
   useEffect(() => { loadEmployees(); }, [loadEmployees]);
 
   /* Counts follow the search but NOT the tab — these tiles are the breakdown
@@ -237,7 +232,7 @@ export default function HrExitManagement() {
           active:     Number(data?.active ?? 0),
           inProgress: Number(data?.inProgress ?? 0),
           exited:     Number(data?.exited ?? 0),
-          missing:    Number(data?.missing ?? 0),
+          blacklisted: Number(data?.blacklisted ?? 0),
         });
       })
       .catch(() => { /* tiles keep their last good values */ })
@@ -314,7 +309,24 @@ export default function HrExitManagement() {
               <span className="text-muted text-truncate" style={{ fontSize: 10.5, fontWeight: 500 }}>
                 {isScheduled ? (noticeFromLabel ? `Exit scheduled · notice ${noticeFromLabel}` : 'Exit scheduled')
                   : e.status === 'Active' ? 'Active'
-                    : e.status === 'Exit In Progress' ? 'In Progress'
+                    : e.status === 'Exit In Progress' ? (
+                      <>
+                        In Progress
+                        {/* A termination is blacklisted the moment its type is
+                            saved, long before the case closes, so the mark has
+                            to be visible here too — otherwise the Blacklisted
+                            tile counts someone no row on any tab admits to.
+                            Only the 'Yes' is shown: mid-exit the question is
+                            usually still unanswered (NULL), and printing "Not
+                            Blacklisted" would advertise a clearance nobody has
+                            given yet. */}
+                        {e.blacklisted && (
+                          <span style={{ display: 'inline-block', marginLeft: 8 }}>
+                            <span className="exit-bl-pill exit-bl-pill--on">Blacklisted</span>
+                          </span>
+                        )}
+                      </>
+                    )
                     : e.status === 'Exited' ? (
                       <>
                         Exited
@@ -628,7 +640,13 @@ export default function HrExitManagement() {
     { key: 'active',     label: 'Active Employees',    value: counts.active,     icon: 'ri-user-line',          gradient: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
     { key: 'inProgress', label: 'Exit in Progress',    value: counts.inProgress, icon: 'ri-time-line',          gradient: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
     { key: 'exited',     label: 'Exited Employees',    value: counts.exited,     icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
-    { key: 'missing',    label: 'Missing Exit Details',value: counts.missing,    icon: 'ri-error-warning-line', gradient: 'linear-gradient(135deg, #be123c 0%, #ef4444 60%, #fb7185 100%)', deep: '#be123c' },
+    /* Blacklisted is a flag on the exit CASE, not a tab: a termination is
+       blacklisted the moment its type is saved (ExitController::
+       applyTerminationBlacklist), so these people sit across Exit In Progress
+       AND Exited. The tile therefore counts every live blacklisted case and
+       deliberately does not drill in — no single tab could hold the number it
+       advertises. The per-row answer is the Blacklisted pill on the row. */
+    { key: 'blacklisted', label: 'Blacklisted Employees', value: counts.blacklisted, icon: 'ri-user-forbid-line', gradient: 'linear-gradient(135deg, #be123c 0%, #ef4444 60%, #fb7185 100%)', deep: '#be123c' },
   ];
 
   const STATUS_COLOR: Record<ExitStatus, string> = {
@@ -661,30 +679,13 @@ export default function HrExitManagement() {
 
             <Row className="g-1 mb-3 align-items-stretch rec-page-kpis row-cols-xl-5 row-cols-md-3 row-cols-sm-2 row-cols-1">
               {KPI_CARDS.map(k => {
-                /* Only the Missing tile drills in — the others describe splits
-                   that either are already a tab or (Total) have no filter to
-                   apply, and a card that looks clickable but is not is the
-                   complaint this fixed. */
-                const drillable = k.key === 'missing';
-                const on = drillable && missingOnly;
+                /* None of the tiles drill in: they describe splits that either
+                   are already a tab, have no filter to apply (Total), or span
+                   more than one tab (Blacklisted). A card that looks clickable
+                   but is not is the complaint this fixed. */
                 return (
                 <Col key={k.key}>
-                  <div
-                    className={`rec-kpi-card h-100${drillable ? ' is-drillable' : ''}${on ? ' is-on' : ''}`}
-                    role={drillable ? 'button' : undefined}
-                    tabIndex={drillable ? 0 : undefined}
-                    aria-pressed={drillable ? on : undefined}
-                    title={drillable
-                      ? (on ? 'Showing only records with missing details — click to clear'
-                            : 'Show only employees with missing details')
-                      : undefined}
-                    onClick={drillable ? () => { setTab('active'); setPage(0); setMissingOnly(v => !v); } : undefined}
-                    onKeyDown={drillable ? (e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault(); setTab('active'); setPage(0); setMissingOnly(v => !v);
-                      }
-                    } : undefined}
-                  >
+                  <div className="rec-kpi-card h-100">
                     <span className="rec-kpi-strip" style={{ background: k.gradient }} />
                     <div className="rec-kpi-text">
                       <span className="rec-kpi-label">{k.label}</span>
@@ -700,18 +701,6 @@ export default function HrExitManagement() {
                 );
               })}
             </Row>
-
-            {missingOnly && (
-              /* The tab strip still reads "Active Employees", so without this
-                 the filtered row count looks like data loss. */
-              <div className="exit-drill-note mb-2">
-                <i className="ri-filter-3-line" />
-                Showing only <strong>Active</strong> employees with missing exit details.
-                <button type="button" onClick={() => { setMissingOnly(false); setPage(0); }}>
-                  Clear filter
-                </button>
-              </div>
-            )}
 
             {/* Shared list table (components/ui/DataTable) — tabs, search,
                 sortable headers, the rows-per-page pager and the fit-to-viewport
@@ -748,12 +737,12 @@ export default function HrExitManagement() {
                 onPageSizeChange: setPerPage,
               }}
               tabs={[
-                { key: 'active',      label: 'Active Employees', icon: 'ri-user-line',            count: counts.active + counts.missing },
+                { key: 'active',      label: 'Active Employees', icon: 'ri-user-line',            count: counts.active },
                 { key: 'in-progress', label: 'Exit In Progress', icon: 'ri-time-line',            count: counts.inProgress },
                 { key: 'exited',      label: 'Exited Employees', icon: 'ri-checkbox-circle-line', count: counts.exited },
               ]}
               activeTab={tab}
-              onTabChange={k => { setMissingOnly(false); setPage(0); setTab(k as typeof tab); }}
+              onTabChange={k => { setPage(0); setTab(k as typeof tab); }}
               emptyMessage={
                 <>
                   <i className="ri-user-search-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
