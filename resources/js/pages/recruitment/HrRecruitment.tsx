@@ -977,13 +977,32 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
 
     if (!requiredExp)           e.requiredExp    = 'Required';
 
+    /* Kept in step with HiringRequestController's rule for this field, which is
+     * deliberately wider than the plain title / job_role allowlist:
+     *   regex:/^[A-Za-z0-9 .,\/&()+\-\x27\x{2019}%:;\x{2013}\x{2014}]*$/u
+     *
+     * The apostrophe is the one that mattered: "Bachelor's degree" is the
+     * ordinary way to write this field and the form rejected it outright while
+     * the SERVER would have accepted it (QA #26). The curly quote and the en/em
+     * dashes are here for the reason the server states — Word and job portals
+     * substitute them silently, so a paste that looks identical on screen must
+     * not fail where typing passes. `%` `:` `;` cover "60% marks" and
+     * "Qualification: B.E.".
+     *
+     * Still an allowlist: markup and shell characters stay rejected, and the
+     * /[A-Za-z]/ check above still demands a real word, so punctuation alone
+     * cannot pass.
+     *
+     * Max is 100, not 255 — the server rule is max:100, so 255 here let someone
+     * type 150 characters, clear the form, and take a 422 from the API with no
+     * field-level explanation. */
     const rq = requiredQual.trim();
     if (!rq)                  e.requiredQual = 'Required';
     else if (rq.length < 2)   e.requiredQual = 'Min 2 characters';
-    else if (rq.length > 255) e.requiredQual = 'Max 255 characters';
+    else if (rq.length > 100) e.requiredQual = 'Max 100 characters';
     else if (!/[A-Za-z]/.test(rq))
       e.requiredQual = 'Must contain letters';
-    else if (!/^[A-Za-z0-9 .,/&()+\-]+$/.test(rq))
+    else if (!/^[A-Za-z0-9 .,/&()+\-'’%:;–—]+$/u.test(rq))
       e.requiredQual = 'No special characters';
     return e;
   };

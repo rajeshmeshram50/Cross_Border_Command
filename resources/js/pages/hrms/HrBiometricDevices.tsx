@@ -474,7 +474,9 @@ export default function HrBiometricDevices() {
               </Col>
             </Row>
           </ModalBody>
-          <ModalFooter className="px-4 pb-3 justify-content-center gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+          {/* Right-aligned, like every other modal footer in the app.
+              `justify-content-center` left the actions floating mid-footer (QA #1). */}
+          <ModalFooter className="px-4 pb-3 justify-content-end gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
             <button
               type="button"
               className="master-modal-cancel"
@@ -490,9 +492,21 @@ export default function HrBiometricDevices() {
               disabled={saving}
               className="btn-label waves-effect waves-light rounded-pill"
             >
-              {saving
-                ? <Spinner size="sm" className="label-icon align-middle me-2" />
-                : <i className="ri-save-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
+              {/* The spinner goes INSIDE the label block, not in place of it.
+                  `.btn-label .label-icon` is `position:absolute; width:35.5px;
+                  top/bottom:-1px` — a fixed label panel on the button's left
+                  edge. Putting that on a <Spinner>, which is a circle with
+                  border-radius:50%, stretched it to the button's full height
+                  and 35.5px wide: a rotating ELLIPSE, which is the "icon gets
+                  rotated" in QA #2. The wrapper keeps the panel's geometry and
+                  centres whatever is in it (the class already sets flex +
+                  center), so the spinner stays round and the button doesn't
+                  change width between states. */}
+              <span className="label-icon">
+                {saving
+                  ? <Spinner size="sm" />
+                  : <i className="ri-save-line align-middle fs-16"></i>}
+              </span>
               {saving
                 ? (editId ? 'Updating...' : 'Saving...')
                 : (editId ? 'Update Device' : 'Register Device')}
@@ -589,15 +603,20 @@ export default function HrBiometricDevices() {
               )}
             </Row>
           </ModalBody>
-          <ModalFooter className="px-4 pb-3 justify-content-center gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+          {/* Right-aligned, like every other modal footer in the app.
+              `justify-content-center` left the actions floating mid-footer (QA #1). */}
+          <ModalFooter className="px-4 pb-3 justify-content-end gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
             <button type="button" className="master-modal-cancel" onClick={() => setImportOpen(false)} disabled={importing}>
               <i className="ri-close-line align-middle me-1"></i>
               {importResult ? 'Close' : 'Cancel'}
             </button>
             <Button color="secondary" type="submit" disabled={importing || !importFile} className="btn-label waves-effect waves-light rounded-pill">
-              {importing
-                ? <Spinner size="sm" className="label-icon align-middle me-2" />
-                : <i className="ri-upload-2-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
+              {/* Same label-block fix as the Register/Update button above. */}
+              <span className="label-icon">
+                {importing
+                  ? <Spinner size="sm" />
+                  : <i className="ri-upload-2-line align-middle fs-16"></i>}
+              </span>
               {importing ? 'Importing...' : 'Import'}
             </Button>
           </ModalFooter>

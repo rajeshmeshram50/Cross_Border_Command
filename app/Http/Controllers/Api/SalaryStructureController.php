@@ -463,6 +463,45 @@ class SalaryStructureController extends Controller
          * The typed CTC was therefore discarded exactly as before the fix:
          * ₹4,00,000 came back ₹3,99,996. The bug looked fixed in the source
          * and was not fixed in the running code. */
+        /* A revision that revises NOTHING must not create a version. (QA)
+         *
+         * Saving the Revise form untouched used to insert a second row with the
+         * identical breakup, supersede the first, and bump the version number —
+         * so the history panel showed "Version 1" and "Version 2" carrying the
+         * same components, the same gross and the same effective date, and the
+         * only honest reading of that pair was that the audit trail was noise.
+         *
+         * Worse, the superseded row inherited a window ending the day BEFORE its
+         * own start date ("applicable from 29 Aug 2023 to 28 Aug 2023") because
+         * both versions began on the same day. A version that was never in force
+         * for a single day is not a revision; it is a save button being pressed.
+         *
+         * Compared against the version currently in force, on everything payroll
+         * or the history panel can actually see: the component fingerprints, the
+         * statutory flags, the PF type, and the effective date. The revision NOTE
+         * is deliberately excluded — a note is a comment on a change, not a
+         * change, and letting it through would reopen the same hole one field
+         * narrower.
+         *
+         * Returns 200 with the EXISTING version rather than 422: nothing failed,
+         * and the caller's intent (these are this employee's terms) is already
+         * true. The response carries `unchanged` so the form can say so plainly
+         * instead of claiming a save that did not happen. */
+        $current = SalaryStructure::where('employee_id', $employee->id)
+            ->where('status', 'active')
+            ->orderByDesc('version')
+            ->first();
+
+        if ($current && $this->sameTerms($current, $data, $employee, $monthlyGross)) {
+            return response()->json([
+                'unchanged' => true,
+                'message'   => 'Nothing changed — version ' . $current->version
+                    . ' already holds exactly these terms (effective '
+                    . Carbon::parse($current->effective_from)->format('j M Y')
+                    . '). No new version was created.',
+                'data'      => $this->serialize($current),
+            ], 200);
+        }
         $structure = DB::transaction(function () use ($data, $employee, $user, $monthlyGross, $monthlyDeductions, $submittedCtc) {
             // Supersede the current active structure (Rule 19 — never overwrite).
             $prev = SalaryStructure::where('employee_id', $employee->id)
@@ -641,6 +680,69 @@ class SalaryStructureController extends Controller
      * in outcome — that one still refuses the employee tier outright and still
      * carries the dead lookup described below.
      */
+    /* Is this submission materially identical to the version already in force?
+     *
+     * "Materially" = everything that changes what payroll pays or what the
+     * history panel displays. Amounts are compared at 2 decimal places as
+     * STRINGS, which sidesteps float equality entirely: 25436.04 submitted as a
+     * JSON number and 25436.0400 read back out of the JSON column both render
+     * "25436.04". Components are keyed by code and sorted, so reordering the
+     * rows in the form is not mistaken for a revision. */
+    private function sameTerms(SalaryStructure $current, array $data, Employee $employee, float $monthlyGross): bool
+    {
+        if ($this->componentFingerprint($data['earnings'] ?? [])
+            !== $this->componentFingerprint($current->earnings ?? [])) {
+            return false;
+        }
+        if ($this->componentFingerprint($data['deductions'] ?? [])
+            !== $this->componentFingerprint($current->deductions ?? [])) {
+            return false;
+        }
+
+        /* The same defaults store() itself applies, so an omitted flag compares
+         * against the value that WOULD be written, not against null. */
+        $pf  = (bool) ($data['pf_applicable']  ?? (bool) $employee->pf_eligible);
+        $esi = (bool) ($data['esi_applicable'] ?? ($monthlyGross <= 21000));
+        $pt  = (bool) ($data['pt_applicable']  ?? true);
+
+        if ($pf  !== (bool) $current->pf_applicable)  return false;
+        if ($esi !== (bool) $current->esi_applicable) return false;
+        if ($pt  !== (bool) $current->pt_applicable)  return false;
+
+        /* PF Type lives on the EMPLOYEE, not the structure — it is the column
+         * PayrollService reads when picking the PF base, so flipping Statutory
+         * to Standard genuinely changes the pay and must count as a revision
+         * even when every amount on the form is untouched. Only checked when
+         * the caller actually sent the field, matching the write-back's own
+         * array_key_exists() rule. */
+        if (array_key_exists('pf_type', $data)) {
+            $submitted = $pf ? ($data['pf_type'] ?: 'statutory') : null;
+            if ($submitted !== $employee->pf_type) return false;
+        }
+
+        // Same terms starting on a different day IS a revision — the window moves.
+        $a = $data['effective_from'] ? Carbon::parse($data['effective_from'])->toDateString() : null;
+        $b = $current->effective_from ? Carbon::parse($current->effective_from)->toDateString() : null;
+
+        return $a === $b;
+    }
+
+    /** A sorted, order-independent "code|label|0.00" list for one side of a breakup. */
+    private function componentFingerprint($lines): array
+    {
+        $out = [];
+        foreach ((array) $lines as $l) {
+            $l     = (array) $l;
+            $code  = trim((string) ($l['code'] ?? ''));
+            $label = trim((string) ($l['label'] ?? $l['name'] ?? ''));
+            if ($code === '' && $label === '') continue;
+            $out[] = mb_strtolower($code !== '' ? $code : $label)
+                . '|' . mb_strtolower($label)
+                . '|' . number_format((float) ($l['amount'] ?? 0), 2, '.', '');
+        }
+        sort($out);
+        return $out;
+    }
     private function canManage(Request $request): bool
     {
         $user = $request->user();
