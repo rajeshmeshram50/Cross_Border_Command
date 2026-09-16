@@ -589,7 +589,16 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
         // against THIS, then writes it to the employee record (#101).
         annual_ctc: salaryAnnual,
       });
-      toast.success('Salary saved', res.data?.message || `Structure saved for ${employee.name}.`);
+      /* The server refuses to create a version when nothing changed, and says
+         so with `unchanged`. Reporting that as "Salary saved" would be a lie
+         the history panel then contradicts — no new version appears — so it
+         gets its own neutral toast. The form still closes: the employee's terms
+         are what the user asked them to be, there is just nothing to record. */
+      if (res.data?.unchanged) {
+        toast.info('No changes', res.data?.message || 'This revision matches the current version, so no new version was created.');
+      } else {
+        toast.success('Salary saved', res.data?.message || `Structure saved for ${employee.name}.`);
+      }
       onSaved();
       onClose();
     } catch (err: any) {
@@ -1022,7 +1031,10 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
  * theme rather than pinning its own colours. Same house style as the payroll
  * run dialog (.prm-*) and the payslip viewer (.ep-pay-*).
  * ──────────────────────────────────────────────────────────────────────── */
-function SalaryModalStyles() {
+/* Exported so SalaryHistoryModal can wear the same hero. Sharing the stylesheet
+   (rather than copying the gradient into a second file) is what keeps the two
+   modals from drifting apart the next time either one is restyled. */
+export function SalaryModalStyles() {
   return (
     <style>{`
       .ssm-modal { max-width: 980px; }

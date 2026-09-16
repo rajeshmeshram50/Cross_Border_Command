@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
-import CustomerEvidenceVaultModal, { ShipmentDocPanel, ShipmentDocSendForSignature, SevStat, type VaultShipmentDoc, type ShipmentSendParty } from '../customer/CustomerEvidenceVaultModal';
-import { VaultReuploadPopup } from '../../../p2p/p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
+import CustomerEvidenceVaultModal, { ShipmentDocPanel, ShipmentDocSendForSignature, ShipmentStatusPill, SevStat, sumRatios, RATIO_COL, type VaultShipmentDoc, type ShipmentSendParty } from '../customer/CustomerEvidenceVaultModal';
+import { VaultReuploadPopup, VaultDateBadge } from '../../../p2p/p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
 import { CLM_CSS } from '../../../clm/shared/clmShared';
 /* Shared Evidence Vault stylesheet — the same one the Customer and Supplier
@@ -137,8 +137,16 @@ export interface ConsigneeVaultTarget {
   contact?: string;
   contactCity?: string;
   /* Linked customer code (e.g. C-010) so the header can show the
-   * buyer-consignee relationship at a glance. */
+   * buyer-consignee relationship at a glance. Stays the PRIMARY customer. */
   customerId?: string;
+  /* Every customer this consignee is mapped to (the consignee_customer pivot,
+   * primary included). The header names the primary and carries the rest as a
+   * +N count that opens the full list -- naming only the primary made a
+   * consignee shared by three buyers look like it belonged to one.
+   *
+   * Optional: callers that don't have the list to hand (the Buyer Profile, the
+   * CTC form) still render the plain single-customer chip. */
+  customers?: { id?: number; code?: string | null; name?: string | null }[];
   /* Optional hint: this consignee is flagged Same as Customer, and here is the
    * customer it mirrors.
    *
@@ -266,7 +274,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   useEffect(() => { if (!open) setCustVaultOpen(false); }, [open]);
   /* "+N more" segment overflow popover — a titled list (matches the CLM pages'
    * authority/segment popovers), opened on click from the header chip. */
-  const [segPop, setSegPop] = useState<{ names: string[]; x: number; y: number } | null>(null);
+  const [segPop, setSegPop] = useState<{ title: string; items: { label: string; code?: string | null }[]; x: number; y: number } | null>(null);
   // "Document Overview" popup — set to a group key to open the all-docs list.
   const [overview, setOverview] = useState<GroupKey | null>(null);
   const [overviewPage, setOverviewPage] = useState(1);
@@ -305,6 +313,15 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   /* Signing tracker launched from an overview row. Held here rather than in
      the row because the overview table is rebuilt on every shipment switch. */
   const [ovTrack, setOvTrack] = useState<{ id: number; code: string } | null>(null);
+  /* Upload straight from the Standard Documents overview.
+   *
+   * A row with no file on record showed a Download button that could never do
+   * anything — disabled, next to a "Pending" pill saying precisely why. The
+   * action the row actually needs is the upload, so a Pending standard row
+   * offers that instead. Case-to-Case rows are signature envelopes, not
+   * uploads, and keep Resend / Track / Download. */
+  const [ovUpload, setOvUpload] = useState<{ doc: VaultDoc; category: 'kyc' | 'dd' | 'tl' } | null>(null);
+  const [ovUploadBusy, setOvUploadBusy] = useState(false);
 
   /* Shipment Send-for-Signature — launches the preview + signature-box wizard
    * for one not-yet-sent shipment document. */
@@ -598,14 +615,20 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   /* Tab badge count. Trade Documents / Agreements are shipment-wise, so
    * their badge reflects the real number of trade docs / agreements across
    * all shipments (sum of each shipment's ratio total), not the standard KPI. */
-  const shippedRows = vault.shipment_agreements.filter(r => r.has_shipment !== false);
+  /* Same split as the Customer vault: the server resolves per-DEAL rows for a
+     consignee and sums every Case-to-Case figure over ALL of them, so counting
+     from the shipped subset put a 0 on the cards while the document list below
+     them was not empty. Total Shipments keeps the server's real shipment count.
+     has_shipment is optional, so undefined still counts as shipped. */
+  const dealRows    = vault.shipment_agreements;
+  const shippedRows = dealRows.filter(r => r.has_shipment !== false);
   const ratioTotal = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[1] ?? p[0], 10) || 0; };
   const shipmentDocCount = (key: 'trade_docs' | 'agreement') =>
-    shippedRows.reduce((acc, r) => acc + ratioTotal(r[key].ratio), 0);
+    dealRows.reduce((acc, r) => acc + ratioTotal(r[key].ratio), 0);
   /* The Case-to-Case tab covers trade documents AND agreements now, so its
      badge totals both — the same sum the Customer vault's single tab shows.
      Counting only trade docs here would under-report the tab's own list.
-     Summed over shippedRows, the same set shipmentDocDone() and the table
+     Summed over dealRows, the same set shipmentDocDone() and the table
      itself read, or the ratio would be a subset over a whole. */
   const tabCount = (t: typeof TABS[number]): number =>
     t.key === 'trade-documents'
@@ -625,16 +648,17 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   const stdTotal = stdAll.length;
   const stdUp    = stdAll.filter(isUploaded).length;
   const stdPend  = stdTotal - stdUp;
-  const splitOf  = (rows: VaultDoc[]) => {
-    const up = rows.filter(isUploaded).length;
-    return { up, pend: rows.length - up };
+  const catStat  = (rows: VaultDoc[]) => {
+    const up   = rows.filter(isUploaded).length;
+    const pend = rows.length - up;
+    return { part: up, whole: rows.length, split: { up, pend } };
   };
 
   /* Case-to-case rows carry "signed/total" ratios per shipment, so the
      signed half comes from the ratio's numerator rather than an attachment. */
   const ratioDone = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[0], 10) || 0; };
   const shipmentDocDone = (key: 'trade_docs' | 'agreement') =>
-    shippedRows.reduce((acc, r) => acc + ratioDone(r[key].ratio), 0);
+    dealRows.reduce((acc, r) => acc + ratioDone(r[key].ratio), 0);
   const tdTotal  = shipmentDocCount('trade_docs');
   const tdDone   = shipmentDocDone('trade_docs');
   const agrTotal = shipmentDocCount('agreement');
@@ -785,39 +809,58 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                     they are one row now, as on the other two vaults. */}
                 <div className="cev-header-chips">
                   {consignee.contact && (
-                    <span className="cev-chip cev-chip-contact">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                      {consignee.contact}
-                    </span>
+                    <span className="cev-chip cev-chip-contact">{consignee.contact}</span>
                   )}
                   {consignee.contactCity && <span className="cev-chip cev-chip-city">{consignee.contactCity}</span>}
-                  {/* Consignee-only chip — the customer this consignee hangs
+                  {/* Consignee-only chip — the customer(s) this consignee hangs
                       off. No equivalent on the other two vaults, kept here
-                      because it is the fastest way back to the parent. */}
-                  {consignee.customerId && <span className="cev-chip cev-chip-link">↳ {consignee.customerId}</span>}
+                      because it is the fastest way back to the parent.
+
+                      A consignee can be mapped to SEVERAL customers, and this
+                      only ever named the primary, so a consignee shared by
+                      three buyers read as belonging to one. The others now ride
+                      inside the same badge as a +N count, and clicking it lists
+                      each mapped customer by name and code. */}
+                  {(() => {
+                    const mapped = (consignee.customers ?? []).filter(m => m?.code || m?.name);
+                    const label  = consignee.customerId || mapped[0]?.code || mapped[0]?.name || '';
+                    if (!label) return null;
+                    /* The pivot INCLUDES the primary, so the one already named
+                       on the chip is not an extra. */
+                    const extra = Math.max(0, mapped.length - 1);
+                    if (extra === 0) return <span className="cev-chip cev-chip-link">{label}</span>;
+                    return (
+                      <Tooltip label={`${mapped.length} mapped customers — click to see all`}>
+                        <button
+                          type="button"
+                          className="cev-chip cev-chip-link sev-chip-more"
+                          onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { title: 'Mapped Customers', items: mapped.map(m => ({ label: m.name || m.code || '—', code: m.code })), x: b.left, y: b.bottom + 6 }); }}
+                        >{label}<span className="cev-chip-seg-count">+{extra}</span></button>
+                      </Tooltip>
+                    );
+                  })()}
                   {consignee.segment && (() => {
-                    /* One segment inline; the rest collapse into a "+N more"
-                     * chip whose popover lists every segment. Five used to be
-                     * shown, which overflowed a header this size. */
                     const segs = String(consignee.segment).split(',').map(s => s.trim()).filter(Boolean);
                     if (segs.length === 0) return null;
-                    const shown = segs.slice(0, 1);
-                    const extra = segs.length - shown.length;
+                    const first = segs[0];
+                    const extra = segs.length - 1;
+                    const short = first.length > 20 ? first.slice(0, 20) + '…' : first;
+                    /* ONE badge, matching the Customer vault's header: the named
+                       segment carries the count inline and the whole thing opens
+                       the full list. It used to be a chip plus a separate
+                       "+29 more" button beside it -- two chips spending twice
+                       the width of a header this size to say one thing. */
+                    if (extra === 0) {
+                      return <Tooltip label={first}><span className="cev-chip cev-chip-seg">{short}</span></Tooltip>;
+                    }
                     return (
-                      <>
-                        {shown.map((s, i) => (
-                          <Tooltip key={`${s}-${i}`} label={s}>
-                            <span className="cev-chip cev-chip-seg">{s.length > 20 ? s.slice(0, 20) + '…' : s}</span>
-                          </Tooltip>
-                        ))}
-                        {extra > 0 && (
-                          <button
-                            type="button"
-                            className="cev-chip cev-chip-seg sev-chip-more"
-                            onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { names: segs, x: b.left, y: b.bottom + 6 }); }}
-                          >+{extra} more</button>
-                        )}
-                      </>
+                      <Tooltip label={`${segs.length} segments — click to see all`}>
+                        <button
+                          type="button"
+                          className="cev-chip cev-chip-seg sev-chip-more"
+                          onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { title: 'Segments', items: segs.map(n => ({ label: n })), x: b.left, y: b.bottom + 6 }); }}
+                        >{short}<span className="cev-chip-seg-count">+{extra}</span></button>
+                      </Tooltip>
                     );
                   })()}
                   {consignee.country && <span className="cev-chip cev-chip-country">{consignee.country}</span>}
@@ -878,9 +921,9 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
             <SevStat tone="slate" icon="ri-file-list-3-line"     label="Total Standard Documents" value={stdTotal} part={stdTotal} whole={stdTotal} split={{ up: stdUp, pend: stdPend }} />
             <SevStat tone="green" icon="ri-checkbox-circle-line" label="Verified / Uploaded"      value={stdUp}    part={stdUp}    whole={stdTotal} tag="Compliant" />
             <SevStat tone="red"   icon="ri-error-warning-line"   label="Pending"                  value={stdPend}  part={stdPend}  whole={stdTotal} tag="Action needed" />
-            <SevStat tone="teal"  icon="ri-building-2-line"      label="Company Due Diligence"    value={vault.company_dd.length}     part={vault.company_dd.length}     whole={stdTotal} split={splitOf(vault.company_dd)} />
-            <SevStat tone="teal"  icon="ri-user-3-line"          label="Owner KYC"                value={vault.owner_kyc.length}      part={vault.owner_kyc.length}      whole={stdTotal} split={splitOf(vault.owner_kyc)} />
-            <SevStat tone="teal"  icon="ri-file-shield-2-line"   label="Trade License"            value={vault.trade_licenses.length} part={vault.trade_licenses.length} whole={stdTotal} split={splitOf(vault.trade_licenses)} />
+            <SevStat tone="teal"  icon="ri-building-2-line"      label="Company Due Diligence"    value={vault.company_dd.length}     {...catStat(vault.company_dd)} />
+            <SevStat tone="teal"  icon="ri-user-3-line"          label="Owner KYC"                value={vault.owner_kyc.length}      {...catStat(vault.owner_kyc)} />
+            <SevStat tone="teal"  icon="ri-file-shield-2-line"   label="Trade License"            value={vault.trade_licenses.length} {...catStat(vault.trade_licenses)} />
           </>) : (<>
             <SevStat tone="slate" icon="ri-file-list-3-line"     label="Total Case to Case Documents" value={c2cTotal} part={c2cTotal} whole={c2cTotal} split={{ up: c2cDone, pend: c2cPend, upLabel: 'signed', pendLabel: 'pending' }} />
             <SevStat tone="green" icon="ri-checkbox-circle-line" label="Total Signed"                 value={c2cDone}  part={c2cDone}  whole={c2cTotal} tag="Complete" />
@@ -926,7 +969,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
             </div>
             <div className="cev-section-right">
               {(tab === 'shipment-agreements' || tab === 'trade-documents') ? (
-                <span className="cev-sec-pill cev-sec-pill-docs">{vault.total_shipments} Shipments</span>
+                <span className="cev-sec-pill cev-sec-pill-docs">{dealRows.length} Transactions</span>
               ) : (
                 <>
                   {statusTally.Verified > 0 && <span className="cev-sec-pill cev-sec-pill-ok"><span className="cev-sec-dot" />Verified {statusTally.Verified}</span>}
@@ -941,7 +984,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           </div>
 
           {(tab === 'shipment-agreements' || tab === 'trade-documents')
-            ? <ShipmentTable rows={shippedRows} kind="both"
+            ? <ShipmentTable rows={dealRows} kind="both"
                              onSend={(leadId, doc, party) => { if (doc.pi_id) setPiSend({ leadId, doc }); else setShipSend({ leadId, doc, party }); }}
                              activeSend={shipSend ?? (piSend ? { ...piSend, party: 'consignee' as const } : null)}
                              onBulkSend={(leadId, docs, party) => { if (docs.length) setShipSend({ leadId, doc: docs[0], docs, party }); }} />
@@ -1077,7 +1120,18 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
               ...(r.trade_docs_consignee ?? []),
               ...(r.agreements_consignee ?? []),
             ]);
-        const shipments     = isStd ? [] : vault.shipment_agreements;
+        /* shippedRows, NOT every deal: this is the Send Documents & Agreements
+           for Signature chooser, and a transaction with no shipment order
+           raised against it has nothing to send. It was listing them anyway —
+           labelled "Not shipped" and fully selectable — so a user could open
+           an unshipped deal's trade documents and queue them for signature.
+           The Customer vault has always filtered here; this is the same rule,
+           and the same variable (defined beside dealRows above).
+
+           The Case-to-Case COUNTERS deliberately stay on dealRows — see the
+           note there. They answer "how much paperwork does this party owe",
+           which is true whether or not a shipment exists yet. */
+        const shipments     = isStd ? [] : shippedRows;
         const shipsWithDocs = isStd ? [] : shipments.filter((r) => shipDocsOf(r).length > 0);
         /* No auto-select of the first shipment any more. The panel opens on a
            chooser and only shows a document list once a shipment is picked —
@@ -1087,10 +1141,21 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
            if it were the whole case-to-case set. */
         const activeShip    = isStd ? null : (shipsWithDocs.find((r) => r.id === ovShip) ?? null);
         const picking       = !isStd && !activeShip;
+        /* Standard rows carry the bucket they came from. Merging the three
+           lists loses it otherwise, and the upload endpoint needs the category
+           to file the file against the right document. */
         const docs: (VaultDoc | VaultShipmentDoc)[] = isStd
-          ? [...vault.company_dd, ...vault.owner_kyc, ...vault.trade_licenses]
+          ? [
+              ...vault.company_dd.map((d) => ({ ...d, ovCat: 'dd' as const })),
+              ...vault.owner_kyc.map((d) => ({ ...d, ovCat: 'kyc' as const })),
+              ...vault.trade_licenses.map((d) => ({ ...d, ovCat: 'tl' as const })),
+            ]
           : (activeShip ? shipDocsOf(activeShip) : []);
-        const shipLabel = (r: VaultShipmentRow) => (r.has_shipment === false ? 'Not shipped' : r.shipment_id);
+        /* A transaction with no shipment has no shipment code to show (QA #75),
+           so the picker and its header fall back to the opportunity — which is
+           what identifies that deal — instead of labelling it with a shipment
+           state it does not have. */
+        const shipLabel = (r: VaultShipmentRow) => (r.has_shipment === false ? (r.opportunity_id || '—') : r.shipment_id);
 
         /* Multi-select. Only case-to-case rows are tickable — standard DD / KYC
          * rows are uploads, not signature envelopes, so there is nothing to
@@ -1104,33 +1169,47 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
          * tooltip, rather than quietly dropping rows from the send. */
         /* Which rows this panel can actually send.
          *
-         * The send modal here runs in its default 'trade-doc' mode, so it
-         * resolves ids against the TRADE DOCUMENT library only. An agreement
-         * needs the same modal opened with mode="agreement" plus an
-         * agreementContext (lead + signers), which this vault does not wire
-         * up — the main Case-to-Case table gates its Send on category 'td'
-         * for exactly that reason. Offering Resend on an agreement row would
-         * hand the modal an id it cannot find.
+         * Agreements send from here too. They used to be refused -- "Agreements
+         * are sent from the Case to Case tab, not here" -- because this popup
+         * sent through SalesCustomerSendForSignatureModal in its default
+         * trade-doc mode, which resolves ids against the TRADE DOCUMENT library
+         * alone and would not have found an agreement id. That was a limit of
+         * the path, not a rule about agreements, and it split one list into
+         * rows you could act on and rows you had to go elsewhere for.
          *
-         * Already-signed and in-flight rows are excluded too, matching the
-         * main table: there is nothing to resend on a completed envelope, and
-         * a pending one wants a reminder, not a second send. */
+         * The sends below now go through ShipmentDocSendForSignature, which
+         * already handles both kinds -- it is what the inline Case-to-Case
+         * panel behind this popup uses -- so the exclusion is gone.
+         *
+         * Already-signed and in-flight rows stay excluded, matching that panel:
+         * there is nothing to resend on a completed envelope, and a pending one
+         * wants a reminder, not a second send. */
         const sendableDoc = (d: VaultShipmentDoc) =>
           !!d.db_id
-          && (d.doc_type ?? 'trade') !== 'agreement'
           && d.status !== 'Signed'
           && d.status !== 'Pending';
         const sendReason = (d: VaultShipmentDoc) =>
           !d.db_id ? 'Not saved against this deal yet'
-          : (d.doc_type ?? 'trade') === 'agreement' ? 'Agreements are sent from the Case to Case tab, not here'
           : d.status === 'Signed' ? 'Already signed — nothing to resend'
           : d.status === 'Pending' ? 'Already out for signature — use Reminder instead'
+          : d.status === 'Draft' ? 'Send this document for signature'
           : 'Send this document for signature again';
+
+        /* One send route for the popup, mirroring the inline panel's: a PI goes
+         * to its own wizard, everything else (trade document or agreement) to
+         * the shipment sender. `party` is 'consignee' because that is what this
+         * vault is -- the same party the old trade-doc path hardcoded via
+         * modelName="Consignee". */
+        const sendShipDocs = (list: VaultShipmentDoc[]) => {
+          if (!activeShip || list.length === 0) return;
+          const head = list[0];
+          if (head.pi_id) { setPiSend({ leadId: activeShip.id, doc: head }); return; }
+          setShipSend({ leadId: activeShip.id, doc: head, docs: list.length > 1 ? list : undefined, party: 'consignee' });
+        };
 
         const keyed    = isStd ? [] : (docs as VaultShipmentDoc[]).map((doc) => ({ key: ovDocKey(doc), doc }));
         const sendable = keyed.filter((r) => sendableDoc(r.doc));
         const picked   = keyed.filter((r) => ovPicked.includes(r.key));
-        const pickedIds = picked.map((r) => r.doc.db_id).filter((n): n is number => !!n);
         /* Every ticked row is sendable by construction — only sendable rows
            can be ticked — so this is a guard against stale ticks, not a
            second rule the user has to satisfy. */
@@ -1206,15 +1285,27 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                           />
                         </th>
                       )}
-                      <th style={{ width: 64 }}>SR NO</th>
+                      {/* table-layout is fixed, so these widths are the whole
+                          story — a column that declares less than its content
+                          needs does not grow, it pushes the table past the
+                          dialog and hands the list a horizontal scrollbar.
+                          The standard list carries TWO action buttons
+                          (Download + Upload / Re-upload), so ACTION needs the
+                          same room the Customer vault gives it; the other
+                          columns give that room back. */}
+                      <th style={{ width: isStd ? 54 : 64 }}>SR NO</th>
                       <th>DOCUMENT NAME</th>
-                      <th style={{ width: 130 }}>STATUS</th>
-                      <th style={{ width: isStd ? 130 : 230 }}>ACTION</th>
+                      {/* Dates belong to one-time company documents; a per-deal
+                          row has no issue / expiry of its own. */}
+                      {isStd && <th style={{ width: 104 }}>ISSUED DATE</th>}
+                      {isStd && <th style={{ width: 104 }}>EXPIRED AT</th>}
+                      <th style={{ width: isStd ? 112 : 130 }}>STATUS</th>
+                      <th style={{ width: isStd ? 196 : 230 }}>ACTION</th>
                     </tr>
                   </thead>
                   <tbody>
                     {docs.length === 0 ? (
-                      <tr><td colSpan={isStd ? 4 : 5} className="cev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
+                      <tr><td colSpan={isStd ? 6 : 5} className="cev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
                     ) : docs.map((d, i) => {
                       const absIdx = i;
                       const raw = isStd ? (d as VaultDoc).attachment_url : (d as VaultShipmentDoc).signed_url;
@@ -1240,14 +1331,38 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                             );
                           })()}
                           <td className="cev-ov-num">{absIdx + 1}</td>
-                          {/* 35 to match the shipment doc panel — the Document
-                              Name column is the widest here too, and a full PI
-                              name ("Proforma Invoice (PI/2026-27/29)") is 32
-                              characters, so 25 hid the PI number itself. */}
-                          <Tooltip label={d.name} disabled={(d.name || '').length <= 35}>
-                            <td className="cev-ov-name">{(d.name || '').length > 35 ? (d.name || '').slice(0, 35) + '…' : d.name}</td>
-                          </Tooltip>
-                          <td><StatusPill s={d.status as VaultStatus} /></td>
+                          {/* 20 on the standard list, which now also carries
+                              Issued Date, Expired At and a two-button action
+                              cell — at 35 the row outgrew the dialog and the
+                              whole table went to a horizontal scrollbar. The
+                              per-deal list keeps 35: it has no date columns and
+                              a full PI name ("Proforma Invoice (PI/2026-27/29)")
+                              is 32 characters, so cutting shorter would hide the
+                              PI number itself. Full name stays on the tooltip
+                              either way. */}
+                          {(() => {
+                            const cap = isStd ? 20 : 35;
+                            const nm = d.name || '';
+                            return (
+                              <Tooltip label={nm} disabled={nm.length <= cap}>
+                                <td className="cev-ov-name">{nm.length > cap ? nm.slice(0, cap) + '…' : nm}</td>
+                              </Tooltip>
+                            );
+                          })()}
+                          {/* Same badge the vault's own tables use, so a date
+                              — and a missing one — reads identically in both
+                              places, and in the Customer vault beside them. */}
+                          {isStd && <td className="cev-cell-dim"><VaultDateBadge value={(d as VaultDoc).issue_date} /></td>}
+                          {isStd && <td className="cev-cell-dim"><VaultDateBadge value={(d as VaultDoc).expiry} kind="expiry" /></td>}
+                          {/* Standard and case-to-case rows share this list but
+                              not their status vocabulary, so each gets the badge
+                              built for it — the same one the shipment panel this
+                              list sits beside uses. */}
+                          <td>
+                            {isStd
+                              ? <StatusPill s={d.status as VaultStatus} />
+                              : <ShipmentStatusPill status={(d as VaultShipmentDoc).status} />}
+                          </td>
                           <td>
                             <div className="sev-ov-acts">
                             {/* Resend / Track — case-to-case only. Standard rows
@@ -1256,6 +1371,14 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                               const sd = d as VaultShipmentDoc;
                               const canSend  = sendableDoc(sd);
                               const canTrack = !!sd.signature_request_id;
+                              /* A Draft has never been out for signature, so
+                                 this is its FIRST send; Declined / Recalled /
+                                 Expired have been, so those are a re-send. The
+                                 button always read "Resend", which told the user
+                                 a Draft had already gone out — and the inline
+                                 Case-to-Case panel behind this popup said "Send"
+                                 on the very same row. Same rule in both now. */
+                              const firstSend = sd.status === 'Draft';
                               return (
                                 <>
                                   <Tooltip label={sendReason(sd)}>
@@ -1263,9 +1386,9 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                                       type="button"
                                       className="sev-ov-act sev-ov-act-send"
                                       disabled={!canSend}
-                                      onClick={() => { if (sd.db_id) setSendDocIds([sd.db_id]); }}
+                                      onClick={() => sendShipDocs([sd])}
                                     >
-                                      <i className="ri-send-plane-line" aria-hidden /> Resend
+                                      <i className={firstSend ? 'ri-send-plane-line' : 'ri-refresh-line'} aria-hidden />{firstSend ? ' Send' : ' Resend'}
                                     </button>
                                   </Tooltip>
                                   <Tooltip label={canTrack ? 'Signing activity tracker' : 'Nothing has been sent for signature yet'}>
@@ -1328,6 +1451,28 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                                 </Tooltip>
                               );
                             })()}
+                            {/* Upload / Re-upload, beside Download rather than
+                                instead of it, so the pair sits at the same x on
+                                every row — same arrangement as the Customer
+                                vault's overview. Per-deal rows get no upload:
+                                their file comes back signed from Zoho. */}
+                            {isStd && (d as VaultDoc).doc_code && consignee?.db_id && (
+                              <Tooltip label={url ? `Replace the file on ${d.name}` : `Upload ${d.name}`}>
+                                <button
+                                  type="button"
+                                  className={url ? 'cev-ov-up cev-ov-reup' : 'cev-ov-up'}
+                                  disabled={ovUploadBusy}
+                                  onClick={() => setOvUpload({
+                                    doc: d as VaultDoc,
+                                    category: ((d as VaultDoc & { ovCat?: 'kyc' | 'dd' | 'tl' }).ovCat) ?? 'dd',
+                                  })}
+                                >
+                                  {url
+                                    ? <><i className="ri-refresh-line" aria-hidden /> Re-upload</>
+                                    : <><i className="ri-upload-2-line" aria-hidden /> Upload</>}
+                                </button>
+                              </Tooltip>
+                            )}
                             </div>
                           </td>
                         </tr>
@@ -1360,7 +1505,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                       type="button"
                       className="cnev-ovbar-send"
                       disabled={!canBulk}
-                      onClick={() => { if (canBulk) setSendDocIds(pickedIds); }}
+                      onClick={() => { if (canBulk) sendShipDocs(picked.map(r => r.doc)); }}
                     >
                       <i className="ri-send-plane-line" aria-hidden /> Send for Signature
                     </button>
@@ -1382,22 +1527,73 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
         />
       )}
 
-      {segPop && createPortal(
-        <>
-          <div onClick={() => setSegPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 13000 }} />
-          <div className="cev-seg-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 250), top: segPop.y, zIndex: 13001, width: 232, maxHeight: 320, overflowY: 'auto' }}>
-            <div className="cev-seg-pop-title">Segments ({segPop.names.length})</div>
-            {segPop.names.map((name, i) => (
-              <div key={i} className={`cev-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
-                <Tooltip label={name}>
-                  <span className="cev-seg-pop-pill">{name.length > 20 ? name.slice(0, 20) + '…' : name}</span>
-                </Tooltip>
-              </div>
-            ))}
-          </div>
-        </>,
-        document.body
+      {/* Upload / Re-upload started from the overview. Outside the overview
+          block for the same reason the tracker above is: that panel re-renders
+          on every tick, which would tear the dialog down mid-upload. */}
+      {ovUpload && (
+        <VaultReuploadPopup
+          doc={ovUpload.doc}
+          category={ovUpload.category}
+          busy={ovUploadBusy}
+          className="cnev-reup"
+          withIssueDate
+          onClose={() => { if (!ovUploadBusy) setOvUpload(null); }}
+          onSubmit={async (f, opts) => {
+            if (!consignee?.db_id || !ovUpload.doc.doc_code) return;
+            setOvUploadBusy(true);
+            try {
+              const fd = new FormData();
+              fd.append('category', ovUpload.category);
+              fd.append('doc_code', ovUpload.doc.doc_code);
+              fd.append('doc_name', ovUpload.doc.name || ovUpload.doc.doc_code);
+              if (f) fd.append('attachment', f);
+              // Left out when absent: the endpoint's rules are nullable and an
+              // empty string fails their `date` check.
+              if (opts?.issueDate) fd.append('issue_date', opts.issueDate);
+              if (opts?.expiryDate) fd.append('expiry_date', opts.expiryDate);
+              await api.post(`/segment-uploads/consignee/${consignee.db_id}`, fd, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+              });
+              setOvUpload(null);
+              await reloadVault();
+              toast.success(f ? 'Document uploaded' : 'Dates saved', f ? `${f.name} has been attached.` : 'The issue and expiry dates were updated.');
+            } catch (e: any) {
+              toast.error('Upload failed', e?.response?.data?.message || 'The file could not be uploaded. Please try again.');
+            } finally {
+              setOvUploadBusy(false);
+            }
+          }}
+        />
       )}
+
+      {segPop && (() => {
+        /* Customer rows carry a code on the right, so they need the wider box;
+           a segment list keeps the original width. */
+        const popW = segPop.items.some(it => it.code) ? 268 : 232;
+        return createPortal(
+          <>
+            <div onClick={() => setSegPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 13000 }} />
+            <div className="cev-seg-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - (popW + 18)), top: segPop.y, zIndex: 13001, width: popW, maxHeight: 320, overflowY: 'auto' }}>
+              <div className="cev-seg-pop-title">{segPop.title} ({segPop.items.length})</div>
+              {segPop.items.map((it, i) => (
+                <div key={i} className={`cev-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
+                  <Tooltip label={it.code ? `${it.code}: ${it.label}` : it.label}>
+                    <span className="cev-seg-pop-pill">
+                      {/* Code first, then the name -- "C-206: Nova Foods". The
+                          code is the identifier people quote, so it leads and
+                          the codes line up down the list; the name is what gets
+                          clipped when the row runs out of room. */}
+                      {it.code && <span className="cev-seg-pop-code">{it.code}:</span>}
+                      {it.label.length > 20 ? it.label.slice(0, 20) + '…' : it.label}
+                    </span>
+                  </Tooltip>
+                </div>
+              ))}
+            </div>
+          </>,
+          document.body
+        );
+      })()}
     </div>,
     document.body
   );
@@ -1494,27 +1690,6 @@ function evEffectiveStatus(d: VaultDoc): VaultStatus | 'Expired' {
 const CLIP = 25;
 const clip = (s: string): string => (s.length > CLIP ? s.slice(0, CLIP) + '…' : s);
 
-const EV_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-/* Same rendering the Supplier vault's Expiry column uses.
-   A real date prints as 12-Sep-2026; anything the parser cannot read is text
-   the catalogue supplied ("Lifetime", "Varies"), so it is passed through
-   rather than blanked. */
-function evFmtExpiry(s?: string | null): string {
-  const d = evParseExpiry(s);
-  if (!d) return s && s.trim() && s.trim() !== '-' ? s.trim() : '—';
-  return `${String(d.getDate()).padStart(2, '0')}-${EV_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
-}
-
-/* Date cells read "N/A" when there is no date, not "—".
-   Expiry already showed N/A (its fallback text comes from the segment-rule
-   master), so a bare dash in Issue Date beside it looked like a different kind
-   of nothing — a missing value versus a not-applicable one. Both mean the same
-   here: no date was recorded. */
-const evFmtDateCell = (s?: string | null): string => {
-  const t = evFmtExpiry(s);
-  return !t || t === '—' ? 'N/A' : t;
-};
-
 function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, onRowBusyChange, sameAsCustomer = false }: {
   rows: VaultDoc[];
   tab: TabKey;
@@ -1610,16 +1785,15 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                 )}
               </td>
               {tab !== 'trade-documents' && (
-                <td className="cev-cell-dim">{evFmtDateCell(d.issue_date)}</td>
+                <td className="cev-cell-dim"><VaultDateBadge value={d.issue_date} /></td>
               )}
-              {/* A date already past is called out — evEffectiveStatus treats it
-                  as Expired regardless of what the API called the row, and the
-                  column should not read as calm text while the status pill
-                  beside it says otherwise. */}
+              {/* A date already past is called out — the badge tones itself
+                  red once the expiry is behind us, so the column cannot read
+                  as calm text while the status pill beside it says Expired.
+                  (That used to be the cell-level `cev-exp-over`; the tone now
+                  travels with the chip, in every vault.) */}
               {tab !== 'trade-documents' && (
-                <td className={evEffectiveStatus(d) === 'Expired' ? 'cev-exp-over' : 'cev-cell-dim'}>
-                  {evFmtDateCell(d.expiry)}
-                </td>
+                <td className="cev-cell-dim"><VaultDateBadge value={d.expiry} kind="expiry" /></td>
               )}
               <td>
                 {d.attachment ? (
@@ -1968,7 +2142,12 @@ function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend }: {
      is present, and each expanded row marks its own kind (showType), which
      is what the two separate tabs used to convey. */
   const isAgreement = kind === 'agreement' || kind === 'both';
-  const COLS = isAgreement ? 11 : 10;
+  /* 'both' is the mode whose expanded row already lists trade documents and
+     agreements together, so the two ratio columns collapse into one to match
+     it — same as the Customer vault's table. Two columns over one combined
+     list read as though the row carried two separate sets. */
+  const merged = kind === 'both';
+  const COLS = isAgreement && !merged ? 11 : 10;
   return (
     <>
       {/* No Customer = / ≠ Consignee tabs in the consignee vault — it always
@@ -1984,11 +2163,17 @@ function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend }: {
               <th>Opportunity ID</th>
               <th>Customer</th>
               <th>Consignee</th>
-              <th>Due Dil.</th>
-              <th>KYC</th>
-              <th>Trade Lic.</th>
-              <th>Trade Docs</th>
-              {isAgreement && <th>Agreement</th>}
+              {/* RATIO_COL, same as the Customer vault: the ratio columns were
+                  auto-sized, so each was only as wide as its own heading and
+                  "TRADE DOCS & AGREEMENTS" stretched far wider than the 2/6
+                  under it. A fixed width makes the gaps equal and centres each
+                  count over its heading instead of leaving it hugging the left
+                  edge; the long heading wraps rather than widening its column. */}
+              <th style={RATIO_COL}>Due Dil.</th>
+              <th style={RATIO_COL}>KYC</th>
+              <th style={RATIO_COL}>Trade Lic.</th>
+              <th style={RATIO_COL}>{merged ? 'Trade Docs & Agreements' : 'Trade Docs'}</th>
+              {isAgreement && !merged && <th style={RATIO_COL}>Agreement</th>}
             </tr>
           </thead>
           <tbody>
@@ -2001,8 +2186,15 @@ function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend }: {
                   <tr style={{ cursor: 'pointer' }} onClick={() => setOpenId(open ? null : r.id)}>
                     <td style={{ textAlign: 'center' }}><span style={{ display: 'inline-block', transition: 'transform .18s', transform: open ? 'rotate(90deg)' : 'none', color: '#0891b2', fontWeight: 800 }}>▸</span></td>
                     <td>{i + 1}</td>
+                    {/* Shipment ID only where a shipment exists (QA #75).
+                        A deal with no shipment order has no shipment status to
+                        report, so the cell stays empty rather than inventing a
+                        "Not shipped" state and dressing it as a status chip —
+                        the Opportunity ID beside it already identifies the row.
+                        The Total Shipments KPI counts the real ones, so the two
+                        keep agreeing. */}
                     <td>{r.has_shipment === false
-                      ? <span className="cev-chip-pill" style={{ opacity: .55 }} title="No shipment order raised for this deal yet">● Not shipped</span>
+                      ? <span style={{ color: '#9ca3af' }}>—</span>
                       : <span className="cev-chip-pill">● {r.shipment_id}</span>}</td>
                     <td><span className="cev-chip-pill cev-chip-pill-warm">● {r.opportunity_id}</span></td>
                     <td>
@@ -2017,11 +2209,11 @@ function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend }: {
                         {r.consignee || '—'}
                       </span>
                     </td>
-                    <td><Ratio r={r.due_dil} /></td>
-                    <td><Ratio r={r.kyc} /></td>
-                    <td><Ratio r={r.trade_lic} /></td>
-                    <td><Ratio r={r.trade_docs} /></td>
-                    {isAgreement && <td><Ratio r={r.agreement} /></td>}
+                    <td style={RATIO_COL}><Ratio r={r.due_dil} /></td>
+                    <td style={RATIO_COL}><Ratio r={r.kyc} /></td>
+                    <td style={RATIO_COL}><Ratio r={r.trade_lic} /></td>
+                    <td style={RATIO_COL}><Ratio r={merged ? sumRatios(r.trade_docs, r.agreement) : r.trade_docs} /></td>
+                    {isAgreement && !merged && <td style={RATIO_COL}><Ratio r={r.agreement} /></td>}
                   </tr>
                   {open && (
                     <tr className="cev-ship-expand">
@@ -2110,8 +2302,6 @@ const CNEV_CSS = `
 .cnev-vault .cev-table thead th { padding-left: 14px; padding-right: 14px; }
 
 /* Expiry that has already passed. */
-.cnev-vault .cev-exp-over { color: #dc2626; font-weight: 700; white-space: nowrap; }
-[data-bs-theme="dark"] .cnev-vault .cev-exp-over { color: #fca5a5; }
 
 /* Upload dialog, as launched FROM THIS VAULT.
  *
@@ -2309,6 +2499,10 @@ const CNEV_CSS = `
 .cnev-ov .cev-ov-name {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* The action cell holds two buttons on the standard list. Without this they
+   were free to lay out wider than the column and spill past the dialog edge. */
+.cnev-ov .sev-ov-acts { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; min-width: 0; }
+.cnev-ov .sev-ov-acts > * { flex: 0 0 auto; }
 
 .cev-mono-ref { color: #0e7490; font-weight: 600; }
 .cev-cell-dim { color: #64748b; white-space: nowrap; }

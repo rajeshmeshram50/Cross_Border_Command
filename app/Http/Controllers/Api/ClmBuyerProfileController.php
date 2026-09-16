@@ -635,7 +635,25 @@ class ClmBuyerProfileController extends Controller
             $tdSigSet  = $separateConsignee
                 ? ($tdSigByLead[$lid]['Customer'] ?? [])
                 : (($tdSigByLead[$lid]['Customer'] ?? []) + ($tdSigByLead[$lid]['Consignee'] ?? []));
-            $tdBuyer   = $docProgress($applicTd, $tdPartyById, $tdSigSet, $separateConsignee ? 'buyer' : 'any');
+            /* 'buyer' in BOTH cases, and the same-as-customer half of that is
+               the fix.
+             *
+               This used to widen to 'any' when the consignee IS the customer,
+               on the reasoning that such a party's vault shows both sides, so
+               the cell should total both. Measured against the vault it does
+               not: the Customer Evidence Vault counts the BUYER-applicable set
+               only, and files the consignee-side documents on the consignee
+               (which has its own row, its own vault, and its own cell here).
+               Widening therefore added every Consignee-only trade document on
+               top of a set the vault never showed, and the row read higher
+               than the panel it links to — C-018 showed 10 against a vault of
+               8, C-014 showed 7 against 5, the surplus being exactly the
+               Consignee-only documents in those segments.
+               The consignee side is untouched: $tdConsDeal above still uses
+               'any' for a same-as-customer consignee, because THAT vault does
+               merge both sets. One entity, two roles, each counted where it is
+               filed. */
+            $tdBuyer   = $docProgress($applicTd, $tdPartyById, $tdSigSet, 'buyer');
             if ($pi) {
                 $tdBuyer['t'] += 1;
                 if (isset($piSignedIds[(int) $pi->id])) $tdBuyer['d'] += 1;
@@ -694,11 +712,29 @@ class ClmBuyerProfileController extends Controller
                     $dealAgrSignedByConsignee[(int) $cons->id][(int) $sid] = true;
                 }
             }
-            $addTd($tdByCustomer, (int) $cust->id, $tdBuyer);
-            $addTd($agrByCustomer, (int) $cust->id, $agrBuyer);
-            if ($cons) {
-                $addTd($tdByConsignee, (int) $cons->id, $tdConsDeal);
-                $addTd($agrByConsignee, (int) $cons->id, $agrConsDeal);
+            /* SHIPMENT-LINKED deals only.
+             *
+             * Case-to-Case documents are per TRANSACTION, and a deal with no
+             * shipment order is not a transaction yet — the Evidence Vault does
+             * not render it and does not count it (see $ctcRows in
+             * SegmentDocUploadController). Counting it here is what produced
+             * the "0/2 outside, nothing inside" mismatch: the cell advertised
+             * paperwork the vault gave the user no way to reach.
+             *
+             * Deliberately narrower than before (product decision, 15 Sep). The
+             * earlier direction widened the VAULT to match this column instead;
+             * that is now reversed on both sides so they still agree.
+             *
+             * Only the td/agr columns are gated. The transaction tables below
+             * keep listing every deal — they have their own shipped / not
+             * shipped split and are not part of this count. */
+            if ($hasShip) {
+                $addTd($tdByCustomer, (int) $cust->id, $tdBuyer);
+                $addTd($agrByCustomer, (int) $cust->id, $agrBuyer);
+                if ($cons) {
+                    $addTd($tdByConsignee, (int) $cons->id, $tdConsDeal);
+                    $addTd($agrByConsignee, (int) $cons->id, $agrConsDeal);
+                }
             }
 
             if ($hasShip && $separateConsignee) {

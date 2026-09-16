@@ -582,12 +582,22 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
      across a tab switch or a reopen would carry a tick the user can no
      longer see into the next Send. */
   useEffect(() => { setTdSelected(new Set()); setPiSelected(false); setPiAfterTd(false); }, [open, view, tdTab]);
-  /* Ticked AND marked Necessary — the set the Send button really acts on. */
+  /* Ticked AND marked Necessary — the set the Send button really acts on.
+   *
+   * De-duped by db_id. The payload carries a trade document once per SEGMENT
+   * it is mapped to, so flattening the segments counted one document as many
+   * times as it had segments: a doc under SG-008 / SG-009 / SG-010 made the
+   * bulk bar read "1 selected" (the table is de-duped, see `tradeDocs`) next
+   * to "Send Selected (3)", and the signature wizard then opened with the
+   * same document listed three times in its rail — and would have sent three
+   * envelopes for it. */
   const tdSendableSelected = useMemo(
-    () => (payload?.segments ?? [])
-      .flatMap(sg => sg.trade_documents ?? [])
-      .filter(t => t.db_id != null && tdSelected.has(t.db_id) && t.needed === true)
-      .map(t => t.db_id as number),
+    () => Array.from(new Set(
+      (payload?.segments ?? [])
+        .flatMap(sg => sg.trade_documents ?? [])
+        .filter(t => t.db_id != null && tdSelected.has(t.db_id) && t.needed === true)
+        .map(t => t.db_id as number),
+    )),
     [payload, tdSelected],
   );
 

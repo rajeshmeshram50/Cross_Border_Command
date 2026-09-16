@@ -454,18 +454,30 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
 
   const tabMeta = TABS.find(t => t.key === tab) ?? TABS[0];
 
-  /* Case-to-Case is about shipments, so an opportunity that has not raised one
-     yet does not belong in it. Those rows rendered as "Not shipped" with every
-     ratio at 0/x and nothing to expand, while the section pill — which reads
-     the server's total_shipments — already excluded them, so the list and the
-     count contradicted each other. One filtered list now feeds the table, the
-     overview picker and every count derived from them. has_shipment is
-     optional, so undefined still counts as shipped. */
-  const shippedRows = vault.shipment_agreements.filter(r => r.has_shipment !== false);
+  /* TWO populations, deliberately kept apart — folding them into one is what
+     printed a zero over a list that was not empty.
+     ·  dealRows    — every transaction the server resolved for this party.
+     ·  shippedRows — only those that have actually raised a shipment order.
+
+     The server sends per-DEAL rows on purpose for a customer / consignee, and
+     sums every Case-to-Case figure it returns (trade_documents_count,
+     agreements_count, total_documents, verified, pending) over ALL of them.
+     Counting here from the shipped subset instead meant a party whose deals
+     carry a PI and its paperwork but no shipment order yet — which is most of
+     them early on — showed 0 on every card while the API said 8 and the Buyer
+     Profile cell said 10. The card contradicted the document list beside it.
+
+     Total Shipments stays on the server's own shipment count: that one really
+     is asking how many shipments exist, and the answer really can be zero
+     while there is paperwork outstanding.
+
+     has_shipment is optional, so undefined still counts as shipped. */
+  const dealRows    = vault.shipment_agreements;
+  const shippedRows = dealRows.filter(r => r.has_shipment !== false);
 
   const ratioTotal = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[1] ?? p[0], 10) || 0; };
   const shipmentDocCount = (key: 'trade_docs' | 'agreement') =>
-    shippedRows.reduce((acc, r) => acc + ratioTotal(r[key].ratio), 0);
+    dealRows.reduce((acc, r) => acc + ratioTotal(r[key].ratio), 0);
   const tabCount = (t: typeof TABS[number]): number =>
     t.key === 'trade-documents'     ? shipmentDocCount('trade_docs') + shipmentDocCount('agreement')
     : t.key === 'shipment-agreements' ? shipmentDocCount('agreement')
@@ -483,7 +495,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
 
   const ratioDone = (ratio: string) => { const p = (ratio || '').split('/'); return parseInt(p[0], 10) || 0; };
   const shipmentDocDone = (key: 'trade_docs' | 'agreement') =>
-    shippedRows.reduce((acc, r) => acc + ratioDone(r[key].ratio), 0);
+    dealRows.reduce((acc, r) => acc + ratioDone(r[key].ratio), 0);
   const tdTotal  = shipmentDocCount('trade_docs');
   const tdDone   = shipmentDocDone('trade_docs');
   const agrTotal = shipmentDocCount('agreement');
@@ -664,7 +676,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
             </div>
             <div className="cev-section-right">
               {tab === 'trade-documents' ? (
-                <span className="cev-sec-pill cev-sec-pill-docs">{vault.total_shipments} Shipments</span>
+                <span className="cev-sec-pill cev-sec-pill-docs">{dealRows.length} Transactions</span>
               ) : (
                 <>
                   {counts.Uploaded > 0 && <span className="cev-sec-pill cev-sec-pill-ok"><span className="cev-sec-dot" />Uploaded {counts.Uploaded}</span>}
@@ -675,7 +687,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
           </div>
 
           {tab === 'trade-documents'
-            ? <ShipmentTable rows={shippedRows} kind="both" filter={shipmentFilter}
+            ? <ShipmentTable rows={dealRows} kind="both" filter={shipmentFilter}
                              onSend={(leadId, doc, party) => { if (doc.pi_id) setPiSend({ leadId, doc }); else setShipSend({ leadId, doc, party }); }}
                              onBulkSend={(leadId, docs, party) => { if (docs.length) setShipSend({ leadId, doc: docs[0], docs, party }); }}
                              activeSend={shipSend ?? (piSend ? { ...piSend, party: 'buyer' } : null)} />
@@ -776,7 +788,11 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
               ...vault.trade_licenses.map((d) => ({ doc: d, cat: 'tl' as const })),
             ]
           : (activeShip ? shipDocsOf(activeShip).map((d) => ({ doc: d, cat: null })) : []);
-        const shipLabel = (r: VaultShipmentRow) => (r.has_shipment === false ? 'Not shipped' : r.shipment_id);
+        /* A transaction with no shipment has no shipment code to show (QA #75),
+           so the picker and its header fall back to the opportunity — which is
+           what identifies that deal — instead of labelling it with a shipment
+           state it does not have. */
+        const shipLabel = (r: VaultShipmentRow) => (r.has_shipment === false ? (r.opportunity_id || '—') : r.shipment_id);
         const title = isStd
           ? 'Standard Documents — Overview'
           : (activeShip ? `Case to Case — ${shipLabel(activeShip)}` : 'Case to Case Documents & Agreements — Overview');
@@ -868,7 +884,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                 <table className="cev-ov-table">
                   {/* Issued / Expired mirror the tab tables, so the overview
                       lists the same facts about a document as the bucket it
-                      came from. Per-deal rows carry neither, and show em dashes. */}
+                      came from. Per-deal rows carry neither, and read N/A. */}
                   <thead><tr><th style={{ width: 58 }}>SR NO</th><th>DOCUMENT NAME</th><th style={{ width: 116 }}>ISSUED DATE</th><th style={{ width: 116 }}>EXPIRED AT</th><th style={{ width: 118 }}>STATUS</th><th style={{ width: 190 }}>ACTION</th></tr></thead>
                   <tbody>
                     {docs.length === 0 ? (
@@ -888,14 +904,21 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                           <td>
                             {isStd && (d as VaultDoc).issue_date
                               ? <span className="cev-date">{(d as VaultDoc).issue_date}</span>
-                              : <span style={{ color: '#9ca3af' }}>—</span>}
+                              : <span className="cev-na">N/A</span>}
                           </td>
                           <td>
                             {isStd && (d as VaultDoc).expiry_date
                               ? <span className="cev-date cev-date-expiry">{(d as VaultDoc).expiry_date}</span>
-                              : <span style={{ color: '#9ca3af' }}>—</span>}
+                              : <span className="cev-na">N/A</span>}
                           </td>
-                          <td><StatusPill s={d.status as VaultStatus} /></td>
+                          {/* Standard and case-to-case rows share this list but
+                              not their status vocabulary, so each gets the badge
+                              built for it — no cast across the two. */}
+                          <td>
+                            {isStd
+                              ? <StatusPill s={d.status as VaultStatus} />
+                              : <ShipmentStatusPill status={(d as VaultShipmentDoc).status} />}
+                          </td>
                           <td>
                             {(() => {
                               const dlKey = `${activeShip?.id ?? 'std'}-${absIdx}`;
@@ -1327,21 +1350,21 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                   </Tooltip>
                 ) : <span style={{ color: '#9ca3af' }}>—</span>}
               </td>
-              {/* Captured on upload; blank for documents that carry no issue
+              {/* Captured on upload; N/A for documents that carry no issue
                   date, and for everything uploaded before the field existed. */}
               <td>
                 {d.issue_date
                   ? <span className="cev-date">{d.issue_date}</span>
-                  : <span style={{ color: '#9ca3af' }}>—</span>}
+                  : <span className="cev-na">N/A</span>}
               </td>
               {/* Expiry of the UPLOADED document. `expiry` is not used here: it
                   falls back to the master's free-text validity ("Lifetime",
-                  "2 years"), which is not a date. No date on file → em dash.
+                  "2 years"), which is not a date. No date on file → N/A.
                   Past dates read red and the next 30 days amber, reusing the
                   chip the Attachment column's dates already use. */}
               <td>
                 {(() => {
-                  if (!d.expiry_date) return <span style={{ color: '#9ca3af' }}>—</span>;
+                  if (!d.expiry_date) return <span className="cev-na">N/A</span>;
                   const due = new Date(d.expiry_date);
                   const days = Number.isNaN(due.getTime())
                     ? null
@@ -1644,8 +1667,15 @@ function ShipmentTable({ rows, kind, filter, onSend, onBulkSend, activeSend }: {
                       <span style={{ display: 'inline-block', transition: 'transform .18s', transform: open ? 'rotate(90deg)' : 'none', color: '#0891b2', fontWeight: 800 }}>▸</span>
                     </td>
                     <td>{i + 1}</td>
+                    {/* Shipment ID only where a shipment exists (QA #75).
+                        A deal with no shipment order has no shipment status to
+                        report, so the cell stays empty rather than inventing a
+                        "Not shipped" state and dressing it as a status chip —
+                        the Opportunity ID beside it already identifies the row.
+                        The Total Shipments KPI counts the real ones, so the two
+                        keep agreeing. */}
                     <td>{r.has_shipment === false
-                      ? <span className="cev-chip-pill" style={{ opacity: .55 }} title="No shipment order raised for this deal yet">● Not shipped</span>
+                      ? <span style={{ color: '#9ca3af' }}>—</span>
                       : <span className="cev-chip-pill">● {r.shipment_id}</span>}</td>
                     <td><span className="cev-chip-pill cev-chip-pill-warm">● {r.opportunity_id}</span></td>
                     <td>
@@ -1693,6 +1723,29 @@ function ShipmentTable({ rows, kind, filter, onSend, onBulkSend, activeSend }: {
         </div>
       </div>
     </>
+  );
+}
+
+/* Status badge for a CASE-TO-CASE (per-deal) document.
+ *
+ * These carry their own vocabulary — Draft / Pending / Declined / Recalled
+ * beside Signed and Expired — which is not VaultStatus, so they cannot share
+ * the standard documents' StatusPill: everything StatusPill does not recognise
+ * falls into its red branch. The overview list cast them across anyway
+ * (`d.status as VaultStatus`), so a Draft came out the same alarming red as a
+ * Declined there, and amber with a dot one click away in the shipment panel —
+ * the same document wearing two badges. One component now, used by both, and
+ * typed to the shipment vocabulary so the cast cannot come back. */
+export function ShipmentStatusPill({ status }: { status: VaultShipmentDoc['status'] }) {
+  const tone = status === 'Signed'
+    ? { fg: '#059669', bg: '#ecfdf5', bd: '#a7f3d0' }
+    : (status === 'Declined' || status === 'Expired')
+      ? { fg: '#dc2626', bg: '#fef2f2', bd: '#fecaca' }
+      : { fg: '#d97706', bg: '#fffbeb', bd: '#fde68a' };
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}`, whiteSpace: 'nowrap' }}>
+      ● {status}
+    </span>
   );
 }
 
@@ -1779,8 +1832,6 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
     } finally { setBusy(null); }
   };
 
-  const stTone = (s: string) => s === 'Signed' ? '#059669' : (s === 'Declined' || s === 'Expired') ? '#dc2626' : '#d97706';
-
   return (
     <div className="cev-sdp" style={{ padding: '12px 16px 16px' }}>
       {/* Same control as the Customer = / ≠ Consignee switch above the matrix:
@@ -1860,12 +1911,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
                       : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>}
                   </td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', color: '#475569' }}>{d.uploaded_on}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'center' }}>{(() => {
-                    const fg = stTone(d.status);
-                    const bg = d.status === 'Signed' ? '#ecfdf5' : (d.status === 'Declined' || d.status === 'Expired') ? '#fef2f2' : '#fffbeb';
-                    const bd = d.status === 'Signed' ? '#a7f3d0' : (d.status === 'Declined' || d.status === 'Expired') ? '#fecaca' : '#fde68a';
-                    return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: bg, color: fg, border: `1px solid ${bd}`, whiteSpace: 'nowrap' }}>● {d.status}</span>;
-                  })()}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'center' }}><ShipmentStatusPill status={d.status} /></td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                     {d.signed_url && (
                       <Tooltip label="View signed document">

@@ -55,7 +55,11 @@ type DayStatus =
      day. Out of scope, not an absence — a person who has left must not sit in
      the Absent column for every day since (#91). Only ever seen while the
      roster is showing exited staff for audit. */
-  | 'Exited';
+  | 'Exited'
+  /* Past the last working day, but Exit Management has not closed the case
+     yet. Deliberately NOT 'Exited': the two screens have to agree, and the
+     one that owns the decision still says the exit is in progress. (#13) */
+  | 'Exit in Progress';
 
 type CorrStatus = 'Pending' | 'Approved' | 'Rejected';
 
@@ -190,6 +194,9 @@ const STATUS_TONE: Record<DayStatus, { fg: string; bg: string; dot: string; labe
   // Neutral slate on purpose — it must not read as a good or a bad day.
   'Not Joined':      { fg: '#475569', bg: '#f1f5f9', dot: '#94a3b8', label: 'Not Joined' },
   'Exited':          { fg: '#475569', bg: '#f1f5f9', dot: '#94a3b8', label: 'Exited' },
+  // Amber, not slate: an open exit case is an OUTSTANDING item for HR, so it
+  // must not wear the same settled grey as someone who has actually gone.
+  'Exit in Progress':{ fg: '#a4661c', bg: '#fde8c4', dot: '#f59e0b', label: 'Exit in Progress' },
 };
 
 const ACCENTS = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e', '#a855f7'];
@@ -910,7 +917,18 @@ export default function HrAttendance() {
                                 to punch in. Says when they finish rather than
                                 claiming they have already gone (#13). */}
                             {!e.exitedOn && e.noticeUntil && (
-                              <span className="att-emp-notice-pill"><i className="ri-time-line" />On notice till {fmtShort(e.noticeUntil)}</span>
+                              /* "On notice till" only reads correctly while the date
+                                 is still ahead. Once it has passed the person has
+                                 stopped coming in but the exit case is still open, so
+                                 the pill names the last day and says what is
+                                 outstanding rather than promising a notice period
+                                 that has already ended. (#13) */
+                              <span className="att-emp-notice-pill">
+                                <i className="ri-time-line" />
+                                {e.noticeUntil >= TODAY_ISO
+                                  ? `On notice till ${fmtShort(e.noticeUntil)}`
+                                  : `Last day ${fmtShort(e.noticeUntil)} · exit in progress`}
+                              </span>
                             )}
                             {e.correction?.status === 'Pending' && (
                               <span className="att-emp-corr-pill"><i className="ri-error-warning-line" />Correction Pending</span>

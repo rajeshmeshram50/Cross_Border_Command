@@ -1462,6 +1462,15 @@ function Stage1(p: {
                         headerConfig={header as unknown as Record<string, unknown>}
                         footerConfig={footer as unknown as Record<string, unknown>}
                         dark={t.dark}
+                        /* Render on demand (↻ / Ctrl+S) rather than after every
+                           pause in typing. A CTC draft is long, and one render
+                           is a full dompdf pass over the whole document —
+                           ~8s at 112 pages, ~21s at 167 — so auto-refresh meant
+                           the panel spent most of its time rebuilding a
+                           document still being written. Enabled HERE ONLY while
+                           it is evaluated; the other four callers of this
+                           component keep the automatic behaviour. */
+                        manualRefresh
                       />
                     </div>
                   )}

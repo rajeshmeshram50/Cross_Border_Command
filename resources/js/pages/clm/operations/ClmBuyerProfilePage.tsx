@@ -8,6 +8,7 @@ import Tooltip from '../../../components/ui/Tooltip';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import { ShimmerTableRows } from '../../../components/ui/Shimmer';
 import WorklistPager from '../../../components/ui/WorklistPager';
+import { PER_PAGE, useAutoFitRows } from '../shared/clmShared';
 import SearchClear from '../../../components/ui/SearchClear';
 
 /*
@@ -145,6 +146,11 @@ const wosNeqData: WosNeqRow[] = [
 ];
 
 const BP_PER_PAGE = 10;
+/* Width of the first-segment chip's column, in px. The "+N" badge sits AFTER
+   this box, so fixing the box is what makes every badge start at the same x
+   down the Segment column. The chip itself still draws at its natural width
+   inside the box and ellipses when it runs past it. */
+const SEG_CHIP_COL = 150;
 const WS_PER_PAGE = 10;
 const WOS_PER_PAGE = 10;
 
@@ -166,8 +172,23 @@ function useDynamicPerPage(
       const el = ref.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      const avail = window.innerHeight - top - footer - gap;
-      const rows = Math.floor(avail / rowHeight);
+
+      /* Both of these were flat numbers, and both were wrong often enough to
+         leave a band of empty card under the last row (QA #19).
+         · The app footer is measured, not assumed 56 — the same rule the CLM
+           masters' useAutoFitRows already follows, and the reason Segment
+           Master fills its page while this one stopped short.
+         · A row is measured from a row that is actually on screen. These rows
+           carry segment pills and progress bars, so 46 is only the floor; a
+           taller real row meant the count was computed against a height no row
+           has, and the table asked for fewer rows than the space holds. */
+      const footerEl = document.querySelector('footer.footer') as HTMLElement | null;
+      const footerH  = footerEl ? footerEl.offsetHeight : footer;
+      const sampleRow = el.querySelector('tbody tr') as HTMLElement | null;
+      const rowH = Math.max(rowHeight, sampleRow?.getBoundingClientRect().height || 0);
+
+      const avail = window.innerHeight - top - footerH - gap;
+      const rows = Math.floor(avail / rowH);
       setPerPage(Number.isFinite(rows) ? Math.max(min, rows) : BP_PER_PAGE);
     };
     calc();
@@ -213,7 +234,16 @@ const BP_CSS = `
  * card sat twice as far from the top of the page as it did from the card below
  * it. Pulling 8px back makes the space above the header strip match the gap
  * beneath it. */
-.seg-page { background: #F4F6FB; min-height: calc(100vh - 56px); padding: 8px; margin-top: -8px; display:flex; flex-direction:column; gap:8px; font-family: var(--font-sans); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+/* min-height is 100% of the scroller, NOT calc(100vh - 56px).
+   The shell puts a fixed header and a fixed footer OUTSIDE the scroller
+   (Layouts/index.tsx), so this page gets 100vh minus BOTH of them. The
+   header is two rows tall (logo/search + nav), nowhere near the 56px that
+   was being subtracted, so the page reserved ~150px more than it is given
+   and the whole shell picked up a second, outer scrollbar that no amount
+   of table sizing could remove. 100% fills exactly what the scroller
+   offers — and where the chain has no definite height it simply resolves
+   to auto, which is content height, so it cannot over-reserve either. */
+.seg-page { background: #F4F6FB; min-height: 100%; padding: 8px; margin-top: -8px; display:flex; flex-direction:column; gap:8px; font-family: var(--font-sans); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
 .seg-page-card {
   background: #fff;
   border: 1px solid rgba(6,182,212,.2);
@@ -672,14 +702,26 @@ export default function ClmBuyerProfilePage() {
   // the pager's "Rows per page" selector (when set) overrides the auto-fit.
   const [bpManualSize, setBpManualSize] = useState<number | null>(null);
   const [consManualSize, setConsManualSize] = useState<number | null>(null);
-  const bpDynamicSize = useDynamicPerPage(buyerTableRef, { deps: [bpaTab, partyAnalyticsOpen] });
-  const consDynamicSize = useDynamicPerPage(consTableRef, { deps: [bpaTab, partyAnalyticsOpen] });
+  /* Dynamic pagination — the SHARED hook the CLM masters use
+     (clmShared/useAutoFitRows), not a local copy.
+     *
+     * This page used to carry its own measurement, and it floored the page at
+     * 4 rows; the shared one floors at PER_PAGE (10) and only grows from there,
+     * which is the whole point of that floor — see its comment: "the old floor
+     * was 4, which served four-row pages on a laptop and made the same tenant
+     * look different on every machine". Sharing it also means a fix to the
+     * measurement lands on every CLM list at once instead of drifting here.
+     *
+     * autoFitRef goes false the moment the user picks a size in the pager, so a
+     * manual choice is never overwritten by the next resize. */
+  const [bpDynamicSize, setBpDynamicSize] = useState(PER_PAGE);
+  const [consDynamicSize, setConsDynamicSize] = useState(PER_PAGE);
+  const buyerAutoFitRef = useRef(true);
+  const consAutoFitRef = useRef(true);
+  const buyerCardFill = useAutoFitRows(buyerCardRef, buyerAutoFitRef, setBpDynamicSize, [bpaTab, partyAnalyticsOpen]);
+  const consCardFill = useAutoFitRows(consCardRef, consAutoFitRef, setConsDynamicSize, [bpaTab, partyAnalyticsOpen]);
   const bpPerPage = bpManualSize ?? bpDynamicSize;
   const consPerPage = consManualSize ?? consDynamicSize;
-  // Stretch each list card to the bottom of the viewport so its pager footer
-  // pins to the bottom of the screen.
-  const buyerCardFill = useFillHeight(buyerCardRef, { deps: [bpaTab, partyAnalyticsOpen] });
-  const consCardFill = useFillHeight(consCardRef, { deps: [bpaTab, partyAnalyticsOpen] });
   // Transaction-wise tables (ws/wos · eq/neq): one card holds the active table,
   // so a single dynamic page size drives whichever is visible.
   const txnCardRef = useRef<HTMLDivElement>(null);
@@ -829,12 +871,30 @@ export default function ClmBuyerProfilePage() {
     const segs = names.map((s) => s.trim()).filter(Boolean);
     if (segs.length === 0) return <span style={{ fontSize: '10px', color: '#94a3b8' }}>—</span>;
     const extra = segs.length - 1;
-    return <>
-      <Tooltip label={segs[0]}><span style={{ display: 'inline-block', verticalAlign: 'middle', fontSize: '9.5px', fontWeight: 600, color: '#0e7490', background: '#ecfeff', border: '1px solid #a5f3fc', padding: '2px 9px', borderRadius: '20px', whiteSpace: 'nowrap', lineHeight: 1.6 }}>{segs[0].length > 30 ? `${segs[0].slice(0, 30)}…` : segs[0]}</span></Tooltip>
+    /* QA #17 — one flex row, not two loose inline chips.
+       The tag was inline-block on vertical-align:middle while the +N badge is
+       inline-flex sitting on the BASELINE, so the two never shared a centre
+       line, and the only space between them was the whitespace in the JSX —
+       which collapses differently depending on the tag's own line box. A flex
+       row with align-items:center and an explicit gap makes both constant down
+       the whole column. */
+    return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, verticalAlign: 'middle', maxWidth: '100%' }}>
+      {/* maxWidth, not a fixed width.
+          A fixed 150px box lined the "+N" badges up in a column, but it also
+          held that width open for a short name — "Processed Foods" left most
+          of the box empty and threw its badge a long way from the chip it
+          belongs to. A cap keeps the part that mattered: every name longer
+          than the cap still truncates at the same x, so those badges still
+          line up, while a short name lets its badge sit right beside it.
+          Truncation is done by CSS at the box edge, not by slicing the string,
+          and the full name stays on the tooltip. */}
+      <span style={{ maxWidth: SEG_CHIP_COL, flexShrink: 1, display: 'inline-flex', alignItems: 'center', minWidth: 0 }}>
+        <Tooltip label={segs[0]}><span style={{ display: 'inline-block', maxWidth: SEG_CHIP_COL, fontSize: '9.5px', fontWeight: 600, color: '#0e7490', background: '#ecfeff', border: '1px solid #a5f3fc', padding: '2px 9px', borderRadius: '20px', whiteSpace: 'nowrap', lineHeight: 1.6, overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }}>{segs[0]}</span></Tooltip>
+      </span>
       {extra > 0 && (
         <Tooltip label="View all segments"><button type="button" onClick={(e) => toggleSegPop(e, key, segs)} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, cursor: 'pointer', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)', border: 'none', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>
       )}
-    </>;
+    </span>;
   };
 
   // ── Live data from GET /clm/buyer-profile ──
@@ -891,20 +951,33 @@ export default function ClmBuyerProfilePage() {
   const buyerTotal = scopedBuyers.length;
   // Compliant buyer = KYC + DD + Trade License all fully completed.
   const buyerCompliant = scopedBuyers.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
-  const buyerKyc = scopedBuyers.filter((r) => r.kyc.d < r.kyc.t).length;
-  const buyerDd = scopedBuyers.filter((r) => r.dd.d < r.dd.t).length;
-  const buyerTl = scopedBuyers.filter((r) => r.tl.d < r.tl.t).length;
-  const buyerTd = scopedBuyers.filter((r) => r.td.d < r.td.t).length;
-  const buyerAgr = scopedBuyers.filter((r) => r.agr.d < r.agr.t).length;
+  /* These cards count DOCUMENTS still outstanding, not parties that have some.
+   *
+     "Trade Documents Pending 01" used to mean "one consignee has something
+     pending", which reads as "one document" and cannot be reconciled with the
+     list underneath — the row on screen showed 0/0 while the card said 1,
+     because the pending one was a different row further down. The label names
+     a document, so the number is a document count.
+     Summing across parties is safe here, unlike the transaction cards: each
+     party owns its own documents, so nothing is counted twice. */
+  const partyPending = <T extends { kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog }>(
+    rows: T[], pick: (r: T) => Prog,
+  ) => rows.reduce((acc, r) => acc + Math.max(0, pick(r).t - pick(r).d), 0);
+
+  const buyerKyc = partyPending(scopedBuyers, (r) => r.kyc);
+  const buyerDd  = partyPending(scopedBuyers, (r) => r.dd);
+  const buyerTl  = partyPending(scopedBuyers, (r) => r.tl);
+  const buyerTd  = partyPending(scopedBuyers, (r) => r.td);
+  const buyerAgr = partyPending(scopedBuyers, (r) => r.agr);
 
   // ── derived consignee analytics ──
   const consTotal = scopedCons.length;
   const consCompliant = scopedCons.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
-  const consKyc = scopedCons.filter((r) => r.kyc.d < r.kyc.t).length;
-  const consDd = scopedCons.filter((r) => r.dd.d < r.dd.t).length;
-  const consTl = scopedCons.filter((r) => r.tl.d < r.tl.t).length;
-  const consTd = scopedCons.filter((r) => r.td.d < r.td.t).length;
-  const consAgr = scopedCons.filter((r) => r.agr.d < r.agr.t).length;
+  const consKyc = partyPending(scopedCons, (r) => r.kyc);
+  const consDd  = partyPending(scopedCons, (r) => r.dd);
+  const consTl  = partyPending(scopedCons, (r) => r.tl);
+  const consTd  = partyPending(scopedCons, (r) => r.td);
+  const consAgr = partyPending(scopedCons, (r) => r.agr);
 
   // ── derived transaction (opportunity) analytics ──
   // Count only the transactions of the ACTIVE shipment tab so the metrics match
@@ -915,12 +988,35 @@ export default function ClmBuyerProfilePage() {
     ? [...wosEqData, ...wosNeqData]
     : [...wsEqData, ...wsNeqData];
   const txnTotal = allTxn.length;
-  const txnCompliant = allTxn.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
+  /* All FIVE families, not three.
+   *
+     Trade Documents and Agreements were left out of the test, so a
+     transaction counted as fully compliant while its own Trade Docs cell read
+     0/2 and its Agreements cell 0/3 — and the two cards to the right of this
+     one were reporting exactly those pending items at the same time. The
+     panel contradicted itself: "Fully Compliant 3" over "Trade Documents
+     Pending 2, Agreements Pending 3" on a three-row table. A row is compliant
+     only when nothing is outstanding on it. */
+  const txnCompliant = allTxn.filter((r) =>
+    r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t
+    && r.td.d === r.td.t && r.agr.d === r.agr.t).length;
   const txnKyc = allTxn.filter((r) => r.kyc.d < r.kyc.t).length;
   const txnDd = allTxn.filter((r) => r.dd.d < r.dd.t).length;
   const txnTl = allTxn.filter((r) => r.tl.d < r.tl.t).length;
-  const txnTd = allTxn.filter((r) => r.td.d < r.td.t).length;
-  const txnAgr = allTxn.filter((r) => r.agr.d < r.agr.t).length;
+  /* Trade Documents / Agreements Pending count DOCUMENTS, not transactions —
+     "how many are still unsigned", which is the number someone acting on this
+     panel actually needs. Two transactions each missing two documents is four
+     pieces of work, and the card used to call that "2".
+     Safe to sum here precisely because these two families are per-transaction:
+     each deal carries its own. The three cards to the left stay on transaction
+     counts for the opposite reason — KYC, Due Diligence and Trade Licences are
+     the CUSTOMER's one-time documents, so the same pending document reappears
+     on every one of that customer's transactions and adding them up would
+     report one missing PAN card as two, or five. */
+  const sumPending = (pick: (r: typeof allTxn[number]) => { d: number; t: number }) =>
+    allTxn.reduce((acc, r) => acc + Math.max(0, pick(r).t - pick(r).d), 0);
+  const txnTd = sumPending((r) => r.td);
+  const txnAgr = sumPending((r) => r.agr);
 
   /* Case-insensitive search across Company Name, Customer/Consignee ID,
    * Segment and Country. Buyer segments are an array; consignee segment is a
@@ -1405,7 +1501,7 @@ export default function ClmBuyerProfilePage() {
                   up against the Analytics card above. Restores the same spacing
                   the top-level cards have. Same pattern the Supplier Profile
                   page uses for its nested cards. */}
-              <div ref={buyerCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: buyerCardFill }}>
+              <div ref={buyerCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: buyerCardFill, maxHeight: buyerCardFill }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.3)' }}>
@@ -1413,9 +1509,8 @@ export default function ClmBuyerProfilePage() {
                     </div>
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Customer List</div>
-                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{buyerListTotal} customers registered across all segments</div>
+                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{buyerSearch.trim() ? `${buyerListTotal} of ${buyerTotal} customers match` : `${buyerListTotal} registered across all segments`}</div>
                     </div>
-                    <span style={{ fontSize: '8px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.22)', padding: '3px 10px', borderRadius: '20px', letterSpacing: '.02em' }}>{buyerListTotal} records</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px', height: '38px', padding: '0 12px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)' }}>
@@ -1444,7 +1539,7 @@ export default function ClmBuyerProfilePage() {
                     <thead>
                       <tr style={txnTableHeaderRow}>
                         {['SR No', 'Customer ID', 'Company Name', 'Segment', 'Country', 'Consignees', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Total Shipments', 'Agreements', 'Action'].map((h, i) => (
-                          <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
+                          <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' || h === 'Segment' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
                         ))}
                       </tr>
                     </thead>
@@ -1459,8 +1554,12 @@ export default function ClmBuyerProfilePage() {
                             <td style={{ padding: '9px 12px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '11px', fontWeight: 700, color: '#0891b2' }}>{(buyerPageSafe - 1) * bpPerPage + i + 1}</span></td>
                             <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{r.id}</span></td>
                             <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
-                            <td style={{ padding: '9px 11px', textAlign: 'center', verticalAlign: 'middle', minWidth: '140px' }}>
-                              <div style={{ display: 'inline-flex', flexWrap: 'nowrap', gap: '4px', justifyContent: 'center', alignItems: 'center' }}>
+                            <td style={{ padding: '9px 11px', textAlign: 'left', verticalAlign: 'middle', minWidth: '196px' }}>
+                              {/* QA #72 — the cell was centred, so a row carrying a "+N"
+                                  badge pushed its chip left of the rows without one and the
+                                  column never showed a straight edge. Left-aligned (header
+                                  too) so every tag starts at the same x. */}
+                              <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', justifyContent: 'flex-start', alignItems: 'center' }}>
                                 {renderSegCell(`buyer-${r.id}`, r.seg)}
                               </div>
                             </td>
@@ -1490,7 +1589,7 @@ export default function ClmBuyerProfilePage() {
                     </tbody>
                   </table>
                 </div>
-                <WorklistPager total={buyerListTotal} page={buyerPageSafe} pageSize={bpPerPage} onPage={setBuyerPage} onPageSize={(n) => { setBpManualSize(n); setBuyerPage(1); }} className="bp-wl" />
+                <WorklistPager total={buyerListTotal} page={buyerPageSafe} pageSize={bpPerPage} onPage={setBuyerPage} onPageSize={(n) => { buyerAutoFitRef.current = false; setBpManualSize(n); setBuyerPage(1); }} className="bp-wl" />
               </div>
             </div>
           )}
@@ -1500,7 +1599,7 @@ export default function ClmBuyerProfilePage() {
             <div>
               {/* marginTop:8px — see the Customer List card above; same nested
                   wrapper, same missing gap under the Analytics card. */}
-              <div ref={consCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: consCardFill }}>
+              <div ref={consCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: consCardFill, maxHeight: consCardFill }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.3)' }}>
@@ -1508,9 +1607,8 @@ export default function ClmBuyerProfilePage() {
                     </div>
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Consignee List</div>
-                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{consListTotal} consignees registered across all customers</div>
+                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{consSearch.trim() ? `${consListTotal} of ${consTotal} consignees match` : `${consListTotal} registered across all customers`}</div>
                     </div>
-                    <span style={{ fontSize: '8px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.22)', padding: '3px 10px', borderRadius: '20px', letterSpacing: '.02em' }}>{consListTotal} records</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px', height: '38px', padding: '0 12px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)' }}>
@@ -1539,7 +1637,7 @@ export default function ClmBuyerProfilePage() {
                     <thead>
                       <tr style={txnTableHeaderRow}>
                         {['SR No', 'Consignee ID', 'Customer ID', 'Company Name', 'Segment', 'Country', 'Customer', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Total Shipments', 'Agreements', 'Action'].map((h, i) => (
-                          <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
+                          <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' || h === 'Segment' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
                         ))}
                       </tr>
                     </thead>
@@ -1563,8 +1661,12 @@ export default function ClmBuyerProfilePage() {
                             <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0e7490', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{r.id}</span></td>
                             <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.06)', border: '1px solid rgba(6,182,212,.14)', padding: '2px 7px', borderRadius: '5px' }}>{r.cid}</span></td>
                             <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
-                            <td style={{ padding: '9px 11px', textAlign: 'center', verticalAlign: 'middle', minWidth: '140px' }}>
-                              <div style={{ display: 'inline-flex', flexWrap: 'nowrap', gap: '4px', justifyContent: 'center', alignItems: 'center' }}>
+                            <td style={{ padding: '9px 11px', textAlign: 'left', verticalAlign: 'middle', minWidth: '196px' }}>
+                              {/* QA #72 — the cell was centred, so a row carrying a "+N"
+                                  badge pushed its chip left of the rows without one and the
+                                  column never showed a straight edge. Left-aligned (header
+                                  too) so every tag starts at the same x. */}
+                              <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', justifyContent: 'flex-start', alignItems: 'center' }}>
                                 {renderSegCell(`cons-${r.id}`, r.seg.split(','))}
                               </div>
                             </td>
@@ -1594,7 +1696,7 @@ export default function ClmBuyerProfilePage() {
                     </tbody>
                   </table>
                 </div>
-                <WorklistPager total={consListTotal} page={consPageSafe} pageSize={consPerPage} onPage={setConsPage} onPageSize={(n) => { setConsManualSize(n); setConsPage(1); }} className="bp-wl" />
+                <WorklistPager total={consListTotal} page={consPageSafe} pageSize={consPerPage} onPage={setConsPage} onPageSize={(n) => { consAutoFitRef.current = false; setConsManualSize(n); setConsPage(1); }} className="bp-wl" />
               </div>
             </div>
           )}
@@ -1737,29 +1839,37 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
           <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
             <thead>
               <tr style={txnTableHeaderRow}>
-                {['SR No', 'Consignee ID', 'Customer ID', 'Company Name', 'Segment', 'Country', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Total Shipments', 'Agreements'].map((h, i) => (
-                  <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
+                {/* Trade Docs and Agreements are shown as ONE column here — the
+                    same pairing the Evidence Vault uses ("Trade Documents &
+                    Agreements"). Only this modal is merged; the list tables on
+                    the page behind it still carry the two separately. */}
+                {['SR No', 'Consignee ID', 'Customer ID', 'Company Name', 'Segment', 'Country', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs & Agreements', 'Total Shipments'].map((h, i) => (
+                  <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' || h === 'Segment' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td colSpan={12} style={{ padding: '30px', textAlign: 'center', fontSize: 12.5, color: '#64748b' }}>No consignees mapped to this customer yet.</td></tr>
+                <tr><td colSpan={11} style={{ padding: '30px', textAlign: 'center', fontSize: 12.5, color: '#64748b' }}>No consignees mapped to this customer yet.</td></tr>
               ) : rows.map((r, i) => (
                 <tr key={r.id} style={{ background: i % 2 === 0 ? '#fff' : 'rgba(240,253,255,.45)', borderBottom: '1px solid rgba(6,182,212,.07)' }}>
                   <td style={{ padding: '9px 12px', textAlign: 'center' }}><span style={{ fontSize: '11px', fontWeight: 700, color: '#0891b2' }}>{i + 1}</span></td>
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0e7490', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{r.id}</span></td>
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.06)', border: '1px solid rgba(6,182,212,.14)', padding: '2px 7px', borderRadius: '5px' }}>{r.cid}</span></td>
                   <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
-                  <td style={{ padding: '9px 11px', textAlign: 'center', minWidth: '140px' }}>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'center', alignItems: 'center' }}>
+                  <td style={{ padding: '9px 11px', textAlign: 'left', minWidth: '140px' }}>
+                    {/* QA #72 — same left edge as the list tables, so the Segment
+                        column reads identically wherever it appears. */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'flex-start', alignItems: 'center' }}>
                       <SegCell names={r.seg.split(',')} sc={r.sc} sb={r.sb} />
                     </div>
                   </td>
                   <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{r.country}</td>
-                  <ProgCell obj={r.kyc} /><ProgCell obj={r.dd} /><ProgCell obj={r.tl} /><ProgCell obj={r.td} />
+                  <ProgCell obj={r.kyc} /><ProgCell obj={r.dd} /><ProgCell obj={r.tl} />
+                  {/* Combined progress: both counters are done/total pairs over the
+                      same party, so they add up cleanly into one bar. */}
+                  <ProgCell obj={{ d: r.td.d + r.agr.d, t: r.td.t + r.agr.t }} />
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><NumBadge n={r.ship} /></td>
-                  <ProgCell obj={r.agr} />
                 </tr>
               ))}
             </tbody>
@@ -1822,28 +1932,33 @@ function ConsigneeCustomerModal({ consignee, customers, onClose }: { consignee: 
           <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
             <thead>
               <tr style={txnTableHeaderRow}>
-                {['Customer ID', 'Company Name', 'Segment', 'Country', 'Consignees', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Total Shipments', 'Agreements'].map((h, i) => (
-                  <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
+                {/* Trade Docs and Agreements merged into one column, matching the
+                    Consignees modal and the Evidence Vault's "Trade Documents &
+                    Agreements" pairing. The list tables behind still keep them apart. */}
+                {['Customer ID', 'Company Name', 'Segment', 'Country', 'Consignees', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs & Agreements', 'Total Shipments'].map((h, i) => (
+                  <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' || h === 'Segment' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {customers.length === 0 ? (
-                <tr><td colSpan={11} style={{ padding: '30px', textAlign: 'center', fontSize: 12.5, color: '#64748b' }}>None of this consignee's mapped customers are in the current list scope.</td></tr>
+                <tr><td colSpan={10} style={{ padding: '30px', textAlign: 'center', fontSize: 12.5, color: '#64748b' }}>None of this consignee's mapped customers are in the current list scope.</td></tr>
               ) : customers.map((customer) => (
                 <tr key={customer.id} style={{ background: '#fff', borderBottom: '1px solid rgba(6,182,212,.07)' }}>
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{customer.id}</span></td>
                   <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{customer.name}</td>
-                  <td style={{ padding: '9px 11px', textAlign: 'center', minWidth: '140px' }}>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'center', alignItems: 'center' }}>
+                  <td style={{ padding: '9px 11px', textAlign: 'left', minWidth: '140px' }}>
+                    {/* QA #72 — same left edge as the list tables, so the Segment
+                        column reads identically wherever it appears. */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'flex-start', alignItems: 'center' }}>
                       <SegCell names={customer.seg} sc={customer.sc} sb={customer.sb} />
                     </div>
                   </td>
                   <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{customer.country}</td>
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><NumBadge n={customer.cn} /></td>
-                  <ProgCell obj={customer.kyc} /><ProgCell obj={customer.dd} /><ProgCell obj={customer.tl} /><ProgCell obj={customer.td} />
+                  <ProgCell obj={customer.kyc} /><ProgCell obj={customer.dd} /><ProgCell obj={customer.tl} />
+                  <ProgCell obj={{ d: customer.td.d + customer.agr.d, t: customer.td.t + customer.agr.t }} />
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><NumBadge n={customer.ship} /></td>
-                  <ProgCell obj={customer.agr} />
                 </tr>
               ))}
             </tbody>

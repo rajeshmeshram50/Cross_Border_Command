@@ -32,11 +32,23 @@ type Props = {
    *  itself, so it cannot be left light on a dark page by a caller that simply
    *  forgot to pass this. (#8) */
   dark?: boolean;
+  /** Render ONLY on demand (the ↻ button or Ctrl+S) instead of automatically
+   *  after every edit.
+   *
+   *  Why this exists: a render is one full dompdf pass over the WHOLE document,
+   *  and dompdf is super-linear — 28pp ≈ 1.2s, 112pp ≈ 8s, 167pp ≈ 21s. So on a
+   *  real contract the panel spent most of its life rebuilding a document the
+   *  author was still typing into, holding a php-fpm worker for the duration.
+   *
+   *  Opt-in per caller, defaulting to the old automatic behaviour, so this can
+   *  be proven on one screen before the other four adopt it. */
+  manualRefresh?: boolean;
 };
 
 export default function CtcLivePreview({
   endpoint = '/clm/ctc-contracts/preview-live',
   contractId, content, pageConfig, headerConfig, footerConfig, dark: darkProp,
+  manualRefresh = false,
 }: Props) {
   /* The preview themes ITSELF. (#8)
      `dark` was a required-in-practice prop defaulting to false, and callers
@@ -54,6 +66,11 @@ export default function CtcLivePreview({
   const [activePage, setActivePage] = useState(1);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+  /* Manual mode only: the draft has changed since what is on screen was
+   * rendered. Surfaced in the toolbar — WITHOUT it the panel silently shows a
+   * stale document, and someone reads three edited clauses off a render that
+   * predates them. On a legal draft that is worse than being slow. */
+  const [stale, setStale] = useState(false);
 
   const docRef = useRef<{ numPages: number; getPage: (n: number) => Promise<any> } | null>(null);
   const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
@@ -84,6 +101,10 @@ export default function CtcLivePreview({
     abortRef.current = ctrl;
     setStatus('loading');
     setErrorMsg('');
+    // Cleared on START, not on success: `content` is captured in this closure,
+    // so anything typed WHILE the render is in flight is not in it and must
+    // leave the panel marked stale again. Clearing on success would wipe that.
+    setStale(false);
     try {
       const res = await api.post(
         endpoint,
@@ -131,15 +152,42 @@ export default function CtcLivePreview({
   const firstRunRef = useRef(true);
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    /* The FIRST render is automatic in both modes — opening the panel to a
+       blank stage and a "press Ctrl+S" hint would be a worse first impression
+       than the wait, and there is nothing to coalesce on mount anyway. */
     if (firstRunRef.current) {
       firstRunRef.current = false;
       void render();
       return;
     }
+    /* Manual mode: an edit does NOT start a render. Flag the panel as stale
+       and wait for the user to ask (↻ or Ctrl+S). The point is not that
+       rendering got faster — it did not — but that the user chose to wait
+       instead of being ambushed by it after every pause in typing. */
+    if (manualRefresh) {
+      setStale(true);
+      return;
+    }
     debounceRef.current = setTimeout(() => { void render(); }, 900);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content, cfgKey, contractId]);
+  }, [content, cfgKey, contractId, manualRefresh]);
+
+  /* Ctrl+S / Cmd+S renders on demand.
+   *
+   * preventDefault is mandatory: without it the browser opens its own "Save
+   * page as…" dialog over the app. Bound only in manual mode so the other
+   * callers keep the browser default they have today. */
+  useEffect(() => {
+    if (!manualRefresh) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.key === 's' || e.key === 'S') || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+      e.preventDefault();
+      void render();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [manualRefresh, render]);
 
   // Drop any in-flight render when the preview unmounts (tab switch, modal close).
   useEffect(() => () => { abortRef.current?.abort(); }, []);
@@ -239,9 +287,49 @@ export default function CtcLivePreview({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '7px 10px', background: barBg, borderBottom: `1px solid ${border}`, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={fg} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-          <span style={{ fontSize: 10, fontWeight: 800, color: fg, letterSpacing: '.03em' }}>Live PDF Preview</span>
+          <span style={{ fontSize: 10, fontWeight: 800, color: fg, letterSpacing: '.03em' }}>
+            {manualRefresh ? 'PDF Preview' : 'Live PDF Preview'}
+          </span>
           {status === 'loading' && (
             <svg className="ctc-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={fg} strokeWidth="2.6" strokeLinecap="round" style={{ marginLeft: 4 }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+          )}
+          {/* ONE labelled control, always present in manual mode, that states
+              which of the two states you are in.
+              A bare ↻ icon could not do this: it looks identical whether the
+              preview is current or four edits behind, so the user had no way
+              to know whether pressing it was necessary. Here the button IS the
+              status — amber and clickable when the draft has moved on, muted
+              and disabled when there is nothing to do. */}
+          {manualRefresh && status !== 'loading' && (
+            <button
+              type="button"
+              onClick={() => { if (stale) void render(); }}
+              disabled={!stale}
+              title={stale
+                ? 'The draft has changed — update the preview (Ctrl+S)'
+                : 'Preview matches the draft'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 6,
+                padding: '3px 9px', borderRadius: 999,
+                border: `1px solid ${stale ? (dark ? 'rgba(245,158,11,.5)' : '#FCD34D') : 'transparent'}`,
+                background: stale ? (dark ? 'rgba(245,158,11,.18)' : '#FEF3C7') : 'transparent',
+                color: stale ? (dark ? '#FCD34D' : '#92400E') : (dark ? 'rgba(255,255,255,.38)' : '#9CA3AF'),
+                fontSize: 9, fontWeight: 800, letterSpacing: '.02em', whiteSpace: 'nowrap',
+                cursor: stale ? 'pointer' : 'default', fontFamily: 'inherit',
+              }}
+            >
+              {stale ? (
+                <>
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                  UPDATE PREVIEW · CTRL+S
+                </>
+              ) : (
+                <>
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                  UP TO DATE
+                </>
+              )}
+            </button>
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -256,10 +344,20 @@ export default function CtcLivePreview({
           </button>
           <button
             type="button"
-            style={{ ...navBtn(status === 'loading'), background: dark ? 'rgba(124,58,237,.25)' : '#EDE9FE', color: fg }}
+            style={{
+              ...navBtn(status === 'loading'),
+              // Amber while stale so the control the user needs is the one that
+              // stands out, matching the badge beside the title.
+              background: (manualRefresh && stale && status !== 'loading')
+                ? (dark ? 'rgba(245,158,11,.28)' : '#FDE68A')
+                : (dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'),
+              color: fg,
+            }}
             disabled={status === 'loading'}
             onClick={() => void render()}
-            title={status === 'loading' ? 'Rendering…' : 'Refresh preview now'}
+            title={status === 'loading'
+              ? 'Rendering…'
+              : (manualRefresh ? 'Refresh preview (Ctrl+S)' : 'Refresh preview now')}
             aria-busy={status === 'loading'}
           >
             {status === 'loading'

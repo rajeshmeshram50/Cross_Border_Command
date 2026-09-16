@@ -110,6 +110,18 @@ class ClmSegmentRuleController extends Controller
         ]);
     }
 
+    /**
+     * Resolve a segment CODE to its id within the caller's own branch scope.
+     * Codes are unique per (client, branch), never per client, so this must
+     * never fall back to a client-wide match.
+     */
+    private function resolveSegmentId($user, string $segmentCode): ?int
+    {
+        $q = ClmSegment::where('code', $segmentCode);
+        MasterVisibility::applyReadScope($q, $user, $user->branch_id ?: null);
+        return $q->value('id');
+    }
+
     public function store(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -131,19 +143,40 @@ class ClmSegmentRuleController extends Controller
             ], 409);
         }
 
+        /* Reject a code that resolves to nothing the caller can see, instead of
+         * saving a rule with a null segment_id. Checked BEFORE the transaction
+         * so the per-client lock is not taken for a request that cannot
+         * succeed. Same fail-closed rule the rest of this module follows: a
+         * filter that cannot be satisfied narrows to nothing, it does not widen
+         * or silently pass. */
+        if (!$this->resolveSegmentId($user, $data['segment_code'])) {
+            $msg = "Segment {$data['segment_code']} was not found in your branch. Pick a segment from the list.";
+            return response()->json([
+                'status'  => false,
+                'message' => $msg,
+                'errors'  => ['segment_code' => [$msg]],
+            ], 422);
+        }
+
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
             $code = $this->nextRuleCode($user->client_id);
 
-            $segment = ClmSegment::where('client_id', $user->client_id)
-                ->where('code', $data['segment_code'])->first();
+            // Branch-scoped, like the duplicate guard above. Segment codes
+            // restart at SG-001 in every branch (nextCode() is branch-scoped),
+            // so a client-wide lookup by code resolves to whichever branch
+            // created its SG-001 first — a new branch's rule then stored the
+            // OLDER branch's segment_id, and /customers/master-bundle (which
+            // intersects branch-visible segments with rule segment_ids) served
+            // the new branch an empty segment list.
+            $segmentId = $this->resolveSegmentId($user, $data['segment_code']);
 
             [$mand, $opt] = $this->countSelections($data['doc_selections']);
 
             return ClmSegmentRule::create([
                 'client_id'         => $user->client_id,
                 'branch_id'         => $user->branch_id,   // branch-owned; null for client-level users → shared
-                'segment_id'        => $segment?->id,
+                'segment_id'        => $segmentId,
                 'segment_code'      => $data['segment_code'],
                 'rule_code'         => $code,
                 'regulatory_status' => $data['regulatory_status'],
@@ -195,7 +228,8 @@ class ClmSegmentRuleController extends Controller
 
         $row->update([
             'segment_code'      => $data['segment_code'],
-            'segment_id'        => ClmSegment::where('client_id', $user->client_id)->where('code', $data['segment_code'])->value('id'),
+            // Same branch-scoped resolution as store() — see the note there.
+            'segment_id'        => $this->resolveSegmentId($user, $data['segment_code']),
             'regulatory_status' => $data['regulatory_status'],
             'document_type'     => $data['document_type'],
             'auths_json'        => $data['auths'] ?? [],
@@ -256,8 +290,27 @@ class ClmSegmentRuleController extends Controller
             return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
         }
 
-        $ruleQuery = ClmSegmentRule::where('client_id', $cid)
-            ->where('segment_id', $segmentId);
+        // Resolve the segment inside the caller's branch scope, then match its
+        // rule by segment_CODE rather than the denormalised segment_id.
+        //
+        // segment_id is nullable and was, until recently, derived from a
+        // client-wide code lookup; because codes restart at SG-001 per branch,
+        // rules in a newer branch can carry a sibling branch's segment_id. This
+        // endpoint feeds Stage 2's KYC/DD/TL/QC lists, so an id mismatch showed
+        // the user an empty document set for a segment whose DCP rule exists.
+        // Matching on the code repairs those rows without a data migration.
+        $segQuery = ClmSegment::whereKey($segmentId);
+        MasterVisibility::applyReadScope($segQuery, $user, $user->branch_id ?: null);
+        $segment = $segQuery->first();
+
+        $ruleQuery = ClmSegmentRule::query();
+        MasterVisibility::applyReadScope($ruleQuery, $user, $user->branch_id ?: null);
+        $segment
+            ? $ruleQuery->where('segment_code', $segment->code)
+            // Segment not visible to this user — match nothing rather than
+            // falling back to a client-wide id scan.
+            : $ruleQuery->whereRaw('1 = 0');
+
         $reqType = $request->query('document_type');
         if (in_array($reqType, ClmSegmentRule::DOC_TYPE_VALUES, true)) {
             $ruleQuery->where('document_type', $reqType);
@@ -365,6 +418,7 @@ class ClmSegmentRuleController extends Controller
      * still exists — which throws a unique-constraint violation on save.
      * Caller must already hold the client row lock.
      */
+
     private function nextRuleCode(int $clientId): string
     {
         $codes = ClmSegmentRule::where('client_id', $clientId)->pluck('rule_code')->all();

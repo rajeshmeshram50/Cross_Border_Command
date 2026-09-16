@@ -269,6 +269,18 @@
   padding: 2px 11px;
 }
 
+/* Code prefix inside a popover row's pill -- the Mapped Customers list answers
+   "which customer" as "C-206: Nova Foods". Leading, not trailing: the code is
+   the identifier people quote, and at the front the codes line up down the list
+   instead of drifting with each name's length. */
+.cev-seg-pop-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #0891b2;
+  white-space: nowrap;
+}
+
 .cev-seg-pop-pill::before {
   content: '';
   width: 5px;
@@ -285,6 +297,10 @@
 }
 
 [data-bs-theme="dark"] .cev-seg-pop-title {
+  color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .cev-seg-pop-code {
   color: #67e8f9;
 }
 
@@ -1478,6 +1494,20 @@
   color: #b91c1c;
 }
 
+/* "N/A" placeholder for the Issued Date / Expired At cells.
+   A bare em dash read as a rendering gap rather than a stated value — these
+   documents genuinely have no date, which is a fact about them, not missing
+   data. `display: block` so it centres across the whole cell instead of
+   hugging the left padding edge the way an inline dash did. Matches the
+   Consignee vault's overview list, which already says N/A. */
+.cev-na {
+  display: block;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
 .cev-attach {
   display: inline-flex;
   align-items: center;
@@ -1992,6 +2022,10 @@
 [data-bs-theme="dark"] .cev-date-expiry[data-status="pending"] {
   background: rgba(239, 68, 68, .18);
   color: #fca5a5;
+}
+
+[data-bs-theme="dark"] .cev-na {
+  color: #64748b;
 }
 
 [data-bs-theme="dark"] .cev-attach {
@@ -4428,6 +4462,18 @@
 .cev-skel-section{ border-radius: 10px 10px 0 0; }
 .cev-skel-thead  { border-radius: 0; }
 .cev-skel-row    { border-radius: 8px; }
+
+/* Placeholders keep their declared heights (QA #14).
+ *
+ * .cev-skel is a column flex container, so every child is shrinkable by
+ * default. The placeholder stack adds up to more than the modal body on a
+ * shorter viewport, and flex answered that by squeezing all of them — the
+ * 66px section came out a few pixels tall, and the shimmer sweeping across
+ * that sliver read as a blue line travelling under the loader. The container
+ * already clips (overflow: hidden), so holding the real heights simply hides
+ * the overflow instead of deforming every tile. */
+.cev-skel > *,
+.cev-skel-table > * { flex-shrink: 0; }
 
 /* A sweeping highlight is decoration; hold it still for anyone who has asked
  * the OS to stop moving things. The tiles keep their gradient, so the page

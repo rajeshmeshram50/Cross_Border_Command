@@ -955,8 +955,43 @@
           top: 0;
           z-index: 3;
           margin: 0 -16px;
-          padding: 10px 16px 12px;
+          /* No top padding — the chip sits flush with the container's top edge
+             when pinned. The 10px that used to be here was meant to absorb the
+             chip's collapsing top margin, but the rule below already zeroes
+             that margin, so it only pushed the pill down and left a strip for
+             passing rows to show in.
+             Sides and bottom stay: the side padding cancels the negative margin
+             that carries the opaque background out to the section edges, and
+             the 12px bottom is the hint's own margin moved onto the wrapper so
+             the gap before "Payroll Configuration" is unchanged. */
+          padding: 0 16px 12px;
           background: #fff;
+        }
+        /* Opaque band ABOVE the pinned wrapper.
+         *
+         * A sticky element only paints its own box. Rows scrolling past it
+         * travel through the strip between the scroll container's top edge and
+         * the wrapper — sub-pixel rounding, a partially-scrolled row, or any
+         * offset above `top: 0` all leave something visible there, which is the
+         * "background data" showing over the pill (QA: onboarding PF).
+         *
+         * bottom: 100% anchors this to the wrapper's top edge, so it travels
+         * WITH the pinned block rather than sitting at a fixed page position.
+         * `background: inherit` means it follows the wrapper's own colour and
+         * needs no separate dark-mode rule — one less thing to drift.
+         *
+         * 24px is generous on purpose: it has to out-cover a scrolled row's
+         * partial height, and it is clipped by the scroll container above, so
+         * over-reaching costs nothing visually. */
+        .onb-init-toggle-sticky::before {
+          content: '';
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: 100%;
+          height: 24px;
+          background: inherit;
+          pointer-events: none;
         }
         /* Both outer margins move onto the wrapper as padding. A margin on the
            first/last child collapses straight through a wrapper that has no
