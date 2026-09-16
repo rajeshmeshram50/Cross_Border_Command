@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
-import CustomerEvidenceVaultModal, { ShipmentDocPanel, ShipmentDocSendForSignature, ShipmentStatusPill, SevStat, sumRatios, type VaultShipmentDoc, type ShipmentSendParty } from '../customer/CustomerEvidenceVaultModal';
+import CustomerEvidenceVaultModal, { ShipmentDocPanel, ShipmentDocSendForSignature, ShipmentStatusPill, SevStat, sumRatios, RATIO_COL, type VaultShipmentDoc, type ShipmentSendParty } from '../customer/CustomerEvidenceVaultModal';
 import { VaultReuploadPopup, VaultDateBadge } from '../../../p2p/p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
 import { CLM_CSS } from '../../../clm/shared/clmShared';
@@ -1169,33 +1169,47 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
          * tooltip, rather than quietly dropping rows from the send. */
         /* Which rows this panel can actually send.
          *
-         * The send modal here runs in its default 'trade-doc' mode, so it
-         * resolves ids against the TRADE DOCUMENT library only. An agreement
-         * needs the same modal opened with mode="agreement" plus an
-         * agreementContext (lead + signers), which this vault does not wire
-         * up — the main Case-to-Case table gates its Send on category 'td'
-         * for exactly that reason. Offering Resend on an agreement row would
-         * hand the modal an id it cannot find.
+         * Agreements send from here too. They used to be refused -- "Agreements
+         * are sent from the Case to Case tab, not here" -- because this popup
+         * sent through SalesCustomerSendForSignatureModal in its default
+         * trade-doc mode, which resolves ids against the TRADE DOCUMENT library
+         * alone and would not have found an agreement id. That was a limit of
+         * the path, not a rule about agreements, and it split one list into
+         * rows you could act on and rows you had to go elsewhere for.
          *
-         * Already-signed and in-flight rows are excluded too, matching the
-         * main table: there is nothing to resend on a completed envelope, and
-         * a pending one wants a reminder, not a second send. */
+         * The sends below now go through ShipmentDocSendForSignature, which
+         * already handles both kinds -- it is what the inline Case-to-Case
+         * panel behind this popup uses -- so the exclusion is gone.
+         *
+         * Already-signed and in-flight rows stay excluded, matching that panel:
+         * there is nothing to resend on a completed envelope, and a pending one
+         * wants a reminder, not a second send. */
         const sendableDoc = (d: VaultShipmentDoc) =>
           !!d.db_id
-          && (d.doc_type ?? 'trade') !== 'agreement'
           && d.status !== 'Signed'
           && d.status !== 'Pending';
         const sendReason = (d: VaultShipmentDoc) =>
           !d.db_id ? 'Not saved against this deal yet'
-          : (d.doc_type ?? 'trade') === 'agreement' ? 'Agreements are sent from the Case to Case tab, not here'
           : d.status === 'Signed' ? 'Already signed — nothing to resend'
           : d.status === 'Pending' ? 'Already out for signature — use Reminder instead'
+          : d.status === 'Draft' ? 'Send this document for signature'
           : 'Send this document for signature again';
+
+        /* One send route for the popup, mirroring the inline panel's: a PI goes
+         * to its own wizard, everything else (trade document or agreement) to
+         * the shipment sender. `party` is 'consignee' because that is what this
+         * vault is -- the same party the old trade-doc path hardcoded via
+         * modelName="Consignee". */
+        const sendShipDocs = (list: VaultShipmentDoc[]) => {
+          if (!activeShip || list.length === 0) return;
+          const head = list[0];
+          if (head.pi_id) { setPiSend({ leadId: activeShip.id, doc: head }); return; }
+          setShipSend({ leadId: activeShip.id, doc: head, docs: list.length > 1 ? list : undefined, party: 'consignee' });
+        };
 
         const keyed    = isStd ? [] : (docs as VaultShipmentDoc[]).map((doc) => ({ key: ovDocKey(doc), doc }));
         const sendable = keyed.filter((r) => sendableDoc(r.doc));
         const picked   = keyed.filter((r) => ovPicked.includes(r.key));
-        const pickedIds = picked.map((r) => r.doc.db_id).filter((n): n is number => !!n);
         /* Every ticked row is sendable by construction — only sendable rows
            can be ticked — so this is a guard against stale ticks, not a
            second rule the user has to satisfy. */
@@ -1357,6 +1371,14 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                               const sd = d as VaultShipmentDoc;
                               const canSend  = sendableDoc(sd);
                               const canTrack = !!sd.signature_request_id;
+                              /* A Draft has never been out for signature, so
+                                 this is its FIRST send; Declined / Recalled /
+                                 Expired have been, so those are a re-send. The
+                                 button always read "Resend", which told the user
+                                 a Draft had already gone out — and the inline
+                                 Case-to-Case panel behind this popup said "Send"
+                                 on the very same row. Same rule in both now. */
+                              const firstSend = sd.status === 'Draft';
                               return (
                                 <>
                                   <Tooltip label={sendReason(sd)}>
@@ -1364,9 +1386,9 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                                       type="button"
                                       className="sev-ov-act sev-ov-act-send"
                                       disabled={!canSend}
-                                      onClick={() => { if (sd.db_id) setSendDocIds([sd.db_id]); }}
+                                      onClick={() => sendShipDocs([sd])}
                                     >
-                                      <i className="ri-send-plane-line" aria-hidden /> Resend
+                                      <i className={firstSend ? 'ri-send-plane-line' : 'ri-refresh-line'} aria-hidden />{firstSend ? ' Send' : ' Resend'}
                                     </button>
                                   </Tooltip>
                                   <Tooltip label={canTrack ? 'Signing activity tracker' : 'Nothing has been sent for signature yet'}>
@@ -1483,7 +1505,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                       type="button"
                       className="cnev-ovbar-send"
                       disabled={!canBulk}
-                      onClick={() => { if (canBulk) setSendDocIds(pickedIds); }}
+                      onClick={() => { if (canBulk) sendShipDocs(picked.map(r => r.doc)); }}
                     >
                       <i className="ri-send-plane-line" aria-hidden /> Send for Signature
                     </button>
@@ -2141,11 +2163,17 @@ function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend }: {
               <th>Opportunity ID</th>
               <th>Customer</th>
               <th>Consignee</th>
-              <th>Due Dil.</th>
-              <th>KYC</th>
-              <th>Trade Lic.</th>
-              <th>{merged ? 'Trade Docs & Agreements' : 'Trade Docs'}</th>
-              {isAgreement && !merged && <th>Agreement</th>}
+              {/* RATIO_COL, same as the Customer vault: the ratio columns were
+                  auto-sized, so each was only as wide as its own heading and
+                  "TRADE DOCS & AGREEMENTS" stretched far wider than the 2/6
+                  under it. A fixed width makes the gaps equal and centres each
+                  count over its heading instead of leaving it hugging the left
+                  edge; the long heading wraps rather than widening its column. */}
+              <th style={RATIO_COL}>Due Dil.</th>
+              <th style={RATIO_COL}>KYC</th>
+              <th style={RATIO_COL}>Trade Lic.</th>
+              <th style={RATIO_COL}>{merged ? 'Trade Docs & Agreements' : 'Trade Docs'}</th>
+              {isAgreement && !merged && <th style={RATIO_COL}>Agreement</th>}
             </tr>
           </thead>
           <tbody>
@@ -2181,11 +2209,11 @@ function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend }: {
                         {r.consignee || '—'}
                       </span>
                     </td>
-                    <td><Ratio r={r.due_dil} /></td>
-                    <td><Ratio r={r.kyc} /></td>
-                    <td><Ratio r={r.trade_lic} /></td>
-                    <td><Ratio r={merged ? sumRatios(r.trade_docs, r.agreement) : r.trade_docs} /></td>
-                    {isAgreement && !merged && <td><Ratio r={r.agreement} /></td>}
+                    <td style={RATIO_COL}><Ratio r={r.due_dil} /></td>
+                    <td style={RATIO_COL}><Ratio r={r.kyc} /></td>
+                    <td style={RATIO_COL}><Ratio r={r.trade_lic} /></td>
+                    <td style={RATIO_COL}><Ratio r={merged ? sumRatios(r.trade_docs, r.agreement) : r.trade_docs} /></td>
+                    {isAgreement && !merged && <td style={RATIO_COL}><Ratio r={r.agreement} /></td>}
                   </tr>
                   {open && (
                     <tr className="cev-ship-expand">
