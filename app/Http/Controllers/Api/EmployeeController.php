@@ -680,10 +680,21 @@ class EmployeeController extends Controller
         return '((' . $this->sqlExitInitiated() . ") OR status = 'Notice Period')";
     }
 
-    /** `status === 'Missing Details'` — only reached when neither above. */
-    private function sqlMissingDetails(): string
+    /**
+     * Carries a live blacklist mark.
+     *
+     * Not a status and not a tab: `blacklisted` is a column on the exit CASE,
+     * and a termination is stamped 'Yes' the moment its type is saved
+     * (ExitController::applyTerminationBlacklist), so blacklisted people sit
+     * in Exit In Progress as well as in Exited. It is therefore counted on its
+     * own axis and never subtracted from another bucket.
+     *
+     * Stored as a nullable 'Yes'/'No' string, so this tests for 'Yes' rather
+     * than for truthiness — NULL means the question was never asked.
+     */
+    private function sqlBlacklisted(): string
     {
-        return "(COALESCE(email, '') = '' OR department_id IS NULL OR designation_id IS NULL)";
+        return $this->sqlLiveExit("LOWER(COALESCE(x.blacklisted, '')) = 'yes'");
     }
 
     /**
@@ -705,8 +716,7 @@ class EmployeeController extends Controller
      * Narrow to one tab. Written as an if/else CHAIN like the frontend's: a
      * closed case can still carry a last_working_day, so "in progress" has to
      * mean in-progress AND NOT exited. The Active tab covers Active AND
-     * Missing Details — one tab on screen, split only by a badge — and
-     * 'missing' narrows that same tab to just the incomplete records.
+     * Missing Details — one tab on screen, split only by a row badge.
      *
      * @param  \Illuminate\Database\Eloquent\Builder  $q
      */
@@ -715,18 +725,10 @@ class EmployeeController extends Controller
         $exited = $this->sqlExited();
         $prog   = $this->sqlInProgress();
 
-        // 'missing' is not a tab — it is the Missing Exit Details KPI tile
-        // drilling into the Active tab it is counted inside, so it carries the
-        // Active predicate plus sqlMissingDetails(). Same expression the tile's
-        // count is summed from in exitStats(), so the drill-in can never show a
-        // different number of rows than the tile advertises. (CBC #133)
-        $missing = $this->sqlMissingDetails();
-
         match ($tab) {
             'exited'      => $q->whereRaw($exited),
             'in-progress' => $q->whereRaw("NOT {$exited} AND {$prog}"),
             'active'      => $q->whereRaw("NOT {$exited} AND NOT {$prog}"),
-            'missing'     => $q->whereRaw("NOT {$exited} AND NOT {$prog} AND {$missing}"),
             default       => null,
         };
     }
@@ -921,29 +923,32 @@ class EmployeeController extends Controller
         $this->applySearch($q, $request->query('search'));
         $this->applyExitVisibility($q);
 
-        $exited  = $this->sqlExited();
-        $prog    = $this->sqlInProgress();
-        $missing = $this->sqlMissingDetails();
+        $exited      = $this->sqlExited();
+        $prog        = $this->sqlInProgress();
+        $blacklisted = $this->sqlBlacklisted();
 
-        // One pass, not five COUNTs that each re-scan the table.
+        /* One pass, not five COUNTs that each re-scan the table.
+           total = active + in_progress + exited, exactly as the three tabs
+           divide the roster. `blacklisted` is NOT part of that split — it cuts
+           across in_progress and exited — so it is summed independently and
+           must not be subtracted from either. */
         $row = $q->selectRaw("
             COUNT(*)                                                    AS total,
             SUM(CASE WHEN {$exited} THEN 1 ELSE 0 END)                  AS exited,
             SUM(CASE WHEN NOT {$exited} AND {$prog} THEN 1 ELSE 0 END)  AS in_progress,
-            SUM(CASE WHEN NOT {$exited} AND NOT {$prog} AND {$missing}
-                     THEN 1 ELSE 0 END)                                 AS missing,
-            SUM(CASE WHEN NOT {$exited} AND NOT {$prog} AND NOT {$missing}
-                     THEN 1 ELSE 0 END)                                 AS active
+            SUM(CASE WHEN NOT {$exited} AND NOT {$prog}
+                     THEN 1 ELSE 0 END)                                 AS active,
+            SUM(CASE WHEN {$blacklisted} THEN 1 ELSE 0 END)             AS blacklisted
         ")->first();
 
         // SUM() is a string on Postgres and null on an empty tenant; these feed
         // a counter animation that expects numbers.
         return response()->json([
-            'total'      => (int) ($row->total ?? 0),
-            'active'     => (int) ($row->active ?? 0),
-            'inProgress' => (int) ($row->in_progress ?? 0),
-            'exited'     => (int) ($row->exited ?? 0),
-            'missing'    => (int) ($row->missing ?? 0),
+            'total'       => (int) ($row->total ?? 0),
+            'active'      => (int) ($row->active ?? 0),
+            'inProgress'  => (int) ($row->in_progress ?? 0),
+            'exited'      => (int) ($row->exited ?? 0),
+            'blacklisted' => (int) ($row->blacklisted ?? 0),
         ]);
     }
 

@@ -5,6 +5,7 @@ import { saveAs } from 'file-saver';
 import api from '../../../api';
 import Tooltip from '../../../components/ui/Tooltip';
 import { ShimmerTableRows } from '../../../components/ui/Shimmer';
+import WorklistPager from '../../../components/ui/WorklistPager';
 import { useToast } from '../../../contexts/ToastContext';
 import { downloadFile } from '../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../utils/resolveFileUrl';
@@ -80,7 +81,8 @@ interface Props {
  * per-party vault keeps only the identity/compliance buckets. */
 type TabKey = 'company-dd' | 'owner-kyc' | 'trade-licenses';
 
-/* Rows shown per page in the document table. */
+/* Rows shown per page in the document table. Fixed — the pager deliberately
+ * omits WorklistPager's Rows-per-page selector here. */
 const PAGE_SIZE = 5;
 
 const TABS: {
@@ -344,8 +346,6 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
   const totalPages = Math.max(1, Math.ceil(docsForTab.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pagedDocs = docsForTab.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-  const firstRow = docsForTab.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
-  const lastRow = Math.min(safePage * PAGE_SIZE, docsForTab.length);
 
   if (!open || !view) return null;
 
@@ -602,29 +602,21 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
               </table>
               </div>
 
-              {/* Pagination — 5 rows per page, rendered as the table card's
-                  own footer bar (sits flush under the rows, not floating on
-                  the body background). */}
+              {/* Pagination — the shared WorklistPager (Showing X–Y of Z pill,
+                  page/total pill and ‹ › arrows) used by the Customer / master
+                  lists and the Segment Details popup, so every table in the
+                  product pages the same way. No `onPageSize`, so the
+                  Rows-per-page selector is left out and the page stays at 5
+                  rows. Rendered as the table card's own footer bar: flush under
+                  the rows, not floating on the body background. */}
               {docsForTab.length > 0 && (
-                <div className="lev-pager">
-                  <div className="lev-pager-info">Showing {firstRow}–{lastRow} of {docsForTab.length}</div>
-                  <div className="lev-pager-ctrls">
-                    <button type="button" className="lev-pager-btn" disabled={safePage <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} aria-label="Previous page">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="15 18 9 12 15 6"/></svg>
-                    </button>
-                    {Array.from({ length: totalPages }).map((_, idx) => {
-                      const n = idx + 1;
-                      return (
-                        <button key={n} type="button" className={`lev-pager-num ${n === safePage ? 'active' : ''}`} onClick={() => setPage(n)}>
-                          {n}
-                        </button>
-                      );
-                    })}
-                    <button type="button" className="lev-pager-btn" disabled={safePage >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))} aria-label="Next page">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="9 18 15 12 9 6"/></svg>
-                    </button>
-                  </div>
-                </div>
+                <WorklistPager
+                  total={docsForTab.length}
+                  page={safePage}
+                  pageSize={PAGE_SIZE}
+                  onPage={setPage}
+                  className="lev-pager"
+                />
               )}
             </div>
           </div>
@@ -1152,20 +1144,12 @@ const LEV_CSS = `
 [data-bs-theme="dark"] .lev-act-upload:hover { background: rgba(34,197,94,.26); }
 [data-bs-theme="dark"] .lev-act-cert     { background: rgba(124,58,237,.22); color: #c4b5fd; border-color: rgba(167,139,250,.42); }
 
-/* ── Pagination — flush footer bar inside the table card ── */
-.lev-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 14px; border-top: 1px solid #ECEEF3; background: #FBFCFE; }
-.lev-pager-info { font-size: 12px; font-weight: 600; color: #64748B; }
-.lev-pager-ctrls { display: inline-flex; align-items: center; gap: 6px; }
-.lev-pager-btn, .lev-pager-num {
-  min-width: 30px; height: 30px; padding: 0 8px; border-radius: 8px; cursor: pointer;
-  background: #fff; border: 1px solid #E2E8F0; color: #475569;
-  font-family: inherit; font-size: 12.5px; font-weight: 700;
-  display: inline-flex; align-items: center; justify-content: center; transition: all .14s ease;
-}
-.lev-pager-btn svg { width: 14px; height: 14px; }
-.lev-pager-btn:hover:not(:disabled), .lev-pager-num:hover:not(.active) { background: #F5F3FF; border-color: #ddd6fe; color: #6d28d9; }
-.lev-pager-btn:disabled { opacity: .45; cursor: not-allowed; }
-.lev-pager-num.active { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); border-color: #6d28d9; color: #fff; box-shadow: 0 3px 8px rgba(124,58,237,.30); }
+/* ── Pagination ──
+   WorklistPager's own .wl-pager band supplies the padding / violet gradient /
+   top border, so all that is left here is seating it in the table card: no
+   gap above it, and square corners because the card already rounds and clips
+   its own. */
+.lev-pager { flex-shrink: 0; margin-top: 0; border-radius: 0; }
 
 /* ── Footer ── */
 .lev-footer { background: #fff; border-top: 1px solid #ECEEF3; padding: 10px 18px; display: flex; align-items: center; justify-content: flex-end; gap: 14px; flex-wrap: wrap; }
@@ -1203,10 +1187,6 @@ const LEV_CSS = `
 [data-bs-theme="dark"] .lev-footer-info { color: #94a3b8; }
 [data-bs-theme="dark"] .lev-footer-info strong { color: #e2e8f0; }
 [data-bs-theme="dark"] .lev-footer-btn.outline { background: #1e293b; border-color: rgba(148,163,184,.30); color: #cbd5e1; }
-[data-bs-theme="dark"] .lev-pager { background: rgba(148,163,184,.06); border-top-color: rgba(148,163,184,.18); }
-[data-bs-theme="dark"] .lev-pager-info { color: #94a3b8; }
-[data-bs-theme="dark"] .lev-pager-btn, [data-bs-theme="dark"] .lev-pager-num { background: #1e293b; border-color: rgba(148,163,184,.30); color: #cbd5e1; }
-[data-bs-theme="dark"] .lev-pager-num.active { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); border-color: #6d28d9; color: #fff; }
 
 @media (max-width: 760px) {
   .lev-backdrop { padding: 10px; }
