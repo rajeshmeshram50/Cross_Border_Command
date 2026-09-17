@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import WorklistPager from "../../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../../api';
@@ -6,7 +6,7 @@ import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import { useConfirm } from '../../../contexts/ConfirmContext';
-import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
+import { CLM_CSS, usePagedList, useAutoFitRows } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import Tooltip from '../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
@@ -95,101 +95,44 @@ export default function ClmSegmentPage() {
   const confirm  = useConfirm();
   const navigate = useNavigate();
 
-  const [rows, setRows]       = useState<Segment[]>([]);
-  const [counts, setCounts]   = useState<Counts>({ all: 0, highly: 0, less: 0 });
-  const [loading, setLoading] = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
-  const [tab, setTab]         = useState<'all'|'highly'|'less'>('all');
-  const [search, setSearch]   = useState('');
-  // Customer ≠ Consignee filter (independent of the regulatory tab/dropdown).
+  const [tab, setTab]           = useState<'all'|'highly'|'less'>('all');
   const [bcFilter, setBcFilter] = useState<'all'|'allowed'|'not'>('all');
-  const [page, setPage]       = useState(1);
-  // Dynamic pagination: rows-per-page auto-fits the visible table height.
-  const [rpp, setRpp]         = useState(PER_PAGE);
-  const autoFitRef            = useRef(true);
-  const [fillH, setFillH]     = useState<number | undefined>(undefined);
-  const scrollRef             = useRef<HTMLDivElement | null>(null);
-  const rootRef               = useRef<HTMLDivElement | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = () => setReloadKey(k => k + 1);
+
+  // Tab, filter, search and paging all run on the server.
+  const params = {
+    ...(tab !== 'all' ? { regulatory_status: tab } : {}),
+    ...(bcFilter !== 'all' ? { buyer_consignee: bcFilter } : {}),
+  };
+  const { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp, meta } =
+    usePagedList<Segment, { counts: Counts }>('/clm/segments', reloadKey, params);
+  const counts: Counts = meta.counts ?? { all: 0, highly: 0, less: 0 };
+
+  const firstLoad  = loading && (rows.length === 0 || replacing);
+  const refreshing = loading && !firstLoad;
+  const start      = (page - 1) * rpp;
+  const autoFitRef = useRef(true);
+  const scrollRef  = useRef<HTMLDivElement | null>(null);
+  const rootRef    = useRef<HTMLDivElement | null>(null);
+  const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total, tab]);
+
+  // Code preview: unfiltered page 1 holds the highest codes (newest first); the server allocates the real one.
+  const topCodesRef = useRef<{ code: string }[]>([]);
+  useEffect(() => {
+    if (page === 1 && tab === 'all' && bcFilter === 'all' && !search.trim() && rows.length) topCodesRef.current = rows;
+  }, [page, tab, bcFilter, search, rows]);
+
+  // Deleting the last row of the last page: step back to the new last page.
+  useEffect(() => {
+    if (!loading && rows.length === 0 && total > 0 && page > 1) setPage(Math.ceil(total / rpp));
+  }, [loading, rows.length, total, page, rpp, setPage]);
 
   const [editing, setEditing]     = useState<Segment | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   useScrollLock(modalOpen); // lock html+body while the custom Add/Edit modal is open
   const [pendingDelete, setPendingDelete] = useState<Segment | null>(null);
   const [deleting, setDeleting] = useState(false);
-
-  const reload = () => {
-    setLoading(true);
-    api.get<{ status: boolean; data: Segment[]; counts: Counts }>('/clm/segments')
-      .then(({ data }) => { setRows(data.data ?? []); setCounts(data.counts ?? { all: 0, highly: 0, less: 0 }); })
-      .catch(() => toast.error('Load failed', 'Could not load segments'))
-      .finally(() => setLoading(false));
-  };
-  useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const filtered = useMemo(() => {
-    let base = tab === 'all' ? rows : tab === 'highly' ? rows.filter(r => r.regulatory_status === 'highly') : rows.filter(r => r.regulatory_status === 'less');
-    if (bcFilter !== 'all') base = base.filter(r => bcFilter === 'allowed' ? r.buyer_consignee === 'allowed' : r.buyer_consignee !== 'allowed');
-    if (!search.trim()) return base;
-    const s = search.toLowerCase();
-    return base.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s));
-  }, [rows, tab, search, bcFilter]);
-  const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
-
-  // Dynamic pagination: pick the rows-per-page that fits between the table's
-  // top and the bottom of the viewport, so the page fills the screen and
-  // spills the rest onto further pages — without forcing a fixed-height
-  // layout. The layout stays natural; we only change how many rows render.
-  useEffect(() => {
-    const recompute = () => {
-      const el = scrollRef.current;
-      if (!el) return;
-      const top = el.getBoundingClientRect().top;     // viewport-relative top of table
-      // Mirror the Customers list EXACTLY: set a FIXED height on the table card
-      // so it always covers the page down to just above the footer. `minHeight`
-      // alone was not stretching here; a hard height forces the box. Small
-      // reserve (≈ footer height) so it fills nearly to the bottom.
-      const fh = Math.max(240, window.innerHeight - top - 50);
-      el.style.height = `${fh}px`;
-      el.style.maxHeight = `${fh}px`;
-      setFillH(prev => (prev === fh ? prev : fh));
-      // Auto-fit the row count to THIS card height so the rows fill it exactly
-      // (self-consistent, like Customers) — measured off the same `fh`.
-      if (autoFitRef.current) {
-        const THEAD = 44, PAGER = 52, ROW = 46;   // header + pager band inside the card
-        const fit = Math.max(4, Math.floor((fh - THEAD - PAGER) / ROW));
-        setRpp(prev => (prev === fit ? prev : fit));
-      }
-    };
-    recompute();
-    const raf = requestAnimationFrame(recompute);
-    // Re-measure once the layout has fully settled. The first pass can run before
-    // the header strip / "What We Are Doing Here" box have taken their final
-    // height, which measured the table too low (large `top`) and under-counted
-    // the rows — so the table stopped short and didn't fill the screen. Two
-    // delayed re-measures lock onto the settled position without observing the
-    // root (which caused animation jank).
-    const settle1 = setTimeout(recompute, 220);
-    const settle2 = setTimeout(recompute, 520);
-    // Deliberately NOT observing the page root here. The "What We Are Doing
-    // Here" box collapses/expands (with a height animation), and observing the
-    // root made rows-per-page recompute as the box moved the table — which
-    // changed the row count / pagination and visibly disturbed the layout every
-    // time that read-only box was toggled. Rows-per-page is now measured only
-    // on mount, on genuine window resizes, and when the filter/tab changes —
-    // so toggling the info box leaves the table completely untouched.
-    let settleTimer: ReturnType<typeof setTimeout> | null = null;
-    const recomputeDebounced = () => {
-      if (settleTimer) clearTimeout(settleTimer);
-      settleTimer = setTimeout(recompute, 140);
-    };
-    window.addEventListener('resize', recomputeDebounced);
-    return () => {
-      if (settleTimer) clearTimeout(settleTimer);
-      window.removeEventListener('resize', recomputeDebounced);
-      cancelAnimationFrame(raf);
-      clearTimeout(settle1);
-      clearTimeout(settle2);
-    };
-  }, [filtered.length, tab]);
 
   const onSave = async (form: SegmentForm, id?: number): Promise<SaveResult> => {
     try {
@@ -344,8 +287,8 @@ export default function ClmSegmentPage() {
               </div>
           </div>
 
-          <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-            {slice.length === 0 && !loading ? (
+          <div className={`clm-tab-body ${loading || rows.length > 0 ? 'has-data' : ''}`}>
+            {rows.length === 0 && !loading ? (
               <div className="clm-empty">
                 <div className="clm-empty-ico">{ICO.bSeg}</div>
                 <div className="clm-empty-title">
@@ -353,11 +296,11 @@ export default function ClmSegmentPage() {
                   {tab === 'highly' && 'No Highly Regulated Segments'}
                   {tab === 'less'   && 'No Less Regulated Segments'}
                 </div>
-                <div className="clm-empty-sub">{rows.length === 0 ? 'Click "+ Add Segment" to create your first segment entry.' : 'No segments match the current tab / search.'}</div>
+                <div className="clm-empty-sub">{counts.all === 0 ? 'Click "+ Add Segment" to create your first segment entry.' : 'No segments match the current tab / search.'}</div>
               </div>
             ) : (
               <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
-                <table className="clm-table" style={{ tableLayout: 'fixed', width: '100%' }}>
+                <table className="clm-table" style={{ tableLayout: 'fixed', width: '100%', opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>
                   <thead><tr>
                     <th style={{ width: '6%', textAlign: 'center' }}>SR. NO</th>
                     <th style={{ width: '12%', textAlign: 'center' }}>SEGMENT ID</th>
@@ -367,8 +310,8 @@ export default function ClmSegmentPage() {
                     <th style={{ width: '15%', textAlign: 'center' }}>ACTIONS</th>
                   </tr></thead>
                   <tbody>
-                    {loading && <ClmSkeletonRows cols={6} />}
-                    {!loading && slice.map((r, i) => (
+                    {firstLoad && <ClmSkeletonRows rows={rpp} cols={6} />}
+                    {!firstLoad && rows.map((r, i) => (
                       <tr key={r.id}>
                         <td className="clm-td-num">{start + i + 1}</td>
                         <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
@@ -412,8 +355,8 @@ export default function ClmSegmentPage() {
                     ))}
                   </tbody>
                 </table>
-                {!loading && filtered.length > 0 && (
-                  <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
+                {!loading && total > 0 && (
+                  <WorklistPager total={total} page={page} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
                 )}
               </div>
             )}
@@ -424,7 +367,7 @@ export default function ClmSegmentPage() {
       {modalOpen && (
         <SegmentModal
           existing={editing}
-          nextCode={nextSegmentCode(rows)}
+          nextCode={nextSegmentCode(topCodesRef.current)}
           existingNames={rows
             .filter(r => r.id !== editing?.id)
             .map(r => r.name)}

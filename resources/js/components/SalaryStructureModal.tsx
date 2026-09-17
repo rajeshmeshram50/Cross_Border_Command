@@ -4,7 +4,7 @@ import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { MasterDatePicker, MasterFormStyles } from '../pages/master/masterFormKit';
-import { pfDeduction } from '../utils/salaryBreakup';
+import { pfDeduction, seedBreakup, reseedSplit, absorbIntoSpecial, SPLIT_CODES } from '../utils/salaryBreakup';
 
 export interface SalaryComponent { code: string; label: string; amount: number }
 
@@ -51,10 +51,8 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
    invented a House Rent Allowance and a Special Allowance nobody had agreed —
    which then saved and appeared in payroll. Allowances are now added
    deliberately; Basic carries the balance until they are. */
-const splitFromGross = (gross: number): SalaryComponent[] => [
-  // Paise, not whole rupees — same reason as seedBreakup(). (CBC #27)
-  { code: 'basic', label: 'Basic Salary', amount: Math.max(0, Math.round(gross * 100) / 100) },
-];
+// Same default split as seedBreakup() in utils/salaryBreakup.ts — keep the two identical.
+const splitFromGross = (gross: number): SalaryComponent[] => seedBreakup(gross);
 
 /**
  * Create / revise an employee's salary structure (Rule 5 + Rule 19). Saving
@@ -331,58 +329,13 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
     const n = Number(raw);
     if (raw.trim() === '' || !Number.isFinite(n) || n <= 0 || n > CTC_MAX) return;
 
-    const monthly = Math.round(n / 12);
-    const basic = Math.round(monthly * 0.5);
-    const hra = Math.round(monthly * 0.3);
+    const monthly = n / 12;
     setEarnings(prev => {
-      // Nothing to preserve — seed a clean default split.
       if (!prev.length) return splitFromGross(monthly);
-
-      const isDefault = (c: SalaryComponent) => ['basic', 'hra', 'special'].includes(c.code);
-      const customs = prev.filter(c => !isDefault(c));
-      const customTotal = customs.reduce((s, c) => s + (Number(c.amount) || 0), 0);
-      /* Custom components alone already exceed the CTC — re-splitting would
-         have to make Basic negative. Leave the rows alone and let the
-         over-salary banner report it, which is the honest outcome: the user has
-         to lower a component or raise the CTC, and silently clamping to zero
-         would hide that. */
+      // Custom rows alone exceed the CTC — leave them for the over-salary banner to report.
+      const customTotal = prev.filter(c => !SPLIT_CODES.includes(c.code)).reduce((s, c) => s + (Number(c.amount) || 0), 0);
       if (customTotal > monthly) return prev;
-
-      /* Re-split only the components the structure ACTUALLY HAS. (#147)
-       *
-       * This used to add a Special Allowance row whenever the remainder was
-       * positive and no such row existed. So an employee deliberately set up
-       * on Basic alone — the whole CTC in one component, with the hint under
-       * the row reading "Basic Salary balances automatically" — grew a Special
-       * Allowance the moment anyone touched the Annual CTC, and Basic was
-       * simultaneously knocked down to 50%. A component nobody configured
-       * appeared, was saved to the structure, and then showed up in payroll:
-       * the config-side source of the same complaint.
-       *
-       * The remainder now goes to whichever balance row the structure already
-       * has — Special when present, otherwise Basic — which is exactly the
-       * rule rebalanceEarnings() below applies when a row is edited. HRA is
-       * rewritten to 30% only if it exists. No row is ever created here. */
-      const hasSpecial = prev.some(c => c.code === 'special');
-      const hasHra     = prev.some(c => c.code === 'hra');
-      const hraAmt     = hasHra ? hra : 0;
-
-      const next = prev.map(c => {
-        if (c.code === 'hra') return { ...c, amount: hraAmt };
-        if (c.code === 'basic') {
-          // Basic is the balance row when there is no Special to absorb it.
-          return { ...c, amount: hasSpecial ? basic : Math.max(0, monthly - customTotal - hraAmt) };
-        }
-        if (c.code === 'special') {
-          return { ...c, amount: Math.max(0, monthly - customTotal - basic - hraAmt) };
-        }
-        return c;
-      });
-
-      /* No Basic and no Special to land the remainder on — every row is a
-         custom one. Leave them exactly as typed; the over/short banner reports
-         the gap, which beats inventing a component to paper over it. */
-      return next;
+      return reseedSplit(prev, monthly);
     });
   };
 
@@ -409,19 +362,9 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
    * which is the honest outcome.
    */
   const rebalanceEarnings = (rows: SalaryComponent[], editedIdx: number): SalaryComponent[] => {
-    if (salaryAnnual <= 0) return rows;                       // no target to balance against
-    if (rows[editedIdx]?.code === 'special') return rows;     // explicit edit of the balance head
-
-    const monthly = Math.round(salaryAnnual / 12);
-    let idx = rows.findIndex((c, k) => k !== editedIdx && c.code === 'special');
-    if (idx === -1) idx = rows.findIndex((c, k) => k !== editedIdx && c.code === 'basic');
-    if (idx === -1) return rows;
-
-    const others = rows.reduce((s, c, k) => k === idx ? s : s + (Number(c.amount) || 0), 0);
-    const balance = Math.round(monthly - others);
-    if (balance < 0) return rows;
-
-    return rows.map((c, k) => (k === idx ? { ...c, amount: balance } : c));
+    if (salaryAnnual <= 0) return rows;
+    if (rows[editedIdx]?.code === 'special') return rows;   // explicit edit of the balance head
+    return absorbIntoSpecial(rows, salaryAnnual / 12, editedIdx);
   };
 
   const updateRow = (
