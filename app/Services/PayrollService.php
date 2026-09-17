@@ -1394,7 +1394,7 @@ class PayrollService
         if ($proration < 1) {
             $exceptions = $this->withException(
                 $exceptions,
-                'warning',
+                'info',
                 'Mid-cycle join/exit — salary pro-rated to ' . round($proration * 100) . '% of the month.'
             );
         }
@@ -1599,7 +1599,7 @@ class PayrollService
         if ($missingPunch > 0) {
             $exceptions = $this->withException(
                 $exceptions,
-                'warning',
+                'info',
                 "{$missingPunch} day(s) with a missing punch — verify attendance before approving."
             );
         }
@@ -1619,7 +1619,7 @@ class PayrollService
             $more = count($shortDays) > 8 ? ' +' . (count($shortDays) - 8) . ' more' : '';
             $exceptions = $this->withException(
                 $exceptions,
-                'warning',
+                'info',
                 count($shortDays) . " day(s) short of this branch's "
                     . $this->trimNum((float) $shortPolicy['half_day_below']) . "h minimum: {$detail}{$more}."
             );
@@ -1720,7 +1720,7 @@ class PayrollService
         if ($overlapDays > 0) {
             $exceptions = $this->withException(
                 $exceptions,
-                'warning',
+                'info',
                 "{$overlapDays} day(s) where attendance and an approved leave request cover the same date. "
                     . "The leave request has been taken as the truth for pay — verify the punches before approving."
             );
@@ -1835,7 +1835,7 @@ class PayrollService
             $lateDays  = $this->trimNum($lateLopDays);
             $exceptions = $this->withException(
                 $exceptions,
-                'warning',
+                'info',
                 "{$lateMarks} late marks → {$lateDays} day" . ($lateLopDays == 1 ? '' : 's') . " LOP "
                     . "(branch rule: every {$latePolicy['count']} {$lateBlock} = {$lateUnit}; "
                     . "verify hours covered before approving)."
@@ -1902,7 +1902,7 @@ class PayrollService
             $notCharged = round($unpaidLeaveDays - $lopDays, 2);
             $exceptions = $this->withException(
                 $exceptions,
-                'warning',
+                'info',
                 "{$notCharged} unpaid-leave day(s) not charged as LOP — the employee is also marked present/paid-leave on those dates. Verify attendance before approving."
             );
         }
@@ -2122,7 +2122,7 @@ class PayrollService
              * on the run to show for it. Warned, so the slip goes to Pending
              * Review and HR fixes the master or the employee record. */
             if (!$rate['rate_found'] && $rate['rate_name'] !== null) {
-                $exceptions = $this->withException($exceptions, 'warning', sprintf(
+                $exceptions = $this->withException($exceptions, 'info', sprintf(
                     'Overtime rate "%s" is not an active rate in the Overtime Rate master — '
                         . 'overtime paid at 1× hourly instead. Fix the rate or the employee\'s '
                         . 'overtime setting before approving.',
@@ -2155,7 +2155,7 @@ class PayrollService
         }
 
         if ($otDetected['capped_days'] > 0) {
-            $exceptions = $this->withException($exceptions, 'warning', sprintf(
+            $exceptions = $this->withException($exceptions, 'info', sprintf(
                 '%d day(s) show more than 12 hr past the shift end — likely a missed punch-out. Verify the attendance; the overtime is capped at 12 hr for those days.',
                 $otDetected['capped_days'],
             ));
@@ -2355,7 +2355,7 @@ class PayrollService
             if ($structure && $structure->basicIsAssumed()) {
                 $exceptions = $this->withException(
                     $exceptions,
-                    'warning',
+                    'info',
                     'No "Basic" earning row on the salary structure — PF was charged on 50% of gross '
                         . '(₹' . number_format($basic, 2) . ') as an assumed basic. '
                         . 'Rename the basic component to "Basic Salary" in Salary Setup so PF is charged on the real figure.'
@@ -2368,7 +2368,7 @@ class PayrollService
              * "PF is configured but nothing was deducted". Say so on the slip. */
             $exceptions = $this->withException(
                 $exceptions,
-                'warning',
+                'info',
                 'PF is applicable but no PF was deducted — the basic pay for this cycle worked out to zero. '
                     . 'Check the earning components on the salary structure.'
             );
@@ -2513,7 +2513,7 @@ class PayrollService
         if ($carried > 0.01) {
             $exceptions = $this->withException(
                 $exceptions,
-                'warning',
+                'info',
                 'Advance recovery exceeded the 70% FOI headroom this cycle — ₹'
                     . number_format($carried, 2) . ' carried to the next cycle.'
             );
@@ -2530,7 +2530,7 @@ class PayrollService
             // HR can carry the shortfall to the next cycle.
             $exceptions = $this->withException(
                 $exceptions,
-                'warning',
+                'info',
                 'Deductions exceeded earned pay — net floored to ₹0; carry the balance to the next cycle.'
             );
             $netPay = 0;
@@ -2572,7 +2572,7 @@ class PayrollService
                 && $unpaidLeaveDays + 0.005 >= $effectiveWorkingDays;
             $exceptions = $this->withException(
                 $exceptions,
-                'warning',
+                'info',
                 'No attendance recorded at all this cycle — ' . $this->trimNum($lopDays)
                     . ' day(s) charged as loss of pay.'
                     . ($explained
@@ -2584,7 +2584,7 @@ class PayrollService
         if ($netPay <= 0 && $proratedGross > 0) {
             $exceptions = $this->withException(
                 $exceptions,
-                'warning',
+                'info',
                 'Zero net pay — employee was fully absent / on loss-of-pay this cycle. Verify before processing.'
             );
         }
@@ -2643,13 +2643,11 @@ class PayrollService
         }
 
         // ── Status + attendance source ─────────────────────────────────────
+        // Only blockers hold a slip; review notes are informational and never gate the run (warnings removed).
         $hasBlocking = collect($exceptions)->contains(fn($e) => $e['type'] === 'blocking');
-        $hasWarning  = collect($exceptions)->contains(fn($e) => $e['type'] === 'warning');
-        $status = $hasBlocking ? 'On Hold' : ($hasWarning ? 'Pending Review' : 'Ready');
+        $status = $hasBlocking ? 'On Hold' : 'Ready';
 
-        $attSource = $att['rows'] > 0
-            ? ($hasWarning && ($missingPunch > 0 || $lateLopDays > 0) ? 'Review' : 'Biometric')
-            : 'Manual';
+        $attSource = $att['rows'] > 0 ? 'Biometric' : 'Manual';
 
         return array_merge($base, [
             /* PAY-06 — the payable working days of the ACTIVE window, not of
@@ -4696,7 +4694,7 @@ class PayrollService
             )];
 
             if (!$rate['rate_found']) {
-                $exceptions[] = ['type' => 'warning', 'reason' => $rate['rate_name']
+                $exceptions[] = ['type' => 'info', 'reason' => $rate['rate_name']
                     ? "Overtime rate \"{$rate['rate_name']}\" is not an Active rate in Master › Overtime (OT) — overtime paid at 1× hourly. Verify before approving."
                     : 'Overtime hours recorded but no Overtime (OT) rate is assigned to this employee — paid at 1× hourly. Assign a rate in the employee\'s Leave & Attendance step.'];
             }

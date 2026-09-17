@@ -839,8 +839,9 @@ class PayrollController extends Controller
         $atRiskAmount = 0;
         foreach ($slips as $s) {
             $ex = $this->visibleExceptions($s);
-            if (empty($ex)) continue;
-            $type = collect($ex)->contains(fn ($e) => $e['type'] === 'blocking') ? 'blocking' : 'warning';
+            // Only blockers are issues; info notes never surface here.
+            if (!collect($ex)->contains(fn ($e) => ($e['type'] ?? null) === 'blocking')) continue;
+            $type = 'blocking';
             if ($type === 'blocking') $blockedAmount += (float) $s->net_pay;
             else $atRiskAmount += (float) $s->net_pay;
             $issues[] = [
@@ -918,7 +919,7 @@ class PayrollController extends Controller
          * proceeds only when the caller acknowledges it explicitly — with who
          * did so and what they waved through recorded in the audit log. */
         $unresolved = Payslip::where('payroll_run_id', $run->id)
-            ->whereIn('status', ['On Hold', 'Pending Review'])
+            ->whereIn('status', ['On Hold'])
             ->get(['id', 'employee_name', 'status']);
 
         if ($unresolved->isNotEmpty() && !$request->boolean('acknowledge_unresolved')) {
@@ -1913,7 +1914,7 @@ class PayrollController extends Controller
      */
     private function pdfBlockReason(Payslip $slip): ?string
     {
-        if (!in_array($slip->status, ['On Hold', 'Pending Review'], true)) {
+        if (!in_array($slip->status, ['On Hold'], true)) {
             return null;
         }
         if ($this->isFinalSlip($slip)) {
