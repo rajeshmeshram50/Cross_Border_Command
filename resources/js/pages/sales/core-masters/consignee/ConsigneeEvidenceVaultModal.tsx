@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import CustomerEvidenceVaultModal, { ShipmentDocPanel, ShipmentDocSendForSignature, ShipmentStatusPill, SevStat, sumRatios, RATIO_COL, type VaultShipmentDoc, type ShipmentSendParty } from '../customer/CustomerEvidenceVaultModal';
 import { VaultReuploadPopup, VaultDateBadge } from '../../../p2p/p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
@@ -851,7 +852,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                        "+29 more" button beside it -- two chips spending twice
                        the width of a header this size to say one thing. */
                     if (extra === 0) {
-                      return <Tooltip label={first}><span className="cev-chip cev-chip-seg">{short}</span></Tooltip>;
+                      return <Tooltip label={first}><span className="cev-chip cev-chip-seg" style={{ display: 'inline-flex', alignItems: 'center' }}>{short}<SegmentNameBadge name={first} /></span></Tooltip>;
                     }
                     return (
                       <Tooltip label={`${segs.length} segments — click to see all`}>
@@ -859,7 +860,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                           type="button"
                           className="cev-chip cev-chip-seg sev-chip-more"
                           onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { title: 'Segments', items: segs.map(n => ({ label: n })), x: b.left, y: b.bottom + 6 }); }}
-                        >{short}<span className="cev-chip-seg-count">+{extra}</span></button>
+                        >{short}<SegmentNameBadge name={first} /><span className="cev-chip-seg-count">+{extra}</span></button>
                       </Tooltip>
                     );
                   })()}
@@ -1569,7 +1570,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
       {segPop && (() => {
         /* Customer rows carry a code on the right, so they need the wider box;
            a segment list keeps the original width. */
-        const popW = segPop.items.some(it => it.code) ? 268 : 232;
+        const popW = segPop.items.some(it => it.code) ? 268 : 280;
         return createPortal(
           <>
             <div onClick={() => setSegPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 13000 }} />
@@ -1585,6 +1586,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                           clipped when the row runs out of room. */}
                       {it.code && <span className="cev-seg-pop-code">{it.code}:</span>}
                       {it.label.length > 20 ? it.label.slice(0, 20) + '…' : it.label}
+                      {segPop.title === 'Segments' && <SegmentNameBadge name={it.label} />}
                     </span>
                   </Tooltip>
                 </div>

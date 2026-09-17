@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
+import { SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 /* Force-download helper. A cross-origin <a download> is IGNORED by the browser
@@ -1490,7 +1491,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                             <Tooltip label={seg} disabled={!long}>
                               <span>
                                 <span className="lasm-party-tab-k">Segment</span>
-                                <span className="lasm-party-tab-v">{long ? seg.slice(0, 25) + '…' : (seg || '—')}</span>
+                                <span className="lasm-party-tab-v">{long ? seg.slice(0, 25) + '…' : (seg || '—')}<SegmentNameBadge name={seg} /></span>
                               </span>
                             </Tooltip>
                           ); })()}

@@ -4,6 +4,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import { LFM_CSS } from '../../sales/opportunity-pipeline/LeadFilterModal';
 import SearchClear from '../../../components/ui/SearchClear';
+import SegmentBadge from '../../../components/ui/SegmentBadge';
 
 
 export type DcpFilters = {
@@ -15,7 +16,7 @@ export type DcpFilters = {
 };
 
 type FacetKey = 'documentType' | 'regulatory' | 'buyerConsignee' | 'authorities' | 'segment';
-type Opt = { value: string; label: string };
+type Opt = { value: string; label: string; reg?: string };
 
 const EMPTY_FILTERS: DcpFilters = {};
 
@@ -217,7 +218,7 @@ export default function ClmDcpFilterModal({ open, onClose, onApply, initial, opt
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                     </span>
-                    <span className="lfm-card-label"><span className="lfm-card-name">{opt.label}</span></span>
+                    <span className="lfm-card-label"><span className="lfm-card-name">{opt.label}</span>{'reg' in opt && <SegmentBadge status={(opt as Opt).reg} style={{ marginLeft: 6 }} />}</span>
                   </label>
                 );
               })}

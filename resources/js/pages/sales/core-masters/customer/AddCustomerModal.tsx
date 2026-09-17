@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { SegmentNameBadge, SegmentNameList } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
 import { CLM_CSS } from '../../../clm/shared/clmShared';
@@ -8,6 +9,7 @@ import Tooltip from '../../../../components/ui/Tooltip';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { Shimmer, ShimmerTableRows } from '../../../../components/ui/Shimmer';
+import { ACM_SHELL_CSS, StepperShimmer, Stage1FormShimmer } from './AddCustomerModalShimmer';
 import { downloadFile } from '../../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -2155,6 +2157,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
        rendered inline it inherited a transformed ancestor as its containing
        block, which pushed the modal low on the page instead of centre. */
     <div className="acm-root">
+      <style>{ACM_SHELL_CSS}</style>
       <style>{SCOPED_CSS}</style>
       {/* CLM shared styles — powers the teal AuthorityBadges "+N" popover used in
           the KYC / DD / Trade Licence issuing-authority columns, matching the
@@ -2956,72 +2959,6 @@ function Stepper({ stage, maxStage, onGoto, complete }: { stage: Stage; maxStage
   );
 }
 
-/* ───── Stepper shimmer ─────
- * Skeleton variant rendered while the edit-mode hydration GET is in
- * flight. Mirrors the 3-stage layout (icon + 2 text rows + connector)
- * so the swap to the real Stepper once data lands is structurally
- * identical — no layout shift. */
-function StepperShimmer() {
-  return (
-    <div className="acm-stepper acm-stepper-shimmer">
-      {[0, 1, 2].map((i) => (
-        <Fragment key={i}>
-          <div className="acm-step acm-step-pending" style={{ pointerEvents: 'none' }}>
-            <div className="acm-step-badge-wrap">
-              <Shimmer width={40} height={40} radius={10} />
-            </div>
-            <div className="acm-step-text" style={{ flex: 1 }}>
-              <Shimmer height={11} width="70%" radius={4} style={{ marginBottom: 6 }} />
-              <Shimmer height={9}  width="55%" radius={4} />
-            </div>
-          </div>
-          {i < 2 && (
-            <div className="acm-step-connector">
-              <Shimmer height={2} width="100%" radius={2} />
-            </div>
-          )}
-        </Fragment>
-      ))}
-    </div>
-  );
-}
-
-/* ───── Stage 1 form skeleton ─────
- * Rendered while the edit-mode hydration fetch is in flight so the
- * user sees the section + field shape immediately instead of empty
- * inputs flickering into populated state. Layout mirrors the actual
- * Stage 1 form (Basic Company Details + Primary Address & Contact). */
-function Stage1FormShimmer() {
-  const FieldShim = () => (
-    <div className="acm-field">
-      <Shimmer height={10} width="40%" radius={4} style={{ marginBottom: 7 }} />
-      <Shimmer height={36} radius={9} />
-    </div>
-  );
-  const Section = ({ rows }: { rows: { cols: number }[] }) => (
-    <div className="acm-section acm-section-purple" style={{ marginBottom: 16 }}>
-      <div className="acm-section-head">
-        <Shimmer width={28} height={28} radius={8} />
-        <div style={{ flex: 1, marginLeft: 10 }}>
-          <Shimmer height={11} width="35%" radius={4} />
-        </div>
-      </div>
-      <div className="acm-section-body">
-        {rows.map((r, i) => (
-          <div key={i} className={`acm-row acm-row-${r.cols}`} style={{ marginBottom: i < rows.length - 1 ? 14 : 0 }}>
-            {Array.from({ length: r.cols }).map((_, j) => <FieldShim key={j} />)}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-  return (
-    <div>
-      <Section rows={[{ cols: 3 }, { cols: 4 }]} />
-      <Section rows={[{ cols: 2 }, { cols: 4 }, { cols: 4 }, { cols: 1 }]} />
-    </div>
-  );
-}
 
 /* ───── Stage 2 KYC shimmer — mimics the sub-tabs + toolbar + table
  * header strip so the swap to the real Stage2KYC after hydration is
@@ -3281,7 +3218,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 disabledHint="no document rule defined in the Document Control Panel yet"
                 renderBadges={(name) => {
                   const t = segTypesByName.get(name);
-                  if (!t || t.size === 0) return null;
+                  if (!t || t.size === 0) return <SegmentNameBadge name={name} style={{ marginLeft: 0 }} />;
                   const both = t.has('international') && t.has('domestic');
                   const badge = (text: string, title: string, color: string, bg: string, bd: string, onClick?: (e: React.MouseEvent) => void) => (
                     <span title={title} onClick={onClick} style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.02em', padding: '1px 6px', borderRadius: 10, whiteSpace: 'nowrap', color, background: bg, border: `1px solid ${bd}`, cursor: onClick ? 'pointer' : undefined }}>{text}</span>
@@ -3293,12 +3230,11 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                     // badges. Stop propagation so the click doesn't toggle the
                     // segment's checkbox.
                     return expandedSegBadges.has(name)
-                      ? <>{intl()}{dom()}</>
-                      : badge('+2', 'Has both International & Domestic — click to show', '#6d28d9', '#f5f3ff', '#ddd6fe',
-                          (e) => { e.stopPropagation(); toggleSegBadge(name); });
+                      ? <><SegmentNameBadge name={name} style={{ marginLeft: 0 }} />{intl()}{dom()}</>
+                      : <><SegmentNameBadge name={name} style={{ marginLeft: 0 }} />{badge('+2', 'Has both International & Domestic — click to show', '#6d28d9', '#f5f3ff', '#ddd6fe',
+                          (e) => { e.stopPropagation(); toggleSegBadge(name); })}</>;
                   }
-                  if (t.has('international')) return intl();
-                  return dom();
+                  return <><SegmentNameBadge name={name} style={{ marginLeft: 0 }} />{t.has('international') ? intl() : dom()}</>;
                 }}
                 maxChips={2}
               />
@@ -5345,16 +5281,16 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
  * Long values truncate with an ellipsis and surface the full text on
  * hover via the project-wide Tooltip — keeps the grid columns lined
  * up no matter how long an address or company name gets. */
-function ReadInline({ label, value, span }: { label: string; value?: string | null; span?: number }) {
+function ReadInline({ label, value, span, node: rich, tip }: { label: string; value?: string | null; span?: number; node?: React.ReactNode; tip?: React.ReactNode }) {
   const v = (value ?? '').toString().trim();
   const node = (
     <div className="acm-hs-inline" style={span ? { gridColumn: `span ${span}` } : undefined}>
       <span className="acm-hs-inline-lbl">{label} :</span>
-      <span className={`acm-hs-inline-val ${!v ? 'is-empty' : ''}`}>{v || '—'}</span>
+      <span className={`acm-hs-inline-val ${!v ? 'is-empty' : ''}`}>{v ? (rich ?? v) : '—'}</span>
     </div>
   );
   // Tooltip only when there's actual content to disambiguate.
-  return v ? <Tooltip label={`${label}: ${v}`}>{node}</Tooltip> : node;
+  return v ? <Tooltip label={tip ? <>{label}: {tip}</> : `${label}: ${v}`}>{node}</Tooltip> : node;
 }
 
 /* ───── Stage 1 read-only summary ─────
@@ -5372,7 +5308,7 @@ function HistoryStage1({ form, locations, customerId, segments = [] }: { form: a
         <ReadInline label="Customer Category"         value={form.coType} />
 
         <ReadInline label="Company Website"           value={form.coWeb} />
-        <ReadInline label="Customer Segment"          value={segDisplay(form.coSeg, segments)} />
+        <ReadInline label="Customer Segment"          value={segDisplay(form.coSeg, segments)} node={<SegmentNameList compact names={form.coSeg} codeOf={n => segments.find(s => s.name === n)?.code} />} tip={<SegmentNameList names={form.coSeg} codeOf={n => segments.find(s => s.name === n)?.code} />} />
         <ReadInline label="Classification"            value={form.coClass} />
         <ReadInline label="Risk Level"                value={form.coRisk} />
 
@@ -5475,17 +5411,6 @@ function TruncatedCell({ text, max = 28, mono = false }: { text: string; max?: n
 
 /* ───── Scoped CSS (root: .acm-root) ───── */
 const SCOPED_CSS = `
-.acm-root {
-  position: fixed; inset: 0; z-index: 10000;
-  display: flex; align-items: center; justify-content: center;
-  padding: 16px;
-  background: rgba(15, 23, 42, 0.55);
-  -webkit-backdrop-filter: blur(4px);
-          backdrop-filter: blur(4px);
-  font-family: var(--font-sans);
-  animation: acmFadeIn .25s ease;
-}
-@keyframes acmFadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes acm-cust-spin { to { transform: rotate(360deg); } }
 .acm-cust-spin { animation: acm-cust-spin .9s linear infinite; transform-origin: 50% 50%; }
 
@@ -5519,25 +5444,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-hydrate-strip { background: rgba(124,58,237,.10); border-color: rgba(167,139,250,.30); }
 [data-bs-theme="dark"] .acm-hydrate-strip-text { color: #c4b5fd; }
 
-.acm-root *, .acm-root *::before, .acm-root *::after { box-sizing: border-box; }
 
-.acm-card {
-  /* Stable card size: width caps at 1224 (≈85% of the prior 1440 cap,
-     matches what the form looked like at 85% browser zoom), height pins
-     at 92vh so the modal doesn't reflow each time the user switches
-     between Stage 1 sub-tabs. Clean white body (was a heavy lavender
-     wash that made everything look blurred together) with a defined
-     violet border. */
-  width: 100%; max-width: 1224px;
-  height: min(92vh, calc(100vh - 24px));
-  background: #ffffff;
-  border: 1px solid #d6c5ff;
-  border-radius: 20px;
-  box-shadow: 0 32px 80px -20px rgba(76,29,149,.40), 0 12px 30px rgba(15,5,40,.18);
-  overflow: hidden; display: flex; flex-direction: column;
-  position: relative;   /* positioning context for the saving lock overlay */
-  animation: acmSlideUp .35s cubic-bezier(.34,1.56,.64,1);
-}
 @keyframes acmSlideUp { from { opacity: 0; transform: translateY(24px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
 /* Saving lock — blankets the whole card so no field/step/button can be edited mid-save. */
@@ -5563,45 +5470,7 @@ const SCOPED_CSS = `
 
 /* Header — solid violet gradient banner. Bold brand color carries
    the modal identity; white text + glassy icon box on top. */
-.acm-header {
-  position: relative;
-  background: linear-gradient(
-135deg, #2e1065 0%, #4c1d95 30%, #6d28d9 65%, #7c3aed 100%);
-  padding: 18px 24px;
-  display: flex; align-items: center; justify-content: space-between;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-.acm-header::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    /* Three stacked layers:
-         1. white dot-grid texture (the polka-dot effect)
-         2 + 3. soft brand glows left/right for depth. */
-    background-image:
-      radial-gradient(rgba(255, 255, 255, .20) 1.1px, transparent 1.6px),
-      radial-gradient(circle at 15% 50%, rgba(167, 139, 250, .32) 0%, transparent 55%),
-      radial-gradient(ellipse at 85% 50%, rgba(139, 92, 246, .22) 0%, transparent 55%);
-    background-size: 18px 18px, auto, auto;
-    background-position: 0 0, 0 0, 0 0;
-}
  
-.acm-header-left { display: flex; align-items: center; gap: 14px; position: relative; z-index: 1; }
-.acm-header-icon {
-  width: 42px; height: 42px; border-radius: 12px;
-  background: rgba(255,255,255,0.18);
-  border: 1.5px solid rgba(255,255,255,0.30);
-  color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
-}
-.acm-title { font-size: 17px; font-weight: 800; color: #fff; letter-spacing: -.3px; line-height: 1.2; }
-.acm-subtitle { font-size: 12px; color: rgba(255,255,255,0.80); margin-top: 3px; }
 .acm-close {
   /* Square (rounded) to match the project-standard close button, not a circle
      (QA #32). */
@@ -5639,33 +5508,13 @@ const SCOPED_CSS = `
 }
 @keyframes acmSpin { to { transform: rotate(360deg); } }
 
-.acm-top-progress {
-  position: relative; height: 3px;
-  background: rgba(124,58,237,.10);
-  overflow: hidden; flex-shrink: 0;
-}
-.acm-top-progress > span {
-  position: absolute; top: 0; bottom: 0; left: 0; width: 30%;
-  background: linear-gradient(90deg, transparent, #7c3aed 30%, #a855f7 70%, transparent);
-  border-radius: 2px;
-  animation: acmTopSlide 1.1s cubic-bezier(.4,0,.2,1) infinite;
-}
-@keyframes acmTopSlide {
-  0%   { left: -35%; }
-  100% { left: 100%; }
-}
 
 /* Stepper */
-.acm-stepper { padding: 16px 22px 14px; display: flex; align-items: center; gap: 0; flex-shrink: 0; background: linear-gradient(110deg,#faf5ff 0%,#f0ebff 100%); }
-.acm-step-connector { flex: 0 0 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; z-index: 0; }
 .acm-connector-line { width: 100%; height: 3px; background: #e2e8f0; border-radius: 3px; position: relative; overflow: hidden; }
 .acm-connector-line::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #8b5cf6, #6d28d9); border-radius: 3px; transform: scaleX(0); transform-origin: left; transition: transform .5s cubic-bezier(.4,0,.2,1); }
 .acm-connector-line[data-done="1"]::after { transform: scaleX(1); }
-.acm-step { flex: 1; padding: 11px 14px; border-radius: 14px; display: flex; align-items: center; gap: 12px; position: relative; overflow: hidden; transition: all .25s; cursor: pointer; min-width: 0; }
-.acm-step-badge-wrap { position: relative; flex-shrink: 0; width: 40px; height: 40px; }
 .acm-step-badge { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; transition: all .25s; }
 .acm-step-num { position: absolute; bottom: -4px; right: -4px; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 900; border: 2px solid #fff; line-height: 1; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
-.acm-step-text { min-width: 0; flex: 1; }
 .acm-step-title { font-size: 12px; font-weight: 800; letter-spacing: -.2px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .acm-step-sub { font-size: 9.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .acm-step-active {     background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%);
@@ -5687,21 +5536,18 @@ const SCOPED_CSS = `
 .acm-step-incomplete .acm-step-num { background: #94a3b8; color: #fff; }
 .acm-step-incomplete .acm-step-title { color: #475569; }
 .acm-step-incomplete .acm-step-sub { color: #94a3b8; }
-.acm-step-pending { background: #f8fafc; border: 1.5px solid #e2e8f0; cursor: not-allowed; opacity: .75; }
 .acm-step-pending .acm-step-badge { background: linear-gradient(135deg, #f1f5f9, #e2e8f0); color: #94a3b8; border: 1px solid #e2e8f0; }
 .acm-step-pending .acm-step-num { background: #e2e8f0; color: #94a3b8; }
 .acm-step-pending .acm-step-title { color: #94a3b8; font-weight: 700; }
 .acm-step-pending .acm-step-sub { color: #cbd5e1; }
 
 /* Tabs */
-.acm-tabs { padding: 14px 22px 14px; display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; background: linear-gradient(110deg,#faf5ff 0%,#f0ebff 100%); border-bottom: 1px solid #ede9fe; }
 .acm-tab { padding: 7px 18px; border-radius: 10px; border: 1.5px solid transparent; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .2s; white-space: nowrap; }
 .acm-tab-on { background: linear-gradient(135deg,#7c3aed,#6d28d9); color: #fff; border-color: #7c3aed; box-shadow: 0 3px 10px rgba(109,40,217,.35); }
 .acm-tab-off { background: #fff; color: #6d28d9; border-color: #c4b5fd; }
 .acm-tab-off:hover { background: #ede9fe; border-color: #7c3aed; }
 
 /* Body */
-.acm-body { flex: 1; overflow-y: auto; padding: 16px 22px 20px; background: #fff; scrollbar-width: thin; scrollbar-color: #a78bfa #ede9fe; display: flex; flex-direction: column; }
 /* KYC stage (DD / Owner KYC / Trade Licence) — stretch the table card to fill
    the modal's fixed height so the pager pins to the bottom instead of floating
    with a big empty gap under a short list. Scoped so Stage 1 is untouched. */
@@ -5730,26 +5576,14 @@ const SCOPED_CSS = `
 .acm-body::-webkit-scrollbar-thumb { background: #a78bfa; border-radius: 10px; }
 
 /* Section card */
-.acm-section { background: #fff; border: 1.5px solid #e0d9f7; border-radius: 14px; margin-bottom: 16px; overflow: hidden; box-shadow: 0 2px 12px rgba(109,40,217,.06); }
-.acm-section:last-child { margin-bottom: 0; }
-.acm-section-purple { border-top: 3px solid #7c3aed; }
-.acm-section-head { padding: 11px 16px; background: linear-gradient(110deg,#faf5ff 0%,#f0ebff 100%); display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #ede9fe; }
 .acm-section-icon { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: linear-gradient(135deg,#ede9fe,#ddd6fe); color: #7c3aed; border: 1px solid #c4b5fd; }
 .acm-section-title { font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #5b21b6; }
 .acm-section-sub { font-size: 11px; color: #9ca3af; font-weight: 500; display: inline-block; margin-left: 6px; }
-.acm-section-body { padding: 16px; }
 .acm-section-body-table { padding: 0 !important; }
 .acm-section-head-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%; }
 .acm-section-head-row > div:nth-child(2) { flex: 1; min-width: 0; }
 
 /* Forms */
-.acm-row { display: grid; gap: 14px; margin-bottom: 14px; }
-.acm-row:last-child { margin-bottom: 0; }
-.acm-row-2 { grid-template-columns: 1fr 2fr; }
-.acm-row-3 { grid-template-columns: repeat(3, 1fr); }
-.acm-row-4 { grid-template-columns: repeat(4, 1fr); }
-.acm-row-1 { grid-template-columns: 1fr; }
-.acm-field { display: flex; flex-direction: column; min-width: 0; }
 .acm-field label { font-size: 10px; font-weight: 800; letter-spacing: .09em; color: #6b7280; text-transform: uppercase; margin-bottom: 5px; }
 .acm-req { color: #ef4444; font-weight: 700; }
 .acm-field input, .acm-field select, .acm-field textarea {

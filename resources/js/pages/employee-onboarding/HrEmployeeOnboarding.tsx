@@ -5522,9 +5522,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                             structure — payroll runs read these figures.
                           </p>
                           <ul style={{ fontSize: 11, color: '#6b7280', lineHeight: 1.7, paddingLeft: 16, marginBottom: 10 }}>
-                            <li><strong>Basic Salary</strong> — 50% of the monthly gross (statutory minimum, Code on Wages 2019; you can adjust the components below).</li>
-                            <li><strong>House Rent Allowance (HRA)</strong> — 30% of the monthly gross.</li>
-                            <li><strong>Special Allowance</strong> — the remaining balance after Basic + HRA and any component you add, so the gross stays on the CTC.</li>
+                            <li><strong>Basic Salary</strong> — the whole monthly gross by default; any allowance you add is taken out of it (must stay at least 50%, Code on Wages 2019).</li>
+                            <li><strong>Allowances (HRA, Special…)</strong> — added by you. Special Allowance, when present, carries the balance so the gross stays on the CTC.</li>
                             <li><strong>PF Deduction</strong> — 12% of basic; capped at <strong>₹15,000</strong> for <strong>Statutory</strong>, or on the <strong>full basic</strong> for <strong>Standard</strong> (set by <em>PF Type</em> above).</li>
                           </ul>
                           <div className="d-flex align-items-center gap-3 flex-wrap mb-3">

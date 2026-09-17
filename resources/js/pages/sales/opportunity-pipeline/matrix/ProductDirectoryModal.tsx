@@ -874,7 +874,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                       // is the numeric id, so matching/saving is unaffected.
                       label: `${formatProductCode(p.product_code)} · ${p.name}`,
                       badge: { text: active ? 'Active' : 'Inactive', tone: active ? 'green' as const : 'red' as const },
-                      badges: seg ? [{ text: segmentLabel(seg, p.segment?.regulatory_status), tone: 'violet' as const }] : undefined,
+                      badges: seg ? [{ text: seg, tone: 'violet' as const, title: segmentLabel(seg, p.segment?.regulatory_status), reg: p.segment?.regulatory_status ?? null }] : undefined,
                       disabled: offSegment,
                       disabledReason: offSegment
                         ? `Not in the customer's segment (${(customerSegments ?? []).join(', ')}) — this product belongs to “${seg}”.`

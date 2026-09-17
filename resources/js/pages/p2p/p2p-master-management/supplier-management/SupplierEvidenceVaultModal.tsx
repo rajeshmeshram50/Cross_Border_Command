@@ -1,4 +1,5 @@
 import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import SegmentBadge from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 
 import type JSZipType from 'jszip';
@@ -121,6 +122,8 @@ export interface SupplierVaultTarget {
   segment?: string;
 
   segments?: string[];
+  /** Name + regulatory status, for the Reg-High / Reg-Low badge on the chips. */
+  segmentItems?: { name: string; reg?: string | null }[];
   country?: string;
 
   type?: string;
@@ -364,6 +367,9 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   const [group, setGroup] = useState<GroupKey>('standard');
 
   const [segPop, setSegPop] = useState<{ names: string[]; x: number; y: number } | null>(null);
+  // "Sugar · Reg-High" label → its badge status, so chips show name + SegmentBadge.
+  const regOf = (label: string) => supplier?.segmentItems?.find(it => label === it.name || label.startsWith(`${it.name} · `))?.reg;
+  const nameOf = (label: string) => supplier?.segmentItems?.find(it => label === it.name || label.startsWith(`${it.name} · `))?.name ?? label;
 
   const [overview, setOverview] = useState<GroupKey | null>(null);
   const [overviewPage, setOverviewPage] = useState(1);
@@ -795,7 +801,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                       {supplier.customerId && <span className="cev-chip cev-chip-link">↳ {supplier.customerId}</span>}
                       {chipSegs.map((s, i) => (
                         <Tooltip key={`${s}-${i}`} label={s}>
-                          <span className="cev-chip cev-chip-seg">{s.length > 22 ? s.slice(0, 22) + '…' : s}</span>
+                          <span className="cev-chip cev-chip-seg" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{nameOf(s).length > 22 ? nameOf(s).slice(0, 22) + '…' : nameOf(s)}<SegmentBadge status={regOf(s)} /></span>
                         </Tooltip>
                       ))}
                       {segRest > 0 && (
@@ -1288,12 +1294,12 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
       {segPop && createPortal(
         <>
           <div onClick={() => setSegPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 13000 }} />
-          <div className="cev-seg-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 250), top: segPop.y, zIndex: 13001, width: 232, maxHeight: 320, overflowY: 'auto' }}>
+          <div className="cev-seg-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 298), top: segPop.y, zIndex: 13001, width: 280, maxHeight: 320, overflowY: 'auto' }}>
             <div className="cev-seg-pop-title">Segments ({segPop.names.length})</div>
             {segPop.names.map((name, i) => (
               <div key={i} className={`cev-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
                 <Tooltip label={name}>
-                  <span className="cev-seg-pop-pill">{name.length > 20 ? name.slice(0, 20) + '…' : name}</span>
+                  <span className="cev-seg-pop-pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{nameOf(name).length > 20 ? nameOf(name).slice(0, 20) + '…' : nameOf(name)}<SegmentBadge status={regOf(name)} /></span>
                 </Tooltip>
               </div>
             ))}

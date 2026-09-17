@@ -1,4 +1,5 @@
-import type { CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
+import api from '../../api';
 
 export type RegulatoryStatus = 'highly' | 'less';
 
@@ -55,5 +56,77 @@ export default function SegmentBadge({ status, name, full = false, style }: Prop
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{name}</span>
       {badge}
     </span>
+  );
+}
+
+/* ── Name-based lookup, for records that store the segment NAME (customer, consignee) ── */
+
+let nameMapPromise: Promise<Map<string, string | null>> | null = null;
+let nameMapAt = 0;
+
+/** lower(name) → status across all the user's branches; a name with both Reg-High and Reg-Low defaults to Reg-High. */
+function loadNameMap(): Promise<Map<string, string | null>> {
+  if (nameMapPromise && Date.now() - nameMapAt < 5 * 60_000) return nameMapPromise;
+  nameMapAt = Date.now();
+  nameMapPromise = api.get<{ data?: { name?: string; regulatory_status?: string }[] }>('/clm/segments', { params: { branch_id: 0 } })
+    .then(res => {
+      const m = new Map<string, string | null>();
+      for (const s of res.data?.data ?? []) {
+        const k = (s.name ?? '').trim().toLowerCase();
+        if (!k || !isStatus(s.regulatory_status)) continue;
+        if (m.get(k) !== 'highly') m.set(k, s.regulatory_status);
+      }
+      return m;
+    })
+    .catch(() => { nameMapPromise = null; return new Map<string, string | null>(); });
+  return nameMapPromise;
+}
+
+export function useSegmentStatusByName(): (name?: string | null) => string | null {
+  const [map, setMap] = useState<Map<string, string | null> | null>(null);
+  useEffect(() => { let live = true; void loadNameMap().then(m => { if (live) setMap(m); }); return () => { live = false; }; }, []);
+  return (name) => map?.get((name ?? '').trim().toLowerCase()) ?? null;
+}
+
+/** Badge for a segment known only by name (Reg-High when the name has both). Renders nothing when unknown. */
+export function SegmentNameBadge({ name, style }: { name?: string | null; style?: CSSProperties }) {
+  const statusOf = useSegmentStatusByName();
+  return <SegmentBadge status={statusOf(name)} style={{ marginLeft: 5, flexShrink: 0, ...style }} />;
+}
+
+/** One-line "Sugar [Reg-High] +2": only the name truncates, so the badge and count stay visible. */
+export function SegmentBadgeLine({ label, status, more = 0 }: { label: string; status?: string | null; more?: number }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: '100%', minWidth: 0, verticalAlign: 'bottom' }}>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{label}</span>
+      <SegmentBadge status={status} style={{ flexShrink: 0 }} />
+      {more > 0 && <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, padding: '0 6px', borderRadius: 999, background: 'rgba(124,58,237,.1)' }}>+{more}</span>}
+    </span>
+  );
+}
+
+/** "S-001: Sugar [Reg-High], Rice [Reg-Low]" for a name list (array or comma string). */
+export function SegmentNameList({ names, codeOf, compact = false }: { names?: string | string[] | null; codeOf?: (name: string) => string | undefined; compact?: boolean }) {
+  const statusOf = useSegmentStatusByName();
+  const arr = Array.isArray(names) ? names : String(names ?? '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!arr.length) return <>—</>;
+  // One-line cells: truncate only the first name so its badge and the "+N" stay visible.
+  if (compact) {
+    const code = codeOf?.(arr[0]);
+    return <SegmentBadgeLine label={code ? `${code}: ${arr[0]}` : arr[0]} status={statusOf(arr[0])} more={arr.length - 1} />;
+  }
+  return (
+    <>
+      {arr.map((n, i) => {
+        const code = codeOf?.(n);
+        return (
+          <span key={`${n}-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 6 }}>
+            {code ? `${code}: ${n}` : n}
+            <SegmentBadge status={statusOf(n)} />
+            {i < arr.length - 1 ? ',' : ''}
+          </span>
+        );
+      })}
+    </>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { SegmentNameBadge } from '../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import { LFM_CSS } from '../opportunity-pipeline/LeadFilterModal';
@@ -439,6 +440,7 @@ export default function PartyFilterModal({ open, onClose, onApply, initial, rows
                       </span>
                       <span className="lfm-card-label">
                         <span className="lfm-card-name">{opt.label}</span>
+                        {active === 'segment' && <SegmentNameBadge name={opt.value} />}
                       </span>
                     </label>
                   );

@@ -1,4 +1,5 @@
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
 import './SalesCustomers.css';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -8,6 +9,7 @@ import { type EditCustomer } from './AddCustomerModal';
 import { type CustomerLite } from './CustomerConsigneesModal';
 import { type CustomerVaultTarget } from './CustomerEvidenceVaultModal';
 import { ShimmerTable } from '../../../../components/ui/Shimmer';
+import AddCustomerModalShimmer from './AddCustomerModalShimmer';
 import { useIsClipped } from '../../../../components/ui/DataTable';
 import api from '../../../../api';
 import TableContainer from '../../../../velzon/Components/Common/TableContainerReactTable';
@@ -39,7 +41,7 @@ function SegChip({ name }: { name: string }) {
   const ref = useRef<HTMLSpanElement>(null);
   const clipped = useIsClipped(ref, name);
   const chip = <span ref={ref} className="smc-seg">{name}</span>;
-  return clipped ? <Tooltip label={name}>{chip}</Tooltip> : chip;
+  return <>{clipped ? <Tooltip label={name}>{chip}</Tooltip> : chip}<SegmentNameBadge name={name} /></>;
 }
 
 type Customer = {
@@ -691,7 +693,7 @@ export default function SalesCustomers() {
       />
 
       {addOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<AddCustomerModalShimmer title={editing ? `Edit Customer — ${editing.company || editing.id}` : 'Add Customer'} />}>
           <AddCustomerModal
             open={addOpen}
             customer={editing}

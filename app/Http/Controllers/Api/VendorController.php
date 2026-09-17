@@ -413,6 +413,7 @@ class VendorController extends Controller
                 'product_name'     => $m->product?->name,
                 'hsn_sac_code'     => $m->product?->hsn?->hsn_code,
                 'segment'          => $m->product?->segment?->name,
+                'segment_regulatory_status' => $m->product?->segment?->regulatory_status,
                 'batch_serial_lot' => $m->batch_serial_lot,
                 'purchase_price'   => $m->purchase_price,
                 'gst_percentage'   => $m->gst_percentage,

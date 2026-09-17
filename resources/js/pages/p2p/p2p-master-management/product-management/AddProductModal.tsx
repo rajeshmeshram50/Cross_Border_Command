@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
-import { segmentLabel } from '../../../../components/ui/SegmentBadge';
+import { segmentLabel, SegmentBadgeLine } from '../../../../components/ui/SegmentBadge';
 import './product-management.css';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
@@ -852,7 +852,7 @@ export default function AddProductModal(props: {
 
     const hydrate = (b: Bundle) => {
       setOptSegments(toOpt(b.segments, 'title', ['regulatory_status' as keyof Row])
-        .map(o => ({ ...o, label: segmentLabel(o.label, o.extra?.regulatory_status as string) })));
+        .map(o => ({ ...o, label: segmentLabel(o.label, o.extra?.regulatory_status as string), extra: { ...o.extra, name: o.label } })));
       setOptHazClasses(toOpt(b.haz_class,                         'name'));
       setOptUoms(
         toOpt(b.uom, 'title', ['short_code', 'unit_type'])
@@ -900,7 +900,7 @@ export default function AddProductModal(props: {
     const labelOf = (key: string) => String(row[key] ?? '');
     switch (slug) {
       case 'segments':
-        setOptSegments(prev => [...prev, { value: id, label: segmentLabel(labelOf('title'), labelOf('regulatory_status')) }]);
+        setOptSegments(prev => [...prev, { value: id, label: segmentLabel(labelOf('title'), labelOf('regulatory_status')), extra: { name: labelOf('title'), regulatory_status: labelOf('regulatory_status') } }]);
         void requestSegmentChange(id);
         break;
       case 'haz_class':
@@ -1485,7 +1485,7 @@ export default function AddProductModal(props: {
                         { label: 'Product Name', value: name || '—' },
                         { label: 'Generic Name', value: genericName || '—' },
                         { label: 'HSN/SAC',      value: labelOf(optHsn, hsnId) },
-                        { label: 'Segment',      value: labelOf(optSegments, segmentId) },
+                        { label: 'Segment',      value: labelOf(optSegments, segmentId), node: (() => { const o = optSegments.find(x => x.value === segmentId); return o ? <SegmentBadgeLine label={String(o.extra?.name ?? o.label)} status={o.extra?.regulatory_status as string} /> : undefined; })() },
                         { label: 'Haz/Non-Haz',  value: hazType || '—' },
                         { label: 'UOM',          value: labelOf(optUoms, uomId) },
                       ],
@@ -1531,7 +1531,8 @@ export default function AddProductModal(props: {
                       <input className="apm-input apm-input-mf" placeholder="Make / Brand / Specifications" value={brand} onChange={e => { setBrand(e.target.value); clearFieldError('brand'); }} />
                     </Field>
                     <Field label="Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segmentId}>
-                      <SelectInput value={segmentId} onChange={(v) => { void requestSegmentChange(v); }} placeholder="Select" options={optSegments} disabled={segChecking} />
+                      <SelectInput value={segmentId} onChange={(v) => { void requestSegmentChange(v); }} placeholder="Select" disabled={segChecking}
+                        options={optSegments.map(o => ({ value: o.value, label: String(o.extra?.name ?? o.label), badges: [{ text: '', reg: o.extra?.regulatory_status as string }] }))} />
                     </Field>
                   </div>
 
@@ -1779,13 +1780,14 @@ export default function AddProductModal(props: {
                           <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select Supplier Name"
                             disabled={saving}
                             options={vendorOpts.map(v => {
-                              const segNames = (v.segmentIds ?? [])
-                                .map(id => labelOf(optSegments, String(id), ''))
-                                .filter(Boolean);
+                              const segOpts = (v.segmentIds ?? [])
+                                .map(id => optSegments.find(o => o.value === String(id)))
+                                .filter((o): o is MasterOpt => !!o);
+                              const segNames = segOpts.map(o => o.label);
                               const MAX_INLINE = 1;
                               const badges: OptBadge[] = segNames
                                 .slice(0, MAX_INLINE)
-                                .map(s => ({ text: s, tone: 'violet' as const }));
+                                .map((s, i) => ({ text: String(segOpts[i].extra?.name ?? s), tone: 'violet' as const, title: s, reg: segOpts[i].extra?.regulatory_status as string }));
                               if (segNames.length > MAX_INLINE) {
                                 const rest = segNames.slice(MAX_INLINE);
                                 badges.push({ text: `+${rest.length}`, tone: 'gray' as const, title: rest.join(', '), items: rest });
@@ -2444,7 +2446,7 @@ function Field(props: {
   );
 }
 
-type OptBadge = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string; items?: string[] };
+type OptBadge = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string; items?: string[]; reg?: string | null };
 
 type Opt = string | { value: string; label: string; badges?: OptBadge[] };
 
@@ -2620,7 +2622,7 @@ function UploadDropzone(props: {
 type PrevStage = {
   name: string;
   tone: 'violet' | 'amber' | 'green';
-  fields: { label: string; value: string }[];
+  fields: { label: string; value: string; node?: ReactNode }[];
   extras?: PrevStageExtra[];
 };
 
@@ -2670,7 +2672,7 @@ function PreviousStages(props: {
                         value (product / generic name) reads in full on hover
                         instead of relying on the browser's native title. */}
                     <Tooltip label={f.value} disabled={!f.value || f.value === '—'}>
-                      <span className="apm-prev-sumv">{f.value}</span>
+                      <span className="apm-prev-sumv">{f.node ?? f.value}</span>
                     </Tooltip>
                   </div>
                 ))}
