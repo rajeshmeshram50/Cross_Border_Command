@@ -147,11 +147,15 @@ class ClmAuthorityController extends Controller
         // (case-insensitive). A sibling branch that can't see this row may
         // reuse the name — consistent with branch-isolated masters.
         $name = trim($data['name']);
-        $dupe = ClmAuthority::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
+        // Unique on the name + description PAIR — same name with a different
+        // description is allowed.
+        $dupe = ClmAuthority::query()
+            ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)])
+            ->whereRaw('LOWER(TRIM(description)) = ?', [mb_strtolower(trim($data['description']))]);
         MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
         if ($dupe->exists()) {
             throw ValidationException::withMessages([
-                'name' => "An authority named \"{$name}\" already exists. Pick a different name.",
+                'name' => "An authority with this name and description already exists.",
             ]);
         }
 
@@ -183,15 +187,18 @@ class ClmAuthorityController extends Controller
         if (!$user) abort(401);
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context for this user'], 403);
 
-        $request->validate(['rows' => 'required|array|min:1|max:5000']);
+        $request->validate(['rows' => 'required|array|min:1|max:20000']);
+        @set_time_limit(300);
 
         $existing = ClmAuthority::query();
         MasterVisibility::applyReadScope($existing, $user, $user->branch_id ?: null);
         $seen = [];
-        foreach ($existing->pluck('name') as $n) $seen[mb_strtolower(trim((string) $n))] = true;
+        $key = fn ($n, $d) => mb_strtolower(trim((string) $n)) . " " . mb_strtolower(trim((string) $d));
+        foreach ($existing->get(['name', 'description']) as $e) $seen[$key($e->name, $e->description)] = true;
 
         $imported = [];
         $failed   = [];
+        $valid    = [];
 
         foreach (array_values($request->input('rows')) as $i => $r) {
             $rowNo = (int) (is_array($r) && isset($r['row']) ? $r['row'] : $i + 2);
@@ -203,28 +210,62 @@ class ClmAuthorityController extends Controller
             elseif ($desc === '')                    $reason = 'Description is required';
             elseif (mb_strlen($name) > 255)          $reason = 'Authority name exceeds 255 characters';
             elseif (mb_strlen($desc) > 500)          $reason = 'Description exceeds 500 characters';
-            elseif (isset($seen[mb_strtolower($name)])) $reason = "An authority named \"{$name}\" already exists";
+            elseif (isset($seen[$key($name, $desc)])) $reason = 'An authority with this name and description already exists';
 
             if ($reason) {
                 $failed[] = ['row' => $rowNo, 'name' => $name, 'description' => $desc, 'reason' => $reason];
                 continue;
             }
 
+            $seen[$key($name, $desc)] = true;
+            $valid[] = ['row' => $rowNo, 'name' => $name, 'description' => $desc];
+        }
+
+        if ($valid) {
             try {
-                $row = DB::transaction(fn () => ClmAuthority::create([
-                    'client_id'   => $user->client_id,
-                    'branch_id'   => $user->branch_id,
-                    'code'        => $this->nextCode($user->client_id, $user->branch_id),
-                    'name'        => $name,
-                    'description' => $desc,
-                    'status'      => ClmAuthority::STATUS_ACTIVE,
-                    'created_by'  => $user->id,
-                    'updated_by'  => $user->id,
-                ]));
-                $seen[mb_strtolower($name)] = true;
-                $imported[] = ['row' => $rowNo, 'code' => $row->code, 'name' => $name, 'description' => $desc];
+                /* Bulk path: codes are allocated ONCE under the same client row
+                   lock nextCode() uses, then rows go in 500 at a time. Calling
+                   nextCode() per row re-reads every code each time — O(n²),
+                   which times out on a 10,000-row sheet. */
+                DB::transaction(function () use ($user, $valid, &$imported) {
+                    DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
+                    $q = ClmAuthority::where('client_id', $user->client_id);
+                    $user->branch_id ? $q->where('branch_id', $user->branch_id) : $q->whereNull('branch_id');
+                    $maxN = 0; $taken = [];
+                    foreach ($q->pluck('code') as $c) {
+                        if (preg_match('/^AUTH-(\d+)$/', (string) $c, $m) && (int) $m[1] > $maxN) $maxN = (int) $m[1];
+                        $taken[(string) $c] = true;
+                    }
+
+                    $now = now();
+                    $n = $maxN;
+                    foreach (array_chunk($valid, 500) as $chunk) {
+                        $insert = [];
+                        foreach ($chunk as $v) {
+                            do { $n++; $code = sprintf('AUTH-%03d', $n); } while (isset($taken[$code]));
+                            $insert[] = [
+                                'client_id'   => $user->client_id,
+                                'branch_id'   => $user->branch_id,
+                                'code'        => $code,
+                                'name'        => $v['name'],
+                                'description' => $v['description'],
+                                'status'      => ClmAuthority::STATUS_ACTIVE,
+                                'created_by'  => $user->id,
+                                'updated_by'  => $user->id,
+                                'created_at'  => $now,
+                                'updated_at'  => $now,
+                            ];
+                            $imported[] = ['row' => $v['row'], 'code' => $code, 'name' => $v['name'], 'description' => $v['description']];
+                        }
+                        ClmAuthority::insert($insert);
+                    }
+                });
             } catch (\Throwable $e) {
-                $failed[] = ['row' => $rowNo, 'name' => $name, 'description' => $desc, 'reason' => 'Could not save this row'];
+                report($e);
+                $imported = [];
+                foreach ($valid as $v) {
+                    $failed[] = $v + ['reason' => 'Could not save — import rolled back'];
+                }
             }
         }
 
@@ -257,14 +298,17 @@ class ClmAuthorityController extends Controller
 
         // Reject rename to a duplicate within the caller's branch scope
         // (case-insensitive, excluding self).
-        if (isset($data['name'])) {
+        if (isset($data['name']) || isset($data['description'])) {
+            $newName = $data['name'] ?? (string) $row->name;
+            $newDesc = $data['description'] ?? (string) $row->description;
             $clash = ClmAuthority::query()->where('id', '!=', $row->id)
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])]);
+                ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($newName))])
+                ->whereRaw('LOWER(TRIM(description)) = ?', [mb_strtolower(trim($newDesc))]);
             MasterVisibility::applyReadScope($clash, $user, $user->branch_id ?: null);
             $clash = $clash->exists();
             if ($clash) {
                 throw ValidationException::withMessages([
-                    'name' => "Another authority named \"{$data['name']}\" already exists. Pick a different name.",
+                    'name' => "Another authority with this name and description already exists.",
                 ]);
             }
         }
