@@ -553,7 +553,7 @@
   background:rgba(139,92,246,.16);border-color:rgba(167,139,250,.34);color:#ddd6fe;
 }
 .sup-fig .sl-seg{font-weight:600;color:#475569;}
-.sup-fig .sl-seg-wrap{display:inline-flex;align-items:center;gap:4px;max-width:166px;min-width:0;}
+.sup-fig .sl-seg-wrap{display:inline-flex;align-items:center;gap:4px;max-width:230px;min-width:0;} /* +64px for the Reg badge */
 .sup-fig .sl-seg-more{flex:none;font-family:inherit;font-size:10px;font-weight:800;color:#7c3aed;background:#f1eafe;border:1px solid #ddd0f7;border-radius:999px;padding:2px 7px;cursor:pointer;line-height:1;transition:all .15s;}
 .sup-fig .sl-seg-more:hover{background:#e6d9fb;transform:translateY(-1px);}
 /* Segment "+N" anchored popover — small white card at the badge (mirrors the
@@ -565,6 +565,8 @@
 .sup-fig .sl-seg-pop-list::-webkit-scrollbar{width:7px;}
 .sup-fig .sl-seg-pop-list::-webkit-scrollbar-thumb{background:rgba(124,58,237,.32);border-radius:99px;}
 .sup-fig .sl-seg-pop-row{display:flex;align-items:center;padding:6px 8px;border-radius:8px;}
+.sup-fig .sl-seg-pop-row{gap:8px;}
+.sup-fig .sl-seg-pop-row .sl-seg-pop-name{display:inline-block;max-width:170px !important;overflow:hidden;text-overflow:ellipsis;min-width:0;}
 .sup-fig .sl-seg-pop-row.alt{background:#f7f4ff;}
 .sup-fig .sl-seg-pop-row .sl-seg{max-width:none;font-size:11px;font-weight:600;color:#5b21b6;background:#f3eeff;border:1px solid #ddd6fe;border-radius:20px;padding:3px 10px;white-space:nowrap;}
 [data-bs-theme="dark"] .sup-fig .sl-seg-pop{background:#1c1438;border-color:rgba(124,58,237,.4);box-shadow:0 16px 40px rgba(0,0,0,.5);}

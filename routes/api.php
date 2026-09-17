@@ -273,6 +273,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     Route::get   ('/clm/authorities',      [ClmAuthorityController::class, 'index']);
     Route::post  ('/clm/authorities',      [ClmAuthorityController::class, 'store']);
+    Route::post  ('/clm/authorities/import', [ClmAuthorityController::class, 'import']);
     Route::put   ('/clm/authorities/{id}', [ClmAuthorityController::class, 'update']);
     Route::delete('/clm/authorities/{id}', [ClmAuthorityController::class, 'destroy']);
 

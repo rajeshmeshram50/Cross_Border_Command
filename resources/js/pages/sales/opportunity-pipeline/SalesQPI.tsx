@@ -4954,7 +4954,7 @@ function ProductsStep(props: {
       // Short cap so the badge stays compact and the product code+name keeps the
       // row — full segment name is on the badge's hover title.
       const short = seg.length > 14 ? `${seg.slice(0, 14)}…` : seg;
-      const reg = prodRow?.segmentReg === 'highly' ? ' · High' : prodRow?.segmentReg === 'less' ? ' · Less' : '';
+      const reg = prodRow?.segmentReg === 'highly' ? ' · Reg-High' : prodRow?.segmentReg === 'less' ? ' · Reg-Low' : '';
       const badge = { text: short + reg, tone: 'violet' as const, title: segmentLabel(seg, prodRow?.segmentReg) };
       const offSegment = segmentSet.size > 0 && !segmentSet.has(seg.toLowerCase());
       return offSegment
