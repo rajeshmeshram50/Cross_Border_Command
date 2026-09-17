@@ -180,6 +180,7 @@ type OrderRow = {
   paymentRequests: number;
   paymentNote?: PaymentNote;
   cancelled?: boolean;
+  cancelReason?: string;
 };
 
 const PO_TYPE: Record<PoType, { label: string; icon: ReactNode }> = {
@@ -402,6 +403,87 @@ const SAMPLE_ROWS: OrderRow[] = [
     zohoSynced: false, inspectionDone: false, paymentRequests: 1,
     paymentNote: { kind: 'ready', amount: 69400 },
   },
+  {
+    po: 'PO/2025-26/005', poDate: '2026-06-02', physicalInspection: false,
+    type: 'services', docType: 'Domestics',
+    shipment: null, shipmentDate: '',
+    opportunity: 'OPP-008', opportunityDate: '2026-04-23',
+    procurement: 'PROC-011', procurementDate: '2026-05-08',
+    supplier: 'Larsen & Toubro', supplierCategory: 'star',
+    risk: 'low',
+    expectedDelivery: '2026-07-01',
+    total: 135000, net: 132300, paid: 66200, balance: 66100,
+    invoices: [
+      {
+        spi: 'SPI/2025-26/016', spiDate: '2026-06-09',
+        amount: 132300, paid: 66200, due: 66100, status: 'partial',
+        grn: 'GRN-016', grnDate: '2026-06-13',
+        qa: 'QA-016', qaDate: '2026-06-15',
+      },
+    ],
+    zohoSynced: true, inspectionDone: false, paymentRequests: 1,
+    cancelled: true, cancelReason: 'Budget not approved for this quarter',
+  },
+  {
+    po: 'PO/2025-26/009', poDate: '2026-06-21', physicalInspection: true,
+    type: 'materials', docType: 'Domestics',
+    shipment: 'SHP-025', shipmentDate: '2026-06-09',
+    opportunity: 'OPP-013', opportunityDate: '2026-05-12',
+    procurement: 'PROC-018', procurementDate: '2026-05-27',
+    supplier: 'JSW Steel', supplierCategory: 'regular',
+    risk: 'medium',
+    expectedDelivery: '2026-07-15',
+    total: 270500, net: 270500, paid: 0, balance: 270500,
+    invoices: [
+      {
+        spi: 'SPI/2025-26/028', spiDate: '2026-06-28',
+        amount: 135300, paid: 0, due: 135300, status: 'pending',
+        grn: 'GRN-028', grnDate: '2026-07-02',
+        qa: 'QA-028', qaDate: '2026-07-04',
+      },
+      {
+        spi: 'SPI/2025-26/029', spiDate: '2026-07-07',
+        amount: 135200, paid: 0, due: 135200, status: 'pending',
+        grn: 'GRN-029', grnDate: '2026-07-11',
+        qa: 'QA-029', qaDate: '2026-07-13',
+      },
+    ],
+    zohoSynced: false, inspectionDone: false, paymentRequests: 0,
+    cancelled: true, cancelReason: 'Supplier unable to meet delivery timeline',
+  },
+  {
+    po: 'PO/2025-26/020', poDate: '2026-05-21', physicalInspection: false,
+    type: 'materials', docType: 'Domestics',
+    shipment: null, shipmentDate: '',
+    opportunity: 'OPP-026', opportunityDate: '2026-04-11',
+    procurement: 'PROC-036', procurementDate: '2026-04-26',
+    supplier: 'Godrej Industries', supplierCategory: 'regular',
+    risk: 'low',
+    expectedDelivery: '2026-06-27',
+    total: 277500, net: 263600, paid: 263600, balance: 0,
+    invoices: [
+      {
+        spi: 'SPI/2025-26/061', spiDate: '2026-05-28',
+        amount: 87900, paid: 87900, due: 0, status: 'full',
+        grn: 'GRN-061', grnDate: '2026-06-01',
+        qa: 'QA-061', qaDate: '2026-06-03',
+      },
+      {
+        spi: 'SPI/2025-26/062', spiDate: '2026-06-06',
+        amount: 87900, paid: 87900, due: 0, status: 'full',
+        grn: 'GRN-062', grnDate: '2026-06-10',
+        qa: 'QA-062', qaDate: '2026-06-12',
+      },
+      {
+        spi: 'SPI/2025-26/063', spiDate: '2026-06-15',
+        amount: 87800, paid: 87800, due: 0, status: 'full',
+        grn: 'GRN-063', grnDate: '2026-06-19',
+        qa: 'QA-063', qaDate: '2026-06-21',
+      },
+    ],
+    zohoSynced: true, inspectionDone: false, paymentRequests: 1,
+    cancelled: true, cancelReason: 'Supplier pricing revised beyond approved limit',
+  },
 ];
 
 const PAYMENT_LABEL: Record<PaymentStatus, string> = {
@@ -539,7 +621,8 @@ const ICON_VAULT = (
   </svg>
 );
 
-function ZohoCell({ synced }: { synced: boolean }) {
+// Cancelled POs are read-only: their action buttons render disabled.
+function ZohoCell({ synced, cancelled = false }: { synced: boolean; cancelled?: boolean }) {
   if (synced) {
     return (
       <div className="ord-statcell">
@@ -550,12 +633,12 @@ function ZohoCell({ synced }: { synced: boolean }) {
   return (
     <div className="ord-statcell">
       <span className="ord-status ord-status--bad"><span className="ord-status__dot" />Not Sync</span>
-      <button type="button" className="ord-btn ord-btn--zoho">{ICON_SYNC}<span>Zoho Sync</span></button>
+      <button type="button" className="ord-btn ord-btn--zoho" disabled={cancelled}>{ICON_SYNC}<span>Zoho Sync</span></button>
     </div>
   );
 }
 
-function InspectionCell({ required, done }: { required: boolean; done: boolean }) {
+function InspectionCell({ required, done, cancelled = false }: { required: boolean; done: boolean; cancelled?: boolean }) {
   if (!required) {
     return (
       <div className="ord-statcell">
@@ -568,7 +651,7 @@ function InspectionCell({ required, done }: { required: boolean; done: boolean }
       {done
         ? <span className="ord-status ord-status--ok"><span className="ord-status__dot" />Completed</span>
         : <span className="ord-status ord-status--bad"><span className="ord-status__dot" />Pending</span>}
-      <button type="button" className={`ord-btn ord-btn--insp${done ? ' is-done' : ''}`}>
+      <button type="button" className={`ord-btn ord-btn--insp${done ? ' is-done' : ''}`} disabled={cancelled}>
         {done ? ICON_TICK : ICON_EYE}
         <span>{done ? 'Inspection Done' : 'Physical Inspection'}</span>
       </button>
@@ -618,7 +701,7 @@ function PaymentCell({ row }: { row: OrderRow }) {
         )}
       </div>
 
-      <button type="button" className={`ord-btn ord-btn--hist${done ? ' is-record' : ''}`}>
+      <button type="button" className={`ord-btn ord-btn--hist${done ? ' is-record' : ''}`} disabled={!!row.cancelled}>
         {done ? ICON_EYE : ICON_HISTORY}
         <span>{done ? 'View Request Details' : 'Manage Payment Requests'}</span>
 
@@ -630,14 +713,31 @@ function PaymentCell({ row }: { row: OrderRow }) {
   );
 }
 
-function ActionCell() {
+function ActionCell({ cancelled = false, cancelReason }: { cancelled?: boolean; cancelReason?: string }) {
   return (
     <div className="ord-actions">
-      <button type="button" className="ord-btn ord-btn--cancel">{ICON_CANCEL}<span>Cancel PO</span></button>
-      <button type="button" className="ord-btn ord-btn--edit">{ICON_EDIT}<span>Edit PO</span></button>
+      {cancelled ? (
+        <button type="button" className="ord-btn ord-btn--cancel is-cancelled" disabled title={cancelReason || 'This PO has been cancelled'}>
+          {ICON_CANCEL}<span>Cancelled</span>
+        </button>
+      ) : (
+        <button type="button" className="ord-btn ord-btn--cancel" title="Cancel this Purchase Order">{ICON_CANCEL}<span>Cancel PO</span></button>
+      )}
+      <button type="button" className="ord-btn ord-btn--edit" disabled={cancelled}>{ICON_EDIT}<span>Edit PO</span></button>
       <button type="button" className="ord-btn ord-btn--vault">{ICON_VAULT}<span>Evidence Vault</span></button>
     </div>
   );
+}
+
+const ICON_X_SM = (
+  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
+// Red "Cancelled" chip under the PO number; hover shows the reason.
+function CancelBadge({ reason }: { reason?: string }) {
+  return <span className="ord-cancelbadge" title={reason}>{ICON_X_SM}Cancelled</span>;
 }
 
 function inTab(row: OrderRow, tab: TabKey): boolean {
@@ -684,7 +784,7 @@ function OrderCard({ row, index }: { row: OrderRow; index: number }) {
   const count = row.invoices.length;
 
   return (
-    <article className="ord-card">
+    <article className={`ord-card${row.cancelled ? ' ord-card--cancelled' : ''}`}>
 
       <div className="ord-card__head">
         <span className="ord-srnum">{index + 1}</span>
@@ -703,6 +803,7 @@ function OrderCard({ row, index }: { row: OrderRow; index: number }) {
         {row.physicalInspection && (
           <span className="ord-badge ord-badge--red ord-physinsp">{ICON_WARN}Physical Inspection</span>
         )}
+        {row.cancelled && <CancelBadge reason={row.cancelReason} />}
       </div>
 
       <div className="ord-card__split">
@@ -768,11 +869,11 @@ function OrderCard({ row, index }: { row: OrderRow; index: number }) {
       <div className="ord-card__status">
         <div className="ord-card__block">
           <span className="ord-card__label">Zohobook Status</span>
-          <ZohoCell synced={row.zohoSynced} />
+          <ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} />
         </div>
         <div className="ord-card__block">
           <span className="ord-card__label">Physical Inspection</span>
-          <InspectionCell required={row.physicalInspection} done={row.inspectionDone} />
+          <InspectionCell required={row.physicalInspection} done={row.inspectionDone} cancelled={row.cancelled} />
         </div>
       </div>
 
@@ -781,7 +882,7 @@ function OrderCard({ row, index }: { row: OrderRow; index: number }) {
         <PaymentCell row={row} />
       </div>
 
-      <ActionCell />
+      <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} />
     </article>
   );
 }
@@ -1055,7 +1156,7 @@ export default function Order() {
               const span = lines.length;
 
               return (
-                <tbody key={row.po}>
+                <tbody key={row.po} className={row.cancelled ? 'ord-po--cancelled' : undefined}>
                   {lines.map((line, lineIndex) => {
                     const isFirst = lineIndex === 0;
                     const isLast = lineIndex === span - 1;
@@ -1075,6 +1176,7 @@ export default function Order() {
                               {row.physicalInspection && (
                                 <span className="ord-badge ord-badge--red ord-physinsp">{ICON_WARN}Physical Inspection</span>
                               )}
+                              {row.cancelled && <CancelBadge reason={row.cancelReason} />}
                             </PoCell>
 
                             <PoCell span={span}>
@@ -1138,12 +1240,12 @@ export default function Order() {
 
                         {isFirst && (
                           <>
-                            <PoCell span={span}><ZohoCell synced={row.zohoSynced} /></PoCell>
+                            <PoCell span={span}><ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} /></PoCell>
                             <PoCell span={span}>
-                              <InspectionCell required={row.physicalInspection} done={row.inspectionDone} />
+                              <InspectionCell required={row.physicalInspection} done={row.inspectionDone} cancelled={row.cancelled} />
                             </PoCell>
                             <PoCell span={span}><PaymentCell row={row} /></PoCell>
-                            <PoCell span={span}><ActionCell /></PoCell>
+                            <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} /></PoCell>
                           </>
                         )}
                       </tr>
@@ -2093,7 +2195,7 @@ const ORDER_CSS = `
   width: 12px;
   height: 12px;
 }
-.ord-btn:hover {
+.ord-btn:hover:not(:disabled) {
   filter: brightness(1.08);
   transform: translateY(-1px);
   box-shadow: 0 5px 13px -3px rgba(12, 74, 110, .5), inset 0 1px 0 rgba(255, 255, 255, .22);
@@ -2295,6 +2397,53 @@ const ORDER_CSS = `
   color: #a8bcc7;
 }
 
+/* Cancelled PO */
+.ord-cancelbadge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  margin: 5px auto 0;
+  padding: 2px 8px;
+  border: 1px solid #fecaca;
+  border-radius: 20px;
+  background: #fee2e2;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #b91c1c;
+  cursor: help;
+}
+.ord-cancelbadge svg { flex-shrink: 0; }
+.ord-card__tags .ord-cancelbadge { margin: 0; }
+
+/* Written after the zebra/hover rules so the pink tint wins. */
+.ord-table tbody.ord-po--cancelled td { background: #fef4f4; }
+.ord-table tbody.ord-po--cancelled tr:hover td { background: #fdeaea; }
+.ord-po--cancelled .ord-idpill { opacity: .72; }
+.ord-po--cancelled .ord-doc__card { opacity: .6; }
+/* Extra classes: must beat .ord-card and .ord-card:nth-child(even), which come later. */
+.ord-cards .ord-card.ord-card--cancelled { background: #fef4f4; border-left-color: #ef4444; }
+[data-bs-theme="dark"] .ord-cards .ord-card.ord-card--cancelled { background: #2a1e28; }
+.ord-card--cancelled .ord-idpill { opacity: .72; }
+.ord-card--cancelled .ord-card__invoice { opacity: .6; }
+
+.ord-btn:disabled {
+  cursor: not-allowed;
+  opacity: .72;
+  filter: none;
+  transform: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12);
+}
+.ord-btn--cancel.is-cancelled {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, .20), rgba(255, 255, 255, 0) 54%),
+    linear-gradient(90deg, #6f8593, #93a8b5 52%, #b9c9d3);
+  box-shadow: none;
+}
+
 /* Dark mode (CLM Segment Master look) */
 [data-bs-theme="dark"] .ord-page { color: #e2e8f0; }
 
@@ -2483,6 +2632,11 @@ const ORDER_CSS = `
 [data-bs-theme="dark"] .ord-paynote--waiting { color: #fcd34d; background: rgba(245, 158, 11, .14); border-color: rgba(245, 158, 11, .35); }
 
 [data-bs-theme="dark"] .ord-dash { color: #475569; }
+
+/* Dark cancelled rows: after the dark zebra/hover rules so the tint wins. */
+[data-bs-theme="dark"] .ord-cancelbadge { color: #fca5a5; background: rgba(239, 68, 68, .14); border-color: rgba(239, 68, 68, .40); }
+[data-bs-theme="dark"] .ord-table tbody.ord-po--cancelled td { background: rgba(239, 68, 68, .07); }
+[data-bs-theme="dark"] .ord-table tbody.ord-po--cancelled tr:hover td { background: rgba(239, 68, 68, .13); }
 
 .ord-empty {
   flex: 1 1 auto;
