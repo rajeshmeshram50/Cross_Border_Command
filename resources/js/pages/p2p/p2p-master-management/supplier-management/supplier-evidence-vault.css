@@ -3812,6 +3812,14 @@
   text-align: center;
 }
 
+/* Same story for the standard list now that it carries Issued Date and
+   Expired At: the base rule centres children 1 / 3 / 4, which would leave
+   Status and Action left-aligned. Everything after the name is centred. */
+.sev-ov .cev-ov-table.sev-ov-std thead th:nth-child(n+3),
+.sev-ov .cev-ov-table.sev-ov-std tbody td:nth-child(n+3) {
+  text-align: center;
+}
+
 .sev-ov .cev-ov-table.sev-ov-c2c input[type="checkbox"] {
   width: 13px;
   height: 13px;

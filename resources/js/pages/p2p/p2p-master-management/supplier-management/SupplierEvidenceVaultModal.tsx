@@ -660,7 +660,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     }
   };
 
-  const submitOvUpload = async (f: File, expiryDate?: string) => {
+  const submitOvUpload = async (f: File, expiryDate?: string, issueDate?: string) => {
     if (!ovUpload || !supplier?.db_id || !ovUpload.doc.doc_code) return;
     if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) {
       toast.error('Unsupported file type', 'Only PDF, JPG or PNG files are allowed. Word / Excel files are not supported.');
@@ -671,6 +671,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
       fd.append('category', ovUpload.category);
       fd.append('doc_code', ovUpload.doc.doc_code);
       fd.append('doc_name', ovUpload.doc.name || ovUpload.doc.doc_code);
+      if (issueDate) fd.append('issue_date', issueDate);
       if (expiryDate) fd.append('expiry_date', expiryDate);
       fd.append('attachment', f);
       await api.post(`/segment-uploads/supplier/${supplier.db_id}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
@@ -1204,11 +1205,13 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                 </div>
               ) : (
                 <div className="cev-ov-body">
-                  <table className="cev-ov-table">
-                    <thead><tr><th style={{ width: 62 }}>Sr No</th><th>Document Name</th><th style={{ width: 150 }}>Status</th><th style={{ width: 150 }}>Action</th></tr></thead>
+                  {/* Issued Date / Expired At, as the Customer and Consignee
+                      overviews list them — the same facts as the tab tables. */}
+                  <table className="cev-ov-table sev-ov-std">
+                    <thead><tr><th style={{ width: 62 }}>Sr No</th><th>Document Name</th><th style={{ width: 116 }}>Issued Date</th><th style={{ width: 116 }}>Expired At</th><th style={{ width: 130 }}>Status</th><th style={{ width: 150 }}>Action</th></tr></thead>
                     <tbody>
                       {docs.length === 0 ? (
-                        <tr><td colSpan={4} className="cev-ov-empty">No documents available.</td></tr>
+                        <tr><td colSpan={6} className="cev-ov-empty">No documents available.</td></tr>
                       ) : docs.map((row, i) => {
                         const d = row.doc;
                         const absIdx = i;
@@ -1222,6 +1225,10 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                           <tr key={`${overview}-${absIdx}`}>
                             <td className="cev-ov-num">{absIdx + 1}</td>
                             <td className="cev-ov-name">{d.name}</td>
+                            <td><VaultDateBadge value={d.issue_date} /></td>
+                            {/* `expiry`, as the tab table beside it reads — the
+                                two lists must not disagree about one document. */}
+                            <td><VaultDateBadge value={d.expiry} kind="expiry" /></td>
                             <td><OvStatusPill s={evEffectiveStatus(d)} /></td>
                             <td>
                               {url ? (
@@ -1274,7 +1281,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           title={ovUpload.category === 'dd' ? 'DD Document Name' : ovUpload.category === 'kyc' ? 'Owner KYC Document Name' : 'Trade License Document Name'}
           row={{ code: ovUpload.doc.reference || ovUpload.doc.doc_code || '', name: ovUpload.doc.name, authority: ovUpload.doc.authority, requirement: (ovUpload.doc.requirement as 'M' | 'O') || 'M' }}
           onClose={() => setOvUpload(null)}
-          onSubmit={async (f, expiryDate) => { await submitOvUpload(f, expiryDate); }}
+          onSubmit={async (f, expiryDate, issueDate) => { await submitOvUpload(f, expiryDate, issueDate); }}
         />
       </>)}
 
@@ -1390,6 +1397,9 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
             <th>{codeLbl}</th>
             <th>{authorityLbl}</th>
             <th>Requirement</th>
+            {/* Issue Date beside Expiry — the document's validity window, as
+                the Customer and Consignee vaults show it. */}
+            <th>Issue Date</th>
             <th>Expiry</th>
             <th>Attachment</th>
             <th>Status</th>
@@ -1398,7 +1408,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr><td colSpan={9} className="cev-empty">No documents in this bucket yet.</td></tr>
+            <tr><td colSpan={10} className="cev-empty">No documents in this bucket yet.</td></tr>
           ) : rows.map((d, i) => (
             <tr key={`${d.doc_code ?? 'doc'}-${i}`}>
               <td>{i + 1}</td>
@@ -1412,6 +1422,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                   <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
                 )}
               </td>
+              <td><VaultDateBadge value={d.issue_date} /></td>
               <td><VaultDateBadge value={d.expiry} kind="expiry" /></td>
               <td>
                 {d.attachment_url ? (
@@ -1761,7 +1772,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
     try { await onRemindTradeDoc(doc); } finally { setReminding(false); }
   };
 
-  const onPick = async (f: File | undefined, opts?: { docName?: string; expiryDate?: string }): Promise<boolean> => {
+  const onPick = async (f: File | undefined, opts?: { docName?: string; issueDate?: string; expiryDate?: string }): Promise<boolean> => {
     if (!f || !ownerId || !doc.doc_code) return false;
 
     if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) {
@@ -1774,6 +1785,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
       fd.append('category', category);
       fd.append('doc_code', doc.doc_code);
       fd.append('doc_name', (opts?.docName?.trim()) || doc.name || doc.doc_code);
+      if (opts?.issueDate) fd.append('issue_date', opts.issueDate);
       if (opts?.expiryDate) fd.append('expiry_date', opts.expiryDate);
       fd.append('attachment', f);
       await api.post(`/segment-uploads/${ownerType}/${ownerId}`, fd, {
@@ -1799,9 +1811,9 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           <SegmentRefUploadPopup
             title={category === 'dd' ? 'DD Document Name' : category === 'kyc' ? 'Owner KYC Document Name' : 'Trade License Document Name'}
             row={{ code: doc.reference || doc.doc_code || '', name: doc.name, authority: doc.authority, requirement: (doc.requirement as 'M' | 'O') || 'M' }}
-            existing={doc.attachment ? { file: null, url: doc.attachment_url || '', name: doc.attachment, expiry: evExpiryIso(doc.expiry) || undefined } : undefined}
+            existing={doc.attachment ? { file: null, url: doc.attachment_url || '', name: doc.attachment, expiry: evExpiryIso(doc.expiry) || undefined, issue: evExpiryIso(doc.issue_date) || undefined } : undefined}
             onClose={() => setReupOpen(false)}
-            onSubmit={async (f, expiryDate) => { const ok = await onPick(f, { expiryDate }); if (ok) setReupOpen(false); }}
+            onSubmit={async (f, expiryDate, issueDate) => { const ok = await onPick(f, { expiryDate, issueDate }); if (ok) setReupOpen(false); }}
           />
         </>
       ) : (

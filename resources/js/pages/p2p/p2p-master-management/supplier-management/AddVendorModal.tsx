@@ -6,6 +6,8 @@ import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import Tooltip from '../../../../components/ui/Tooltip';
+import SearchClear from '../../../../components/ui/SearchClear';
+import WorklistPager from '../../../../components/ui/WorklistPager';
 import { Shimmer, ShimmerForm, ShimmerTable } from '../../../../components/ui/Shimmer';
 import { MasterMultiSelect } from '../../../master/masterFormKit';
 import { useRuledSegments, type SegDocType } from '../../../../hooks/useRuledSegments';
@@ -513,7 +515,7 @@ export default function AddVendorModal(props: {
 
   const [segmentDocKeys, setSegmentDocKeys] = useState<Record<string, string[]>>({});
 
-  type SegRefUpload = { file: File | null; url: string; name: string; expiry?: string };
+  type SegRefUpload = { file: File | null; url: string; name: string; expiry?: string; issue?: string };
   const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
 
   const [bundledSegUploads, setBundledSegUploads] = useState<any[] | null>(null);
@@ -523,7 +525,7 @@ export default function AddVendorModal(props: {
     owner:   'kyc',
     license: 'tl',
   };
-  const persistSegmentRefUpload = async (refKey: string, file: File, docName: string, expiryDate?: string) => {
+  const persistSegmentRefUpload = async (refKey: string, file: File, docName: string, expiryDate?: string, issueDate?: string) => {
     const ownerId = vendorId || initialVendorId || null;
     if (!ownerId) {
       toast.error(
@@ -539,6 +541,7 @@ export default function AddVendorModal(props: {
     fd.append('category', category);
     fd.append('doc_code', doc_code);
     fd.append('doc_name', docName || doc_code);
+    if (issueDate) fd.append('issue_date', issueDate);
     if (expiryDate) fd.append('expiry_date', expiryDate);
     fd.append('attachment', file);
     try {
@@ -567,7 +570,7 @@ export default function AddVendorModal(props: {
           }
           return {
             ...prev,
-            [refKey]: { file: null, url: row.attachment_url, name: row.attachment_name || file.name, expiry: row.expiry_date || expiryDate || undefined },
+            [refKey]: { file: null, url: row.attachment_url, name: row.attachment_name || file.name, expiry: row.expiry_date || expiryDate || undefined, issue: row.issue_date || issueDate || undefined },
           };
         });
       }
@@ -1072,6 +1075,7 @@ export default function AddVendorModal(props: {
         url:  x.attachment_url || '',
         name: x.attachment_name || '',
         expiry: x.expiry_date || undefined,
+        issue: x.issue_date || undefined,
       };
     }
     if (Object.keys(hydrated).length > 0) setSegmentRefUploads(hydrated);
@@ -4538,9 +4542,9 @@ function SupplierSegmentRefTable(props: {
   title: string;
   tabKey: string;
   rows: SegRefRow[];
-  uploads: Record<string, { file: File | null; url: string; name: string; expiry?: string }>;
-  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string; expiry?: string }>>>;
-  persistUpload: (refKey: string, file: File, docName: string, expiryDate?: string) => Promise<void> | void;
+  uploads: Record<string, { file: File | null; url: string; name: string; expiry?: string; issue?: string }>;
+  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string; expiry?: string; issue?: string }>>>;
+  persistUpload: (refKey: string, file: File, docName: string, expiryDate?: string, issueDate?: string) => Promise<void> | void;
 }) {
   const { title, tabKey, rows, uploads, setUploads, persistUpload } = props;
   const toast = useToast();
@@ -4553,7 +4557,7 @@ function SupplierSegmentRefTable(props: {
     catch { toast.error('Download failed', 'Could not download the file. Please try again.'); }
     finally { setDownloadingKey(null); }
   };
-  const onSubmit = async (row: SegRefRow, f: File, expiryDate?: string): Promise<boolean> => {
+  const onSubmit = async (row: SegRefRow, f: File, expiryDate?: string, issueDate?: string): Promise<boolean> => {
     const refKey = `${tabKey}::${row.code}`;
     const err = validateVendorUpload(f);
     if (err) { toast.error(err.title, err.body); return false; }
@@ -4562,10 +4566,10 @@ function SupplierSegmentRefTable(props: {
       if (existing?.url && existing.url.startsWith('blob:')) {
         try { URL.revokeObjectURL(existing.url); } catch {}
       }
-      return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name, expiry: expiryDate || undefined } };
+      return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name, expiry: expiryDate || undefined, issue: issueDate || undefined } };
     });
     try {
-      await persistUpload(refKey, f, row.name, expiryDate);
+      await persistUpload(refKey, f, row.name, expiryDate, issueDate);
     } catch {
       return false;
     }
@@ -4596,8 +4600,9 @@ function SupplierSegmentRefTable(props: {
               <th style={{ width: 130 }}>AUTO CODE</th>
               <th>{title}</th>
               <th style={{ width: 180 }}>ISSUING AUTHORITY</th>
-              <th style={{ width: 150 }}>EXPIRY</th>
-              <th style={{ width: 150 }}>REQUIREMENT</th>
+              <th style={{ width: 130 }}>ISSUE DATE</th>
+              <th style={{ width: 130 }}>EXPIRY</th>
+              <th style={{ width: 140 }}>REQUIREMENT</th>
               <th style={{ width: 140 }}>ACTIONS</th>
             </tr>
           </thead>
@@ -4605,6 +4610,7 @@ function SupplierSegmentRefTable(props: {
             {filtered.map((r, i) => {
               const refKey = `${tabKey}::${r.code}`;
               const uploaded = uploads[refKey];
+              const uploadedIssue = uploaded?.issue ? fmtSegRefExpiry(uploaded.issue) : '';
               const uploadedExpiry = uploaded?.expiry ? fmtSegRefExpiry(uploaded.expiry) : '';
               const expiryText = uploadedExpiry || r.expiry || 'N/A';
               const isDate = !!uploadedExpiry || !!(r.expiry && /\d/.test(r.expiry));
@@ -4621,6 +4627,9 @@ function SupplierSegmentRefTable(props: {
                     </Tooltip>
                   </td>
                   <td><AuthorityBadges value={r.authority_list && r.authority_list.length ? r.authority_list : r.authority} /></td>
+                  {/* Neutral pill: an issue date is a fact, not a deadline, so it
+                      takes none of the expiry column's red / green tone. */}
+                  <td><span className="avm-exp-pill is-na">{uploadedIssue || 'N/A'}</span></td>
                   <td><span className={`avm-exp-pill ${isDate ? 'is-date' : 'is-na'} ${expTone}`}>{expiryText}</span></td>
                   <td>
                     <div className="avm-req-pair">
@@ -4666,7 +4675,7 @@ function SupplierSegmentRefTable(props: {
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={7} style={{ textAlign: 'center', padding: '18px', color: '#94a3b8' }}>No documents match your search.</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', padding: '18px', color: '#94a3b8' }}>No documents match your search.</td></tr>
             )}
           </tbody>
         </table>
@@ -4677,7 +4686,7 @@ function SupplierSegmentRefTable(props: {
           row={popupRow}
           existing={uploads[`${tabKey}::${popupRow.code}`]}
           onClose={() => setPopupRow(null)}
-          onSubmit={async (f, expiryDate) => { const ok = await onSubmit(popupRow, f, expiryDate); if (ok) setPopupRow(null); }}
+          onSubmit={async (f, expiryDate, issueDate) => { const ok = await onSubmit(popupRow, f, expiryDate, issueDate); if (ok) setPopupRow(null); }}
         />
       )}
     </>
@@ -4687,18 +4696,27 @@ function SupplierSegmentRefTable(props: {
 export function SegmentRefUploadPopup(props: {
   title: string;
   row: SegRefRow;
-  existing?: { file: File | null; url: string; name: string; expiry?: string };
+  existing?: { file: File | null; url: string; name: string; expiry?: string; issue?: string };
   onClose: () => void;
-  onSubmit: (file: File, expiryDate?: string) => void | Promise<void>;
+  onSubmit: (file: File, expiryDate?: string, issueDate?: string) => void | Promise<void>;
 }) {
   const { title, row, existing, onClose, onSubmit } = props;
   const toast = useToast();
   const [file, setFile] = useState<File | null>(existing?.file ?? null);
   const [hasExpiry, setHasExpiry] = useState<boolean>(!!existing?.expiry);
   const [expiryDate, setExpiryDate] = useState<string>(existing?.expiry ?? '');
+  /* Issue date — when the document was granted, as the Customer and Consignee
+     vaults already ask. Optional (the endpoint's rule is nullable) and capped
+     at today: a certificate cannot have been issued in the future. */
+  const [issueDate, setIssueDate] = useState<string>(existing?.issue ?? '');
   const catLabel = title.replace(/ (DOCUMENT )?NAME$/i, '').replace(/\bDD\b/i, 'Due Diligence');
   const save = async () => {
     if (hasExpiry && !expiryDate) { toast.error('Expiry date required', 'Pick the expiry date, or switch Expiry to No.'); return; }
+    // The server enforces this too (after_or_equal:issue_date); this is the immediate answer.
+    if (issueDate && hasExpiry && expiryDate && expiryDate < issueDate) {
+      toast.error('Dates out of order', 'The expiry date cannot be earlier than the issue date.');
+      return;
+    }
     let toSubmit = file;
     if (!toSubmit) {
       if (!existing?.url) { toast.error('File required', 'Choose a document to upload.'); return; }
@@ -4712,8 +4730,9 @@ export function SegmentRefUploadPopup(props: {
         return;
       }
     }
-    await onSubmit(toSubmit, hasExpiry ? expiryDate : undefined);
+    await onSubmit(toSubmit, hasExpiry ? expiryDate : undefined, issueDate || undefined);
   };
+  const today = todayIso();
   return (
     <PopupShell title={`Upload ${catLabel} Document`} icon="ri-upload-cloud-2-line" subtitle={row.name} onClose={onClose} onSave={save}>
       <div className="avm-grid-2">
@@ -4724,9 +4743,15 @@ export function SegmentRefUploadPopup(props: {
           <input className="avm-input" value={row.name} readOnly />
         </Field>
       </div>
-      <div className="avm-grid-2">
+      {/* Authority on its own row so the two dates sit side by side below it. */}
+      <div className="avm-grid-1">
         <Field label="Issuing Authority">
           <input className="avm-input" value={row.authority || '—'} readOnly />
+        </Field>
+      </div>
+      <div className="avm-grid-2">
+        <Field label="Issue Date" hint={<span className="avm-field-hint">Optional</span>}>
+          <MasterDatePicker value={issueDate} onChange={setIssueDate} placeholder="Select issue date" maxDate={today} />
         </Field>
         <Field label="Expiry" hint={!hasExpiry ? <span className="avm-field-hint">Has an expiry date?</span> : undefined}>
           <div className="avm-expiry-row">
@@ -4736,7 +4761,9 @@ export function SegmentRefUploadPopup(props: {
             </div>
             {hasExpiry && (
               <div className="avm-expiry-date">
-                <MasterDatePicker value={expiryDate} onChange={setExpiryDate} placeholder="Select expiry date" minDate={todayIso()} />
+                {/* Floor is the later of today and the issue date — an expiry
+                    cannot predate the day the document was granted. */}
+                <MasterDatePicker value={expiryDate} onChange={setExpiryDate} placeholder="Select expiry date" minDate={issueDate && issueDate > today ? issueDate : today} />
               </div>
             )}
           </div>
@@ -5070,7 +5097,97 @@ function GstScrutinyTable(props: { rows: GstScrutinyRow[] }) {
   );
 }
 
-function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: string) => void; onEdit?: (id: string) => void; busy?: boolean; readOnly?: boolean; allowRemove?: boolean }) {
+/* Search + fixed 3-row paging for the two Mapped Products popups (QA #127) —
+ * the same treatment as the product side's Mapped Suppliers popup, with no
+ * rows-per-page picker. `rows` is null while the list popup is still loading;
+ * that first arrival is not a "row added", so only a later growth jumps. */
+const MAPPED_PAGE_SIZE = 3;
+
+function useMappedProductsPaging(rows: ProductMappingRow[] | null) {
+  const [search, setSearchRaw] = useState('');
+  const [page, setPage] = useState(1);
+  const setSearch = (v: string) => { setSearchRaw(v); setPage(1); };
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (rows ?? []).filter(r => !q || [
+      r.productName, r.productCode, formatProductCode(r.productCode), r.hsnSacCode, r.segment,
+    ].some(s => String(s ?? '').toLowerCase().includes(q)));
+  }, [rows, search]);
+
+  /* Mappings append (the endpoint lists them by id), so after one is added
+     land on the last page with the search cleared — otherwise the product
+     just mapped sits out of view and reads as a failed save. */
+  const prevLen = useRef<number | null>(rows ? rows.length : null);
+  useEffect(() => {
+    const len = rows ? rows.length : null;
+    if (len !== null && prevLen.current !== null && len > prevLen.current) {
+      setSearchRaw('');
+      setPage(Math.ceil(len / MAPPED_PAGE_SIZE));
+    }
+    prevLen.current = len;
+  }, [rows]);
+
+  const pages = Math.max(1, Math.ceil(filtered.length / MAPPED_PAGE_SIZE));
+  const safePage = Math.min(page, pages);
+  const start = (safePage - 1) * MAPPED_PAGE_SIZE;
+  return {
+    search, setSearch, filtered, start, setPage,
+    page: safePage,
+    pageRows: filtered.slice(start, start + MAPPED_PAGE_SIZE),
+  };
+}
+
+function MappedProductsSearch(props: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="avm-mapped-search">
+      <i className="ri-search-line" aria-hidden />
+      <input
+        type="text"
+        placeholder="Search product, code, HSN/SAC, segment…"
+        value={props.value}
+        onChange={e => props.onChange(e.target.value)}
+        aria-label="Search mapped products"
+      />
+      <SearchClear show={props.value} onClear={() => props.onChange('')} />
+    </div>
+  );
+}
+
+/* The table and its pager as one card, or the no-match message when the
+   search filters every row out. Callers handle the truly-empty list. */
+function PagedMappingTable(props: {
+  paging: ReturnType<typeof useMappedProductsPaging>;
+  onRemove: (id: string) => void;
+  onEdit?: (id: string) => void;
+  busy?: boolean;
+}) {
+  const { paging } = props;
+  if (paging.filtered.length === 0) {
+    return <div className="avm-empty avm-empty-accent">No mapped products match "{paging.search.trim()}".</div>;
+  }
+  return (
+    <div className="avm-mapped-paged">
+      <ProductMappingTable
+        rows={paging.pageRows}
+        srOffset={paging.start}
+        onRemove={props.onRemove}
+        onEdit={props.onEdit}
+        busy={props.busy}
+        allowRemove={false}
+      />
+      <WorklistPager
+        className="avm-mapped-pager"
+        total={paging.filtered.length}
+        page={paging.page}
+        pageSize={MAPPED_PAGE_SIZE}
+        onPage={paging.setPage}
+      />
+    </div>
+  );
+}
+
+function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: string) => void; onEdit?: (id: string) => void; busy?: boolean; readOnly?: boolean; allowRemove?: boolean; /** Sr No of the first row minus one — for a paged slice. */ srOffset?: number }) {
   return (
     <KycTable
       isEmpty={props.rows.length === 0}
@@ -5090,7 +5207,7 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
     >
           {props.rows.map((r, i) => (
             <tr key={r.id}>
-              <td><span className="avm-sr-pill">{String(i + 1).padStart(2, '0')}</span></td>
+              <td><span className="avm-sr-pill">{String((props.srOffset ?? 0) + i + 1).padStart(2, '0')}</span></td>
               <td><strong>{r.productName}</strong></td>
               <td><span className="avm-auto-code">{formatProductCode(r.productCode) || r.productCode}</span></td>
               <td><span className="font-monospace fs-13">{r.hsnSacCode || '—'}</span></td>
@@ -5169,6 +5286,7 @@ function MappedProductsPopup(props: {
 }) {
   const n = props.rows.length;
   const busy = !!props.busy;
+  const paging = useMappedProductsPaging(props.rows);
   return (
     <PopupChrome
       title="Mapped Products"
@@ -5180,7 +5298,7 @@ function MappedProductsPopup(props: {
       footer={<button className="avm-btn-ghost" onClick={props.onClose} disabled={busy}>Close</button>}
     >
       <div className="avm-mapped-toolbar">
-        <span className="avm-mapped-count">{n} product{n === 1 ? '' : 's'} mapped</span>
+        <MappedProductsSearch value={paging.search} onChange={paging.setSearch} />
         <button className="avm-section-add-btn" onClick={props.onAdd} disabled={busy}>
           <i className="ri-add-line" /> Map Product
         </button>
@@ -5188,7 +5306,7 @@ function MappedProductsPopup(props: {
       {n === 0 ? (
         <div className="avm-empty avm-empty-accent">No products mapped yet. Click "Map Product" to begin.</div>
       ) : (
-        <ProductMappingTable rows={props.rows} onRemove={props.onRemove} onEdit={props.onEdit} busy={busy} allowRemove={false} />
+        <PagedMappingTable paging={paging} onRemove={props.onRemove} onEdit={props.onEdit} busy={busy} />
       )}
     </PopupChrome>
   );
@@ -5208,6 +5326,7 @@ export function MappedProductsViewPopup(props: {
   const toast = useToast();
   const [rows, setRows] = useState<ProductMappingRow[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const paging = useMappedProductsPaging(rows);
 
   /* Map Product, opened from this popup's header. The wizard is not involved:
      the form writes straight to /vendors/{id}/step/products and this popup
@@ -5449,10 +5568,8 @@ export function MappedProductsViewPopup(props: {
          form is up it holds unsaved input, so a stray click must not bin it. */
       dismissOnBackdrop={!mapOpen}
       busy={saving}
-      /* In the header rather than above the table: the wizard's version of this
-         popup pairs its button with a count pill in a toolbar row, but there is
-         no pill here, and a lone button would push the table down a row for a
-         control the header has space for. */
+      /* In the header rather than beside the search: the header has room for
+         it, and the search row then only appears once there are rows to search. */
       headerAction={
         <button className="avm-cp-head-btn" onClick={openMapForm} disabled={saving || rows === null}>
           <i className="ri-add-line" /> Map New Product
@@ -5461,7 +5578,7 @@ export function MappedProductsViewPopup(props: {
       footer={<button className="avm-btn-ghost" onClick={props.onClose} disabled={saving}>Close</button>}
     >
       {rows === null ? (
-        <ShimmerTable rows={5} cols={9} />
+        <ShimmerTable rows={MAPPED_PAGE_SIZE} cols={9} />
       ) : failed ? (
         <div className="avm-empty avm-empty-accent">Could not load the mapped products. Close and try again.</div>
       ) : rows.length === 0 ? (
@@ -5472,13 +5589,12 @@ export function MappedProductsViewPopup(props: {
            revision of the row you are looking at, while removing the mapping
            destroys saved data from a popup opened to READ it. Removal stays in
            the supplier form, one deliberate step further in. */
-        <ProductMappingTable
-          rows={rows}
-          onEdit={openEditForm}
-          onRemove={() => {}}
-          allowRemove={false}
-          busy={saving}
-        />
+        <>
+          <div className="avm-mapped-toolbar">
+            <MappedProductsSearch value={paging.search} onChange={paging.setSearch} />
+          </div>
+          <PagedMappingTable paging={paging} onEdit={openEditForm} onRemove={() => {}} busy={saving} />
+        </>
       )}
     </PopupChrome>
 
@@ -6024,6 +6140,27 @@ function BankAddPopup(props: {
     setDraft({ ...draft, branchAddress: cleaned });
     setErrors(prev => ({ ...prev, branchAddress: error }));
   };
+  /* Account Number checks as it is typed, like the three fields above (QA #34).
+     The 9–18 digit rule (8–34 alphanumeric for an international IBAN) used to
+     run only at Save, so letters and symbols went into the box with nothing
+     said — which reads as no validation at all. Characters the rule can never
+     accept are dropped as they are typed, with the reason shown; a number that
+     is still too short is called out as soon as the field is left. */
+  const acctMax = props.international ? 34 : 18;
+  const handleAccountNumberChange = (raw: string) => {
+    const cleaned = raw.replace(props.international ? /[^A-Za-z0-9]/g : /\D/g, '').slice(0, acctMax);
+    setDraft({ ...draft, accountNumber: cleaned });
+    setErrors(prev => ({
+      ...prev,
+      accountNumber: cleaned !== raw.slice(0, acctMax)
+        ? (props.international ? 'Only letters and digits are allowed' : 'Only digits are allowed')
+        : undefined,
+    }));
+  };
+  const handleAccountNumberBlur = () => {
+    const err = validateAccountNumber(draft.accountNumber, 'Account Number', !!props.international);
+    if (err) setErrors(prev => ({ ...prev, accountNumber: err }));
+  };
   return (
     <PopupShell title={isEdit ? 'Edit Bank Details' : 'Add Bank Details'} icon="ri-bank-card-line" onClose={onClose} onSave={handleSave}>
       <div className="avm-grid-4">
@@ -6051,10 +6188,15 @@ function BankAddPopup(props: {
               thing stopping it, and only at Save. */}
           <input
             className="avm-input"
-            placeholder={props.international ? 'Enter account / IBAN number' : 'Enter account number'}
-            maxLength={props.international ? 34 : 18}
+            placeholder={props.international ? 'Enter account / IBAN number' : 'Enter 9–18 digit account number'}
+            inputMode={props.international ? 'text' : 'numeric'}
+            /* No maxLength attribute: the browser would cut a pasted
+               "1234 5678 9012 3456" at 18 characters BEFORE the spaces are
+               stripped and lose real digits. The handler caps the length after
+               cleaning instead, so typing still stops at the limit. */
             value={draft.accountNumber}
-            onChange={e => { set('accountNumber', e.target.value); setErrors(p => ({ ...p, accountNumber: undefined })); }}
+            onChange={e => handleAccountNumberChange(e.target.value)}
+            onBlur={handleAccountNumberBlur}
           />
         </Field>
         {/* One column, two codes: a domestic bank routes on IFSC, a foreign

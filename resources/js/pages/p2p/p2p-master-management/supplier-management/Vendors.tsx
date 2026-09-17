@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardBody, Col, Row } from 'reactstrap';
@@ -115,10 +115,12 @@ export type SupplierContact = {
 /* Fresh vs Recurring tab key. Fresh = newly onboarded supplier with no
    opportunity yet; Recurring = at least one opportunity created against it. */
 /* Per-screen key so other tables can adopt the same pattern without colliding —
-   the convention HrEmployees set. Versioned: bump the suffix if the DEFAULT
-   ever changes, because a remembered size always beats a new default and the
-   change would otherwise reach nobody who has already opened this page. */
-const PER_PAGE_KEY = 'cbc.p2p.suppliers.perPage.v1';
+   the convention HrEmployees set.
+   .v2 — v1 stored a MANUAL rows-per-page pick and let it switch the screen fit
+   off for good, so anyone who once chose 5 saw five rows on every monitor from
+   then on. v2 holds only the last FITTED size, as the opening guess; a new key
+   so those stale picks are not read back. */
+const PER_PAGE_KEY = 'cbc.p2p.suppliers.perPage.v2';
 
 type SupplierTab = 'all' | 'fresh' | 'recurring';
 
@@ -616,37 +618,35 @@ export default function Vendors() {
   /* Search is a network call now, so it waits for a pause in typing instead of
      firing per keystroke. 350ms is the same delay HrEmployees uses. */
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  /* Rows per page: a fixed 10 by default, remembered per screen — the same
-     contract HR Employees and Employee Onboarding use (see PER_PAGE_KEY in
-     HrEmployees.tsx).
-     It used to be DERIVED from the viewport: an effect measured the space under
-     the table and set rpp to whatever fitted. That made page size a property of
-     the window rather than of the list — it changed on resize, on zoom, on
-     opening devtools, and differed between two people looking at the same
-     tenant. Every one of those changes refetched, which is why this file needs
-     a stale-response token at all; rows moved under the cursor mid-read.
-     A remembered number does none of that.
-     Lazy initialiser so localStorage is read once on mount, and guarded because
-     a private-mode browser can throw on access. */
-  const savedRpp = useMemo(() => {
+  /* Rows per page — the HR Employees contract (HrEmployees.tsx + DataTable's
+     autoFitRows / minAutoRows={10}):
+       · the first request asks for 10;
+       · once the table is on screen the count is fitted to the space down to
+         the bottom of the window, never below 10, and re-fitted when the window
+         is resized (a different screen resolution, zoom, a docked devtools);
+       · a size picked from Rows per page wins over the fit for the rest of the
+         visit. It is not persisted — the next visit fits the screen again,
+         exactly as the Employees table does.
+     The last fitted size is remembered only as the opening guess, so a tall
+     monitor's first request is usually already the right size and no second
+     fetch goes out. Lazy initialiser so localStorage is read once on mount,
+     guarded because a private-mode browser can throw on access. */
+  const [rpp, setRpp] = useState<number>(() => {
     try {
       const n = Number(localStorage.getItem(PER_PAGE_KEY));
-      return Number.isFinite(n) && n > 0 && n <= 200 ? n : null;
+      return Number.isFinite(n) && n >= 10 && n <= 200 ? n : 10;
     } catch {
-      return null;
+      return 10;
     }
-  }, []);
-  const [rpp, setRpp] = useState<number>(savedRpp ?? 10);
-  /* Auto-fit until the user picks a size, then never again. A pick is a
-     deliberate answer to this question and re-deriving it on the next resize
-     would keep overwriting it — so a remembered pick also starts this false. */
-  const autoFitRef = useRef(savedRpp === null);
-  /* Only a MANUAL pick is remembered. Persisting the fitted number too would
-     bake one machine's viewport in as a permanent choice and switch auto-fit
-     off for good on the next visit. */
-  const rememberRpp = (n: number) => {
-    try { localStorage.setItem(PER_PAGE_KEY, String(n)); } catch { /* private mode */ }
-  };
+  });
+  /* True until the user picks a size this visit. */
+  const autoFitRef = useRef(true);
+  /* Live copies for the resize handler, which is registered once per effect
+     run and would otherwise read the page / size it was created with. */
+  const rppRef = useRef(rpp);
+  rppRef.current = rpp;
+  const pageRef = useRef(page);
+  pageRef.current = page;
   const rootRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -874,7 +874,15 @@ export default function Vendors() {
          costs no render and no refetch — only a real change in how many rows
          fit is worth a request. */
       const fit = Math.max(10, Math.floor(avail / ROW));
-      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
+      if (autoFitRef.current && fit !== rppRef.current) {
+        /* Keep the row the user was looking at on screen: a resize on page 4
+           lands on whichever new page now holds that page's first row, rather
+           than on a page number that may no longer exist for the new size. */
+        const firstRow = (pageRef.current - 1) * rppRef.current;
+        setRpp(fit);
+        setPage(Math.floor(firstRow / fit) + 1);
+        try { localStorage.setItem(PER_PAGE_KEY, String(fit)); } catch { /* private mode */ }
+      }
 
       /* MIN height, so the card runs down to 8px above the app footer — the
          same rule the HRMS tables get from DataTable's fitToViewport.
@@ -1366,7 +1374,7 @@ useEffect(() => {
                   {/* A size picked here stops the auto-fit and is remembered, so
                       the next visit opens on the choice rather than re-deriving
                       one over the top of it. */}
-                  <WorklistPager total={total} page={curPage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; rememberRpp(n); setRpp(n); setPage(1); }} pageSizeOptions={[5, 10, 25, 50]} />
+                  <WorklistPager total={total} page={curPage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} pageSizeOptions={[10, 25, 50]} />
                 </div>
               </>
             )}

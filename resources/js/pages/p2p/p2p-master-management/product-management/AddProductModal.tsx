@@ -9,6 +9,8 @@ import { useAuth } from '../../../../contexts/AuthContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../../../components/ui/Tooltip';
+import SearchClear from '../../../../components/ui/SearchClear';
+import WorklistPager from '../../../../components/ui/WorklistPager';
 import { SegmentModal, type SegmentForm } from '../../../clm/compliance/ClmSegmentPage';
 import { CLM_CSS } from '../../../clm/shared/clmShared';
 import { readProductMasterBundle,  writeProductMasterBundle,} from './productBundleCache';
@@ -147,6 +149,8 @@ const mapVendorRows = (rows?: BundleVendorRow[] | null): VendorOpt[] =>
   }));
 
 type Tab = 'core' | 'sales' | 'quality';
+
+const SUP_PAGE_SIZE = 3;
 
 const formatSupplierCode = (raw: string): string => {
   const m = String(raw ?? '').match(/(\d+)\s*$/);
@@ -394,6 +398,29 @@ export default function AddProductModal(props: {
   const [vendorPurchasePrice, setVendorPurchasePrice] = useState<string>('');
   const [vendorRemarks, setVendorRemarks] = useState('');
   const [vendorEditingId, setVendorEditingId] = useState<string | null>(null);
+
+  /* Mapped Suppliers popup: client-side search + a fixed 3-row page (no
+     rows-per-page picker — QA #74). Each row carries its master option so the
+     search and the Type / State columns read the same lookup. */
+  const [supSearch, setSupSearch] = useState('');
+  const [supPage, setSupPage] = useState(1);
+  useEffect(() => {
+    if (!supplierPopupOpen) { setSupSearch(''); setSupPage(1); }
+  }, [supplierPopupOpen]);
+  const supRows = useMemo(() => {
+    const q = supSearch.trim().toLowerCase();
+    return vendors
+      .map(v => ({
+        v,
+        opt: vendorOpts.find(o => (v.vendorId && o.id === String(v.vendorId)) || (v.vendorCode && o.code === v.vendorCode)),
+      }))
+      .filter(({ v, opt }) => !q || [
+        v.vendorName, v.vendorCode, formatSupplierCode(v.vendorCode), v.contactPerson, opt?.type, opt?.state,
+      ].some(s => String(s ?? '').toLowerCase().includes(q)));
+  }, [vendors, vendorOpts, supSearch]);
+  const supPages = Math.max(1, Math.ceil(supRows.length / SUP_PAGE_SIZE));
+  const supPageSafe = Math.min(supPage, supPages);
+  const supStart = (supPageSafe - 1) * SUP_PAGE_SIZE;
 
   /* "+" beside Supplier Name → Domestic/International gate → the full Add
      Supplier wizard. `supplierAddScope` doubles as the wizard's open flag: it
@@ -712,6 +739,10 @@ export default function AddProductModal(props: {
     const newList = [...vendors, entry];
     if (await commitVendorList(newList, 'Supplier mapped', `${entry.vendorName} added to this product`)) {
       closeVendorDraft();
+      // New rows append, so land on the last page with the search cleared —
+      // otherwise the supplier just mapped sits out of view.
+      setSupSearch('');
+      setSupPage(Math.ceil(newList.length / SUP_PAGE_SIZE));
     }
   };
 
@@ -1686,7 +1717,17 @@ export default function AddProductModal(props: {
                 </div>
                 <div className="apm-sup-body">
               <div className="apm-sup-bar">
-                <span className="apm-sup-countpill">{vendors.length} supplier{vendors.length !== 1 ? 's' : ''} mapped</span>
+                <div className="apm-sup-search">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                  <input
+                    type="text"
+                    placeholder="Search supplier, code, type, state, contact…"
+                    value={supSearch}
+                    onChange={(e) => { setSupSearch(e.target.value); setSupPage(1); }}
+                    aria-label="Search mapped suppliers"
+                  />
+                  <SearchClear show={supSearch} onClear={() => { setSupSearch(''); setSupPage(1); }} />
+                </div>
                 <Tooltip
                   label="Select a GST rate for this product (Sales Config) before mapping a supplier."
                   disabled={canMapSupplier}
@@ -1853,8 +1894,11 @@ export default function AddProductModal(props: {
 
               {vendors.length === 0 ? (
                 <div className="apm-sup-empty">No suppliers mapped yet. Click &quot;Map Supplier&quot; to begin.</div>
+              ) : supRows.length === 0 ? (
+                <div className="apm-sup-empty">No mapped suppliers match &quot;{supSearch.trim()}&quot;.</div>
               ) : (
-                <div className="apm-sup-tablewrap">
+                <>
+                <div className="apm-sup-tablewrap has-pager">
                   <table className="apm-sup-table">
                     <thead>
                       <tr>
@@ -1863,11 +1907,10 @@ export default function AddProductModal(props: {
                       </tr>
                     </thead>
                     <tbody>
-                      {vendors.map((v, i) => {
-                        const opt = vendorOpts.find(o => (v.vendorId && o.id === String(v.vendorId)) || (v.vendorCode && o.code === v.vendorCode));
+                      {supRows.slice(supStart, supStart + SUP_PAGE_SIZE).map(({ v, opt }, i) => {
                         return (
                         <tr key={v.id}>
-                          <td><span className="apm-sup-sr">{String(i + 1).padStart(2, '0')}</span></td>
+                          <td><span className="apm-sup-sr">{String(supStart + i + 1).padStart(2, '0')}</span></td>
                           <td className="apm-sup-cname">
                             {v.vendorName.length > 15
                               ? <Tooltip label={v.vendorName}><span>{v.vendorName.slice(0, 15) + '…'}</span></Tooltip>
@@ -1902,6 +1945,14 @@ export default function AddProductModal(props: {
                     </tbody>
                   </table>
                 </div>
+                <WorklistPager
+                  className="apm-sup-pager"
+                  total={supRows.length}
+                  page={supPageSafe}
+                  pageSize={SUP_PAGE_SIZE}
+                  onPage={setSupPage}
+                />
+                </>
               )}
                 </div>
                 <div className="apm-sup-foot">
@@ -2265,10 +2316,10 @@ function SupplierSkeleton({ onClose }: { onClose: () => void }) {
         </div>
         <div className="apm-sup-body">
           <div className="apm-sup-bar">
-            <span className="apm-shim apm-sup-shim-pill" />
+            <span className="apm-shim apm-sup-shim-search" />
             <span className="apm-shim apm-sup-shim-btn" />
           </div>
-          <div className="apm-sup-tablewrap">
+          <div className="apm-sup-tablewrap has-pager">
             <table className="apm-sup-table">
               <thead>
                 <tr>
@@ -2286,6 +2337,10 @@ function SupplierSkeleton({ onClose }: { onClose: () => void }) {
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="wl-pager apm-sup-pager">
+            <span className="apm-shim apm-sup-shim-info" />
+            <span className="apm-shim apm-sup-shim-nav" />
           </div>
         </div>
         <div className="apm-sup-foot">

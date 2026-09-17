@@ -6896,6 +6896,19 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
     padding: 12px 14px;
   }
 
+  .apm-sup-bar {
+    flex-wrap: wrap;
+  }
+
+  .apm-sup-search {
+    max-width: none;
+    flex-basis: 100%;
+  }
+
+  .apm-sup-pager.wl-pager {
+    justify-content: center;
+  }
+
   .apm-mv-popup-body {
     padding: 14px;
   }
@@ -7411,9 +7424,22 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
 
 /* Shimmer placeholders for the Mapped Suppliers popup while it loads.
    Sized to the real controls so nothing shifts when the data lands. */
-.apm-sup-shim-pill {
-  width: 132px;
-  height: 30px;
+.apm-sup-shim-search {
+  flex: 1;
+  max-width: 340px;
+  height: 34px;
+  border-radius: 9px;
+}
+
+.apm-sup-shim-info {
+  width: 150px;
+  height: 28px;
+  border-radius: 20px;
+}
+
+.apm-sup-shim-nav {
+  width: 140px;
+  height: 32px;
   border-radius: 20px;
 }
 
@@ -7637,14 +7663,49 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   margin-bottom: 12px;
 }
 
-.apm-sup-countpill {
+/* Search over the mapped rows — sits where the "N suppliers mapped" pill was
+   (the count now lives in the pager's "Showing X–Y of Z"). */
+.apm-sup-search {
+  --ui-search-clear: #7c3aed;
+  flex: 1;
+  max-width: 340px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 11px;
+  background: #fff;
+  border: 1.5px solid #e2d4fa;
+  border-radius: 9px;
+  color: #a78bfa;
+  transition: border-color .16s, box-shadow .16s;
+}
+
+.apm-sup-search:focus-within {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, .18);
+}
+
+.apm-sup-search svg {
+  flex-shrink: 0;
+}
+
+.apm-sup-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
   font-size: 12px;
-  font-weight: 700;
-  color: #6d28d9;
-  background: #f5f1fe;
-  border: 1px solid #e2d4fa;
-  border-radius: 20px;
-  padding: 6px 14px;
+  font-weight: 500;
+  color: #3b0764;
+}
+
+.apm-sup-search input::placeholder {
+  color: #a78bfa;
+  font-weight: 500;
 }
 
 .apm-sup-map {
@@ -7698,6 +7759,20 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   overflow-x: auto;
   border: 1px solid #efe9fb;
   border-radius: 12px;
+}
+
+/* Table + pager read as one card: the table gives up its bottom corners and
+   the shared .wl-pager band closes the card underneath it. */
+.apm-sup-tablewrap.has-pager {
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
+}
+
+.apm-sup-pager.wl-pager {
+  margin-top: 0;
+  padding: 8px 12px;
+  border: 1px solid #efe9fb;
+  border-top: 2px solid #ddd6fe;
 }
 
 .apm-sup-table {
@@ -7914,10 +7989,24 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   border-top-color: rgba(167, 139, 250, .16);
 }
 
-[data-bs-theme="dark"] .apm-sup-countpill {
-  background: rgba(124, 58, 237, .18);
-  color: #c4b5fd;
+[data-bs-theme="dark"] .apm-sup-search {
+  background: rgba(255, 255, 255, .04);
   border-color: rgba(167, 139, 250, .3);
+  color: #a78bfa;
+  --ui-search-clear: #c4b5fd;
+}
+
+[data-bs-theme="dark"] .apm-sup-search input {
+  color: #ede9fe;
+}
+
+[data-bs-theme="dark"] .apm-sup-search input::placeholder {
+  color: rgba(196, 181, 253, .6);
+}
+
+[data-bs-theme="dark"] .apm-sup-pager.wl-pager {
+  border-color: rgba(167, 139, 250, .16);
+  border-top-color: rgba(167, 139, 250, .30);
 }
 
 [data-bs-theme="dark"] .apm-sup-sr {

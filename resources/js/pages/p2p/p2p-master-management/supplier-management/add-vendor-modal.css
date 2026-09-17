@@ -1705,9 +1705,37 @@
 /* Mapped Products list popup — wider to fit the mapping table columns. */
 .avm-cp-popup-wide { max-width: 1040px; }
 .avm-mapped-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 0; }
-.avm-mapped-count {
-  font-size: 12px; font-weight: 700; color: #6d28d9;
-  background: #f5f1fe; border: 1px solid #e2d4fa; border-radius: 20px; padding: 5px 13px;
+/* Search over the mapped rows — where the "N products mapped" pill was (the
+   count now lives in the pager's "Showing X–Y of Z"). Matches the product
+   side's Mapped Suppliers search (.apm-sup-search). */
+.avm-mapped-search {
+  --ui-search-clear: #7c3aed;
+  flex: 1; max-width: 340px; height: 34px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 6px 0 11px;
+  background: #fff; border: 1.5px solid #e2d4fa; border-radius: 9px;
+  color: #a78bfa;
+  transition: border-color .16s, box-shadow .16s;
+}
+.avm-mapped-search:focus-within { border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,.18); }
+.avm-mapped-search i { flex-shrink: 0; font-size: 15px; line-height: 1; }
+.avm-mapped-search input {
+  flex: 1; min-width: 0; height: 100%;
+  border: none; outline: none; background: transparent;
+  font-family: inherit; font-size: 12px; font-weight: 500; color: #3b0764;
+}
+.avm-mapped-search input::placeholder { color: #a78bfa; font-weight: 500; }
+/* Table + pager read as one card: the table gives up its bottom edge and the
+   shared .wl-pager band closes the card underneath it. */
+.avm-mapped-paged .avm-mapped-wrap {
+  border-bottom: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+.avm-mapped-paged .avm-mapped-table tbody tr:last-child td { border-bottom: 0; }
+.avm-mapped-pager.wl-pager {
+  margin-top: 0; padding: 8px 12px;
+  border: 1px solid #f1ecfb; border-top: 2px solid #ddd6fe;
 }
 .avm-empty-accent { color: #7c3aed; border-color: #ddd6fe; background: #faf7ff; }
 .avm-cp-head {
@@ -2193,7 +2221,10 @@ button.avm-kyc-act { padding: 0; font: inherit; }
 [data-bs-theme="dark"] .avm-uploaded-dot { color: #4ade80; }
 [data-bs-theme="dark"] .avm-kyc-search { background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.22); }
 [data-bs-theme="dark"] .avm-kyc-search input { color: #ede9fe; }
-[data-bs-theme="dark"] .avm-mapped-count { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .avm-mapped-search { background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.3); color: #a78bfa; --ui-search-clear: #c4b5fd; }
+[data-bs-theme="dark"] .avm-mapped-search input { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-mapped-search input::placeholder { color: rgba(196,181,253,.6); }
+[data-bs-theme="dark"] .avm-mapped-pager.wl-pager { border-color: rgba(167,139,250,.18); border-top-color: rgba(167,139,250,.30); }
 [data-bs-theme="dark"] .avm-empty-accent { background: rgba(124,58,237,.08); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
 [data-bs-theme="dark"] .avm-section-headtext .avm-section-sub { color: #a89fc7; }
 [data-bs-theme="dark"] .avm-section-sub::before { color: rgba(167,139,250,.4); }
@@ -2207,4 +2238,7 @@ button.avm-kyc-act { padding: 0; font: inherit; }
   .avm-grid-2, .avm-grid-3, .avm-grid-4 { grid-template-columns: 1fr; }
   .avm-tabs { overflow-x: auto; }
   .avm-pill-tabs { overflow-x: auto; flex-wrap: nowrap; }
+  .avm-mapped-toolbar { flex-wrap: wrap; justify-content: flex-end; }
+  .avm-mapped-search { max-width: none; flex-basis: 100%; }
+  .avm-mapped-pager.wl-pager { justify-content: center; }
 }
