@@ -1014,7 +1014,6 @@ function Step1Basic({
   const shownUrl     = attachment ? pickedUrl : (showExisting ? existingUrl : null);
   const hasFile      = !!attachment || showExisting;
 
-  const openFile = () => { if (shownUrl) window.open(shownUrl, '_blank', 'noopener,noreferrer'); };
   const clearFile = () => {
     setFileError('');
     if (attachment) {
@@ -1124,16 +1123,35 @@ function Step1Basic({
               </span>
             )}
 
+            {/* An <a>, not a <button> — this is the whole fix for View doing nothing.
+                In View mode the form sits inside <fieldset disabled>, and the
+                browser disables every <button> in a disabled fieldset: it swallows
+                the click before any handler runs, so the old window.open handler never fired and no
+                request was ever made. `pointerEvents: 'auto'` only brought HOVER
+                back (which is why the tooltip still appeared) — it cannot re-enable
+                a disabled control. Links are not form controls, so the fieldset
+                leaves them alone, and a real href also opens the file natively
+                (middle-click, open in new tab) instead of through window.open. */}
             <Tooltip label={shownUrl ? 'View' : 'Preview available once saved'} position="top">
-              <button
-                type="button"
-                onClick={openFile}
-                aria-label="View attachment"
-                aria-disabled={!shownUrl}
-                style={{ ...attachBtn, color: '#0c63b0', pointerEvents: 'auto', opacity: shownUrl ? 1 : 0.45, cursor: shownUrl ? 'pointer' : 'not-allowed' }}
-              >
-                <i className="ri-eye-line" />
-              </button>
+              {shownUrl ? (
+                <a
+                  href={shownUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="View attachment"
+                  style={{ ...attachBtn, color: '#0c63b0', pointerEvents: 'auto', textDecoration: 'none' }}
+                >
+                  <i className="ri-eye-line" />
+                </a>
+              ) : (
+                <span
+                  aria-label="View attachment"
+                  aria-disabled
+                  style={{ ...attachBtn, color: '#0c63b0', opacity: 0.45, cursor: 'not-allowed' }}
+                >
+                  <i className="ri-eye-line" />
+                </span>
+              )}
             </Tooltip>
             {!readOnly && (
               <>
