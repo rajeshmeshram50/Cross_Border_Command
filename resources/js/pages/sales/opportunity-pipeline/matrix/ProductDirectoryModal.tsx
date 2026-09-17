@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { segmentLabel } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { formatProductCode } from '../../../../utils/formatProductCode';
@@ -55,7 +56,7 @@ type ProductOpt = {
   status?:      string | null;   // active | inactive | draft — shown in the picker
   /* Eager-loaded segment relation from GET /products — surfaced as a small
      violet badge in the picker next to the status pill. */
-  segment?:     { name: string | null } | null;
+  segment?:     { name: string | null; regulatory_status?: string | null } | null;
 };
 
 type CurrencyOpt = {
@@ -873,7 +874,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                       // is the numeric id, so matching/saving is unaffected.
                       label: `${formatProductCode(p.product_code)} · ${p.name}`,
                       badge: { text: active ? 'Active' : 'Inactive', tone: active ? 'green' as const : 'red' as const },
-                      badges: seg ? [{ text: seg, tone: 'violet' as const }] : undefined,
+                      badges: seg ? [{ text: segmentLabel(seg, p.segment?.regulatory_status), tone: 'violet' as const }] : undefined,
                       disabled: offSegment,
                       disabledReason: offSegment
                         ? `Not in the customer's segment (${(customerSegments ?? []).join(', ')}) — this product belongs to “${seg}”.`

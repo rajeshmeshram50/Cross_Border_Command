@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { segmentLabel } from '../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import api from '../../../api';
@@ -2493,6 +2494,7 @@ type ProductMasterRow = {
      deleted row — products.segment_id carries no FK constraint, so that state
      is reachable and must not be treated as a mismatch. */
   segment: string | null;
+  segmentReg?: string | null;
 };
 type LoadedMasters = {
   currencies:       MasterOpt[];
@@ -2699,6 +2701,7 @@ function shapeQpiMasters(
       /* ProductController eager-loads `segment`, so the NAME is already
          resolved here — no second lookup against the segment master. */
       segment: (r.segment?.name ?? '').trim() || null,
+      segmentReg: r.segment?.regulatory_status ?? null,
     });
   });
 
@@ -4945,11 +4948,14 @@ function ProductsStep(props: {
     const segmentSet = new Set(customerSegments.map(s => s.toLowerCase()));
     opts = opts.map(o => {
       const code = (o.value || '').split(' – ')[0]?.trim() ?? '';
-      const seg = productsRaw.find(pr => pr.code === code)?.segment;
+      const prodRow = productsRaw.find(pr => pr.code === code);
+      const seg = prodRow?.segment;
       if (!seg) return o;   // free-text / no-segment products stay as-is
       // Short cap so the badge stays compact and the product code+name keeps the
       // row — full segment name is on the badge's hover title.
-      const badge = { text: seg.length > 14 ? `${seg.slice(0, 14)}…` : seg, tone: 'violet' as const, title: seg };
+      const short = seg.length > 14 ? `${seg.slice(0, 14)}…` : seg;
+      const reg = prodRow?.segmentReg === 'highly' ? ' · High' : prodRow?.segmentReg === 'less' ? ' · Less' : '';
+      const badge = { text: short + reg, tone: 'violet' as const, title: segmentLabel(seg, prodRow?.segmentReg) };
       const offSegment = segmentSet.size > 0 && !segmentSet.has(seg.toLowerCase());
       return offSegment
         ? { ...o, badge, disabled: true, disabledReason: 'Customer and product segment must match.' }

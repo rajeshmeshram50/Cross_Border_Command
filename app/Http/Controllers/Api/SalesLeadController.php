@@ -1426,7 +1426,7 @@ class SalesLeadController extends Controller
 
         $rows = LeadProduct::with([
                 'product:id,product_code,name,status,segment_id',
-                'product.segment:id,name',
+                'product.segment:id,name,regulatory_status',
             ])
             ->where('lead_id', $lead->id)
             ->orderByDesc('id')
@@ -1698,7 +1698,7 @@ class SalesLeadController extends Controller
         $rows = LeadProductSharedPrice::with([
             'leadProduct:id,product_id,currency,quantity,target_price',
             'leadProduct.product:id,product_code,name,status,segment_id',
-            'leadProduct.product.segment:id,name',
+            'leadProduct.product.segment:id,name,regulatory_status',
         ])
             ->where('lead_id', $lead->id)
             // Defense-in-depth: the lead-scope check above already rejects
@@ -1952,7 +1952,7 @@ class SalesLeadController extends Controller
         // a follow-up GET.
         return response()->json(['status' => true, 'data' => $row->fresh([
             'product:id,product_code,name,status,segment_id',
-            'product.segment:id,name',
+            'product.segment:id,name,regulatory_status',
         ])], 201);
     }
 

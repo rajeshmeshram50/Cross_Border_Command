@@ -1,4 +1,5 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { segmentLabel } from '../../../../components/ui/SegmentBadge';
 import './product-management.css';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
@@ -819,7 +820,8 @@ export default function AddProductModal(props: {
       });
 
     const hydrate = (b: Bundle) => {
-      setOptSegments(toOpt(b.segments,                            'title'));
+      setOptSegments(toOpt(b.segments, 'title', ['regulatory_status' as keyof Row])
+        .map(o => ({ ...o, label: segmentLabel(o.label, o.extra?.regulatory_status as string) })));
       setOptHazClasses(toOpt(b.haz_class,                         'name'));
       setOptUoms(
         toOpt(b.uom, 'title', ['short_code', 'unit_type'])
@@ -867,7 +869,7 @@ export default function AddProductModal(props: {
     const labelOf = (key: string) => String(row[key] ?? '');
     switch (slug) {
       case 'segments':
-        setOptSegments(prev => [...prev, { value: id, label: labelOf('title') }]);
+        setOptSegments(prev => [...prev, { value: id, label: segmentLabel(labelOf('title'), labelOf('regulatory_status')) }]);
         void requestSegmentChange(id);
         break;
       case 'haz_class':

@@ -122,6 +122,24 @@ class ClmSegmentRuleController extends Controller
         return $q->value('id');
     }
 
+    // Rule status must match its segment, or "Sugar – Less" could carry a High rule.
+    private function segmentStatusMismatch($user, array $data): ?\Illuminate\Http\JsonResponse
+    {
+        $q = ClmSegment::where('code', $data['segment_code']);
+        MasterVisibility::applyReadScope($q, $user, $user->branch_id ?: null);
+        $segment = $q->first(['name', 'regulatory_status']);
+        if (!$segment) {
+            $msg = "Segment {$data['segment_code']} was not found in your branch. Pick a segment from the list.";
+            return response()->json(['status' => false, 'message' => $msg, 'errors' => ['segment_code' => [$msg]]], 422);
+        }
+        if ($segment->regulatory_status !== $data['regulatory_status']) {
+            $label = $segment->regulatory_status === ClmSegment::REG_HIGHLY ? 'Highly Regulated' : 'Less Regulated';
+            $msg = "{$segment->name} ({$data['segment_code']}) is {$label} — the rule's regulatory status must match the segment.";
+            return response()->json(['status' => false, 'message' => $msg, 'errors' => ['regulatory_status' => [$msg]]], 422);
+        }
+        return null;
+    }
+
     public function store(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -149,14 +167,7 @@ class ClmSegmentRuleController extends Controller
          * succeed. Same fail-closed rule the rest of this module follows: a
          * filter that cannot be satisfied narrows to nothing, it does not widen
          * or silently pass. */
-        if (!$this->resolveSegmentId($user, $data['segment_code'])) {
-            $msg = "Segment {$data['segment_code']} was not found in your branch. Pick a segment from the list.";
-            return response()->json([
-                'status'  => false,
-                'message' => $msg,
-                'errors'  => ['segment_code' => [$msg]],
-            ], 422);
-        }
+        if ($bad = $this->segmentStatusMismatch($user, $data)) return $bad;
 
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
@@ -210,6 +221,7 @@ class ClmSegmentRuleController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
         $data = $this->validatePayload($request);
+        if ($bad = $this->segmentStatusMismatch($user, $data)) return $bad;
         $clashQuery = ClmSegmentRule::query()
             ->whereKeyNot($row->id)
             ->where('segment_code', $data['segment_code'])

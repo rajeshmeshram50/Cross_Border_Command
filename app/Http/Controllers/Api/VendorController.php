@@ -85,8 +85,8 @@ class VendorController extends Controller
         'vendorType:id,name',
         'riskLevel:id,name',
         'vendorBehaviour:id,name',
-        'segment:id,name',
-        'segments:id,name',
+        'segment:id,name,regulatory_status',
+        'segments:id,name,regulatory_status',
         'complianceBehaviour:id,name',
         'classification:id,name',
         'client:id,org_name',
@@ -166,10 +166,10 @@ class VendorController extends Controller
                 // render the "+N" contact badge + Contact Persons popup.
                 'addresses:id,vendor_id,is_primary,contact_name,designation,contact_no,email',
                 'vendorType:id,name',
-                'segment:id,name',
+                'segment:id,name,regulatory_status',
                 // All mapped segments (vendor_segments pivot) so the list can
                 // render the Segment column + "+N" badge, not just the scalar one.
-                'segments:id,name',
+                'segments:id,name,regulatory_status',
                 'riskLevel:id,name',
                 // Drives the "Compliant Status" column on the list. Without it
                 // the pill had no data and every row rendered a dash.
@@ -402,7 +402,7 @@ class VendorController extends Controller
             ->with([
                 'product:id,product_code,name,hsn_id,segment_id',
                 'product.hsn:id,hsn_code',
-                'product.segment:id,name',
+                'product.segment:id,name,regulatory_status',
             ])
             ->orderBy('id')
             ->get()
@@ -2044,7 +2044,7 @@ class VendorController extends Controller
                 'vendor_types'          => $active(VendorTypes::class,          ['id', 'name']),
                 'risk_levels'           => $active(RiskLevels::class,           ['id', 'name']),
                 'vendor_behaviour'      => $active(VendorBehaviour::class,      ['id', 'name']),
-                'segments'              => $active(Segments::class,             ['id', 'name']),
+                'segments'              => $active(Segments::class,             ['id', 'name', 'regulatory_status']),
                 'compliance_behaviours' => $active(ComplianceBehaviours::class, ['id', 'name']),
                 'classifications'       => $active(CustomerClassifications::class, ['id', 'name']),
                 'address_types'         => $active(AddressTypes::class,           ['id', 'name']),

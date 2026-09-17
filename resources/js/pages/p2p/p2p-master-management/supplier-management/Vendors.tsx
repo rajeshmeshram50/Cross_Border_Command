@@ -1,4 +1,5 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { segmentLabel } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardBody, Col, Row } from 'reactstrap';
@@ -133,8 +134,8 @@ type ApiVendor = {
   status: string;
   primary_email: string | null;
   vendor_type?: { id: number; name: string | null } | null;
-  segment?: { id: number; name: string | null } | null;
-  segments?: { id: number; name: string | null }[] | null;
+  segment?: { id: number; name: string | null; regulatory_status?: string | null } | null;
+  segments?: { id: number; name: string | null; regulatory_status?: string | null }[] | null;
   risk_level?: { id: number; name: string | null } | null;
   /* Compliance Behaviour master row — eager-loaded by VendorController::index
      for the Compliant Status column. */
@@ -694,13 +695,13 @@ export default function Vendors() {
       email:       row.primary_address?.email ?? row.primary_email ?? '—',
       status:      row.status === 'active' ? 'Active' : 'Inactive',
       opportunityCount: Number(row.opportunity_count ?? 0) || 0,
-      segment:     row.segment?.name ?? undefined,
+      segment:     row.segment?.name ? segmentLabel(row.segment.name, row.segment.regulatory_status) : undefined,
       // Prefer the multi-segment pivot; fall back to the legacy scalar `segment`
       // relation so suppliers created before multi-segment still show their
       // segment in the list (the list endpoint returns raw models — no fallback).
       segments:    (() => {
-        const arr = (row.segments ?? []).map(s => s.name ?? '').filter(Boolean);
-        return arr.length ? arr : (row.segment?.name ? [row.segment.name] : []);
+        const arr = (row.segments ?? []).filter(s => s.name).map(s => segmentLabel(s.name, s.regulatory_status));
+        return arr.length ? arr : (row.segment?.name ? [segmentLabel(row.segment.name, row.segment.regulatory_status)] : []);
       })(),
       risk:        row.risk_level?.name ?? undefined,
       /* The DERIVED status, not the Compliance Behaviour master. That master

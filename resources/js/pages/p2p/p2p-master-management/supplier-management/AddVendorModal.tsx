@@ -1,4 +1,5 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { segmentLabel } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
@@ -278,7 +279,7 @@ async function loadMappableProducts(): Promise<ProductMappingOpt[]> {
     id: number; product_code?: string; name?: string;
     base_price?: number | string | null; segment_id?: number | null;
     hsn?: { hsn_code?: string } | null;
-    segment?: { id?: number; title?: string } | null;
+    segment?: { id?: number; title?: string; regulatory_status?: string } | null;
     gst_percentage?: { percentage?: number | string } | null;
   };
   const res = await api.get<{ data?: Row[] } | Row[]>('/products?per_page=500&lite=1');
@@ -291,7 +292,7 @@ async function loadMappableProducts(): Promise<ProductMappingOpt[]> {
       code:      r.product_code ?? '',
       name:      r.name ?? '',
       hsn:       r.hsn?.hsn_code ?? '',
-      segment:   r.segment?.title ?? '',
+      segment:   segmentLabel(r.segment?.title, r.segment?.regulatory_status),
       segmentId: r.segment_id ?? r.segment?.id ?? null,
       basePrice:     r.base_price != null ? String(r.base_price) : '',
       gstPercentage: r.gst_percentage?.percentage != null ? String(r.gst_percentage.percentage) : '',
@@ -445,17 +446,17 @@ export default function AddVendorModal(props: {
 
   const [quickAdd, setQuickAdd] = useState<VendorMasterSlug | null>(null);
 
-  const [segAdd, setSegAdd] = useState<{ nextCode: string; names: string[] } | null>(null);
+  const [segAdd, setSegAdd] = useState<{ nextCode: string; segments: { name: string; regulatory_status?: string }[] } | null>(null);
   const [segAddLoading, setSegAddLoading] = useState(false);
   const openSegmentAdd = async () => {
     if (segAddLoading) return;
     setSegAddLoading(true);
     try {
-      const { data } = await api.get<{ data: { code: string; name: string }[] }>('/clm/segments');
+      const { data } = await api.get<{ data: { code: string; name: string; regulatory_status?: string }[] }>('/clm/segments');
       const segRows = data.data ?? [];
-      setSegAdd({ nextCode: nextSegmentCode(segRows), names: segRows.map(r => r.name) });
+      setSegAdd({ nextCode: nextSegmentCode(segRows), segments: segRows });
     } catch {
-      setSegAdd({ nextCode: 'SG-001', names: [] });
+      setSegAdd({ nextCode: 'SG-001', segments: [] });
     } finally {
       setSegAddLoading(false);
     }
@@ -909,7 +910,7 @@ export default function AddVendorModal(props: {
       setBehaviourOpts(toOpt(b.vendor_behaviour));
       setSegmentOpts(
         (b.segments || [])
-          .map(r => ({ value: String(r.id), label: String(r.title ?? r.name ?? '') }))
+          .map(r => ({ value: String(r.id), label: segmentLabel(String(r.title ?? r.name ?? ''), (r as { regulatory_status?: string }).regulatory_status) }))
           .filter(o => o.value !== '' && o.label !== '')
       );
       setComplianceOpts(toOpt(b.compliance_behaviours));
@@ -2119,7 +2120,7 @@ export default function AddVendorModal(props: {
         base_price?: number | string | null;
         segment_id?: number | null;
         hsn?: { hsn_code?: string } | null;
-        segment?: { id?: number; title?: string } | null;
+        segment?: { id?: number; title?: string; regulatory_status?: string } | null;
         gst_percentage?: { percentage?: number | string } | null;
       };
       const res = await api.get<{ data?: ProductRow[] } | ProductRow[]>('/products?per_page=500&lite=1');
@@ -3669,7 +3670,7 @@ export default function AddVendorModal(props: {
           <SegmentModal
             existing={null}
             nextCode={segAdd.nextCode}
-            existingNames={segAdd.names}
+            existingSegments={segAdd.segments}
             onClose={() => setSegAdd(null)}
             onSave={async (form: SegmentForm) => {
               try {
@@ -3677,7 +3678,7 @@ export default function AddVendorModal(props: {
                 const created = data?.data;
                 if (created?.id) {
                   const id = String(created.id);
-                  setSegmentOpts(prev => [...prev, { value: id, label: String(created.name ?? form.name) }]);
+                  setSegmentOpts(prev => [...prev, { value: id, label: segmentLabel(String(created.name ?? form.name), form.regulatory_status) }]);
                   toast.info(
                     'Segment created',
                     `${created.name ?? form.name} can't be selected until a rule is defined for it in the Document Control Panel.`,
@@ -3728,7 +3729,7 @@ export default function AddVendorModal(props: {
               case 'segments': {
                 const label = String(row.title ?? '');
                 if (label) {
-                  setSegmentOpts(prev => [...prev, { value: id, label }]);
+                  setSegmentOpts(prev => [...prev, { value: id, label: segmentLabel(label, row.regulatory_status as string) }]);
                   setSegment(prev => prev.includes(id) ? prev : [...prev, id]);
                   clearFieldError('segment');
                 }

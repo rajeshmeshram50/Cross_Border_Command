@@ -170,6 +170,23 @@ class ClmSegmentController extends Controller
         return $map;
     }
 
+    /** Same name (case/space-insensitive) + same regulatory status within the caller's branch scope. */
+    private function duplicateExists($user, string $name, string $regulatoryStatus, ?int $exceptId = null): bool
+    {
+        $q = ClmSegment::query()
+            ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($name))])
+            ->where('regulatory_status', $regulatoryStatus)
+            ->when($exceptId, fn ($w) => $w->where('id', '!=', $exceptId));
+        MasterVisibility::applyReadScope($q, $user, $user->branch_id ?: null);
+        return $q->exists();
+    }
+
+    private function duplicateMessage(string $name, string $regulatoryStatus): string
+    {
+        $label = $regulatoryStatus === ClmSegment::REG_HIGHLY ? 'Highly Regulated' : 'Less Regulated';
+        return "\"{$name}\" already exists as {$label}. Pick a different name or regulatory status.";
+    }
+
     /**
      * Which tenant-stamp columns a reference table actually carries, plus
      * whether it carries enough of them to be scoped at all. A table with no
@@ -250,15 +267,10 @@ class ClmSegmentController extends Controller
             'status'            => ['nullable', Rule::in(ClmSegment::STATUSES)],
         ]);
 
-        // Reject duplicate segment name within the caller's branch scope
-        // (case-insensitive). Sibling branches may reuse the name.
+        // Unique on name + regulatory status: "Sugar – Less" and "Sugar – Highly" may coexist.
         $name = trim($data['name']);
-        $dupe = ClmSegment::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
-        MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
-        if ($dupe->exists()) {
-            $msg = "A segment named \"{$name}\" already exists. Pick a different name.";
-            // 422 + errors.name so the modal shows it inline under the name field
-            // (not a global toast) — same shape Laravel's `unique` rule returns.
+        if ($this->duplicateExists($user, $name, $data['regulatory_status'])) {
+            $msg = $this->duplicateMessage($name, $data['regulatory_status']);
             return response()->json([
                 'status'  => false,
                 'message' => $msg,
@@ -352,15 +364,12 @@ class ClmSegmentController extends Controller
             ], 422);
         }
 
-        // Reject rename to a duplicate within the caller's branch scope
-        // (case-insensitive, excluding self).
-        if (isset($data['name'])) {
-            $clashQ = ClmSegment::query()->where('id', '!=', $row->id)
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])]);
-            MasterVisibility::applyReadScope($clashQ, $user, $user->branch_id ?: null);
-            $clash = $clashQ->exists();
-            if ($clash) {
-                $msg = "Another segment named \"{$data['name']}\" already exists. Pick a different name.";
+        // Checked on the FINAL name + status, so changing only the status is validated too.
+        if (isset($data['name']) || isset($data['regulatory_status'])) {
+            $finalName = $data['name'] ?? (string) $row->name;
+            $finalReg  = $data['regulatory_status'] ?? (string) $row->regulatory_status;
+            if ($this->duplicateExists($user, $finalName, $finalReg, (int) $row->id)) {
+                $msg = $this->duplicateMessage($finalName, $finalReg);
                 return response()->json([
                     'status'  => false,
                     'message' => $msg,

@@ -28,6 +28,7 @@ const DdModal  = lazyPage(() => import('./ClmDdModal'));
 const QcModal  = lazyPage(() => import('./ClmQcModal'));
 const TlModal  = lazyPage(() => import('./ClmTlModal'));
 import SearchClear from '../../../components/ui/SearchClear';
+import SegmentBadge, { segmentLabel } from '../../../components/ui/SegmentBadge';
 import { lazyPage } from '../../../utils/lazyPage';
 
 /* Central CLM → Document Control Panel.
@@ -342,8 +343,8 @@ export default function ClmDcpPage() {
     const segMap = new Map<string, string>();
     for (const r of allRows) {
       for (const a of authsForRule(r)) authSet.add(a);
-      const name = boot?.segments.find(s => s.code === r.segment_code)?.name ?? r.segment_code;
-      segMap.set(r.segment_code, name);
+      const seg = boot?.segments.find(s => s.code === r.segment_code);
+      segMap.set(r.segment_code, seg ? segmentLabel(seg.name, seg.regulatory_status) : r.segment_code);
     }
     return {
       authorities: Array.from(authSet).sort((a, b) => a.localeCompare(b)).map(a => ({ value: a, label: a })),
@@ -571,7 +572,7 @@ export default function ClmDcpPage() {
                           </Tooltip>
                         </td>
                         <td style={{ textAlign: 'center' }}>
-                          <span className={`clm-badge ${isHigh ? 'clm-badge-red' : 'clm-badge-green'}`}><span className="clm-badge-dot" />{isHigh ? 'High' : 'Less'}</span>
+                          <SegmentBadge status={isHigh ? 'highly' : 'less'} />
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           {r.document_type ? (
@@ -685,7 +686,9 @@ function SegmentRuleModal(props: {
   const prefillSeg = prefillSegmentCode
     ? (boot.segments.find(sg => sg.code === prefillSegmentCode) ?? null)
     : null;
-  const [reg, setReg]         = useState<'highly'|'less'|null>(existing?.regulatory_status ?? prefillSeg?.regulatory_status ?? null);
+  // Status comes from the segment itself; an older rule may have saved the wrong one.
+  const existingSeg = existing ? boot.segments.find(sg => sg.code === existing.segment_code) : undefined;
+  const [reg, setReg]         = useState<'highly'|'less'|null>(existingSeg?.regulatory_status ?? existing?.regulatory_status ?? prefillSeg?.regulatory_status ?? null);
   /* Domestic / International — defaults to International for every new rule
    * (a segment can hold one rule per type). Scopes the segment picker, the
    * "already ruled" exclusion, and the matched-rule (Add → Edit) pivot. */
@@ -734,7 +737,7 @@ function SegmentRuleModal(props: {
    * since the user is explicitly batching new rules. */
   useEffect(() => {
     if (!existing && !isMulti && matchedRule) {
-      setReg(matchedRule.regulatory_status);
+      setReg(boot.segments.find(sg => sg.code === matchedRule.segment_code)?.regulatory_status ?? matchedRule.regulatory_status);
       setDocSel(matchedRule.doc_selections ?? {});
     }
   }, [matchedRule, existing, isMulti]);
@@ -1021,7 +1024,7 @@ function SegmentRuleModal(props: {
                           options={segments.map(s => {
                             // Truncate long names to 40 chars; full name in the hover tooltip.
                             const nm = s.name.length > 40 ? `${s.name.slice(0, 40)}…` : s.name;
-                            return { value: s.code, label: `${nm} (${s.code})`, fullLabel: `${s.name} (${s.code})` };
+                            return { value: s.code, label: `${segmentLabel(nm, s.regulatory_status)} (${s.code})`, fullLabel: `${segmentLabel(s.name, s.regulatory_status)} (${s.code})` };
                           })}
                           onChange={(vs) => setSegCodes(vs)}
                         />
@@ -1036,7 +1039,7 @@ function SegmentRuleModal(props: {
                           // Truncate the (free-text, up-to-255-char) segment name to 40
                           // chars in the list; the full name shows in the option tooltip.
                           const nm = s.name.length > 40 ? `${s.name.slice(0, 40)}…` : s.name;
-                          return { value: s.code, label: `${nm} (${s.code})`, fullLabel: `${s.name} (${s.code})` };
+                          return { value: s.code, label: `${segmentLabel(nm, s.regulatory_status)} (${s.code})`, fullLabel: `${segmentLabel(s.name, s.regulatory_status)} (${s.code})` };
                         })}
                       />
                     )}

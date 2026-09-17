@@ -368,9 +368,7 @@ export default function ClmSegmentPage() {
         <SegmentModal
           existing={editing}
           nextCode={nextSegmentCode(topCodesRef.current)}
-          existingNames={rows
-            .filter(r => r.id !== editing?.id)
-            .map(r => r.name)}
+          existingSegments={rows.filter(r => r.id !== editing?.id)}
           onClose={() => { setModalOpen(false); setEditing(null); }}
           onSave={(form) => onSave(form, editing?.id)}
         />
@@ -389,8 +387,8 @@ export default function ClmSegmentPage() {
   );
 }
 
-export function SegmentModal(props: { existing: Segment | null; nextCode: string; existingNames?: string[]; onClose: () => void; onSave: (f: SegmentForm) => SaveResult | Promise<SaveResult> | void | Promise<void>; }) {
-  const { existing, nextCode, existingNames = [], onClose, onSave } = props;
+export function SegmentModal(props: { existing: Segment | null; nextCode: string; existingSegments?: { name: string; regulatory_status?: string }[]; onClose: () => void; onSave: (f: SegmentForm) => SaveResult | Promise<SaveResult> | void | Promise<void>; }) {
+  const { existing, nextCode, existingSegments = [], onClose, onSave } = props;
   const isEdit = !!existing;
 
   const [name, setName]     = useState(existing?.name ?? '');
@@ -438,10 +436,9 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
     }
     else {
       const lower = trimmed.toLowerCase();
-      if (existingNames.some(n => n.trim().toLowerCase() === lower)) {
-        // Clip the echoed name — a 255-char name would otherwise blow the
-        // duplicate banner off-screen.
-        next.name = `A segment named "${clipName(trimmed)}" already exists. Pick a different name.`;
+      // Unique on name + regulatory status; only checked once a status is picked.
+      if (reg && existingSegments.some(s => s.name.trim().toLowerCase() === lower && s.regulatory_status === reg)) {
+        next.name = `"${clipName(trimmed)}" already exists as ${reg === 'highly' ? 'Highly' : 'Less'} Regulated. Pick a different name or regulatory status.`;
       }
     }
     if (!reg) next.reg = 'Regulatory status is required';
