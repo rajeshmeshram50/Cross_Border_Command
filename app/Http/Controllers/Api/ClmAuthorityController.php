@@ -171,6 +171,70 @@ class ClmAuthorityController extends Controller
         return response()->json(['status' => true, 'data' => $row], 201);
     }
 
+    /**
+     * Bulk import from the Excel sheet. Each row is validated on its own — a
+     * bad row lands in `failed` with a reason and never blocks the good ones.
+     * Same rules as store(): name/description required, length caps, and no
+     * duplicate name (case-insensitive) in the caller's scope or in the file.
+     */
+    public function import(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context for this user'], 403);
+
+        $request->validate(['rows' => 'required|array|min:1|max:5000']);
+
+        $existing = ClmAuthority::query();
+        MasterVisibility::applyReadScope($existing, $user, $user->branch_id ?: null);
+        $seen = [];
+        foreach ($existing->pluck('name') as $n) $seen[mb_strtolower(trim((string) $n))] = true;
+
+        $imported = [];
+        $failed   = [];
+
+        foreach (array_values($request->input('rows')) as $i => $r) {
+            $rowNo = (int) (is_array($r) && isset($r['row']) ? $r['row'] : $i + 2);
+            $name  = trim((string) (is_array($r) ? ($r['name'] ?? '') : ''));
+            $desc  = trim((string) (is_array($r) ? ($r['description'] ?? '') : ''));
+
+            $reason = null;
+            if ($name === '')                        $reason = 'Authority name is required';
+            elseif ($desc === '')                    $reason = 'Description is required';
+            elseif (mb_strlen($name) > 255)          $reason = 'Authority name exceeds 255 characters';
+            elseif (mb_strlen($desc) > 500)          $reason = 'Description exceeds 500 characters';
+            elseif (isset($seen[mb_strtolower($name)])) $reason = "An authority named \"{$name}\" already exists";
+
+            if ($reason) {
+                $failed[] = ['row' => $rowNo, 'name' => $name, 'description' => $desc, 'reason' => $reason];
+                continue;
+            }
+
+            try {
+                $row = DB::transaction(fn () => ClmAuthority::create([
+                    'client_id'   => $user->client_id,
+                    'branch_id'   => $user->branch_id,
+                    'code'        => $this->nextCode($user->client_id, $user->branch_id),
+                    'name'        => $name,
+                    'description' => $desc,
+                    'status'      => ClmAuthority::STATUS_ACTIVE,
+                    'created_by'  => $user->id,
+                    'updated_by'  => $user->id,
+                ]));
+                $seen[mb_strtolower($name)] = true;
+                $imported[] = ['row' => $rowNo, 'code' => $row->code, 'name' => $name, 'description' => $desc];
+            } catch (\Throwable $e) {
+                $failed[] = ['row' => $rowNo, 'name' => $name, 'description' => $desc, 'reason' => 'Could not save this row'];
+            }
+        }
+
+        return response()->json([
+            'status'   => true,
+            'imported' => $imported,
+            'failed'   => $failed,
+        ]);
+    }
+
     public function update(Request $request, $id)
     {
         $user = $request->user();

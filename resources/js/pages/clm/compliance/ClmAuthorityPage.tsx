@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import WorklistPager from "../../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
+import * as XLSX from 'xlsx';
 import api from '../../../api';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
@@ -136,6 +137,71 @@ export default function ClmAuthorityPage() {
       throw e;   // let the modal surface field-level (422) errors below the field
     }
   };
+  /* ── Excel: sample sheet / export / import ── */
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  useScrollLock(!!importResult);
+
+  const downloadSample = () => {
+    const ws = XLSX.utils.json_to_sheet([
+      { 'Authority Name': 'FSSAI', 'Description': 'Food Safety & Standards Authority of India' },
+      { 'Authority Name': 'DGFT',  'Description': 'Directorate General of Foreign Trade' },
+    ]);
+    ws['!cols'] = [{ wch: 30 }, { wch: 60 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Authorities');
+    XLSX.writeFile(wb, 'Authority_Import_Sample.xlsx');
+  };
+
+  const onExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      // No per_page → the endpoint returns the full (search-filtered) list.
+      const { data } = await api.get<{ data: Authority[] }>('/clm/authorities', {
+        params: debouncedSearch ? { search: debouncedSearch } : {},
+      });
+      const list = data.data ?? [];
+      if (!list.length) { toast.warning('Nothing to export', 'There are no authorities to export.'); return; }
+      const ws = XLSX.utils.json_to_sheet(list.map((r, i) => ({
+        'Sr. No': i + 1, 'Authority ID': r.code, 'Authority Name': r.name, 'Description': r.description,
+      })));
+      ws['!cols'] = [{ wch: 8 }, { wch: 14 }, { wch: 30 }, { wch: 60 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Authorities');
+      XLSX.writeFile(wb, `Authorities_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch { toast.error('Export failed', 'Could not export authorities'); }
+    finally { setExporting(false); }
+  };
+
+  const onImportFile = async (file: File) => {
+    setImporting(true);
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const json: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      // Forgiving header match: "Authority Name" / "Name", "Description".
+      const pick = (o: Record<string, any>, keys: string[]) => {
+        const k = Object.keys(o).find(h => keys.includes(h.trim().toLowerCase()));
+        return k ? String(o[k] ?? '').trim() : '';
+      };
+      const rows = json
+        .map((o, i) => ({ row: i + 2, name: pick(o, ['authority name', 'name']), description: pick(o, ['description', 'desc']) }))
+        .filter(r => r.name || r.description);
+      if (!rows.length) { toast.warning('Empty sheet', 'No rows found. Use the sample sheet format.'); return; }
+      const { data } = await api.post<ImportResult>('/clm/authorities/import', { rows });
+      setImportResult({ imported: data.imported ?? [], failed: data.failed ?? [] });
+      if ((data.imported ?? []).length) reload();
+    } catch (e: any) {
+      toast.error('Import failed', e?.response?.data?.message ?? 'Could not read or import the file');
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
   const onDelete = async () => {
     if (!pendingDelete || deleting) return;
     setDeleting(true);
@@ -159,6 +225,14 @@ export default function ClmAuthorityPage() {
            search bar never shifts position when it gains or loses focus. */
         @media (max-width: 1280px) { .clm-root .clm-tabs-bar .auth-search { width: 360px; } }
         @media (max-width: 760px)  { .clm-root .clm-tabs-bar .auth-search { width: 100%; } }
+        .clm-root .auth-xl-btn {
+          display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px;
+          border: 1px solid rgba(8,145,178,.35); border-radius: 8px; background: #fff;
+          color: #0e7490; font-size: 13px; font-weight: 600; cursor: pointer;
+        }
+        .clm-root .auth-xl-btn:hover:not(:disabled) { background: #ecfeff; }
+        .clm-root .auth-xl-btn:disabled { opacity: .6; cursor: progress; }
+        [data-bs-theme="dark"] .clm-root .auth-xl-btn { background: #0f172a; color: #67e8f9; }
       `}</style>
 
       <ClmPageHeader
@@ -189,10 +263,26 @@ export default function ClmAuthorityPage() {
             <input autoComplete="off" type="text" placeholder="Search by authority name, ID or description…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
             <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
+            onChange={e => { const f = e.target.files?.[0]; if (f) void onImportFile(f); }} />
+          <button type="button" className="auth-xl-btn" onClick={downloadSample}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Sample Sheet
+          </button>
+          <button type="button" className="auth-xl-btn" onClick={() => fileRef.current?.click()} disabled={importing}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            {importing ? 'Importing…' : 'Import'}
+          </button>
+          <button type="button" className="auth-xl-btn" onClick={() => void onExport()} disabled={exporting}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            {exporting ? 'Exporting…' : 'Export'}
+          </button>
           <div className="clm-total">
             <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg></div>
             <div className="clm-total-lbl">Total Authorities</div>
             <div className="clm-total-num">{count}</div>
+          </div>
           </div>
         </div>
 
@@ -280,6 +370,8 @@ export default function ClmAuthorityPage() {
         />
       )}
 
+      {importResult && <ImportResultModal result={importResult} onClose={() => setImportResult(null)} />}
+
       <DeleteConfirmModal
         open={!!pendingDelete}
         title="Delete Authority"
@@ -291,6 +383,79 @@ export default function ClmAuthorityPage() {
       />
     </div>
   );
+}
+
+type ImportResult = {
+  imported: { row: number; code: string; name: string; description: string }[];
+  failed:   { row: number; name: string; description: string; reason: string }[];
+};
+
+/* Import outcome — two tabs: Completed rows and Failed rows (with reason). */
+function ImportResultModal({ result, onClose }: { result: ImportResult; onClose: () => void }) {
+  const [tab, setTab] = useState<'done' | 'failed'>(result.imported.length || !result.failed.length ? 'done' : 'failed');
+
+  const downloadFailed = () => {
+    const ws = XLSX.utils.json_to_sheet(result.failed.map(f => ({
+      'Row': f.row, 'Authority Name': f.name, 'Description': f.description, 'Reason': f.reason,
+    })));
+    ws['!cols'] = [{ wch: 6 }, { wch: 30 }, { wch: 50 }, { wch: 45 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Failed');
+    XLSX.writeFile(wb, 'Authority_Import_Failed.xlsx');
+  };
+
+  const tabStyle = (active: boolean, color: string): React.CSSProperties => ({
+    flex: 1, padding: '10px 12px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13,
+    background: 'transparent', color: active ? color : 'var(--vz-secondary-color)',
+    borderBottom: `2px solid ${active ? color : 'transparent'}`,
+  });
+  const cell: React.CSSProperties = { padding: '8px 10px', borderBottom: '1px solid rgba(148,163,184,.25)', fontSize: 13, textAlign: 'left', verticalAlign: 'top' };
+  const empty = (msg: string) => <div style={{ padding: 20, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>{msg}</div>;
+
+  return createPortal((
+    <div className="clm-modal-bd">
+      <div className="clm-modal" style={{ maxWidth: 760, width: '95vw' }}>
+        <div className="clm-modal-head">
+          <div className="clm-modal-head-left">
+            <div>
+              <div className="clm-modal-head-title">Import Result</div>
+              <div className="clm-modal-head-sub">{result.imported.length} imported successfully, {result.failed.length} failed.</div>
+            </div>
+          </div>
+          <button className="clm-modal-close" onClick={onClose}>×</button>
+        </div>
+        <div style={{ display: 'flex', borderBottom: '1px solid rgba(148,163,184,.3)' }}>
+          <button type="button" style={tabStyle(tab === 'done', '#059669')} onClick={() => setTab('done')}>Completed ({result.imported.length})</button>
+          <button type="button" style={tabStyle(tab === 'failed', '#dc2626')} onClick={() => setTab('failed')}>Failed ({result.failed.length})</button>
+        </div>
+        <div className="clm-modal-body" style={{ maxHeight: '55vh', overflow: 'auto' }}>
+          {tab === 'done' ? (
+            result.imported.length === 0 ? empty('No rows were imported.') : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr><th style={cell}>Row</th><th style={cell}>Authority ID</th><th style={cell}>Authority Name</th><th style={cell}>Description</th></tr></thead>
+                <tbody>{result.imported.map(r => (
+                  <tr key={`d${r.row}`}><td style={cell}>{r.row}</td><td style={cell}><span className="clm-code-pill">{r.code}</span></td><td style={cell}>{r.name}</td><td style={cell}>{r.description}</td></tr>
+                ))}</tbody>
+              </table>
+            )
+          ) : (
+            result.failed.length === 0 ? empty('No failed rows.') : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr><th style={cell}>Row</th><th style={cell}>Authority Name</th><th style={cell}>Description</th><th style={cell}>Reason</th></tr></thead>
+                <tbody>{result.failed.map(r => (
+                  <tr key={`f${r.row}`}><td style={cell}>{r.row}</td><td style={cell}>{r.name || '—'}</td><td style={cell}>{r.description || '—'}</td><td style={{ ...cell, color: '#dc2626' }}>{r.reason}</td></tr>
+                ))}</tbody>
+              </table>
+            )
+          )}
+        </div>
+        <div className="clm-modal-foot">
+          {result.failed.length > 0 && <button className="clm-btn-cancel" onClick={downloadFailed}>Download Failed Rows</button>}
+          <button className="clm-btn-save" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  ), document.body);
 }
 
 function AuthorityModal(props: { existing: Authority | null; nextCode: string; onClose: () => void; onSave: (f: { name: string; description: string }) => void; }) {
