@@ -73,12 +73,7 @@ class ClmQcController extends Controller
            ONCE and matching in memory turns the whole loop into hash lookups. */
         $sets = $this->usageSets((int) $user->client_id);
         $rows->each(function ($r) use ($sets) {
-            $labels = [];
-            if ($r->code && isset($sets['rules'][$r->code]))   $labels[] = 'Segment Rules';
-            if ($r->code && isset($sets['uploads'][$r->code])) $labels[] = 'Segment Doc Uploads';
-            if ($r->name && isset($sets['products'][mb_strtolower(trim((string) $r->name))])) {
-                $labels[] = 'Product QC Records';
-            }
+            $labels = $this->qcUsageLabels($sets, $r);
             $r->in_use  = !empty($labels);
             $r->used_in = $labels;
         });
@@ -97,7 +92,8 @@ class ClmQcController extends Controller
 
     /**
      * Everything that references a QC document, read once per REQUEST rather
-     * than once per row. Returns three lookup maps: codes used by segment
+     * than once per row. Returns three lookup maps, each grouped by the branch
+     * the reference belongs to (see ChecksClmDocUsage): codes used by segment
      * rules, codes used by segment doc uploads, and lowercased names used by
      * product QC records.
      *
@@ -110,19 +106,32 @@ class ClmQcController extends Controller
         $sets = $this->clmDocUsageSets($clientId);
 
         // QC alone also appears in product QC records, matched by NAME.
-        // product_qc_records has no client_id — scope through its product.
+        // product_qc_records has no client_id or branch_id — both come from
+        // its product.
         $products = [];
         if (Schema::hasTable('product_qc_records') && Schema::hasColumn('product_qc_records', 'qc_name')) {
             foreach (DB::table('product_qc_records')
                        ->join('products', 'products.id', '=', 'product_qc_records.product_id')
                        ->where('products.client_id', $clientId)
                        ->whereNotNull('product_qc_records.qc_name')
-                       ->distinct()->pluck('product_qc_records.qc_name') as $n) {
-                $products[mb_strtolower(trim((string) $n))] = true;
+                       ->distinct()->get(['products.branch_id', 'product_qc_records.qc_name']) as $r) {
+                $products[self::clmBranchKey($r->branch_id)][mb_strtolower(trim((string) $r->qc_name))] = true;
             }
         }
 
         return $sets + ['products' => $products];
+    }
+
+    /** Where this QC document is referenced, within its own branch's scope.
+     *  Shared by the list's in_use flag and the delete guard. */
+    private function qcUsageLabels(array $sets, ClmQcDocument $row): array
+    {
+        $labels = $this->clmDocUsageLabels($sets, $row->code, $row->branch_id);
+        $name = mb_strtolower(trim((string) $row->name));
+        if ($name !== '' && self::clmUsageHas($sets['products'], $row->branch_id, $name)) {
+            $labels[] = 'Product QC Records';
+        }
+        return $labels;
     }
 
     public function store(Request $request)
@@ -241,7 +250,8 @@ class ClmQcController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        $usedIn = $this->usageCheck($user->client_id, $row->code, $row->name);
+        // Same branch-scoped sets the list's in_use flag reads, so the two agree.
+        $usedIn = $this->qcUsageLabels($this->usageSets((int) $user->client_id), $row);
         if (!empty($usedIn)) {
             return response()->json([
                 'status'  => false,
@@ -255,44 +265,6 @@ class ClmQcController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
-    /** QC docs are referenced by code (segment rules JSON + segment doc
-     *  uploads) AND by name (product_qc_records.qc_name free-text).
-     *
-     *  Codes (QC-001, …) are allocated PER CLIENT, so every tenant has a
-     *  "QC-001". The usage lookups MUST be scoped to this client's rows —
-     *  otherwise a freshly created QC-001 falsely matches another tenant's
-     *  reference to their own QC-001 and the delete is wrongly blocked. */
-    private function usageCheck(int $clientId, ?string $code, ?string $name): array
-    {
-        $usedIn = [];
-        if ($code && Schema::hasTable('clm_segment_rules')
-            && Schema::hasColumn('clm_segment_rules', 'doc_selections')
-            && DB::table('clm_segment_rules')
-                ->where('client_id', $clientId)
-                ->where('doc_selections', 'like', '%"' . $code . '"%')
-                ->exists()) {
-            $usedIn[] = 'Segment Rules';
-        }
-        if ($code && Schema::hasTable('segment_doc_uploads')
-            && Schema::hasColumn('segment_doc_uploads', 'doc_code')
-            && DB::table('segment_doc_uploads')
-                ->where('client_id', $clientId)
-                ->where('doc_code', $code)
-                ->exists()) {
-            $usedIn[] = 'Segment Doc Uploads';
-        }
-        // product_qc_records has no client_id — scope through its product.
-        if ($name && Schema::hasTable('product_qc_records')
-            && Schema::hasColumn('product_qc_records', 'qc_name')
-            && DB::table('product_qc_records')
-                ->join('products', 'products.id', '=', 'product_qc_records.product_id')
-                ->where('products.client_id', $clientId)
-                ->where('product_qc_records.qc_name', $name)
-                ->exists()) {
-            $usedIn[] = 'Product QC Records';
-        }
-        return $usedIn;
-    }
 
     private function nextCode(int $clientId, ?int $branchId): string
     {

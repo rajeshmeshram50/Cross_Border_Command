@@ -20,18 +20,68 @@ use Illuminate\Support\Facades\Schema;
  * one ONCE and matching in memory turns the whole loop into hash lookups, so
  * the query count stops depending on the row count.
  *
- * NOTE ON SCOPE: the per-row version passed each row's own `client_id`, which
- * for a client-level (shared, client_id null) row meant "used by ANY tenant".
- * These sets are scoped to the VIEWING tenant, so a shared row now reports
- * whether THIS client uses it — more useful, and it is only a display flag.
- * The delete guard is unchanged: destroy() still runs its own per-row check
- * with the original semantics, so nothing about deletion safety moves.
+ * BRANCH SCOPE. Master codes restart per BRANCH (every branch has its own
+ * KYC-001), and each branch keeps its own segment rules and its own customers /
+ * suppliers. Matching on client + code alone therefore reported a document
+ * a branch had only just created as "in use by Segment Rules" whenever a
+ * SIBLING branch referenced its own document with the same code — the
+ * CLM-master bug reported on the production data (Vortex India's KYC-001…006,
+ * DD-001/002, TL-001, QC-001/002, all flagged by Head Office references).
+ *
+ * So every reference is recorded under the branch it belongs to — a rule's own
+ * branch_id, an upload's OWNER's branch_id (segment_doc_uploads carries none of
+ * its own) — and a document is matched against:
+ *   · a branch-owned document → references in its own branch, plus client-level
+ *     (branch-less) references, which every branch can see;
+ *   · a client-level document (branch_id null) → references anywhere in the
+ *     client, as before, since every branch can use a shared document.
+ * Anything whose branch cannot be resolved counts as client-level, so the
+ * delete guard only ever errs towards "in use", never towards "free".
+ *
+ * destroy() uses these same sets, so the list's flag and the delete guard give
+ * the same answer.
  */
 trait ChecksClmDocUsage
 {
+    /** Bucket key for a branch id: null (client-level) → 'shared'. */
+    protected static function clmBranchKey($branchId): string
+    {
+        return $branchId === null ? 'shared' : (string) (int) $branchId;
+    }
+
     /**
-     * Sets of document CODES referenced by each source.
-     * Shape: ['rules' => [code => true], 'uploads' => [code => true]]
+     * Is `$key` referenced from the scope a row with `$branchId` lives in?
+     * `$byBranch` is a [branchKey => [key => true]] map.
+     */
+    protected static function clmUsageHas(array $byBranch, $branchId, string $key): bool
+    {
+        if ($branchId === null) {
+            foreach ($byBranch as $set) {
+                if (isset($set[$key])) return true;
+            }
+            return false;
+        }
+        return isset($byBranch[self::clmBranchKey($branchId)][$key])
+            || isset($byBranch['shared'][$key]);
+    }
+
+    /**
+     * Owner tables of segment_doc_uploads, keyed by uploadable_type — the same
+     * set SegmentDocUploadController::TYPE_MAP resolves. Each carries branch_id.
+     */
+    protected static function clmUploadOwnerTables(): array
+    {
+        return [
+            \App\Models\Customer::class  => 'customers',
+            \App\Models\Consignee::class => 'consignees',
+            \App\Models\Vendor::class    => 'vendors',
+            \App\Models\Product::class   => 'products',
+        ];
+    }
+
+    /**
+     * Document CODES referenced by each source, grouped by branch.
+     * Shape: ['rules' => [branchKey => [code => true]], 'uploads' => [branchKey => [code => true]]]
      */
     protected function clmDocUsageSets(?int $clientId): array
     {
@@ -40,8 +90,9 @@ trait ChecksClmDocUsage
         if (Schema::hasTable('clm_segment_rules') && Schema::hasColumn('clm_segment_rules', 'doc_selections')) {
             $q = DB::table('clm_segment_rules');
             if ($clientId) $q->where('client_id', $clientId);
-            foreach ($q->pluck('doc_selections') as $j) {
-                $arr = is_array($j) ? $j : (json_decode((string) $j, true) ?: []);
+            foreach ($q->get(['branch_id', 'doc_selections']) as $r) {
+                $arr = is_array($r->doc_selections) ? $r->doc_selections : (json_decode((string) $r->doc_selections, true) ?: []);
+                $bk  = self::clmBranchKey($r->branch_id);
                 /* Shape is { kyc: {CODE: 'M'}, dd: {...}, tl: {...}, qc: {...} }.
                    Every bucket is walked rather than just the caller's own, so
                    one trait serves all four masters and a code filed under an
@@ -50,28 +101,49 @@ trait ChecksClmDocUsage
                    the same way. */
                 foreach ($arr as $bucket) {
                     if (is_array($bucket)) {
-                        foreach (array_keys($bucket) as $code) $rules[(string) $code] = true;
+                        foreach (array_keys($bucket) as $code) $rules[$bk][(string) $code] = true;
                     }
                 }
             }
         }
 
         if (Schema::hasTable('segment_doc_uploads') && Schema::hasColumn('segment_doc_uploads', 'doc_code')) {
-            $q = DB::table('segment_doc_uploads')->whereNotNull('doc_code')->distinct();
+            $owners = self::clmUploadOwnerTables();
+            foreach ($owners as $class => $table) {
+                // LEFT join: an upload whose owner row is gone has no branch to
+                // file it under, so it lands in 'shared' rather than vanishing.
+                $q = DB::table('segment_doc_uploads as u')
+                    ->leftJoin("{$table} as o", 'o.id', '=', 'u.uploadable_id')
+                    ->where('u.uploadable_type', $class)
+                    ->whereNotNull('u.doc_code')
+                    ->distinct();
+                if ($clientId) $q->where('u.client_id', $clientId);
+                foreach ($q->get(['o.branch_id', 'u.doc_code']) as $r) {
+                    $uploads[self::clmBranchKey($r->branch_id)][(string) $r->doc_code] = true;
+                }
+            }
+            // Any other owner type has no known branch — client-level.
+            $q = DB::table('segment_doc_uploads')
+                ->whereNotIn('uploadable_type', array_keys($owners))
+                ->whereNotNull('doc_code')
+                ->distinct();
             if ($clientId) $q->where('client_id', $clientId);
-            foreach ($q->pluck('doc_code') as $c) $uploads[(string) $c] = true;
+            foreach ($q->pluck('doc_code') as $c) $uploads['shared'][(string) $c] = true;
         }
 
         return ['rules' => $rules, 'uploads' => $uploads];
     }
 
-    /** Human-readable sources this code appears in. Empty => safe to delete. */
-    protected function clmDocUsageLabels(array $sets, ?string $code): array
+    /**
+     * Human-readable sources this code appears in, for a document owned by
+     * `$branchId` (null = client-level). Empty => safe to delete.
+     */
+    protected function clmDocUsageLabels(array $sets, ?string $code, $branchId): array
     {
         if (!$code) return [];
         $labels = [];
-        if (isset($sets['rules'][$code]))   $labels[] = 'Segment Rules';
-        if (isset($sets['uploads'][$code])) $labels[] = 'Segment Doc Uploads';
+        if (self::clmUsageHas($sets['rules'], $branchId, $code))   $labels[] = 'Segment Rules';
+        if (self::clmUsageHas($sets['uploads'], $branchId, $code)) $labels[] = 'Segment Doc Uploads';
         return $labels;
     }
 }

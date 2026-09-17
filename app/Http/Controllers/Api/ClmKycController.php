@@ -9,7 +9,6 @@ use App\Support\ClmMasterAccess;
 use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -65,7 +64,7 @@ class ClmKycController extends Controller
            query count grew with the master. See ChecksClmDocUsage. */
         $usage = $this->clmDocUsageSets((int) $user->client_id);
         $rows->each(function ($r) use ($usage) {
-            $labels = $this->clmDocUsageLabels($usage, $r->code);
+            $labels = $this->clmDocUsageLabels($usage, $r->code, $r->branch_id);
             $r->in_use  = !empty($labels);
             $r->used_in = $labels;
         });
@@ -179,7 +178,8 @@ class ClmKycController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        $usedIn = $this->usageCheck($row->code, $row->client_id);
+        // Same branch-scoped sets the list's in_use flag reads, so the two agree.
+        $usedIn = $this->clmDocUsageLabels($this->clmDocUsageSets($row->client_id), $row->code, $row->branch_id);
         if (!empty($usedIn)) {
             return response()->json([
                 'status'  => false,
@@ -191,33 +191,6 @@ class ClmKycController extends Controller
         $row->delete();
 
         return response()->json(['status' => true, 'message' => 'Deleted']);
-    }
-
-    /** Usage check — MUST be scoped to the licence's own client. Codes restart
-     *  per client (KYC-001, KYC-002, …), so an unscoped check falsely marked
-     *  THIS client's doc "in use" whenever ANY other client used the same code,
-     *  blocking deletion of a doc not referenced anywhere in this tenant. */
-    private function usageCheck(?string $code, ?int $clientId = null): array
-    {
-        if (!$code) return [];
-        $usedIn = [];
-        if (Schema::hasTable('clm_segment_rules')
-            && Schema::hasColumn('clm_segment_rules', 'doc_selections')
-            && DB::table('clm_segment_rules')
-                ->when($clientId, fn ($q) => $q->where('client_id', $clientId))
-                ->where('doc_selections', 'like', '%"' . $code . '"%')
-                ->exists()) {
-            $usedIn[] = 'Segment Rules';
-        }
-        if (Schema::hasTable('segment_doc_uploads')
-            && Schema::hasColumn('segment_doc_uploads', 'doc_code')
-            && DB::table('segment_doc_uploads')
-                ->when($clientId, fn ($q) => $q->where('client_id', $clientId))
-                ->where('doc_code', $code)
-                ->exists()) {
-            $usedIn[] = 'Segment Doc Uploads';
-        }
-        return $usedIn;
     }
 
     private function nextCode(int $clientId, ?int $branchId): string
