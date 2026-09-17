@@ -880,7 +880,6 @@ class AuthController extends Controller
         return null;
     }
 
-    
 
 
     public function updateBranding(\Illuminate\Http\Request $request)
