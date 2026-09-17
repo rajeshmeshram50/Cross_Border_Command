@@ -126,6 +126,7 @@ const LEAF_DESC: Record<string, string> = {
   "p2p.po": "Create & track purchase orders.",
   "p2p.spi": "Process supplier invoices & taxes.",
   "p2p.debit_note": "Issue & track supplier debit notes for returns & adjustments.",
+  "p2p.order": "New purchase order module (in development).",
 };
 
 const slugToPath = (slug: string): string => {
@@ -233,6 +234,7 @@ const p2pLeafLink = (leafId: string): string => {
     case "p2p.po":            return "/p2p/purchase-order";
     case "p2p.spi":           return "/p2p/supplier-purchase-invoice";
     case "p2p.debit_note":    return "/p2p/debit-note";
+    case "p2p.order":         return "/p2p/order";
     default:                  return "/p2p";
   }
 };
@@ -373,7 +375,8 @@ const Navdata = () => {
           // hr.devices rides on the hr.attendance grant (no separate permission
           // leaf) — same pattern as sales.sign_tracker.
           .filter((c) => isSuperAdmin || perms[c.id]?.can_view
-            || (c.id === 'hr.devices' && !!perms['hr.attendance']?.can_view))
+            || (c.id === 'hr.devices' && !!perms['hr.attendance']?.can_view)
+            || (c.id === 'p2p.order' && !!perms['p2p.po']?.can_view))
           .map((c) => ({
             id: c.id,
             label: c.label,
@@ -408,6 +411,8 @@ const Navdata = () => {
             // read-only view of the same Quotation/PI/agreement sign requests,
             // so it rides on the Quotation Vs PI permission.
             if (c.id === 'sales.sign_tracker') return !!perms['sales.quotation_vs_pi']?.can_view;
+            // Order has no DB module row — it rides on the Purchase Order grant.
+            if (c.id === 'p2p.order') return !!perms['p2p.po']?.can_view;
             return !!perms[c.id]?.can_view;
           })
           .map((c) => ({
