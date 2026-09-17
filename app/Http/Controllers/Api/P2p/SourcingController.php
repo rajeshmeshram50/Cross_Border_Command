@@ -1046,10 +1046,21 @@ class SourcingController extends Controller
 
             if ($from === 'master') {
                 $code = $p['code'] ?? '';
-                $prod = Product::where('client_id', $clientId)
+                /* Scoped to the TARGET's branch first. product_code is a
+                   per-branch sequence (ProductController::nextProductCode --
+                   "each branch restarts at P-01", unique on client_id +
+                   branch_id + product_code), so P-01 exists once per branch and
+                   a client-wide match returned whichever row the database
+                   handed back: another branch's product, with its name, segment,
+                   HSN and id written onto this sourcing row. Client-wide stays
+                   as the fallback for targets with no branch. */
+                $byBranch = fn () => Product::where('client_id', $clientId)
                     ->with(['segment:id,name', 'hsn:id,hsn_code'])
-                    ->where('product_code', $code)
-                    ->first();
+                    ->where('product_code', $code);
+                $prod = $target->branch_id
+                    ? (clone $byBranch())->where('branch_id', $target->branch_id)->first()
+                    : null;
+                if (!$prod) $prod = $byBranch()->first();
 
                 // The frontend sends the DISPLAY code, padded by padCode()
                 // ("P-41" → "P-041"). When product_code is stored unpadded the
@@ -1057,7 +1068,15 @@ class SourcingController extends Controller
                 // as its name and no segment/HSN. Fall back to matching on the
                 // padded form so the real product (name, segment, HSN, id) resolves.
                 if (!$prod && $code !== '') {
-                    $prod = Product::where('client_id', $clientId)
+                    // Same branch-first rule on the padded fallback: without it
+                    // the unpadded-code path walked straight back into another
+                    // branch's P-1.
+                    $padded = Product::where('client_id', $clientId)
+                        ->when($target->branch_id, fn ($q) => $q->where('branch_id', $target->branch_id))
+                        ->with(['segment:id,name', 'hsn:id,hsn_code'])
+                        ->get()
+                        ->first(fn($x) => $this->padCode($x->product_code) === $code);
+                    $prod = $padded ?: Product::where('client_id', $clientId)
                         ->with(['segment:id,name', 'hsn:id,hsn_code'])
                         ->get()
                         ->first(fn($x) => $this->padCode($x->product_code) === $code);
