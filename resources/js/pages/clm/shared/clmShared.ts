@@ -1643,14 +1643,16 @@ export function paginate<T>(rows: T[], page: number, perPage: number = PER_PAGE)
  * holds one page, filtering there searches ten rows out of five hundred and
  * reports "2 results" for a term that matches eighty. The endpoint does it.
  *
- * `extraParams` are STATIC per call site (e.g. { view: 'list' }) and are
- * deliberately absent from the effect deps — an object literal would be a new
- * reference on every render and would refetch in a loop. Pass a constant.
+ * `extraParams` (tab / filter values) are compared by value, so a new object
+ * literal each render is safe; changing a value refetches from page 1.
  */
-export function usePagedList<T>(endpoint: string, reloadKey: number, extraParams: Record<string, string | number> = {}) {
+export function usePagedList<T, M = Record<string, unknown>>(endpoint: string, reloadKey: number, extraParams: Record<string, string | number> = {}) {
   const toast = useToast();
+  const paramsKey = JSON.stringify(extraParams);
   const [rows,  setRows]  = useState<T[]>([]);
   const [total, setTotal] = useState(0);
+  // Full response body, for extras such as tab counts.
+  const [meta, setMeta] = useState<Partial<M>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch]   = useState('');
   const [debounced, setDebounced] = useState('');
@@ -1664,7 +1666,7 @@ export function usePagedList<T>(endpoint: string, reloadKey: number, extraParams
          Dimming them leaves a wrong-but-legible list under a faint veil.
        - REFRESH (same query, e.g. after a save): the same rows are coming
          back, so blanking them would make a re-fetch look like data loss. */
-  const [applied, setApplied] = useState({ search: '', page: 1, rpp: PER_PAGE });
+  const [applied, setApplied] = useState({ search: '', page: 1, rpp: PER_PAGE, params: paramsKey });
   // Newest-request token: a page move, a size change and a debounced search can
   // each fire while the previous request is still out.
   const reqRef = useRef(0);
@@ -1677,31 +1679,32 @@ export function usePagedList<T>(endpoint: string, reloadKey: number, extraParams
 
   // Back to page 1 whenever the result SET changes rather than the position in
   // it — staying on page 9 of a search with two pages renders an empty table.
-  useEffect(() => { setPage(1); }, [debounced, rpp]);
+  useEffect(() => { setPage(1); }, [debounced, rpp, paramsKey]);
 
   useEffect(() => {
     const token = ++reqRef.current;
     setLoading(true);
-    api.get<{ status: boolean; data: T[]; total?: number; count?: number }>(endpoint, {
-      params: { ...extraParams, page, per_page: rpp, ...(debounced ? { search: debounced } : {}) },
+    api.get<{ status: boolean; data: T[]; total?: number; count?: number } & Partial<M>>(endpoint, {
+      params: { ...JSON.parse(paramsKey), page, per_page: rpp, ...(debounced ? { search: debounced } : {}) },
     })
       .then(r => {
         if (token !== reqRef.current) return;
         setRows(r.data.data ?? []);
         setTotal(Number(r.data.total ?? r.data.count ?? 0));
-        setApplied({ search: debounced, page, rpp });
+        setMeta(r.data);
+        setApplied({ search: debounced, page, rpp, params: paramsKey });
       })
       .catch(() => { if (token === reqRef.current) { toast.error('Load failed', 'Could not load the list'); setRows([]); setTotal(0); } })
       .finally(() => { if (token === reqRef.current) setLoading(false); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endpoint, page, rpp, debounced, reloadKey]);
+  }, [endpoint, page, rpp, debounced, paramsKey, reloadKey]);
 
   /* True while a load that REPLACES the result set is in flight. Callers show
      the skeleton for this and reserve the dim for a same-query refresh. */
   const replacing = loading
-    && (applied.search !== debounced || applied.page !== page || applied.rpp !== rpp);
+    && (applied.search !== debounced || applied.page !== page || applied.rpp !== rpp || applied.params !== paramsKey);
 
-  return { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp };
+  return { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp, meta };
 }
 
 /* Rows that fit the visible table, never fewer than PER_PAGE (10).

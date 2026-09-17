@@ -21,7 +21,7 @@
 // MasterVisibility::applyReadScope was added to the server bundle.
 // Without bumping, browsers would keep serving the older potentially-
 // leaky payload until the 5-min TTL expired.
-const KEY = 'vendor:master-bundle:v2';
+const KEY = 'vendor:master-bundle:v3';   // v3: segments carry regulatory_status
 const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 type Envelope<T> = { v: 1; ts: number; data: T };

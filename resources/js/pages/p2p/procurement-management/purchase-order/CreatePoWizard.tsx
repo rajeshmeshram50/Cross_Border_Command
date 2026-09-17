@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { segmentLabel } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -87,7 +88,7 @@ const PO_PRODUCTS = [
  * PI "expected" list (for the Missing Product Details check) and the product
  * dropdown fallback when the product master fetch fails. */
 type PoLine = { id: number; productId: number | null; code: string; piName: string; piQty: string; name: string; qty: string; rate: string; gst: number };
-type ProdOpt = { id: number | null; code: string; name: string; price: number; gst: number; segment: string };
+type ProdOpt = { id: number | null; code: string; name: string; price: number; gst: number; segment: string; segmentReg?: string };
 /* With-Shipment only: the canonical PI product set for the PO. PO rows may drop
  * below it (user removes a product); those removed PI products can be re-added
  * via the "Product Name (PO)" dropdown on a new Add-Product row. */
@@ -534,6 +535,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
           // Segment NAME (from /products eager-loaded `segment`) — drives the
           // Stage-2 supplier-segment product filter + the dropdown badge.
           segment: String((p.segment as { name?: unknown } | undefined)?.name ?? p.segment_name ?? ''),
+          segmentReg: String((p.segment as { regulatory_status?: unknown } | undefined)?.regulatory_status ?? ''),
         };
       }).filter((o: ProdOpt) => o.name);
       if (!cancelled && opts.length) setProdOpts(opts);
@@ -897,7 +899,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     // Codes go through formatProductCode so the picker reads P-021, matching the
     // Product master and this table's own Product Code column (the raw DB code is
     // 2-digit: P-21).
-    prodOpts.forEach(o => { m[o.name] = { code: formatProductCode(o.code) || undefined, badge: o.segment || undefined, disabled: prodDisabled(o) }; });
+    prodOpts.forEach(o => { m[o.name] = { code: formatProductCode(o.code) || undefined, badge: segmentLabel(o.segment, o.segmentReg) || undefined, disabled: prodDisabled(o) }; });
     return m;
   }, [prodOpts, prodDisabled]);
   // Resolve a PI row's product segment from the product master (PI rows carry no

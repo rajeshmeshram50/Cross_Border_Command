@@ -1555,7 +1555,7 @@ class ProductController extends Controller
             //     the frontend — we just need to SELECT the real `name`.
             //   • Every other master uses its own native columns directly.
             return [
-                'segments'           => $active(Segments::class,          ['id', 'name']),
+                'segments'           => $active(Segments::class,          ['id', 'name', 'regulatory_status']),
                 'haz_class'          => $active(HazClass::class,          ['id', 'name']),
                 'uom'                => $active(Uom::class,               ['id', 'title', 'short_code', 'unit_type']),
                 'hsn_codes'          => $active(HsnCodes::class,          ['id', 'hsn_code', 'description']),

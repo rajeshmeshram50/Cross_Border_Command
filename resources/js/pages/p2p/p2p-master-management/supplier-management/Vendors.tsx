@@ -1,4 +1,5 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import SegmentBadge, { segmentLabel } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardBody, Col, Row } from 'reactstrap';
@@ -77,6 +78,8 @@ export type Vendor = {
   opportunityCount: number;
   segment?: string;
   segments?: string[];
+  /** Name + status kept apart so the list can draw the badge. */
+  segmentItems?: { name: string; reg?: string | null }[];
   risk?: string;
   /* Compliance Behaviour master value ("Compliant", "Under Review",
      "Flagged", …) — rendered as the Compliant Status pill. */
@@ -135,8 +138,8 @@ type ApiVendor = {
   status: string;
   primary_email: string | null;
   vendor_type?: { id: number; name: string | null } | null;
-  segment?: { id: number; name: string | null } | null;
-  segments?: { id: number; name: string | null }[] | null;
+  segment?: { id: number; name: string | null; regulatory_status?: string | null } | null;
+  segments?: { id: number; name: string | null; regulatory_status?: string | null }[] | null;
   risk_level?: { id: number; name: string | null } | null;
   /* Compliance Behaviour master row — eager-loaded by VendorController::index
      for the Compliant Status column. */
@@ -536,7 +539,7 @@ export default function Vendors() {
   const [mappedTarget, setMappedTarget] = useState<Vendor | null>(null);
   /* Segment "+N" popover — fixed-positioned card anchored to the clicked badge
      so the table's overflow can't clip it. */
-  const [segPop, setSegPop] = useState<{ segments: string[]; x: number; y: number; top: number } | null>(null);
+  const [segPop, setSegPop] = useState<{ segments: { name: string; reg?: string | null }[]; x: number; y: number; top: number } | null>(null);
   // Measured placement for the segment popover — anchor to the badge, clamp to
   // the viewport, and flip ABOVE when there isn't room below (never clipped).
   const segPopRef = useRef<HTMLDivElement>(null);
@@ -694,13 +697,17 @@ export default function Vendors() {
       email:       row.primary_address?.email ?? row.primary_email ?? '—',
       status:      row.status === 'active' ? 'Active' : 'Inactive',
       opportunityCount: Number(row.opportunity_count ?? 0) || 0,
-      segment:     row.segment?.name ?? undefined,
+      segment:     row.segment?.name ? segmentLabel(row.segment.name, row.segment.regulatory_status) : undefined,
       // Prefer the multi-segment pivot; fall back to the legacy scalar `segment`
       // relation so suppliers created before multi-segment still show their
       // segment in the list (the list endpoint returns raw models — no fallback).
+      segmentItems: (() => {
+        const arr = (row.segments ?? []).filter(s => s.name).map(s => ({ name: String(s.name), reg: s.regulatory_status }));
+        return arr.length ? arr : (row.segment?.name ? [{ name: row.segment.name, reg: row.segment.regulatory_status }] : []);
+      })(),
       segments:    (() => {
-        const arr = (row.segments ?? []).map(s => s.name ?? '').filter(Boolean);
-        return arr.length ? arr : (row.segment?.name ? [row.segment.name] : []);
+        const arr = (row.segments ?? []).filter(s => s.name).map(s => segmentLabel(s.name, s.regulatory_status));
+        return arr.length ? arr : (row.segment?.name ? [segmentLabel(row.segment.name, row.segment.regulatory_status)] : []);
       })(),
       risk:        row.risk_level?.name ?? undefined,
       /* The DERIVED status, not the Compliance Behaviour master. That master
@@ -1230,20 +1237,23 @@ useEffect(() => {
                             <td className="sl-col-c"><span className={`sl-pill sl-pill--${kind}`}><span className="sl-pill-dot" />{v.type}</span></td>
                             <td>
                               <span className="sl-seg-wrap">
-                                {v.segments && v.segments.length > 0 ? (
+                                {v.segmentItems && v.segmentItems.length > 0 ? (
                                   <>
-                                    <Tooltip label={v.segments[0]}><span className="sl-seg sl-trunc">{v.segments[0]}</span></Tooltip>
-                                    {v.segments.length > 1 && (
-                                      <Tooltip label={`View all ${v.segments.length} segments`}>
+                                    <Tooltip label={v.segments?.[0] ?? v.segmentItems[0].name}>
+                                      <span className="sl-seg sl-trunc">{v.segmentItems[0].name}</span>
+                                    </Tooltip>
+                                    <SegmentBadge status={v.segmentItems[0].reg} style={{ flexShrink: 0 }} />
+                                    {v.segmentItems.length > 1 && (
+                                      <Tooltip label={`View all ${v.segmentItems.length} segments`}>
                                       <button
                                         type="button"
                                         className="sl-seg-more"
                                         onClick={(e) => {
                                           const r = e.currentTarget.getBoundingClientRect();
-                                          setSegPop({ segments: v.segments ?? [], x: r.left, y: r.bottom + 6, top: r.top });
+                                          setSegPop({ segments: v.segmentItems ?? [], x: r.left, y: r.bottom + 6, top: r.top });
                                         }}
                                       >
-                                        +{v.segments.length - 1}
+                                        +{v.segmentItems.length - 1}
                                       </button>
                                       </Tooltip>
                                     )}
@@ -1425,15 +1435,16 @@ useEffect(() => {
           <div
             ref={segPopRef}
             className="sl-seg-pop"
-            style={segPopPos ? { left: segPopPos.left, top: segPopPos.top, width: 214 } : { left: -9999, top: 0, width: 214, visibility: 'hidden' }}
+            style={segPopPos ? { left: segPopPos.left, top: segPopPos.top, width: 260 } : { left: -9999, top: 0, width: 260, visibility: 'hidden' }}
           >
             <div className="sl-seg-pop-title">Segments ({segPop.segments.length})</div>
             <div className="sl-seg-pop-list" style={{ maxHeight: 148 }}>
               {segPop.segments.map((s, idx) => (
-                <div key={`${s}-${idx}`} className={`sl-seg-pop-row ${idx % 2 ? 'alt' : ''}`}>
-                  <Tooltip label={s}>
-                    <span className="sl-seg">{s.length > 20 ? s.slice(0, 20) + '…' : s}</span>
+                <div key={`${s.name}-${idx}`} className={`sl-seg-pop-row ${idx % 2 ? 'alt' : ''}`}>
+                  <Tooltip label={s.name}>
+                    <span className="sl-seg sl-seg-pop-name">{s.name}</span>
                   </Tooltip>
+                  <SegmentBadge status={s.reg} style={{ marginLeft: 'auto', flexShrink: 0 }} />
                 </div>
               ))}
             </div>

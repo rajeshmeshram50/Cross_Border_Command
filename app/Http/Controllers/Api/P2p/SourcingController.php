@@ -203,7 +203,7 @@ class SourcingController extends Controller
         $active = fn($q) => $q->whereRaw('LOWER(status) = ?', ['active']);
 
         return $this->ok([
-            'segments'   => Segments::query()->tap($scope)->tap($active)->orderBy('name')->get(['id', 'name']),
+            'segments'   => Segments::query()->tap($scope)->tap($active)->orderBy('name')->get(['id', 'name', 'regulatory_status']),
             'countries'  => Countries::query()->tap($scope)->tap($active)->orderBy('name')->get(['id', 'name']),
             'states'     => States::query()->tap($scope)->tap($active)->orderBy('name')->get(['id', 'country_id', 'name']),
             'stateCodes' => StateCodes::query()->tap($scope)->tap($active)->statutoryFirst()->get(['id', 'state_id', 'state_code']),

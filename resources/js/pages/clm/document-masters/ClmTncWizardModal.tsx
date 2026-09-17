@@ -727,7 +727,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
           <SegmentModal
             existing={null}
             nextCode={nextSegmentCode(segments.map(s => ({ code: s.code ?? '' })))}
-            existingNames={[...segments.map(s => s.name), ...localSegs.map(s => s.name)]}
+            existingSegments={[...segments, ...localSegs.map(s => ({ name: s.name, regulatory_status: s.tier }))]}
             onClose={() => setQuickAddSegmentOpen(false)}
             onSave={onCreateSegment}
           />

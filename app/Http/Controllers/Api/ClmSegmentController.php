@@ -14,6 +14,15 @@ use Illuminate\Validation\Rule;
 
 class ClmSegmentController extends Controller
 {
+    /** @var array<string, array<string, int>> table => flipped column list, per request */
+    private array $columnCache = [];
+
+    // Memoized hasTable/hasColumn — one schema query per table instead of one per check.
+    private function schemaHas(string $table, ?string $column = null): bool
+    {
+        $cols = $this->columnCache[$table] ??= array_flip(Schema::getColumnListing($table));
+        return $column === null ? $cols !== [] : isset($cols[$column]);
+    }
 
     public function index(Request $request)
     {
@@ -24,12 +33,36 @@ class ClmSegmentController extends Controller
         // Newest segments first so a freshly-added entry appears at the top.
         $q = ClmSegment::query()->orderBy('id', 'desc');
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
-        $rows = $q->get();
 
-        // Per-segment "in use" flags so the UI can disable + explain the delete
-        // action for referenced segments. Computed with ONE query per
-        // referencing table (not per row) so the list stays fast. Mirrors the
-        // same reference checks performed in destroy().
+        // Tab counts cover the whole scoped set, independent of tab/filter/search.
+        $c = (clone $q)->reorder()->toBase()->selectRaw(
+            'COUNT(*) AS total_all,
+             COUNT(*) FILTER (WHERE regulatory_status = ?) AS total_highly,
+             COUNT(*) FILTER (WHERE regulatory_status = ?) AS total_less',
+            [ClmSegment::REG_HIGHLY, ClmSegment::REG_LESS]
+        )->first();
+        $counts = ['all' => (int) $c->total_all, 'highly' => (int) $c->total_highly, 'less' => (int) $c->total_less];
+
+        if (in_array($reg = $request->input('regulatory_status'), ClmSegment::REG_VALUES, true)) {
+            $q->where('regulatory_status', $reg);
+        }
+        $bc = $request->input('buyer_consignee');
+        if ($bc === 'allowed') {
+            $q->where('buyer_consignee', ClmSegment::BC_ALLOWED);
+        } elseif ($bc === 'not') {
+            $q->where(fn ($w) => $w->whereNull('buyer_consignee')->orWhere('buyer_consignee', '<>', ClmSegment::BC_ALLOWED));
+        }
+        if ($search = trim((string) $request->input('search', ''))) {
+            $like = '%' . $search . '%';
+            $q->where(fn ($w) => $w->where('name', 'ilike', $like)->orWhere('code', 'ilike', $like));
+        }
+
+        // Paged only when per_page is sent; dropdown consumers still get every row.
+        $perPage = $request->filled('per_page') ? min(200, max(1, (int) $request->input('per_page'))) : null;
+        $total   = $perPage ? (clone $q)->count() : null;
+        $rows    = $perPage ? $q->forPage(max(1, (int) $request->input('page', 1)), $perPage)->get() : $q->get();
+
+        // Usage scan runs on the current page only — it is the expensive part.
         $usage = $this->usageLabels($rows);
         $rows->each(function ($r) use ($usage) {
             $labels = $usage[$r->id] ?? [];
@@ -40,11 +73,9 @@ class ClmSegmentController extends Controller
         return response()->json([
             'status' => true,
             'data'   => $rows,
-            'counts' => [
-                'all'    => $rows->count(),
-                'highly' => $rows->where('regulatory_status', ClmSegment::REG_HIGHLY)->count(),
-                'less'   => $rows->where('regulatory_status', ClmSegment::REG_LESS)->count(),
-            ],
+            'count'  => $rows->count(),
+            'total'  => $total ?? $rows->count(),
+            'counts' => $counts,
         ]);
     }
 
@@ -87,20 +118,20 @@ class ClmSegmentController extends Controller
         };
 
         // ── id-based reference tables ──
-        if (Schema::hasTable('clm_segment_rules')) {
+        if ($this->schemaHas('clm_segment_rules')) {
             foreach (DB::table('clm_segment_rules')->whereIn('segment_id', $ids)->distinct()->pluck('segment_id') as $sid) {
                 $addById($sid, 'Segment Rules');
             }
         }
         foreach ([['vendors', 'Vendors'], ['products', 'Products'], ['customers', 'Customers']] as [$table, $label]) {
-            if (Schema::hasTable($table) && Schema::hasColumn($table, 'segment_id')) {
+            if ($this->schemaHas($table) && $this->schemaHas($table, 'segment_id')) {
                 foreach (DB::table($table)->whereIn('segment_id', $ids)->distinct()->pluck('segment_id') as $sid) {
                     $addById($sid, $label);
                 }
             }
         }
         // master_vendor_directory stores segment as a string id OR the name.
-        if (Schema::hasTable('master_vendor_directory') && Schema::hasColumn('master_vendor_directory', 'segment_id')) {
+        if ($this->schemaHas('master_vendor_directory') && $this->schemaHas('master_vendor_directory', 'segment_id')) {
             $strIds = array_map('strval', $ids);
             [$refCols, $refScoped] = $this->referenceStampColumns('master_vendor_directory');
             $vals = DB::table('master_vendor_directory')
@@ -126,7 +157,7 @@ class ClmSegmentController extends Controller
                 ['clm_agreement_library', 'segment', 'Agreement Library'],
             ] as [$table, $col, $label]
         ) {
-            if (Schema::hasTable($table) && Schema::hasColumn($table, $col)) {
+            if ($this->schemaHas($table) && $this->schemaHas($table, $col)) {
                 [$refCols, $refScoped] = $this->referenceStampColumns($table);
                 $refs = DB::table($table)->whereIn($col, $names)
                     ->select(array_merge([$col], $refCols))->distinct()->get();
@@ -137,6 +168,23 @@ class ClmSegmentController extends Controller
         }
 
         return $map;
+    }
+
+    /** Same name (case/space-insensitive) + same regulatory status within the caller's branch scope. */
+    private function duplicateExists($user, string $name, string $regulatoryStatus, ?int $exceptId = null): bool
+    {
+        $q = ClmSegment::query()
+            ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($name))])
+            ->where('regulatory_status', $regulatoryStatus)
+            ->when($exceptId, fn ($w) => $w->where('id', '!=', $exceptId));
+        MasterVisibility::applyReadScope($q, $user, $user->branch_id ?: null);
+        return $q->exists();
+    }
+
+    private function duplicateMessage(string $name, string $regulatoryStatus): string
+    {
+        $label = $regulatoryStatus === ClmSegment::REG_HIGHLY ? 'Highly Regulated' : 'Less Regulated';
+        return "\"{$name}\" already exists as {$label}. Pick a different name or regulatory status.";
     }
 
     /**
@@ -150,9 +198,9 @@ class ClmSegmentController extends Controller
     private function referenceStampColumns(string $table): array
     {
         $cols = [];
-        $hasClient = Schema::hasColumn($table, 'client_id');
+        $hasClient = $this->schemaHas($table, 'client_id');
         if ($hasClient) $cols[] = 'client_id';
-        if (Schema::hasColumn($table, 'branch_id')) $cols[] = 'branch_id';
+        if ($this->schemaHas($table, 'branch_id')) $cols[] = 'branch_id';
         return [$cols, $hasClient];
     }
 
@@ -192,10 +240,10 @@ class ClmSegmentController extends Controller
      */
     private function scopeToSegment($q, string $table, $seg): void
     {
-        if (!Schema::hasColumn($table, 'client_id') || $seg->client_id === null) return;
+        if (!$this->schemaHas($table, 'client_id') || $seg->client_id === null) return;
         $q->where('client_id', $seg->client_id);
 
-        if (!Schema::hasColumn($table, 'branch_id') || $seg->branch_id === null) return;
+        if (!$this->schemaHas($table, 'branch_id') || $seg->branch_id === null) return;
         $q->where(function ($w) use ($seg) {
             $w->where('branch_id', $seg->branch_id)->orWhereNull('branch_id');
         });
@@ -219,15 +267,10 @@ class ClmSegmentController extends Controller
             'status'            => ['nullable', Rule::in(ClmSegment::STATUSES)],
         ]);
 
-        // Reject duplicate segment name within the caller's branch scope
-        // (case-insensitive). Sibling branches may reuse the name.
+        // Unique on name + regulatory status: "Sugar – Less" and "Sugar – Highly" may coexist.
         $name = trim($data['name']);
-        $dupe = ClmSegment::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
-        MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
-        if ($dupe->exists()) {
-            $msg = "A segment named \"{$name}\" already exists. Pick a different name.";
-            // 422 + errors.name so the modal shows it inline under the name field
-            // (not a global toast) — same shape Laravel's `unique` rule returns.
+        if ($this->duplicateExists($user, $name, $data['regulatory_status'])) {
+            $msg = $this->duplicateMessage($name, $data['regulatory_status']);
             return response()->json([
                 'status'  => false,
                 'message' => $msg,
@@ -321,15 +364,12 @@ class ClmSegmentController extends Controller
             ], 422);
         }
 
-        // Reject rename to a duplicate within the caller's branch scope
-        // (case-insensitive, excluding self).
-        if (isset($data['name'])) {
-            $clashQ = ClmSegment::query()->where('id', '!=', $row->id)
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])]);
-            MasterVisibility::applyReadScope($clashQ, $user, $user->branch_id ?: null);
-            $clash = $clashQ->exists();
-            if ($clash) {
-                $msg = "Another segment named \"{$data['name']}\" already exists. Pick a different name.";
+        // Checked on the FINAL name + status, so changing only the status is validated too.
+        if (isset($data['name']) || isset($data['regulatory_status'])) {
+            $finalName = $data['name'] ?? (string) $row->name;
+            $finalReg  = $data['regulatory_status'] ?? (string) $row->regulatory_status;
+            if ($this->duplicateExists($user, $finalName, $finalReg, (int) $row->id)) {
+                $msg = $this->duplicateMessage($finalName, $finalReg);
                 return response()->json([
                     'status'  => false,
                     'message' => $msg,
@@ -372,7 +412,7 @@ class ClmSegmentController extends Controller
     private function cascadeSegmentRename($clientId, string $old, string $new): void
     {
         foreach (['customers', 'consignees'] as $table) {
-            if (!\Illuminate\Support\Facades\Schema::hasColumn($table, 'segment')) continue;
+            if (!$this->schemaHas($table, 'segment')) continue;
             $q = DB::table($table)
                 ->where('client_id', $clientId)
                 ->whereNull('deleted_at')
@@ -416,28 +456,28 @@ class ClmSegmentController extends Controller
         // migration yet (e.g. staging without consolidate-segments).
         $usedIn = [];
         if (
-            Schema::hasTable('clm_segment_rules')
+            $this->schemaHas('clm_segment_rules')
             && DB::table('clm_segment_rules')->where('segment_id', $row->id)->exists()
         ) {
             $usedIn[] = 'Segment Rules';
         }
         if (
-            Schema::hasTable('vendors')
-            && Schema::hasColumn('vendors', 'segment_id')
+            $this->schemaHas('vendors')
+            && $this->schemaHas('vendors', 'segment_id')
             && DB::table('vendors')->where('segment_id', $row->id)->exists()
         ) {
             $usedIn[] = 'Vendors';
         }
         if (
-            Schema::hasTable('products')
-            && Schema::hasColumn('products', 'segment_id')
+            $this->schemaHas('products')
+            && $this->schemaHas('products', 'segment_id')
             && DB::table('products')->where('segment_id', $row->id)->exists()
         ) {
             $usedIn[] = 'Products';
         }
         if (
-            Schema::hasTable('customers')
-            && Schema::hasColumn('customers', 'segment_id')
+            $this->schemaHas('customers')
+            && $this->schemaHas('customers', 'segment_id')
             && DB::table('customers')->where('segment_id', $row->id)->exists()
         ) {
             $usedIn[] = 'Customers';
@@ -446,8 +486,8 @@ class ClmSegmentController extends Controller
         // The id arm is exact, so it stays unscoped; the name arm is ambiguous
         // across tenants and gets the same scoping as the tables below.
         if (
-            Schema::hasTable('master_vendor_directory')
-            && Schema::hasColumn('master_vendor_directory', 'segment_id')
+            $this->schemaHas('master_vendor_directory')
+            && $this->schemaHas('master_vendor_directory', 'segment_id')
             && DB::table('master_vendor_directory')
             ->where(function ($q) use ($row) {
                 $q->where('segment_id', (string) $row->id)
@@ -501,7 +541,7 @@ class ClmSegmentController extends Controller
 
         if (!$sharesNameWithSibling) {
             foreach ($nameStringTables as $t) {
-                if (!Schema::hasTable($t['table']) || !Schema::hasColumn($t['table'], $t['col'])) continue;
+                if (!$this->schemaHas($t['table']) || !$this->schemaHas($t['table'], $t['col'])) continue;
                 $q = DB::table($t['table'])->where($t['col'], $row->name);
                 $this->scopeToSegment($q, $t['table'], $row);
                 if ($q->exists()) $usedIn[] = $t['label'];

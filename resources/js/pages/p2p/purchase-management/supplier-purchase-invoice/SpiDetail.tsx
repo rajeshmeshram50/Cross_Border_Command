@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { segmentLabel } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -92,7 +93,7 @@ type DdMeta = { code?: string; badge?: string; tone?: 'own' | 'third'; segment?:
 
 /* A product-master option for the standalone (Direct) product picker.
    `segId`/`segment` gate the picker to the supplier's segment(s). */
-type ProdOpt = { id: number | null; code: string; name: string; price: number; gst: number; hsn: string; segId: number | null; segment: string };
+type ProdOpt = { id: number | null; code: string; name: string; price: number; gst: number; hsn: string; segId: number | null; segment: string; segReg?: string };
 
 /* Supplier Legal Status — the 5-parameter compliance breakdown is derived from
  * the vendor's Evidence Vault (/segment-uploads/supplier/{id}/vault). Mirrors
@@ -235,6 +236,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
         const segId = p.segment_id != null ? Number(p.segment_id)
           : (seg && typeof seg === 'object' && (seg as { id?: number }).id != null ? Number((seg as { id?: number }).id) : null);
         const segment = (seg && typeof seg === 'object') ? String((seg as { name?: string }).name ?? '') : String(seg ?? '');
+        const segReg = (seg && typeof seg === 'object') ? String((seg as { regulatory_status?: string }).regulatory_status ?? '') : '';
         return {
           id: p.id != null ? Number(p.id) : null,
           name: String(p.name ?? p.product_name ?? p.title ?? ''),
@@ -243,6 +245,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
           gst: base > 0 && gstAmt > 0 ? Math.round((gstAmt / base) * 100) : n(p.gst ?? p.gst_rate ?? 0),
           hsn,
           segId,
+          segReg,
           segment,
         };
       }).filter((o: ProdOpt) => o.name);
@@ -263,7 +266,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
   const gateBySegment = supSegIds.length > 0;
   prodOpts.forEach(p => {
     const mismatch = gateBySegment && p.segId != null && !supSegIds.includes(p.segId);
-    prodMeta[p.name] = { code: p.code || undefined, segment: p.segment || undefined, disabled: mismatch };
+    prodMeta[p.name] = { code: p.code || undefined, segment: segmentLabel(p.segment, p.segReg) || undefined, disabled: mismatch };
   });
 
   // Standalone: prefill the supplier chosen back in the Map modal + its legal status.

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef, type ReactNode, type CSSProperties } from 'react';
+import SegmentBadge from '../../../../components/ui/SegmentBadge';
 import RowsPerPageSelect from '../../../../components/ui/RowsPerPageSelect';
 import './product-management.css';
 import { readProductMasterBundle, writeProductMasterBundle } from './productBundleCache';
@@ -20,6 +21,7 @@ export type Product = {
   genericName: string;
   brand: string;
   segment: string;
+  segmentReg?: string;
   price: number;
   currency: string;
   rating: number;
@@ -92,7 +94,7 @@ function formatProductCode(raw: string): string {
 
 function apiToCard(row: Record<string, unknown>): Product {
   const get = <T,>(k: string, fallback: T): T => (row[k] as T) ?? fallback;
-  const segObj = row.segment as { title?: string } | null;
+  const segObj = row.segment as { title?: string; regulatory_status?: string } | null;
   const uomObj = row.uom as { title?: string; short_code?: string } | null;
   const hsnObj = row.hsn as { hsn_code?: string } | null;
   const gstObj = row.gst_percentage as { percentage?: number | string } | null;
@@ -118,6 +120,7 @@ function apiToCard(row: Record<string, unknown>): Product {
     genericName: get('generic_name', '') as string,
     brand: get('brand', '—') as string,
     segment: segObj?.title ?? '—',
+    segmentReg: segObj?.regulatory_status,
     price: Number(row.total_price ?? row.base_price ?? 0),
     currency: '₹',
     rating: 0,
@@ -1170,7 +1173,7 @@ function ProductCard(props: {
           const seg = product.segment ?? '';
           const short = seg.length > 30 ? `${seg.slice(0, 30)}…` : seg;
           const badge = (
-            <span className="prd-pcard-thumb-seg" style={segColor ? { background: segColor } : undefined}>{short}</span>
+            <span className="prd-pcard-thumb-seg" style={segColor ? { background: segColor } : undefined}>{short} <SegmentBadge status={product.segmentReg} style={{ background: '#fff' }} /></span>
           );
           return seg.length > 30 ? <Tooltip label={seg}>{badge}</Tooltip> : badge;
         })()}

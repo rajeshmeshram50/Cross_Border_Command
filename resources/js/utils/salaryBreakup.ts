@@ -34,37 +34,17 @@ export const ZERO_OK_CODES = ['pf', 'esi', 'special'];
 export const MAX_COMP_AMOUNT = 99999999.99;
 export const MAX_COMP_LABEL  = 120;
 
-/** The whole monthly gross on Basic Salary, and nothing else. (#9 / #147)
- *
- *  This used to seed a 50 / 30 / 20 Basic / HRA / Special split the moment an
- *  Annual CTC was typed, so entering ₹6,00,000 on the Employee form silently
- *  produced a House Rent Allowance and a Special Allowance that nobody had
- *  agreed. Those rows then saved to the structure and turned up as real
- *  components in payroll — the config-side half of "Special Allowance is
- *  calculated even when it is not configured".
- *
- *  Seeding Basic alone states only what the CTC itself already says: this is
- *  the monthly gross. Every allowance is now something HR adds deliberately,
- *  and `absorbIntoSpecial` / the balance rules fund it out of Basic so the
- *  total still lands on the CTC.
- *
- *  Basic at 100% clears the Code on Wages, 2019 floor (Basic + DA >= 50% of
- *  total remuneration) by a wide margin, so the seeded state is compliant as
- *  well as honest. */
+/** Default Basic 50% / HRA 30% / Special = balance split for a monthly gross. */
 export const seedBreakup = (monthlyGross: number): SalBreakComp[] => {
-  /* Rounded to the PAISA, not the rupee. (CBC #27)
-   *
-   * A whole-rupee monthly figure cannot annualise back to most CTCs: ₹4,00,000
-   * ÷ 12 is ₹33,333.33recurring, so ₹33,333/month came to ₹3,99,996 — ₹4 short
-   * of the figure the user had just typed, on screen, with no way to correct
-   * it. Keeping the paise makes it ₹33,333.33 × 12 = ₹3,99,999.96, which is the
-   * CTC to the rupee and reconciles exactly everywhere the annual total is
-   * shown. Verified across the awkward cases (4,00,000 / 5,00,000 / 1,00,000 /
-   * 2,50,000 / 9,99,999): every one lands on a zero gap where the whole-rupee
-   * seed was 3-4 short. */
-  const g = Math.max(0, Math.round(monthlyGross * 100) / 100);
+  // Paise, so the total annualises back to the CTC (CBC #27).
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const g = Math.max(0, r2(monthlyGross));
+  const basic = r2(g * 0.5);
+  const hra = r2(g * 0.3);
   return [
-    { code: 'basic', label: 'Basic Salary', amount: g },
+    { code: 'basic',   label: 'Basic Salary',         amount: basic },
+    { code: 'hra',     label: 'House Rent Allowance', amount: hra },
+    { code: 'special', label: 'Special Allowance',    amount: Math.max(0, r2(g - basic - hra)) },
   ];
 };
 
@@ -146,26 +126,22 @@ export const reseedSplit = (existing: SalBreakComp[], monthlyGross: number): Sal
   return absorbIntoSpecial([...seeded, ...custom], monthlyGross);
 };
 
-/** Special Allowance is the residual of the package, so a component HR adds is
- *  funded OUT of it rather than piled on top of the gross.
- *  Without this a ₹102 custom row pushed the gross ₹102/mo past the CTC and, worse,
- *  left Basic at 50% of the CTC while the gross had grown — so the Code on Wages
- *  floor tripped at 49.99% and blocked the save with an error the form offered no
- *  way to clear. Clamped at 0: a package that genuinely outgrows the CTC still
- *  shows the red "over the salary" line instead of being silently rewritten. */
-export const absorbIntoSpecial = (earnings: SalBreakComp[], monthlyGross: number): SalBreakComp[] => {
-  /* Paise, matching seedBreakup(). (CBC #27)
-     Rounding the target to whole rupees here undid the paise the seed had just
-     put in: a ₹33,333.33 Basic re-balanced against a ₹33,333 target the moment
-     HR added a component, and the annual total fell ₹4 short again. */
+/** Put the gap between the earnings and the monthly gross into the balance row:
+ *  Special Allowance, or Basic Salary when HR has removed Special. `skipIdx` is a row just edited by hand. */
+export const absorbIntoSpecial = (earnings: SalBreakComp[], monthlyGross: number, skipIdx = -1): SalBreakComp[] => {
   const target = Math.max(0, Math.round(monthlyGross * 100) / 100);
   if (target <= 0) return earnings;
-  const idx = earnings.findIndex(c => c.code === 'special');
-  if (idx < 0) return earnings;   // HR deleted the row — nothing left to fund from
+  let idx = earnings.findIndex((c, i) => i !== skipIdx && c.code === 'special');
+  const isBasic = idx < 0;
+  if (isBasic) idx = earnings.findIndex((c, i) => i !== skipIdx && c.code === 'basic');
+  if (idx < 0) return earnings;
   const others = earnings.reduce((s, c, i) => (i === idx ? s : s + (Number(c.amount) || 0)), 0);
-  const special = Math.max(0, Math.round((target - others) * 100) / 100);
-  if (special === (Number(earnings[idx].amount) || 0)) return earnings;
-  return earnings.map((c, i) => (i === idx ? { ...c, amount: special } : c));
+  const raw = Math.round((target - others) * 100) / 100;
+  // Never push Basic below zero; an over-CTC package is left for the red banner to report.
+  if (isBasic && raw < 0) return earnings;
+  const balance = Math.max(0, raw);
+  if (balance === (Number(earnings[idx].amount) || 0)) return earnings;
+  return earnings.map((c, i) => (i === idx ? { ...c, amount: balance } : c));
 };
 
 /* Professional Tax opens on its statutory figure, mirroring the slab in
