@@ -195,7 +195,7 @@ class ClmRegulatoryDefenseFileController extends Controller
         $sr = 0;
         return CtcContract::where('client_id', $clientId)
             ->orderByDesc('id')
-            ->get(['id', 'code', 'title', 'counterparties'])
+            ->get(['id', 'branch_id', 'code', 'title', 'counterparties'])
             ->map(function (CtcContract $c) use (&$sr, $clientId) {
                 $sr++;
                 $cps  = is_array($c->counterparties) ? $c->counterparties : [];
@@ -210,7 +210,9 @@ class ClmRegulatoryDefenseFileController extends Controller
                     $t = $this->resolveVaultTarget(
                         (string) ($cp['source_type'] ?? ''),
                         $cp['source_id'] ?? null,
-                        $clientId
+                        $clientId,
+                        $cp['source_db_id'] ?? null,
+                        $c->branch_id
                     );
                     if (!$t) continue;
                     $dedupe = $t['type'] . '#' . $t['id'];
@@ -251,9 +253,9 @@ class ClmRegulatoryDefenseFileController extends Controller
      * ("C-009" / vendor_code / consignee_code); returns null when the party
      * type isn't vault-backed or the reference can't be resolved.
      */
-    private function resolveVaultTarget(string $sourceType, $sourceId, int $clientId): ?array
+    private function resolveVaultTarget(string $sourceType, $sourceId, int $clientId, $sourceDbId = null, $branchId = null): ?array
     {
-        if ($sourceId === null || $sourceId === '') return null;
+        if (($sourceId === null || $sourceId === '') && ($sourceDbId === null || $sourceDbId === '')) return null;
         $t = mb_strtolower(trim($sourceType));
 
         [$type, $label, $model, $codeCol] = match (true) {
@@ -264,11 +266,22 @@ class ClmRegulatoryDefenseFileController extends Controller
         };
         if (!$type) return null;
 
+        /* The picker's numeric PK first. Customer / consignee / vendor codes
+           restart per branch, so matching the code client-wide had one hit per
+           branch and ->first() could open ANOTHER branch's company in the
+           Evidence-Vault drawer -- their DD, KYC and trade licences under this
+           agreement's counterparty tab. Branch-scoped code match second,
+           client-wide last for rows with no branch. */
         $id = null;
-        if (is_numeric($sourceId)) {
+        if ($sourceDbId !== null && $sourceDbId !== '' && (int) $sourceDbId > 0) {
+            $id = (int) $sourceDbId;
+        } elseif (is_numeric($sourceId)) {
             $id = (int) $sourceId;
-        } else {
-            $row = $model::where('client_id', $clientId)->where($codeCol, (string) $sourceId)->first(['id']);
+        } elseif ($sourceId !== null && $sourceId !== '') {
+            $row = $branchId !== null
+                ? $model::where('client_id', $clientId)->where('branch_id', $branchId)->where($codeCol, (string) $sourceId)->first(['id'])
+                : null;
+            $row = $row ?: $model::where('client_id', $clientId)->where($codeCol, (string) $sourceId)->first(['id']);
             $id = $row ? (int) $row->id : null;
         }
         return $id ? ['key' => $type, 'label' => $label, 'type' => $type, 'id' => $id] : null;

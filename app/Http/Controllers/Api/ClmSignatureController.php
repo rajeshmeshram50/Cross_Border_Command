@@ -1437,8 +1437,10 @@ class ClmSignatureController extends Controller
         foreach ((is_array($c->counterparties) ? $c->counterparties : []) as $cp) {
             $type = strtolower((string) ($cp['source_type'] ?? ''));
             $id   = $cp['source_id'] ?? null;
-            if ($id === null || $id === '' || $type === '') continue;
-            [$model, $modelName] = $this->ctcLivePartyModel($type, $id, (int) $c->client_id);
+            $dbId = $cp['source_db_id'] ?? null;
+            if ($type === '') continue;
+            if (($id === null || $id === '') && ($dbId === null || $dbId === '')) continue;
+            [$model, $modelName] = $this->ctcLivePartyModel($type, $id, (int) $c->client_id, $dbId, $c->branch_id);
             if ($model) $html = self::replacePartyNamespaceTokens($html, $model, $modelName);
         }
 
@@ -1448,22 +1450,50 @@ class ClmSignatureController extends Controller
         return preg_replace($pattern, '', $html);
     }
 
-    /** Live model + CLM model-name for a CTC counterparty reference. */
-    private function ctcLivePartyModel(string $type, $id, int $clientId): array
+    /**
+     * Live model + CLM model-name for a CTC counterparty reference.
+     *
+     * Resolution order mirrors CtcContractController::partyByRef(): the numeric
+     * PK the counterparty picker recorded (`source_db_id`) first, then the
+     * display code scoped to the agreement's own branch, then client-wide.
+     *
+     * Customer / consignee / vendor codes are allocated PER BRANCH -- every
+     * branch owns its own C-001 / CN-001 / S-001 run -- so matching the code
+     * client-wide has one hit per branch and returns whichever the database
+     * hands back. That put a different branch's company name, GST and address
+     * into the agreement HTML, and unlike the Stage-2 preview this copy is the
+     * one rendered for signature and sent to Zoho.
+     */
+    private function ctcLivePartyRow($q, $id, string $codeCol, $dbId = null, $branchId = null)
+    {
+        if ($dbId !== null && $dbId !== '' && (int) $dbId > 0) {
+            $row = (clone $q)->find((int) $dbId);
+            if ($row) return $row;
+        }
+        if (is_numeric($id)) return (clone $q)->find($id);
+        if ($id === null || $id === '') return null;
+        if ($branchId !== null) {
+            $row = (clone $q)->where($codeCol, $id)->where('branch_id', $branchId)->first();
+            if ($row) return $row;
+        }
+        return (clone $q)->where($codeCol, $id)->first();
+    }
+
+    private function ctcLivePartyModel(string $type, $id, int $clientId, $dbId = null, $branchId = null): array
     {
         if ($type === 'buyer' || $type === 'customer') {
             $q = \App\Models\Customer::where('client_id', $clientId)->with('primaryAddress');
-            $row = is_numeric($id) ? $q->find($id) : $q->where('customer_code', $id)->first();
+            $row = $this->ctcLivePartyRow($q, $id, 'customer_code', $dbId, $branchId);
             return $row ? [$row, 'Customer'] : [null, ''];
         }
         if ($type === 'consignee') {
             $q = \App\Models\Consignee::where('client_id', $clientId)->with('primaryAddress');
-            $row = is_numeric($id) ? $q->find($id) : $q->where('consignee_code', $id)->first();
+            $row = $this->ctcLivePartyRow($q, $id, 'consignee_code', $dbId, $branchId);
             return $row ? [$row, 'Consignee'] : [null, ''];
         }
         if ($type === 'supplier' || $type === 'vendor') {
             $q = \App\Models\Vendor::where('client_id', $clientId)->with('primaryAddress');
-            $row = is_numeric($id) ? $q->find($id) : $q->where('vendor_code', $id)->first();
+            $row = $this->ctcLivePartyRow($q, $id, 'vendor_code', $dbId, $branchId);
             return $row ? [$row, 'Vendor'] : [null, ''];
         }
         return [null, ''];
