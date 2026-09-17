@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, CSSProperties } from 'react';
+import { useState, useEffect, useMemo, useRef, CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import CustomerEvidenceVaultModal, { type CustomerVaultTarget, type TabKey as VaultTab } from '../../sales/core-masters/customer/CustomerEvidenceVaultModal';
@@ -151,6 +151,14 @@ const BP_PER_PAGE = 10;
    down the Segment column. The chip itself still draws at its natural width
    inside the box and ellipses when it runs past it. */
 const SEG_CHIP_COL = 150;
+
+/* Domestic = the exporter's home country; International = everything else.
+   Module scope, not inside the component: these are pure and never change, and
+   a function recreated on every render would be a new value in every useMemo
+   dependency list below, which would memoise nothing. */
+const HOME_COUNTRY = 'india';
+const isDomesticCountry = (c: string) => (c || '').trim().toLowerCase() === HOME_COUNTRY;
+const isDomesticBuyer = isDomesticCountry;
 const WS_PER_PAGE = 10;
 const WOS_PER_PAGE = 10;
 
@@ -916,11 +924,14 @@ export default function ClmBuyerProfilePage() {
   // International vs Domestic buyer scope. Domestic = the exporter's home
   // country (India); International = every other country. Drives the Buyer
   // List + the buyer analytics cards so both reflect the chosen tab.
-  const HOME_COUNTRY = 'india';
-  const isDomesticCountry = (c: string) => (c || '').trim().toLowerCase() === HOME_COUNTRY;
-  const isDomesticBuyer = isDomesticCountry;
-  const scopedBuyers = bpBuyerData.filter((r) => buyerScope === 'domestic' ? isDomesticBuyer(r.country) : !isDomesticBuyer(r.country));
-  const scopedCons = bpConsData.filter((r) => consScope === 'domestic' ? isDomesticCountry(r.country) : !isDomesticCountry(r.country));
+  /* Recomputed only when the data or the chosen scope changes. Typing in a
+     search box, hovering a row or paging no longer re-filters every record. */
+  const scopedBuyers = useMemo(
+    () => bpBuyerData.filter((r) => buyerScope === 'domestic' ? isDomesticBuyer(r.country) : !isDomesticBuyer(r.country)),
+    [bpBuyerData, buyerScope]);
+  const scopedCons = useMemo(
+    () => bpConsData.filter((r) => consScope === 'domestic' ? isDomesticCountry(r.country) : !isDomesticCountry(r.country)),
+    [bpConsData, consScope]);
   // International vs Domestic transactions — scoped by the buyer's country so
   // the transaction-wise analytics + all four tables follow the chosen tab.
   const txnInScope = <T extends { country?: string }>(rows: T[]): T[] =>
@@ -928,10 +939,10 @@ export default function ClmBuyerProfilePage() {
   // These tabs are shipment-linked transactions — only surface rows that
   // actually carry a shipment id (drop any placeholder/blank ones).
   const hasShipmentId = <T extends { shp?: string }>(r: T): boolean => !!r.shp && r.shp.trim() !== '' && r.shp.trim() !== '—';
-  const wsEqData    = txnInScope(bp.ws_eq).filter(hasShipmentId);
-  const wsNeqData   = txnInScope(bp.ws_neq).filter(hasShipmentId);
-  const wosEqData   = txnInScope(bp.wos_eq);
-  const wosNeqData  = txnInScope(bp.wos_neq);
+  const wsEqData   = useMemo(() => txnInScope(bp.ws_eq).filter(hasShipmentId),   [bp.ws_eq, txnScope]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const wsNeqData  = useMemo(() => txnInScope(bp.ws_neq).filter(hasShipmentId),  [bp.ws_neq, txnScope]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const wosEqData  = useMemo(() => txnInScope(bp.wos_eq),                        [bp.wos_eq, txnScope]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const wosNeqData = useMemo(() => txnInScope(bp.wos_neq),                       [bp.wos_neq, txnScope]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Case-insensitive search across every text column the transaction tables
    * render: Shipment ID, Opportunity ID, Customer, Consignee, PI Number and
@@ -964,29 +975,35 @@ export default function ClmBuyerProfilePage() {
     rows: T[], pick: (r: T) => Prog,
   ) => rows.reduce((acc, r) => acc + Math.max(0, pick(r).t - pick(r).d), 0);
 
-  const buyerKyc = partyPending(scopedBuyers, (r) => r.kyc);
-  const buyerDd  = partyPending(scopedBuyers, (r) => r.dd);
-  const buyerTl  = partyPending(scopedBuyers, (r) => r.tl);
-  const buyerTd  = partyPending(scopedBuyers, (r) => r.td);
-  const buyerAgr = partyPending(scopedBuyers, (r) => r.agr);
+  const buyerKpi = useMemo(() => ({
+    kyc: partyPending(scopedBuyers, (r) => r.kyc),
+    dd:  partyPending(scopedBuyers, (r) => r.dd),
+    tl:  partyPending(scopedBuyers, (r) => r.tl),
+    td:  partyPending(scopedBuyers, (r) => r.td),
+    agr: partyPending(scopedBuyers, (r) => r.agr),
+  }), [scopedBuyers]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const { kyc: buyerKyc, dd: buyerDd, tl: buyerTl, td: buyerTd, agr: buyerAgr } = buyerKpi;
 
   // ── derived consignee analytics ──
   const consTotal = scopedCons.length;
   const consCompliant = scopedCons.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
-  const consKyc = partyPending(scopedCons, (r) => r.kyc);
-  const consDd  = partyPending(scopedCons, (r) => r.dd);
-  const consTl  = partyPending(scopedCons, (r) => r.tl);
-  const consTd  = partyPending(scopedCons, (r) => r.td);
-  const consAgr = partyPending(scopedCons, (r) => r.agr);
+  const consKpi = useMemo(() => ({
+    kyc: partyPending(scopedCons, (r) => r.kyc),
+    dd:  partyPending(scopedCons, (r) => r.dd),
+    tl:  partyPending(scopedCons, (r) => r.tl),
+    td:  partyPending(scopedCons, (r) => r.td),
+    agr: partyPending(scopedCons, (r) => r.agr),
+  }), [scopedCons]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const { kyc: consKyc, dd: consDd, tl: consTl, td: consTd, agr: consAgr } = consKpi;
 
   // ── derived transaction (opportunity) analytics ──
   // Count only the transactions of the ACTIVE shipment tab so the metrics match
   // the table on screen: "With Shipment ID" → ws (eq + neq); "Without Shipment
   // ID" → wos (eq + neq). Summing all four made the totals include rows the
   // visible table never shows.
-  const allTxn: (WsEqRow | WsNeqRow | WosEqRow | WosNeqRow)[] = shipTab === 'without'
-    ? [...wosEqData, ...wosNeqData]
-    : [...wsEqData, ...wsNeqData];
+  const allTxn: (WsEqRow | WsNeqRow | WosEqRow | WosNeqRow)[] = useMemo(
+    () => shipTab === 'without' ? [...wosEqData, ...wosNeqData] : [...wsEqData, ...wsNeqData],
+    [shipTab, wsEqData, wsNeqData, wosEqData, wosNeqData]);
   const txnTotal = allTxn.length;
   /* All FIVE families, not three.
    *
@@ -997,12 +1014,26 @@ export default function ClmBuyerProfilePage() {
      panel contradicted itself: "Fully Compliant 3" over "Trade Documents
      Pending 2, Agreements Pending 3" on a three-row table. A row is compliant
      only when nothing is outstanding on it. */
-  const txnCompliant = allTxn.filter((r) =>
-    r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t
-    && r.td.d === r.td.t && r.agr.d === r.agr.t).length;
-  const txnKyc = allTxn.filter((r) => r.kyc.d < r.kyc.t).length;
-  const txnDd = allTxn.filter((r) => r.dd.d < r.dd.t).length;
-  const txnTl = allTxn.filter((r) => r.tl.d < r.tl.t).length;
+  const txnKpi = useMemo(() => {
+    /* One pass instead of seven. Each of these used to walk the whole list on
+       every render; they all read the same rows, so they are gathered here. */
+    const sumPendingOf = (pick: (r: typeof allTxn[number]) => { d: number; t: number }) =>
+      allTxn.reduce((acc, r) => acc + Math.max(0, pick(r).t - pick(r).d), 0);
+    return {
+      compliant: allTxn.filter((r) =>
+        r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t
+        && r.td.d === r.td.t && r.agr.d === r.agr.t).length,
+      kyc: allTxn.filter((r) => r.kyc.d < r.kyc.t).length,
+      dd:  allTxn.filter((r) => r.dd.d < r.dd.t).length,
+      tl:  allTxn.filter((r) => r.tl.d < r.tl.t).length,
+      td:  sumPendingOf((r) => r.td),
+      agr: sumPendingOf((r) => r.agr),
+    };
+  }, [allTxn]);
+  const txnCompliant = txnKpi.compliant;
+  const txnKyc = txnKpi.kyc;
+  const txnDd = txnKpi.dd;
+  const txnTl = txnKpi.tl;
   /* Trade Documents / Agreements Pending count DOCUMENTS, not transactions —
      "how many are still unsigned", which is the number someone acting on this
      panel actually needs. Two transactions each missing two documents is four
@@ -1013,28 +1044,30 @@ export default function ClmBuyerProfilePage() {
      the CUSTOMER's one-time documents, so the same pending document reappears
      on every one of that customer's transactions and adding them up would
      report one missing PAN card as two, or five. */
-  const sumPending = (pick: (r: typeof allTxn[number]) => { d: number; t: number }) =>
-    allTxn.reduce((acc, r) => acc + Math.max(0, pick(r).t - pick(r).d), 0);
-  const txnTd = sumPending((r) => r.td);
-  const txnAgr = sumPending((r) => r.agr);
+  const txnTd = txnKpi.td;
+  const txnAgr = txnKpi.agr;
 
   /* Case-insensitive search across Company Name, Customer/Consignee ID,
    * Segment and Country. Buyer segments are an array; consignee segment is a
    * single string. Falls back to the full list when the box is empty. */
   const buyerQ = buyerSearch.trim().toLowerCase();
-  const buyerFiltered = scopedBuyers.filter((r) =>
+  /* cardFilter is in the dependency list because matchCard() reads it — leave
+     it out and clicking a KPI card would stop filtering the list. */
+  const buyerFiltered = useMemo(() => scopedBuyers.filter((r) =>
     matchCard(r) && (!buyerQ ||
       r.name.toLowerCase().includes(buyerQ) ||
       r.id.toLowerCase().includes(buyerQ) ||
       r.country.toLowerCase().includes(buyerQ) ||
-      r.seg.some((s) => s.toLowerCase().includes(buyerQ))));
+      r.seg.some((s) => s.toLowerCase().includes(buyerQ)))),
+    [scopedBuyers, buyerQ, cardFilter]);   // eslint-disable-line react-hooks/exhaustive-deps
   const consQ = consSearch.trim().toLowerCase();
-  const consFiltered = scopedCons.filter((r) =>
+  const consFiltered = useMemo(() => scopedCons.filter((r) =>
     matchCard(r) && (!consQ ||
       r.name.toLowerCase().includes(consQ) ||
       r.id.toLowerCase().includes(consQ) ||
       r.country.toLowerCase().includes(consQ) ||
-      r.seg.toLowerCase().includes(consQ)));
+      r.seg.toLowerCase().includes(consQ))),
+    [scopedCons, consQ, cardFilter]);   // eslint-disable-line react-hooks/exhaustive-deps
   const buyerListTotal = buyerFiltered.length;
   const consListTotal = consFiltered.length;
 
