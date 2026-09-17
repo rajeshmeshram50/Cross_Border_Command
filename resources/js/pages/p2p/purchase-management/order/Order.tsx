@@ -1,20 +1,8 @@
-/* ─────────────────────────────────────────────────────────────────────────
- * Order — Purchase Order list page (new build).
- *
- * Built from scratch against the Figma design. It does not import, reuse or
- * depend on the older purchase-order module in any way.
- *
- * Current stage: STEP 7 — status + action columns. Static design complete.
- * ───────────────────────────────────────────────────────────────────────── */
-
+// P2P → Order: purchase order list. Uses static SAMPLE_ROWS until the API is connected.
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import WorklistPager from '../../../../components/ui/WorklistPager';
+import CreatePoModal from './CreatePoModal';
 
-/* The five steps shown in the guide box.
- *
- * Kept as DATA rather than five hand-written cards. The markup for one card is
- * written once and repeated with .map(), so adding a sixth step, or changing
- * how every card looks, is a one-place change. */
 type GuideStep = { num: string; title: string; desc: string; icon: ReactNode };
 
 const iconProps = {
@@ -85,11 +73,6 @@ const GUIDE_STEPS: GuideStep[] = [
   },
 ];
 
-/* The four list tabs.
- *
- * TabKey is a TypeScript "union type": a value of this type can ONLY be one of
- * these four strings. Writing setActiveTab('withh') by mistake is caught while
- * you type, instead of silently selecting no tab at runtime. */
 type TabKey = 'all' | 'with' | 'without' | 'cancelled';
 
 type ListTab = { key: TabKey; label: string; danger?: boolean; icon: ReactNode };
@@ -99,8 +82,6 @@ const tabIconProps = {
   strokeWidth: 2.1, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const,
 };
 
-/* No counts here: they are worked out from the rows (see tabCounts in the
-   component), so a tab can never show a number that disagrees with its list. */
 const LIST_TABS: ListTab[] = [
   {
     key: 'all', label: "All PO's",
@@ -139,16 +120,6 @@ const LIST_TABS: ListTab[] = [
   },
 ];
 
-/* ─────────────────────────────────────────────────────────────────────────
- * TABLE
- * ───────────────────────────────────────────────────────────────────────── */
-
-/* The 21 columns, with their exact widths from the design (in px).
- *
- * groupEnd marks Balance Amount — the last column that describes the WHOLE
- * purchase order. Everything after it (SPI, GRN, QA) describes one invoice at
- * a time. A dashed line after that column shows where one kind of information
- * ends and the other begins. */
 type Column = { label: string; width: number; groupEnd?: boolean };
 
 const COLUMNS: Column[] = [
@@ -175,15 +146,8 @@ const COLUMNS: Column[] = [
   { label: 'Action',                     width: 360 },
 ];
 
-/* The table is exactly as wide as its columns added together (3006px).
- * reduce() walks the array and keeps a running total, starting from 0. */
 const TABLE_WIDTH = COLUMNS.reduce((total, col) => total + col.width, 0);
 
-/* How the documents chain together:
- *   1 PO  →  many SPIs (supplier invoices)
- *   1 SPI →  exactly 1 GRN (goods received)  →  exactly 1 QA (quality check)
- * Because SPI, GRN and QA are always one-to-one, they travel together as ONE
- * object. A PO holds a list of these. */
 type PaymentStatus = 'full' | 'partial' | 'pending';
 
 type InvoiceLine = {
@@ -193,19 +157,11 @@ type InvoiceLine = {
   qa: string; qaDate: string;
 };
 
-/* One purchase order. Real rows will come from the API later; the shape
- * stays the same. shipment is "string | null" because a PO raised without a
- * shipment has no Shipment ID — the type forces us to handle that case. */
-/* Fixed sets of allowed values. A union type like 'ffd' | 'services' means
- * TypeScript rejects any other string, so a typo such as 'service' is caught
- * while writing the data, not discovered later as a wrongly coloured pill. */
 type PoType = 'materials' | 'ffd' | 'services';
 type DocType = 'International' | 'Domestics';
 type SupplierCategory = 'star' | 'regular' | 'high' | 'blacklisted';
 type RiskLevel = 'high' | 'medium' | 'low';
 
-/* A note under the payment bar. "?" on the field in OrderRow means a PO may
- * have no note at all. */
 type PaymentNote = { kind: 'ready' | 'waiting'; amount: number };
 
 type OrderRow = {
@@ -219,17 +175,13 @@ type OrderRow = {
   expectedDelivery: string;
   total: number; net: number; paid: number; balance: number;
   invoices: InvoiceLine[];
-  zohoSynced: boolean;        // pushed to Zohobook yet?
-  inspectionDone: boolean;    // only matters when physicalInspection is true
-  paymentRequests: number;    // how many payment requests were raised
-  paymentNote?: PaymentNote;  // optional
-  cancelled?: boolean;        // optional; missing means "not cancelled"
+  zohoSynced: boolean;
+  inspectionDone: boolean;
+  paymentRequests: number;
+  paymentNote?: PaymentNote;
+  cancelled?: boolean;
 };
 
-/* LOOKUP TABLES — data describes WHAT a row is ('ffd', 'low'); these tables
- * say how each value LOOKS (label, colour class, icon). The JSX just reads
- * from them, so it needs no if/else chains, and adding a new variant means
- * adding one line here. */
 const PO_TYPE: Record<PoType, { label: string; icon: ReactNode }> = {
   materials: {
     label: 'Material / Goods',
@@ -303,13 +255,6 @@ const RISK_LEVEL: Record<RiskLevel, { label: string; tone: string; icon: ReactNo
   low: { label: 'Low', tone: 'green', icon: ICON_CHECK },
 };
 
-/* Six POs from the design, picked so every style appears at least once:
- *   049  International, High risk, 1 invoice, part paid
- *   008  no Shipment ID, 2 invoices, nothing paid, Not Sync
- *   054  FFD / Transporter, fully paid (100%)
- *   014  Regular supplier, Low risk, Not Applicable inspection
- *   001  Star supplier, payment awaiting approval
- *   015  Services, 3 invoices, approved and ready to pay */
 const SAMPLE_ROWS: OrderRow[] = [
   {
     po: 'PO/2025-26/049', poDate: '2026-03-03', physicalInspection: true,
@@ -323,10 +268,10 @@ const SAMPLE_ROWS: OrderRow[] = [
     total: 259500, net: 259500, paid: 129800, balance: 129700,
     invoices: [
       {
-        spi: 'SPI/2025-26/051', spiDate: '10 Mar 2026',
+        spi: 'SPI/2025-26/051', spiDate: '2026-03-10',
         amount: 259500, paid: 129800, due: 129700, status: 'partial',
-        grn: 'GRN-051', grnDate: '14 Mar 2026',
-        qa: 'QA-051', qaDate: '16 Mar 2026',
+        grn: 'GRN-051', grnDate: '2026-03-14',
+        qa: 'QA-051', qaDate: '2026-03-16',
       },
     ],
     zohoSynced: true, inspectionDone: true, paymentRequests: 2,
@@ -343,16 +288,16 @@ const SAMPLE_ROWS: OrderRow[] = [
     total: 261000, net: 258400, paid: 0, balance: 258400,
     invoices: [
       {
-        spi: 'SPI/2025-26/025', spiDate: '27 Jun 2026',
+        spi: 'SPI/2025-26/025', spiDate: '2026-06-27',
         amount: 129200, paid: 0, due: 129200, status: 'pending',
-        grn: 'GRN-025', grnDate: '01 Jul 2026',
-        qa: 'QA-025', qaDate: '03 Jul 2026',
+        grn: 'GRN-025', grnDate: '2026-07-01',
+        qa: 'QA-025', qaDate: '2026-07-03',
       },
       {
-        spi: 'SPI/2025-26/026', spiDate: '06 Jul 2026',
+        spi: 'SPI/2025-26/026', spiDate: '2026-07-06',
         amount: 129200, paid: 0, due: 129200, status: 'pending',
-        grn: 'GRN-026', grnDate: '10 Jul 2026',
-        qa: 'QA-026', qaDate: '12 Jul 2026',
+        grn: 'GRN-026', grnDate: '2026-07-10',
+        qa: 'QA-026', qaDate: '2026-07-12',
       },
     ],
     zohoSynced: false, inspectionDone: false, paymentRequests: 0,
@@ -369,10 +314,10 @@ const SAMPLE_ROWS: OrderRow[] = [
     total: 104500, net: 102400, paid: 102400, balance: 0,
     invoices: [
       {
-        spi: 'SPI/2025-26/066', spiDate: '23 Apr 2026',
+        spi: 'SPI/2025-26/066', spiDate: '2026-04-23',
         amount: 102400, paid: 102400, due: 0, status: 'full',
-        grn: 'GRN-066', grnDate: '27 Apr 2026',
-        qa: 'QA-066', qaDate: '29 Apr 2026',
+        grn: 'GRN-066', grnDate: '2026-04-27',
+        qa: 'QA-066', qaDate: '2026-04-29',
       },
     ],
     zohoSynced: true, inspectionDone: false, paymentRequests: 1,
@@ -389,10 +334,10 @@ const SAMPLE_ROWS: OrderRow[] = [
     total: 252500, net: 247400, paid: 247400, balance: 0,
     invoices: [
       {
-        spi: 'SPI/2025-26/043', spiDate: '06 Jun 2026',
+        spi: 'SPI/2025-26/043', spiDate: '2026-06-06',
         amount: 247400, paid: 247400, due: 0, status: 'full',
-        grn: 'GRN-043', grnDate: '10 Jun 2026',
-        qa: 'QA-043', qaDate: '12 Jun 2026',
+        grn: 'GRN-043', grnDate: '2026-06-10',
+        qa: 'QA-043', qaDate: '2026-06-12',
       },
     ],
     zohoSynced: true, inspectionDone: false, paymentRequests: 2,
@@ -409,16 +354,16 @@ const SAMPLE_ROWS: OrderRow[] = [
     total: 259500, net: 249100, paid: 62300, balance: 186800,
     invoices: [
       {
-        spi: 'SPI/2025-26/004', spiDate: '26 Jun 2026',
+        spi: 'SPI/2025-26/004', spiDate: '2026-06-26',
         amount: 124600, paid: 62300, due: 62300, status: 'partial',
-        grn: 'GRN-004', grnDate: '30 Jun 2026',
-        qa: 'QA-004', qaDate: '02 Jul 2026',
+        grn: 'GRN-004', grnDate: '2026-06-30',
+        qa: 'QA-004', qaDate: '2026-07-02',
       },
       {
-        spi: 'SPI/2025-26/005', spiDate: '05 Jul 2026',
+        spi: 'SPI/2025-26/005', spiDate: '2026-07-05',
         amount: 124500, paid: 0, due: 124500, status: 'pending',
-        grn: 'GRN-005', grnDate: '09 Jul 2026',
-        qa: 'QA-005', qaDate: '11 Jul 2026',
+        grn: 'GRN-005', grnDate: '2026-07-09',
+        qa: 'QA-005', qaDate: '2026-07-11',
       },
     ],
     zohoSynced: true, inspectionDone: false, paymentRequests: 2,
@@ -436,22 +381,22 @@ const SAMPLE_ROWS: OrderRow[] = [
     total: 132500, net: 128500, paid: 0, balance: 128500,
     invoices: [
       {
-        spi: 'SPI/2025-26/046', spiDate: '18 Jun 2026',
+        spi: 'SPI/2025-26/046', spiDate: '2026-06-18',
         amount: 42800, paid: 0, due: 42800, status: 'pending',
-        grn: 'GRN-046', grnDate: '22 Jun 2026',
-        qa: 'QA-046', qaDate: '24 Jun 2026',
+        grn: 'GRN-046', grnDate: '2026-06-22',
+        qa: 'QA-046', qaDate: '2026-06-24',
       },
       {
-        spi: 'SPI/2025-26/047', spiDate: '27 Jun 2026',
+        spi: 'SPI/2025-26/047', spiDate: '2026-06-27',
         amount: 42800, paid: 0, due: 42800, status: 'pending',
-        grn: 'GRN-047', grnDate: '01 Jul 2026',
-        qa: 'QA-047', qaDate: '03 Jul 2026',
+        grn: 'GRN-047', grnDate: '2026-07-01',
+        qa: 'QA-047', qaDate: '2026-07-03',
       },
       {
-        spi: 'SPI/2025-26/048', spiDate: '06 Jul 2026',
+        spi: 'SPI/2025-26/048', spiDate: '2026-07-06',
         amount: 42900, paid: 0, due: 42900, status: 'pending',
-        grn: 'GRN-048', grnDate: '10 Jul 2026',
-        qa: 'QA-048', qaDate: '12 Jul 2026',
+        grn: 'GRN-048', grnDate: '2026-07-10',
+        qa: 'QA-048', qaDate: '2026-07-12',
       },
     ],
     zohoSynced: false, inspectionDone: false, paymentRequests: 1,
@@ -459,49 +404,41 @@ const SAMPLE_ROWS: OrderRow[] = [
   },
 ];
 
-/* Label for each payment state. Record<PaymentStatus, string> means "an object
- * with exactly one entry per status" — forget one and TypeScript complains. */
 const PAYMENT_LABEL: Record<PaymentStatus, string> = {
   full: 'Fully Paid',
   partial: 'Partially Paid',
   pending: 'Payment Not Initiated',
 };
 
-/* "SPI/2025-26/051" → "051". The regex (\d+)$ grabs the digits at the END.
- * ?.[1] reads the captured group only if there was a match; ?? falls back to
- * the whole id when there wasn't. */
 const seqOf = (id: string) => id.match(/(\d+)$/)?.[1] ?? id;
 
-/* 259500 → "₹2,59,500".
- * 'en-IN' groups digits the Indian way (lakh, crore), not 259,500. */
 const formatMoney = (value: number) => '₹' + value.toLocaleString('en-IN');
 
-/* An ID pill with a date underneath — used by PO Number, Shipment,
- * Opportunity and Procurement. A small component, so the four columns
- * cannot drift apart in how they look. */
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// "2026-03-03" → "03-Mar-2026". Splits the text instead of new Date(), which reads
+// the string as UTC and can show the previous day in timezones behind UTC.
+function formatDate(iso: string): string {
+  const [year, month, day] = iso.split('-');
+  const monthName = MONTHS[Number(month) - 1];
+  if (!year || !day || !monthName) return iso;
+  return `${day}-${monthName}-${year}`;
+}
+
 function IdCell({ id, date }: { id: string; date: string }) {
   return (
     <div className="ord-idcell">
       <span className="ord-idpill">{id}</span>
-      <span className="ord-idcell__date">{date}</span>
+      <span className="ord-idcell__date">{formatDate(date)}</span>
     </div>
   );
 }
 
-/* A PO-level cell: it stretches down across ALL of the PO's invoice rows.
- *
- * rowSpan={3} tells the browser "this cell is 3 rows tall". The next 2 rows
- * must then SKIP this column — otherwise they would have one cell too many
- * and every column after it would shift right.
- *
- * children is whatever you put between <PoCell> and </PoCell>. */
 function PoCell({ span, groupEnd, children }: { span: number; groupEnd?: boolean; children: ReactNode }) {
   const className = groupEnd ? 'ord-po-cell ord-table__group-end' : 'ord-po-cell';
   return <td rowSpan={span} className={className}>{children}</td>;
 }
 
-/* The small grey "SPI 1/2" chip plus the ID pill — the top line of every
- * SPI, GRN and QA card. */
 function DocTop({ label, index, count, id }: { label: string; index: number; count: number; id: string }) {
   return (
     <div className="ord-doc__top">
@@ -511,10 +448,6 @@ function DocTop({ label, index, count, id }: { label: string; index: number; cou
   );
 }
 
-/* The three cards for ONE invoice line: SPI, then its GRN, then its QA.
- * It returns three <td>s wrapped in <>...</> (a Fragment). A component must
- * return one thing; a Fragment groups siblings without adding an extra tag,
- * which matters here — a <div> between <tr> and <td> is invalid HTML. */
 function InvoiceCells({ line, index, count }: { line: InvoiceLine; index: number; count: number }) {
   return (
     <>
@@ -524,7 +457,7 @@ function InvoiceCells({ line, index, count }: { line: InvoiceLine; index: number
           <div className="ord-doc__meta">
             <span className="ord-doc__money">{formatMoney(line.amount)}</span>
             <span className="ord-doc__dot">·</span>
-            <span>{line.spiDate}</span>
+            <span>{formatDate(line.spiDate)}</span>
           </div>
           <div className="ord-doc__foot">
             <span className={`ord-pill ord-pill--${line.status}`}>
@@ -544,7 +477,7 @@ function InvoiceCells({ line, index, count }: { line: InvoiceLine; index: number
           <div className="ord-doc__meta">
             <span>Received</span>
             <span className="ord-doc__dot">·</span>
-            <span>{line.grnDate}</span>
+            <span>{formatDate(line.grnDate)}</span>
           </div>
           <div className="ord-doc__foot">
             <span className="ord-pill ord-pill--received"><span className="ord-pill__dot" />Goods Received</span>
@@ -559,7 +492,7 @@ function InvoiceCells({ line, index, count }: { line: InvoiceLine; index: number
           <div className="ord-doc__meta">
             <span>Inspected</span>
             <span className="ord-doc__dot">·</span>
-            <span>{line.qaDate}</span>
+            <span>{formatDate(line.qaDate)}</span>
           </div>
           <div className="ord-doc__foot">
             <span className="ord-pill ord-pill--qa"><span className="ord-pill__dot" />QA Passed</span>
@@ -571,9 +504,6 @@ function InvoiceCells({ line, index, count }: { line: InvoiceLine; index: number
   );
 }
 
-/* ── Icons for the status and action buttons ──
- * Stored as JSX in constants: an icon never changes, so there is no reason
- * to rebuild it inside a component on every render. */
 const btnIconProps = {
   viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
   strokeWidth: 2.2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const,
@@ -609,9 +539,6 @@ const ICON_VAULT = (
   </svg>
 );
 
-/* 18 · Zohobook Status
- * Not synced → the red pill AND the button that syncs it.
- * Synced     → the green pill alone. The button would only repeat the pill. */
 function ZohoCell({ synced }: { synced: boolean }) {
   if (synced) {
     return (
@@ -628,8 +555,6 @@ function ZohoCell({ synced }: { synced: boolean }) {
   );
 }
 
-/* 19 · Physical Inspection Status — THREE states, so an early return for the
- * simplest one keeps the rest easy to read. */
 function InspectionCell({ required, done }: { required: boolean; done: boolean }) {
   if (!required) {
     return (
@@ -651,16 +576,13 @@ function InspectionCell({ required, done }: { required: boolean; done: boolean }
   );
 }
 
-/* 20 · Payment Progress Status
- * The percentage is DERIVED from paid and net, not stored. If it were stored
- * separately it could disagree with the amounts; calculated, it never can. */
 function PaymentCell({ row }: { row: OrderRow }) {
   const pct = row.net > 0 ? Math.round((row.paid / row.net) * 100) : 0;
   const status: PaymentStatus = pct >= 100 ? 'full' : pct > 0 ? 'partial' : 'pending';
   const label = status === 'full' ? 'Payment Completed' : PAYMENT_LABEL[status];
   const done = status === 'full';
   const isReady = row.paymentNote?.kind === 'ready';
-  // Built once here, used twice below (the visible text and the hover title).
+
   const noteText = !row.paymentNote ? ''
     : row.paymentNote.kind === 'ready'
       ? `${formatMoney(row.paymentNote.amount)} approved · ready to pay`
@@ -668,15 +590,14 @@ function PaymentCell({ row }: { row: OrderRow }) {
 
   return (
     <div className="ord-paycell">
-      {/* The state class on the wrapper (is-full / is-partial / is-pending)
-          recolours the %, the bar and the captions all at once. */}
+
       <div className={`ord-progress is-${status}`}>
         <div className="ord-progress__top">
           <span className={`ord-pill ord-pill--${status}`}><span className="ord-pill__dot" />{label}</span>
           <span className="ord-progress__pct">{pct}%</span>
         </div>
         <div className="ord-progress__bar">
-          {/* Inline style because the width comes from data. */}
+
           <div className="ord-progress__fill" style={{ width: `${pct}%` }}>
             <span className="ord-progress__sheen" />
           </div>
@@ -686,8 +607,6 @@ function PaymentCell({ row }: { row: OrderRow }) {
           <span className="ord-progress__due"><span className="ord-progress__mdot" />{formatMoney(row.balance)} due</span>
         </div>
 
-        {/* Optional note. row.paymentNote && (...) renders nothing when the
-            PO has no note, because paymentNote is then undefined. */}
         {row.paymentNote && (
           <span
             className={`ord-paynote ord-paynote--${row.paymentNote.kind}`}
@@ -702,8 +621,7 @@ function PaymentCell({ row }: { row: OrderRow }) {
       <button type="button" className={`ord-btn ord-btn--hist${done ? ' is-record' : ''}`}>
         {done ? ICON_EYE : ICON_HISTORY}
         <span>{done ? 'View Request Details' : 'Manage Payment Requests'}</span>
-        {/* Show the count badge only when there is something to count.
-            It turns green when approved money is ready to pay. */}
+
         {row.paymentRequests > 0 && (
           <i className={`ord-btn__count${isReady ? ' ord-btn__count--ready' : ''}`}>{row.paymentRequests}</i>
         )}
@@ -712,7 +630,6 @@ function PaymentCell({ row }: { row: OrderRow }) {
   );
 }
 
-/* 21 · Action — the three document actions on one row. */
 function ActionCell() {
   return (
     <div className="ord-actions">
@@ -723,26 +640,17 @@ function ActionCell() {
   );
 }
 
-/* ── Filtering ──
- * Plain functions outside the component: they only take data and return an
- * answer, with no state or hooks, so they don't need to live inside it. */
-
-/* Which rows belong to a tab. */
 function inTab(row: OrderRow, tab: TabKey): boolean {
   if (tab === 'with') return row.shipment !== null;
   if (tab === 'without') return row.shipment === null;
-  if (tab === 'cancelled') return !!row.cancelled;   // !! turns undefined into false
-  return true;                                       // 'all'
+  if (tab === 'cancelled') return !!row.cancelled;
+  return true;
 }
 
-/* Everything a user might type to find a PO, joined into one lowercase string.
- * It uses the LABELS people see ("Regular Supplier", "FFD / Transporter"),
- * not the internal keys ('regular', 'ffd'), because users search for what is
- * on screen. flatMap turns each invoice into its three IDs (SPI, GRN, QA) and
- * flattens them into the same list. */
 function searchTextOf(row: OrderRow): string {
   return [
-    row.po, row.poDate,
+
+    row.po, row.poDate, formatDate(row.poDate), formatDate(row.expectedDelivery),
     PO_TYPE[row.type].label, row.docType,
     row.shipment ?? '', row.opportunity, row.procurement,
     row.supplier, SUPPLIER_CATEGORY[row.supplierCategory].label,
@@ -752,21 +660,9 @@ function searchTextOf(row: OrderRow): string {
   ].join(' ').toLowerCase();
 }
 
-/* ── Pagination ──
- * The footer itself is the app's shared WorklistPager component, so this page
- * pages exactly like Suppliers and the CLM lists. Only the numbers live here. */
 const PAGE_SIZE_OPTIONS = [5, 10, 25, 50];
-const DEFAULT_PAGE_SIZE = 10;   // as in the design
+const DEFAULT_PAGE_SIZE = 10;
 
-/* ── Phone detection ──
- * A CUSTOM HOOK: a function whose name starts with "use" and that uses other
- * hooks inside. It packages reusable logic; any component can call it.
- *
- * window.matchMedia runs the same test as a CSS media query, from JavaScript.
- * - useState(() => ...) reads the answer once, before the first render, so a
- *   phone gets the card view immediately (no flash of the table first).
- * - useEffect subscribes to changes (rotating the phone, resizing a window)
- *   and the returned function unsubscribes when the page is left. */
 const PHONE_QUERY = '(max-width: 768px)';
 
 function useIsPhone() {
@@ -782,10 +678,6 @@ function useIsPhone() {
   return isPhone;
 }
 
-/* ── One PO as a card (phones) ──
- * The same information as one table row, stacked top to bottom. It REUSES
- * the table's pieces (IdCell, badges, ZohoCell, PaymentCell, ActionCell…), so
- * the card and the table always show the same thing in the same colours. */
 function OrderCard({ row, index }: { row: OrderRow; index: number }) {
   const category = SUPPLIER_CATEGORY[row.supplierCategory];
   const risk = RISK_LEVEL[row.risk];
@@ -793,12 +685,12 @@ function OrderCard({ row, index }: { row: OrderRow; index: number }) {
 
   return (
     <article className="ord-card">
-      {/* Top: number, PO, type */}
+
       <div className="ord-card__head">
         <span className="ord-srnum">{index + 1}</span>
         <div className="ord-card__po">
           <span className="ord-idpill">{row.po}</span>
-          <span className="ord-idcell__date">{row.poDate}</span>
+          <span className="ord-idcell__date">{formatDate(row.poDate)}</span>
         </div>
         <span className={`ord-typepill ord-typepill--${row.type}`}>
           <span className="ord-typepill__ico">{PO_TYPE[row.type].icon}</span>
@@ -813,7 +705,6 @@ function OrderCard({ row, index }: { row: OrderRow; index: number }) {
         )}
       </div>
 
-      {/* Supplier on the left, risk on the right */}
       <div className="ord-card__split">
         <div className="ord-card__block">
           <span className="ord-card__label">Supplier</span>
@@ -826,7 +717,6 @@ function OrderCard({ row, index }: { row: OrderRow; index: number }) {
         </div>
       </div>
 
-      {/* <dl> is HTML's list of label/value pairs: <dt> = label, <dd> = value. */}
       <dl className="ord-card__grid">
         <div>
           <dt>Shipment ID</dt>
@@ -834,7 +724,7 @@ function OrderCard({ row, index }: { row: OrderRow; index: number }) {
         </div>
         <div><dt>Opportunity ID</dt><dd><IdCell id={row.opportunity} date={row.opportunityDate} /></dd></div>
         <div><dt>Procurement ID</dt><dd><IdCell id={row.procurement} date={row.procurementDate} /></dd></div>
-        <div><dt>Expected Delivery</dt><dd><span className="ord-edd">{row.expectedDelivery}</span></dd></div>
+        <div><dt>Expected Delivery</dt><dd><span className="ord-edd">{formatDate(row.expectedDelivery)}</span></dd></div>
       </dl>
 
       <dl className="ord-card__grid">
@@ -844,7 +734,6 @@ function OrderCard({ row, index }: { row: OrderRow; index: number }) {
         <div><dt>Balance</dt><dd><span className="ord-amt ord-amt--bal">{formatMoney(row.balance)}</span></dd></div>
       </dl>
 
-      {/* Each invoice: its SPI card, then the GRN and QA that belong to it. */}
       <div className="ord-card__section">
         <span className="ord-card__label">Mapped SPI / GRN / QA ({count})</span>
         {count === 0 && <span className="ord-dash">—</span>}
@@ -854,7 +743,7 @@ function OrderCard({ row, index }: { row: OrderRow; index: number }) {
             <div className="ord-doc__meta">
               <span className="ord-doc__money">{formatMoney(line.amount)}</span>
               <span className="ord-doc__dot">·</span>
-              <span>{line.spiDate}</span>
+              <span>{formatDate(line.spiDate)}</span>
             </div>
             <div className="ord-doc__foot">
               <span className={`ord-pill ord-pill--${line.status}`}><span className="ord-pill__dot" />{PAYMENT_LABEL[line.status]}</span>
@@ -864,12 +753,12 @@ function OrderCard({ row, index }: { row: OrderRow; index: number }) {
             </div>
             <div className="ord-card__chain">
               <span className="ord-idpill">{line.grn}</span>
-              <span className="ord-doc__sub">Received · {line.grnDate}</span>
+              <span className="ord-doc__sub">Received · {formatDate(line.grnDate)}</span>
               <span className="ord-pill ord-pill--received"><span className="ord-pill__dot" />Goods Received</span>
             </div>
             <div className="ord-card__chain">
               <span className="ord-idpill">{line.qa}</span>
-              <span className="ord-doc__sub">Inspected · {line.qaDate}</span>
+              <span className="ord-doc__sub">Inspected · {formatDate(line.qaDate)}</span>
               <span className="ord-pill ord-pill--qa"><span className="ord-pill__dot" />QA Passed</span>
             </div>
           </div>
@@ -898,41 +787,22 @@ function OrderCard({ row, index }: { row: OrderRow; index: number }) {
 }
 
 export default function Order() {
-  /* STATE — whether the guide box is open.
-   *
-   * useState returns two things: the current value, and a function to change
-   * it. Calling setGuideOpen() tells React the value changed, and React draws
-   * the component again with the new value. Starts CLOSED, so the PO list
-   * gets the most room; the user opens it with the arrow when needed. */
+
   const [guideOpen, setGuideOpen] = useState(false);
 
   const toggleGuide = () => setGuideOpen((open) => !open);
 
-  /* STATE — which tab is selected. Typed as TabKey, so only the four real
-     tab names are accepted. Starts on "all", as in the design. */
+  const [createOpen, setCreateOpen] = useState(false);
+
   const [activeTab, setActiveTab] = useState<TabKey>('all');
 
-  /* STATE — what is typed in the search box. */
   const [search, setSearch] = useState('');
 
-  /* true on phone-width screens → render cards instead of the wide table. */
   const isPhone = useIsPhone();
 
-  /* PAGINATION
-   * Only the page NUMBER is state. Everything else is DERIVED from it on each
-   * render: how many pages exist, where this page starts, which rows show.
-   * Storing those too would risk them disagreeing with the page number. */
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
-  /* FILTERING — tab first, then search.
-   *
-   * useMemo(() => work, [inputs]) remembers the result and redoes the work
-   * ONLY when one of the inputs changes. Changing page or hovering a row
-   * re-renders the component, but the filtered list is reused as-is.
-   *
-   * .trim() ignores spaces typed before/after; toLowerCase() on both sides
-   * makes "adani" find "Adani Enterprises". */
   const rows = useMemo(() => {
     const term = search.trim().toLowerCase();
     return SAMPLE_ROWS
@@ -940,8 +810,6 @@ export default function Order() {
       .filter((row) => term === '' || searchTextOf(row).includes(term));
   }, [activeTab, search]);
 
-  /* Tab counts, worked out from the rows. They ignore the search on purpose,
-   * so each tab keeps showing how many POs it holds in total. */
   const tabCounts = useMemo(() => {
     const counts: Record<TabKey, number> = { all: 0, with: 0, without: 0, cancelled: 0 };
     for (const row of SAMPLE_ROWS) {
@@ -952,12 +820,9 @@ export default function Order() {
     return counts;
   }, []);
 
-  const start = (page - 1) * pageSize;                 // page 2 of 10 → starts at 10
-  const pageRows = rows.slice(start, start + pageSize); // slice(10, 20) → rows 11–20
+  const start = (page - 1) * pageSize;
+  const pageRows = rows.slice(start, start + pageSize);
 
-  /* The list scrolls inside its card, so after any change of what is shown we
-   * jump back to the top of the list — otherwise page 2 would open halfway
-   * down. The "?." skips the call when that view is not on screen. */
   const cardsRef = useRef<HTMLDivElement>(null);
   const scrollListToTop = () => {
     scrollRef.current?.scrollTo({ top: 0 });
@@ -969,10 +834,7 @@ export default function Order() {
     scrollListToTop();
   };
 
-  /* Every change that alters WHICH rows are listed goes back to page 1.
-   * Example: on page 3, searching "infosys" leaves 1 result — page 3 of that
-   * would be empty. That's why these handlers reset the page themselves,
-   * right where the change happens. */
+  // Anything that changes which rows are listed goes back to page 1.
   const selectTab = (tab: TabKey) => {
     setActiveTab(tab);
     setPage(1);
@@ -989,58 +851,38 @@ export default function Order() {
     scrollListToTop();
   };
 
-  /* SMOOTH SCROLLING — switch hover effects off while the table is scrolling.
-   *
-   * During a sideways scroll the buttons slide under a still mouse pointer.
-   * Each one it touches starts its hover animation (filter, lift, shadow),
-   * which makes the browser repaint while it is also scrolling: that's the lag.
-   * So while scrolling we add "is-scrolling" to the wrapper (CSS then ignores
-   * the mouse), and remove it 150ms after the last scroll event.
-   *
-   * Why useRef and NOT useState? A scroll fires dozens of events per second.
-   * Setting state would re-render the whole table on every one of them.
-   * A ref is a box React does not watch: changing it causes no re-render.
-   *   scrollRef   → the wrapper <div> itself, so we can toggle its class
-   *   scrollTimer → the id of the pending "scrolling has stopped" timer */
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollTimer = useRef<number | undefined>(undefined);
 
+  // Ignore the mouse while scrolling so hover animations don't repaint mid-scroll.
+  // Refs, not state: scroll fires many times a second and must not re-render.
   const onTableScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
     el.classList.add('is-scrolling');
-    // Each new scroll event cancels the previous timer and starts a fresh one,
-    // so the class is removed only once scrolling has really stopped.
+
     window.clearTimeout(scrollTimer.current);
     scrollTimer.current = window.setTimeout(() => el.classList.remove('is-scrolling'), 150);
   };
 
-  /* Cleanup: if the user leaves the page mid-scroll, cancel the pending timer
-   * so it does not run against a table that no longer exists. The function
-   * returned from useEffect runs when the component unmounts. */
   useEffect(() => () => window.clearTimeout(scrollTimer.current), []);
 
-  /* The header behaves like a button, so it must also work from the keyboard:
-     Enter or Space toggles it, the same as a real button. */
   const onGuideKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();          // stop Space from scrolling the page
+      e.preventDefault();
       toggleGuide();
     }
   };
 
   return (
     <div className="ord-page">
-      {/* The styles live with the component, so this page carries everything
-          it needs and never depends on another module's stylesheet. */}
-      <style>{ORDER_CSS}</style>
 
-      {/* ── SECTION A · Header strip ─────────────────────────────────── */}
+      <style>{ORDER_CSS}</style>
+      {/* Mounted only while open, so its scroll lock and key listener exist only then. */}
+      {createOpen && <CreatePoModal onClose={() => setCreateOpen(false)} />}
+
       <div className="ord-strip">
-        {/* Three decorative layers, drawn behind the content:
-            accent = teal bar down the left edge
-            glow   = soft coloured light at both ends
-            sheen  = white highlight across the top half */}
+
         <span className="ord-strip__accent" />
         <span className="ord-strip__glow" />
         <span className="ord-strip__sheen" />
@@ -1066,9 +908,8 @@ export default function Order() {
         </div>
 
         <div className="ord-strip__right">
-          {/* No onClick yet: this is the design phase. The button will open
-              the create form once we build that screen. */}
-          <button type="button" className="ord-strip__btn">
+
+          <button type="button" className="ord-strip__btn" onClick={() => setCreateOpen(true)}>
             <span className="ord-strip__btn-sheen" />
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" />
@@ -1079,9 +920,6 @@ export default function Order() {
         </div>
       </div>
 
-      {/* ── SECTION B · What We Are Doing Here ──────────────────────── */}
-      {/* The class is built from state. When guideOpen is false the box gets
-          "is-collapsed", and the CSS for that class closes the body. */}
       <div className={`ord-guide${guideOpen ? '' : ' is-collapsed'}`}>
         <div
           className="ord-guide__header"
@@ -1117,9 +955,7 @@ export default function Order() {
         </div>
 
         <div className="ord-guide__body">
-          {/* One card's markup, repeated once per step.
-              key tells React which card is which, so it can update the right
-              one when the list changes. It must be unique within the list. */}
+
           {GUIDE_STEPS.map((step) => (
             <div className="ord-guide__item" key={step.num}>
               <div className="ord-guide__item-top">
@@ -1133,13 +969,9 @@ export default function Order() {
         </div>
       </div>
 
-      {/* ── SECTION C · PO list ─────────────────────────────────────── */}
-      {/* One white card holds the toolbar now and the table in the next step. */}
       <div className="ord-list">
         <div className="ord-list__top">
 
-          {/* role="tablist" / role="tab" / aria-selected tell screen readers
-              these buttons are a set of tabs and which one is chosen. */}
           <div className="ord-tabs" role="tablist" aria-label="Purchase order views">
             {LIST_TABS.map((tab) => {
               const isActive = tab.key === activeTab;
@@ -1171,9 +1003,7 @@ export default function Order() {
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
-            {/* A CONTROLLED input: React owns the value.
-                value={search} shows whatever is in state; onChange writes each
-                keystroke back into state. The box and the state never disagree. */}
+
             <input
               type="text"
               aria-label="Search purchase orders"
@@ -1185,11 +1015,6 @@ export default function Order() {
 
         </div>
 
-        {/* PHONE → cards. Everything else → the table.
-            isPhone ? A : B renders only ONE of them, so a phone never builds
-            the 21-column table at all. */}
-        {/* Nothing matches → a message instead of an empty table.
-            Three possible views now: empty, phone cards, desktop table. */}
         {rows.length === 0 ? (
           <div className="ord-empty">
             {search.trim()
@@ -1198,23 +1023,16 @@ export default function Order() {
           </div>
         ) : isPhone ? (
           <div className="ord-cards" ref={cardsRef}>
-            {/* index restarts at 0 on every page, so add start:
-                page 2, first card → 10 + 0 + 1 = Sr. No 11. */}
+
             {pageRows.map((row, index) => (
               <OrderCard key={row.po} row={row} index={start + index} />
             ))}
           </div>
         ) : (
-        /* ── The table ──
-            The table is 3006px wide, far wider than the screen. The wrapper
-            div scrolls sideways so the PAGE itself never scrolls sideways. */
+
         <div className="ord-table-scroll" ref={scrollRef} onScroll={onTableScroll}>
           <table className="ord-table" style={{ width: TABLE_WIDTH }}>
 
-            {/* <colgroup> sets each column's width ONCE, here, instead of on
-                every cell. With table-layout:fixed (see CSS) the browser uses
-                these widths as they are and does not resize columns to fit
-                their text, so a long supplier name cannot push columns around. */}
             <colgroup>
               {COLUMNS.map((col) => (
                 <col key={col.label} style={{ width: col.width }} />
@@ -1231,13 +1049,8 @@ export default function Order() {
               </tr>
             </thead>
 
-            {/* ONE <tbody> PER PO. A table may have many <tbody>s; each one
-                groups the rows of one PO. That lets the CSS treat a whole PO as
-                a unit: tint every second PO, and drop the bottom line under
-                the last PO — with no extra JavaScript. */}
             {pageRows.map((row, poIndex) => {
-              /* A PO with no invoices yet still needs ONE row, or it would
-                 vanish from the table. [null] is that single empty row. */
+
               const lines = row.invoices.length > 0 ? row.invoices : [null];
               const span = lines.length;
 
@@ -1252,16 +1065,11 @@ export default function Order() {
                     return (
                       <tr key={line ? line.spi : 'no-invoice'} className={rowClass || undefined}>
 
-                        {/* Columns 1–14 appear ONLY in the first row, each
-                            stretched down with rowSpan. Rows 2, 3... start
-                            straight at the SPI column. */}
                         {isFirst && (
                           <>
-                            {/* 1 · Sr. No — index starts at 0, people count from 1. */}
+
                             <PoCell span={span}><span className="ord-srnum">{start + poIndex + 1}</span></PoCell>
 
-                            {/* 2 · PO Number, plus a red badge only when inspection is needed.
-                                {condition && <X />} renders X when true and nothing when false. */}
                             <PoCell span={span}>
                               <IdCell id={row.po} date={row.poDate} />
                               {row.physicalInspection && (
@@ -1269,9 +1077,6 @@ export default function Order() {
                               )}
                             </PoCell>
 
-                            {/* 3 · PO Type */}
-                            {/* PO_TYPE[row.type] looks up this row's label and icon;
-                                the modifier class picks the colours. */}
                             <PoCell span={span}>
                               <span className={`ord-typepill ord-typepill--${row.type}`}>
                                 <span className="ord-typepill__ico">{PO_TYPE[row.type].icon}</span>
@@ -1279,15 +1084,12 @@ export default function Order() {
                               </span>
                             </PoCell>
 
-                            {/* 4 · Document Type */}
                             <PoCell span={span}>
                               <span className={`ord-doctype ord-doctype--${row.docType === 'International' ? 'intl' : 'dom'}`}>
                                 {row.docType}
                               </span>
                             </PoCell>
 
-                            {/* 5, 6, 7 · the linked IDs. No shipment → a dash.
-                                condition ? A : B picks one of two things to show. */}
                             <PoCell span={span}>
                               {row.shipment
                                 ? <IdCell id={row.shipment} date={row.shipmentDate} />
@@ -1296,7 +1098,6 @@ export default function Order() {
                             <PoCell span={span}><IdCell id={row.opportunity} date={row.opportunityDate} /></PoCell>
                             <PoCell span={span}><IdCell id={row.procurement} date={row.procurementDate} /></PoCell>
 
-                            {/* 8 · Supplier. title= shows the full name on hover when it is cut off. */}
                             <PoCell span={span}>
                               <div className="ord-supplier">
                                 <span className="ord-supplier__name" title={row.supplier}>{row.supplier}</span>
@@ -1307,7 +1108,6 @@ export default function Order() {
                               </div>
                             </PoCell>
 
-                            {/* 9 · Risk Alert */}
                             <PoCell span={span}>
                               <span className={`ord-badge ord-badge--${RISK_LEVEL[row.risk].tone} ord-risk`}>
                                 {RISK_LEVEL[row.risk].icon}
@@ -1315,10 +1115,8 @@ export default function Order() {
                               </span>
                             </PoCell>
 
-                            {/* 10 · Expected Delivery Date */}
-                            <PoCell span={span}><span className="ord-edd">{row.expectedDelivery}</span></PoCell>
+                            <PoCell span={span}><span className="ord-edd">{formatDate(row.expectedDelivery)}</span></PoCell>
 
-                            {/* 11–14 · money. One base class + one colour modifier each. */}
                             <PoCell span={span}><span className="ord-amt">{formatMoney(row.total)}</span></PoCell>
                             <PoCell span={span}><span className="ord-amt ord-amt--net">{formatMoney(row.net)}</span></PoCell>
                             <PoCell span={span}><span className="ord-amt ord-amt--paid">{formatMoney(row.paid)}</span></PoCell>
@@ -1328,7 +1126,6 @@ export default function Order() {
                           </>
                         )}
 
-                        {/* 15–17 · SPI / GRN / QA — one set in EVERY row. */}
                         {line ? (
                           <InvoiceCells line={line} index={lineIndex} count={span} />
                         ) : (
@@ -1339,7 +1136,6 @@ export default function Order() {
                           </>
                         )}
 
-                        {/* 18–21 · PO-level again, so first row only. */}
                         {isFirst && (
                           <>
                             <PoCell span={span}><ZohoCell synced={row.zohoSynced} /></PoCell>
@@ -1360,9 +1156,6 @@ export default function Order() {
         </div>
         )}
 
-        {/* Outside the scroll area, as the card's last child: the rows scroll
-            above it while the footer stays pinned to the bottom of the card. */}
-        {/* Hidden when nothing matches — the empty message is enough. */}
         {rows.length > 0 && (
           <WorklistPager
             className="wl-teal"
@@ -1379,45 +1172,10 @@ export default function Order() {
   );
 }
 
-/* ─────────────────────────────────────────────────────────────────────────
- * Styles
- *
- * Every class starts with "ord-" so nothing here can clash with any other
- * page in the app.
- *
- * Naming follows BEM: block__element--modifier.
- *   ord-strip            the block
- *   ord-strip__title     a part of that block
- *
- * All values are measured from the Figma export. The design defines a violet
- * base and a teal variant on top; this page is always teal, so the teal
- * values are written in directly instead of rebuilding both layers.
- * ───────────────────────────────────────────────────────────────────────── */
 const ORDER_CSS = `
-/* SPACING RULE: 8px everywhere.
-   No padding here: the app layout (.page-content in app.css) already puts
-   8px around every page. Adding more would double the edge gap.
-   gap is the ONLY space between sections, so no section has its own margin. */
-/* FIT THE SCREEN — only the list scrolls
-   The page is exactly as tall as the space between the menu and the footer.
-   The header strip, guide and tabs stay put; the rows scroll INSIDE the card.
-
-   The chain has to be unbroken, parent to child:
-     .main-content (fixed height, set by the layout)
-       .page-content      height:100%        → exactly the full area
-         .container-fluid   flex:1, min-h:0  → takes that height
-           .ord-page          flex:1, min-h:0  → takes it again
-             strip, guide       flex-shrink:0  → keep their natural height
-             .ord-list          flex:1, min-h:0 → gets what is left
-               .ord-table-scroll  flex:1, overflow:auto → scrolls the rows
-   If one link is missing, the height stops there and the whole page scrolls.
-
-   Why min-height:0 everywhere: a flex child is NOT allowed to be smaller than
-   its content by default (min-height:auto). Without min-height:0 the list
-   grows to fit all rows, and the page scrolls instead of the list.
-
-   :has() limits the first two rules to the page that contains .ord-page, so
-   the shared layout classes are not changed for any other page. */
+/* Page fits the screen and only the list scrolls. Every flex level needs
+   min-height: 0, or it grows to fit all rows and the whole page scrolls.
+   :has() limits the layout overrides to this page. */
 .page-content:has(> .container-fluid > .ord-page) {
   display: flex;
   flex-direction: column;
@@ -1441,13 +1199,9 @@ const ORDER_CSS = `
   flex-direction: column;
   gap: 8px;
   font-family: 'DM Sans', system-ui, sans-serif;
-  /* The app's body sets letter-spacing: -0.02em, and every child inherits it,
-     which squeezes all text slightly narrower than the design. The design has
-     none, so reset it here. Elements that set their own spacing keep it. */
   letter-spacing: 0;
 }
 
-/* ── Section A · Header strip ── */
 .ord-strip {
   position: relative;
   overflow: hidden;
@@ -1455,7 +1209,7 @@ const ORDER_CSS = `
   align-items: center;
   justify-content: space-between;
   min-height: 58px;
-  padding: 8px;
+  padding: 0 20px;
   border: 1px solid #9ce1ee;
   border-radius: 16px;
   background: linear-gradient(110deg, #f0fdff 0%, #e8fbfd 25%, #cffafe 55%, #bff0f7 85%, #a5e9f3 100%);
@@ -1465,8 +1219,6 @@ const ORDER_CSS = `
     0 2px 8px rgba(0, 0, 0, .06);
 }
 
-/* Decorative layers. position:absolute takes them out of the layout, and
-   pointer-events:none lets clicks pass straight through them. */
 .ord-strip__accent {
   position: absolute;
   left: 0; top: 0; bottom: 0;
@@ -1491,12 +1243,11 @@ const ORDER_CSS = `
   background: linear-gradient(180deg, rgba(255, 255, 255, .5), transparent);
 }
 
-/* z-index:1 lifts the real content above the three decorative layers. */
 .ord-strip__left {
   display: flex;
   align-items: center;
   gap: 13px;
-  padding-left: 4px;   /* clears the 4px teal bar on the left edge */
+  padding-left: 10px;
   z-index: 1;
 }
 .ord-strip__right {
@@ -1524,8 +1275,6 @@ const ORDER_CSS = `
 }
 .ord-strip__avatar svg { display: block; }
 
-/* The green dot sits on the tile's corner: the wrap is position:relative,
-   so this absolute dot is placed relative to the wrap, not the page. */
 .ord-strip__online-dot {
   position: absolute;
   bottom: -1px;
@@ -1599,7 +1348,6 @@ const ORDER_CSS = `
   background: linear-gradient(180deg, rgba(255, 255, 255, .18), transparent);
 }
 
-/* ── Section B · What We Are Doing Here ── */
 .ord-guide {
   position: relative;
   overflow: hidden;
@@ -1611,8 +1359,7 @@ const ORDER_CSS = `
     0 8px 28px rgba(6, 182, 212, .2),
     0 2px 8px rgba(0, 0, 0, .06);
 }
-/* ::before is a pseudo-element: a decoration CSS draws for us without an
-   extra tag in the JSX. Here it is the teal bar down the left edge. */
+
 .ord-guide::before {
   content: '';
   position: absolute;
@@ -1630,14 +1377,13 @@ const ORDER_CSS = `
   align-items: center;
   gap: 12px;
   min-height: 48px;
-  padding: 8px 8px 8px 8px;
+  padding: 7px 12px;
   cursor: pointer;
   user-select: none;
   border-bottom: 1px solid #9ce1ee;
   background: linear-gradient(110deg, #f0fdff 0%, #e8fbfd 25%, #cffafe 55%, #bff0f7 85%, #a5e9f3 100%);
 }
-/* A ring for keyboard users only. :focus-visible shows it after Tab, never
-   after a mouse click, so it adds nothing to the design for mouse users. */
+
 .ord-guide__header:focus-visible {
   outline: 2px solid #0891b2;
   outline-offset: -2px;
@@ -1677,8 +1423,6 @@ const ORDER_CSS = `
     0 4px 14px rgba(8, 145, 178, .45);
 }
 
-/* min-width:0 lets this column shrink below its text width. Without it a
-   flex child refuses to shrink, and the ellipsis on the subtitle never fires. */
 .ord-guide__header-mid {
   position: relative;
   z-index: 1;
@@ -1744,15 +1488,9 @@ const ORDER_CSS = `
   transition: transform .24s cubic-bezier(.22, 1, .36, 1);
 }
 
-/* The body is a grid. auto-fit with minmax(140px, 1fr) means: fit as many
-   columns as the width allows, each at least 140px, sharing the spare space
-   equally. On a wide screen the 5 cards sit in one row; on a narrow one they
-   wrap onto more rows, with no media query needed. */
 .ord-guide__body {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  /* gap = space BETWEEN cards, padding = space around the outside.
-     Both 8px, so every card has exactly 8px on all four sides. */
   gap: 8px;
   padding: 8px;
   overflow: hidden;
@@ -1762,11 +1500,6 @@ const ORDER_CSS = `
   transition: max-height .3s cubic-bezier(.22, 1, .36, 1), opacity .22s, padding .3s;
 }
 
-/* COLLAPSED — everything the "is-collapsed" class changes.
-   The body animates from max-height 320px to 0, which is why it slides shut
-   instead of vanishing. The arrow turns to point sideways. */
-/* padding must go to 0 too: max-height:0 hides the content, but padding
-   would still leave a 16px strip showing. */
 .ord-guide.is-collapsed .ord-guide__body {
   max-height: 0;
   padding-top: 0;
@@ -1800,7 +1533,7 @@ const ORDER_CSS = `
     0 6px 18px rgba(8, 145, 178, .14),
     0 1px 4px rgba(15, 23, 42, .04);
 }
-/* The 3px teal bar across the top of each card. */
+
 .ord-guide__item::before {
   content: '';
   position: absolute;
@@ -1848,12 +1581,6 @@ const ORDER_CSS = `
   color: #94A3B8;
 }
 
-/* ── Section C · PO list card ── */
-/* flex:1 takes the height left under the strip and guide; the column layout
-   passes it on to the table's scroll area.
-   min-height:320px is the safety net: on a short screen (or a phone with the
-   guide open) the list never gets squeezed to nothing — the page scrolls a
-   little instead, and the list still has room to show rows. */
 .ord-list {
   flex: 1 1 auto;
   min-height: 320px;
@@ -1866,8 +1593,6 @@ const ORDER_CSS = `
   box-shadow: 0 4px 16px rgba(8, 80, 110, .06);
 }
 
-/* flex-wrap:wrap lets the search box drop BELOW the tabs when the screen is
-   too narrow for both on one line, instead of squashing them together. */
 .ord-list__top {
   display: flex;
   align-items: center;
@@ -1877,8 +1602,6 @@ const ORDER_CSS = `
   padding: 8px;
 }
 
-/* ── Tabs ── */
-/* The grey rounded tray the tabs sit in. */
 .ord-tabs {
   display: inline-flex;
   align-items: center;
@@ -1911,16 +1634,12 @@ const ORDER_CSS = `
   outline-offset: 2px;
 }
 
-/* The selected tab. */
 .ord-tabs__tab.is-active {
   color: #fff;
   background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
   box-shadow: 0 4px 12px rgba(8, 145, 178, .32);
 }
 
-/* Cancelled turns red, but ONLY while selected. Both classes are required:
-   .ord-tabs__tab--danger alone changes nothing, so the tab looks like the
-   others until it is clicked. */
 .ord-tabs__tab--danger.is-active {
   color: #fff;
   background: linear-gradient(135deg, #dc2626, #b91c1c);
@@ -1940,22 +1659,19 @@ const ORDER_CSS = `
   color: #0e7490;
   background: #dce9f0;
 }
-/* Inside a selected tab (teal or red), the count turns translucent white. */
+
 .ord-tabs__tab.is-active .ord-tabs__count {
   color: #fff;
   background: rgba(255, 255, 255, .24);
 }
 
-/* ── Search ── */
 .ord-search {
   position: relative;
   flex: 1;
   min-width: 345px;
   max-width: 630px;
 }
-/* The magnifier is drawn ON TOP of the input, inside its left padding.
-   pointer-events:none lets a click on the icon reach the input underneath,
-   so clicking the icon still puts the cursor in the box. */
+
 .ord-search svg {
   position: absolute;
   left: 13px;
@@ -1964,8 +1680,7 @@ const ORDER_CSS = `
   color: #9fb2c0;
   pointer-events: none;
 }
-/* padding-left 38px leaves room for the icon, so typed text never runs
-   underneath it. box-sizing:border-box keeps width:100% INCLUDING padding. */
+
 .ord-search input {
   width: 100%;
   box-sizing: border-box;
@@ -1989,30 +1704,17 @@ const ORDER_CSS = `
   box-shadow: 0 0 0 3px rgba(34, 211, 238, .12);
 }
 
-/* ── Table: scroll wrapper ── */
-/* overflow-x:auto shows a sideways scrollbar only when the table is wider
-   than the card (always, at 3006px). */
-/* Three things keep the sideways scroll smooth:
-   1. background:#fff — a solid background lets the browser scroll the table
-      as one ready-made image on the GPU instead of repainting it each frame.
-   2. No border-radius here — the card (.ord-list) already rounds and clips
-      the corners. A second rounded clip on the scroller itself adds a mask
-      the browser must redraw while scrolling.
-   3. overscroll-behavior-x:contain — on a touchpad, hitting the end of the
-      table no longer triggers the browser's swipe back/forward gesture. */
 .ord-table-scroll {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;            /* both ways: sideways for columns, down for rows */
+  overflow: auto;
   background: #fff;
   overscroll-behavior: contain;
 }
-/* The tabs/search bar keeps its height; only the scroll area shrinks. */
+
 .ord-list__top { flex-shrink: 0; }
 .ord-table-scroll::-webkit-scrollbar { width: 9px; }
-/* While scrolling (class set from JS), the table ignores the mouse, so no
-   hover animation can start under the pointer. Clicks work again 150ms
-   after scrolling stops. */
+
 .ord-table-scroll.is-scrolling .ord-table { pointer-events: none; }
 .ord-table-scroll::-webkit-scrollbar { height: 9px; }
 .ord-table-scroll::-webkit-scrollbar-thumb {
@@ -2020,18 +1722,10 @@ const ORDER_CSS = `
   border-radius: 8px;
 }
 
-/* ── Table ── */
-/* table-layout:fixed = obey the colgroup widths exactly.
-   border-collapse:collapse = neighbouring cells share ONE border line. */
-/* will-change:transform puts the whole table on its OWN GPU layer.
-   The browser draws it once (all 21 header gradients, shadows, buttons) and
-   then just slides that finished picture while scrolling. Without it, the
-   header gradients and badges can be redrawn on every frame, which shows up
-   as the header stuttering behind the scroll. */
 .ord-table {
   table-layout: fixed;
   border-collapse: collapse;
-  will-change: transform;
+  will-change: transform; /* own GPU layer: smooth horizontal scroll */
 }
 .ord-table th,
 .ord-table td {
@@ -2040,8 +1734,6 @@ const ORDER_CSS = `
   vertical-align: middle;
 }
 
-/* Header labels may wrap onto two lines ("EXPECTED DELIVERY DATE"),
-   because the columns are narrow. */
 .ord-table th {
   padding: 8px 5px;
   font-size: 9px;
@@ -2053,14 +1745,10 @@ const ORDER_CSS = `
   color: #5b7d8c;
   background: linear-gradient(180deg, #f9feff, #edf9fc);
   border-bottom: 1.5px solid #dbf0f4;
-  /* STICKY HEADER: while the rows scroll up, the header row stays pinned to
-     the top of the scroll area. z-index keeps it above the rows under it.
-     The inset shadow redraws the bottom line, because with
-     border-collapse the real border scrolls away with the table. */
   position: sticky;
   top: 0;
   z-index: 2;
-  box-shadow: inset 0 -1.5px 0 #dbf0f4;
+  box-shadow: inset 0 -1.5px 0 #dbf0f4; /* collapsed borders scroll away; this keeps the line */
 }
 .ord-table td {
   padding: 7px 5px;
@@ -2071,10 +1759,6 @@ const ORDER_CSS = `
   border-bottom: 1px solid #f1f6f8;
 }
 
-/* ── Where one PO ends ──
-   Extra room above the first row and below the last row of each PO, plus a
-   thick teal line under it. The PO-level cells get that line directly: a
-   rowSpan cell's bottom edge sits at the bottom of the whole PO. */
 .ord-table tr.is-first td { padding-top: 10px; }
 .ord-table tr.is-last td {
   padding-bottom: 10px;
@@ -2082,18 +1766,13 @@ const ORDER_CSS = `
 }
 .ord-table td.ord-po-cell { border-bottom: 2.5px solid #aee0e9; }
 
-/* ── Row colours ──
-   :nth-of-type(even) = every 2nd tbody, i.e. every 2nd PO. The whole PO is
-   tinted together, not stripe by stripe. */
 .ord-table tbody:nth-of-type(even) td { background: #f8fcfd; }
 .ord-table tbody tr:hover td { background: #f4fbfd; }
 .ord-table tbody:nth-of-type(even) tr:hover td { background: #eff9fb; }
 
-/* The dashed divider after Balance Amount. */
 .ord-table th.ord-table__group-end { border-right: 1.5px dashed #c7e9ee; }
 .ord-table td.ord-table__group-end { border-right: 1.5px dashed #cdeef3; }
 
-/* ── Cell: Sr. No ── */
 .ord-srnum {
   display: inline-flex;
   align-items: center;
@@ -2108,14 +1787,13 @@ const ORDER_CSS = `
   box-shadow: 0 2px 6px rgba(8, 145, 178, .3);
 }
 
-/* ── Cell: ID pill + date ── */
 .ord-idcell {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 1.5px;
 }
-/* Shared by the ID cells and the SPI / GRN / QA cards. */
+
 .ord-idpill {
   display: inline-flex;
   align-items: center;
@@ -2136,10 +1814,6 @@ const ORDER_CSS = `
   color: #5b8a99;
 }
 
-/* ── Badges ──
-   Physical Inspection, the supplier category and the risk level are all the
-   same shape: a rounded pill with an icon. .ord-badge holds that shape once.
-   Each badge adds its own size, and a colour modifier picks the colours. */
 .ord-badge {
   display: inline-flex;
   align-items: center;
@@ -2170,7 +1844,6 @@ const ORDER_CSS = `
 }
 .ord-physinsp svg { width: 9px; height: 9px; color: #dc2626; }
 
-/* ── Cell: PO Type ── */
 .ord-typepill {
   display: inline-flex;
   align-items: center;
@@ -2198,7 +1871,6 @@ const ORDER_CSS = `
 }
 .ord-typepill__ico svg { width: 8.5px; height: 8.5px; }
 
-/* One colour set per PO type: the pill, and the small square icon inside it. */
 .ord-typepill--materials { color: #0e7490; background: linear-gradient(135deg, #f0fdff, #d6f6fa); border-color: #bfecef; }
 .ord-typepill--materials .ord-typepill__ico { background: linear-gradient(135deg, #22d3ee, #0891b2); }
 .ord-typepill--ffd { color: #6d28d9; background: linear-gradient(135deg, #f8f4ff, #ece1fd); border-color: #e2d4fa; }
@@ -2206,7 +1878,6 @@ const ORDER_CSS = `
 .ord-typepill--services { color: #b45309; background: linear-gradient(135deg, #fffaf0, #fef0d9); border-color: #fde3b8; }
 .ord-typepill--services .ord-typepill__ico { background: linear-gradient(135deg, #fbbf24, #d97706); }
 
-/* ── Cell: Document Type ── */
 .ord-doctype {
   display: inline-block;
   padding: 3px 8px;
@@ -2218,13 +1889,12 @@ const ORDER_CSS = `
 .ord-doctype--intl { color: #6d28d9; background: #ede9fe; border: 1px solid #ddd6fe; }
 .ord-doctype--dom  { color: #0e7490; background: #e0f5fa; border: 1px solid #bfe7f0; }
 
-/* ── Cell: Supplier ── */
 .ord-supplier {
   display: flex;
   flex-direction: column;
   align-items: center;
 }
-/* Ellipsis needs all three: a width limit, overflow hidden, nowrap. */
+
 .ord-supplier__name {
   display: block;
   max-width: 100%;
@@ -2246,7 +1916,6 @@ const ORDER_CSS = `
 }
 .ord-supplier__cat svg { width: 9px; height: 9px; }
 
-/* ── Cell: Risk Alert ── */
 .ord-risk {
   gap: 5px;
   padding: 4px 11px;
@@ -2256,9 +1925,6 @@ const ORDER_CSS = `
 }
 .ord-risk svg { width: 11px; height: 11px; }
 
-/* ── Cell: Expected Delivery Date ── */
-/* tabular-nums gives every digit the same width, so dates in a column line
-   up digit under digit. */
 .ord-edd {
   font-size: 11px;
   font-weight: 700;
@@ -2266,7 +1932,6 @@ const ORDER_CSS = `
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Cells: money ── */
 .ord-amt {
   font-size: 11px;
   font-weight: 800;
@@ -2278,28 +1943,20 @@ const ORDER_CSS = `
 .ord-amt--paid { color: #047857; }
 .ord-amt--bal  { color: #b45309; }
 
-/* ── Cells: SPI / GRN / QA ──
-   Each of the three columns is a lightly tinted lane, closed off by dashed
-   lines on the outside, so the chain reads as one group. */
 .ord-table tbody td.ord-doc {
   padding: 5px 7px;
   border-bottom: 1px solid #eef7fa;
 }
-/* Three class-level parts (ord-table, is-last, ord-doc) beat the two above,
-   so the last invoice of a PO still gets the thick teal line. */
+
 .ord-table tbody tr.is-last td.ord-doc { border-bottom: 2.5px solid #aee0e9; }
 
 .ord-doc--spi { background: #fafdff; border-left: 1.5px dashed #cdeef3; }
 .ord-doc--grn { background: #fafefb; }
 .ord-doc--qa  { background: #fdfaff; border-right: 1.5px dashed #cdeef3; }
 
-/* No line under the very last PO — the card's own edge is right there.
-   Written last on purpose: equal strength, so the later rule wins. */
 .ord-table tbody:last-child tr.is-last td,
 .ord-table tbody:last-child td.ord-po-cell { border-bottom: none; }
 
-/* The card inside each cell: left-aligned, stacked top to bottom.
-   min-width:0 lets it shrink to the column instead of forcing it wider. */
 .ord-doc__card {
   display: flex;
   flex-direction: column;
@@ -2323,7 +1980,6 @@ const ORDER_CSS = `
 .ord-doc__meta { gap: 5px; font-size: 8.5px; font-weight: 600; color: #6b8d9c; }
 .ord-doc__foot { gap: 7px; }
 
-/* The grey "SPI 1/2" chip. */
 .ord-doc__seq {
   padding: 2px 5px;
   border-radius: 5px;
@@ -2353,9 +2009,6 @@ const ORDER_CSS = `
 .ord-doc__paid { font-weight: 800; color: #047857; }
 .ord-doc__due  { font-weight: 800; color: #b45309; }
 
-/* ── Status pill (small) ──
-   The dot uses background:currentColor — it copies the pill's text colour,
-   so each modifier sets ONE colour and the dot follows automatically. */
 .ord-pill {
   display: inline-flex;
   align-items: center;
@@ -2381,7 +2034,6 @@ const ORDER_CSS = `
 .ord-pill--pending  { color: #b91c1c; background: #fee2e2; border-color: #fecaca; }
 .ord-pill--qa       { color: #6d28d9; background: #f1e9fd; border-color: #e2d4fa; }
 
-/* ── Status cells: pill on top, button underneath ── */
 .ord-statcell {
   display: flex;
   flex-direction: column;
@@ -2389,8 +2041,6 @@ const ORDER_CSS = `
   gap: 7px;
 }
 
-/* Status pill (large). Here the dot has its OWN colour, a brighter shade than
-   the text, so it is set per modifier instead of using currentColor. */
 .ord-status {
   display: inline-flex;
   align-items: center;
@@ -2414,11 +2064,6 @@ const ORDER_CSS = `
 .ord-status--na  { color: #52708a; background: #eef2f6; }
 .ord-status--na  .ord-status__dot { background: #94a8b8; }
 
-/* ── Buttons ──
-   One base class for size and shape. Each modifier only swaps the gradient.
-   background-image holds TWO layers, and the first one is drawn on top:
-     1. a white fade over the top half, which acts as the sheen
-     2. the colour gradient underneath */
 .ord-btn {
   display: inline-flex;
   align-items: center;
@@ -2469,7 +2114,7 @@ const ORDER_CSS = `
     linear-gradient(180deg, rgba(255, 255, 255, .18), rgba(255, 255, 255, 0) 54%),
     linear-gradient(90deg, #0d4d60, #0e7490 52%, #2aa8c4);
 }
-/* Done keeps the same teal. Only the tick turns green. */
+
 .ord-btn--insp.is-done svg { color: #6ee7b7; }
 .ord-btn--hist {
   background-image:
@@ -2498,7 +2143,6 @@ const ORDER_CSS = `
   box-shadow: 0 3px 9px -3px rgba(185, 28, 28, .5), inset 0 1px 0 rgba(255, 255, 255, .18);
 }
 
-/* The request count, cut into the button as a see-through chip. */
 .ord-btn__count {
   display: inline-flex;
   align-items: center;
@@ -2514,13 +2158,12 @@ const ORDER_CSS = `
   color: #fff;
   background: rgba(255, 255, 255, .24);
 }
-/* When approved money is ready to pay, the count turns green. */
+
 .ord-btn__count--ready {
   color: #053b2b;
   background: #34d399;
 }
 
-/* ── Payment Progress cell ── */
 .ord-paycell {
   display: flex;
   flex-direction: column;
@@ -2547,7 +2190,7 @@ const ORDER_CSS = `
   font-weight: 900;
   letter-spacing: -.2px;
 }
-/* overflow:hidden on the track clips the fill to its rounded ends. */
+
 .ord-progress__bar {
   position: relative;
   width: 100%;
@@ -2586,9 +2229,7 @@ const ORDER_CSS = `
   gap: 3px;
   white-space: nowrap;
 }
-/* One-line note under the bar: money approved and waiting (green), or money
-   still waiting for approval (amber). max-width + ellipsis cut a long note
-   with "…" instead of letting it widen the column. */
+
 .ord-paynote {
   display: inline-flex;
   align-items: center;
@@ -2618,7 +2259,6 @@ const ORDER_CSS = `
   background: currentColor;
 }
 
-/* One class on the wrapper sets the colours of every part inside it. */
 .ord-progress.is-full .ord-progress__pct  { color: #16a34a; }
 .ord-progress.is-full .ord-progress__fill {
   background: linear-gradient(90deg, #4ade80, #16a34a);
@@ -2643,7 +2283,6 @@ const ORDER_CSS = `
 .ord-progress.is-pending .ord-progress__paid { color: #a8b8c2; }
 .ord-progress.is-pending .ord-progress__due  { color: #dc2626; }
 
-/* ── Action cell ── */
 .ord-actions {
   display: flex;
   align-items: center;
@@ -2651,30 +2290,14 @@ const ORDER_CSS = `
   gap: 8px;
 }
 
-/* Placeholder for columns not built yet. */
 .ord-dash {
   font-weight: 700;
   color: #a8bcc7;
 }
 
-/* ══════════════════════════════════════════════════════════════════════
-   DARK MODE
-   The app's theme switch puts data-bs-theme="dark" on the <html> tag.
-   [data-bs-theme="dark"] .ord-x  means ".ord-x, but only inside dark mode".
-
-   Why it always wins: an attribute selector counts like a class. So every
-   dark rule is its light rule PLUS one more part — stronger, no !important.
-
-   The look follows CLM Segment Master:
-   - surfaces: deep navy (#0f172a / #1e293b) with faint teal borders
-   - accents:  the same colours as light mode, but as see-through tints
-               (e.g. red at 14% opacity) with bright text on top
-   - white sheens and glows: dimmed to almost nothing, or they glare
-   ══════════════════════════════════════════════════════════════════════ */
-
+/* Dark mode (CLM Segment Master look) */
 [data-bs-theme="dark"] .ord-page { color: #e2e8f0; }
 
-/* ── Header strip ── */
 [data-bs-theme="dark"] .ord-strip {
   background: #102234;
   border-color: rgba(6, 182, 212, .25);
@@ -2688,7 +2311,6 @@ const ORDER_CSS = `
 [data-bs-theme="dark"] .ord-strip__title { color: #67e8f9; }
 [data-bs-theme="dark"] .ord-strip__sub { color: #7dd3fc; }
 
-/* ── Guide ── */
 [data-bs-theme="dark"] .ord-guide {
   background: #0f172a;
   border-color: rgba(6, 182, 212, .25);
@@ -2727,7 +2349,6 @@ const ORDER_CSS = `
 [data-bs-theme="dark"] .ord-guide__item-num,
 [data-bs-theme="dark"] .ord-guide__item-desc { color: #94a3b8; }
 
-/* ── List card, tabs, search ── */
 [data-bs-theme="dark"] .ord-list {
   background: #0f172a;
   border-color: rgba(6, 182, 212, .18);
@@ -2737,8 +2358,7 @@ const ORDER_CSS = `
   background: #1e293b;
   border-color: rgba(6, 182, 212, .20);
 }
-/* :not(.is-active) keeps the selected tab's white text: without it this rule
-   would also grey out the active tab (same strength, and it comes later). */
+
 [data-bs-theme="dark"] .ord-tabs__tab:not(.is-active) { color: #94a3b8; }
 [data-bs-theme="dark"] .ord-tabs__tab:not(.is-active):hover { color: #67e8f9; }
 [data-bs-theme="dark"] .ord-tabs__tab:not(.is-active) .ord-tabs__count {
@@ -2752,22 +2372,18 @@ const ORDER_CSS = `
   border-color: rgba(6, 182, 212, .25);
 }
 [data-bs-theme="dark"] .ord-search input::placeholder { color: #64748b; }
-/* Chrome paints autofilled inputs near-white and ignores background. A huge
-   inset shadow is the only way to paint over it. */
+
 [data-bs-theme="dark"] .ord-search input:-webkit-autofill {
   -webkit-text-fill-color: #e2e8f0;
   -webkit-box-shadow: 0 0 0 1000px #1e293b inset;
 }
 
-/* ── Table ── */
 [data-bs-theme="dark"] .ord-table-scroll { background: #0f172a; }
 [data-bs-theme="dark"] .ord-table-scroll::-webkit-scrollbar-thumb { background: rgba(6, 182, 212, .35); }
 
-/* The header is sticky, so it must be SOLID or the rows would show through it
-   while scrolling. Two layers: the see-through teal on top of the navy card. */
 [data-bs-theme="dark"] .ord-table th {
   color: #cffafe;
-  background: linear-gradient(rgba(8, 145, 178, .18), rgba(8, 145, 178, .18)), #0f172a;
+  background: linear-gradient(rgba(8, 145, 178, .18), rgba(8, 145, 178, .18)), #0f172a; /* solid: sticky header, rows must not show through */
   border-bottom-color: rgba(6, 182, 212, .30);
   box-shadow: inset 0 -1.5px 0 rgba(6, 182, 212, .30);
 }
@@ -2779,26 +2395,21 @@ const ORDER_CSS = `
 [data-bs-theme="dark"] .ord-table td.ord-po-cell,
 [data-bs-theme="dark"] .ord-table tbody tr.is-last td.ord-doc { border-bottom-color: rgba(6, 182, 212, .35); }
 [data-bs-theme="dark"] .ord-table tbody td.ord-doc { border-bottom-color: rgba(6, 182, 212, .08); }
-/* Still no line under the last PO. Needed again here because the dark doc
-   rule above is stronger than the light "last PO" rule. */
+
 [data-bs-theme="dark"] .ord-table tbody:last-child tr.is-last td,
 [data-bs-theme="dark"] .ord-table tbody:last-child td.ord-po-cell { border-bottom: none; }
 
 [data-bs-theme="dark"] .ord-table th.ord-table__group-end,
 [data-bs-theme="dark"] .ord-table td.ord-table__group-end { border-right-color: rgba(6, 182, 212, .30); }
 
-/* SPI / GRN / QA lanes: the same blue / green / purple hint, but faint. */
 [data-bs-theme="dark"] .ord-doc--spi { background: rgba(56, 189, 248, .04); border-left-color: rgba(6, 182, 212, .25); }
 [data-bs-theme="dark"] .ord-doc--grn { background: rgba(34, 197, 94, .04); }
 [data-bs-theme="dark"] .ord-doc--qa  { background: rgba(168, 85, 247, .04); border-right-color: rgba(6, 182, 212, .25); }
 
-/* Zebra and hover, written after the lanes so they win the same way they
-   do in light mode. */
 [data-bs-theme="dark"] .ord-table tbody:nth-of-type(even) td { background: rgba(8, 145, 178, .06); }
 [data-bs-theme="dark"] .ord-table tbody tr:hover td,
 [data-bs-theme="dark"] .ord-table tbody:nth-of-type(even) tr:hover td { background: rgba(8, 145, 178, .16); }
 
-/* ── Cells ── */
 [data-bs-theme="dark"] .ord-idpill {
   color: #67e8f9;
   background: rgba(8, 145, 178, .16);
@@ -2853,8 +2464,6 @@ const ORDER_CSS = `
 [data-bs-theme="dark"] .ord-status--bad { color: #fca5a5; background: rgba(239, 68, 68, .14); }
 [data-bs-theme="dark"] .ord-status--na  { color: #94a3b8; background: rgba(148, 163, 184, .12); }
 
-/* Buttons keep their teal / red gradients (they already read well on dark);
-   only the shadow gets darker so it doesn't glow blue. */
 [data-bs-theme="dark"] .ord-btn { box-shadow: 0 3px 9px -3px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .12); }
 
 [data-bs-theme="dark"] .ord-progress__bar { background: rgba(255, 255, 255, .08); box-shadow: none; }
@@ -2875,19 +2484,6 @@ const ORDER_CSS = `
 
 [data-bs-theme="dark"] .ord-dash { color: #475569; }
 
-/* ══════════════════════════════════════════════════════════════════════
-   RESPONSIVE
-   Kept at the END on purpose: a later rule with the same strength wins, so
-   these override the desktop values above without needing !important.
-
-   A media query applies its rules only while the condition is true.
-   max-width: 768px  →  "only when the screen is 768px wide or less".
-   The breakpoints go from wide to narrow, so a phone gets ALL of them
-   stacked: the 1400 rules, then 1024, then 768, then 480.
-   ══════════════════════════════════════════════════════════════════════ */
-
-/* Shown instead of the list when a tab or search has no results.
-   flex:1 fills the card, so the pager area doesn't jump up. */
 .ord-empty {
   flex: 1 1 auto;
   display: flex;
@@ -2901,10 +2497,6 @@ const ORDER_CSS = `
 }
 [data-bs-theme="dark"] .ord-empty { color: #64748b; }
 
-/* The shared WorklistPager (app.css) is built for pages where it sits at the
-   end of a stretched card. Here it is the card's last row: no top margin,
-   never squeezed, square corners (the card already rounds and clips them),
-   and 8px padding like the rest of this page. */
 .ord-list > .wl-pager {
   flex-shrink: 0;
   margin-top: 0;
@@ -2912,10 +2504,7 @@ const ORDER_CSS = `
   border-radius: 0;
 }
 
-/* ── Phone card view ──
-   Only rendered on phones (see useIsPhone), so these rules need no media
-   query: on a desktop the elements simply don't exist. */
-/* Same idea as the table: the cards scroll inside the list card. */
+/* Phone card view (rendered instead of the table, see useIsPhone) */
 .ord-cards {
   flex: 1 1 auto;
   min-height: 0;
@@ -2944,7 +2533,7 @@ const ORDER_CSS = `
   align-items: center;
   gap: 8px;
 }
-/* flex:1 takes the free middle space, pushing the type pill to the right. */
+
 .ord-card__po {
   flex: 1;
   min-width: 0;
@@ -2986,7 +2575,6 @@ const ORDER_CSS = `
 .ord-card .ord-supplier__name { white-space: normal; }
 .ord-card .ord-supplier__cat { margin-top: 0; }
 
-/* Two label/value columns. The <div> around each dt+dd pair is one grid cell. */
 .ord-card__grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -3029,7 +2617,6 @@ const ORDER_CSS = `
   gap: 6px;
 }
 
-/* auto-fit + minmax: two columns when there is room, one when there isn't. */
 .ord-card__status {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -3037,7 +2624,6 @@ const ORDER_CSS = `
 }
 .ord-card__status .ord-statcell { align-self: stretch; align-items: flex-start; }
 
-/* The table versions are sized for fixed columns; in a card they fill the width. */
 .ord-card .ord-progress { width: 100%; min-width: 0; margin: 0; }
 .ord-card .ord-btn { height: 38px; padding: 0 12px; font-size: 11px; }
 .ord-card .ord-paycell .ord-btn { align-self: stretch; }
@@ -3062,8 +2648,7 @@ const ORDER_CSS = `
   border-color: rgba(6, 182, 212, .25);
 }
 
-/* Always on: let the long strip text shrink instead of pushing the Create PO
-   button off the card, and let the tabs scroll sideways when they don't fit. */
+/* Responsive */
 .ord-strip__left { min-width: 0; }
 .ord-tabs {
   max-width: 100%;
@@ -3072,8 +2657,6 @@ const ORDER_CSS = `
 }
 .ord-tabs__tab { flex-shrink: 0; }
 
-/* ≤1400px (laptops): tabs and search no longer fit on one line. Instead of
-   the search dropping down at its desktop width, it takes the full row. */
 @media (max-width: 1400px) {
   .ord-search {
     flex: 1 1 100%;
@@ -3082,7 +2665,6 @@ const ORDER_CSS = `
   }
 }
 
-/* ≤1024px (tablets): smaller tabs, so more of them are visible at once. */
 @media (max-width: 1024px) {
   .ord-tabs__tab {
     gap: 7px;
@@ -3090,11 +2672,10 @@ const ORDER_CSS = `
     font-size: 12px;
   }
   .ord-guide__header-sub {
-    white-space: normal;   /* wrap the guide subtitle instead of cutting it */
+    white-space: normal;
   }
 }
 
-/* ≤768px (large phones): the header strip stacks, the button goes full width. */
 @media (max-width: 768px) {
   .ord-strip {
     flex-wrap: wrap;
@@ -3104,12 +2685,10 @@ const ORDER_CSS = `
   .ord-strip__left { padding-left: 0; }
   .ord-strip__right,
   .ord-strip__btn { width: 100%; }
-  /* 5 guide cards now stack in 2–3 rows and need more than the 320px the
-     open/close animation allowed on desktop. */
+
   .ord-guide__body { max-height: 900px; }
 }
 
-/* ≤480px (small phones): one guide card per row, tighter text. */
 @media (max-width: 480px) {
   .ord-strip__title { font-size: 13.5px; }
   .ord-guide__header-row { flex-wrap: wrap; }
