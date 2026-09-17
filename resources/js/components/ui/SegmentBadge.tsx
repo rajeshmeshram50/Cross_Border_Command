@@ -13,10 +13,10 @@ const TONES: Record<RegulatoryStatus, { color: string; bg: string; border: strin
 
 const isStatus = (v: unknown): v is RegulatoryStatus => v === 'highly' || v === 'less';
 
-/** "Sugar · Less Regulated" — for dropdown options and plain text. */
+/** "Sugar · High" — for dropdown options and plain text. */
 export function segmentLabel(name?: string | null, status?: string | null): string {
   const n = (name ?? '').trim();
-  return isStatus(status) ? `${n} · ${TONES[status].full}` : n;
+  return isStatus(status) ? `${n} · ${TONES[status].short}` : n;
 }
 
 type Props = {

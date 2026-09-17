@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
-import { segmentLabel } from '../../../../components/ui/SegmentBadge';
+import SegmentBadge, { segmentLabel } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
@@ -375,7 +375,7 @@ export default function AddVendorModal(props: {
   const [kycSub,   setKycSub]   = useState<KycSubTab>('owner');
   const [prevOpen, setPrevOpen] = useState(false);
 
-  type Opt = { value: string; label: string };
+  type Opt = { value: string; label: string; reg?: string };
   const [vendorTypeOpts, setVendorTypeOpts]     = useState<Opt[]>([]);
   const [riskLevelOpts,  setRiskLevelOpts]      = useState<Opt[]>([]);
   const [segmentOpts,    setSegmentOpts]        = useState<Opt[]>([]);
@@ -669,6 +669,9 @@ export default function AddVendorModal(props: {
     });
   }, [segRulesLoaded, segmentOpts, ruledSegIds, country, segment, segTypesById, supplierDocType]);
 
+  // Plain text (toasts, review) — the dropdown shows the status as a badge instead.
+  const segText = (id: string) => { const o = segmentOpts.find(x => x.value === String(id)); return o ? segmentLabel(o.label, o.reg) : String(id); };
+
   const sortedSegmentOpts = useMemo(() => {
     const disabled = new Set(disabledSegmentIds);
     const rank = (v: string): number => {
@@ -910,7 +913,7 @@ export default function AddVendorModal(props: {
       setBehaviourOpts(toOpt(b.vendor_behaviour));
       setSegmentOpts(
         (b.segments || [])
-          .map(r => ({ value: String(r.id), label: segmentLabel(String(r.title ?? r.name ?? ''), (r as { regulatory_status?: string }).regulatory_status) }))
+          .map(r => ({ value: String(r.id), label: String(r.title ?? r.name ?? ''), reg: (r as { regulatory_status?: string }).regulatory_status }))
           .filter(o => o.value !== '' && o.label !== '')
       );
       setComplianceOpts(toOpt(b.compliance_behaviours));
@@ -1425,7 +1428,7 @@ export default function AddVendorModal(props: {
         return t && t.size > 0 && !t.has(supplierDocType);
       });
       if (mismatched.length) {
-        const names = mismatched.map(id => segmentOpts.find(o => o.value === id)?.label ?? id);
+        const names = mismatched.map(segText);
         errs.segment = `${names.join(', ')} ${mismatched.length > 1 ? 'have' : 'has'} no ${label} rule — this is a ${label} supplier, so the segment's document type must match.`;
       }
     }
@@ -2644,7 +2647,7 @@ export default function AddVendorModal(props: {
                 { label: 'Company Name',         value: companyName || '—' },
                 { label: 'Legal Name',           value: legalName || '—' },
                 { label: 'Supplier Type',        value: labelFor(vendorType, SUPPLIER_TYPE_OPTS) || vendorType || '—' },
-                { label: 'Segment',              value: segment.map(s => labelFor(s, segmentOpts) || s).join(', ') || '—' },
+                { label: 'Segment',              value: segment.map(s => segText(s)).join(', ') || '—' },
                 { label: 'Risk Level',           value: labelFor(riskLevel, riskLevelOpts) || '—' },
                 { label: 'Supplier Behaviour',   value: (SUPPLIER_BEHAVIOUR_OPTS.find(o => o.value === vendorBehaviour)?.label) || '—' },
                 { label: 'Supplier Category', value: (SUPPLIER_CATEGORY_OPTS.find(o => o.value === supplierCategory)?.label) || '—' },
@@ -2861,7 +2864,8 @@ export default function AddVendorModal(props: {
                           disabledHint={segmentDisabledHint}
                           renderBadges={(id) => {
                             const t = segTypesById.get(String(id));
-                            if (!t || t.size === 0) return null;
+                            const reg = <SegmentBadge status={segmentOpts.find(o => o.value === String(id))?.reg} />;
+                            if (!t || t.size === 0) return reg;
                             const badge = (text: string, title: string, color: string, bg: string, bd: string, onClick?: (e: React.MouseEvent) => void) => (
                               <span title={title} onClick={onClick} style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.02em', padding: '1px 6px', borderRadius: 10, whiteSpace: 'nowrap', color, background: bg, border: `1px solid ${bd}`, cursor: onClick ? 'pointer' : undefined }}>{text}</span>
                             );
@@ -2869,12 +2873,11 @@ export default function AddVendorModal(props: {
                             const dom  = () => badge('DOM', 'Domestic rule', '#0f766e', '#ecfdf5', '#99f6e4');
                             if (t.has('international') && t.has('domestic')) {
                               return expandedSegBadges.has(String(id))
-                                ? <>{intl()}{dom()}</>
-                                : badge('+2', 'Both International & Domestic — click to show', '#6d28d9', '#f5f3ff', '#ddd6fe',
-                                    (e) => { e.stopPropagation(); toggleSegBadge(String(id)); });
+                                ? <>{reg}{intl()}{dom()}</>
+                                : <>{reg}{badge('+2', 'Both International & Domestic — click to show', '#6d28d9', '#f5f3ff', '#ddd6fe',
+                                    (e) => { e.stopPropagation(); toggleSegBadge(String(id)); })}</>;
                             }
-                            if (t.has('international')) return intl();
-                            return dom();
+                            return <>{reg}{t.has('international') ? intl() : dom()}</>;
                           }}
                           onChange={vs => {
                             const added = vs.filter(s => !segment.includes(s));
@@ -2883,7 +2886,7 @@ export default function AddVendorModal(props: {
                               return t && t.size > 0 && !t.has(supplierDocType);
                             }) : [];
                             if (badAdd.length) {
-                              const names = badAdd.map(id => segmentOpts.find(o => o.value === id)?.label ?? id);
+                              const names = badAdd.map(segText);
                               const label = supplierDocType === 'domestic' ? 'Domestic' : 'International';
                               toast.error(
                                 'Segment not allowed',
@@ -2916,7 +2919,7 @@ export default function AddVendorModal(props: {
                               const docRemoved = removed.filter(s => !lockedRemoved.includes(s)
                                 && (segReqKeys[String(s)] ?? []).some(k => uploadedSet.has(k)));
                               if (lockedRemoved.length) {
-                                const label = (id: string) => segmentOpts.find(o => o.value === id)?.label ?? id;
+                                const label = segText;
                                 const by = (r: string) => lockedRemoved.filter(s => lockedSegmentReasons[String(s)] === r).map(label);
                                 const poNames   = lockedRemoved.filter(s => !['spi', 'product'].includes(lockedSegmentReasons[String(s)] ?? '')).map(label);
                                 const spiNames  = by('spi');
@@ -2932,7 +2935,7 @@ export default function AddVendorModal(props: {
                                 }
                               }
                               if (docRemoved.length) {
-                                const n = docRemoved.map(id => segmentOpts.find(o => o.value === id)?.label ?? id);
+                                const n = docRemoved.map(segText);
                                 toast.error(
                                   'Cannot remove segment',
                                   `${n.join(', ')} — has uploaded documents. Delete them in KYC / Due Diligence first.`,
@@ -3678,7 +3681,7 @@ export default function AddVendorModal(props: {
                 const created = data?.data;
                 if (created?.id) {
                   const id = String(created.id);
-                  setSegmentOpts(prev => [...prev, { value: id, label: segmentLabel(String(created.name ?? form.name), form.regulatory_status) }]);
+                  setSegmentOpts(prev => [...prev, { value: id, label: String(created.name ?? form.name), reg: form.regulatory_status }]);
                   toast.info(
                     'Segment created',
                     `${created.name ?? form.name} can't be selected until a rule is defined for it in the Document Control Panel.`,
@@ -3729,7 +3732,7 @@ export default function AddVendorModal(props: {
               case 'segments': {
                 const label = String(row.title ?? '');
                 if (label) {
-                  setSegmentOpts(prev => [...prev, { value: id, label: segmentLabel(label, row.regulatory_status as string) }]);
+                  setSegmentOpts(prev => [...prev, { value: id, label, reg: row.regulatory_status as string }]);
                   setSegment(prev => prev.includes(id) ? prev : [...prev, id]);
                   clearFieldError('segment');
                 }
