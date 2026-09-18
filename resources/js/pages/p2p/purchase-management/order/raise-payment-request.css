@@ -1,0 +1,194 @@
+.rpr-formgrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 6px;
+}
+
+.rpr-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rpr-field label {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: #5b7585;
+}
+
+.rpr-field__hd {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.rpr-amtwrap {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 11px;
+  box-sizing: border-box;
+  border: 1.5px solid #dbe7ee;
+  border-radius: 9px;
+  background: #f9fdfe;
+  transition: border-color .15s, box-shadow .15s;
+}
+
+.rpr-amtwrap:focus-within {
+  border-color: #22d3ee;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, .14);
+}
+
+[data-bs-theme="dark"] .rpr-amtwrap {
+  background: #0f1d33;
+  border-color: rgba(6, 182, 212, .3);
+}
+
+.rpr-amtwrap__cur {
+  font-size: 13px;
+  font-weight: 800;
+  color: #5b7585;
+  flex-shrink: 0;
+}
+
+.rpr-amtwrap__in {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 8px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+[data-bs-theme="dark"] .rpr-amtwrap__in {
+  color: #e2e8f0;
+}
+
+.rpr-amtwrap__in::-webkit-outer-spin-button,
+.rpr-amtwrap__in::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.rpr-amtwrap__in[type=number] {
+  -moz-appearance: textfield;
+}
+
+.rpr-amthint {
+  font-size: 10px;
+  font-weight: 600;
+  color: #93a7b3;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.rpr-amthint.is-err {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.rpr-field--reason {
+  margin-top: 14px;
+}
+
+.rpr-reasoncount {
+  font-size: 10px;
+  font-weight: 700;
+  color: #a8bcc7;
+  font-variant-numeric: tabular-nums;
+}
+
+.rpr-reasoncount.is-near {
+  color: #b45309;
+}
+
+.rpr-ta {
+  width: 100%;
+  min-height: 66px;
+  padding: 9px 11px;
+  box-sizing: border-box;
+  resize: vertical;
+  border: 1.5px solid #dbe7ee;
+  border-radius: 9px;
+  background: #f9fdfe;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #0f172a;
+  transition: border-color .15s, box-shadow .15s;
+}
+
+.rpr-ta:focus {
+  outline: none;
+  border-color: #22d3ee;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, .14);
+}
+
+[data-bs-theme="dark"] .rpr-ta {
+  background: #0f1d33;
+  border-color: rgba(6, 182, 212, .3);
+  color: #e2e8f0;
+}
+
+.rpr-opt {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  text-transform: none;
+  color: #a8bcc7;
+}
+
+.rpr-err {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.rpr-err svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.rpr-recap__type.is-empty {
+  color: #a8bcc7;
+}
+
+@media (max-width: 1100px) {
+  .rpr-formgrid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .rpr-formgrid {
+    grid-template-columns: 1fr;
+  }
+
+  .rpr-field__hd {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+  }
+}

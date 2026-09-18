@@ -1,11 +1,20 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import type { OrderRow } from './Order';
+import type { NewRequest } from './RaisePaymentRequestModal';
+import type { ReleasePayment } from './MakePoPaymentModal';
+import {
+  APPROVERS, Box, HeroRefChips, ICON_X, PoSummaryCards, STAT_ICONS, Stat,
+  initials, money, shiftIso, shortDate, valueBreakdown,
+} from './payment-shared';
+
 import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './manage-payment-requests.css';
 
 const DeductTdsModal = lazy(() => import('./DeductTdsModal'));
+const RaisePaymentRequestModal = lazy(() => import('./RaisePaymentRequestModal'));
+const MakePoPaymentModal = lazy(() => import('./MakePoPaymentModal'));
 
 type ReqStatus = 'approved' | 'pending' | 'rejected';
 
@@ -21,56 +30,6 @@ type PaymentRequest = {
   paid: number;
 };
 
-const money = (v: number) => '₹' + Math.round(v || 0).toLocaleString('en-IN');
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-function fmtDate(iso: string): string {
-  const [y, m, d] = (iso || '').split('-');
-  const mon = MONTHS[Number(m) - 1];
-  if (!y || !d || !mon) return iso || '—';
-  return `${d}-${mon}-${y}`;
-}
-
-function shortDate(iso: string): string {
-  const [y, m, d] = (iso || '').split('-');
-  return y && m && d ? `${d}/${m}/${y}` : '—';
-}
-
-function shiftIso(iso: string, days: number): string {
-  const t = Date.parse((iso || '') + 'T00:00:00Z');
-  if (Number.isNaN(t)) return iso || '';
-  return new Date(t + days * 86400000).toISOString().slice(0, 10);
-}
-
-const initials = (name: string) => {
-  const p = name.trim().split(/\s+/);
-  return ((p[0] || '?').charAt(0) + (p[1] || '').charAt(0)).toUpperCase();
-};
-
-const APPROVERS = [
-  { name: 'Sunita Rao', role: 'Finance Controller' },
-  { name: 'Amit Shetty', role: 'GM Commercial' },
-  { name: 'Rahul Menon', role: 'Finance Manager' },
-  { name: 'Priya Nair', role: 'Accounts Head' },
-];
-
-const SUPPLIER_CODES: Record<string, string> = {
-  'Adani Enterprises': 'S-003',
-  'Bharat Forge': 'S-011',
-  'Reliance Industries': 'S-001',
-  'Infosys Ltd': 'S-024',
-  'Larsen & Toubro': 'S-007',
-  'JSW Steel': 'S-016',
-  'Godrej Industries': 'S-032',
-};
-
-function supplierCode(name: string): string {
-  if (SUPPLIER_CODES[name]) return SUPPLIER_CODES[name];
-  let h = 0;
-  for (let i = 0; i < name.length; i += 1) h = (h * 31 + name.charCodeAt(i)) % 97;
-  return 'S-' + String(h + 1).padStart(3, '0');
-}
 
 function buildRequests(row: OrderRow): PaymentRequest[] {
   const n = row.paymentRequests;
@@ -84,7 +43,7 @@ function buildRequests(row: OrderRow): PaymentRequest[] {
   const out: PaymentRequest[] = [];
   const push = (amount: number, status: ReqStatus, paid: number) => {
     const i = out.length;
-    const who = APPROVERS[i % APPROVERS.length];
+    const who = APPROVERS[(i + 1) % APPROVERS.length];
     out.push({
       id: 'PRQ-' + String(i + 1).padStart(3, '0'),
       date: shiftIso(row.poDate, 9 + i * 25),
@@ -133,17 +92,8 @@ const ICON_EYE = (
   <svg {...ic}><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>
 );
 const ICON_CHECK = <svg {...ic} strokeWidth={3}><path d="M20 6 9 17l-5-5" /></svg>;
-const ICON_CHEVRON = <svg {...ic} width="10" height="10" strokeWidth={2.8}><polyline points="6 9 12 15 18 9" /></svg>;
-const ICON_CHART = (
-  <svg {...ic} width="14" height="14" strokeWidth={2.4}>
-    <path d="M3 3v18h18" /><polyline points="7 14 11 9 15 12 20 6" />
-  </svg>
-);
 const ICON_TDS = (
   <svg {...ic} strokeWidth={2.4}><line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" /></svg>
-);
-const ICON_X = (
-  <svg {...ic} strokeWidth={2.6}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
 );
 const ICON_WALLET = (
   <svg {...ic} strokeWidth={2.4}>
@@ -152,71 +102,6 @@ const ICON_WALLET = (
     <path d="M18 12a2 2 0 0 0 0 4h4v-4z" />
   </svg>
 );
-
-const statIco = (d: ReactNode) => (
-  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{d}</svg>
-);
-
-function Chip({ label, value, meta, mod, extra }: { label: string; value: string; meta?: string; mod?: string; extra?: ReactNode }) {
-  return (
-    <div className={`mpr-hero__chip${mod ? ' ' + mod : ''}`}>
-      <span className="mpr-hero__chip-lbl">{label}</span>
-      <span className="mpr-hero__chip-line">
-        <span className="mpr-hero__chip-val">{value}</span>
-        {meta && <span className="mpr-hero__chip-meta">{meta}</span>}
-        {extra}
-      </span>
-    </div>
-  );
-}
-
-function Stat({ mod, icon, label, value, sub }: {
-  mod?: string; icon: ReactNode; label: string; value: string; sub?: string;
-}) {
-  return (
-    <div className={`mpr-stat${mod ? ' ' + mod : ''}`}>
-      <div className="mpr-stat__ico">{statIco(icon)}</div>
-      <div>
-        <div className="mpr-stat__lbl">{label}</div>
-        <div className="mpr-stat__val">{value}</div>
-        {sub && <div className="mpr-stat__sub">{sub}</div>}
-      </div>
-    </div>
-  );
-}
-
-function Box({ label, title, sub, headerExtra, children }: {
-  label: string; title: string; sub: string; headerExtra?: ReactNode; children: ReactNode;
-}) {
-  const [open, setOpen] = useState(true);
-  return (
-    <div className={`spi-bref mpr-box${open ? '' : ' is-collapsed'}`}>
-      <div
-        className="spi-bref-head"
-        role="button"
-        tabIndex={0}
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen((o) => !o); }
-        }}
-      >
-        <div className="spi-bref-ico">{ICON_CHART}</div>
-        <div className="spi-bref-mid">
-          <div className="spi-bref-row">
-            <div className="spi-bref-label">{label}</div>
-            <div className="spi-bref-sep" />
-            <div className="spi-bref-title">{title}</div>
-          </div>
-          <div className="spi-bref-sub">{sub}</div>
-        </div>
-        {headerExtra}
-        <div className="spi-bref-toggle">{ICON_CHEVRON}</div>
-      </div>
-      <div className="spi-bref-body">{children}</div>
-    </div>
-  );
-}
 
 const STATUS: Record<ReqStatus, { cls: string; label: string }> = {
   approved: { cls: 'mpr-st--done', label: 'Approved' },
@@ -229,7 +114,9 @@ function payLabel(q: PaymentRequest): string {
   return q.paid >= q.approved ? 'Paid in full' : 'Partially paid';
 }
 
-function RequestRow({ q, index, net }: { q: PaymentRequest; index: number; net: number }) {
+function RequestRow({ q, index, net, onPay }: {
+  q: PaymentRequest; index: number; net: number; onPay: (q: PaymentRequest) => void;
+}) {
   const due = Math.max(0, q.approved - q.paid);
   const st = STATUS[q.status];
   const pct = net > 0 ? Math.round((q.amount / net) * 100) : 0;
@@ -289,6 +176,7 @@ function RequestRow({ q, index, net }: { q: PaymentRequest; index: number; net: 
               type="button"
               className="mpr-paybtn"
               disabled={q.status !== 'approved'}
+              onClick={() => onPay(q)}
               title={
                 q.status === 'pending' ? 'Awaiting approval — payment opens once this request is approved'
                   : q.status === 'rejected' ? 'This request was declined — nothing to pay against it'
@@ -298,7 +186,13 @@ function RequestRow({ q, index, net }: { q: PaymentRequest; index: number; net: 
               {ICON_RUPEE}<span>Make PO Payment</span>
             </button>
           )}
-          <button type="button" className="mpr-viewbtn" title={`View Payment History — ${q.id}`} aria-label={`View payment history for ${q.id}`}>
+          <button
+            type="button"
+            className="mpr-viewbtn"
+            onClick={() => onPay(q)}
+            title={`View Payment History — ${q.id}`}
+            aria-label={`View payment history for ${q.id}`}
+          >
             {ICON_EYE}
           </button>
         </span>
@@ -335,8 +229,12 @@ export default function ManagePaymentRequestsModal({ row, onClose }: { row: Orde
 
   const [tds, setTds] = useState(0);
   const [tdsOpen, setTdsOpen] = useState(false);
+  const [raiseOpen, setRaiseOpen] = useState(false);
+  const [added, setAdded] = useState<PaymentRequest[]>([]);
+  const [payReq, setPayReq] = useState<PaymentRequest | null>(null);
+  const [releases, setReleases] = useState<Record<string, ReleasePayment[]>>({});
 
-  const list = useMemo(() => buildRequests(row), [row]);
+  const list = useMemo(() => [...buildRequests(row), ...added], [row, added]);
 
   const f = useMemo(() => {
     const requested = list.reduce((s, q) => s + q.amount, 0);
@@ -361,18 +259,75 @@ export default function ManagePaymentRequestsModal({ row, onClose }: { row: Orde
     };
   }, [list, row]);
 
-  const extra = 0;
-  const base = Math.round((row.total - extra) / 1.18);
-  const gst = row.total - extra - base;
+  const { base, gst, extra } = valueBreakdown(row.total);
   const pctPaid = row.net > 0 ? Math.round((row.paid / row.net) * 100) : 0;
 
-  const spi = row.invoices[0];
   const canPay = f.approvedUnpaid > 0 && !row.cancelled;
   const canRequest = f.openToRequest > 0 && !row.cancelled && !f.complete;
 
   return createPortal(
 
     <div className="spi-mdl-backdrop">
+      {payReq && (
+        <Suspense fallback={<TdsLoading />}>
+          <MakePoPaymentModal
+            row={row}
+            requestId={payReq.id}
+            requestDate={payReq.date}
+            requestType={payReq.type}
+            requestedAmount={payReq.amount}
+            approved={payReq.approved}
+            approver={payReq.approver}
+            approverRole={payReq.role}
+            alreadyPaid={payReq.paid}
+            payments={releases[payReq.id] ?? []}
+            tds={tds}
+            onOpenTds={() => setTdsOpen(true)}
+            onClose={() => setPayReq(null)}
+            onRecord={(p) => setReleases((prev) => ({
+              ...prev,
+              [payReq.id]: [...(prev[payReq.id] ?? []), p],
+            }))}
+            onDelete={(i) => setReleases((prev) => ({
+              ...prev,
+              [payReq.id]: (prev[payReq.id] ?? []).filter((_, ix) => ix !== i),
+            }))}
+          />
+        </Suspense>
+      )}
+
+      {raiseOpen && (
+        <Suspense fallback={<TdsLoading />}>
+          <RaisePaymentRequestModal
+            row={row}
+            nextId={'PRQ-' + String(list.length + 1).padStart(3, '0')}
+            requested={f.requested}
+            approvedTotal={f.approved}
+            pendingAmt={f.pendingAmt}
+            pendingCount={f.pendingCount}
+            approvedUnpaid={f.approvedUnpaid}
+            requestCount={list.length}
+            available={f.openToRequest}
+            complete={f.complete}
+            onClose={() => setRaiseOpen(false)}
+            onSubmit={(req: NewRequest) => {
+              setAdded((prev) => [...prev, {
+                id: req.id,
+                date: new Date().toISOString().slice(0, 10),
+                type: req.type,
+                amount: req.amount,
+                approver: req.approver,
+                role: req.role,
+                status: 'pending',
+                approved: 0,
+                paid: 0,
+              }]);
+              setRaiseOpen(false);
+            }}
+          />
+        </Suspense>
+      )}
+
       {tdsOpen && (
         <Suspense fallback={<TdsLoading />}>
           <DeductTdsModal
@@ -404,19 +359,7 @@ export default function ManagePaymentRequestsModal({ row, onClose }: { row: Orde
             <div className="mpr-hero__sub">All requests raised on this PO</div>
           </div>
 
-          <div className="mpr-hero__chips">
-            <Chip label="Supplier" value={row.supplier} meta={supplierCode(row.supplier)} mod="mpr-hero__chip--sup" />
-            <Chip label="PO Number" value={row.po} meta={fmtDate(row.poDate)} />
-            <Chip
-              label={row.invoices.length > 1 ? 'SPI Numbers' : 'SPI Number'}
-              value={spi ? spi.spi : '—'}
-              meta={spi ? fmtDate(spi.spiDate) : undefined}
-              extra={row.invoices.length > 1 ? <span className="mpr-hero__chip-meta">+{row.invoices.length - 1}</span> : undefined}
-            />
-            <Chip label="Shipment ID" value={row.shipment || '—'} meta={row.shipment ? fmtDate(row.shipmentDate) : undefined} />
-            <Chip label="Opportunity ID" value={row.opportunity} meta={fmtDate(row.opportunityDate)} />
-            <Chip label="Procurement ID" value={row.procurement} meta={fmtDate(row.procurementDate)} />
-          </div>
+          <HeroRefChips row={row} />
 
           <button type="button" className="mpr-hero__close" onClick={onClose} aria-label="Close">{ICON_X}</button>
         </div>
@@ -468,38 +411,7 @@ export default function ManagePaymentRequestsModal({ row, onClose }: { row: Orde
               </div>
             )}
           >
-            <div className="mpr-stats">
-              <Stat
-                icon={<><rect x="2" y="7" width="20" height="14" rx="2.5" /><path d="M16 7V5a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v2" /></>}
-                label="PO Base Amount (Without GST)" value={money(base)} sub="Pre-tax order value"
-              />
-              <Stat
-                mod="mpr-stat--base"
-                icon={<><path d="M3 3v18h18" /><polyline points="7 14 11 9 15 12 20 6" /></>}
-                label="GST Amount" value={money(gst)} sub="18% on the base amount"
-              />
-              <Stat
-                mod="mpr-stat--bal"
-                icon={<><path d="M1 3h15v13H1z" /><path d="M16 8h4l3 3v5h-7V8z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></>}
-                label="Extra Charges" value={money(extra)} sub="None on this order"
-              />
-              <Stat
-                mod="mpr-stat--gst"
-                icon={<><circle cx="12" cy="12" r="10" /><path d="M12 7v10" /><path d="M9 10h6" /><path d="M9 14h6" /></>}
-                label="Total PO Amount (Grand Total)" value={money(row.total)} sub={`${money(row.net)} net payable`}
-              />
-              <Stat
-                mod="mpr-stat--paid"
-                icon={<><path d="M6 3h12" /><path d="M6 8h12" /><path d="m6 13 8.5 8" /><path d="M6 13h3" /><path d="M9 13c6.667 0 6.667-10 0-10" /></>}
-                label="Total Paid Amount" value={money(row.paid)} sub={`${pctPaid}% of net payable released`}
-              />
-              <Stat
-                mod="mpr-stat--tds"
-                icon={<><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" /><path d="M3 5v14a2 2 0 0 0 2 2h16v-5" /><path d="M18 12a2 2 0 0 0 0 4h4v-4z" /></>}
-                label="Balance Amount" value={money(row.balance)}
-                sub={f.complete ? 'Fully settled' : 'Still to be released'}
-              />
-            </div>
+            <PoSummaryCards total={row.total} paid={row.paid} balance={row.balance} net={row.net} complete={f.complete} />
           </Box>
 
           <Box
@@ -509,7 +421,7 @@ export default function ManagePaymentRequestsModal({ row, onClose }: { row: Orde
           >
             <div className="mpr-stats">
               <Stat
-                icon={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" /></>}
+                icon={STAT_ICONS.doc}
                 label="Total Requests" value={String(list.length)}
                 sub={list.length
                   ? [f.approvedCount && `${f.approvedCount} approved`, f.pendingCount && `${f.pendingCount} awaiting`, f.declinedCount && `${f.declinedCount} declined`]
@@ -578,7 +490,7 @@ export default function ManagePaymentRequestsModal({ row, onClose }: { row: Orde
                   <span className="mpr-c">Paid Amount</span>
                   <span className="mpr-c">Action</span>
                 </div>
-                {list.map((q, i) => <RequestRow key={q.id} q={q} index={i} net={row.net} />)}
+                {list.map((q, i) => <RequestRow key={q.id} q={q} index={i} net={row.net} onPay={setPayReq} />)}
               </div>
             )}
           </div>
@@ -595,7 +507,11 @@ export default function ManagePaymentRequestsModal({ row, onClose }: { row: Orde
           )}
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose}>Close</button>
-            {canRequest && <button type="button" className="spi-mdl-confirm mpr-raise">Raise New Request</button>}
+            {canRequest && (
+              <button type="button" className="spi-mdl-confirm mpr-raise" onClick={() => setRaiseOpen(true)}>
+                Raise New Request
+              </button>
+            )}
           </div>
         </div>
 
