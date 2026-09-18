@@ -269,6 +269,12 @@
   padding: 2px 11px;
 }
 
+/* Reg-High / Reg-Low badge: name stays on one line, badge never squeezed; solid white on the dark vault header. */
+.cev-seg-pop-pill { white-space: nowrap; }
+.cev-seg-pop-pill .seg-reg-badge,
+.cev-chip .seg-reg-badge { flex-shrink: 0; }
+.cev-chip .seg-reg-badge { background: #fff !important; }
+
 /* Code prefix inside a popover row's pill -- the Mapped Customers list answers
    "which customer" as "C-206: Nova Foods". Leading, not trailing: the code is
    the identifier people quote, and at the front the codes line up down the list

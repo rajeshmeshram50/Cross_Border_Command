@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { segmentLabel } from '../../../../components/ui/SegmentBadge';
+import SegmentBadge from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -89,7 +89,7 @@ const todayIso = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD (local) â
 /* Optional per-option meta for EditSelect (warehouse code + own/third badge).
    `segment` shows the product's segment; `disabled` freezes an option whose
    segment doesn't match the supplier (SPI product picker). */
-type DdMeta = { code?: string; badge?: string; tone?: 'own' | 'third'; segment?: string; disabled?: boolean };
+type DdMeta = { code?: string; badge?: string; tone?: 'own' | 'third'; segment?: string; segReg?: string; disabled?: boolean };
 
 /* A product-master option for the standalone (Direct) product picker.
    `segId`/`segment` gate the picker to the supplier's segment(s). */
@@ -266,7 +266,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
   const gateBySegment = supSegIds.length > 0;
   prodOpts.forEach(p => {
     const mismatch = gateBySegment && p.segId != null && !supSegIds.includes(p.segId);
-    prodMeta[p.name] = { code: p.code || undefined, segment: segmentLabel(p.segment, p.segReg) || undefined, disabled: mismatch };
+    prodMeta[p.name] = { code: p.code || undefined, segment: p.segment || undefined, segReg: p.segReg || undefined, disabled: mismatch };
   });
 
   // Standalone: prefill the supplier chosen back in the Map modal + its legal status.
@@ -1371,6 +1371,7 @@ function eselLabel(o: string, m?: DdMeta) {
       {m.code && <span className="spi-dt-esel-code">{formatProductCode(m.code)}:</span>}
       <span className="spi-dt-esel-name" title={o}>{o}</span>
       {m.segment && <span className="spi-dt-esel-seg">{m.segment}</span>}
+      {m.segReg && <SegmentBadge status={m.segReg} style={{ marginLeft: 4, flexShrink: 0 }} />}
       {m.badge && <span className={`spi-dt-esel-badge spi-dt-esel-badge--${m.tone || 'own'}`}>{m.badge}</span>}
       {m.disabled && <span className="spi-dt-esel-lock">Segment not mapped</span>}
     </span>

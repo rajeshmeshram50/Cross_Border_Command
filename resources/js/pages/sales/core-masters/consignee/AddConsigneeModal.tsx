@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import { SegmentNameBadge, SegmentNameList } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useTheme } from '../../../../contexts/ThemeContext';
@@ -2243,7 +2244,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                       {customer.name}
                       <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 20, padding: '1px 7px' }}>CUSTOMER</span>
                     </div>
-                    <div className="acm-picked-meta">{customer.id} • {truncSegment(customer.segment)} • {customer.country}</div>
+                    <div className="acm-picked-meta">{customer.id} • {truncSegment(customer.segment)}<SegmentNameBadge name={customer.segment} /> • {customer.country}</div>
                   </div>
                 </>
               ) : (
@@ -2347,7 +2348,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                         {isPrimary && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 20, padding: '1px 7px' }}>PRIMARY</span>}
                         {crossBorder && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#b45309', background: '#fef3c7', borderRadius: 20, padding: '1px 7px' }}>{isDomesticCountry(c.country) ? 'DOMESTIC' : 'INTERNATIONAL'}</span>}
                       </div>
-                      <div className="acm-pop-meta">{c.id} • {truncSegment(c.segment)} • {c.country}</div>
+                      <div className="acm-pop-meta">{c.id} • {truncSegment(c.segment)}<SegmentNameBadge name={c.segment} /> • {c.country}</div>
                     </div>
                   </button>
                   );
@@ -2377,7 +2378,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                     {customer.name}
                     <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 20, padding: '1px 7px' }}>PRIMARY</span>
                   </div>
-                  <div className="acm-picked-meta">{customer.id} • {truncSegment(customer.segment)} • {customer.country}</div>
+                  <div className="acm-picked-meta">{customer.id} • {truncSegment(customer.segment)}<SegmentNameBadge name={customer.segment} /> • {customer.country}</div>
                 </div>
                 {primaryLocked ? (
                   <span title="Locked — you're mapping under this customer" style={{ fontSize: 10, fontWeight: 700, color: '#6b7280', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
@@ -2531,7 +2532,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                           now means Domestic vs International. */}
                       <ReadInlineG label="Customer Category"    value={activeLinkedCust?.type} />
 
-                      <ReadInlineG label="Customer Segment"     value={segDisplay(activeLinkedCust?.segment, mSegmentIds)} />
+                      <ReadInlineG label="Customer Segment"     value={segDisplay(activeLinkedCust?.segment, mSegmentIds)} node={<SegmentNameList compact names={activeLinkedCust?.segment} codeOf={n => mSegmentIds.find(s => s.name === n)?.code} />} tip={<SegmentNameList names={activeLinkedCust?.segment} codeOf={n => mSegmentIds.find(s => s.name === n)?.code} />} />
                       <ReadInlineG label="Classification"       value={activeLinkedCust?.classification} />
                       <ReadInlineG label="Risk Level"           value={activeLinkedCust?.risk} />
                       <ReadInlineG label="Company Website"      value={activeLinkedCust?.website} />
@@ -3525,7 +3526,7 @@ const Stage1 = ({
                       <span style={{ color: '#94a3b8', fontSize: 13 }}>Inherited from customer</span>
                     ) : (
                       <>
-                        <span className="acm-seg-firstchip" title={labels[0]} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{truncSegment(labels[0])}{typeBadge(segVals[0])}</span>
+                        <span className="acm-seg-firstchip" title={labels[0]} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{truncSegment(labels[0])}<SegmentNameBadge name={segVals[0]} style={{ marginLeft: 0 }} />{typeBadge(segVals[0])}</span>
                         {labels.length > 1 && (
                           <span role="button" onClick={() => setSegPopOpen(o => !o)} className="acm-seg-morebtn" title={segPopOpen ? 'Hide segments' : `View all ${labels.length} segments`}>
                             {segPopOpen ? 'Hide' : `+${labels.length}`}
@@ -3540,7 +3541,7 @@ const Stage1 = ({
                             however many segments are inherited. */}
                         <div className="acm-seg-pop-scroll" style={{ maxHeight: 132, overflowY: 'auto', paddingRight: 4 }}>
                           {labels.map((l: string, i: number) => (
-                            <div key={i} className="acm-seg-pop-row" title={l} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span className="acm-seg-dot" />{truncSegment(l)}{typeBadge(segVals[i])}</div>
+                            <div key={i} className="acm-seg-pop-row" title={l} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span className="acm-seg-dot" style={{ flexShrink: 0 }} /><span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l}</span><span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}><SegmentNameBadge name={segVals[i]} style={{ marginLeft: 0 }} />{typeBadge(segVals[i])}</span></div>
                           ))}
                         </div>
                       </div>
@@ -4984,15 +4985,15 @@ const RecapField = ({ label, value }: { label: string; value?: string }) => (
  * Stage 2 / Stage 3 history panel so the data carried forward from
  * Stage 1 reads as a dense 4-column grid instead of card-styled
  * sub-panels. */
-const ReadInlineG = ({ label, value, span }: { label: string; value?: string | null; span?: number }) => {
+const ReadInlineG = ({ label, value, span, node: rich, tip }: { label: string; value?: string | null; span?: number; node?: React.ReactNode; tip?: React.ReactNode }) => {
   const v = (value ?? '').toString().trim();
   const node = (
     <div className="acg-hs-inline" style={span ? { gridColumn: `span ${span}` } : undefined}>
       <span className="acg-hs-inline-lbl">{label} :</span>
-      <span className={`acg-hs-inline-val ${!v ? 'is-empty' : ''}`}>{v || '—'}</span>
+      <span className={`acg-hs-inline-val ${!v ? 'is-empty' : ''}`}>{v ? (rich ?? v) : '—'}</span>
     </div>
   );
-  return v ? <Tooltip label={`${label}: ${v}`}>{node}</Tooltip> : node;
+  return v ? <Tooltip label={tip ? <>{label}: {tip}</> : `${label}: ${v}`}>{node}</Tooltip> : node;
 };
 
 /* ─── Stage 1 summary — dense 4-column "Label : Value" grid of every
@@ -5010,7 +5011,7 @@ function ConsigneeHistoryStage1({ form, locations, consigneeCode, segments = [] 
         {consigneeCode && <ReadInlineG label="Consignee ID" value={consigneeCode} />}
         <ReadInlineG label="Company Name"        value={form.companyName} />
         <ReadInlineG label="Company Legal Name"  value={form.legalName} />
-        <ReadInlineG label="Customer Segment"    value={segDisplay(form.segment, segments)} />
+        <ReadInlineG label="Customer Segment"    value={segDisplay(form.segment, segments)} node={<SegmentNameList compact names={form.segment} codeOf={n => segments.find(s => s.name === n)?.code} />} tip={<SegmentNameList names={form.segment} codeOf={n => segments.find(s => s.name === n)?.code} />} />
 
         <ReadInlineG label="Classification"      value={form.classification} />
         <ReadInlineG label="Risk Level"          value={form.risk} />
@@ -6762,7 +6763,7 @@ const SCOPED_CSS = `
 /* Popover listing every inherited segment (teal-dotted pills). */
 .acm-seg-pop {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
-  min-width: 190px; max-width: 260px; max-height: 260px; overflow-y: auto;
+  min-width: 190px; max-width: 360px; max-height: 260px; overflow-y: auto;
   background: #fff; border: 1px solid #d1fae5; border-radius: 12px;
   box-shadow: 0 14px 34px rgba(13,148,136,.18), 0 4px 12px rgba(0,0,0,.08);
   padding: 10px;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { segmentLabel } from '../../../../components/ui/SegmentBadge';
+import SegmentBadge from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -218,7 +218,7 @@ const docHd = (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" strok
 // `name` overrides the raw option value for display — used by the supplier
 // field, whose option VALUE is the unique code (names can duplicate) but which
 // still shows the human name via meta.
-type DdOptMeta = { code?: string; name?: string; badge?: string; badgeTone?: 'own' | 'third'; disabled?: boolean };
+type DdOptMeta = { code?: string; name?: string; badge?: string; badgeTone?: 'own' | 'third'; segReg?: string; disabled?: boolean };
 /* An out-of-segment option used to carry a red "Segment not mapped" chip here.
  * It was dropped: in a narrow cell (the Stage-2 product picker) it collided with
  * the segment badge and both ended up clipped mid-word. A frozen option still
@@ -231,6 +231,7 @@ const DdOptLabel = ({ o, meta }: { o: string; meta?: DdOptMeta }) => (
       {meta.code && <span className="pof-dd__optcode">{meta.code}:</span>}
       <span className="pof-dd__optname">{meta.name ?? o}</span>
       {meta.badge && <span className={`pof-dd__optbadge pof-dd__optbadge--${meta.badgeTone || 'own'}`}>{meta.badge}</span>}
+      {meta.segReg && <SegmentBadge status={meta.segReg} style={{ marginLeft: 4, flexShrink: 0 }} />}
     </span>
   ) : <span>{o}</span>
 );
@@ -899,7 +900,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     // Codes go through formatProductCode so the picker reads P-021, matching the
     // Product master and this table's own Product Code column (the raw DB code is
     // 2-digit: P-21).
-    prodOpts.forEach(o => { m[o.name] = { code: formatProductCode(o.code) || undefined, badge: segmentLabel(o.segment, o.segmentReg) || undefined, disabled: prodDisabled(o) }; });
+    prodOpts.forEach(o => { m[o.name] = { code: formatProductCode(o.code) || undefined, badge: o.segment || undefined, segReg: o.segmentReg || undefined, disabled: prodDisabled(o) }; });
     return m;
   }, [prodOpts, prodDisabled]);
   // Resolve a PI row's product segment from the product master (PI rows carry no

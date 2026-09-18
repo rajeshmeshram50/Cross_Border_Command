@@ -1361,6 +1361,7 @@ useEffect(() => {
                                     risk: v.risk,
                                     segment: v.segment,
                                     segments: v.segments,
+                                    segmentItems: v.segmentItems,
                                     country: v.country,
                                     type: v.type,
                                     contact: v.contactName,

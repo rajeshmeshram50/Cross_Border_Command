@@ -51,7 +51,6 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
    invented a House Rent Allowance and a Special Allowance nobody had agreed —
    which then saved and appeared in payroll. Allowances are now added
    deliberately; Basic carries the balance until they are. */
-// Same default split as seedBreakup() in utils/salaryBreakup.ts — keep the two identical.
 const splitFromGross = (gross: number): SalaryComponent[] => seedBreakup(gross);
 
 /**
@@ -838,9 +837,8 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                   <i className="ri-arrow-down-s-line ssm-rules-caret" />
                 </summary>
                 <div className="ssm-rules-body">
-                  <div className="ssm-rule"><b>Basic Salary</b><span>50% of monthly gross (statutory minimum, Code on Wages 2019).</span></div>
-                  <div className="ssm-rule"><b>House Rent Allowance</b><span>30% of monthly gross.</span></div>
-                  <div className="ssm-rule"><b>Special Allowance</b><span>The remaining balance after Basic + HRA.</span></div>
+                  <div className="ssm-rule"><b>Basic Salary</b><span>The whole monthly gross by default; any allowance you add is taken out of it (must stay at least 50%, Code on Wages 2019).</span></div>
+                  <div className="ssm-rule"><b>Allowances (HRA, Special…)</b><span>Added by you. Special Allowance, when present, carries the balance instead of Basic.</span></div>
                   <div className="ssm-rule">
                     <b>PF Deduction</b>
                     <span>

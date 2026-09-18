@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import Tooltip from './Tooltip';
+import SegmentBadge from './SegmentBadge';
 import './MasterSelect.css';
 
 /* A small pill shown beside an option label. `tone` picks the palette —
@@ -9,7 +10,8 @@ import './MasterSelect.css';
    `title` overrides the hover tooltip (defaults to `text`).
    `items` turns the pill into a click target — e.g. a "+2 more" overflow
    pill opens a mini popup listing the hidden tags. */
-type OptBadgeSpec = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string; items?: string[] };
+// `reg` adds the segment Reg-High / Reg-Low badge after the pill (text '' = badge only).
+type OptBadgeSpec = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string; items?: string[]; reg?: string | null };
 
 // Follow the active app theme: light pastel pills in light mode, translucent
 // tints + lighter text in dark mode (QA #123 — the option badges were fixed
@@ -68,6 +70,15 @@ export function OptBadge({ b, staticPill }: { b: OptBadgeSpec; staticPill?: bool
     maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis',
     ...badgeToneStyle(b.tone),
   };
+
+  if (b.reg !== undefined) {
+    return (
+      <>
+        {b.text && <span title={b.title ?? b.text} style={style}>{b.text}</span>}
+        <SegmentBadge status={b.reg} style={{ marginLeft: 6, flexShrink: 0 }} />
+      </>
+    );
+  }
 
   if (!interactive) {
     return <span title={b.title ?? b.text} style={style}>{b.text}</span>;

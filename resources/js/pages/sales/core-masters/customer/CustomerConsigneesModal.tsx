@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import api from '../../../../api';
@@ -276,6 +277,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                             return (
                               <span className="d-inline-flex align-items-center" style={{ gap: 4 }}>
                                 <Tooltip label={segList[0]} disabled={segList[0].length <= 14}><span className="ccm-seg">{truncSegment(segList[0])}</span></Tooltip>
+                                <SegmentNameBadge name={segList[0]} style={{ marginLeft: 0 }} />
                                 {extra > 0 && (
                                   <Tooltip label={`View ${extra} more`}>
                                     <button
@@ -453,6 +455,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                     <Tooltip label={name} disabled={name.length <= 14}>
                       <span className="ccm-seg">{truncSegment(name)}</span>
                     </Tooltip>
+                    <SegmentNameBadge name={name} />
                   </div>
                 ))}
               </div>

@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
-import SegmentBadge, { segmentLabel } from '../../../../components/ui/SegmentBadge';
+import SegmentBadge, { segmentLabel, SegmentBadgeLine, SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
@@ -235,6 +235,7 @@ export type ProductMappingRow = {
   productName: string;
   hsnSacCode: string;
   segment: string;
+  segmentReg?: string | null;
   batchSerialLot: string;
   purchasePrice: number;
   gstPercentage: number;
@@ -271,7 +272,7 @@ function recomputeMappingTotals(draft: ProductMappingDraft): ProductMappingDraft
 /** Options for the Product Name dropdown, with everything the form autofills. */
 export type ProductMappingOpt = {
   value: string; label: string; code: string; name: string;
-  hsn: string; segment: string; segmentId: number | null;
+  hsn: string; segment: string; segmentId: number | null; segmentName?: string; segmentReg?: string | null;
   basePrice: string; gstPercentage: string;
 };
 
@@ -295,6 +296,8 @@ async function loadMappableProducts(): Promise<ProductMappingOpt[]> {
       name:      r.name ?? '',
       hsn:       r.hsn?.hsn_code ?? '',
       segment:   segmentLabel(r.segment?.title, r.segment?.regulatory_status),
+      segmentName: r.segment?.title ?? '',
+      segmentReg:  r.segment?.regulatory_status ?? null,
       segmentId: r.segment_id ?? r.segment?.id ?? null,
       basePrice:     r.base_price != null ? String(r.base_price) : '',
       gstPercentage: r.gst_percentage?.percentage != null ? String(r.gst_percentage.percentage) : '',
@@ -834,7 +837,9 @@ export default function AddVendorModal(props: {
     name: string;
     hsn: string;
     segment: string;
-    segmentId: number | null;  
+    segmentId: number | null;
+    segmentName?: string;
+    segmentReg?: string | null;
 
     basePrice: string;
     gstPercentage: string;
@@ -2140,6 +2145,8 @@ export default function AddVendorModal(props: {
         name:     r.name ?? '',
         hsn:      r.hsn?.hsn_code ?? '',
         segment:  r.segment?.title ?? '',
+        segmentName: r.segment?.title ?? '',
+        segmentReg:  (r.segment as { regulatory_status?: string } | null | undefined)?.regulatory_status ?? null,
         segmentId: r.segment_id ?? r.segment?.id ?? null,
         basePrice:     r.base_price != null ? String(r.base_price) : '',
         gstPercentage: r.gst_percentage?.percentage != null ? String(r.gst_percentage.percentage) : '',
@@ -2625,6 +2632,7 @@ export default function AddVendorModal(props: {
             type PrevField = {
               label: string;
               value: string;
+              node?: React.ReactNode;   // rich value (e.g. segment badges); `value` stays the tooltip text
               href?: string;        
               suffix?: string;      
             };
@@ -2651,7 +2659,8 @@ export default function AddVendorModal(props: {
                 { label: 'Company Name',         value: companyName || '—' },
                 { label: 'Legal Name',           value: legalName || '—' },
                 { label: 'Supplier Type',        value: labelFor(vendorType, SUPPLIER_TYPE_OPTS) || vendorType || '—' },
-                { label: 'Segment',              value: segment.map(s => segText(s)).join(', ') || '—' },
+                { label: 'Segment',              value: segment.map(s => segText(s)).join(', ') || '—',
+                  node: segment.length ? (() => { const o = segmentOpts.find(x => x.value === String(segment[0])); return <SegmentBadgeLine label={o?.label ?? String(segment[0])} status={o?.reg} more={segment.length - 1} />; })() : undefined },
                 { label: 'Risk Level',           value: labelFor(riskLevel, riskLevelOpts) || '—' },
                 { label: 'Supplier Behaviour',   value: (SUPPLIER_BEHAVIOUR_OPTS.find(o => o.value === vendorBehaviour)?.label) || '—' },
                 { label: 'Supplier Category', value: (SUPPLIER_CATEGORY_OPTS.find(o => o.value === supplierCategory)?.label) || '—' },
@@ -2781,7 +2790,7 @@ export default function AddVendorModal(props: {
                                     {f.href ? (
                                       <Tooltip label={f.value}><a href={f.href} target="_blank" rel="noopener noreferrer" className="avm-prev-v avm-prev-link">{f.value}</a></Tooltip>
                                     ) : (
-                                      <Tooltip label={f.value}><span className="avm-prev-v">{f.value}</span></Tooltip>
+                                      <Tooltip label={f.value}><span className="avm-prev-v">{f.node ?? f.value}</span></Tooltip>
                                     )}
                                     {f.suffix ? <span className="avm-prev-suffix">{f.suffix}</span> : null}
                                   </div>
@@ -3659,7 +3668,7 @@ export default function AddVendorModal(props: {
                  list, where similarly named products are indistinguishable.
                  Violet is MasterSelect's documented tone for a category tag. */
               .map(o => (o.segment
-                ? { ...o, badges: [{ text: o.segment, tone: 'violet' as const, title: `Segment: ${o.segment}` }] }
+                ? { ...o, badges: [{ text: o.segmentName || o.segment, tone: 'violet' as const, title: `Segment: ${o.segment}`, reg: o.segmentReg ?? null }] }
                 : o));
           })()}
           onProductChange={onMapProductChange}
@@ -5215,7 +5224,7 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
               <td><strong>{r.productName}</strong></td>
               <td><span className="avm-auto-code">{formatProductCode(r.productCode) || r.productCode}</span></td>
               <td><span className="font-monospace fs-13">{r.hsnSacCode || '—'}</span></td>
-              <td>{r.segment ? <SegmentTags segment={r.segment} tagClassName="avm-seg-tag" /> : '—'}</td>
+              <td>{r.segment ? (() => { const name = r.segment.split(' · ')[0]; return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SegmentTags segment={name} tagClassName="avm-seg-tag" />{r.segmentReg ? <SegmentBadge status={r.segmentReg} style={{ flexShrink: 0 }} /> : <SegmentNameBadge name={name} style={{ marginLeft: 0 }} />}</span>; })() : '—'}</td>
               <td className="text-end avm-num fs-13">₹{r.purchasePrice.toFixed(2)}</td>
               {/* 0% is a VALUE, not a blank (CS-168). This read
                   `r.gstPercentage ? … : '—'`, and 0 is falsy — so a product
@@ -5357,7 +5366,7 @@ export function MappedProductsViewPopup(props: {
     type ApiRow = {
       id: number; product_id?: number | null;
       product_code?: string | null; product_name?: string | null;
-      hsn_sac_code?: string | null; segment?: string | null; batch_serial_lot?: string | null;
+      hsn_sac_code?: string | null; segment?: string | null; segment_regulatory_status?: string | null; batch_serial_lot?: string | null;
       purchase_price?: number | string | null; gst_percentage?: number | string | null;
       gst_amount?: number | string | null; total_amount?: number | string | null;
     };
@@ -5371,6 +5380,7 @@ export function MappedProductsViewPopup(props: {
         productName: m.product_name ?? '—',
         hsnSacCode: m.hsn_sac_code ?? '',
         segment: m.segment ?? '',
+        segmentReg: m.segment_regulatory_status ?? null,
         batchSerialLot: m.batch_serial_lot ?? '',
         purchasePrice: Number(m.purchase_price ?? 0),
         gstPercentage: Number(m.gst_percentage ?? 0),
@@ -5417,7 +5427,7 @@ export function MappedProductsViewPopup(props: {
          read the same or the dropdown looks different depending on which door
          you came through. */
       .map(o => (o.segment
-        ? { ...o, badges: [{ text: o.segment, tone: 'violet' as const, title: `Segment: ${o.segment}` }] }
+        ? { ...o, badges: [{ text: o.segmentName || o.segment, tone: 'violet' as const, title: `Segment: ${o.segment}`, reg: o.segmentReg ?? null }] }
         : o));
     // mapDraft.productId is a dependency now — the filter keeps whichever
     // product the draft points at, so the list has to recompute when it changes.

@@ -341,16 +341,18 @@ export default function ClmDcpPage() {
   const filterOptions = useMemo(() => {
     const authSet = new Set<string>();
     const segMap = new Map<string, string>();
+    const segReg = new Map<string, string | undefined>();
     for (const r of allRows) {
       for (const a of authsForRule(r)) authSet.add(a);
       const seg = boot?.segments.find(s => s.code === r.segment_code);
-      segMap.set(r.segment_code, seg ? segmentLabel(seg.name, seg.regulatory_status) : r.segment_code);
+      segMap.set(r.segment_code, seg ? seg.name : r.segment_code);
+      segReg.set(r.segment_code, seg?.regulatory_status);
     }
     return {
       authorities: Array.from(authSet).sort((a, b) => a.localeCompare(b)).map(a => ({ value: a, label: a })),
       segments: Array.from(segMap.entries())
         .sort((a, b) => a[1].localeCompare(b[1]))
-        .map(([code, name]) => ({ value: code, label: `${name} (${code})` })),
+        .map(([code, name]) => ({ value: code, label: `${name} (${code})`, reg: segReg.get(code) })),
     };
   }, [allRows, boot]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1024,8 +1026,9 @@ function SegmentRuleModal(props: {
                           options={segments.map(s => {
                             // Truncate long names to 40 chars; full name in the hover tooltip.
                             const nm = s.name.length > 40 ? `${s.name.slice(0, 40)}…` : s.name;
-                            return { value: s.code, label: `${segmentLabel(nm, s.regulatory_status)} (${s.code})`, fullLabel: `${segmentLabel(s.name, s.regulatory_status)} (${s.code})` };
+                            return { value: s.code, label: `${nm} (${s.code})`, fullLabel: `${segmentLabel(s.name, s.regulatory_status)} (${s.code})` };
                           })}
+                          renderBadges={(code) => <SegmentBadge status={segments.find(s => s.code === code)?.regulatory_status} />}
                           onChange={(vs) => setSegCodes(vs)}
                         />
                       )
@@ -1039,7 +1042,7 @@ function SegmentRuleModal(props: {
                           // Truncate the (free-text, up-to-255-char) segment name to 40
                           // chars in the list; the full name shows in the option tooltip.
                           const nm = s.name.length > 40 ? `${s.name.slice(0, 40)}…` : s.name;
-                          return { value: s.code, label: `${segmentLabel(nm, s.regulatory_status)} (${s.code})`, fullLabel: `${segmentLabel(s.name, s.regulatory_status)} (${s.code})` };
+                          return { value: s.code, label: `${nm} (${s.code})`, fullLabel: `${segmentLabel(s.name, s.regulatory_status)} (${s.code})`, badges: [{ text: '', reg: s.regulatory_status }] };
                         })}
                       />
                     )}

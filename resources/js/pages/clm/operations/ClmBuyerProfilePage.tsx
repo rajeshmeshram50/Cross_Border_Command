@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, CSSProperties } from 'react';
+import { SegmentNameBadge } from '../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import CustomerEvidenceVaultModal, { type CustomerVaultTarget, type TabKey as VaultTab } from '../../sales/core-masters/customer/CustomerEvidenceVaultModal';
@@ -898,6 +899,7 @@ export default function ClmBuyerProfilePage() {
           and the full name stays on the tooltip. */}
       <span style={{ maxWidth: SEG_CHIP_COL, flexShrink: 1, display: 'inline-flex', alignItems: 'center', minWidth: 0 }}>
         <Tooltip label={segs[0]}><span style={{ display: 'inline-block', maxWidth: SEG_CHIP_COL, fontSize: '9.5px', fontWeight: 600, color: '#0e7490', background: '#ecfeff', border: '1px solid #a5f3fc', padding: '2px 9px', borderRadius: '20px', whiteSpace: 'nowrap', lineHeight: 1.6, overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }}>{segs[0]}</span></Tooltip>
+        <SegmentNameBadge name={segs[0]} />
       </span>
       {extra > 0 && (
         <Tooltip label="View all segments"><button type="button" onClick={(e) => toggleSegPop(e, key, segs)} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, cursor: 'pointer', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)', border: 'none', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>
@@ -1781,7 +1783,7 @@ export default function ClmBuyerProfilePage() {
             <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#0891b2', padding: '4px 8px 7px' }}>Segments ({segOpen.names.length})</div>
             {segOpen.names.map((name, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '5px 8px', borderRadius: 8, background: i % 2 ? 'rgba(6,182,212,.05)' : 'transparent' }}>
-                <span style={{ fontSize: 10, fontWeight: 600, color: '#0c4a6e', wordBreak: 'break-word' }}>{name}</span>
+                <span style={{ fontSize: 10, fontWeight: 600, color: '#0c4a6e', wordBreak: 'break-word' }}>{name}</span><SegmentNameBadge name={name} />
               </div>
             ))}
           </div>
@@ -1808,6 +1810,7 @@ function SegCell({ names, sc, sb }: { names: string[]; sc: string; sb: string })
   };
   return <>
     <Tooltip label={segs[0]}><span style={{ display: 'inline-block', verticalAlign: 'middle', fontSize: '8.5px', fontWeight: 600, color: sc, background: sb, border: '1px solid rgba(6,182,212,.15)', padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap' }}>{segs[0].length > 30 ? `${segs[0].slice(0, 30)}…` : segs[0]}</span></Tooltip>
+    <SegmentNameBadge name={segs[0]} />
     {segs.length > 1 && (
       <Tooltip label="View all segments"><button type="button" onClick={toggle} style={{ fontSize: '8.5px', fontWeight: 800, color: '#fff', background: 'linear-gradient(135deg, #06b6d4, #0891b2)', padding: '2px 8px', borderRadius: '20px', whiteSpace: 'nowrap', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{segs.length - 1}</button></Tooltip>
     )}
@@ -1817,7 +1820,7 @@ function SegCell({ names, sc, sb }: { names: string[]; sc: string; sb: string })
         <div className="seg-pop" style={{ position: 'fixed', left: Math.min(open.x, window.innerWidth - 240), top: open.flipUp ? undefined : open.y, bottom: open.flipUp ? (window.innerHeight - open.y) : undefined, zIndex: 200001, width: 220, maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 12, padding: 8, boxShadow: '0 18px 50px rgba(15,23,42,.30)', border: '1px solid rgba(6,182,212,.18)', fontFamily: 'var(--font-sans)' }}>
           <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#0891b2', padding: '4px 8px 7px' }}>Segments ({segs.length})</div>
           {segs.map((name, i) => (
-            <div key={i} style={{ fontSize: 10.5, fontWeight: 600, color: '#0c4a6e', padding: '5px 8px', borderRadius: 7, background: i % 2 === 0 ? 'rgba(6,182,212,.05)' : 'transparent' }}>{name}</div>
+            <div key={i} style={{ fontSize: 10.5, fontWeight: 600, color: '#0c4a6e', padding: '5px 8px', borderRadius: 7, background: i % 2 === 0 ? 'rgba(6,182,212,.05)' : 'transparent' }}>{name}<SegmentNameBadge name={name} /></div>
           ))}
         </div>
       </>,

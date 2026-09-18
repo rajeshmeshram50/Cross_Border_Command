@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -552,7 +553,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                        button: the named segment carries the count inline and the
                        whole thing opens the full list. */
                     if (extra === 0) {
-                      return <Tooltip label={first}><span className="cev-chip cev-chip-seg">{short}</span></Tooltip>;
+                      return <Tooltip label={first}><span className="cev-chip cev-chip-seg" style={{ display: 'inline-flex', alignItems: 'center' }}>{short}<SegmentNameBadge name={first} /></span></Tooltip>;
                     }
                     return (
                       <Tooltip label={`${segs.length} segments — click to see all`}>
@@ -560,7 +561,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                           type="button"
                           className="cev-chip cev-chip-seg sev-chip-more"
                           onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { names: segs, x: b.left, y: b.bottom + 6 }); }}
-                        >{short}<span className="cev-chip-seg-count">+{extra}</span></button>
+                        >{short}<SegmentNameBadge name={first} /><span className="cev-chip-seg-count">+{extra}</span></button>
                       </Tooltip>
                     );
                   })()}
@@ -1014,12 +1015,12 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
       {segPop && createPortal(
         <>
           <div onClick={() => setSegPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 13000 }} />
-          <div className="cev-seg-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 250), top: segPop.y, zIndex: 13001, width: 232, maxHeight: 320, overflowY: 'auto' }}>
+          <div className="cev-seg-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 298), top: segPop.y, zIndex: 13001, width: 280, maxHeight: 320, overflowY: 'auto' }}>
             <div className="cev-seg-pop-title">Segments ({segPop.names.length})</div>
             {segPop.names.map((name, i) => (
               <div key={i} className={`cev-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
                 <Tooltip label={name}>
-                  <span className="cev-seg-pop-pill">{name.length > 20 ? name.slice(0, 20) + '…' : name}</span>
+                  <span className="cev-seg-pop-pill" style={{ display: 'inline-flex', alignItems: 'center' }}>{name.length > 20 ? name.slice(0, 20) + '…' : name}<SegmentNameBadge name={name} /></span>
                 </Tooltip>
               </div>
             ))}

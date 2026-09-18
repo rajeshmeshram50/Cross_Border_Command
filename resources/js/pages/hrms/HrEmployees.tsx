@@ -5626,9 +5626,8 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                         {/* How the auto-split + statutory deductions are derived,
                           so anyone reading the breakup understands the figures. */}
                         <ul className="mb-3 ps-3" style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', lineHeight: 1.7 }}>
-                          <li><strong>Basic Salary</strong> — 50% of the monthly gross (statutory minimum under Code on Wages, 2019; you can adjust the components below).</li>
-                          <li><strong>House Rent Allowance (HRA)</strong> — 30% of the monthly gross.</li>
-                          <li><strong>Special Allowance</strong> — the remaining balance after Basic + HRA and any component you add, so the gross stays on the CTC.</li>
+                          <li><strong>Basic Salary</strong> — the whole monthly gross by default; any allowance you add is taken out of it (must stay at least 50%, Code on Wages, 2019).</li>
+                          <li><strong>Allowances (HRA, Special…)</strong> — added by you. Special Allowance, when present, carries the balance so the gross stays on the CTC.</li>
                           <li><strong>PF Deduction</strong> — <strong>12% of Basic Salary</strong>; <em>Statutory</em> caps the basic at the ₹15,000 EPF ceiling (max ₹1,800/mo), <em>Standard</em> uses the full basic. Toggle PF on/off via <em>PF Applicable</em> above.</li>
                           <li><strong>ESI / Professional Tax</strong> — whatever you enter here is deducted <strong>in full</strong> each cycle; they are not scaled down for a part-month or for loss of pay.</li>
                         </ul>

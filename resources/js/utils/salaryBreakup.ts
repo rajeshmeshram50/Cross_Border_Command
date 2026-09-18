@@ -34,18 +34,11 @@ export const ZERO_OK_CODES = ['pf', 'esi', 'special'];
 export const MAX_COMP_AMOUNT = 99999999.99;
 export const MAX_COMP_LABEL  = 120;
 
-/** Default Basic 50% / HRA 30% / Special = balance split for a monthly gross. */
+/** Whole monthly gross on Basic only; HR adds allowances deliberately and they come out of Basic. (#9 / #147) */
 export const seedBreakup = (monthlyGross: number): SalBreakComp[] => {
   // Paise, so the total annualises back to the CTC (CBC #27).
-  const r2 = (n: number) => Math.round(n * 100) / 100;
-  const g = Math.max(0, r2(monthlyGross));
-  const basic = r2(g * 0.5);
-  const hra = r2(g * 0.3);
-  return [
-    { code: 'basic',   label: 'Basic Salary',         amount: basic },
-    { code: 'hra',     label: 'House Rent Allowance', amount: hra },
-    { code: 'special', label: 'Special Allowance',    amount: Math.max(0, r2(g - basic - hra)) },
-  ];
+  const g = Math.max(0, Math.round(monthlyGross * 100) / 100);
+  return [{ code: 'basic', label: 'Basic Salary', amount: g }];
 };
 
 /**
@@ -121,7 +114,8 @@ export const planEarningRemoval = (
  */
 export const reseedSplit = (existing: SalBreakComp[], monthlyGross: number): SalBreakComp[] => {
   const present = new Set(existing.map(c => c.code));
-  const custom  = existing.filter(c => !SPLIT_CODES.includes(c.code));
+  // Only Basic is re-seeded; HRA/Special and custom rows keep their amounts and the balance row absorbs the change.
+  const custom  = existing.filter(c => c.code !== 'basic');
   const seeded  = seedBreakup(monthlyGross).filter(c => present.has(c.code));
   return absorbIntoSpecial([...seeded, ...custom], monthlyGross);
 };
