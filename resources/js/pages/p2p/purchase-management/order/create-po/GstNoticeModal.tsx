@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { formatDmy } from '../../../../../utils/formatDmy';
+import { IcoShieldAlert, IcoUser } from '../icons';
 
 export type GstNotice = {
   tone: 'stop' | 'warn';
@@ -44,7 +45,7 @@ export default function GstNoticeModal({ notice, onClose }: { notice: GstNotice;
     <div className="cgst-backdrop">
       <div className="cgst-card" role="dialog" aria-modal="true" aria-labelledby="cgst-title">
         <div className={`cgst-hd cgst-hd--${notice.tone}`}>
-          <span className="cgst-hd__ico">{stop ? <IcoShield /> : <IcoUser />}</span>
+          <span className="cgst-hd__ico">{stop ? <IcoShieldAlert /> : <IcoUser />}</span>
           <span className="cgst-hd__txt">
             <span className="cgst-hd__t" id="cgst-title">{stop ? 'GST Scrutiny Required' : 'Senior Approval Required'}</span>
             <span className="cgst-hd__s">
@@ -139,6 +140,3 @@ function Row({ label, value, tag, tagTone = 'ok' }: { label: string; value: stri
   );
 }
 
-const S = { fill: 'none', stroke: '#fff', strokeWidth: 2.2, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
-function IcoShield() { return <svg width="20" height="20" viewBox="0 0 24 24" {...S}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><line x1="12" y1="8" x2="12" y2="13" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>; }
-function IcoUser() { return <svg width="20" height="20" viewBox="0 0 24 24" {...S}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>; }

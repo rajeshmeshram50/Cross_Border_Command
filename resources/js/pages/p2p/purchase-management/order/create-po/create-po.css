@@ -849,3 +849,457 @@
 [data-bs-theme="dark"] .cgst-ta { background: #0c1c24; border-color: rgba(34, 211, 238, .22); color: #e2e8f0; }
 [data-bs-theme="dark"] .cgst-ft { background: #0c1c24; border-top-color: rgba(148, 163, 184, .16); }
 [data-bs-theme="dark"] .cgst-btn--ghost { background: #1e293b; color: #cbd5e1; border-color: rgba(148, 163, 184, .25); }
+
+/* Step 02 summary: the little dash before each group heading. */
+.cpf-ro-dash { width: 12px; height: 2px; border-radius: 2px; background: currentColor; flex-shrink: 0; }
+
+/* ── Step 02 · PI vs PO product table ─────────────────────────────────────
+   Grouped header, two sticky columns and tinted editable cells. Values from
+   the prototype's .cpd-* rules. ─────────────────────────────────────────── */
+.cpd-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 9px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #5b7585;
+}
+.cpd-legend__sw {
+  flex-shrink: 0;
+  width: 22px;
+  height: 13px;
+  border-radius: 4px;
+  background: rgba(34, 211, 238, .14);
+  border: 1px solid rgba(34, 211, 238, .45);
+}
+
+.cpd-scroll {
+  overflow-x: auto;
+  border: 1px solid #e3eef3;
+  border-radius: 11px;
+  scrollbar-width: thin;
+  scrollbar-color: #bfe3ec transparent;
+}
+.cpd-tbl { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; }
+.cpd-tbl thead { background: linear-gradient(110deg, #0e7490 0%, #0891b2 50%, #06b6d4 100%); }
+.cpd-tbl thead th {
+  padding: 9px 12px;
+  text-align: center;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #fff;
+  background: transparent;
+}
+.cpd-grp th { border-bottom: 1px solid rgba(255, 255, 255, .25); }
+.cpd-th-left { text-align: left; }
+.cpd-edh { background: #0e7490; }
+.cpd-th-sub {
+  display: block;
+  margin-top: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(8, 47, 73, .22);
+  font-size: 7.5px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  line-height: 1.35;
+  color: #e0fbff;
+}
+.cpd-th-final {
+  background: rgba(255, 255, 255, .16);
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, .45), inset -1px 0 0 rgba(255, 255, 255, .45);
+}
+
+.cpd-tbl tbody td {
+  padding: 14px 12px;
+  border-bottom: 1px solid #eef6f9;
+  font-weight: 600;
+  color: #334155;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.cpd-tbl tbody tr:hover td { background: #f8fdff; }
+/* These have to out-specify ".cpd-tbl tbody td { text-align: center }", or the
+   product columns centre themselves. */
+.cpd-tbl tbody td.cpd-td-left,
+.cpd-tbl thead th.cpd-th-left { text-align: left; }
+.cpd-tbl tfoot td.cpd-foot-lbl { text-align: left; padding-left: 20px; }
+
+/* The first two columns stay put while the rest scrolls sideways. */
+.cpd-stick { position: sticky; z-index: 3; background: #fff; }
+.cpd-stick--1 { left: 0; width: 42px; min-width: 42px; }
+.cpd-stick--2 { left: 42px; width: 232px; min-width: 232px; box-shadow: 7px 0 12px -8px rgba(8, 47, 73, .35); }
+.cpd-tbl thead .cpd-stick { background: #0b6a84; }
+
+/* The product block stacks its name over the meta line. */
+.cpd-prod { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.cpd-prod__nm { font-size: 12px; font-weight: 800; color: #0f2a38; white-space: normal; }
+.cpd-prod__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  row-gap: 2px;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: #7c98a6;
+}
+.cpd-prod__meta b { color: #0c4a6e; font-weight: 800; }
+.cpd-prod__dot { width: 3px; height: 3px; border-radius: 50%; background: #c3d4dd; flex-shrink: 0; }
+.cpd-code {
+  padding: 2px 7px;
+  border: 1px solid #bfe9f3;
+  border-radius: 5px;
+  background: linear-gradient(135deg, #eafcff, #d9f4fb);
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 800;
+  color: #0c4a6e;
+}
+
+/* Tinted = editable: PO product, quantity and rate. */
+.cpd-ed { background: rgba(34, 211, 238, .07); box-shadow: inset 1px 0 0 rgba(34, 211, 238, .16), inset -1px 0 0 rgba(34, 211, 238, .16); }
+.cpd-in {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1.5px solid #e6eef3;
+  border-radius: 7px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-align: center;
+  color: #0f172a;
+  outline: none;
+}
+.cpd-in:focus { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34, 211, 238, .14); }
+.cpd-pick { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.cpd-pick .spi-dt-select-edit { min-height: 0; padding: 6px 8px; }
+.cpd-iconbtn,
+.cpd-addbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
+  box-shadow: 0 2px 6px rgba(8, 145, 178, .3);
+  transition: transform .14s;
+}
+.cpd-addbtn { width: 22px; height: 22px; margin-left: auto; }
+.cpd-iconbtn:hover,
+.cpd-addbtn:hover { transform: translateY(-1px); }
+
+/* Descriptions sit in a three-line box (3 x 15px); "Read more" floats in the
+   bottom-right corner over a fade, so the text never pushes the row taller. */
+.cpd-desc {
+  min-width: 210px;
+  max-width: 250px;
+  text-align: left;
+  white-space: normal;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #5b7585;
+  vertical-align: middle;
+}
+.cpd-desc__wrap {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  height: 45px;
+  font-size: 10.5px;
+  line-height: 15px;
+  text-align: left;
+}
+.cpd-desc__wrap.is-open { height: auto; }
+.cpd-more {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  height: 15px;
+  line-height: 15px;
+  margin: 0;
+  padding: 0 0 0 30px;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  color: #0e7490;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), var(--cpd-rowbg, #fff) 30%, var(--cpd-rowbg, #fff));
+  transition: color .14s;
+}
+.cpd-more:hover { color: #06b6d4; text-decoration: underline; text-underline-offset: 2px; }
+.cpd-desc__wrap.is-open .cpd-more { position: static; padding-left: 4px; background: none; }
+
+/* The PO picker fills its column like the prototype's .cpd-dd--prod. */
+.cpd-pick .spi-dt-select-edit { width: 100%; min-width: 186px; height: 30px; font-size: 11px; font-weight: 700; color: #0f172a; }
+
+/* Zebra rows, with the sticky columns following the same tint. */
+.cpd-tbl tbody tr:nth-child(even) { --cpd-rowbg: #f8fcfe; background: #f8fcfe; }
+.cpd-tbl tbody tr:nth-child(even) .cpd-stick { background: #f8fcfe; }
+.cpd-tbl tbody tr { --cpd-rowbg: #fff; }
+
+.cpd-miss { font-weight: 800; color: #b45309; }
+.cpd-gst { color: #0891b2; font-weight: 800; }
+.cpd-final { background: rgba(6, 182, 212, .06); font-weight: 800; color: #0c4a6e; }
+.cpd-tbl tfoot td {
+  padding: 11px 12px;
+  background: linear-gradient(110deg, #f0fbfd, #e8f8fc);
+  border-top: 1.5px solid #d6eef4;
+  font-weight: 800;
+  color: #0c4a6e;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.cpd-tbl tfoot .cpd-final { background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4); color: #fff; }
+.cpd-foot-lbl {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: #5b7585;
+}
+
+[data-bs-theme="dark"] .cpd-tbl,
+[data-bs-theme="dark"] .cpd-stick { background: #0e1b24; }
+[data-bs-theme="dark"] .cpd-tbl tbody td { color: #cbd5e1; border-bottom-color: rgba(148, 163, 184, .16); }
+[data-bs-theme="dark"] .cpd-tbl tbody tr:hover td { background: rgba(34, 211, 238, .06); }
+[data-bs-theme="dark"] .cpd-prod__nm { color: #e2e8f0; }
+[data-bs-theme="dark"] .cpd-in { background: #0c1c24; border-color: rgba(34, 211, 238, .22); color: #e2e8f0; }
+[data-bs-theme="dark"] .cpd-tbl tfoot td { background: rgba(8, 145, 178, .16); color: #e2e8f0; border-top-color: rgba(34, 211, 238, .3); }
+[data-bs-theme="dark"] .cpd-scroll { border-color: rgba(148, 163, 184, .2); }
+
+/* ── Step 02 · additional charges + totals ───────────────────────────────── */
+.cpd-sum { display: grid; grid-template-columns: 1fr 340px; gap: 14px; margin-top: 14px; align-items: start; }
+@media (max-width: 1100px) { .cpd-sum { grid-template-columns: 1fr; } }
+.cpd-sum__charges { padding: 12px 13px; border: 1px solid #e3eef3; border-radius: 12px; background: #fbfeff; }
+.cpd-sum__hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: #0891b2;
+}
+.cpd-chg-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 760px) { .cpd-chg-grid { grid-template-columns: 1fr; } }
+.cpd-chg-f { display: flex; flex-direction: column; gap: 6px; }
+.cpd-chg-f label { font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #5b7585; }
+.cpd-chg-inwrap { position: relative; display: flex; align-items: center; }
+.cpd-chg-cur { position: absolute; left: 11px; font-size: 12px; font-weight: 700; color: #7c97a8; pointer-events: none; }
+.cpd-chg-in {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px 9px 24px;
+  border: 1.5px solid #e6eef3;
+  border-radius: 9px;
+  background: #f9fdfe;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  text-align: right;
+  color: #0f172a;
+  outline: none;
+}
+.cpd-chg-in:focus { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34, 211, 238, .14); background: #fff; }
+
+.cpd-totbox {
+  border: 1.5px solid #cdeaf1;
+  border-radius: 12px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #f7fdff, #edf8fb);
+}
+.cpd-totrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 14px;
+  border-bottom: 1px solid #e3eef3;
+}
+.cpd-totrow__k { font-size: 10.5px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: #52708a; }
+.cpd-totrow__v { font-size: 13px; font-weight: 800; color: #0c4a6e; font-variant-numeric: tabular-nums; }
+.cpd-totrow--grand {
+  border-bottom: none;
+  padding: 13px 14px;
+  background: linear-gradient(110deg, #0e7490, #0891b2 60%, #06b6d4);
+}
+.cpd-totrow--grand .cpd-totrow__k { color: rgba(255, 255, 255, .85); }
+.cpd-totrow--grand .cpd-totrow__v { font-size: 15px; color: #fff; }
+
+/* ── Step 02 · missing product details ──────────────────────────────────── */
+.cpd-misscount {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border: 1.5px solid #fed7aa;
+  border-radius: 20px;
+  background: #ffedd5;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #9a3412;
+}
+.cpd-misscount.is-zero { color: #15803d; background: #dcfce7; border-color: #bbf7d0; }
+.cpd-miss-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 26px;
+  border: 1px dashed #bbf7d0;
+  border-radius: 12px;
+  background: #f6fefa;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #15803d;
+}
+.cpd-tbl--miss tbody td { padding: 10px 12px; }
+.cpd-name { font-weight: 800; color: #0f2a38; }
+.cpd-missqty {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 14px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fee2e2;
+  font-size: 12px;
+  font-weight: 800;
+  color: #b91c1c;
+}
+.cpd-tbl--miss .spi-dt-select-edit { min-height: 0; height: 34px; padding: 6px 10px; font-size: 11.5px; }
+
+[data-bs-theme="dark"] .cpd-sum__charges { background: #0e1b24; border-color: rgba(148, 163, 184, .2); }
+[data-bs-theme="dark"] .cpd-chg-in { background: #0c1c24; border-color: rgba(34, 211, 238, .22); color: #e2e8f0; }
+[data-bs-theme="dark"] .cpd-totbox { background: rgba(8, 145, 178, .1); border-color: rgba(34, 211, 238, .28); }
+[data-bs-theme="dark"] .cpd-totrow { border-bottom-color: rgba(148, 163, 184, .16); }
+[data-bs-theme="dark"] .cpd-totrow__v { color: #e2e8f0; }
+[data-bs-theme="dark"] .cpd-miss-empty { background: rgba(22, 163, 74, .1); border-color: rgba(34, 197, 94, .3); color: #4ade80; }
+
+/* ── Compact variant (.cpd-tbl--pd) ───────────────────────────────────────
+   This is what lets all 15 columns fit without sideways scrolling: headers
+   wrap inside an 88px cap, the body drops to 11px, and only the two product
+   columns keep a real minimum width. Values from the prototype. ─────────── */
+.cpd-tbl--pd { font-size: 11px; table-layout: auto; }
+.cpd-tbl--pd td,
+.cpd-tbl--pd th { min-width: 0; max-width: none; overflow: hidden; }
+.cpd-tbl--pd thead th {
+  position: sticky;
+  top: 0;
+  z-index: 7;
+  padding: 7px;
+  font-size: 8.5px;
+  letter-spacing: .03em;
+  line-height: 1.18;
+  white-space: normal;
+  max-width: 88px;
+  /* No background here: the cells stay transparent so the thead's
+     110deg teal gradient runs across the whole row. Only the sticky
+     columns get a solid fill, because they scroll over the body. */
+}
+.cpd-tbl--pd thead tr.cpd-grp th {
+  max-width: none;
+  padding: 7px 10px 6px;
+  font-size: 8px;
+  letter-spacing: .09em;
+  color: rgba(224, 250, 255, .92);
+  border-bottom: 1px solid rgba(255, 255, 255, .22);
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, .16);
+}
+.cpd-tbl--pd thead tr.cpd-grp th:first-child { box-shadow: none; }
+.cpd-tbl--pd thead tr:last-child th { height: 54px; box-shadow: inset 1px 0 0 rgba(255, 255, 255, .10); }
+.cpd-tbl--pd thead th.cpd-edh { background: rgba(255, 255, 255, .16); box-shadow: inset 0 -2px 0 rgba(165, 243, 252, .85); }
+.cpd-tbl--pd thead .cpd-stick { background: #0e7490; z-index: 6; }
+.cpd-tbl--pd thead th.cpd-th-left { text-align: left; }
+
+/* Only the product columns hold a width; the rest shrink to their content. */
+.cpd-tbl--pd td.cpd-prodcell { min-width: 200px; padding: 7px 9px; vertical-align: middle; }
+.cpd-tbl--pd td.cpd-prodcell.cpd-ed { min-width: 240px; }
+.cpd-tbl--pd .cpd-desc { min-width: 170px; max-width: 250px; }
+.cpd-tbl--pd tfoot .cpd-stick--1 { width: 274px; min-width: 274px; }
+
+/* Compact variant: tighter cells and inputs, so numbers are never clipped. */
+.cpd-tbl--pd tbody td { padding: 10px 6px; }
+/* Figma: input.cpd-in--num is 56 x 26.21, #F9FDFE, padding 5px 6px. */
+.cpd-tbl--pd .cpd-in {
+  width: 56px;
+  min-width: 56px;
+  padding: 5px 6px;
+  background: #f9fdfe;
+}
+.cpd-tbl--pd tfoot td { padding: 11px 6px; }
+
+/* Header labels stay on one line, as in the Figma; only the last column wraps
+   (its label is the longest). The table still scrolls on narrow screens. */
+.cpd-tbl--pd thead th { white-space: nowrap; max-width: none; }
+.cpd-tbl--pd thead th.cpd-th-final { white-space: normal; max-width: 104px; }
+
+/* Figma measurements: number input 56 x 26.21, header cells 54.41 tall. */
+.cpd-tbl--pd .cpd-in { height: 26px; line-height: 1.15; }
+
+/* The products section body is a plain 14px box (as in the prototype), so the
+   only space under the legend is its own 9px margin — the shared section body
+   is a flex column with a 12px gap, which doubled it. */
+.cpf-form .cpd-body { display: block; padding: 14px; }
+
+/* ── Scroll smoothness ───────────────────────────────────────────────────
+   Two things made this form repaint heavily while scrolling:
+   · the five header pills carry backdrop-filter: blur(6px), so every frame
+     re-samples what is behind them — they look the same without it;
+   · the sticky table header + sticky columns give the compositor many
+     layers, so the sticky cells are promoted instead.
+
+   NOTE: never put a transform / will-change: transform on .cpf-form itself —
+   it becomes the containing block for the position:fixed footer, which then
+   floats into the middle of the page instead of sitting at the bottom. */
+.cpf-form .spi-dt-pill { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.cpf-form .cpd-tbl thead th { will-change: transform; }
+
+/* ── Only the body scrolls ───────────────────────────────────────────────
+   The header strip and the four step cards stay put while the form scrolls
+   beneath them. It also scrolls far less area per frame, so the movement is
+   lighter than scrolling the whole overlay. */
+.cpf-form {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 12px 12px 0;
+}
+.cpf-form > .spi-dt {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.cpf-form .spi-dt-topcard { flex-shrink: 0; }
+.cpf-form .spi-dt-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 10px 2px 84px;
+  scrollbar-width: thin;
+}
+/* The body is a column flex container with a fixed height, so its sections
+   would shrink to fit instead of overflowing — then nothing scrolls. */
+.cpf-form .spi-dt-body > * { flex-shrink: 0; }
+/* No supplier picked yet — the compliance bar sits empty. */
+.cpf-lgbar__fill.is-empty { width: 0; }

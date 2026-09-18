@@ -4,12 +4,14 @@
 import { useMemo, useState } from 'react';
 import { EditSelect, Field } from '../form-fields';
 import GstNoticeModal, { type GstNotice } from '../GstNoticeModal';
+import type { PoDraft, SetDraft } from '../po-draft';
 import { MasterDatePicker } from '../../../../../../components/ui/MasterDatePicker';
 import { formatDmy } from '../../../../../../utils/formatDmy';
 import {
   LEGAL_PARAMS, RISK_GUIDELINES, RISK_LEVELS, SUPPLIER_CATEGORIES, SUPPLIER_OPTIONS, SUPPLIER_TYPES,
   isRiskMandatory, legalSections, legalTotals, supplierByOption, type Supplier,
 } from '../sample-suppliers';
+import { IcoAlert, IcoCheck, IcoChevron, IcoClock, IcoDocSm, IcoFile, IcoLock, IcoOk, IcoPin, IcoPlus, IcoShield, IcoStop, IcoUser, IcoWarn } from '../../icons';
 
 // Dropdown choices — static until the masters API is wired in.
 const PO_TYPES = ['Material / Goods', 'Services', 'FFD / Transporter'];
@@ -107,45 +109,73 @@ function cutoffDate(): string {
   return d.toISOString().slice(0, 10);
 }
 
-export default function Step1LinkSupplier() {
+export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set: SetDraft }) {
   const [poOpen, setPoOpen] = useState(true);
   const [supOpen, setSupOpen] = useState(true);
 
-  const [poType, setPoType] = useState('Material / Goods');
-  const [docType, setDocType] = useState('Domestics');
-  const [transport, setTransport] = useState('Road');
-  const [deliveryDate, setDeliveryDate] = useState('');
-  const [deliveryLocation, setDeliveryLocation] = useState('');
-  const [paymentType, setPaymentType] = useState('Advance');
-  const [physInsp, setPhysInsp] = useState(false);
+  const poType = draft.poType;
+  const setPoType = (v: string) => set({ poType: v });
+  const docType = draft.docType;
+  const setDocType = (v: string) => set({ docType: v });
+  const transport = draft.transport;
+  const setTransport = (v: string) => set({ transport: v });
+  const deliveryDate = draft.deliveryDate;
+  const setDeliveryDate = (v: string) => set({ deliveryDate: v });
+  const deliveryLocation = draft.deliveryLocation;
+  const setDeliveryLocation = (v: string) => set({ deliveryLocation: v });
+  const paymentType = draft.paymentType;
+  const setPaymentType = (v: string) => set({ paymentType: v });
+  const physInsp = draft.physInsp;
+  const setPhysInsp = (v: boolean) => set({ physInsp: v });
 
   // International POs need currency / shipping terms that a domestic PO doesn't.
-  const [currency, setCurrency] = useState('');
-  const [exchangeRate, setExchangeRate] = useState('');
-  const [incoTerm, setIncoTerm] = useState('');
-  const [portLoading, setPortLoading] = useState('');
-  const [portDischarge, setPortDischarge] = useState('');
-  const [finalDestination, setFinalDestination] = useState('');
-  const [countryOrigin, setCountryOrigin] = useState('');
+  const currency = draft.currency;
+  const setCurrency = (v: string) => set({ currency: v });
+  const exchangeRate = draft.exchangeRate;
+  const setExchangeRate = (v: string) => set({ exchangeRate: v });
+  const incoTerm = draft.incoTerm;
+  const setIncoTerm = (v: string) => set({ incoTerm: v });
+  const portLoading = draft.portLoading;
+  const setPortLoading = (v: string) => set({ portLoading: v });
+  const portDischarge = draft.portDischarge;
+  const setPortDischarge = (v: string) => set({ portDischarge: v });
+  const finalDestination = draft.finalDestination;
+  const setFinalDestination = (v: string) => set({ finalDestination: v });
+  const countryOrigin = draft.countryOrigin;
+  const setCountryOrigin = (v: string) => set({ countryOrigin: v });
   const isInternational = docType === 'International';
 
   // Supplier section — picking a supplier fills the rest of its fields.
-  const [supplier, setSupplier] = useState('');
-  const [legalName, setLegalName] = useState('');
-  const [supType, setSupType] = useState('Manufacturer');
-  const [risk, setRisk] = useState('High Risk');
-  const [category, setCategory] = useState('Star Supplier');
+  const supplier = draft.supplier;
+  const setSupplier = (v: string) => set({ supplier: v });
+  const legalName = draft.legalName;
+  const setLegalName = (v: string) => set({ legalName: v });
+  const supType = draft.supType;
+  const setSupType = (v: string) => set({ supType: v });
+  const risk = draft.risk;
+  const setRisk = (v: string) => set({ risk: v });
+  const category = draft.category;
+  const setCategory = (v: string) => set({ category: v });
 
   // Address & contact — also filled from the chosen supplier, still editable.
-  const [address, setAddress] = useState('');
-  const [country, setCountry] = useState('India');
-  const [state, setState] = useState('Maharashtra');
-  const [stateCode, setStateCode] = useState('');
-  const [city, setCity] = useState('');
-  const [contact, setContact] = useState('');
-  const [designation, setDesignation] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
+  const address = draft.address;
+  const setAddress = (v: string) => set({ address: v });
+  const country = draft.country;
+  const setCountry = (v: string) => set({ country: v });
+  const state = draft.state;
+  const setState = (v: string) => set({ state: v });
+  const stateCode = draft.stateCode;
+  const setStateCode = (v: string) => set({ stateCode: v });
+  const city = draft.city;
+  const setCity = (v: string) => set({ city: v });
+  const contact = draft.contact;
+  const setContact = (v: string) => set({ contact: v });
+  const designation = draft.designation;
+  const setDesignation = (v: string) => set({ designation: v });
+  const phone = draft.phone;
+  const setPhone = (v: string) => set({ phone: v });
+  const email = draft.email;
+  const setEmail = (v: string) => set({ email: v });
 
   // Every card collapses from its own header.
   const [supCardOpen, setSupCardOpen] = useState(true);
@@ -178,11 +208,16 @@ export default function Step1LinkSupplier() {
   };
 
   // GST scrutiny — filled from the supplier, still editable.
-  const [scrutinyDate, setScrutinyDate] = useState('');
-  const [gstNo, setGstNo] = useState('');
-  const [gstStatus, setGstStatus] = useState('Active');
-  const [filingDate, setFilingDate] = useState('');
-  const [remarks, setRemarks] = useState('');
+  const scrutinyDate = draft.scrutinyDate;
+  const setScrutinyDate = (v: string) => set({ scrutinyDate: v });
+  const gstNo = draft.gstNo;
+  const setGstNo = (v: string) => set({ gstNo: v });
+  const gstStatus = draft.gstStatus;
+  const setGstStatus = (v: string) => set({ gstStatus: v });
+  const filingDate = draft.filingDate;
+  const setFilingDate = (v: string) => set({ filingDate: v });
+  const remarks = draft.remarks;
+  const setRemarks = (v: string) => set({ remarks: v });
 
   // Both dates are checked against the same 3-month window.
   const scrutinyAge = monthsAgo(scrutinyDate);
@@ -286,7 +321,7 @@ export default function Step1LinkSupplier() {
                 <span className="cpf-req">Required</span>
               </div>
             ) : (
-              <button type="button" className={`spi-dt-toggle ${physInsp ? 'cpf-toggle-req' : ''}`} onClick={() => setPhysInsp((v) => !v)}>
+              <button type="button" className={`spi-dt-toggle ${physInsp ? 'cpf-toggle-req' : ''}`} onClick={() => setPhysInsp(!physInsp)}>
                 <span className={`spi-dt-toggle-sw ${physInsp ? 'on' : ''}`}><span className="spi-dt-toggle-knob" /></span>
                 <span className="spi-dt-toggle-txt">{physInsp ? 'Yes' : 'No'}</span>
                 <span className={`cpf-req ${physInsp ? '' : 'cpf-req--off'}`}>{physInsp ? 'Required' : 'Not required'}</span>
@@ -425,7 +460,7 @@ export default function Step1LinkSupplier() {
             ) : (
               <>
                 <span className="spi-dt-minus cpf-push">{legalOpen ? '–' : '+'}</span>
-                <span className="cpf-lgbar"><span className="cpf-lgbar__fill cpf-fill-ok" style={{ width: '0%' }} /></span>
+                <span className="cpf-lgbar"><span className="cpf-lgbar__fill is-empty" /></span>
                 <span className="cpf-lgpct">0%</span>
               </>
             )}
@@ -577,22 +612,8 @@ export default function Step1LinkSupplier() {
   );
 }
 
-function IcoFile() { return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>; }
-function IcoLock() { return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>; }
-function IcoUser() { return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>; }
-function IcoChevron() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>; }
 function SevIcon({ sev }: { sev: Severity }) {
   if (sev === 'ok') return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>;
   if (sev === 'med') return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12.5 15 14" /></svg>;
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="7" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /><circle cx="12" cy="12" r="10" /></svg>;
 }
-function IcoAlert() { return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>; }
-function IcoDocSm() { return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" /></svg>; }
-function IcoWarn() { return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>; }
-function IcoOk() { return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>; }
-function IcoStop() { return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>; }
-function IcoClock() { return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15.5 14" /></svg>; }
-function IcoShield() { return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M9 12l2 2 4-4" /></svg>; }
-function IcoCheck() { return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>; }
-function IcoPin() { return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>; }
-function IcoPlus() { return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>; }

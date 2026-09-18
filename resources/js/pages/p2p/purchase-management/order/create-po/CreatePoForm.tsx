@@ -6,8 +6,11 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import Step1LinkSupplier from './steps/Step1LinkSupplier';
+import Step2ProductDetails from './steps/Step2ProductDetails';
+import { usePoDraft } from './po-draft';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './create-po.css';
+import { IcoCard, IcoCheck, IcoChevronL, IcoChevronR, IcoDoc, IcoLines, IcoShip, IcoTarget, IcoUser, IcoX } from '../icons';
 
 // What the Create PO popup passes in: how this PO is linked.
 export type PoLink = {
@@ -38,12 +41,16 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   // Freeze the page behind the form, but never the form's own scroller —
   // without the exception the hook locks this overlay too and nothing scrolls.
   useScrollLock(true, '.spi-dt-overlay');
+  // The form owns what has been filled in, so each step can read the ones
+  // before it (Step 02 recaps Step 01).
+  const { draft, set } = usePoDraft();
   const [stage, setStage] = useState(0);
-  const overlayRef = useRef<HTMLDivElement>(null);
+  // The body is the scroller now (the header strip stays put), so this is
+  // what gets scrolled back to the top on a stage change.
+  const bodyRef = useRef<HTMLDivElement>(null);
 
-  // Every stage change starts at the top of the form.
   useEffect(() => {
-    overlayRef.current?.scrollTo({ top: 0 });
+    bodyRef.current?.scrollTo({ top: 0 });
   }, [stage]);
 
   useEffect(() => {
@@ -58,7 +65,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   const goBack = () => { if (stage === 0) onChangeLink(); else setStage(stage - 1); };
 
   return createPortal(
-    <div className="spi-dt-overlay cpf-form" ref={overlayRef}>
+    <div className="spi-dt-overlay cpf-form">
       <div className="spi-dt">
         <div className="spi-dt-topcard">
           <div className="spi-dt-head">
@@ -123,9 +130,10 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
           </div>
         </div>
 
-        <div className="spi-dt-body">
-          {stage === 0 && <Step1LinkSupplier />}
-          {stage > 0 && <div className="cpf-soon">{STAGES[stage].title} — coming next.</div>}
+        <div className="spi-dt-body" ref={bodyRef}>
+          {stage === 0 && <Step1LinkSupplier draft={draft} set={set} />}
+          {stage === 1 && <Step2ProductDetails draft={draft} />}
+          {stage > 1 && <div className="cpf-soon">{STAGES[stage].title} — coming next.</div>}
         </div>
 
         <div className="spi-dt-foot">
@@ -167,16 +175,4 @@ function HeadPill({ icon, label, value, mono, alt }: { icon: React.ReactNode; la
   );
 }
 
-const S = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
 
-function IcoDoc() { return <svg width="22" height="22" viewBox="0 0 24 24" {...S}><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M9 12l1.6 1.6L14 10" /><line x1="8" y1="17" x2="16" y2="17" /></svg>; }
-function IcoLines() { return <svg width="13" height="13" viewBox="0 0 24 24" {...S} stroke="#fff" strokeWidth={2.4}><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>; }
-function IcoShip() { return <svg width="13" height="13" viewBox="0 0 24 24" {...S} stroke="#fff" strokeWidth={2.4}><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>; }
-function IcoTarget() { return <svg width="13" height="13" viewBox="0 0 24 24" {...S} stroke="#fff" strokeWidth={2.4}><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg>; }
-function IcoBox() { return <svg width="13" height="13" viewBox="0 0 24 24" {...S} stroke="#fff" strokeWidth={2.4}><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>; }
-function IcoUser() { return <svg width="13" height="13" viewBox="0 0 24 24" {...S} stroke="#fff" strokeWidth={2.4}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>; }
-function IcoCard() { return <svg width="14" height="14" viewBox="0 0 24 24" {...S}><rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" /></svg>; }
-function IcoX() { return <svg width="14" height="14" viewBox="0 0 24 24" {...S} strokeWidth={2.4}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>; }
-function IcoCheck() { return <svg width="10" height="10" viewBox="0 0 24 24" {...S} strokeWidth={3}><polyline points="20 6 9 17 4 12" /></svg>; }
-function IcoChevronL() { return <svg width="13" height="13" viewBox="0 0 24 24" {...S} strokeWidth={2.6}><polyline points="15 18 9 12 15 6" /></svg>; }
-function IcoChevronR() { return <svg width="13" height="13" viewBox="0 0 24 24" {...S} strokeWidth={2.6}><polyline points="9 18 15 12 9 6" /></svg>; }
