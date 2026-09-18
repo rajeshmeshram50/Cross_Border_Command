@@ -615,29 +615,8 @@ export default function HrPayroll() {
             { label: 'Open Employee',    tone: 'purple', kind: 'employee' },
           ],
         });
-      } else if (r.status === 'Pending Review' || r.attMismatch || r.mismatch) {
-        const reasons: string[] = realReasons ?? [];
-        if (!reasons.length) {
-          if (r.mismatch)        reasons.push(r.mismatch);
-          if (r.lateMarks > 0)   reasons.push(`${r.lateMarks} late mark${r.lateMarks === 1 ? '' : 's'} flagged`);
-          if (!reasons.length)   reasons.push('Attendance review pending');
-        }
-        list.push({
-          id: r.id,
-          type: 'warning',
-          empCode: r.empId,
-          encryptedId: r.encryptedId,
-          empName: r.name,
-          empInitials: r.initials,
-          empAccent: r.accent,
-          department: r.department,
-          reasons,
-          actions: [
-            { label: 'Go to Attendance', tone: 'blue',   kind: 'attendance' },
-            { label: 'Open Employee',    tone: 'purple', kind: 'employee' },
-          ],
-        });
       }
+      // Warnings were removed: only On Hold (blocking) employees are listed.
     }
     return list;
   }, [rows]);
@@ -1504,7 +1483,7 @@ export default function HrPayroll() {
          final. Dim it and mark it Provisional until the slip is settled. */
       cell: info => {
         const r = info.row.original;
-        const provisional = r.status === 'Pending Review' || r.status === 'On Hold';
+        const provisional = r.status === 'On Hold';
         return (
           <div className="d-flex flex-column align-items-end" style={{ lineHeight: 1.25 }}>
             <span
@@ -1894,7 +1873,7 @@ export default function HrPayroll() {
           const r = info.row.original;
           // A payslip cannot be generated until the payroll status is resolved —
           // On Hold / Pending Review slips are blocked.
-          const payslipBlocked = r.status === 'On Hold' || r.status === 'Pending Review';
+          const payslipBlocked = r.status === 'On Hold';
           return (
             <button
               type="button"
