@@ -213,9 +213,9 @@ export default function MapSupplierPurchaseInvoiceModal({
 
 /* ── Custom dropdown (matches the PO wizard's Dd — styled panel, not a native
       <select>, so the open list looks consistent across browsers). ── */
-type DdOption = { value: string; label: string; badge?: 'with' | 'without'; trade?: 'domestic' | 'international' };
+export type DdOption = { value: string; label: string; badge?: 'with' | 'without'; trade?: 'domestic' | 'international' };
 
-function ModalSelect({ value, options, onChange, placeholder, disabled }: {
+export function ModalSelect({ value, options, onChange, placeholder, disabled }: {
   value: string;
   options: DdOption[];
   onChange: (v: string) => void;
