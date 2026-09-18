@@ -538,9 +538,13 @@ class PayrollController extends Controller
             $covered = $slips->pluck('employee_id')->filter()->map(fn ($i) => (int) $i)->all();
             $pending = $this->payroll->eligibleEmployees($period)
                 ->reject(fn ($e) => in_array((int) $e->id, $covered, true))
-                ->map(fn ($e) => $this->serializePendingEmployee($e))
+                ->map(fn ($e) => [
+                    'employee_id' => $e->id,
+                    'empId'       => $e->emp_code ?: ('EMP-' . $e->id),
+                    'name'        => trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')) ?: ($e->display_name ?: 'Employee'),
+                    'joined_on'   => $e->date_of_joining,
+                ])
                 ->values();
-            $rows = $rows->concat($pending)->values();
         }
 
         /* What this caller is allowed to DO, told to the screen. (CBC #16)
@@ -557,6 +561,9 @@ class PayrollController extends Controller
          * UI can stop lying about what is available. */
         return response()->json([
             'data' => [
+                // Joined/became eligible after the run was generated — shown as a notice,
+                // never as payroll rows, until payroll is re-run. (#30)
+                'pending_employees' => $pending,
                 'period'  => $this->serializePeriod($period, $run),
                 'run'     => $run ? $this->serializeRun($run) : null,
                 'rows'    => $rows,

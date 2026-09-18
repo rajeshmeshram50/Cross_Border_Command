@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef, type ReactNode, type CSSProperties } from 'react';
-import SegmentBadge from '../../../../components/ui/SegmentBadge';
+import SegmentBadge, { SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
 import RowsPerPageSelect from '../../../../components/ui/RowsPerPageSelect';
 import './product-management.css';
 import { readProductMasterBundle, writeProductMasterBundle } from './productBundleCache';
@@ -923,7 +923,7 @@ export default function Products() {
             switch (key) {
               case 'segment':
                 return segmentOpts.filter(s => s !== 'All Segments').map(v => (
-                  <CheckRow key={v} label={v} checked={filters.segment.includes(v)} onChange={() => toggleMulti('segment', v)} />
+                  <CheckRow key={v} label={v} segment checked={filters.segment.includes(v)} onChange={() => toggleMulti('segment', v)} />
                 ));
 
               case 'hsn':
@@ -1084,7 +1084,7 @@ function FrozenRows(props: { options: string[] }) {
   );
 }
 
-function CheckRow(props: { label: string; checked: boolean; onChange: () => void; tip?: string }) {
+function CheckRow(props: { label: string; checked: boolean; onChange: () => void; tip?: string; segment?: boolean }) {
   /* `tip` is for rows whose visible label is already abbreviated (HSN codes
      carry a clipped description) — those always get a tooltip with the full
      text, not just the ones that overflow. */
@@ -1095,6 +1095,7 @@ function CheckRow(props: { label: string; checked: boolean; onChange: () => void
     <label className="prd-filter-row">
       <input type="checkbox" checked={props.checked} onChange={props.onChange} />
       {long ? <Tooltip label={tip}>{span}</Tooltip> : span}
+      {props.segment && <SegmentNameBadge name={props.label} style={{ flex: '0 0 auto', alignSelf: 'center', marginLeft: 'auto' }} />}
     </label>
   );
 }
@@ -1173,9 +1174,15 @@ function ProductCard(props: {
           const seg = product.segment ?? '';
           const short = seg.length > 30 ? `${seg.slice(0, 30)}…` : seg;
           const badge = (
-            <span className="prd-pcard-thumb-seg" style={segColor ? { background: segColor } : undefined}>{short} <SegmentBadge status={product.segmentReg} style={{ background: '#fff' }} /></span>
+            <span className="prd-pcard-thumb-seg" style={segColor ? { background: segColor } : undefined}>{short}</span>
           );
-          return seg.length > 30 ? <Tooltip label={seg}>{badge}</Tooltip> : badge;
+          return (
+            <>
+              {seg.length > 30 ? <Tooltip label={seg}>{badge}</Tooltip> : badge}
+              {/* Own corner, not inside the segment chip: that chip uppercases its text. */}
+              <span className="prd-pcard-thumb-reg"><SegmentBadge status={product.segmentReg} style={{ background: '#fff' }} /></span>
+            </>
+          );
         })()}
         <span className={`prd-pcard-status prd-pcard-status--${isActive ? 'active' : 'inactive'}`}>
           <span className="prd-pcard-status-dot" />{isActive ? 'Active' : 'Inactive'}

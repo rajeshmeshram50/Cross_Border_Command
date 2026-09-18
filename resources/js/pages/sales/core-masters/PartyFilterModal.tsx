@@ -440,7 +440,7 @@ export default function PartyFilterModal({ open, onClose, onApply, initial, rows
                       </span>
                       <span className="lfm-card-label">
                         <span className="lfm-card-name">{opt.label}</span>
-                        {active === 'segment' && <SegmentNameBadge name={opt.value} />}
+                        {active === 'segment' && <SegmentNameBadge name={opt.value} style={{ marginLeft: 'auto', flexShrink: 0 }} />}
                       </span>
                     </label>
                   );

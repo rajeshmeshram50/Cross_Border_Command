@@ -16,7 +16,6 @@ import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
 import { MasterRecordModal } from '../../../master/MasterRecordModal';
 import { SegmentModal, nextSegmentCode, type SegmentForm } from '../../../clm/compliance/ClmSegmentPage';
 import { CLM_CSS } from '../../../clm/shared/clmShared';
-import { SegmentTags } from '../../procurement-management/bulk-sourcing/SegmentTags';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import { downloadFile } from '../../../../utils/downloadFile';
 import { formatProductCode } from '../../../../utils/formatProductCode';
@@ -5224,7 +5223,13 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
               <td><strong>{r.productName}</strong></td>
               <td><span className="avm-auto-code">{formatProductCode(r.productCode) || r.productCode}</span></td>
               <td><span className="font-monospace fs-13">{r.hsnSacCode || '—'}</span></td>
-              <td>{r.segment ? (() => { const name = r.segment.split(' · ')[0]; return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SegmentTags segment={name} tagClassName="avm-seg-tag" />{r.segmentReg ? <SegmentBadge status={r.segmentReg} style={{ flexShrink: 0 }} /> : <SegmentNameBadge name={name} style={{ marginLeft: 0 }} />}</span>; })() : '—'}</td>
+              {/* One chip: segment name with its Reg badge inside, same as every list. */}
+              <td>{r.segment ? (() => { const name = r.segment.split(' · ')[0]; return (
+                <span className="avm-seg-tag" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: 210 }}>
+                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                  {r.segmentReg ? <SegmentBadge status={r.segmentReg} style={{ flexShrink: 0 }} /> : <SegmentNameBadge name={name} style={{ marginLeft: 0, flexShrink: 0 }} />}
+                </span>
+              ); })() : '—'}</td>
               <td className="text-end avm-num fs-13">₹{r.purchasePrice.toFixed(2)}</td>
               {/* 0% is a VALUE, not a blank (CS-168). This read
                   `r.gstPercentage ? … : '—'`, and 0 is falsy — so a product

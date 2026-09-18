@@ -1020,8 +1020,9 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
             {segPop.names.map((name, i) => (
               <div key={i} className={`cev-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
                 <Tooltip label={name}>
-                  <span className="cev-seg-pop-pill" style={{ display: 'inline-flex', alignItems: 'center' }}>{name.length > 20 ? name.slice(0, 20) + '…' : name}<SegmentNameBadge name={name} /></span>
+                  <span className="cev-seg-pop-pill" style={{ flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
                 </Tooltip>
+                <SegmentNameBadge name={name} style={{ marginLeft: 'auto', flexShrink: 0 }} />
               </div>
             ))}
           </div>

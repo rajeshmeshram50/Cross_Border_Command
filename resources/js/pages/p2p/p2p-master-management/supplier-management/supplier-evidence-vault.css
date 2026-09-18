@@ -270,7 +270,8 @@
 }
 
 /* Reg-High / Reg-Low badge: name stays on one line, badge never squeezed; solid white on the dark vault header. */
-.cev-seg-pop-pill { white-space: nowrap; }
+.cev-seg-pop-pill { white-space: nowrap; max-width: 100%; }
+.cev-seg-pop-row { gap: 8px; }
 .cev-seg-pop-pill .seg-reg-badge,
 .cev-chip .seg-reg-badge { flex-shrink: 0; }
 .cev-chip .seg-reg-badge { background: #fff !important; }

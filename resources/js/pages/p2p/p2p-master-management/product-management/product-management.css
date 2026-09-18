@@ -1085,6 +1085,9 @@
   background: linear-gradient(180deg, rgba(15, 23, 42, .04) 0%, transparent 32%, transparent 60%, rgba(15, 23, 42, .28) 100%);
 }
 
+/* Reg badge sits in the opposite corner of the thumbnail, clear of the segment chip. */
+.prd-pcard-thumb-reg { position: absolute; right: 10px; bottom: 9px; z-index: 3; text-transform: none; letter-spacing: 0; }
+
 .prd-pcard-thumb-seg {
   position: absolute;
   left: 10px;

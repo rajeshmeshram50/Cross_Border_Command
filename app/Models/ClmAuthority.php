@@ -197,6 +197,24 @@ class ClmAuthority extends Model
         return implode(', ', array_keys($out));
     }
 
+    /**
+     * A stored id list in canonical form — deduped and sorted — so "6, 5" and
+     * "5, 6" compare equal. Used by the name + authority uniqueness rule of
+     * the KYC / DD / Trade Licence masters.
+     */
+    public static function canonicalIds(?string $stored): string
+    {
+        $ids = array_unique(array_filter(array_map('trim', explode(',', (string) $stored)), fn ($t) => $t !== ''));
+        sort($ids, SORT_NATURAL);
+        return implode(',', $ids);
+    }
+
+    /** True when two stored id lists hold the same set of authorities. */
+    public static function sameIdSet(?string $a, ?string $b): bool
+    {
+        return static::canonicalIds($a) === static::canonicalIds($b);
+    }
+
     /** True when authority id appears as an exact token in a stored id list. */
     public static function storedContainsId(?string $stored, int $id): bool
     {

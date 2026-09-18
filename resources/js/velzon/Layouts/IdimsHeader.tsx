@@ -96,6 +96,7 @@ const LEAF_DESC: Record<string, string> = {
   'p2p.spi': 'Process supplier invoices & taxes.',
   'p2p.debit_note': 'Issue & track supplier debit notes for returns & adjustments.',
   'p2p.order': 'New purchase order module (in development).',
+  'p2p.payment_request': 'Review and action every pending PO payment request.',
 };
 
 // Top-level slug → route.
@@ -179,6 +180,7 @@ function p2pLeafPath(id: string): string {
     case 'p2p.spi':           return '/p2p/supplier-purchase-invoice';
     case 'p2p.debit_note':    return '/p2p/debit-note';
     case 'p2p.order':         return '/p2p/order';
+    case 'p2p.payment_request': return '/p2p/payment-request';
     default:                  return '/p2p';
   }
 }
@@ -542,7 +544,7 @@ export default function IdimsHeader() {
         colsFor(item.dd).flat().forEach(g => {
           g.children.forEach(leaf => {
             // p2p.order has no DB module row — it rides on the Purchase Order grant.
-            const visible = isSuperAdmin || !!perms[leaf.id === 'p2p.order' ? 'p2p.po' : leaf.id]?.can_view;
+            const visible = isSuperAdmin || !!perms[(leaf.id === 'p2p.order' || leaf.id === 'p2p.payment_request') ? 'p2p.po' : leaf.id]?.can_view;
             if (!visible) return;
             out.push({ id: leaf.id, label: leaf.label, parent: item.label, path: leafPath(leaf.id, item.dd!), icon: item.icon });
           });
@@ -577,7 +579,7 @@ export default function IdimsHeader() {
     // Attendance grant (same pattern as sales.sign_tracker).
     const slug = leaf.id === 'sales.sign_tracker' ? 'sales.quotation_vs_pi'
       : leaf.id === 'hr.devices' ? 'hr.attendance'
-      : leaf.id === 'p2p.order' ? 'p2p.po'   // no DB module row — rides on the PO grant
+      : (leaf.id === 'p2p.order' || leaf.id === 'p2p.payment_request') ? 'p2p.po'   // no DB module row — rides on the PO grant
       : leaf.id;
     return !!perms[slug]?.can_view;
   };

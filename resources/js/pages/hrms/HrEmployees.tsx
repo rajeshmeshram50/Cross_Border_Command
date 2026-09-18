@@ -1727,6 +1727,18 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
   const breakupMatches = Math.abs(breakupDiff) <= CTC_ROUNDING_SLACK;
   const breakupOverSalary = breakupDiff > CTC_ROUNDING_SLACK;
 
+  /** One-click fix for a breakup that does not annualise to the CTC: the gap goes on Basic. */
+  const balanceBreakupToBasic = () => {
+    const deltaMonthly = Math.round((salaryAnnual - breakupAnnual) / 12);   // + add, − remove
+    if (!deltaMonthly) return;
+    setEEarnings(prev => {
+      if (!prev.length) return [{ code: 'basic', label: 'Basic Salary', amount: Math.max(0, deltaMonthly) }];
+      const idx = prev.findIndex(c => c.code === 'basic');
+      const target = idx !== -1 ? idx : 0;
+      return prev.map((c, i) => (i === target ? { ...c, amount: Math.max(0, (Number(c.amount) || 0) + deltaMonthly) } : c));
+    });
+  };
+
   // ESI / Professional Tax are entered manually: ticking the box drops a
   // labelled, free-input row into Fixed Deductions for HR/accounts to fill;
   // unticking removes it. No amount is auto-computed.
@@ -5661,18 +5673,31 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                             <div style={{ fontSize: 11.5, fontWeight: 600, color: salaryAnnual <= 0 ? 'var(--vz-secondary-color)' : (breakupOverSalary ? '#dc2626' : '#0a8754') }}>
                               ≈ ₹{breakupAnnual.toLocaleString('en-IN')} / year
                             </div>
-                            {salaryAnnual > 0 && !breakupMatches && (
-                              <div style={{ fontSize: 10.5, fontWeight: 600, color: breakupOverSalary ? '#dc2626' : '#0a8754' }}>
-                                {breakupOverSalary
-                                  ? `₹${breakupDiff.toLocaleString('en-IN')} over the salary (₹${salaryAnnual.toLocaleString('en-IN')})`
-                                  : `₹${Math.abs(breakupDiff).toLocaleString('en-IN')} under the salary (₹${salaryAnnual.toLocaleString('en-IN')})`}
-                              </div>
-                            )}
-                            {salaryAnnual > 0 && breakupMatches && (
-                              <div style={{ fontSize: 10.5, fontWeight: 600, color: '#0a8754' }}>Matches the salary amount</div>
-                            )}
                           </div>
                         </div>
+
+                        {/* CTC verdict strip — same shape as the payroll Salary Structure popup:
+                            the gap is stated once, with the one-click correction beside it. */}
+                        {salaryAnnual > 0 && !breakupMatches && (
+                          <div className="d-flex align-items-center gap-2 mt-2 p-2 px-3"
+                            style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, fontSize: 12, fontWeight: 600, color: '#b1401d' }}>
+                            <i className="ri-error-warning-line" style={{ fontSize: 15 }} />
+                            <span>
+                              <b>₹{Math.abs(breakupDiff).toLocaleString('en-IN')} {breakupOverSalary ? 'over' : 'short of'}</b> the Annual CTC
+                              {' '}(₹{salaryAnnual.toLocaleString('en-IN')}) — balance the breakup before saving.
+                            </span>
+                            <button type="button" className="btn btn-sm ms-auto" style={{ fontSize: 11, fontWeight: 700, padding: '3px 12px', background: '#fff', border: '1px solid #fecaca', color: '#b1401d', whiteSpace: 'nowrap' }} onClick={balanceBreakupToBasic}>
+                              <i className="ri-scales-3-line me-1" />Balance to Basic
+                            </button>
+                          </div>
+                        )}
+                        {salaryAnnual > 0 && breakupMatches && (
+                          <div className="d-flex align-items-center gap-2 mt-2 p-2 px-3"
+                            style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 10, fontSize: 12, fontWeight: 600, color: '#0a8754' }}>
+                            <i className="ri-checkbox-circle-line" style={{ fontSize: 15 }} />
+                            <span>Breakup matches the Annual CTC.</span>
+                          </div>
+                        )}
                         {/* Live deduction estimate + net — Net = Gross − PF − ESI −
                           PT − fixed deductions. Updates with PF / ESI / PT
                           selections and any Fixed Deductions added. */}

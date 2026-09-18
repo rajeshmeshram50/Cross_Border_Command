@@ -1240,9 +1240,11 @@ useEffect(() => {
                                 {v.segmentItems && v.segmentItems.length > 0 ? (
                                   <>
                                     <Tooltip label={v.segments?.[0] ?? v.segmentItems[0].name}>
-                                      <span className="sl-seg sl-trunc">{v.segmentItems[0].name}</span>
+                                      <span className="sl-seg sl-trunc sl-seg--withbadge">
+                                        <span className="sl-seg-name">{v.segmentItems[0].name}</span>
+                                        <SegmentBadge status={v.segmentItems[0].reg} style={{ flexShrink: 0 }} />
+                                      </span>
                                     </Tooltip>
-                                    <SegmentBadge status={v.segmentItems[0].reg} style={{ flexShrink: 0 }} />
                                     {v.segmentItems.length > 1 && (
                                       <Tooltip label={`View all ${v.segmentItems.length} segments`}>
                                       <button

@@ -2758,6 +2758,18 @@ function InitiateOnboardingModal({
   const obMatches = Math.abs(obDiff) <= CTC_ROUNDING_SLACK;
   const obOverSalary = obDiff > CTC_ROUNDING_SLACK;
 
+  /** One-click fix for a breakup that does not annualise to the CTC: the gap goes on Basic. */
+  const obBalanceToBasic = () => {
+    const deltaMonthly = Math.round((obSalaryAnnual - obBreakupAnnual) / 12);   // + add, − remove
+    if (!deltaMonthly) return;
+    setObEarnings(prev => {
+      if (!prev.length) return [{ code: 'basic', label: 'Basic Salary', amount: Math.max(0, deltaMonthly) }];
+      const idx = prev.findIndex(c => c.code === 'basic');
+      const target = idx !== -1 ? idx : 0;
+      return prev.map((c, i) => (i === target ? { ...c, amount: Math.max(0, (Number(c.amount) || 0) + deltaMonthly) } : c));
+    });
+  };
+
   /* ESI / Professional Tax are entered manually: ticking drops a labelled row
      into Deductions, unticking removes it. PT opens on its slab figure; ESI
      opens at ₹0 for HR to fill (its ceiling carries across a contribution
@@ -5551,18 +5563,30 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                               <div style={{ fontSize: 11.5, fontWeight: 600, color: obSalaryAnnual <= 0 ? 'var(--vz-secondary-color)' : (obOverSalary ? '#dc2626' : '#0a8754') }}>
                                 ≈ {fmt(obBreakupAnnual)} / year
                               </div>
-                              {obSalaryAnnual > 0 && !obMatches && (
-                                <div style={{ fontSize: 10.5, fontWeight: 600, color: obOverSalary ? '#dc2626' : '#0a8754' }}>
-                                  {obOverSalary
-                                    ? `${fmt(obDiff)} over the salary (${fmt(obSalaryAnnual)})`
-                                    : `${fmt(Math.abs(obDiff))} under the salary (${fmt(obSalaryAnnual)})`}
-                                </div>
-                              )}
-                              {obSalaryAnnual > 0 && obMatches && (
-                                <div style={{ fontSize: 10.5, fontWeight: 600, color: '#0a8754' }}>Matches the salary amount</div>
-                              )}
                             </div>
                           </div>
+
+                          {/* CTC verdict strip — same as the Employee form and payroll. */}
+                          {obSalaryAnnual > 0 && !obMatches && (
+                            <div className="d-flex align-items-center gap-2 mt-2 p-2 px-3"
+                              style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, fontSize: 12, fontWeight: 600, color: '#b1401d' }}>
+                              <i className="ri-error-warning-line" style={{ fontSize: 15 }} />
+                              <span>
+                                <b>{fmt(Math.abs(obDiff))} {obOverSalary ? 'over' : 'short of'}</b> the Annual CTC
+                                {' '}({fmt(obSalaryAnnual)}) — balance the breakup before saving.
+                              </span>
+                              <button type="button" className="btn btn-sm ms-auto" style={{ fontSize: 11, fontWeight: 700, padding: '3px 12px', background: '#fff', border: '1px solid #fecaca', color: '#b1401d', whiteSpace: 'nowrap' }} onClick={obBalanceToBasic}>
+                                <i className="ri-scales-3-line me-1" />Balance to Basic
+                              </button>
+                            </div>
+                          )}
+                          {obSalaryAnnual > 0 && obMatches && (
+                            <div className="d-flex align-items-center gap-2 mt-2 p-2 px-3"
+                              style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 10, fontSize: 12, fontWeight: 600, color: '#0a8754' }}>
+                              <i className="ri-checkbox-circle-line" style={{ fontSize: 15 }} />
+                              <span>Breakup matches the Annual CTC.</span>
+                            </div>
+                          )}
 
                           {(obPfActive || obDed > 0) && (
                             <>

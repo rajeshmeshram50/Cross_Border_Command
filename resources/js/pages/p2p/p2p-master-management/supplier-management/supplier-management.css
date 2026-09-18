@@ -552,6 +552,9 @@
 [data-layout-mode="dark"] .sup-fig .sl-seg.sl-trunc{
   background:rgba(139,92,246,.16);border-color:rgba(167,139,250,.34);color:#ddd6fe;
 }
+/* Pill carrying the Reg badge: flex, so the NAME truncates and the badge stays whole. */
+.sup-fig .sl-seg.sl-seg--withbadge{display:inline-flex;align-items:center;gap:5px;max-width:210px;}
+.sup-fig .sl-seg-name{display:inline-block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .sup-fig .sl-seg{font-weight:600;color:#475569;}
 .sup-fig .sl-seg-wrap{display:inline-flex;align-items:center;gap:4px;max-width:230px;min-width:0;} /* +64px for the Reg badge */
 .sup-fig .sl-seg-more{flex:none;font-family:inherit;font-size:10px;font-weight:800;color:#7c3aed;background:#f1eafe;border:1px solid #ddd0f7;border-radius:999px;padding:2px 7px;cursor:pointer;line-height:1;transition:all .15s;}

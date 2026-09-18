@@ -344,6 +344,8 @@ export default function HrPayroll() {
   const [cycleCollapsed, setCycleCollapsed] = useState(false);
 
   const [tab, setTab] = useState<'processing' | 'biometric' | 'report' | 'salary'>('processing');
+  // Employees who became eligible AFTER this run was generated — a notice, never rows. (#30)
+  const [pendingJoiners, setPendingJoiners] = useState<{ empId: string; name: string }[]>([]);
 
   const [roster, setRoster] = useState<SalaryEmployeeLite[]>([]);
   const [rosterLoading, setRosterLoading] = useState(false);
@@ -922,6 +924,7 @@ export default function HrPayroll() {
        new month's label. The tiles and the table both read these, and both
        already render their own loading state from `loading`. */
     setRows([]);
+    setPendingJoiners([]);
     setPeriodMeta(null);
     setRunMeta(null);
     setLoading(true);
@@ -930,6 +933,7 @@ export default function HrPayroll() {
         if (seq !== loadSeq.current) return;      // superseded by a newer switch
         const d = res.data?.data ?? {};
         setRows(Array.isArray(d.rows) ? d.rows : []);
+        setPendingJoiners(Array.isArray(d.pending_employees) ? d.pending_employees : []);
         setPeriodMeta(d.period ?? null);
         setRunMeta(d.run ?? null);
         /* Defaults to TRUE when the key is absent so an older API (or a cached
@@ -1361,7 +1365,6 @@ export default function HrPayroll() {
     const attMismatch    = rows.filter(r => r.attMismatch || r.attSource === 'Review').length;
     const syncedEmployees    = rows.filter(r => r.attSource === 'Biometric').length;
     const missingPunchCases  = rows.filter(r => r.missingPunch > 0).length;
-    const mismatchCases      = rows.filter(r => r.attSource === 'Review').length;
     const unpaidLeaveCases   = rows.filter(r => r.unpaidLeave > 0).length;
     const paidLeaveCases     = rows.filter(r => r.paidLeave > 0).length;
     const totalGross    = rows.reduce((s, r) => s + r.earnings, 0);
@@ -1382,7 +1385,6 @@ export default function HrPayroll() {
       attMismatch,
       syncedEmployees,
       missingPunchCases,
-      mismatchCases,
       unpaidLeaveCases,
       paidLeaveCases,
       totalGross,
@@ -1659,7 +1661,6 @@ export default function HrPayroll() {
               : undefined}
           >
             {r.absent}
-            {hol > 0 && <span className="text-muted" style={{ fontSize: 10, marginLeft: 3 }}>*</span>}
           </span>
         );
       },
@@ -1719,15 +1720,6 @@ export default function HrPayroll() {
             {r.attSource}
           </span>
         );
-      },
-    },
-    {
-      header: 'Mismatch',
-      accessorKey: 'mismatch',
-      meta: { width: '8%', align: 'center' },
-      cell: info => {
-        const m = info.row.original.mismatch;
-        return m ? <span style={{ color: '#b1401d', fontWeight: 600 }} className="fs-13">{m}</span> : <span className="text-muted">—</span>;
       },
     },
   ], []);
@@ -2396,8 +2388,8 @@ export default function HrPayroll() {
           } else if (k.mode === 'fraction') {
             displayValue = (
               <>
-                <AnimatedNumber value={counts.readyProcessed} />
-                <span className="text-muted fw-semibold" style={{ fontSize: 18 }}> / {counts.totalEmployees}</span>
+                <span style={{ fontWeight: 800 }}><AnimatedNumber value={counts.readyProcessed} /></span>
+                <span style={{ fontSize: 22, fontWeight: 800 }}> / {counts.totalEmployees}</span>
               </>
             );
           } else {
@@ -2526,6 +2518,24 @@ export default function HrPayroll() {
           Department / Status pickers, sortable headers and the rows-per-page
           pager all come from the component; one instance per tab. The old
           wrapping Card is gone: DataTable brings its own card chrome. */}
+      {/* Joined after this run was generated: named here, but kept out of every
+          payroll tab until payroll is re-run for the cycle. (#30) */}
+      {tab === 'processing' && pendingJoiners.length > 0 && (
+        <div
+          className="d-flex align-items-start gap-2 mb-3"
+          style={{ padding: '10px 14px', borderRadius: 10, fontSize: 12.5, fontWeight: 600, background: '#fff8e6', border: '1px solid #fde68a', color: '#92400e' }}
+        >
+          <i className="ri-user-add-line" style={{ fontSize: 15, marginTop: 1 }} />
+          <span>
+            {pendingJoiners.length} employee{pendingJoiners.length === 1 ? '' : 's'} joined after this payroll was generated and {pendingJoiners.length === 1 ? 'is' : 'are'} not included — re-run payroll to add them:{' '}
+            <span style={{ fontWeight: 700 }}>
+              {pendingJoiners.slice(0, 5).map(p => `${p.empId} ${p.name}`).join(', ')}
+              {pendingJoiners.length > 5 ? ` +${pendingJoiners.length - 5} more` : ''}
+            </span>
+          </span>
+        </div>
+      )}
+
       {tab === 'processing' && (
             <DataTable<PayrollRow>
               data={filtered}
@@ -2594,7 +2604,6 @@ export default function HrPayroll() {
                 {[
                   { key: 'syncedEmployees',   label: 'Synced Employees',    n: counts.syncedEmployees,   tone: 'green'  as const },
                   { key: 'missingPunchCases', label: 'Missing Punch Cases', n: counts.missingPunchCases, tone: 'red'    as const },
-                  { key: 'mismatchCases',     label: 'Mismatch Cases',      n: counts.mismatchCases,     tone: 'red'    as const },
                   { key: 'paidLeaveCases',    label: 'Paid Leave Cases',    n: counts.paidLeaveCases,    tone: 'blue'   as const },
                   { key: 'unpaidLeaveCases',  label: 'Unpaid Leave Cases',  n: counts.unpaidLeaveCases,  tone: 'amber'  as const },
                 ].map(t => (

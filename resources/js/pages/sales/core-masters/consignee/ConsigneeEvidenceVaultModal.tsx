@@ -1586,9 +1586,9 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                           clipped when the row runs out of room. */}
                       {it.code && <span className="cev-seg-pop-code">{it.code}:</span>}
                       {it.label.length > 20 ? it.label.slice(0, 20) + '…' : it.label}
-                      {segPop.title === 'Segments' && <SegmentNameBadge name={it.label} />}
                     </span>
                   </Tooltip>
+                  {segPop.title === 'Segments' && <SegmentNameBadge name={it.label} style={{ marginLeft: 'auto', flexShrink: 0 }} />}
                 </div>
               ))}
             </div>

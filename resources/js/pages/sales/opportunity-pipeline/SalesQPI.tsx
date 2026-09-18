@@ -4953,12 +4953,13 @@ function ProductsStep(props: {
       if (!seg) return o;   // free-text / no-segment products stay as-is
       // Short cap so the badge stays compact and the product code+name keeps the
       // row — full segment name is on the badge's hover title.
-      const short = seg.length > 14 ? `${seg.slice(0, 14)}…` : seg;
+      const short = seg.length > 24 ? `${seg.slice(0, 24)}…` : seg;
       const badge = { text: short, tone: 'violet' as const, title: segmentLabel(seg, prodRow?.segmentReg), reg: prodRow?.segmentReg ?? null };
       const offSegment = segmentSet.size > 0 && !segmentSet.has(seg.toLowerCase());
+      const fullLabel = `${o.label} · ${segmentLabel(seg, prodRow?.segmentReg)}`;
       return offSegment
-        ? { ...o, badge, disabled: true, disabledReason: 'Customer and product segment must match.' }
-        : { ...o, badge };
+        ? { ...o, badge, fullLabel, disabled: true, disabledReason: 'Customer and product segment must match.' }
+        : { ...o, badge, fullLabel };
     });
 
     // Build a set of already-added productIds (skip free-text rows that

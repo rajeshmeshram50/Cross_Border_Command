@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { SegmentNameBadge } from '../../../../../components/ui/SegmentBadge';
 import api from '../../../../../api';
 import { formatProductCode } from '../../../../../utils/formatProductCode';
 import Tooltip from '../../../../../components/ui/Tooltip';
@@ -563,7 +564,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             <td><span className="s4-code s4-code-navy">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                             <td>
                               <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s4-prod-name">{r.product_name ?? "—"}</div></Tooltip>
-                              {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s4-cat-badge">{r.product_category.toUpperCase()}</span></Tooltip>}
+                              {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s4-cat-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: '100%' }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{r.product_category.toUpperCase()}</span><SegmentNameBadge name={r.product_category} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>}
                             </td>
                             <td>
                               <span className={`s4-pill ${statusLc === 'active' ? 's4-pill-active' : statusLc === 'draft' ? 's4-pill-draft' : 's4-pill-inactive'}`}>
@@ -684,7 +685,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             <td><span className="s4-code s4-code-navy">{formatProductCode(r.product_code) || `P-${String(r.product_id ?? 0).padStart(3,'0')}`}</span></td>
                             <td>
                               <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s4-prod-name">{r.product_name ?? "—"}</div></Tooltip>
-                              {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s4-cat-badge">{r.product_category.toUpperCase()}</span></Tooltip>}
+                              {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s4-cat-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: '100%' }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{r.product_category.toUpperCase()}</span><SegmentNameBadge name={r.product_category} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>}
                             </td>
                             <td><span className="s4-dt">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>
