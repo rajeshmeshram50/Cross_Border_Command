@@ -7,13 +7,25 @@ use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * Bulk Excel import shared by the three authority-backed CLM document masters
+ * (KYC / DD / Trade Licence). They differ only in the model, the code prefix
+ * and the name of their validity column, so the logic lives here once.
+ *
+ * Every row is validated on its own: a bad row lands in `failed` with a reason
+ * and never blocks the good ones. The AUTHORITY column carries authority
+ * NAMES (comma-separated for several) because a name is what the person
+ * exporting reads in the grid; each one is resolved to the id the column
+ * actually stores, and an unknown name fails the row rather than silently
+ * dropping the reference.
+ */
 trait ImportsClmDocMaster
 {
     /**
-     * @param  string  
-     * @param  string  
-     * @param  string  
-     * @param  string  
+     * @param  string  $modelClass   Eloquent model for the master
+     * @param  string  $prefix       Code prefix, e.g. 'KYC'
+     * @param  string  $validityCol  'expiry' or 'validity'
+     * @param  string  $label        Human name used in the duplicate message
      */
     protected function importClmDocRows(
         Request $request,
@@ -31,13 +43,14 @@ trait ImportsClmDocMaster
         $request->validate(['rows' => 'required|array|min:1|max:20000']);
         @set_time_limit(300);
 
-      
+        /* Authority NAME → id, for the whole tenant, read once. Resolving per
+           row would be a query per row. */
         $authByName = [];
         foreach (ClmAuthority::where('client_id', $user->client_id)->get(['id', 'name']) as $a) {
             $authByName[mb_strtolower(trim((string) $a->name))] = (string) $a->id;
         }
 
-        
+        // Existing names in the caller's scope — the duplicate check.
         $existing = $modelClass::query();
         MasterVisibility::applyReadScope($existing, $user, $user->branch_id ?: null);
         $seen = [];
@@ -64,7 +77,9 @@ trait ImportsClmDocMaster
             if (mb_strlen($valid_) > 32)    { $fail('Validity/Expiry exceeds 32 characters'); continue; }
             if (isset($seen[mb_strtolower($name)])) { $fail("A {$label} named \"{$name}\" already exists"); continue; }
 
-         
+            /* Authority column: names, ids, or a mix, comma-separated. Every
+               token must resolve — a half-mapped row would look imported
+               while quietly losing an authority. */
             $ids = [];
             $unknown = [];
             foreach (explode(',', $auth) as $tok) {
@@ -90,7 +105,10 @@ trait ImportsClmDocMaster
 
         if ($valid) {
             try {
-                
+                /* Codes allocated ONCE under the same client row lock the
+                   single-row nextCode() takes, then rows go in 500 at a time.
+                   Allocating per row re-reads every code each time — O(n²),
+                   which times out on a 10,000-row sheet. */
                 DB::transaction(function () use ($user, $valid, $modelClass, $prefix, $validityCol, &$imported) {
                     DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
 
