@@ -1,0 +1,154 @@
+<?php
+
+namespace App\Http\Controllers\Concerns;
+
+use App\Models\ClmAuthority;
+use App\Support\MasterVisibility;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+trait ImportsClmDocMaster
+{
+    /**
+     * @param  string  
+     * @param  string  
+     * @param  string  
+     * @param  string  
+     */
+    protected function importClmDocRows(
+        Request $request,
+        string $modelClass,
+        string $prefix,
+        string $validityCol,
+        string $label
+    ) {
+        $user = $request->user();
+        if (!$user) abort(401);
+        if (!$user->client_id) {
+            return response()->json(['status' => false, 'message' => 'No tenant context for this user'], 403);
+        }
+
+        $request->validate(['rows' => 'required|array|min:1|max:20000']);
+        @set_time_limit(300);
+
+      
+        $authByName = [];
+        foreach (ClmAuthority::where('client_id', $user->client_id)->get(['id', 'name']) as $a) {
+            $authByName[mb_strtolower(trim((string) $a->name))] = (string) $a->id;
+        }
+
+        
+        $existing = $modelClass::query();
+        MasterVisibility::applyReadScope($existing, $user, $user->branch_id ?: null);
+        $seen = [];
+        foreach ($existing->pluck('name') as $n) $seen[mb_strtolower(trim((string) $n))] = true;
+
+        $imported = [];
+        $failed   = [];
+        $valid    = [];
+
+        foreach (array_values($request->input('rows')) as $i => $r) {
+            $r     = is_array($r) ? $r : [];
+            $rowNo = (int) ($r['row'] ?? $i + 2);
+            $name  = trim((string) ($r['name'] ?? ''));
+            $auth  = trim((string) ($r['authority'] ?? ''));
+            $valid_= trim((string) ($r['validity'] ?? ''));
+
+            $fail = function (string $reason) use (&$failed, $rowNo, $name, $auth, $valid_) {
+                $failed[] = ['row' => $rowNo, 'name' => $name, 'authority' => $auth, 'validity' => $valid_, 'reason' => $reason];
+            };
+
+            if ($name === '')               { $fail('Name is required'); continue; }
+            if (mb_strlen($name) > 255)     { $fail('Name exceeds 255 characters'); continue; }
+            if ($auth === '')               { $fail('Authority is required'); continue; }
+            if (mb_strlen($valid_) > 32)    { $fail('Validity/Expiry exceeds 32 characters'); continue; }
+            if (isset($seen[mb_strtolower($name)])) { $fail("A {$label} named \"{$name}\" already exists"); continue; }
+
+         
+            $ids = [];
+            $unknown = [];
+            foreach (explode(',', $auth) as $tok) {
+                $tok = trim($tok);
+                if ($tok === '') continue;
+                $id = ctype_digit($tok)
+                    ? (in_array($tok, $authByName, true) ? $tok : null)
+                    : ($authByName[mb_strtolower($tok)] ?? null);
+                if ($id === null) $unknown[] = $tok; else $ids[$id] = true;
+            }
+            if ($unknown) { $fail('Unknown authority: ' . implode(', ', $unknown) . ' — use a name from the Authority Master'); continue; }
+            if (!$ids)    { $fail('Authority is required'); continue; }
+
+            $seen[mb_strtolower($name)] = true;
+            $valid[] = [
+                'row'       => $rowNo,
+                'name'      => $name,
+                'authority' => implode(', ', array_keys($ids)),
+                'auth_text' => $auth,
+                'validity'  => $valid_ !== '' ? $valid_ : 'N/A',
+            ];
+        }
+
+        if ($valid) {
+            try {
+                
+                DB::transaction(function () use ($user, $valid, $modelClass, $prefix, $validityCol, &$imported) {
+                    DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
+
+                    $q = $modelClass::where('client_id', $user->client_id);
+                    $user->branch_id ? $q->where('branch_id', $user->branch_id) : $q->whereNull('branch_id');
+                    $maxN = 0; $taken = [];
+                    foreach ($q->pluck('code') as $c) {
+                        if (preg_match('/^' . preg_quote($prefix, '/') . '-(\d+)$/', (string) $c, $m) && (int) $m[1] > $maxN) {
+                            $maxN = (int) $m[1];
+                        }
+                        $taken[(string) $c] = true;
+                    }
+
+                    $now = now();
+                    $n   = $maxN;
+                    foreach (array_chunk($valid, 500) as $chunk) {
+                        $insert = [];
+                        foreach ($chunk as $v) {
+                            do { $n++; $code = sprintf('%s-%03d', $prefix, $n); } while (isset($taken[$code]));
+                            $insert[] = [
+                                'client_id'   => $user->client_id,
+                                'branch_id'   => $user->branch_id,
+                                'code'        => $code,
+                                'name'        => $v['name'],
+                                'authority'   => $v['authority'],
+                                $validityCol  => $v['validity'],
+                                'status'      => $modelClass::STATUS_ACTIVE,
+                                'created_by'  => $user->id,
+                                'updated_by'  => $user->id,
+                                'created_at'  => $now,
+                                'updated_at'  => $now,
+                            ];
+                            $imported[] = [
+                                'row'       => $v['row'],
+                                'code'      => $code,
+                                'name'      => $v['name'],
+                                'authority' => $v['auth_text'],
+                                'validity'  => $v['validity'],
+                            ];
+                        }
+                        $modelClass::insert($insert);
+                    }
+                });
+            } catch (\Throwable $e) {
+                report($e);
+                $imported = [];
+                foreach ($valid as $v) {
+                    $failed[] = [
+                        'row'       => $v['row'],
+                        'name'      => $v['name'],
+                        'authority' => $v['auth_text'],
+                        'validity'  => $v['validity'],
+                        'reason'    => 'Could not save — import rolled back',
+                    ];
+                }
+            }
+        }
+
+        return response()->json(['status' => true, 'imported' => $imported, 'failed' => $failed]);
+    }
+}

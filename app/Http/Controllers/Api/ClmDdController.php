@@ -15,24 +15,27 @@ use Illuminate\Validation\ValidationException;
 class ClmDdController extends Controller
 {
     use \App\Http\Controllers\Concerns\ChecksClmDocUsage;
+    use \App\Http\Controllers\Concerns\ImportsClmDocMaster;
+
+ 
+    public function import(Request $request)
+    {
+        return $this->importClmDocRows($request, ClmDdDocument::class, 'DD', 'expiry', 'due-diligence document');
+    }
 
     public function index(Request $request)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
-        // Branch-scoped read: own rows + client-level (shared); siblings hidden (CBC-434).
+      
         $q = ClmDdDocument::query()->orderByDesc('id');   // newest entry first
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
 
-        /* Search runs in SQL, alongside the paging. Once the client holds a
-           single page, filtering there searches ten rows and reports a count
-           for the page rather than the master. */
+       
         if ($search = trim((string) $request->input('search', ''))) {
             $like = '%' . $search . '%';
-            /* Authority is stored by ID, but the list shows — and the old
-               client-side filter searched — the resolved NAME. Resolve the
-               term to ids so searching by authority still works. */
+         
             $authIds = ClmAuthority::idsMatchingName((int) $user->client_id, $search);
             $q->where(function ($w) use ($like, $authIds) {
                 $w->where('name', 'ilike', $like)->orWhere('code', 'ilike', $like);
@@ -54,12 +57,7 @@ class ClmDdController extends Controller
         $map = ClmAuthority::idNameMap($user->client_id, ClmAuthority::idsReferencedIn($rows->pluck('authority')));
         $rows->each(fn ($r) => $r->authority_names = ClmAuthority::displayNames($r->authority, $map));
 
-        // Per-row "in use" flags so the UI can disable + explain the delete
-        // action for referenced documents (mirrors the checks in destroy()).
-        /* Built ONCE, then matched in memory. This was a per-row
-           usageCheck() — two existence queries and four
-           Schema::hasTable/hasColumn calls for every row, so the
-           query count grew with the master. See ChecksClmDocUsage. */
+    
         $usage = $this->clmDocUsageSets((int) $user->client_id);
         $rows->each(function ($r) use ($usage) {
             $labels = $this->clmDocUsageLabels($usage, $r->code, $r->branch_id);
@@ -70,8 +68,7 @@ class ClmDdController extends Controller
         return response()->json([
             'status' => true,
             'data'   => $rows,
-            // `count` stays the rows in hand (unchanged for existing callers);
-            // `total` is the whole filtered set, which is what a pager needs.
+           
             'count'  => $rows->count(),
             'total'  => $total ?? $rows->count(),
         ]);
@@ -195,10 +192,7 @@ class ClmDdController extends Controller
     private function nextCode(int $clientId, ?int $branchId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
-        // Branch-scoped so each branch restarts from DD-001 rather than
-        // continuing another branch's tally — the DD master is branch-
-        // isolated via MasterVisibility. A client-level creator ($branchId
-        // null) sequences the shared rows.
+       
         $query = ClmDdDocument::where('client_id', $clientId);
         $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
         $codes = $query->pluck('code')->all();

@@ -7,6 +7,7 @@ const KycModal = lazyPage(() => import('./ClmKycModal'));
 import WorklistPager from "../../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../../api';
+import ClmDocImportExport from '../shared/ClmDocImportExport';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import AuthorityBadges from './AuthorityBadges';
 import { useToast } from '../../../contexts/ToastContext';
@@ -172,10 +173,22 @@ export default function ClmKycPage() {
             <input autoComplete="off" type="text" placeholder="Search KYC documents…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
             <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <ClmDocImportExport
+            endpoint="/clm/kyc-documents"
+            fileStem="KYC_Documents"
+            nameLabel="KYC Document Name"
+            validityLabel="Expiry"
+            authorities={auths}
+            samples={[{ name: 'PAN Card', validity: 'N/A' }, { name: 'GST Certificate', validity: '1 Year' }]}
+            search={debouncedSearch}
+            onImported={reload}
+          />
           <div className="clm-total">
             <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></div>
             <div className="clm-total-lbl">Total KYC Documents</div>
             <div className="clm-total-num">{count}</div>
+          </div>
           </div>
         </div>
 
