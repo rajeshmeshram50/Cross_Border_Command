@@ -15,6 +15,13 @@ use Illuminate\Validation\ValidationException;
 class ClmKycController extends Controller
 {
     use \App\Http\Controllers\Concerns\ChecksClmDocUsage;
+    use \App\Http\Controllers\Concerns\ImportsClmDocMaster;
+
+  
+    public function import(Request $request)
+    {
+        return $this->importClmDocRows($request, ClmKycDocument::class, 'KYC', 'expiry', 'KYC document');
+    }
 
     public function index(Request $request)
     {
@@ -26,14 +33,10 @@ class ClmKycController extends Controller
         $q = ClmKycDocument::query()->orderByDesc('id');   // newest entry first
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
 
-        /* Search runs in SQL, alongside the paging. Once the client holds a
-           single page, filtering there searches ten rows and reports a count
-           for the page rather than the master. */
+        
         if ($search = trim((string) $request->input('search', ''))) {
             $like = '%' . $search . '%';
-            /* Authority is stored by ID, but the list shows — and the old
-               client-side filter searched — the resolved NAME. Resolve the
-               term to ids so searching by authority still works. */
+           
             $authIds = ClmAuthority::idsMatchingName((int) $user->client_id, $search);
             $q->where(function ($w) use ($like, $authIds) {
                 $w->where('name', 'ilike', $like)->orWhere('code', 'ilike', $like);
@@ -41,8 +44,7 @@ class ClmKycController extends Controller
             });
         }
 
-        /* PAGINATION — opt-in via per_page, so every existing caller that
-           wants the whole list is unchanged. */
+       
         $perPage = $request->filled('per_page')
             ? min(200, max(1, (int) $request->input('per_page')))
             : null;
@@ -51,17 +53,11 @@ class ClmKycController extends Controller
 
         $rows = $perPage ? $q->forPage($page, $perPage)->get() : $q->get();
 
-        // `authority` stores authority ids; expose the resolved current names so
-        // the list (and any name search) shows live values.
+   
         $map = ClmAuthority::idNameMap($user->client_id, ClmAuthority::idsReferencedIn($rows->pluck('authority')));
         $rows->each(fn ($r) => $r->authority_names = ClmAuthority::displayNames($r->authority, $map));
 
-        // Per-row "in use" flags so the UI can disable + explain the delete
-        // action for referenced documents (mirrors the checks in destroy()).
-        /* Built ONCE, then matched in memory. This was a per-row
-           usageCheck() — two existence queries and four
-           Schema::hasTable/hasColumn calls for every row, so the
-           query count grew with the master. See ChecksClmDocUsage. */
+       
         $usage = $this->clmDocUsageSets((int) $user->client_id);
         $rows->each(function ($r) use ($usage) {
             $labels = $this->clmDocUsageLabels($usage, $r->code, $r->branch_id);
@@ -72,8 +68,7 @@ class ClmKycController extends Controller
         return response()->json([
             'status' => true,
             'data'   => $rows,
-            // `count` stays the rows in hand (unchanged for existing callers);
-            // `total` is the whole filtered set, which is what a pager needs.
+            
             'count'  => $rows->count(),
             'total'  => $total ?? $rows->count(),
         ]);
@@ -196,10 +191,7 @@ class ClmKycController extends Controller
     private function nextCode(int $clientId, ?int $branchId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
-        // Branch-scoped so each branch restarts from KYC-001 rather than
-        // continuing another branch's tally — the KYC master is branch-
-        // isolated via MasterVisibility. A client-level creator ($branchId
-        // null) sequences the shared rows.
+        
         $query = ClmKycDocument::where('client_id', $clientId);
         $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
         $codes = $query->pluck('code')->all();

@@ -7,6 +7,7 @@ const TlModal = lazyPage(() => import('./ClmTlModal'));
 import WorklistPager from "../../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../../api';
+import ClmDocImportExport from '../shared/ClmDocImportExport';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, useAutoFitRows } from '../shared/clmShared';
@@ -191,10 +192,22 @@ export default function ClmTradeLicensesPage() {
             <input autoComplete="off" type="text" placeholder="Search trade licences…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
             <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <ClmDocImportExport
+            endpoint="/clm/trade-licenses"
+            fileStem="Trade_Licences"
+            nameLabel="Licence Name"
+            validityLabel="Validity"
+            authorities={auths}
+            samples={[{ name: 'IEC Certificate', validity: 'Lifetime' }, { name: 'FSSAI Licence', validity: '1 Year' }]}
+            search={debouncedSearch}
+            onImported={reload}
+          />
           <div className="clm-total">
             <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="12" y2="13"/></svg></div>
             <div className="clm-total-lbl">Total Trade Licences</div>
             <div className="clm-total-num">{count}</div>
+          </div>
           </div>
         </div>
 
