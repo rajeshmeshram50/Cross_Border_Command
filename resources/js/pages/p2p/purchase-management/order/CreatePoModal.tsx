@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { ModalSelect } from '../supplier-purchase-invoice/MapSupplierPurchaseInvoiceModal';
+import type { PoLink } from './create-po/CreatePoForm';
 import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
 
 type PoMode = 'with' | 'without';
@@ -19,10 +20,18 @@ const SHIPMENTS = [
 
 const SHIPMENT_OPTIONS = SHIPMENTS.map((s) => ({ value: s.id, label: `${s.id} — ${s.customer}` }));
 
-export default function CreatePoModal({ onClose }: { onClose: () => void }) {
+type Props = {
+  onClose: () => void;
+  onConfirm: (link: PoLink) => void;
+  // Set when the user came back here from the form's "Change Link", so the
+  // earlier choice stays selected.
+  initial?: PoLink | null;
+};
+
+export default function CreatePoModal({ onClose, onConfirm, initial }: Props) {
   useScrollLock();
-  const [mode, setMode] = useState<PoMode | null>(null);
-  const [shipment, setShipment] = useState('');
+  const [mode, setMode] = useState<PoMode | null>(initial?.mode ?? null);
+  const [shipment, setShipment] = useState(initial?.shipmentId ?? '');
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -32,6 +41,13 @@ export default function CreatePoModal({ onClose }: { onClose: () => void }) {
 
   // "With Shipment ID" needs a shipment; "Without" can continue straight away.
   const canConfirm = mode === 'without' || (mode === 'with' && !!shipment);
+
+  const confirm = () => {
+    if (!mode) return;
+    if (mode === 'without') { onConfirm({ mode }); return; }
+    const picked = SHIPMENTS.find((s) => s.id === shipment);
+    onConfirm({ mode, shipmentId: shipment, customer: picked?.customer });
+  };
 
   // No close on backdrop click: a stray click must not lose the user's choices.
   return createPortal(
@@ -95,8 +111,7 @@ export default function CreatePoModal({ onClose }: { onClose: () => void }) {
           <div className="spi-mdl-audit"><IcoClock /> All POs are audit-tracked</div>
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
-            {/* Next step: open the PO form. */}
-            <button type="button" className="spi-mdl-confirm" disabled={!canConfirm}>
+            <button type="button" className="spi-mdl-confirm" disabled={!canConfirm} onClick={confirm}>
               Confirm &amp; Continue <IcoArrow />
             </button>
           </div>

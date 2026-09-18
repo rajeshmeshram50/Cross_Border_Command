@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { SegmentNameBadge } from '../../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../../api';
 import { useToast } from '../../../../../contexts/ToastContext';
@@ -19,6 +20,8 @@ type Props = {
   productId:   number | null;
   productCode: string | null;
   productName: string | null;
+  /** Segment name of the product; the Reg badge is looked up from it. */
+  productSegment?: string | null;
   targetPrice: number | string | null;
   currency:    string | null;
   onClose:     () => void;
@@ -44,6 +47,7 @@ export type VendorMapTarget = {
   product_id:    number;
   product_code?: string | null;
   product_name?: string | null;
+  product_category?: string | null;
   target_price?: number | string | null;
   currency?:     string | null;
 };
@@ -58,7 +62,7 @@ const money = (v: number | string | null | undefined, symbol = '₹'): string =>
   return `${symbol}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
-export default function VendorMappingsModal({ open, maps, productId, productCode, productName, targetPrice, currency, onClose }: Props) {
+export default function VendorMappingsModal({ open, maps, productId, productCode, productName, productSegment, targetPrice, currency, onClose }: Props) {
 
   // L1 = vendor with the lowest total (falls back to purchase price).
   const l1Id = useMemo(() => {
@@ -101,6 +105,12 @@ export default function VendorMappingsModal({ open, maps, productId, productCode
             <div className="vmm-head-sub">
               Product: <strong>{productName ?? '—'}</strong>
               <span className="vmm-head-chip">{code}</span>
+              {productSegment && (
+                <span className="vmm-head-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  {productSegment}
+                  <SegmentNameBadge name={productSegment} style={{ marginLeft: 0, flexShrink: 0, background: '#fff', borderColor: 'transparent' }} />
+                </span>
+              )}
               <span className="vmm-head-count">{maps.length} vendor</span>
             </div>
           </div>

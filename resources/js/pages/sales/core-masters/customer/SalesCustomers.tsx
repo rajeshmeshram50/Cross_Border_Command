@@ -37,11 +37,27 @@ const CustomerEvidenceVaultModal = lazyPage(() => import('./CustomerEvidenceVaul
  * tooltip on names that fit. Used by the table cell AND the "+N" popover — the
  * popover pills had no hover reveal at all, so a long name like
  * "Travel & Luggagewww…" was unreadable there. */
-function SegChip({ name }: { name: string }) {
+function SegChip({ name, split = false }: { name: string; split?: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
   const clipped = useIsClipped(ref, name);
-  const chip = <span ref={ref} className="smc-seg">{name}</span>;
-  return <>{clipped ? <Tooltip label={name}>{chip}</Tooltip> : chip}<SegmentNameBadge name={name} /></>;
+  /* List cell: one pill carrying the badge. Popup row (`split`): the name pill and
+     the Reg badge are separate chips, badge pinned to the right of the row. */
+  if (split) {
+    const pill = <span ref={ref} className="smc-seg">{name}</span>;
+    return (
+      <>
+        {clipped ? <Tooltip label={name}>{pill}</Tooltip> : pill}
+        <SegmentNameBadge name={name} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+      </>
+    );
+  }
+  const chip = (
+    <span className="smc-seg smc-seg--withbadge">
+      <span ref={ref} className="smc-seg-name">{name}</span>
+      <SegmentNameBadge name={name} style={{ marginLeft: 0 }} />
+    </span>
+  );
+  return clipped ? <Tooltip label={name}>{chip}</Tooltip> : chip;
 }
 
 type Customer = {
@@ -773,12 +789,12 @@ export default function SalesCustomers() {
         return createPortal(
           <>
             <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1090 }} />
-            <div className="smc-seg-pop" style={{ position: 'fixed', left, top, zIndex: 1091, width: 210, borderRadius: 12, padding: 8 }}>
+            <div className="smc-seg-pop" style={{ position: 'fixed', left, top, zIndex: 1091, width: 268, borderRadius: 12, padding: 8 }}>
               <div className="smc-seg-pop-title">Segments ({segOpen.names.length})</div>
               <div style={{ maxHeight: ROWS_MAX_H, overflowY: 'auto' }}>
                 {segOpen.names.map((name, i) => (
                   <div key={i} className={`smc-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
-                    <SegChip name={name} />
+                    <SegChip name={name} split />
                   </div>
                 ))}
               </div>

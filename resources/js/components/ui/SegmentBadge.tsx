@@ -8,8 +8,8 @@ export type RegulatoryStatus = 'highly' | 'less';
  *   Reg-Low  → emerald #0d9488 (bg 7%, border 22%)
  * Dark mode lifts brightness via the rule injected below. */
 const TONES: Record<RegulatoryStatus, { color: string; bg: string; border: string; short: string; full: string }> = {
-  highly: { color: '#dc2626', bg: 'rgba(220,38,38,.07)', border: 'rgba(220,38,38,.22)', short: 'Reg-High', full: 'Highly Regulated' },
-  less:   { color: '#0d9488', bg: 'rgba(13,148,136,.07)', border: 'rgba(13,148,136,.22)', short: 'Reg-Low', full: 'Less Regulated' },
+  highly: { color: '#dc2626', bg: 'rgba(220,38,38,.07)', border: 'rgba(220,38,38,.22)', short: 'High', full: 'Highly Regulated' },
+  less:   { color: '#0d9488', bg: 'rgba(13,148,136,.07)', border: 'rgba(13,148,136,.22)', short: 'Less', full: 'Less Regulated' },
 };
 
 const isStatus = (v: unknown): v is RegulatoryStatus => v === 'highly' || v === 'less';

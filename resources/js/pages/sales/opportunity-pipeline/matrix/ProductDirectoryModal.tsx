@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { segmentLabel } from '../../../../components/ui/SegmentBadge';
+import { segmentLabel, SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { formatProductCode } from '../../../../utils/formatProductCode';
@@ -674,7 +674,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                             <span className="pdm-prod-name">{r.product_name ?? '—'}</span>
                           </Tooltip>
                           {r.product_category && (
-                            <span className="pdm-cat-badge">{r.product_category.toUpperCase()}</span>
+                            <span className="pdm-cat-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: '100%' }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{r.product_category.toUpperCase()}</span><SegmentNameBadge name={r.product_category} style={{ marginLeft: 0, flexShrink: 0 }} /></span>
                           )}
                         </div>
                       </td>

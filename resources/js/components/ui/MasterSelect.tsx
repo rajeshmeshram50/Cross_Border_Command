@@ -11,7 +11,8 @@ import './MasterSelect.css';
    `items` turns the pill into a click target — e.g. a "+2 more" overflow
    pill opens a mini popup listing the hidden tags. */
 // `reg` adds the segment Reg-High / Reg-Low badge after the pill (text '' = badge only).
-type OptBadgeSpec = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string; items?: string[]; reg?: string | null };
+type OptBadgeItem = string | { text: string; reg?: string | null };
+type OptBadgeSpec = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string; items?: OptBadgeItem[]; reg?: string | null };
 
 // Follow the active app theme: light pastel pills in light mode, translucent
 // tints + lighter text in dark mode (QA #123 — the option badges were fixed
@@ -66,17 +67,20 @@ export function OptBadge({ b, staticPill }: { b: OptBadgeSpec; staticPill?: bool
 
   const style: CSSProperties = {
     marginLeft: 8, padding: '1px 8px', borderRadius: 999,
-    fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
-    maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis',
+    fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
+    // Only the segment chip may shrink; a status pill (Active/Inactive) stays whole.
+    maxWidth: 160, minWidth: 0, flexShrink: b.reg !== undefined ? 1 : 0, overflow: 'hidden', textOverflow: 'ellipsis',
     ...badgeToneStyle(b.tone),
   };
 
+  // Segment + Reg status read as ONE chip, same as the customer/supplier lists.
   if (b.reg !== undefined) {
+    if (!b.text) return <SegmentBadge status={b.reg} style={{ marginLeft: 6, flexShrink: 0 }} />;
     return (
-      <>
-        {b.text && <span title={b.title ?? b.text} style={style}>{b.text}</span>}
-        <SegmentBadge status={b.reg} style={{ marginLeft: 6, flexShrink: 0 }} />
-      </>
+      <span title={b.title ?? b.text} style={{ ...style, display: 'inline-flex', alignItems: 'center', gap: 5, overflow: 'hidden', maxWidth: '100%' }}>
+        <span style={{ flex: '1 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 34 }}>{b.text}</span>
+        <SegmentBadge status={b.reg} style={{ flexShrink: 0 }} />
+      </span>
     );
   }
 
@@ -112,9 +116,15 @@ export function OptBadge({ b, staticPill }: { b: OptBadgeSpec; staticPill?: bool
           onClick={e => e.stopPropagation()}
           style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 12000 }}
         >
-          {b.items!.map((it, i) => (
-            <span key={i} className="master-select-badge-pop-item" title={it}>{it}</span>
-          ))}
+          {b.items!.map((it, i) => {
+            const label = typeof it === 'string' ? it : it.text;
+            return (
+              <span key={i} className="master-select-badge-pop-item" title={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                {label}
+                {typeof it !== 'string' && <SegmentBadge status={it.reg} style={{ flexShrink: 0 }} />}
+              </span>
+            );
+          })}
         </div>,
         document.body,
       )}
@@ -468,7 +478,9 @@ export function MasterSelect({
                               hard-capped at 55%. The badge wrapper never shrinks, so
                               it always stays fully readable on the right. */}
                           <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.label}</span>
-                          <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
+                          {/* The product NAME wins the row: the segment chip shrinks (its own
+                              text ellipsises) before the label gives up any width. */}
+                          <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', flex: '0 1 auto', minWidth: 0, maxWidth: '45%' }}>
                             {badgesOf(opt).map((b, i) => <OptBadge key={i} b={b} />)}
                           </span>
                         </span>

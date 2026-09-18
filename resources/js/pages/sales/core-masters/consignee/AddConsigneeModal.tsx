@@ -3541,7 +3541,14 @@ const Stage1 = ({
                             however many segments are inherited. */}
                         <div className="acm-seg-pop-scroll" style={{ maxHeight: 132, overflowY: 'auto', paddingRight: 4 }}>
                           {labels.map((l: string, i: number) => (
-                            <div key={i} className="acm-seg-pop-row" title={l} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span className="acm-seg-dot" style={{ flexShrink: 0 }} /><span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l}</span><span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}><SegmentNameBadge name={segVals[i]} style={{ marginLeft: 0 }} />{typeBadge(segVals[i])}</span></div>
+                            <div key={i} title={l} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                              {/* Name keeps the pill; the Reg and INT/DOM badges are separate chips beside it. */}
+                              <span className="acm-seg-pop-row" style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 1 auto', minWidth: 0, marginBottom: 0 }}>
+                                <span className="acm-seg-dot" style={{ flexShrink: 0 }} />
+                                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l}</span>
+                              </span>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, marginLeft: 'auto' }}><SegmentNameBadge name={segVals[i]} style={{ marginLeft: 0 }} />{typeBadge(segVals[i])}</span>
+                            </div>
                           ))}
                         </div>
                       </div>

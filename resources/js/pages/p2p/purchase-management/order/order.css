@@ -1005,3 +1005,26 @@
     white-space: normal;
   }
 }
+
+/* ── Create-PO loading skeleton ───────────────────────────────────────────
+   Widths for the shimmer bars (the shimmer itself is a shared P2P style). */
+.ord-skl { pointer-events: none; }
+.ord-skl-title { display: flex; flex-direction: column; gap: 7px; margin-left: 11px; }
+.ord-skl-steps { grid-template-columns: repeat(4, 1fr); }
+.ord-skl-step { height: 96px; border-radius: 14px; }
+.ord-skl-thin { height: 8px; margin-top: 7px; }
+.ord-skl-w84 { width: 84px; margin-bottom: 9px; }
+.ord-skl-w120 { width: 120px; }
+.ord-skl-w180 { width: 180px; }
+.ord-skl-w200 { width: 200px; }
+.ord-skl-w280 { width: 280px; }
+
+/* ── List shimmer ─────────────────────────────────────────────────────── */
+.ord-skel-tr td { padding: 14px 8px; border-bottom: 1px solid #eef4f7; }
+.ord-skel-card { display: flex; flex-direction: column; gap: 12px; }
+.ord-skel-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ord-skel-w64 { width: 64px; }
+.ord-skel-w96 { width: 96px; }
+.ord-skel-w120 { width: 120px; }
+.ord-skel-w140 { width: 140px; }
+[data-bs-theme="dark"] .ord-skel-tr td { border-bottom-color: rgba(148, 163, 184, .16); }

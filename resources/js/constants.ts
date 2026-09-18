@@ -314,6 +314,8 @@ export const P2P_GROUPS: MenuGroup[] = [
       { id: 'p2p.spi', icon: 'CreditCard', label: 'Supplier Purchase Invoice (SPI)' },
       { id: 'p2p.debit_note', icon: 'FileText', label: 'Debit Note' },
       { id: 'p2p.order', icon: 'FileText', label: 'Order' },
+      // Temporary placement under Purchase Management until the P2P nav redesign lands.
+      { id: 'p2p.payment_request', icon: 'IndianRupee', label: 'Payment Request Management' },
     ],
   },
 ];

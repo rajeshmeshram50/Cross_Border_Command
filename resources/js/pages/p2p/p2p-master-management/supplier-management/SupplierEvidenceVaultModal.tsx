@@ -789,7 +789,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                     ? supplier.segments
                     : (supplier.segment ? [supplier.segment] : [])
                   ).map(s => String(s).trim()).filter(Boolean);
-                  const chipSegs = segs.slice(0, 3);
+                  const chipSegs = segs.slice(0, 1);
                   const segRest  = segs.length - chipSegs.length;
                   const type = (supplier.type ?? '').trim();
 
@@ -1298,9 +1298,11 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
             <div className="cev-seg-pop-title">Segments ({segPop.names.length})</div>
             {segPop.names.map((name, i) => (
               <div key={i} className={`cev-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
+                {/* Two separate chips: the segment pill on the left, its own Reg badge on the right. */}
                 <Tooltip label={name}>
-                  <span className="cev-seg-pop-pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{nameOf(name).length > 20 ? nameOf(name).slice(0, 20) + '…' : nameOf(name)}<SegmentBadge status={regOf(name)} /></span>
+                  <span className="cev-seg-pop-pill" style={{ flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nameOf(name)}</span>
                 </Tooltip>
+                <SegmentBadge status={regOf(name)} style={{ marginLeft: 'auto', flexShrink: 0 }} />
               </div>
             ))}
           </div>
