@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import type { OrderRow } from './Order';
 import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './manage-payment-requests.css';
+
+const DeductTdsModal = lazy(() => import('./DeductTdsModal'));
 
 type ReqStatus = 'approved' | 'pending' | 'rejected';
 
@@ -142,6 +144,13 @@ const ICON_TDS = (
 );
 const ICON_X = (
   <svg {...ic} strokeWidth={2.6}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+);
+const ICON_WALLET = (
+  <svg {...ic} strokeWidth={2.4}>
+    <path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4" />
+    <path d="M4 6v12a2 2 0 0 0 2 2h14v-4" />
+    <path d="M18 12a2 2 0 0 0 0 4h4v-4z" />
+  </svg>
 );
 
 const statIco = (d: ReactNode) => (
@@ -298,6 +307,20 @@ function RequestRow({ q, index, net }: { q: PaymentRequest; index: number; net: 
   );
 }
 
+function TdsLoading() {
+  return createPortal(
+    <div className="spi-mdl-backdrop">
+      <div className="mpr-tdsload">
+        <span className="spi-sk-bar mpr-tdsload__hd" />
+        <div className="mpr-tdsload__grid">
+          {Array.from({ length: 6 }, (_, i) => <span className="spi-sk-bar mpr-tdsload__cell" key={i} />)}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 export default function ManagePaymentRequestsModal({ row, onClose }: { row: OrderRow; onClose: () => void }) {
   useScrollLock();
 
@@ -309,6 +332,9 @@ export default function ManagePaymentRequestsModal({ row, onClose }: { row: Orde
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  const [tds, setTds] = useState(0);
+  const [tdsOpen, setTdsOpen] = useState(false);
 
   const list = useMemo(() => buildRequests(row), [row]);
 
@@ -347,6 +373,22 @@ export default function ManagePaymentRequestsModal({ row, onClose }: { row: Orde
   return createPortal(
 
     <div className="spi-mdl-backdrop">
+      {tdsOpen && (
+        <Suspense fallback={<TdsLoading />}>
+          <DeductTdsModal
+            po={row.po}
+            base={base}
+            gst={gst}
+            extra={extra}
+            total={row.total}
+            room={row.balance}
+            saved={tds}
+            onSave={(amount) => { setTds(amount); setTdsOpen(false); }}
+            onClose={() => setTdsOpen(false)}
+          />
+        </Suspense>
+      )}
+
       <div className="spi-mdl mpr-card" role="dialog" aria-modal="true" aria-labelledby="mpr-title" tabIndex={-1} ref={cardRef}>
 
         <div className="mpr-hero">
@@ -354,7 +396,7 @@ export default function ManagePaymentRequestsModal({ row, onClose }: { row: Orde
           <div className="mpr-hero__titleblock">
             <div className="mpr-hero__titlerow">
               <span className="mpr-hero__title" id="mpr-title">Payment Requests History</span>
-              <span className={`mpr-hero__badge${f.complete ? '' : ' mpr-hero__badge--neutral'}`}>
+              <span className="mpr-hero__badge">
                 <span className="mpr-hero__bdot" />
                 {f.complete ? 'Payment Completed' : `${list.length} request${list.length === 1 ? '' : 's'}`}
               </span>
@@ -396,9 +438,32 @@ export default function ManagePaymentRequestsModal({ row, onClose }: { row: Orde
             sub="How this PO’s value is made up and where it stands today · read-only"
             headerExtra={!row.cancelled && (
               <div className="mpr-tds" onClick={(e) => e.stopPropagation()}>
-                <button type="button" className="mpr-tdsbtn" title="Withhold tax at source against this PO">
+                {tds > 0 && (
+                  <>
+                    <span className="mpr-chip mpr-chip--cut" title={`Tax withheld at source on this PO · counted towards paid`}>
+                      <span className="mpr-chip__ico">{ICON_TDS}</span>
+                      <span className="mpr-chip__txt">
+                        <span className="mpr-chip__k">TDS Deducted</span>
+                        <b className="mpr-chip__v">{money(tds)}</b>
+                      </span>
+                    </span>
+                    <span className="mpr-chip mpr-chip--net" title={`Payable to ${row.supplier} after TDS · ${money(row.total)} less ${money(tds)}`}>
+                      <span className="mpr-chip__ico">{ICON_WALLET}</span>
+                      <span className="mpr-chip__txt">
+                        <span className="mpr-chip__k">Net Payable</span>
+                        <b className="mpr-chip__v">{money(Math.max(0, row.total - tds))}</b>
+                      </span>
+                    </span>
+                  </>
+                )}
+                <button
+                  type="button"
+                  className={`mpr-tdsbtn${tds > 0 ? ' mpr-tdsbtn--edit' : ''}`}
+                  title={tds > 0 ? 'Revise the tax deducted at source on this PO' : 'Withhold tax at source against this PO'}
+                  onClick={() => setTdsOpen(true)}
+                >
                   <span className="mpr-tdsbtn__ico">{ICON_TDS}</span>
-                  <span>Deduct TDS Here</span>
+                  <span>{tds > 0 ? 'Revise TDS' : 'Deduct TDS Here'}</span>
                 </button>
               </div>
             )}
