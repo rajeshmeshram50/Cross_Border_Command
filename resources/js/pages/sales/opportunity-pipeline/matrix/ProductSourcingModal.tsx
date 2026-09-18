@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import Tooltip from '../../../../components/ui/Tooltip';
@@ -297,7 +298,7 @@ export default function ProductSourcingModal({ open, leadId, onClose, onChanged 
                           <div className="psm-name-cell">
                             <Tooltip label={r.product_name ?? ''} themed maxWidth={420}><span className="psm-prod-name">{r.product_name ?? '—'}</span></Tooltip>
                             {r.product_category && (
-                              <span className="psm-cat-badge">{r.product_category.toUpperCase()}</span>
+                              <span className="psm-cat-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: '100%' }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{r.product_category.toUpperCase()}</span><SegmentNameBadge name={r.product_category} style={{ marginLeft: 0, flexShrink: 0 }} /></span>
                             )}
                           </div>
                         </td>

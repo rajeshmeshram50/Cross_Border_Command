@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { SegmentNameBadge } from '../../../../../components/ui/SegmentBadge';
 import api from '../../../../../api';
 import { formatProductCode } from '../../../../../utils/formatProductCode';
 import { useToast } from '../../../../../contexts/ToastContext';
@@ -499,7 +500,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                         <td><span className="s3-code s3-code-violet">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                         <td>
                           <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s3-prod-name">{r.product_name ?? "—"}</div></Tooltip>
-                          {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s3-cat-badge s3-cat-badge-violet">{r.product_category.toUpperCase()}</span></Tooltip>}
+                          {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s3-cat-badge s3-cat-badge-violet" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: '100%' }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{r.product_category.toUpperCase()}</span><SegmentNameBadge name={r.product_category} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>}
                         </td>
                         <td>
                           <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : 's3-pill-inactive'}`}>
@@ -673,7 +674,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           <td><span className="s3-code s3-code-amber">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                           <td>
                             <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s3-prod-name">{r.product_name ?? "—"}</div></Tooltip>
-                            {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s3-cat-badge s3-cat-badge-amber">{r.product_category.toUpperCase()}</span></Tooltip>}
+                            {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s3-cat-badge s3-cat-badge-amber" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: '100%' }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{r.product_category.toUpperCase()}</span><SegmentNameBadge name={r.product_category} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>}
                           </td>
                           <td>
                             <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : 's3-pill-inactive'}`}>
@@ -837,7 +838,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                         <td><span className="s3-code s3-code-mint">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                         <td>
                           <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s3-prod-name">{r.product_name ?? "—"}</div></Tooltip>
-                          {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s3-cat-badge s3-cat-badge-mint">{r.product_category.toUpperCase()}</span></Tooltip>}
+                          {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s3-cat-badge s3-cat-badge-mint" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: '100%' }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{r.product_category.toUpperCase()}</span><SegmentNameBadge name={r.product_category} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>}
                         </td>
                         <td>
                           <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : 's3-pill-inactive'}`}>
@@ -957,6 +958,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
         productId={vendorMaps.target?.product_id ?? null}
         productCode={formatProductCode(vendorMaps.target?.product_code) || null}
         productName={vendorMaps.target?.product_name ?? null}
+        productSegment={vendorMaps.target?.product_category ?? null}
         targetPrice={vendorMaps.target?.target_price ?? null}
         currency={vendorMaps.target?.currency ?? null}
         onClose={vendorMaps.close}

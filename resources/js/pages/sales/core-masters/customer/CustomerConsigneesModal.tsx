@@ -276,8 +276,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                             const extra = segList.length - 1;
                             return (
                               <span className="d-inline-flex align-items-center" style={{ gap: 4 }}>
-                                <Tooltip label={segList[0]} disabled={segList[0].length <= 14}><span className="ccm-seg">{truncSegment(segList[0])}</span></Tooltip>
-                                <SegmentNameBadge name={segList[0]} style={{ marginLeft: 0 }} />
+                                <Tooltip label={segList[0]} disabled={segList[0].length <= 14}><span className="ccm-seg" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{truncSegment(segList[0])}<SegmentNameBadge name={segList[0]} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>
                                 {extra > 0 && (
                                   <Tooltip label={`View ${extra} more`}>
                                     <button
@@ -455,7 +454,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                     <Tooltip label={name} disabled={name.length <= 14}>
                       <span className="ccm-seg">{truncSegment(name)}</span>
                     </Tooltip>
-                    <SegmentNameBadge name={name} />
+                    <SegmentNameBadge name={name} style={{ marginLeft: 'auto', flexShrink: 0 }} />
                   </div>
                 ))}
               </div>

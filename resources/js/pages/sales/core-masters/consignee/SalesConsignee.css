@@ -932,6 +932,10 @@
   padding: 3px 10px;
 }
 
+/* Pill that carries the Reg badge inside it: flex, so only the NAME truncates. */
+.smcg-seg--withbadge { display: inline-flex; align-items: center; gap: 5px; max-width: 210px; padding-right: 5px; }
+.smcg-seg-name { display: inline-block; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .smcg-seg-more {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 20px; height: 20px; padding: 0 6px; border-radius: 20px;

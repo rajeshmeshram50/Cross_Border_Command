@@ -1789,8 +1789,12 @@ export default function AddProductModal(props: {
                                 .slice(0, MAX_INLINE)
                                 .map((s, i) => ({ text: String(segOpts[i].extra?.name ?? s), tone: 'violet' as const, title: s, reg: segOpts[i].extra?.regulatory_status as string }));
                               if (segNames.length > MAX_INLINE) {
-                                const rest = segNames.slice(MAX_INLINE);
-                                badges.push({ text: `+${rest.length}`, tone: 'gray' as const, title: rest.join(', '), items: rest });
+                                const rest = segOpts.slice(MAX_INLINE);
+                                badges.push({
+                                  text: `+${rest.length}`, tone: 'gray' as const, title: rest.map(o => o.label).join(', '),
+                                  // Objects, not plain text: the popup draws each segment's own Reg badge.
+                                  items: rest.map(o => ({ text: String(o.extra?.name ?? o.label), reg: o.extra?.regulatory_status as string })),
+                                });
                               }
                               return {
                                 value: v.code,
@@ -2446,7 +2450,7 @@ function Field(props: {
   );
 }
 
-type OptBadge = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string; items?: string[]; reg?: string | null };
+type OptBadge = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string; items?: (string | { text: string; reg?: string | null })[]; reg?: string | null };
 
 type Opt = string | { value: string; label: string; badges?: OptBadge[] };
 

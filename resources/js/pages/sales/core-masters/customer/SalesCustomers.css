@@ -1429,6 +1429,10 @@
   border-color: rgba(167,139,250,.35);
 }
 [data-bs-theme="dark"] .smc-company { color: #f1ecff; }
+/* Pill that carries the Reg badge inside it: flex, so only the NAME truncates. */
+.smc-seg--withbadge { display: inline-flex; align-items: center; gap: 5px; max-width: 210px; padding-right: 5px; }
+.smc-seg-name { display: inline-block; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 [data-bs-theme="dark"] .smc-seg {
   color: #c4b5fd;
   background: rgba(124,58,237,0.18);

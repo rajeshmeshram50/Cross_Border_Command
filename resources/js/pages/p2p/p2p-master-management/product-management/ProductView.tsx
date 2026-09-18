@@ -508,7 +508,7 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
                 </div>
                 <div className="pv2pd-hl pv2pd-hl--g">
                   <span className="pv2pd-hl__ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg></span>
-                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">Segment</span><Tooltip label={segmentName}><span className="pv2pd-hl__v">{segmentName} <SegmentBadge status={product.segment?.regulatory_status as string | undefined} /></span></Tooltip></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">Segment</span><Tooltip label={segmentName}><span className="pv2pd-hl__v" style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{segmentName}</span><SegmentBadge status={product.segment?.regulatory_status as string | undefined} style={{ flexShrink: 0 }} /></span></Tooltip></span>
                 </div>
                 <div className={`pv2pd-hl ${isHaz ? 'pv2pd-hl--h' : 'pv2pd-hl--c'}`}>
                   <span className="pv2pd-hl__ico">{isHaz

@@ -450,10 +450,12 @@ export default function SalesConsignee() {
         const rowId = (info.row.original as ConsigneeRow).id;
         return (
           <span className="d-inline-flex align-items-center" style={{ gap: 4, maxWidth: '100%', minWidth: 0 }}>
-            {segList[0].length > 30
-              ? <Tooltip label={segList[0]}><span className="smcg-seg">{truncSegment(segList[0])}</span></Tooltip>
-              : <span className="smcg-seg">{segList[0]}</span>}
-            <SegmentNameBadge name={segList[0]} style={{ marginLeft: 0 }} />
+            <Tooltip label={segList[0]} disabled={segList[0].length <= 30}>
+              <span className="smcg-seg smcg-seg--withbadge">
+                <span className="smcg-seg-name">{segList[0]}</span>
+                <SegmentNameBadge name={segList[0]} style={{ marginLeft: 0 }} />
+              </span>
+            </Tooltip>
             {extra > 0 && (
               <Tooltip label={`View ${extra} more`}>
                 <button
@@ -840,7 +842,7 @@ export default function SalesConsignee() {
                         segment chips stay green. */}
                     {segOpen.title === 'Customer IDs'
                       ? <span className="smcg-cust-chip">{name}</span>
-                      : <><span className="smcg-seg" title={name}>{truncSegment(name)}</span><SegmentNameBadge name={name} /></>}
+                      : <><span className="smcg-seg" title={name}>{truncSegment(name)}</span><SegmentNameBadge name={name} style={{ marginLeft: 'auto', flexShrink: 0 }} /></>}
                   </div>
                 ))}
               </div>
@@ -977,8 +979,7 @@ export default function SalesConsignee() {
                           <td style={{ padding: '10px 14px', fontSize: 12.5, color: mc.textMuted, borderBottom: `1px solid ${mc.border}` }}>
                             {segList.length === 0 ? '—' : (
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                <Tooltip label={segList[0]} disabled={segList[0].length <= 14}><span style={{ background: mc.chipBg, color: mc.chipFg, borderRadius: 6, padding: '1px 8px', fontSize: 11.5, fontWeight: 600 }}>{truncSegment(segList[0])}</span></Tooltip>
-                                <SegmentNameBadge name={segList[0]} style={{ marginLeft: 0 }} />
+                                <Tooltip label={segList[0]} disabled={segList[0].length <= 14}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: mc.chipBg, color: mc.chipFg, borderRadius: 6, padding: '1px 8px', fontSize: 11.5, fontWeight: 600 }}>{truncSegment(segList[0])}<SegmentNameBadge name={segList[0]} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>
                                 {segList.length > 1 && (
                                   <Tooltip label={`View ${segList.length - 1} more`}>
                                     <span
@@ -1058,7 +1059,7 @@ export default function SalesConsignee() {
           <div style={{ position: 'fixed', left: Math.max(8, Math.min(mappedSeg.x, window.innerWidth - 290)), top: Math.max(8, Math.min(mappedSeg.y + 10, window.innerHeight - 268)), zIndex: 1098, width: 270, maxHeight: 260, overflowY: 'auto', background: mc.popBg, borderRadius: 10, boxShadow: '0 14px 34px rgba(0,0,0,.35)', padding: 8, border: `1px solid ${mc.border}` }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: mc.chipFg, marginBottom: 6, textTransform: 'uppercase', letterSpacing: .3 }}>Segments ({mappedSeg.names.length})</div>
             {mappedSeg.names.map((n, i) => (
-              <div key={i} title={n} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: mc.textStrong, padding: '5px 7px', borderRadius: 6, background: i % 2 ? mc.rowAlt : 'transparent' }}><span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</span><SegmentNameBadge name={n} style={{ marginLeft: 0 }} /></div>
+              <div key={i} title={n} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: mc.textStrong, padding: '5px 7px', borderRadius: 6, background: i % 2 ? mc.rowAlt : 'transparent' }}><span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</span><SegmentNameBadge name={n} style={{ marginLeft: 'auto', flexShrink: 0 }} /></div>
             ))}
           </div>
         </>,

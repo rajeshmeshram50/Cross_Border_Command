@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
+import { SegmentNameBadge, SegmentNameList } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 /* Force-download helper. A cross-origin <a download> is IGNORED by the browser
@@ -1487,11 +1487,13 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                             <span className="lasm-party-tab-k">Email</span>
                             <span className="lasm-party-tab-v">{info?.email || '—'}</span>
                           </span>
-                          {(() => { const seg = info?.segment || ''; const long = seg.length > 25; return (
-                            <Tooltip label={seg} disabled={!long}>
-                              <span>
+                          {/* Multi-segment parties: the cell shows the first segment with its badge plus a +N,
+                              the tooltip lists every segment with its own badge. */}
+                          {(() => { const seg = info?.segment || ''; return (
+                            <Tooltip label={seg ? <SegmentNameList names={seg} /> : ''} disabled={!seg}>
+                              <span style={{ minWidth: 0 }}>
                                 <span className="lasm-party-tab-k">Segment</span>
-                                <span className="lasm-party-tab-v">{long ? seg.slice(0, 25) + '…' : (seg || '—')}<SegmentNameBadge name={seg} /></span>
+                                <span className="lasm-party-tab-v">{seg ? <SegmentNameList compact names={seg} /> : '—'}</span>
                               </span>
                             </Tooltip>
                           ); })()}
@@ -1740,7 +1742,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                               <div className="lasm-doc-sub">{td.reference}</div>
                             </td>
                             <td>
-                              {(() => { const seg = td.segmentName ?? ''; const long = seg.length > 30; return <Tooltip label={seg} disabled={!long}><div className="lasm-doc-name">{long ? seg.slice(0, 30) + '…' : seg}</div></Tooltip>; })()}
+                              {(() => { const seg = td.segmentName ?? ''; const long = seg.length > 30; return <Tooltip label={seg} disabled={!long}><div className="lasm-doc-name" style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{long ? seg.slice(0, 30) + '…' : seg}</span><SegmentNameBadge name={seg} style={{ marginLeft: 0 }} /></div></Tooltip>; })()}
                               <div className="lasm-doc-sub">{td.segmentCode}</div>
                             </td>
                             <td>
