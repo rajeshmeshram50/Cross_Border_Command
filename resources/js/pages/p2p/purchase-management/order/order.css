@@ -75,10 +75,8 @@
   overscroll-behavior: contain;
 }
 
-.ord-table-scroll::-webkit-scrollbar { width: 9px; }
-
 .ord-table-scroll.is-scrolling .ord-table { pointer-events: none; }
-.ord-table-scroll::-webkit-scrollbar { height: 9px; }
+.ord-table-scroll::-webkit-scrollbar { width: 9px; height: 9px; }
 .ord-table-scroll::-webkit-scrollbar-thumb {
   background: #bfe3ec;
   border-radius: 8px;
@@ -960,3 +958,73 @@
   background: rgba(56, 189, 248, .04);
   border-color: rgba(6, 182, 212, .25);
 }
+
+/* ── Phone ──
+   On a small screen the strip, guide, tabs and pager leave almost no room for
+   the list, so the page scrolls normally instead of fitting the screen, and
+   the cards grow to their full height. */
+@media (max-width: 768px) {
+  .page-content:has(> .container-fluid > .ord-page) {
+    height: auto;
+    min-height: 100%;
+  }
+  .page-content:has(> .container-fluid > .ord-page) > .container-fluid,
+  .ord-page,
+  .ord-list {
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+  .ord-cards {
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+  .ord-table-scroll {
+    flex: 0 0 auto;
+    overflow-y: visible;
+  }
+
+  /* All 4 tabs visible: two per row instead of one scrolling row. */
+  .ord-list > .spi-segrow {
+    gap: 10px;
+    padding: 10px;
+  }
+  .ord-list .spi-seg {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+  /* The long label can only share a row if it may wrap onto two lines. */
+  .ord-list .spi-seg-btn {
+    flex: 1 1 45%;
+    min-width: 0;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 10px;
+    font-size: 11.5px;
+    line-height: 1.25;
+    text-align: center;
+    white-space: normal;
+  }
+}
+
+/* ── Create-PO loading skeleton ───────────────────────────────────────────
+   Widths for the shimmer bars (the shimmer itself is a shared P2P style). */
+.ord-skl { pointer-events: none; }
+.ord-skl-title { display: flex; flex-direction: column; gap: 7px; margin-left: 11px; }
+.ord-skl-steps { grid-template-columns: repeat(4, 1fr); }
+.ord-skl-step { height: 96px; border-radius: 14px; }
+.ord-skl-thin { height: 8px; margin-top: 7px; }
+.ord-skl-w84 { width: 84px; margin-bottom: 9px; }
+.ord-skl-w120 { width: 120px; }
+.ord-skl-w180 { width: 180px; }
+.ord-skl-w200 { width: 200px; }
+.ord-skl-w280 { width: 280px; }
+
+/* ── List shimmer ─────────────────────────────────────────────────────── */
+.ord-skel-tr td { padding: 14px 8px; border-bottom: 1px solid #eef4f7; }
+.ord-skel-card { display: flex; flex-direction: column; gap: 12px; }
+.ord-skel-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ord-skel-w64 { width: 64px; }
+.ord-skel-w96 { width: 96px; }
+.ord-skel-w120 { width: 120px; }
+.ord-skel-w140 { width: 140px; }
+[data-bs-theme="dark"] .ord-skel-tr td { border-bottom-color: rgba(148, 163, 184, .16); }

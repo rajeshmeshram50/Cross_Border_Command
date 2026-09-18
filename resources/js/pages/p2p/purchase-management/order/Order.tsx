@@ -1,10 +1,16 @@
 // P2P → Order: purchase order list. Uses static SAMPLE_ROWS until the API is connected.
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import Badge, { type BadgeVariant } from '../../../../components/ui/Badge';
 import CreatePoModal from './CreatePoModal';
+// The PO form is a screen of its own: loaded only when one is being created,
+// so the list page doesn't carry it. The type import costs nothing at runtime.
+import type { PoLink } from './create-po/CreatePoForm';
+const CreatePoForm = lazy(() => import('./create-po/CreatePoForm'));
 import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './order.css';
+
+const ManagePaymentRequestsModal = lazy(() => import('./ManagePaymentRequestsModal'));
 
 type GuideStep = { num: string; title: string; desc: string; icon: ReactNode };
 
@@ -167,7 +173,7 @@ type RiskLevel = 'high' | 'medium' | 'low';
 
 type PaymentNote = { kind: 'ready' | 'waiting'; amount: number };
 
-type OrderRow = {
+export type OrderRow = {
   po: string; poDate: string; physicalInspection: boolean;
   type: PoType; docType: DocType;
   shipment: string | null; shipmentDate: string;
@@ -663,7 +669,7 @@ function InspectionCell({ required, done, cancelled = false }: { required: boole
   );
 }
 
-function PaymentCell({ row }: { row: OrderRow }) {
+function PaymentCell({ row, onManage }: { row: OrderRow; onManage: (row: OrderRow) => void }) {
   const pct = row.net > 0 ? Math.round((row.paid / row.net) * 100) : 0;
   const status: PaymentStatus = pct >= 100 ? 'full' : pct > 0 ? 'partial' : 'pending';
   const label = status === 'full' ? 'Payment Completed' : PAYMENT_LABEL[status];
@@ -705,7 +711,12 @@ function PaymentCell({ row }: { row: OrderRow }) {
         )}
       </div>
 
-      <button type="button" className={`ord-btn ord-btn--hist${done ? ' is-record' : ''}`} disabled={!!row.cancelled}>
+      <button
+        type="button"
+        className={`ord-btn ord-btn--hist${done ? ' is-record' : ''}`}
+        disabled={!!row.cancelled}
+        onClick={() => onManage(row)}
+      >
         {done ? ICON_EYE : ICON_HISTORY}
         <span>{done ? 'View Request Details' : 'Manage Payment Requests'}</span>
 
@@ -782,7 +793,7 @@ function useIsPhone() {
   return isPhone;
 }
 
-function OrderCard({ row, index }: { row: OrderRow; index: number }) {
+function OrderCard({ row, index, onManage }: { row: OrderRow; index: number; onManage: (row: OrderRow) => void }) {
   const category = SUPPLIER_CATEGORY[row.supplierCategory];
   const risk = RISK_LEVEL[row.risk];
   const count = row.invoices.length;
@@ -883,7 +894,7 @@ function OrderCard({ row, index }: { row: OrderRow; index: number }) {
 
       <div className="ord-card__section">
         <span className="ord-card__label">Payment Progress</span>
-        <PaymentCell row={row} />
+        <PaymentCell row={row} onManage={onManage} />
       </div>
 
       <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} />
@@ -897,7 +908,19 @@ export default function Order() {
 
   const toggleGuide = () => setGuideOpen((open) => !open);
 
+  // Rows are static sample data today, so this flag only covers the first
+  // paint. When the list API is connected it becomes that request's state.
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const timer = setTimeout(() => setLoading(false), 600);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Create PO runs in two screens: the link popup, then the full-page form.
   const [createOpen, setCreateOpen] = useState(false);
+  const [poLink, setPoLink] = useState<PoLink | null>(null);
+
+  const [payRow, setPayRow] = useState<OrderRow | null>(null);
 
   const [activeTab, setActiveTab] = useState<TabKey>('all');
 
@@ -982,8 +1005,30 @@ export default function Order() {
   return (
     <div className="ord-page">
 
-      {/* Mounted only while open, so its scroll lock and key listener exist only then. */}
-      {createOpen && <CreatePoModal onClose={() => setCreateOpen(false)} />}
+      {/* Mounted only while open, so the scroll lock and key listener exist only then. */}
+      {createOpen && (
+        <CreatePoModal
+          initial={poLink}
+          onClose={() => setCreateOpen(false)}
+          onConfirm={(link) => { setPoLink(link); setCreateOpen(false); }}
+        />
+      )}
+
+      {poLink && !createOpen && (
+        <Suspense fallback={<CreatePoSkeleton />}>
+          <CreatePoForm
+            link={poLink}
+            onClose={() => setPoLink(null)}
+            onChangeLink={() => setCreateOpen(true)}
+          />
+        </Suspense>
+      )}
+
+      {payRow && (
+        <Suspense fallback={null}>
+          <ManagePaymentRequestsModal row={payRow} onClose={() => setPayRow(null)} />
+        </Suspense>
+      )}
 
       {/* Header strip, guide, tabs and search use the shared SPI styles (spi-*). */}
       <div className="spi-head">
@@ -1104,7 +1149,9 @@ export default function Order() {
 
         </div>
 
-        {rows.length === 0 ? (
+        {loading ? (
+          <OrderListSkeleton phone={isPhone} />
+        ) : rows.length === 0 ? (
           <div className="ord-empty">
             {search.trim()
               ? 'No purchase orders match your search.'
@@ -1114,7 +1161,7 @@ export default function Order() {
           <div className="ord-cards" ref={cardsRef}>
 
             {pageRows.map((row, index) => (
-              <OrderCard key={row.po} row={row} index={start + index} />
+              <OrderCard key={row.po} row={row} index={start + index} onManage={setPayRow} />
             ))}
           </div>
         ) : (
@@ -1235,7 +1282,7 @@ export default function Order() {
                             <PoCell span={span}>
                               <InspectionCell required={row.physicalInspection} done={row.inspectionDone} cancelled={row.cancelled} />
                             </PoCell>
-                            <PoCell span={span}><PaymentCell row={row} /></PoCell>
+                            <PoCell span={span}><PaymentCell row={row} onManage={setPayRow} /></PoCell>
                             <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} /></PoCell>
                           </>
                         )}
@@ -1261,6 +1308,108 @@ export default function Order() {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+/* Shown for the moment the PO form's code is being fetched. It mirrors the
+   form's own layout — header, four step cards, two field sections — so the
+   screen doesn't jump when the real thing arrives. Shimmer classes come from
+   the shared P2P wizard styles this page already loads. */
+function CreatePoSkeleton() {
+  return (
+    <div className="spi-dt-overlay ord-skl">
+      <div className="spi-dt">
+        <div className="spi-dt-topcard">
+          <div className="spi-dt-head">
+            <div className="spi-dt-sk spi-dt-sk-ico" />
+            <div className="ord-skl-title">
+              <div className="spi-dt-sk spi-dt-sk-line ord-skl-w180" />
+              <div className="spi-dt-sk spi-dt-sk-line ord-skl-w120 ord-skl-thin" />
+            </div>
+          </div>
+          <div className="spi-dt-steps ord-skl-steps">
+            {[0, 1, 2, 3].map((i) => <div key={i} className="spi-dt-sk ord-skl-step" />)}
+          </div>
+        </div>
+        {[0, 1].map((s) => (
+          <div className="spi-dt-sec" key={s}>
+            <div className="spi-dt-sec-head">
+              <div className="spi-dt-sk spi-dt-sk-ico" />
+              <div className="spi-dt-sec-mid">
+                <div className="spi-dt-sk spi-dt-sk-line ord-skl-w200" />
+                <div className="spi-dt-sk spi-dt-sk-line ord-skl-w280 ord-skl-thin" />
+              </div>
+            </div>
+            <div className="spi-dt-sec-body">
+              <div className="spi-dt-grid4">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i}>
+                    <div className="spi-dt-sk spi-dt-sk-line ord-skl-w84 ord-skl-thin" />
+                    <div className="spi-dt-sk spi-dt-sk-field" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* List shimmer. Mirrors the real grid — same column widths, same two-line
+   invoice rows — so the table doesn't jump when the rows arrive. On a phone it
+   mirrors the cards instead. The shimmer bar is a shared P2P style. */
+function OrderListSkeleton({ phone }: { phone: boolean }) {
+  if (phone) {
+    return (
+      <div className="ord-cards">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div className="ord-card ord-skel-card" key={i}>
+            <div className="ord-skel-row">
+              <span className="spi-sk-bar ord-skel-w120" />
+              <span className="spi-sk-bar ord-skel-w64" />
+            </div>
+            {Array.from({ length: 6 }).map((__, j) => (
+              <div className="ord-skel-row" key={j}>
+                <span className="spi-sk-bar ord-skel-w96" />
+                <span className="spi-sk-bar ord-skel-w140" />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="ord-table-scroll">
+      <table className="ord-table" style={{ width: TABLE_WIDTH }}>
+        <colgroup>
+          {COLUMNS.map((col) => <col key={col.label} style={{ width: col.width }} />)}
+        </colgroup>
+        <thead>
+          <tr>
+            {COLUMNS.map((col) => (
+              <th key={col.label} className={col.groupEnd ? 'ord-table__group-end' : undefined}>{col.label}</th>
+            ))}
+          </tr>
+        </thead>
+        {Array.from({ length: 4 }).map((_, rowIndex) => (
+          <tbody key={rowIndex}>
+            {[0, 1].map((line) => (
+              <tr key={line} className="ord-skel-tr">
+                {COLUMNS.map((col) => (
+                  <td key={col.label} className={col.groupEnd ? 'ord-table__group-end' : undefined}>
+                    <span className="spi-sk-bar" style={{ width: Math.round(col.width * 0.6) }} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        ))}
+      </table>
     </div>
   );
 }

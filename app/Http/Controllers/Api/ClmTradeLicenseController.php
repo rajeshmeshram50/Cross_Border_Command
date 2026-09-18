@@ -8,6 +8,7 @@ use App\Models\ClmTradeLicense;
 use App\Support\ClmMasterAccess;
 use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
+
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -15,24 +16,27 @@ use Illuminate\Validation\ValidationException;
 class ClmTradeLicenseController extends Controller
 {
     use \App\Http\Controllers\Concerns\ChecksClmDocUsage;
+    use \App\Http\Controllers\Concerns\ImportsClmDocMaster;
+
+   
+    public function import(Request $request)
+    {
+        return $this->importClmDocRows($request, ClmTradeLicense::class, 'TL', 'validity', 'trade licence');
+    }
 
     public function index(Request $request)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
-        // Branch-scoped read: own rows + client-level (shared); siblings hidden (CBC-435).
+        
         $q = ClmTradeLicense::query()->orderByDesc('id');   // newest entry first
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
 
-        /* Search runs in SQL, alongside the paging. Once the client holds a
-           single page, filtering there searches ten rows and reports a count
-           for the page rather than the master. */
+       
         if ($search = trim((string) $request->input('search', ''))) {
             $like = '%' . $search . '%';
-            /* Authority is stored by ID, but the list shows — and the old
-               client-side filter searched — the resolved NAME. Resolve the
-               term to ids so searching by authority still works. */
+           
             $authIds = ClmAuthority::idsMatchingName((int) $user->client_id, $search);
             $q->where(function ($w) use ($like, $authIds) {
                 $w->where('name', 'ilike', $like)->orWhere('code', 'ilike', $like);
@@ -40,8 +44,7 @@ class ClmTradeLicenseController extends Controller
             });
         }
 
-        /* PAGINATION — opt-in via per_page, so every existing caller that
-           wants the whole list is unchanged. */
+      
         $perPage = $request->filled('per_page')
             ? min(200, max(1, (int) $request->input('per_page')))
             : null;
@@ -50,16 +53,11 @@ class ClmTradeLicenseController extends Controller
 
         $rows = $perPage ? $q->forPage($page, $perPage)->get() : $q->get();
 
-        // `authority` stores authority ids; expose the resolved current names.
+       
         $map = ClmAuthority::idNameMap($user->client_id, ClmAuthority::idsReferencedIn($rows->pluck('authority')));
         $rows->each(fn ($r) => $r->authority_names = ClmAuthority::displayNames($r->authority, $map));
 
-        // Per-row "in use" flags so the UI can disable + explain the delete
-        // action for referenced licences (mirrors the checks in destroy()).
-        /* Built ONCE, then matched in memory. This was a per-row
-           usageCheck() — two existence queries and four
-           Schema::hasTable/hasColumn calls for every row, so the
-           query count grew with the master. See ChecksClmDocUsage. */
+      
         $usage = $this->clmDocUsageSets((int) $user->client_id);
         $rows->each(function ($r) use ($usage) {
             $labels = $this->clmDocUsageLabels($usage, $r->code, $r->branch_id);
@@ -70,8 +68,7 @@ class ClmTradeLicenseController extends Controller
         return response()->json([
             'status' => true,
             'data'   => $rows,
-            // `count` stays the rows in hand (unchanged for existing callers);
-            // `total` is the whole filtered set, which is what a pager needs.
+          
             'count'  => $rows->count(),
             'total'  => $total ?? $rows->count(),
         ]);
@@ -95,8 +92,7 @@ class ClmTradeLicenseController extends Controller
         MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
         if ($dupe->exists()) {
             $msg = "A trade licence named \"{$name}\" already exists. Pick a different name.";
-            // 422 + errors.name so the modal shows it inline under LICENCE NAME
-            // (not a global toast) — same shape Laravel's `unique` rule returns.
+            
             return response()->json([
                 'status'  => false,
                 'message' => $msg,
@@ -104,7 +100,7 @@ class ClmTradeLicenseController extends Controller
             ], 422);
         }
 
-        // Store authority by id (resolve names → ids); reject if nothing valid.
+      
         $data['authority'] = ClmAuthority::normalizeIds($data['authority'] ?? null, $user->client_id);
         if ($data['authority'] === '') {
             throw ValidationException::withMessages(['authority' => 'Select at least one valid authority.']);
@@ -113,7 +109,7 @@ class ClmTradeLicenseController extends Controller
         $row = DB::transaction(function () use ($user, $data) {
             return ClmTradeLicense::create([
                 'client_id'  => $user->client_id,
-                'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
+                'branch_id'  => $user->branch_id,   
                 'code'       => $this->nextCode($user->client_id, $user->branch_id),
                 'name'       => trim($data['name']),
                 'authority'  => $data['authority'],
@@ -184,7 +180,7 @@ class ClmTradeLicenseController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // Same branch-scoped sets the list's in_use flag reads, so the two agree.
+     
         $usedIn = $this->clmDocUsageLabels($this->clmDocUsageSets($row->client_id), $row->code, $row->branch_id);
         if (!empty($usedIn)) {
             return response()->json([
@@ -203,10 +199,7 @@ class ClmTradeLicenseController extends Controller
     private function nextCode(int $clientId, ?int $branchId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
-        // Branch-scoped so each branch restarts from TL-001 rather than
-        // continuing another branch's tally — the trade-license master is
-        // branch-isolated via MasterVisibility. A client-level creator
-        // ($branchId null) sequences the shared rows.
+      
         $query = ClmTradeLicense::where('client_id', $clientId);
         $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
         $codes = $query->pluck('code')->all();

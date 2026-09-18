@@ -1,0 +1,851 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * Create PO form — only the bits that differ from the shared P2P wizard.
+ * Everything else (overlay, header strip, pills, stage cards, fields, footer)
+ * comes from the shared spi-dt-* styles in supplier-purchase-invoice.css.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/* SPI has 2 stages, this form has 4. Row spacing follows the prototype's
+   .p2pj-steps-row (9px 16px, 8px gap) rather than SPI's roomier 12px. */
+.cpf-steps4 {
+  grid-template-columns: repeat(4, 1fr);
+  padding: 9px 16px;
+  gap: 8px;
+}
+@media (max-width: 1280px) { .cpf-steps4 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 760px) { .cpf-steps4 { grid-template-columns: 1fr; } }
+
+/* .p2sc is 96px tall because its ACTIVE / DONE chip floats in the corner
+   instead of sitting in the first line. */
+.cpf-form .spi-dt-step { min-height: 96px; }
+.cpf-form .spi-dt-step-badge {
+  position: absolute;
+  top: 11px;
+  right: 20px;
+  z-index: 2;
+}
+.cpf-form .spi-dt-step-badge-done { right: 24px; }
+
+/* Header strip: 60px tall, title at weight 800 (.cstrip / .cstrip__title). */
+.cpf-form .spi-dt-head { min-height: 60px; }
+.cpf-form .spi-dt-head-title { font-weight: 800; letter-spacing: -.4px; }
+/* Left block: icon 20px from the strip edge (SPI adds 10 more), 9px to the
+   text, 2px between title and sub-line. */
+.cpf-form .spi-dt-head-l { padding-left: 0; gap: 9px; }
+.cpf-form .spi-dt-head-sub { margin-top: 2px; }
+.cpf-form .spi-dt-pill { padding: 7px 14px; }
+/* Reference pills sit to the right, beside PO Payment / Close — the gap in the
+   strip is between the title and the pills, not after them. */
+.cpf-form .spi-dt-pills { margin-left: auto; }
+/* SPI pushes the buttons right with their own auto margin; with two of them the
+   free space splits in half and the pills drift left. The pills own it here. */
+.cpf-form .spi-dt-head-r { margin-left: 0; gap: 6px; }
+/* Prototype spacing: 19px between pills, 13px from the last pill to the first
+   button (6 + 1px divider + 6), and 42px-tall buttons. */
+.cpf-form .spi-dt-head { column-gap: 6px; }
+.cpf-form .spi-dt-pills { gap: 7px; }
+.cpf-form .spi-dt-divider { margin: 0; height: 32px; }
+.cpf-form .spi-dt-btn-pay,
+.cpf-form .spi-dt-btn-close { height: 42px; padding: 0 16px; }
+.cpf-form .spi-dt-btn-close { padding: 0 13px; }
+
+/* Supplier Details is a 5-field row (the shared grid is 4). */
+.cpf-grid5 { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 1400px) { .cpf-grid5 { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 1100px) { .cpf-grid5 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 760px) { .cpf-grid5 { grid-template-columns: 1fr; } }
+
+/* ── Figma-exact trims, scoped to this form so SPI / Debit Note stay as they
+   are. Measured against the prototype: labels 9.5px #5b7585, fields on a
+   #f9fdfe wash, card headers 57px, toggle in a teal box. ── */
+.cpf-form .spi-dt-field-lbl {
+  font-size: 9.5px;
+  line-height: 1.45;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: #5b7585;
+}
+.cpf-form .spi-dt-field { gap: 5px; }
+.cpf-form .spi-dt-inp,
+.cpf-form .spi-dt-select-edit,
+.cpf-form .spi-dt-textarea { background: #f9fdfe; }
+.cpf-form .spi-dt-inp:focus,
+.cpf-form .spi-dt-textarea:focus { background: #fff; }
+.cpf-form .spi-dt-card-head { padding: 10px 13px; }
+/* Icons: tiles already match (36/11 and 26/8); the glyphs inside were a size
+   or two bigger than the prototype's, and its header text is heavier. */
+.cpf-form .spi-dt-card-ico svg { width: 14px; height: 14px; }
+.cpf-form .spi-dt-pill-ico svg { width: 11px; height: 11px; }
+/* The header avatar sits inside a soft translucent ring; the section and card
+   tiles had only a drop shadow, so they looked flat next to it. */
+.cpf-form .spi-dt-sec-ico {
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, .18), 0 4px 12px rgba(8, 145, 178, .4);
+}
+.cpf-form .spi-dt-card-ico {
+  box-shadow: 0 0 0 2.5px rgba(6, 182, 212, .16), 0 3px 9px rgba(8, 145, 178, .35);
+}
+.cpf-form .cpf-ico-risk {
+  box-shadow: 0 0 0 2.5px rgba(245, 158, 11, .18), 0 3px 9px rgba(217, 119, 6, .35);
+}
+.cpf-form .spi-dt-sec-lbl,
+.cpf-form .spi-dt-sec-title { font-weight: 800; letter-spacing: -.2px; }
+/* Physical-inspection toggle, to the prototype's .pof-toggle spec:
+   1.5px teal frame, 3px accent bar, 38x21 switch, hover ring. */
+.cpf-form .spi-dt-toggle {
+  position: relative;
+  overflow: hidden;
+  gap: 11px;
+  height: 40px;
+  padding: 0 11px 0 12px;
+  border: 1.5px solid #9fd9ea;
+  border-radius: 9px;
+  background: linear-gradient(180deg, #f6fcfe, #e8f6fb);
+  box-shadow: inset 0 1px 2px rgba(8, 47, 73, .05);
+  transition: border-color .15s, box-shadow .15s, background .15s;
+}
+.cpf-form .spi-dt-toggle::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, #22d3ee, #0891b2);
+}
+.cpf-form .spi-dt-toggle:hover {
+  border-color: #5fc7e0;
+  box-shadow: inset 0 1px 2px rgba(8, 47, 73, .05), 0 0 0 4px rgba(34, 211, 238, .16);
+}
+.cpf-form .spi-dt-toggle > * { position: relative; z-index: 1; }
+.cpf-form .spi-dt-toggle-sw {
+  position: relative;
+  flex-shrink: 0;
+  width: 38px;
+  height: 21px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #c3d1dc, #aebecb);
+  box-shadow: inset 0 1px 3px rgba(15, 23, 42, .22);
+  transition: background .2s ease, box-shadow .2s ease;
+}
+.cpf-form .spi-dt-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #fff, #f1f5f8);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .32), 0 0 0 .5px rgba(15, 23, 42, .06);
+  transition: transform .2s cubic-bezier(.34, 1.56, .64, 1);
+}
+.cpf-form .spi-dt-toggle-sw.on .spi-dt-toggle-knob { transform: translateX(17px); }
+.cpf-form .spi-dt-toggle-txt {
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: .01em;
+  color: #5b7585;
+  transition: color .15s;
+}
+[data-bs-theme="dark"] .cpf-form .spi-dt-inp,
+[data-bs-theme="dark"] .cpf-form .spi-dt-select-edit,
+[data-bs-theme="dark"] .cpf-form .spi-dt-textarea { background: #0c1c24; }
+[data-bs-theme="dark"] .cpf-form .spi-dt-toggle { background: #0c1c24; border-color: rgba(34, 211, 238, .25); }
+[data-bs-theme="dark"] .cpf-form .spi-dt-field-lbl { color: #94a3b8; }
+
+/* "Add Supplier" — teal button sitting beside the card title. */
+.cpf-addbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 10px;
+  height: 36px;
+  padding: 0 20px;
+  border: none;
+  border-radius: 11px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
+  box-shadow: 0 4px 14px rgba(8, 145, 178, .34);
+  transition: transform .15s, box-shadow .15s;
+}
+.cpf-addbtn:hover { transform: translateY(-1px); box-shadow: 0 7px 20px rgba(8, 145, 178, .46); }
+.cpf-addbtn:active { transform: translateY(0); }
+.cpf-addbtn svg { display: block; flex-shrink: 0; }
+
+/* Card headers that collapse on click. */
+.cpf-clickable { cursor: pointer; }
+/* Pushes the badge + chevron to the right edge of a card header. */
+.cpf-push { margin-left: auto; }
+/* Keeps the element's slot in the header while it has nothing to say. */
+.cpf-hide { visibility: hidden; }
+.cpf-chev {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  margin-left: 8px;
+  border: 1px solid #c2ecf3;
+  border-radius: 7px;
+  background: #fff;
+  color: #0e7490;
+  transition: transform .25s cubic-bezier(.22, 1, .36, 1), background .15s;
+}
+.cpf-chev:hover { background: #eafaff; }
+.cpf-chev.is-closed { transform: rotate(-90deg); }
+[data-bs-theme="dark"] .cpf-chev { background: #13242e; border-color: rgba(34, 211, 238, .25); color: #67e8f9; }
+
+/* Compliance bar colour by how complete the supplier's documents are. */
+.cpf-fill-ok { background: linear-gradient(90deg, #0e7490, #0891b2 55%, #06b6d4); }
+.cpf-fill-warn { background: linear-gradient(90deg, #d97706, #f59e0b); }
+.cpf-fill-bad { background: linear-gradient(90deg, #dc2626, #ef4444); }
+
+/* ── Supplier Legal Status ───────────────────────────────────────────────
+   Header: vault button + mini progress bar. Body: the two section cards. */
+.cpf-vault {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  margin-left: 10px;
+  padding: 8px 15px;
+  border: none;
+  border-radius: 11px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
+  box-shadow: 0 2px 4px rgba(8, 47, 73, .18), 0 8px 18px -6px rgba(8, 145, 178, .5);
+  transition: transform .15s, box-shadow .15s;
+}
+.cpf-vault:hover { transform: translateY(-1px); box-shadow: 0 2px 4px rgba(8, 47, 73, .2), 0 10px 22px -6px rgba(8, 145, 178, .62); }
+.cpf-vault svg { flex-shrink: 0; }
+.cpf-lgbar {
+  width: 270px;
+  height: 12px;
+  flex-shrink: 0;
+  margin-left: 13px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e8eff3;
+  box-shadow: inset 0 1px 2px rgba(8, 40, 60, .1);
+}
+.cpf-lgbar__fill { display: block; height: 100%; border-radius: 999px; transition: width .5s cubic-bezier(.22, 1, .36, 1); }
+.cpf-lgpct {
+  min-width: 48px;
+  text-align: right;
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #0c4a6e;
+}
+.cpf-lg { padding: 13px; }
+.cpf-lg__tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+@media (max-width: 1100px) { .cpf-lg__tabs { grid-template-columns: 1fr; } }
+.cpf-lg__tab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px 15px;
+  border-radius: 15px;
+  background:
+    radial-gradient(135% 150% at 4% -10%, rgba(255, 255, 255, .22), rgba(255, 255, 255, 0) 46%),
+    radial-gradient(90% 130% at 100% 120%, rgba(255, 255, 255, .16), rgba(255, 255, 255, 0) 55%),
+    linear-gradient(118deg, #0b5566 0%, #0891b2 48%, #06b6d4 82%, #22d3ee 100%);
+  box-shadow: 0 2px 4px rgba(8, 47, 73, .18), 0 16px 32px -14px rgba(8, 145, 178, .5), inset 0 1px 0 rgba(255, 255, 255, .28);
+}
+.cpf-lg__tab--warn {
+  background:
+    radial-gradient(135% 150% at 4% -10%, rgba(255, 255, 255, .22), rgba(255, 255, 255, 0) 46%),
+    radial-gradient(90% 130% at 100% 120%, rgba(255, 255, 255, .14), rgba(255, 255, 255, 0) 55%),
+    linear-gradient(118deg, #a5540a 0%, #d97706 48%, #f59e0b 82%, #fbbf24 100%);
+  box-shadow: 0 2px 4px rgba(69, 26, 3, .18), 0 16px 32px -14px rgba(217, 119, 6, .5), inset 0 1px 0 rgba(255, 255, 255, .28);
+}
+.cpf-lg__tab--bad {
+  background:
+    radial-gradient(135% 150% at 4% -10%, rgba(255, 255, 255, .22), rgba(255, 255, 255, 0) 46%),
+    radial-gradient(90% 130% at 100% 120%, rgba(255, 255, 255, .14), rgba(255, 255, 255, 0) 55%),
+    linear-gradient(118deg, #a11414 0%, #dc2626 48%, #ef4444 82%, #f87171 100%);
+  box-shadow: 0 2px 4px rgba(69, 10, 10, .18), 0 16px 32px -14px rgba(220, 38, 38, .5), inset 0 1px 0 rgba(255, 255, 255, .28);
+}
+.cpf-lg__hd { display: flex; align-items: center; gap: 12px; }
+.cpf-lg__ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  color: #fff;
+  background: linear-gradient(150deg, rgba(255, 255, 255, .34), rgba(255, 255, 255, .08));
+  border: 1px solid rgba(255, 255, 255, .34);
+}
+.cpf-lg__txt { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.cpf-lg__nm {
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: -.15px;
+  line-height: 1.15;
+  color: #fff;
+  text-shadow: 0 1px 6px rgba(8, 47, 73, .3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cpf-lg__sub {
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+  color: rgba(236, 254, 255, .86);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cpf-lg__cnt {
+  flex-shrink: 0;
+  padding: 5px 11px;
+  border: 1px solid rgba(255, 255, 255, .3);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .15);
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #fff;
+}
+.cpf-lg__pct {
+  flex-shrink: 0;
+  min-width: 52px;
+  text-align: right;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -.045em;
+  color: #fff;
+  text-shadow: 0 1px 8px rgba(8, 47, 73, .32);
+}
+.cpf-lg__bar {
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(3, 42, 58, .3), rgba(3, 42, 58, .18));
+  box-shadow: inset 0 1px 3px rgba(3, 42, 58, .38);
+}
+.cpf-lg__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #a5f3fc 0%, #ecfeff 58%, #fff 100%);
+  box-shadow: 0 0 14px rgba(236, 254, 255, .55);
+  transition: width .5s cubic-bezier(.22, 1, .36, 1);
+}
+.cpf-lg__tab--warn .cpf-lg__fill { background: linear-gradient(90deg, #fde68a 0%, #fff7e0 58%, #fff 100%); box-shadow: 0 0 14px rgba(255, 247, 224, .55); }
+.cpf-lg__tab--bad .cpf-lg__fill { background: linear-gradient(90deg, #fecaca 0%, #ffe9e9 58%, #fff 100%); box-shadow: 0 0 14px rgba(255, 233, 233, .55); }
+
+/* Physical inspection = Yes. Figma's alert toggle: red box, red switch,
+   red label and a red pill — not just a red border. */
+.cpf-toggle-req {
+  position: relative;
+  border-color: #f87171 !important;
+  background: linear-gradient(180deg, #fff5f5, #fee2e2) !important;
+  box-shadow: inset 0 1px 2px rgba(73, 8, 8, .05), 0 0 0 4px rgba(239, 68, 68, .18) !important;
+}
+.cpf-toggle-req::before { background: linear-gradient(180deg, #f87171, #dc2626) !important; }
+.cpf-toggle-req:hover {
+  border-color: #ef4444 !important;
+  box-shadow: inset 0 1px 2px rgba(73, 8, 8, .05), 0 0 0 4px rgba(239, 68, 68, .26) !important;
+}
+.cpf-form .cpf-toggle-req .spi-dt-toggle-sw.on {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  box-shadow: inset 0 1px 2px rgba(73, 8, 8, .22), 0 0 10px rgba(220, 38, 38, .35);
+}
+.cpf-form .cpf-toggle-req .spi-dt-toggle-txt { color: #b91c1c; font-weight: 800; }
+/* Grey "not required" chip on the editable toggle. */
+.cpf-req--off {
+  border-color: #dde6ed !important;
+  background: #eef3f7 !important;
+  color: #64809a !important;
+}
+.cpf-req {
+  margin-left: auto;
+  padding: 4px 9px;
+  border: 1px solid #fca5a5;
+  border-radius: 999px;
+  background: #fee2e2;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: #b91c1c;
+}
+
+/* Mandatory guidelines — shown inside Risk Alert when the PO is pinned. */
+.cpf-guide {
+  margin-bottom: 10px;
+  border: 1.5px solid #fca5a5;
+  border-radius: 12px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #fffafa, #fdeeee);
+}
+.cpf-guide__hd {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 13px;
+  background: linear-gradient(118deg, #a11414 0%, #dc2626 55%, #ef4444 100%);
+  color: #fff;
+}
+.cpf-guide__ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .18);
+  border: 1px solid rgba(255, 255, 255, .3);
+}
+.cpf-guide__t { font-size: 12px; font-weight: 800; letter-spacing: -.1px; }
+.cpf-guide__tag {
+  margin-left: auto;
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 255, 255, .35);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .16);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.cpf-guide__list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 11px 13px; }
+@media (max-width: 1100px) { .cpf-guide__list { grid-template-columns: 1fr; } }
+.cpf-guide__row { display: flex; align-items: flex-start; gap: 9px; }
+.cpf-guide__ck {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #dc2626;
+  color: #fff;
+}
+.cpf-guide__ck svg { width: 11px; height: 11px; }
+.cpf-guide__rt { font-size: 11.5px; font-weight: 800; color: #991b1b; }
+.cpf-guide__rx { margin-top: 2px; font-size: 10.5px; font-weight: 600; line-height: 1.4; color: #9f4a4a; }
+
+[data-bs-theme="dark"] .cpf-lgpct { color: #e2e8f0; }
+[data-bs-theme="dark"] .cpf-lgbar { background: rgba(148, 163, 184, .22); }
+[data-bs-theme="dark"] .cpf-guide { background: rgba(220, 38, 38, .12); border-color: rgba(248, 113, 113, .32); }
+[data-bs-theme="dark"] .cpf-guide__rt { color: #fca5a5; }
+[data-bs-theme="dark"] .cpf-guide__rx { color: #cbb0b0; }
+
+/* GST compliance banner — four states (idle / cleared / approval / blocked).
+   SPI only has a single amber "scrutiny overdue" strip, so this one is new. */
+.cpf-gst {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin: 0 0 12px;
+  padding: 11px 13px;
+  border: 1.5px solid #dbe7ee;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fff, #f7fbfd);
+}
+.cpf-gst__ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: #eef4f7;
+  color: #64809a;
+}
+.cpf-gst__txt { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.cpf-gst__t { font-size: 12.5px; font-weight: 800; line-height: 1.2; color: #0c4a6e; }
+.cpf-gst__s { font-size: 11px; font-weight: 600; line-height: 1.35; color: #5b7585; }
+.cpf-gst__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #7c98a6;
+}
+.cpf-gst__meta b { font-weight: 800; color: #0c4a6e; }
+.cpf-gst__age {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #eef4f7;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  color: #64809a;
+}
+.cpf-gst__sep { width: 1px; height: 11px; margin: 0 3px; background: #dbe7ee; }
+.cpf-gst__btn {
+  flex-shrink: 0;
+  align-self: center;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
+  box-shadow: 0 3px 10px rgba(8, 145, 178, .3);
+  transition: transform .15s, box-shadow .15s;
+}
+.cpf-gst__btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(8, 145, 178, .42); }
+
+.cpf-gst--ok { border-color: #bbf7d0; background: linear-gradient(180deg, #f6fefa, #eafaf0); }
+.cpf-gst--ok .cpf-gst__ico { background: #dcfce7; color: #15803d; }
+.cpf-gst--ok .cpf-gst__t { color: #166534; }
+
+.cpf-gst--warn { border-color: #fde68a; background: linear-gradient(180deg, #fffdf5, #fef7e7); }
+.cpf-gst--warn .cpf-gst__ico { background: #fef3c7; color: #b45309; }
+.cpf-gst--warn .cpf-gst__t { color: #92400e; }
+.cpf-gst--warn .cpf-gst__btn { background: linear-gradient(135deg, #b45309, #d97706 55%, #f59e0b); box-shadow: 0 3px 10px rgba(217, 119, 6, .3); }
+
+.cpf-gst--stop { border-color: #fecaca; background: linear-gradient(180deg, #fffafa, #fdeeee); }
+.cpf-gst--stop .cpf-gst__ico { background: #fee2e2; color: #b91c1c; }
+.cpf-gst--stop .cpf-gst__t { color: #991b1b; }
+.cpf-gst--stop .cpf-gst__btn { background: linear-gradient(135deg, #b91c1c, #dc2626 55%, #ef4444); box-shadow: 0 3px 10px rgba(220, 38, 38, .3); }
+
+[data-bs-theme="dark"] .cpf-gst { background: #13242e; border-color: rgba(148, 163, 184, .22); }
+[data-bs-theme="dark"] .cpf-gst__t { color: #e2e8f0; }
+[data-bs-theme="dark"] .cpf-gst__s { color: #94a3b8; }
+[data-bs-theme="dark"] .cpf-gst--ok { background: rgba(22, 163, 74, .12); border-color: rgba(34, 197, 94, .3); }
+[data-bs-theme="dark"] .cpf-gst--warn { background: rgba(217, 119, 6, .12); border-color: rgba(245, 158, 11, .3); }
+[data-bs-theme="dark"] .cpf-gst--stop { background: rgba(220, 38, 38, .12); border-color: rgba(248, 113, 113, .32); }
+
+/* Supplier Risk Alert — verdict strip + one row per check. SPI has no risk
+   panel, so these are the form's own styles. */
+.cpf-ico-risk { background: linear-gradient(135deg, #f59e0b, #d97706) !important; }
+.cpf-risk { padding: 13px; }
+.cpf-risk__badge {
+  margin-left: auto;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  border-radius: 20px;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.cpf-risk__badge--ok { color: #15803d; background: #dcfce7; border-color: #bbf7d0; }
+.cpf-risk__badge--med { color: #b45309; background: #fef3c7; border-color: #fde68a; }
+.cpf-risk__badge--high { color: #b91c1c; background: #fee2e2; border-color: #fca5a5; }
+.cpf-risk__badge--none { color: #64809a; background: #eef3f7; border-color: #dde6ed; }
+
+.cpf-risk__sum {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 10px;
+  padding: 11px 13px;
+  border: 1.5px solid #dbe7ee;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fff, #f7fbfd);
+}
+.cpf-risk__sum-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: #eef4f7;
+  color: #64809a;
+}
+.cpf-risk__sum-ico svg { width: 16px; height: 16px; }
+.cpf-risk__sum-txt { flex: 1; min-width: 0; }
+.cpf-risk__sum-t { font-size: 12.5px; font-weight: 800; line-height: 1.2; color: #0c4a6e; }
+.cpf-risk__sum-x { margin-top: 3px; font-size: 10.5px; font-weight: 600; line-height: 1.35; color: #5b7585; }
+.cpf-risk__sum-score { flex-shrink: 0; font-size: 15px; font-weight: 900; letter-spacing: -.4px; color: #0c4a6e; }
+.cpf-risk__sum--ok { border-color: #bbf7d0; background: linear-gradient(180deg, #f6fefa, #eafaf0); }
+.cpf-risk__sum--ok .cpf-risk__sum-ico { background: #dcfce7; color: #15803d; }
+.cpf-risk__sum--ok .cpf-risk__sum-t, .cpf-risk__sum--ok .cpf-risk__sum-score { color: #166534; }
+.cpf-risk__sum--med { border-color: #fde68a; background: linear-gradient(180deg, #fffdf5, #fef7e7); }
+.cpf-risk__sum--med .cpf-risk__sum-ico { background: #fef3c7; color: #b45309; }
+.cpf-risk__sum--med .cpf-risk__sum-t, .cpf-risk__sum--med .cpf-risk__sum-score { color: #92400e; }
+.cpf-risk__sum--high { border-color: #fecaca; background: linear-gradient(180deg, #fffafa, #fdeeee); }
+.cpf-risk__sum--high .cpf-risk__sum-ico { background: #fee2e2; color: #b91c1c; }
+.cpf-risk__sum--high .cpf-risk__sum-t, .cpf-risk__sum--high .cpf-risk__sum-score { color: #991b1b; }
+
+.cpf-risk__list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
+@media (max-width: 1100px) { .cpf-risk__list { grid-template-columns: 1fr; } }
+.cpf-risk__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e6eef3;
+  border-radius: 11px;
+  background: #fff;
+}
+.cpf-risk__dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: #eef4f7;
+  color: #64809a;
+}
+.cpf-risk__dot svg { width: 12px; height: 12px; }
+.cpf-risk__txt { flex: 1; min-width: 0; }
+.cpf-risk__t { font-size: 11.5px; font-weight: 800; letter-spacing: -.1px; color: #0f172a; }
+.cpf-risk__d { margin-top: 2px; font-size: 10.5px; font-weight: 600; line-height: 1.4; color: #64748b; }
+.cpf-risk__tag {
+  flex-shrink: 0;
+  align-self: center;
+  padding: 3px 8px;
+  border: 1px solid rgba(15, 23, 42, .09);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .8);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #475569;
+}
+.cpf-risk__row--ok { border-color: #bbf7d0; background: linear-gradient(180deg, #f9fefb, #f1fbf5); }
+.cpf-risk__row--ok .cpf-risk__dot { background: #dcfce7; color: #15803d; }
+.cpf-risk__row--ok .cpf-risk__t { color: #166534; }
+.cpf-risk__row--med { border-color: #fde68a; background: linear-gradient(180deg, #fffdf6, #fef8ea); }
+.cpf-risk__row--med .cpf-risk__dot { background: #fef3c7; color: #b45309; }
+.cpf-risk__row--med .cpf-risk__t { color: #92400e; }
+.cpf-risk__row--high { border-color: #fecaca; background: linear-gradient(180deg, #fffafa, #fdefef); }
+.cpf-risk__row--high .cpf-risk__dot { background: #fee2e2; color: #b91c1c; }
+.cpf-risk__row--high .cpf-risk__t { color: #991b1b; }
+.cpf-risk__empty { padding: 16px; text-align: center; font-size: 11.5px; font-weight: 600; color: #94a3b8; }
+
+[data-bs-theme="dark"] .cpf-risk__sum, [data-bs-theme="dark"] .cpf-risk__row { background: #13242e; border-color: rgba(148, 163, 184, .22); }
+[data-bs-theme="dark"] .cpf-risk__sum-t, [data-bs-theme="dark"] .cpf-risk__t { color: #e2e8f0; }
+[data-bs-theme="dark"] .cpf-risk__sum-x, [data-bs-theme="dark"] .cpf-risk__d { color: #94a3b8; }
+[data-bs-theme="dark"] .cpf-risk__row--ok, [data-bs-theme="dark"] .cpf-risk__sum--ok { background: rgba(22, 163, 74, .12); border-color: rgba(34, 197, 94, .3); }
+[data-bs-theme="dark"] .cpf-risk__row--med, [data-bs-theme="dark"] .cpf-risk__sum--med { background: rgba(217, 119, 6, .12); border-color: rgba(245, 158, 11, .3); }
+[data-bs-theme="dark"] .cpf-risk__row--high, [data-bs-theme="dark"] .cpf-risk__sum--high { background: rgba(220, 38, 38, .12); border-color: rgba(248, 113, 113, .32); }
+
+/* Placeholder while stages 02–04 are being built. */
+.cpf-soon {
+  padding: 28px;
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 14px;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748b;
+  text-align: center;
+}
+[data-bs-theme="dark"] .cpf-soon { background: #0e1b24; border-color: rgba(148, 163, 184, .25); color: #94a3b8; }
+
+/* ── GST notice popups ────────────────────────────────────────────────────
+   Values from the prototype's .cgst-* rules. Two tones: stop (blocked) and
+   warn (senior approval). ─────────────────────────────────────────────── */
+.cgst-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2500100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(8, 40, 60, .45);
+  backdrop-filter: blur(2px);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  letter-spacing: 0;
+  animation: cgstIn .16s ease;
+}
+@keyframes cgstIn { from { opacity: 0; } to { opacity: 1; } }
+.cgst-card {
+  width: min(520px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(8, 40, 60, .32);
+}
+
+.cgst-hd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 17px;
+  color: #fff;
+  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
+}
+.cgst-hd--warn { background: linear-gradient(135deg, #b45309, #d97706 55%, #f59e0b); }
+.cgst-hd--stop { background: linear-gradient(135deg, #b91c1c, #dc2626 55%, #ef4444); }
+.cgst-hd__ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .2);
+  border: 1px solid rgba(255, 255, 255, .3);
+}
+.cgst-hd__txt { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.cgst-hd__t { font-size: 15px; font-weight: 800; letter-spacing: -.2px; }
+.cgst-hd__s { font-size: 10.5px; font-weight: 600; color: rgba(255, 255, 255, .85); }
+.cgst-x {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .18);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.cgst-x:hover { background: rgba(255, 255, 255, .3); }
+
+.cgst-bd { display: flex; flex-direction: column; gap: 13px; padding: 17px 20px; }
+.cgst-lead { margin: 0; font-size: 12.5px; font-weight: 600; line-height: 1.5; color: #3a5161; }
+.cgst-lead b { color: #0f172a; font-weight: 800; }
+
+.cgst-rows { border: 1px solid #e3eef3; border-radius: 11px; overflow: hidden; }
+.cgst-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 38px;
+  padding: 9px 12px;
+  border-bottom: 1px solid #eef4f7;
+  background: #fbfeff;
+}
+.cgst-row:last-child { border-bottom: none; }
+.cgst-row__k { font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #7c98a6; }
+.cgst-row__v { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 800; color: #0e7490; }
+.cgst-tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.cgst-tag--ok { color: #15803d; background: #dcfce7; border: 1px solid #bbf7d0; }
+.cgst-tag--warn { color: #b45309; background: #fef3c7; border: 1px solid #fde68a; }
+.cgst-tag--stop { color: #b91c1c; background: #fee2e2; border: 1px solid #fecaca; }
+
+.cgst-note {
+  padding: 9px 11px;
+  border: 1px solid #e3eef3;
+  border-radius: 10px;
+  background: #f4fafc;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: #5b7585;
+}
+
+.cgst-field { display: flex; flex-direction: column; gap: 5px; }
+.cgst-field label {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: #5b7585;
+}
+.cgst-opt { font-size: 9px; font-weight: 700; letter-spacing: .03em; text-transform: none; color: #a8bcc7; }
+.cgst-sel,
+.cgst-ta {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid #e6eef3;
+  border-radius: 9px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #0f172a;
+  outline: none;
+}
+.cgst-sel {
+  appearance: none;
+  height: 40px;
+  padding-right: 32px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235b7585' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  background-size: 14px;
+}
+.cgst-ta { min-height: 52px; resize: none; }
+.cgst-sel:focus,
+.cgst-ta:focus { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34, 211, 238, .15); }
+
+.cgst-ft {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 13px 17px;
+  border-top: 1px solid #eef4f7;
+  background: #fbfeff;
+  border-radius: 0 0 16px 16px;
+}
+.cgst-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: -.1px;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
+  transition: filter .15s, transform .12s, box-shadow .15s;
+}
+.cgst-btn:hover { transform: translateY(-1px); }
+.cgst-btn--ghost { background: #fff; color: #5b7585; border: 1.5px solid #dbe7ee; }
+.cgst-btn--warn { background: linear-gradient(135deg, #b45309, #d97706 55%, #f59e0b); box-shadow: 0 3px 10px rgba(217, 119, 6, .3); }
+.cgst-btn--stop { background: linear-gradient(135deg, #b91c1c, #dc2626 55%, #ef4444); box-shadow: 0 3px 10px rgba(220, 38, 38, .3); }
+
+[data-bs-theme="dark"] .cgst-card { background: #0e1b24; }
+[data-bs-theme="dark"] .cgst-lead { color: #cbd5e1; }
+[data-bs-theme="dark"] .cgst-lead b { color: #e2e8f0; }
+[data-bs-theme="dark"] .cgst-row { background: #13242e; border-bottom-color: rgba(148, 163, 184, .16); }
+[data-bs-theme="dark"] .cgst-rows { border-color: rgba(148, 163, 184, .2); }
+[data-bs-theme="dark"] .cgst-row__v { color: #67e8f9; }
+[data-bs-theme="dark"] .cgst-note { background: rgba(34, 211, 238, .08); border-color: rgba(34, 211, 238, .2); color: #94a3b8; }
+[data-bs-theme="dark"] .cgst-sel,
+[data-bs-theme="dark"] .cgst-ta { background: #0c1c24; border-color: rgba(34, 211, 238, .22); color: #e2e8f0; }
+[data-bs-theme="dark"] .cgst-ft { background: #0c1c24; border-top-color: rgba(148, 163, 184, .16); }
+[data-bs-theme="dark"] .cgst-btn--ghost { background: #1e293b; color: #cbd5e1; border-color: rgba(148, 163, 184, .25); }

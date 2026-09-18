@@ -280,16 +280,19 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     Route::get   ('/clm/kyc-documents',      [ClmKycController::class, 'index']);
     Route::post  ('/clm/kyc-documents',      [ClmKycController::class, 'store']);
+    Route::post  ('/clm/kyc-documents/import', [ClmKycController::class, 'import']);
     Route::put   ('/clm/kyc-documents/{id}', [ClmKycController::class, 'update']);
     Route::delete('/clm/kyc-documents/{id}', [ClmKycController::class, 'destroy']);
 
     Route::get   ('/clm/dd-documents',      [ClmDdController::class, 'index']);
     Route::post  ('/clm/dd-documents',      [ClmDdController::class, 'store']);
+    Route::post  ('/clm/dd-documents/import', [ClmDdController::class, 'import']);
     Route::put   ('/clm/dd-documents/{id}', [ClmDdController::class, 'update']);
     Route::delete('/clm/dd-documents/{id}', [ClmDdController::class, 'destroy']);
 
     Route::get   ('/clm/trade-licenses',      [ClmTradeLicenseController::class, 'index']);
     Route::post  ('/clm/trade-licenses',      [ClmTradeLicenseController::class, 'store']);
+    Route::post  ('/clm/trade-licenses/import', [ClmTradeLicenseController::class, 'import']);
     Route::put   ('/clm/trade-licenses/{id}', [ClmTradeLicenseController::class, 'update']);
     Route::delete('/clm/trade-licenses/{id}', [ClmTradeLicenseController::class, 'destroy']);
 
