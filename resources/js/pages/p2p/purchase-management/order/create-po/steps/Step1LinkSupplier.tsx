@@ -3,6 +3,7 @@
 // The address, legal, GST and risk panels follow in the next sections.
 import { useMemo, useState } from 'react';
 import { EditSelect, Field } from '../form-fields';
+import GstNoticeModal, { type GstNotice } from '../GstNoticeModal';
 import { MasterDatePicker } from '../../../../../../components/ui/MasterDatePicker';
 import { formatDmy } from '../../../../../../utils/formatDmy';
 import {
@@ -99,6 +100,13 @@ function gstState(supplier: string, scrutinyAge: number | null, filingAge: numbe
   return { tone: 'ok', title: 'GST compliance cleared', note: `Scrutiny and filing are both inside the ${GST_STALE_MONTHS}-month window. This PO can proceed.` };
 }
 
+/** The oldest date a scrutiny or return may carry and still be accepted. */
+function cutoffDate(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - GST_STALE_MONTHS);
+  return d.toISOString().slice(0, 10);
+}
+
 export default function Step1LinkSupplier() {
   const [poOpen, setPoOpen] = useState(true);
   const [supOpen, setSupOpen] = useState(true);
@@ -181,6 +189,24 @@ export default function Step1LinkSupplier() {
   const filingAge = monthsAgo(filingDate);
   const gst = gstState(supplier, scrutinyAge, filingAge);
 
+  // The banner's action opens the matching notice popup.
+  const [notice, setNotice] = useState<GstNotice | null>(null);
+  const openNotice = () => {
+    if (gst.tone !== 'stop' && gst.tone !== 'warn') return;
+    const s = supplierByOption(supplier);
+    setNotice({
+      tone: gst.tone,
+      supplier: s?.key ?? '—',
+      code: s?.code ?? '—',
+      scrutiny: scrutinyDate,
+      filing: filingDate,
+      scrutinyAge,
+      filingAge,
+      cutoff: cutoffDate(),
+      months: GST_STALE_MONTHS,
+    });
+  };
+
   // Risk alerts are re-derived from the chosen supplier, never stored.
   const [riskOpen, setRiskOpen] = useState(true);
   const picked = useMemo(() => supplierByOption(supplier), [supplier]);
@@ -209,6 +235,8 @@ export default function Step1LinkSupplier() {
 
   return (
     <>
+    {notice && <GstNoticeModal notice={notice} onClose={() => setNotice(null)} />}
+
     <div className={`spi-dt-sec ${poOpen ? '' : 'is-collapsed'}`}>
       <div className="spi-dt-sec-head" onClick={() => setPoOpen((o) => !o)}>
         <div className="spi-dt-sec-ico"><IcoFile /></div>
@@ -456,7 +484,7 @@ export default function Step1LinkSupplier() {
                 </span>
               )}
             </span>
-            {gst.action && <button type="button" className="cpf-gst__btn">{gst.action}</button>}
+            {gst.action && <button type="button" className="cpf-gst__btn" onClick={openNotice}>{gst.action}</button>}
           </div>
 
           <div className="spi-dt-grid4">
