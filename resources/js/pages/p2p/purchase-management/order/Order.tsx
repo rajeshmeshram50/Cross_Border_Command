@@ -1,8 +1,12 @@
 // P2P → Order: purchase order list. Uses static SAMPLE_ROWS until the API is connected.
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import Badge, { type BadgeVariant } from '../../../../components/ui/Badge';
 import CreatePoModal from './CreatePoModal';
+// The PO form is a screen of its own: loaded only when one is being created,
+// so the list page doesn't carry it. The type import costs nothing at runtime.
+import type { PoLink } from './create-po/CreatePoForm';
+const CreatePoForm = lazy(() => import('./create-po/CreatePoForm'));
 import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './order.css';
 
@@ -897,7 +901,9 @@ export default function Order() {
 
   const toggleGuide = () => setGuideOpen((open) => !open);
 
+  // Create PO runs in two screens: the link popup, then the full-page form.
   const [createOpen, setCreateOpen] = useState(false);
+  const [poLink, setPoLink] = useState<PoLink | null>(null);
 
   const [activeTab, setActiveTab] = useState<TabKey>('all');
 
@@ -982,8 +988,24 @@ export default function Order() {
   return (
     <div className="ord-page">
 
-      {/* Mounted only while open, so its scroll lock and key listener exist only then. */}
-      {createOpen && <CreatePoModal onClose={() => setCreateOpen(false)} />}
+      {/* Mounted only while open, so the scroll lock and key listener exist only then. */}
+      {createOpen && (
+        <CreatePoModal
+          initial={poLink}
+          onClose={() => setCreateOpen(false)}
+          onConfirm={(link) => { setPoLink(link); setCreateOpen(false); }}
+        />
+      )}
+
+      {poLink && !createOpen && (
+        <Suspense fallback={<CreatePoSkeleton />}>
+          <CreatePoForm
+            link={poLink}
+            onClose={() => setPoLink(null)}
+            onChangeLink={() => setCreateOpen(true)}
+          />
+        </Suspense>
+      )}
 
       {/* Header strip, guide, tabs and search use the shared SPI styles (spi-*). */}
       <div className="spi-head">
@@ -1260,6 +1282,52 @@ export default function Order() {
             pageSizeOptions={PAGE_SIZE_OPTIONS}
           />
         )}
+      </div>
+    </div>
+  );
+}
+
+/* Shown for the moment the PO form's code is being fetched. It mirrors the
+   form's own layout — header, four step cards, two field sections — so the
+   screen doesn't jump when the real thing arrives. Shimmer classes come from
+   the shared P2P wizard styles this page already loads. */
+function CreatePoSkeleton() {
+  return (
+    <div className="spi-dt-overlay ord-skl">
+      <div className="spi-dt">
+        <div className="spi-dt-topcard">
+          <div className="spi-dt-head">
+            <div className="spi-dt-sk spi-dt-sk-ico" />
+            <div className="ord-skl-title">
+              <div className="spi-dt-sk spi-dt-sk-line ord-skl-w180" />
+              <div className="spi-dt-sk spi-dt-sk-line ord-skl-w120 ord-skl-thin" />
+            </div>
+          </div>
+          <div className="spi-dt-steps ord-skl-steps">
+            {[0, 1, 2, 3].map((i) => <div key={i} className="spi-dt-sk ord-skl-step" />)}
+          </div>
+        </div>
+        {[0, 1].map((s) => (
+          <div className="spi-dt-sec" key={s}>
+            <div className="spi-dt-sec-head">
+              <div className="spi-dt-sk spi-dt-sk-ico" />
+              <div className="spi-dt-sec-mid">
+                <div className="spi-dt-sk spi-dt-sk-line ord-skl-w200" />
+                <div className="spi-dt-sk spi-dt-sk-line ord-skl-w280 ord-skl-thin" />
+              </div>
+            </div>
+            <div className="spi-dt-sec-body">
+              <div className="spi-dt-grid4">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i}>
+                    <div className="spi-dt-sk spi-dt-sk-line ord-skl-w84 ord-skl-thin" />
+                    <div className="spi-dt-sk spi-dt-sk-field" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
