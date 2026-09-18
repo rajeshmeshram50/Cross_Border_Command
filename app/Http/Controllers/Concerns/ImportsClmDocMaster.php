@@ -53,8 +53,11 @@ trait ImportsClmDocMaster
         // Existing names in the caller's scope — the duplicate check.
         $existing = $modelClass::query();
         MasterVisibility::applyReadScope($existing, $user, $user->branch_id ?: null);
+        // Unique on name + issuing-authority SET (order-insensitive), same rule
+        // as the Add/Edit forms.
+        $key = fn ($n, $a) => mb_strtolower(trim((string) $n)) . "\0" . ClmAuthority::canonicalIds($a);
         $seen = [];
-        foreach ($existing->pluck('name') as $n) $seen[mb_strtolower(trim((string) $n))] = true;
+        foreach ($existing->get(['name', 'authority']) as $e) $seen[$key($e->name, $e->authority)] = true;
 
         $imported = [];
         $failed   = [];
@@ -75,7 +78,6 @@ trait ImportsClmDocMaster
             if (mb_strlen($name) > 255)     { $fail('Name exceeds 255 characters'); continue; }
             if ($auth === '')               { $fail('Authority is required'); continue; }
             if (mb_strlen($valid_) > 32)    { $fail('Validity/Expiry exceeds 32 characters'); continue; }
-            if (isset($seen[mb_strtolower($name)])) { $fail("A {$label} named \"{$name}\" already exists"); continue; }
 
             /* Authority column: names, ids, or a mix, comma-separated. Every
                token must resolve — a half-mapped row would look imported
@@ -93,7 +95,13 @@ trait ImportsClmDocMaster
             if ($unknown) { $fail('Unknown authority: ' . implode(', ', $unknown) . ' — use a name from the Authority Master'); continue; }
             if (!$ids)    { $fail('Authority is required'); continue; }
 
-            $seen[mb_strtolower($name)] = true;
+            $authIds = implode(', ', array_keys($ids));
+            if (isset($seen[$key($name, $authIds)])) {
+                $fail("A {$label} named \"{$name}\" with the same issuing authority already exists");
+                continue;
+            }
+
+            $seen[$key($name, $authIds)] = true;
             $valid[] = [
                 'row'       => $rowNo,
                 'name'      => $name,

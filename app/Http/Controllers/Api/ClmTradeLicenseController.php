@@ -90,8 +90,11 @@ class ClmTradeLicenseController extends Controller
         $name = trim($data['name']);
         $dupe = ClmTradeLicense::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
         MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
-        if ($dupe->exists()) {
-            $msg = "A trade licence named \"{$name}\" already exists. Pick a different name.";
+        $newAuth = ClmAuthority::normalizeIds($data['authority'] ?? null, $user->client_id);
+        // Unique on name + issuing authority TOGETHER — the same name under a
+        // different authority set is a different document.
+        if ($dupe->pluck('authority')->contains(fn ($a) => ClmAuthority::sameIdSet($a, $newAuth))) {
+            $msg = "A trade licence named \"{$name}\" with the same issuing authority already exists.";
             
             return response()->json([
                 'status'  => false,
@@ -149,12 +152,14 @@ class ClmTradeLicenseController extends Controller
             }
         }
 
-        if (isset($data['name'])) {
+        if (isset($data['name']) || isset($data['authority'])) {
+            $checkName = $data['name'] ?? trim((string) $row->name);
+            $checkAuth = $data['authority'] ?? (string) $row->authority;
             $clash = ClmTradeLicense::query()->where('id', '!=', $row->id)
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])]);
+                ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($checkName)]);
             MasterVisibility::applyReadScope($clash, $user, $user->branch_id ?: null);
-            if ($clash->exists()) {
-                $msg = "Another trade licence named \"{$data['name']}\" already exists. Pick a different name.";
+            if ($clash->pluck('authority')->contains(fn ($a) => ClmAuthority::sameIdSet($a, $checkAuth))) {
+                $msg = "Another trade licence named \"{$checkName}\" with the same issuing authority already exists.";
                 return response()->json([
                     'status'  => false,
                     'message' => $msg,

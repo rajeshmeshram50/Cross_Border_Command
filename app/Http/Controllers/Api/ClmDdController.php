@@ -90,9 +90,12 @@ class ClmDdController extends Controller
         $name = trim($data['name']);
         $dupe = ClmDdDocument::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
         MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
-        if ($dupe->exists()) {
+        $newAuth = ClmAuthority::normalizeIds($data['authority'] ?? null, $user->client_id);
+        // Unique on name + issuing authority TOGETHER — the same name under a
+        // different authority set is a different document.
+        if ($dupe->pluck('authority')->contains(fn ($a) => ClmAuthority::sameIdSet($a, $newAuth))) {
             throw ValidationException::withMessages([
-                'name' => "A due-diligence document named \"{$name}\" already exists. Pick a different name.",
+                'name' => "A due-diligence document named \"{$name}\" with the same issuing authority already exists.",
             ]);
         }
 
@@ -145,13 +148,15 @@ class ClmDdController extends Controller
             }
         }
 
-        if (isset($data['name'])) {
+        if (isset($data['name']) || isset($data['authority'])) {
+            $checkName = $data['name'] ?? trim((string) $row->name);
+            $checkAuth = $data['authority'] ?? (string) $row->authority;
             $clash = ClmDdDocument::query()->where('id', '!=', $row->id)
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])]);
+                ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($checkName)]);
             MasterVisibility::applyReadScope($clash, $user, $user->branch_id ?: null);
-            if ($clash->exists()) {
+            if ($clash->pluck('authority')->contains(fn ($a) => ClmAuthority::sameIdSet($a, $checkAuth))) {
                 throw ValidationException::withMessages([
-                    'name' => "Another due-diligence document named \"{$data['name']}\" already exists. Pick a different name.",
+                    'name' => "Another due-diligence document named \"{$checkName}\" with the same issuing authority already exists.",
                 ]);
             }
         }
