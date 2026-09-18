@@ -1064,30 +1064,14 @@ class AttendanceController extends Controller
             $exitedOnIso = $hasLeft ? ($exitIso ?? $emp->deleted_at?->toDateString()) : null;
             $noticeUntil = (!$hasLeft && $exitIso !== null) ? $exitIso : null;
 
-            /* Past the last working day, but the exit case is still OPEN. (#13)
-             *
-             * An elapsed notice period used to be treated as having left, so an
-             * employee sitting in Exit Management's "Exit In Progress" tab —
-             * case open, readiness 40%, clearance unfinished — was labelled
-             * 'Exited' in Attendance with a "Left 14 Sep 2026" pill beside it.
-             * Two screens, two contradictory answers about the same person, and
-             * the one that says "gone" is the one payroll and clearance are not
-             * ready to agree with.
-             *
-             * The planned last working day is a PLAN until HR closes the case:
-             * it gets extended, it gets withdrawn, the person works an extra
-             * week. Only the Closed marker (Stage 4) means they are actually
-             * gone, which is the rule $exitCompleted already encodes.
-             *
-             * The day still needs a label though — they are not punching in, and
-             * reading it as 'Absent' would drop them into the Absent chip and
-             * the Absent KPI for every day since, which is the exact harm #91
-             * fixed for real leavers. So it gets its own status: out of scope
-             * for attendance, honest about the exit not being finished, and
-             * visibly different from 'Exited'. */
-            if ($exitIso !== null && $date > $exitIso && !$today) {
-                $statusToday = $hasLeft ? 'Exited' : 'Exit in Progress';
-            }            // Approved leave wins over an "Absent" reading (no attendance row).
+            /* An open exit keeps the real attendance reading (Absent): the notice pill
+               beside the name already says the exit is in progress. Only a CLOSED exit
+               replaces the status, so a genuine leaver stops reading as absent. */
+            if ($exitIso !== null && $date > $exitIso && !$today && $hasLeft) {
+                $statusToday = 'Exited';
+            }
+
+            // Approved leave wins over an "Absent" reading (no attendance row).
             if (isset($onLeaveSet[$emp->id]) && strcasecmp($statusToday, 'Absent') === 0) {
                 $statusToday = 'Leave';
             }
