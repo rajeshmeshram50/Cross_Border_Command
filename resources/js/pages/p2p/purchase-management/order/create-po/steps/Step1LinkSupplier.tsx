@@ -225,10 +225,10 @@ export default function Step1LinkSupplier() {
 
       <div className="spi-dt-sec-body">
         <div className="spi-dt-grid4">
-          <Field label="PO Type" req>
+          <Field label="PO Type">
             <EditSelect value={poType} options={PO_TYPES} onChange={setPoType} />
           </Field>
-          <Field label="Document Type" req>
+          <Field label="Document Type">
             <EditSelect value={docType} options={DOC_TYPES} onChange={setDocType} />
           </Field>
           <Field label="Mode of Transport">
@@ -240,13 +240,13 @@ export default function Step1LinkSupplier() {
               <span className="spi-dt-auto"><IcoLock /> AUTO</span>
             </div>
           </Field>
-          <Field label="Expected Delivery Date" req>
+          <Field label="Expected Delivery Date">
             <MasterDatePicker value={deliveryDate} onChange={setDeliveryDate} />
           </Field>
           <Field label="Delivery Location">
             <input className="spi-dt-inp" placeholder="Enter delivery location" value={deliveryLocation} onChange={(e) => setDeliveryLocation(e.target.value)} />
           </Field>
-          <Field label="Payment Type" req>
+          <Field label="Payment Type">
             <EditSelect value={paymentType} options={PAYMENT_TYPES} onChange={setPaymentType} />
           </Field>
           <Field label="Physical Inspection Required">
@@ -268,7 +268,7 @@ export default function Step1LinkSupplier() {
 
           {isInternational && (
             <>
-              <Field label="Currency" req>
+              <Field label="Currency">
                 <EditSelect value={currency} options={CURRENCIES} onChange={setCurrency} />
               </Field>
               <Field label="Exchange Rate">
@@ -322,7 +322,7 @@ export default function Step1LinkSupplier() {
           </div>
           {supCardOpen && (
           <div className="spi-dt-grid4 cpf-grid5">
-            <Field label="SELECT SUPPLIER" req>
+            <Field label="SELECT SUPPLIER">
               <EditSelect value={supplier} options={SUPPLIER_OPTIONS} onChange={pickSupplier} placeholder="— Select Supplier —" />
             </Field>
             <Field label="COMPANY LEGAL NAME">

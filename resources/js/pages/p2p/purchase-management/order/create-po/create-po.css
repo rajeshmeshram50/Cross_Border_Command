@@ -4,10 +4,49 @@
  * comes from the shared spi-dt-* styles in supplier-purchase-invoice.css.
  * ───────────────────────────────────────────────────────────────────────── */
 
-/* SPI has 2 stages, this form has 4 — same cards, wider row. */
-.cpf-steps4 { grid-template-columns: repeat(4, 1fr); }
+/* SPI has 2 stages, this form has 4. Row spacing follows the prototype's
+   .p2pj-steps-row (9px 16px, 8px gap) rather than SPI's roomier 12px. */
+.cpf-steps4 {
+  grid-template-columns: repeat(4, 1fr);
+  padding: 9px 16px;
+  gap: 8px;
+}
 @media (max-width: 1280px) { .cpf-steps4 { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 760px) { .cpf-steps4 { grid-template-columns: 1fr; } }
+
+/* .p2sc is 96px tall because its ACTIVE / DONE chip floats in the corner
+   instead of sitting in the first line. */
+.cpf-form .spi-dt-step { min-height: 96px; }
+.cpf-form .spi-dt-step-badge {
+  position: absolute;
+  top: 11px;
+  right: 20px;
+  z-index: 2;
+}
+.cpf-form .spi-dt-step-badge-done { right: 24px; }
+
+/* Header strip: 60px tall, title at weight 800 (.cstrip / .cstrip__title). */
+.cpf-form .spi-dt-head { min-height: 60px; }
+.cpf-form .spi-dt-head-title { font-weight: 800; letter-spacing: -.4px; }
+/* Left block: icon 20px from the strip edge (SPI adds 10 more), 9px to the
+   text, 2px between title and sub-line. */
+.cpf-form .spi-dt-head-l { padding-left: 0; gap: 9px; }
+.cpf-form .spi-dt-head-sub { margin-top: 2px; }
+.cpf-form .spi-dt-pill { padding: 7px 14px; }
+/* Reference pills sit to the right, beside PO Payment / Close — the gap in the
+   strip is between the title and the pills, not after them. */
+.cpf-form .spi-dt-pills { margin-left: auto; }
+/* SPI pushes the buttons right with their own auto margin; with two of them the
+   free space splits in half and the pills drift left. The pills own it here. */
+.cpf-form .spi-dt-head-r { margin-left: 0; gap: 6px; }
+/* Prototype spacing: 19px between pills, 13px from the last pill to the first
+   button (6 + 1px divider + 6), and 42px-tall buttons. */
+.cpf-form .spi-dt-head { column-gap: 6px; }
+.cpf-form .spi-dt-pills { gap: 7px; }
+.cpf-form .spi-dt-divider { margin: 0; height: 32px; }
+.cpf-form .spi-dt-btn-pay,
+.cpf-form .spi-dt-btn-close { height: 42px; padding: 0 16px; }
+.cpf-form .spi-dt-btn-close { padding: 0 13px; }
 
 /* Supplier Details is a 5-field row (the shared grid is 4). */
 .cpf-grid5 { grid-template-columns: repeat(5, 1fr); }
@@ -18,13 +57,37 @@
 /* ── Figma-exact trims, scoped to this form so SPI / Debit Note stay as they
    are. Measured against the prototype: labels 9.5px #5b7585, fields on a
    #f9fdfe wash, card headers 57px, toggle in a teal box. ── */
-.cpf-form .spi-dt-field-lbl { font-size: 9.5px; line-height: 1.45; color: #5b7585; }
+.cpf-form .spi-dt-field-lbl {
+  font-size: 9.5px;
+  line-height: 1.45;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: #5b7585;
+}
+.cpf-form .spi-dt-field { gap: 5px; }
 .cpf-form .spi-dt-inp,
 .cpf-form .spi-dt-select-edit,
 .cpf-form .spi-dt-textarea { background: #f9fdfe; }
 .cpf-form .spi-dt-inp:focus,
 .cpf-form .spi-dt-textarea:focus { background: #fff; }
 .cpf-form .spi-dt-card-head { padding: 10px 13px; }
+/* Icons: tiles already match (36/11 and 26/8); the glyphs inside were a size
+   or two bigger than the prototype's, and its header text is heavier. */
+.cpf-form .spi-dt-card-ico svg { width: 14px; height: 14px; }
+.cpf-form .spi-dt-pill-ico svg { width: 11px; height: 11px; }
+/* The header avatar sits inside a soft translucent ring; the section and card
+   tiles had only a drop shadow, so they looked flat next to it. */
+.cpf-form .spi-dt-sec-ico {
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, .18), 0 4px 12px rgba(8, 145, 178, .4);
+}
+.cpf-form .spi-dt-card-ico {
+  box-shadow: 0 0 0 2.5px rgba(6, 182, 212, .16), 0 3px 9px rgba(8, 145, 178, .35);
+}
+.cpf-form .cpf-ico-risk {
+  box-shadow: 0 0 0 2.5px rgba(245, 158, 11, .18), 0 3px 9px rgba(217, 119, 6, .35);
+}
+.cpf-form .spi-dt-sec-lbl,
+.cpf-form .spi-dt-sec-title { font-weight: 800; letter-spacing: -.2px; }
 /* Physical-inspection toggle, to the prototype's .pof-toggle spec:
    1.5px teal frame, 3px accent bar, 38x21 switch, hover ring. */
 .cpf-form .spi-dt-toggle {
