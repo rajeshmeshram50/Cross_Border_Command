@@ -901,6 +901,14 @@ export default function Order() {
 
   const toggleGuide = () => setGuideOpen((open) => !open);
 
+  // Rows are static sample data today, so this flag only covers the first
+  // paint. When the list API is connected it becomes that request's state.
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const timer = setTimeout(() => setLoading(false), 600);
+    return () => clearTimeout(timer);
+  }, []);
+
   // Create PO runs in two screens: the link popup, then the full-page form.
   const [createOpen, setCreateOpen] = useState(false);
   const [poLink, setPoLink] = useState<PoLink | null>(null);
@@ -1126,7 +1134,9 @@ export default function Order() {
 
         </div>
 
-        {rows.length === 0 ? (
+        {loading ? (
+          <OrderListSkeleton phone={isPhone} />
+        ) : rows.length === 0 ? (
           <div className="ord-empty">
             {search.trim()
               ? 'No purchase orders match your search.'
@@ -1329,6 +1339,62 @@ function CreatePoSkeleton() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/* List shimmer. Mirrors the real grid — same column widths, same two-line
+   invoice rows — so the table doesn't jump when the rows arrive. On a phone it
+   mirrors the cards instead. The shimmer bar is a shared P2P style. */
+function OrderListSkeleton({ phone }: { phone: boolean }) {
+  if (phone) {
+    return (
+      <div className="ord-cards">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div className="ord-card ord-skel-card" key={i}>
+            <div className="ord-skel-row">
+              <span className="spi-sk-bar ord-skel-w120" />
+              <span className="spi-sk-bar ord-skel-w64" />
+            </div>
+            {Array.from({ length: 6 }).map((__, j) => (
+              <div className="ord-skel-row" key={j}>
+                <span className="spi-sk-bar ord-skel-w96" />
+                <span className="spi-sk-bar ord-skel-w140" />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="ord-table-scroll">
+      <table className="ord-table" style={{ width: TABLE_WIDTH }}>
+        <colgroup>
+          {COLUMNS.map((col) => <col key={col.label} style={{ width: col.width }} />)}
+        </colgroup>
+        <thead>
+          <tr>
+            {COLUMNS.map((col) => (
+              <th key={col.label} className={col.groupEnd ? 'ord-table__group-end' : undefined}>{col.label}</th>
+            ))}
+          </tr>
+        </thead>
+        {Array.from({ length: 4 }).map((_, rowIndex) => (
+          <tbody key={rowIndex}>
+            {[0, 1].map((line) => (
+              <tr key={line} className="ord-skel-tr">
+                {COLUMNS.map((col) => (
+                  <td key={col.label} className={col.groupEnd ? 'ord-table__group-end' : undefined}>
+                    <span className="spi-sk-bar" style={{ width: Math.round(col.width * 0.6) }} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        ))}
+      </table>
     </div>
   );
 }
