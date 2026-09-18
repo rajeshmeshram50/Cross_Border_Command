@@ -1,5 +1,5 @@
 // P2P → Order: purchase order list. Uses static SAMPLE_ROWS until the API is connected.
-import { Suspense, lazy, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import Badge, { type BadgeVariant } from '../../../../components/ui/Badge';
 import CreatePoModal from './CreatePoModal';
@@ -9,6 +9,8 @@ import type { PoLink } from './create-po/CreatePoForm';
 const CreatePoForm = lazy(() => import('./create-po/CreatePoForm'));
 import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './order.css';
+
+const ManagePaymentRequestsModal = lazy(() => import('./ManagePaymentRequestsModal'));
 
 type GuideStep = { num: string; title: string; desc: string; icon: ReactNode };
 
@@ -171,7 +173,7 @@ type RiskLevel = 'high' | 'medium' | 'low';
 
 type PaymentNote = { kind: 'ready' | 'waiting'; amount: number };
 
-type OrderRow = {
+export type OrderRow = {
   po: string; poDate: string; physicalInspection: boolean;
   type: PoType; docType: DocType;
   shipment: string | null; shipmentDate: string;
@@ -667,7 +669,7 @@ function InspectionCell({ required, done, cancelled = false }: { required: boole
   );
 }
 
-function PaymentCell({ row }: { row: OrderRow }) {
+function PaymentCell({ row, onManage }: { row: OrderRow; onManage: (row: OrderRow) => void }) {
   const pct = row.net > 0 ? Math.round((row.paid / row.net) * 100) : 0;
   const status: PaymentStatus = pct >= 100 ? 'full' : pct > 0 ? 'partial' : 'pending';
   const label = status === 'full' ? 'Payment Completed' : PAYMENT_LABEL[status];
@@ -709,7 +711,12 @@ function PaymentCell({ row }: { row: OrderRow }) {
         )}
       </div>
 
-      <button type="button" className={`ord-btn ord-btn--hist${done ? ' is-record' : ''}`} disabled={!!row.cancelled}>
+      <button
+        type="button"
+        className={`ord-btn ord-btn--hist${done ? ' is-record' : ''}`}
+        disabled={!!row.cancelled}
+        onClick={() => onManage(row)}
+      >
         {done ? ICON_EYE : ICON_HISTORY}
         <span>{done ? 'View Request Details' : 'Manage Payment Requests'}</span>
 
@@ -786,7 +793,7 @@ function useIsPhone() {
   return isPhone;
 }
 
-function OrderCard({ row, index }: { row: OrderRow; index: number }) {
+function OrderCard({ row, index, onManage }: { row: OrderRow; index: number; onManage: (row: OrderRow) => void }) {
   const category = SUPPLIER_CATEGORY[row.supplierCategory];
   const risk = RISK_LEVEL[row.risk];
   const count = row.invoices.length;
@@ -887,7 +894,7 @@ function OrderCard({ row, index }: { row: OrderRow; index: number }) {
 
       <div className="ord-card__section">
         <span className="ord-card__label">Payment Progress</span>
-        <PaymentCell row={row} />
+        <PaymentCell row={row} onManage={onManage} />
       </div>
 
       <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} />
@@ -912,6 +919,8 @@ export default function Order() {
   // Create PO runs in two screens: the link popup, then the full-page form.
   const [createOpen, setCreateOpen] = useState(false);
   const [poLink, setPoLink] = useState<PoLink | null>(null);
+
+  const [payRow, setPayRow] = useState<OrderRow | null>(null);
 
   const [activeTab, setActiveTab] = useState<TabKey>('all');
 
@@ -1012,6 +1021,12 @@ export default function Order() {
             onClose={() => setPoLink(null)}
             onChangeLink={() => setCreateOpen(true)}
           />
+        </Suspense>
+      )}
+
+      {payRow && (
+        <Suspense fallback={null}>
+          <ManagePaymentRequestsModal row={payRow} onClose={() => setPayRow(null)} />
         </Suspense>
       )}
 
@@ -1146,7 +1161,7 @@ export default function Order() {
           <div className="ord-cards" ref={cardsRef}>
 
             {pageRows.map((row, index) => (
-              <OrderCard key={row.po} row={row} index={start + index} />
+              <OrderCard key={row.po} row={row} index={start + index} onManage={setPayRow} />
             ))}
           </div>
         ) : (
@@ -1267,7 +1282,7 @@ export default function Order() {
                             <PoCell span={span}>
                               <InspectionCell required={row.physicalInspection} done={row.inspectionDone} cancelled={row.cancelled} />
                             </PoCell>
-                            <PoCell span={span}><PaymentCell row={row} /></PoCell>
+                            <PoCell span={span}><PaymentCell row={row} onManage={setPayRow} /></PoCell>
                             <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} /></PoCell>
                           </>
                         )}
