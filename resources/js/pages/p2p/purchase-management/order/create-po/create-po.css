@@ -1303,3 +1303,404 @@
 .cpf-form .spi-dt-body > * { flex-shrink: 0; }
 /* No supplier picked yet — the compliance bar sits empty. */
 .cpf-lgbar__fill.is-empty { width: 0; }
+
+/* ── Step 02 table · dark mode ───────────────────────────────────────────
+   The light-mode rules for the compact variant (zebra stripe, tinted cells,
+   input wash) are more specific than the earlier dark ones, so the dark
+   values are restated here with the same class chains. */
+[data-bs-theme="dark"] .cpd-tbl tbody tr { --cpd-rowbg: #0e1b24; }
+[data-bs-theme="dark"] .cpd-tbl tbody tr:nth-child(even),
+[data-bs-theme="dark"] .cpd-tbl tbody tr:nth-child(even) .cpd-stick { background: #13242e; }
+[data-bs-theme="dark"] .cpd-tbl tbody tr:nth-child(even) { --cpd-rowbg: #13242e; }
+[data-bs-theme="dark"] .cpd-tbl tbody tr:hover td { background: rgba(34, 211, 238, .07); }
+
+/* Editable cells: the tint and both controls. */
+[data-bs-theme="dark"] .cpd-ed { background: rgba(34, 211, 238, .1); box-shadow: inset 1px 0 0 rgba(34, 211, 238, .22), inset -1px 0 0 rgba(34, 211, 238, .22); }
+[data-bs-theme="dark"] .cpf-form .cpd-pick .spi-dt-select-edit,
+[data-bs-theme="dark"] .cpd-tbl--pd .cpd-in {
+  background: #0c1c24;
+  border-color: rgba(34, 211, 238, .22);
+  color: #e2e8f0;
+}
+
+/* Text tones: the greys are tuned for a white table. */
+[data-bs-theme="dark"] .cpd-prod__nm,
+[data-bs-theme="dark"] .cpd-name { color: #e2e8f0; }
+[data-bs-theme="dark"] .cpd-prod__meta,
+[data-bs-theme="dark"] .cpd-desc,
+[data-bs-theme="dark"] .cpd-desc__wrap,
+[data-bs-theme="dark"] .cpd-legend,
+[data-bs-theme="dark"] .cpd-foot-lbl { color: #94a3b8; }
+[data-bs-theme="dark"] .cpd-prod__meta b { color: #cbd5e1; }
+[data-bs-theme="dark"] .cpd-more { color: #67e8f9; }
+[data-bs-theme="dark"] .cpd-gst { color: #67e8f9; }
+[data-bs-theme="dark"] .cpd-miss { color: #fbbf24; }
+[data-bs-theme="dark"] .cpd-code {
+  background: rgba(34, 211, 238, .12);
+  border-color: rgba(34, 211, 238, .3);
+  color: #7dd3fc;
+}
+[data-bs-theme="dark"] .cpd-final { background: rgba(6, 182, 212, .12); color: #e2e8f0; }
+[data-bs-theme="dark"] .cpd-tbl tfoot .cpd-final { background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4); color: #fff; }
+
+/* ── Narrow screens ──────────────────────────────────────────────────────
+   Tablet: the section's reference pills crowd out the title, so they go.
+   Phone: the step cards become a swipeable row instead of four full-height
+   blocks, and the table's pinned columns are released — with 330px of width
+   there is nothing to pin them against. */
+@media (max-width: 1000px) {
+  .cpf-form .spi-dt-secpills { display: none; }
+}
+
+@media (max-width: 760px) {
+  .cpf-form { padding: 8px 8px 0; }
+  .cpf-form .spi-dt-body { padding: 8px 0 84px; }
+
+  .cpf-steps4 {
+    display: flex;
+    overflow-x: auto;
+    gap: 8px;
+    padding: 8px;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: thin;
+  }
+  .cpf-form .spi-dt-step {
+    flex: 0 0 210px;
+    min-height: 72px;
+    padding: 9px 12px;
+    clip-path: none;
+    scroll-snap-align: start;
+  }
+  .cpf-form .spi-dt-step-big { font-size: 20px; margin-bottom: 2px; }
+  .cpf-form .spi-dt-step-desc,
+  .cpf-form .spi-dt-step-ghost { display: none; }
+  .cpf-form .spi-dt-step-badge { top: 8px; right: 10px; }
+
+  /* Header strip: title on top, buttons under it. */
+  .cpf-form .spi-dt-head { flex-wrap: wrap; row-gap: 8px; padding: 9px 12px; }
+  .cpf-form .spi-dt-head-r { margin-left: auto; }
+
+  /* Section headers stack their chip and chevron under the title. */
+  .cpf-form .spi-dt-sec-head { flex-wrap: wrap; row-gap: 6px; }
+
+  /* Table: nothing pinned, tighter minimums, still scrolls sideways. */
+  .cpd-tbl--pd .cpd-stick,
+  .cpd-tbl--pd .cpd-stick--1,
+  .cpd-tbl--pd .cpd-stick--2,
+  .cpd-tbl--pd tfoot .cpd-stick--1 { position: static; width: auto; min-width: 0; box-shadow: none; }
+  .cpd-tbl--pd .cpd-stick--2 { min-width: 170px; }
+  .cpd-tbl--pd td.cpd-prodcell { min-width: 170px; }
+  .cpd-tbl--pd td.cpd-prodcell.cpd-ed { min-width: 190px; }
+  .cpd-tbl--pd .cpd-desc { min-width: 150px; max-width: 180px; }
+  .cpd-tbl--pd .cpd-pick .spi-dt-select-edit { min-width: 120px; }
+
+  /* Charges and totals sit one under the other. */
+  .cpd-sum { gap: 10px; }
+  .cpd-sum__charges { padding: 10px; }
+  .cpd-legend { align-items: flex-start; }
+}
+
+/* ── Badges and chips · dark mode ────────────────────────────────────────
+   These carry light pastel fills (pink / amber / white) that stay bright on
+   a dark card, so each tone gets a translucent version instead. */
+[data-bs-theme="dark"] .cpf-risk__badge--ok { color: #4ade80; background: rgba(22, 163, 74, .16); border-color: rgba(34, 197, 94, .34); }
+[data-bs-theme="dark"] .cpf-risk__badge--med { color: #fbbf24; background: rgba(245, 158, 11, .16); border-color: rgba(245, 158, 11, .34); }
+[data-bs-theme="dark"] .cpf-risk__badge--high { color: #fca5a5; background: rgba(220, 38, 38, .18); border-color: rgba(248, 113, 113, .36); }
+[data-bs-theme="dark"] .cpf-risk__badge--none { color: #94a3b8; background: rgba(148, 163, 184, .14); border-color: rgba(148, 163, 184, .28); }
+
+[data-bs-theme="dark"] .cpf-risk__tag {
+  background: rgba(148, 163, 184, .14);
+  border-color: rgba(148, 163, 184, .24);
+  color: #cbd5e1;
+}
+[data-bs-theme="dark"] .cpf-risk__dot,
+[data-bs-theme="dark"] .cpf-risk__sum-ico { background: rgba(148, 163, 184, .16); color: #cbd5e1; }
+[data-bs-theme="dark"] .cpf-risk__row--ok .cpf-risk__dot { background: rgba(22, 163, 74, .2); color: #4ade80; }
+[data-bs-theme="dark"] .cpf-risk__row--med .cpf-risk__dot { background: rgba(245, 158, 11, .2); color: #fbbf24; }
+[data-bs-theme="dark"] .cpf-risk__row--high .cpf-risk__dot { background: rgba(220, 38, 38, .22); color: #fca5a5; }
+[data-bs-theme="dark"] .cpf-risk__row--ok .cpf-risk__t,
+[data-bs-theme="dark"] .cpf-risk__sum--ok .cpf-risk__sum-t,
+[data-bs-theme="dark"] .cpf-risk__sum--ok .cpf-risk__sum-score { color: #4ade80; }
+[data-bs-theme="dark"] .cpf-risk__row--med .cpf-risk__t,
+[data-bs-theme="dark"] .cpf-risk__sum--med .cpf-risk__sum-t,
+[data-bs-theme="dark"] .cpf-risk__sum--med .cpf-risk__sum-score { color: #fbbf24; }
+[data-bs-theme="dark"] .cpf-risk__row--high .cpf-risk__t,
+[data-bs-theme="dark"] .cpf-risk__sum--high .cpf-risk__sum-t,
+[data-bs-theme="dark"] .cpf-risk__sum--high .cpf-risk__sum-score { color: #fca5a5; }
+[data-bs-theme="dark"] .cpf-risk__sum--ok .cpf-risk__sum-ico { background: rgba(22, 163, 74, .2); color: #4ade80; }
+[data-bs-theme="dark"] .cpf-risk__sum--med .cpf-risk__sum-ico { background: rgba(245, 158, 11, .2); color: #fbbf24; }
+[data-bs-theme="dark"] .cpf-risk__sum--high .cpf-risk__sum-ico { background: rgba(220, 38, 38, .22); color: #fca5a5; }
+
+/* Physical-inspection chips. */
+[data-bs-theme="dark"] .cpf-req { background: rgba(220, 38, 38, .18); border-color: rgba(248, 113, 113, .36); color: #fca5a5; }
+[data-bs-theme="dark"] .cpf-req--off {
+  background: rgba(148, 163, 184, .14) !important;
+  border-color: rgba(148, 163, 184, .26) !important;
+  color: #94a3b8 !important;
+}
+
+/* GST banner meta + the "x MO AGO" chips. */
+[data-bs-theme="dark"] .cpf-gst__age { background: rgba(148, 163, 184, .16); color: #cbd5e1; }
+[data-bs-theme="dark"] .cpf-gst__meta { color: #94a3b8; }
+[data-bs-theme="dark"] .cpf-gst__meta b { color: #e2e8f0; }
+[data-bs-theme="dark"] .cpf-gst__sep { background: rgba(148, 163, 184, .3); }
+[data-bs-theme="dark"] .cpf-gst__ico { background: rgba(148, 163, 184, .16); color: #cbd5e1; }
+[data-bs-theme="dark"] .cpf-gst--ok .cpf-gst__ico { background: rgba(22, 163, 74, .2); color: #4ade80; }
+[data-bs-theme="dark"] .cpf-gst--warn .cpf-gst__ico { background: rgba(245, 158, 11, .2); color: #fbbf24; }
+[data-bs-theme="dark"] .cpf-gst--stop .cpf-gst__ico { background: rgba(220, 38, 38, .22); color: #fca5a5; }
+[data-bs-theme="dark"] .cpf-gst--ok .cpf-gst__t { color: #4ade80; }
+[data-bs-theme="dark"] .cpf-gst--warn .cpf-gst__t { color: #fbbf24; }
+[data-bs-theme="dark"] .cpf-gst--stop .cpf-gst__t { color: #fca5a5; }
+
+/* Step 02 missing-count badge and the popup's row tags. */
+[data-bs-theme="dark"] .cpd-misscount { background: rgba(245, 158, 11, .16); border-color: rgba(245, 158, 11, .34); color: #fbbf24; }
+[data-bs-theme="dark"] .cpd-misscount.is-zero { background: rgba(22, 163, 74, .16); border-color: rgba(34, 197, 94, .34); color: #4ade80; }
+[data-bs-theme="dark"] .cpd-missqty { background: rgba(220, 38, 38, .18); border-color: rgba(248, 113, 113, .36); color: #fca5a5; }
+[data-bs-theme="dark"] .cgst-tag--ok { background: rgba(22, 163, 74, .16); border-color: rgba(34, 197, 94, .34); color: #4ade80; }
+[data-bs-theme="dark"] .cgst-tag--warn { background: rgba(245, 158, 11, .16); border-color: rgba(245, 158, 11, .34); color: #fbbf24; }
+[data-bs-theme="dark"] .cgst-tag--stop { background: rgba(220, 38, 38, .18); border-color: rgba(248, 113, 113, .36); color: #fca5a5; }
+
+/* The "Yes" toggle keeps a light pink fill in dark mode because the light rule
+   carries !important (it has to beat the shared toggle style). */
+[data-bs-theme="dark"] .cpf-form .cpf-toggle-req {
+  border-color: rgba(248, 113, 113, .5) !important;
+  background: linear-gradient(180deg, rgba(220, 38, 38, .2), rgba(220, 38, 38, .12)) !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .25), 0 0 0 4px rgba(239, 68, 68, .14) !important;
+}
+[data-bs-theme="dark"] .cpf-form .cpf-toggle-req:hover {
+  border-color: rgba(248, 113, 113, .7) !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .25), 0 0 0 4px rgba(239, 68, 68, .22) !important;
+}
+[data-bs-theme="dark"] .cpf-form .cpf-toggle-req .spi-dt-toggle-txt { color: #fca5a5; }
+
+/* ── Step 03 · terms ─────────────────────────────────────────────────────── */
+.cpt-title { margin-bottom: 9px; font-size: 13px; font-weight: 800; color: #0c4a6e; }
+.cpt-terms { min-height: 260px; resize: vertical; }
+[data-bs-theme="dark"] .cpt-title { color: #e2e8f0; }
+
+/* The recap's read-only product table keeps the row height of the live one. */
+.spi-dt-sumstep .cpd-scroll { border-radius: 10px; }
+
+/* ── Step 04 · trade documents ───────────────────────────────────────────
+   The table reuses the product table's shell (.cpd-tbl--pd); these are the
+   pieces that only exist here: the vault pill, status chips and actions. */
+.cdoc-vault {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex-shrink: 1;
+  min-width: 0;
+  margin-right: 8px;
+  height: 42px;
+  padding: 0 18px 0 7px;
+  border: none;
+  border-radius: 21px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: #fff;
+  background-color: transparent;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: -.15px;
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, .14), rgba(255, 255, 255, 0) 50%),
+    linear-gradient(90deg, #04222f, #0a4459 50%, #0e6280);
+  box-shadow:
+    0 10px 24px -9px rgba(1, 18, 26, .85),
+    inset 0 1px 0 rgba(255, 255, 255, .22),
+    inset 0 -10px 18px -12px rgba(34, 211, 238, .45);
+  transition: filter .15s, transform .12s, box-shadow .15s;
+}
+.cdoc-vault:hover { transform: translateY(-1px); filter: brightness(1.08); }
+.cdoc-vault__ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #062a3c;
+  background: linear-gradient(145deg, #a5f3fc, #22d3ee 55%, #06b6d4);
+  box-shadow: 0 3px 10px -3px rgba(34, 211, 238, .8), inset 0 1px 0 rgba(255, 255, 255, .6);
+}
+.cdoc-vault__t { white-space: nowrap; }
+.cdoc-vault__s {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: rgba(224, 251, 255, .8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cdoc-tbl .cdoc-check { width: 44px; }
+.cdoc-tbl input[type="checkbox"] { width: 15px; height: 15px; accent-color: #0891b2; cursor: pointer; }
+.cdoc-ref { margin-top: 3px; font-size: 10px; font-weight: 600; color: #7c98a6; }
+.cdoc-req {
+  display: inline-flex;
+  padding: 3px 10px;
+  border: 1px solid #fde68a;
+  border-radius: 999px;
+  background: #fef3c7;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  color: #b45309;
+}
+.cdoc-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 190px;
+  padding: 6px 11px;
+  border: 1px solid #cfeaf2;
+  border-radius: 8px;
+  background: #f0fbfd;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #0e7490;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cdoc-file:hover { background: #e2f6fb; }
+
+.cdoc-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.cdoc-status__dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.cdoc-status--signed { color: #15803d; background: #dcfce7; border-color: #bbf7d0; }
+.cdoc-status--pending { color: #b45309; background: #fef3c7; border-color: #fde68a; }
+
+.cdoc-actions { display: flex; align-items: center; gap: 8px; justify-content: center; }
+.cdoc-btn,
+.cdoc-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px;
+  border: none;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, #0b3d52, #0e7490 60%, #0891b2);
+  box-shadow: 0 3px 10px rgba(8, 47, 73, .28);
+  transition: transform .14s, box-shadow .14s, filter .14s;
+}
+.cdoc-btn:hover,
+.cdoc-send:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(8, 47, 73, .36); }
+.cdoc-btn--signed { background: linear-gradient(135deg, #14532d, #16a34a 60%, #22c55e); box-shadow: 0 3px 10px rgba(22, 163, 74, .3); }
+
+.cdoc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+.cdoc-foot__hint { margin-right: auto; font-size: 11.5px; font-weight: 600; color: #5b7585; }
+.cdoc-send--sign { background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4); }
+.cdoc-send:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+
+[data-bs-theme="dark"] .cdoc-ref { color: #94a3b8; }
+[data-bs-theme="dark"] .cdoc-req { background: rgba(245, 158, 11, .16); border-color: rgba(245, 158, 11, .34); color: #fbbf24; }
+[data-bs-theme="dark"] .cdoc-file { background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .26); color: #67e8f9; }
+[data-bs-theme="dark"] .cdoc-status--signed { background: rgba(22, 163, 74, .16); border-color: rgba(34, 197, 94, .34); color: #4ade80; }
+[data-bs-theme="dark"] .cdoc-status--pending { background: rgba(245, 158, 11, .16); border-color: rgba(245, 158, 11, .34); color: #fbbf24; }
+[data-bs-theme="dark"] .cdoc-foot__hint { color: #94a3b8; }
+
+@media (max-width: 1000px) { .cdoc-vault__s { display: none; } }
+@media (max-width: 760px) {
+  .cdoc-vault { padding: 6px 12px; margin-right: 0; }
+  .cdoc-vault__t { font-size: 11px; }
+  .cdoc-actions { flex-direction: column; align-items: stretch; }
+  .cdoc-foot { justify-content: stretch; }
+  .cdoc-foot__hint { width: 100%; margin-right: 0; }
+  .cdoc-send { flex: 1; justify-content: center; }
+}
+
+/* Signature completion certificate — outlined, so it reads as secondary next
+   to the two filled download buttons. */
+.cdoc-btn--cert {
+  background: #f0fdf6;
+  border: 1.5px solid #86efac;
+  color: #15803d;
+  box-shadow: none;
+}
+.cdoc-btn--cert:hover { background: #e4fbed; box-shadow: 0 4px 12px rgba(22, 163, 74, .18); }
+[data-bs-theme="dark"] .cdoc-btn--cert {
+  background: rgba(22, 163, 74, .14);
+  border-color: rgba(34, 197, 94, .38);
+  color: #4ade80;
+}
+
+/* The table spreads spare width across its columns, and ACTION (the widest)
+   was taking nearly all of it — leaving a gap between the status pill and the
+   buttons. Cap it and let the document name absorb the slack instead. */
+.cdoc-tbl th:nth-child(4),
+.cdoc-tbl td:nth-child(4) { min-width: 210px; }
+.cdoc-tbl th:nth-child(8),
+.cdoc-tbl td:nth-child(8) { min-width: 180px; }
+.cdoc-tbl th:last-child,
+.cdoc-tbl td:last-child { width: 500px; }
+/* The hint belongs beside the buttons, not at the far edge. */
+.cdoc-foot__hint { margin-right: 0; }
+.cdoc-foot { justify-content: flex-end; }
+
+/* ── Table that fills the screen ─────────────────────────────────────────
+   The documents card takes whatever height is left under the summary, so the
+   table grows with the window instead of leaving dead space below it. Its
+   rows scroll inside the card and the send actions stay at the bottom. */
+.cpf-form .spi-dt-body > .cpf-fill {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 320px;
+}
+.cpf-form .spi-dt-body > .cpf-fill.is-collapsed { flex: 0 0 auto; min-height: 0; }
+.cpf-fill > .spi-dt-sec-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.cpf-fill .cpd-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+/* Keep the header row visible while the rows scroll. */
+.cpf-fill .cdoc-tbl thead th { position: sticky; top: 0; z-index: 7; }
+.cpf-fill .cdoc-foot { margin-top: auto; padding-top: 14px; }
+@media (max-width: 760px) { .cpf-form .spi-dt-body > .cpf-fill { min-height: 0; } }
+
+/* Documents card sits tighter: 8px around the table, like the list pages. */
+.cpf-fill > .spi-dt-sec-body { padding: 8px; }
+.cpf-fill .cdoc-foot { padding-top: 8px; }
+
+/* Same 8px rhythm between the step cards, the summary and the section below. */
+.cpf-form .spi-dt-body { padding: 8px 2px 84px; gap: 8px; }
+/* .spi-dt is a flex column with a 12px gap, which added to the body's own
+   padding above the first card. */
+.cpf-form > .spi-dt { gap: 0; }
+
+/* The terms editor fills the card, which fills the screen. */
+.cpf-fill .cpt-terms { flex: 1; min-height: 160px; }
+.cpf-fill .cpt-title { flex-shrink: 0; }

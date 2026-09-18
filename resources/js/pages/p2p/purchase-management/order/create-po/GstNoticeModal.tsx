@@ -1,7 +1,5 @@
-// The two GST popups behind the compliance banner's action button:
-//  · "stop"  — scrutiny is out of date, the PO cannot proceed
-//  · "warn"  — scrutiny is fine but the return is overdue, a senior may allow it
-// Same shell, different colour and content, so they live in one component.
+// The two GST popups behind the banner's action: "stop" (scrutiny expired,
+// PO blocked) and "warn" (return overdue, a senior may allow it).
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';

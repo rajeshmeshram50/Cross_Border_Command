@@ -1,9 +1,5 @@
-/* ─────────────────────────────────────────────────────────────────────────
- * Create PO form controls — label + field, and the styled dropdown.
- *
- * They wear the shared P2P wizard classes (spi-dt-*) so the form matches the
- * rest of P2P, but the components belong to this form only.
- * ───────────────────────────────────────────────────────────────────────── */
+// Label + field and the styled dropdown for this form. They wear the shared
+// P2P wizard classes so the form matches the rest of P2P.
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import SegmentBadge from '../../../../../components/ui/SegmentBadge';

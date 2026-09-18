@@ -1,10 +1,9 @@
-/* ─────────────────────────────────────────────────────────────────────────
- * What the user has filled in so far.
- *
- * The form shell owns it, so a later step can read what an earlier one
- * answered — Step 02 opens with a read-only summary of Step 01.
- * ───────────────────────────────────────────────────────────────────────── */
+// What the user has filled in so far. The form shell owns it so a later step
+// can read earlier answers — each step opens with a recap of the ones before.
 import { useState } from 'react';
+import { PI_PRODUCTS } from './sample-products';
+import type { PoLineRow } from './steps/ProductTable';
+import { EMPTY_CHARGES, type Charges } from './steps/ChargesSummary';
 
 export type PoDraft = {
   // Step 01 · basic purchase order details
@@ -45,6 +44,11 @@ export type PoDraft = {
   gstStatus: string;
   filingDate: string;
   remarks: string;
+  // Step 02 · product lines and the extra charges
+  lines: PoLineRow[];
+  charges: Charges;
+  // Step 03 · terms
+  terms: string;
 };
 
 // The prototype opens a fresh draft with these already chosen.
@@ -82,6 +86,10 @@ const EMPTY_DRAFT: PoDraft = {
   gstStatus: 'Active',
   filingDate: '',
   remarks: '',
+  // The PO starts as a copy of the PI: same products, quantities and rates.
+  lines: PI_PRODUCTS.map((pi) => ({ pi, poCode: pi.code, qtyPo: pi.qtyPi, rate: pi.rate })),
+  charges: EMPTY_CHARGES,
+  terms: '',
 };
 
 export type SetDraft = (patch: Partial<PoDraft>) => void;
