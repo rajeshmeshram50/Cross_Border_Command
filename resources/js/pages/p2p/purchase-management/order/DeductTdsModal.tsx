@@ -49,7 +49,7 @@ function Readonly({ label, value }: { label: string; value: number }) {
 export default function DeductTdsModal({
   po, base, gst, extra, total, room, saved, onSave, onClose,
 }: DeductTdsProps) {
-  useScrollLock();
+  useScrollLock(true, '.mtds-card');
 
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => { cardRef.current?.focus(); }, []);

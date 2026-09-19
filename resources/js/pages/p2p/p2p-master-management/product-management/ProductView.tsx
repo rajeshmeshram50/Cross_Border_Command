@@ -21,7 +21,7 @@ function formatProductCode(raw: string): string {
   return `${prefix}${m[2].padStart(3, '0')}`;
 }
 
-type ProductDto = {
+export type ProductDto = {
   id: number;
   product_code: string;
   name: string;
@@ -62,7 +62,7 @@ type ProductDto = {
   updated_at?: string | null;
 };
 
-export default function ProductView(props: { productId?: number; onClose?: () => void } = {}) {
+export default function ProductView(props: { productId?: number; onClose?: () => void; preview?: ProductDto } = {}) {
   // Dual-mode: as a route it reads the :id param and "Back" navigates to the
   // list; as a popup (opened from a product card) it takes `productId` and
   // `onClose`, so it renders over the list instead of full-screen.
@@ -78,8 +78,8 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
   const isSalesDept    = dept === 'sales';
   const isPurchaseDept = dept === 'purchase';
 
-  const [product, setProduct] = useState<ProductDto | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [product, setProduct] = useState<ProductDto | null>(props.preview ?? null);
+  const [loading, setLoading] = useState(!props.preview);
   const [tab, setTab] = useState<'desc' | 'brand' | 'confidential' | 'qc' | 'suppliers'>('desc');
   const [activeImg, setActiveImg] = useState(0);
   const [editOpen, setEditOpen] = useState(false);
@@ -128,7 +128,7 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
   }, [id]);
 
   const load = async (silent = false) => {
-    if (!id) return;
+    if (!id || props.preview) return;
     // Silent reloads (triggered from inside the edit modal's Save & Next)
     // must NOT flip the shimmer flag — doing so swaps the whole page out
     // for the placeholder, unmounts the open <AddProductModal>, and then
@@ -366,6 +366,7 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
             </Tooltip>
           </div>
           <div className="pv2pd-hero-btns">
+            {!props.preview && (
             <button className="pv2pd-hbtn pv2pd-hbtn--edit" onClick={() => setEditOpen(true)}>
               {/* Exact prototype icon (Feather "edit" — pen-to-square). */}
               {/* The trailing words collapse on narrow screens (see the 480px
@@ -373,16 +374,17 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
                   wrapping "Back to Product List" onto a line of its own. */}
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg> <span>Edit<span className="pv2pd-hbtn-more"> Product</span></span>
             </button>
+            )}
             {/* Sales can't manage suppliers — the button is hidden entirely
                 (not just disabled) so there's no dead control / denial toast. */}
-            {!isSalesDept && (
+            {!isSalesDept && !props.preview && (
               <button className="pv2pd-hbtn pv2pd-hbtn--suppliers" onClick={() => { setSupplierOnly(true); setEditOpen(true); }}>
                 {/* Exact prototype icon (Feather "users" — two people). */}
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> <span><span className="pv2pd-hbtn-more">Mapped </span>Suppliers</span>
               </button>
             )}
             <button className="pv2pd-hbtn pv2pd-hbtn--ghost" onClick={goBack}>
-              <i className="ri-arrow-left-s-line" /> <span>Back<span className="pv2pd-hbtn-more"> to Product List</span></span>
+              <i className="ri-arrow-left-s-line" /> <span>Back{!props.preview && <span className="pv2pd-hbtn-more"> to Product List</span>}</span>
             </button>
           </div>
         </div>

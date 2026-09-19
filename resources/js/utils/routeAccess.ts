@@ -123,7 +123,7 @@ const P2P_LEAF: Record<string, string> = {
   '/p2p/debit-note': 'p2p.debit_note',
   // New Order module (static frontend data, no DB module row of its own) —
   // rides on the Purchase Order grant, same pattern as sales.sign_tracker.
-  '/p2p/order': 'p2p.po',
+  '/p2p/order': 'p2p.order',
   // Same for the new Payment Request module — no module row of its own yet.
   '/p2p/payment-request': 'p2p.po',
 };

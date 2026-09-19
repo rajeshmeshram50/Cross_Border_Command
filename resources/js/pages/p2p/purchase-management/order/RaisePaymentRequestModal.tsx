@@ -5,7 +5,7 @@ import { ModalSelect } from '../supplier-purchase-invoice/MapSupplierPurchaseInv
 import type { OrderRow } from './Order';
 import {
   APPROVERS, Box, HeroRefChips, PAYMENT_TYPES, PoSummaryCards, STAT_ICONS, Stat,
-  ICON_X, money,
+  ICON_PENCIL, ICON_X, money,
 } from './payment-shared';
 import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './manage-payment-requests.css';
@@ -57,7 +57,7 @@ export default function RaisePaymentRequestModal({
   row, nextId, requested, approvedTotal, pendingAmt, pendingCount, approvedUnpaid,
   requestCount, available, complete, onSubmit, onClose,
 }: RaiseRequestProps) {
-  useScrollLock();
+  useScrollLock(true, '.mpr-card--raise');
 
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => { cardRef.current?.focus(); }, []);
@@ -137,7 +137,7 @@ export default function RaisePaymentRequestModal({
 
   return createPortal(
     <div className="spi-mdl-backdrop">
-      <div className="spi-mdl mpr-card" role="dialog" aria-modal="true" aria-labelledby="rpr-title" tabIndex={-1} ref={cardRef}>
+      <div className="spi-mdl mpr-card mpr-card--raise" role="dialog" aria-modal="true" aria-labelledby="rpr-title" tabIndex={-1} ref={cardRef}>
 
         <div className="mpr-hero">
           <div className="mpr-hero__icon">{ICON_SEND}</div>
@@ -164,8 +164,10 @@ export default function RaisePaymentRequestModal({
             label="Request"
             title="Payment Request Details"
             sub={`${money(row.paid)} of ${money(row.total)} paid · ${progPct}% · ${money(available)} open for this request`}
+            icon={ICON_PENCIL}
+            className="rpr-details-box"
+            headerExtra={<div className="rpr-hdstats">{requestStats}</div>}
           >
-            {requestStats}
 
             <div className="rpr-formgrid">
               <div className="rpr-field">
@@ -210,11 +212,11 @@ export default function RaisePaymentRequestModal({
                     onChange={(e) => fromAmt(e.target.value)}
                   />
                 </div>
-                <span className={`rpr-amthint${overBudget ? ' is-err' : ''}`}>
-                  {overBudget
-                    ? `Amount exceeds the available balance of ${money(available)}.`
-                    : `Up to ${money(available)} available for this request`}
-                </span>
+                {overBudget && (
+                  <span className="rpr-amthint is-err">
+                    Amount exceeds the available balance of {money(available)}.
+                  </span>
+                )}
               </div>
 
               <div className="rpr-field">
