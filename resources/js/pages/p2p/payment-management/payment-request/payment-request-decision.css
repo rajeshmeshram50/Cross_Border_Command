@@ -1,0 +1,118 @@
+/* Approve / Reject Payment Request dialog. Built on the Raise Payment Request
+   dialog's frame (mpr-*, rpr-*); only the read-only plates, the remark box
+   and the decline accent are new here. */
+.mpr-card.spi-mdl.prd-dec { width: min(1320px, 96vw); max-height: 92vh; }
+.prd-dec__bd { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+.prd-dec__stats { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .prd-dec__stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .prd-dec__stats { grid-template-columns: 1fr 1fr; } }
+
+.prd-dec__prog { display: flex; align-items: center; gap: 8px; margin-left: auto; padding-right: 8px; }
+.prd-dec__progtxt { font-size: 10px; font-weight: 800; color: #0c4a6e; white-space: nowrap; }
+.prd-dec__progbar { width: 90px; height: 7px; flex-shrink: 0; overflow: hidden; border-radius: 6px; background: rgba(8,80,110,.14); }
+.prd-dec__progbar > span { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, #22d3ee, #0891b2); box-shadow: 0 0 6px rgba(34,211,238,.5); }
+@media (max-width: 760px) { .prd-dec__prog { display: none; } }
+
+/* The request on one line, the decision closing it. */
+.prd-dec__grid7 { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px 12px; align-items: stretch; }
+@media (max-width: 1320px) { .prd-dec__grid7 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .prd-dec__grid7 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.prd-dec__field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.prd-dec__field > label,
+.prd-dec__fieldhd label {
+  display: flex; align-items: center; gap: 6px; margin: 0;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #54707f;
+}
+.prd-dec__fieldhd { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.prd-dec__ro {
+  flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; min-height: 42px; padding: 6px 11px;
+  border: 1.5px solid #cdd9e0; border-radius: 9px; background: #e4ebf0; cursor: not-allowed;
+  font-size: 12.5px; font-weight: 700; line-height: 1.3; color: #2b4353;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.prd-dec__ro.is-id { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #0b5f77; }
+.prd-dec__ro.is-num,
+.prd-dec__ro.is-amt { font-size: 13.5px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.prd-dec__ro.is-amt { color: #0b5f77; }
+.prd-dec__rosub { display: block; margin-top: 2px; font-size: 9.5px; font-weight: 700; color: #6b8493; }
+
+/* The live controls carry the only accent on the card. */
+.prd-dec__field.is-live > label,
+.prd-dec__field.is-live .prd-dec__fieldhd label { color: #0e7490; }
+.prd-dec__field.is-live > label::before,
+.prd-dec__field.is-live .prd-dec__fieldhd label::before {
+  content: ""; width: 3px; height: 11px; border-radius: 2px; flex-shrink: 0;
+  background: linear-gradient(180deg, #67e8f9, #0e7490); box-shadow: 0 0 7px -1px rgba(34,211,238,.8);
+}
+.prd-dec__amt { border: 1.5px solid #22d3ee; background: #fff; box-shadow: 0 0 0 3.5px rgba(34,211,238,.16), 0 2px 8px -2px rgba(8,145,178,.28); }
+.prd-dec__amt:focus-within { border-color: #0891b2; box-shadow: 0 0 0 3.5px rgba(34,211,238,.26), 0 3px 10px -2px rgba(8,145,178,.34); }
+.prd-dec__row2 { margin-top: 10px; }
+
+.prd-dec__remark {
+  display: flex; align-items: flex-start; gap: 8px; padding: 6px 6px 6px 10px;
+  background: #fff; border: 1.5px solid #cfe6ee; border-radius: 11px; box-shadow: 0 1px 2px rgba(8,47,73,.05);
+  transition: border-color .15s, box-shadow .15s;
+}
+.prd-dec__remark:focus-within { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.18); }
+.prd-dec__remarkin {
+  flex: 1; min-width: 0; height: 42px; max-height: 96px; padding: 12px 0 0; resize: none; overflow-y: auto;
+  border: none; outline: none; background: transparent;
+  font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1.45; color: #17394d;
+}
+.prd-dec__remarkin::placeholder { color: #9db4c1; font-weight: 600; }
+.prd-dec__remarkacts { display: flex; align-items: center; gap: 6px; flex-shrink: 0; padding-top: 4px; }
+.prd-dec__rbtn {
+  display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 12px; border: none; border-radius: 9px;
+  cursor: pointer; white-space: nowrap; color: #fff; font-family: inherit; font-size: 10.5px; font-weight: 800;
+  background-image: linear-gradient(180deg, rgba(255,255,255,.2), rgba(255,255,255,0) 54%), linear-gradient(90deg, #5ee0f2, #22b8d6 48%, #0e7490);
+  box-shadow: 0 2px 8px -3px rgba(12,74,110,.55), inset 0 1px 0 rgba(255,255,255,.25);
+  transition: filter .15s, transform .12s;
+}
+.prd-dec__rbtn:hover { filter: brightness(1.07); transform: translateY(-1px); }
+.prd-dec__rbtn svg { width: 14px; height: 14px; flex-shrink: 0; }
+@media (max-width: 640px) { .prd-dec__rbtn span { display: none; } .prd-dec__rbtn { padding: 0 10px; } }
+
+.prd-dec__files { display: flex; flex-wrap: wrap; gap: 6px; }
+.prd-dec__file {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 230px; height: 30px; padding: 0 4px 0 8px; border-radius: 9px;
+  font-size: 10.5px; font-weight: 700; color: #0b5e75;
+  background: linear-gradient(180deg, #f2fdff, #e2f7fd); box-shadow: inset 0 0 0 1px rgba(8,145,178,.26);
+}
+.prd-dec__fileico { display: flex; flex-shrink: 0; color: #0891b2; }
+.prd-dec__fileico svg { width: 13px; height: 13px; }
+.prd-dec__filen { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prd-dec__filesz { flex-shrink: 0; font-size: 9px; font-weight: 700; color: #7ba3b4; }
+.prd-dec__filex {
+  width: 20px; height: 20px; flex-shrink: 0; padding: 0; border: none; border-radius: 6px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; background: transparent; color: #7ba3b4;
+}
+.prd-dec__filex svg { width: 10px; height: 10px; }
+.prd-dec__filex:hover { background: #fee2e2; color: #dc2626; }
+
+/* Approve commits money, so it submits in green; decline in rose. */
+.prd-dec__submit.spi-mdl-confirm { background: linear-gradient(135deg, #34d399, #059669); box-shadow: 0 3px 10px rgba(5,150,105,.32); }
+.prd-dec__submit.spi-mdl-confirm.is-no { background: linear-gradient(135deg, #fb7185, #be123c); box-shadow: 0 3px 10px rgba(190,18,60,.32); }
+.prd-dec__submit.spi-mdl-confirm:hover:not(:disabled) { filter: brightness(1.06); }
+
+/* Decline: the chrome stays teal, the red goes on the reason and the button. */
+.prd-dec--no .prd-dec__field.is-live .prd-dec__fieldhd label { color: #be123c; }
+.prd-dec--no .prd-dec__field.is-live .prd-dec__fieldhd label::before { background: linear-gradient(180deg, #fca5a5, #dc2626); box-shadow: 0 0 7px -1px rgba(239,68,68,.75); }
+.prd-dec--no .prd-dec__remark { border-color: #fb7185; background: #fffafb; box-shadow: 0 0 0 3.5px rgba(244,63,94,.13); }
+.prd-dec--no .prd-dec__remark:focus-within { border-color: #e11d48; box-shadow: 0 0 0 3.5px rgba(244,63,94,.22); }
+.prd-dec--no .prd-dec__remarkin::placeholder { color: #c98a97; }
+.prd-dec--no .prd-dec__rbtn {
+  background-image: linear-gradient(180deg, rgba(255,255,255,.2), rgba(255,255,255,0) 54%), linear-gradient(90deg, #f87171, #e02424 48%, #991b1b);
+  box-shadow: 0 2px 8px -3px rgba(153,27,27,.6), inset 0 1px 0 rgba(255,255,255,.25);
+}
+.prd-dec--no .prd-dec__file { color: #9f1239; background: linear-gradient(180deg, #fff5f5, #fee6e6); box-shadow: inset 0 0 0 1px rgba(220,38,38,.22); }
+.prd-dec--no .prd-dec__fileico { color: #dc2626; }
+.prd-dec__req {
+  margin-left: 2px; padding: 1.5px 6px; border-radius: 20px;
+  font-size: 8.5px; font-weight: 800; letter-spacing: .06em; color: #be123c; background: #ffe9ee; border: 1px solid #fbcfd8;
+}
+
+[data-bs-theme="dark"] .prd-dec__ro { background: #16223a; border-color: #1f2d42; color: #cbd5e1; }
+[data-bs-theme="dark"] .prd-dec__remark { background: #0f1827; border-color: #1f2d42; }
+[data-bs-theme="dark"] .prd-dec__remarkin { color: #e2e8f0; }
+[data-bs-theme="dark"] .prd-dec__progtxt { color: #bae6fd; }
+[data-bs-theme="dark"] .prd-dec--no .prd-dec__remark { background: rgba(244,63,94,.06); }

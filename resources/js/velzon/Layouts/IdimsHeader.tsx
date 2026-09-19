@@ -546,7 +546,7 @@ export default function IdimsHeader() {
         colsFor(item.dd).flat().forEach(g => {
           g.children.forEach(leaf => {
             // Payment Request has no DB module row — it rides on the PO grant.
-            const visible = isSuperAdmin || !!perms[(leaf.id === 'p2p.payment_request' || leaf.id === 'p2p.advance_refund') ? 'p2p.po' : leaf.id]?.can_view;
+            const visible = isSuperAdmin || !!perms[leaf.id === 'p2p.advance_refund' ? 'p2p.po' : leaf.id]?.can_view;
             if (!visible) return;
             out.push({ id: leaf.id, label: leaf.label, parent: item.label, path: leafPath(leaf.id, item.dd!), icon: item.icon });
           });
@@ -581,7 +581,7 @@ export default function IdimsHeader() {
     // Attendance grant (same pattern as sales.sign_tracker).
     const slug = leaf.id === 'sales.sign_tracker' ? 'sales.quotation_vs_pi'
       : leaf.id === 'hr.devices' ? 'hr.attendance'
-      : (leaf.id === 'p2p.payment_request' || leaf.id === 'p2p.advance_refund') ? 'p2p.po'   // no DB module row — rides on the PO grant
+      : leaf.id === 'p2p.advance_refund' ? 'p2p.po'   // no DB module row — rides on the PO grant
       : leaf.id;
     return !!perms[slug]?.can_view;
   };
