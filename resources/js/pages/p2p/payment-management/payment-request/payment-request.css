@@ -1,0 +1,266 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * Payment Request Management — only what the shared P2P styles don't cover.
+ *
+ * The page shell (header strip, guide, tabs, search, card) comes from
+ * p2p-common.css (`spi-*`) and the table from order.css (`ord-*`); everything
+ * here either matches a Figma value those two don't carry, or overrides one
+ * for this page alone. Class prefix: `prm-`.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/* ── Page shell ─────────────────────────────────────────────────────────── */
+
+/* Headings run one step lighter than the shared 800, with the tracking opened. */
+.prm-page .spi-head-title { letter-spacing: .6px; }
+.prm-page .spi-bref-label,
+.prm-page .spi-bref-title,
+.prm-page .spi-step-title { letter-spacing: .2px; }
+.prm-page .spi-head-title,
+.prm-page .spi-bref-label,
+.prm-page .spi-bref-title,
+.prm-page .spi-step-num,
+.prm-page .spi-step-title { font-weight: 700; }
+
+/* Tabs: Figma .prm-seg — roomier pills, 22px count chip. `:not(.is-active)`
+   keeps the active pill's white-on-teal, which this file would otherwise win. */
+.prm-page .spi-seg-btn { padding: 13px 15px; }
+.prm-page .spi-seg-btn:not(.is-active) { color: #6b8499; }
+.prm-page .spi-seg-c { height: 22px; }
+.prm-page .spi-seg-btn:not(.is-active) .spi-seg-c { background: #dce9f0; }
+
+/* Search matches the tab bar's height and spans the last four columns.
+   The explicit selector beats order.css's fixed 41px. */
+/* One row, always: the search shrinks before it is allowed to wrap under the tabs,
+   and min-height keeps it from collapsing to a thin strip. */
+.prm-page .ord-list > .spi-segrow { flex-wrap: nowrap; }
+.prm-page .ord-list .spi-segrow .spi-seg { flex: 0 0 auto; }
+.prm-page .ord-list .spi-segrow .spi-search {
+  height: auto; min-height: 46px; align-self: stretch;
+  flex: 1 1 594px; min-width: 260px; max-width: 594px; margin-bottom: 0;
+}
+.prm-page .spi-search input { font-size: 13px; }
+.prm-page .ord-list > .spi-segrow { padding-bottom: 6px; }
+
+/* ── Table ──────────────────────────────────────────────────────────────── */
+
+.prm-page .ord-table td { padding: 8px 10px; font-size: 11px; }
+
+/* Figma .bst-row--head, one line per label. */
+.prm-page .ord-table th {
+  padding: 9px 10px;
+  font-size: 8.5px;
+  font-weight: 650;
+  letter-spacing: .6px;
+  color: #6b8a97;
+  white-space: nowrap;
+  background: linear-gradient(180deg, #e9f9fc, #f2fcfd);
+}
+
+/* Figma .bst-sr: a plain number, not the PO list's teal chip. */
+.prm-page .ord-srnum {
+  width: auto; height: auto; border-radius: 0;
+  font-size: 12px; font-weight: 800; color: #7c93a3;
+  background: none; box-shadow: none;
+}
+
+/* The wash flags PHYSICAL INSPECTION, not the decision, and sits on the ROW:
+   a gradient per <td> restarts in every column and reads as vertical bands.
+   A declined request fades its own contents instead (Figma .is-closed). */
+.prm-row.is-physreq {
+  background: linear-gradient(90deg, #fdeaea, #fdf1f1 55%, #fdeaea);
+  box-shadow: inset 3px 0 0 #ef4444;
+}
+.prm-page .ord-table tbody tr.prm-row.is-physreq:hover {
+  background: linear-gradient(90deg, #fbdcdc, #fdeaea 55%, #fbdcdc);
+}
+.prm-page .ord-table tbody tr.prm-row.is-physreq td,
+.prm-page .ord-table tbody tr.prm-row.is-physreq:hover td { background: transparent; }
+.prm-row.is-closed td > * { opacity: .72; }
+
+/* ── Cells ──────────────────────────────────────────────────────────────── */
+
+.prm-status { margin-top: 5px; gap: 5px; padding: 3px 9px; font-size: 9.5px; letter-spacing: .02em; text-transform: none; }
+
+/* Request Raised Against: the PO → SPI pair on one line, flag underneath. */
+.prm-against { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.prm-against__docs { display: flex; align-items: center; gap: 6px; }
+.prm-against__arrow { display: inline-flex; align-items: center; color: #9fc0ce; flex-shrink: 0; }
+.prm-flag { gap: 4px; font-size: 8px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.prm-flag svg { width: 9px; height: 9px; flex-shrink: 0; }
+
+/* Supplier category — Figma .po-supcat fills. */
+.prm-supcat { gap: 4px; font-size: 8px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; line-height: 1.3; }
+.prm-supcat svg { width: 9px; height: 9px; flex-shrink: 0; }
+.prm-supcat.prm-supcat--regular { color: #1d4ed8; background: linear-gradient(180deg, #f5f9ff, #dbeafe); border: 1px solid #a8c9f5; }
+.prm-supcat.prm-supcat--star { color: #92400e; background: linear-gradient(180deg, #fffbeb, #fde68a); border: 1px solid #f0c14b; }
+.prm-supcat.prm-supcat--star svg { color: #d97706; }
+.prm-supcat.prm-supcat--high { color: #b91c1c; background: linear-gradient(180deg, #fff1f1, #fee2e2); border: 1px solid #fca5a5; }
+.prm-supcat.prm-supcat--blacklisted { color: #f8fafc; background: linear-gradient(180deg, #334155, #0f172a); border: 1px solid #0f172a; }
+
+/* Approved amount: figure plus the line that says what happened to it. */
+.prm-amtcell { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.prm-amtcell__note { font-size: 8.5px; font-weight: 600; color: #7c8da3; font-variant-numeric: tabular-nums; }
+.prm-dash { font-size: 11px; font-weight: 800; color: #94a3b8; }
+
+.prm-paytype { font-size: 11px; font-weight: 650; color: #0f2a38; line-height: 1.3; }
+
+.prm-party { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; }
+.prm-party__code {
+  flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 650; color: #fff; border: none;
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+  box-shadow: 0 2px 5px -1px rgba(8,145,178,.4);
+}
+.prm-party__name {
+  min-width: 0; max-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 10.5px; font-weight: 650; color: #1e293b; line-height: 1.25;
+}
+
+/* ── Actions ────────────────────────────────────────────────────────────── */
+
+.prm-acts { display: inline-flex; align-items: center; gap: 6px; justify-content: center; }
+
+.prm-viewbtn {
+  height: 36px; padding: 0 12px 0 6px; gap: 6px; border-radius: 8px;
+  font-size: 9.5px; font-weight: 550; letter-spacing: 0;
+  background-image: linear-gradient(135deg, #0c4a6e, #0e7490 60%, #0891b2);
+  box-shadow: 0 3px 9px -3px rgba(12,74,110,.55), inset 0 1px 0 rgba(255,255,255,.2);
+}
+.prm-viewbtn:hover:not(:disabled) { background-image: linear-gradient(135deg, #0e7490, #155e75 60%, #0c4a6e); }
+/* The glyph sits in its own inset tile, as in the Figma. */
+.prm-viewbtn__ico {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 23px; height: 23px; border-radius: 7px;
+  background: rgba(255,255,255,.18); box-shadow: inset 0 1px 0 rgba(255,255,255,.25);
+}
+
+/* Square twin of View Request — carries the decline reason. */
+.prm-reasonbtn {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 36px; height: 36px; padding: 0; border: none; border-radius: 8px; cursor: pointer;
+  color: #fff; background: linear-gradient(135deg, #0c4a6e, #0e7490 60%, #0891b2);
+  box-shadow: 0 3px 9px -3px rgba(12,74,110,.55), inset 0 1px 0 rgba(255,255,255,.2);
+  transition: all .15s cubic-bezier(.22,1,.36,1);
+}
+.prm-reasonbtn:hover { background: linear-gradient(135deg, #0e7490, #155e75 60%, #0c4a6e); transform: translateY(-1px); }
+.prm-reasonbtn:active { transform: translateY(0); }
+.prm-viewbtn:focus-visible,
+.prm-reasonbtn:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; }
+
+/* ── Dark theme ─────────────────────────────────────────────────────────── */
+
+[data-bs-theme="dark"] .prm-page .ord-table th {
+  color: #94a3b8;
+  background: linear-gradient(180deg, rgba(8,145,178,.16), rgba(8,145,178,.08));
+}
+[data-bs-theme="dark"] .prm-page .ord-srnum { color: #94a3b8; }
+[data-bs-theme="dark"] .prm-paytype { color: #e2e8f0; }
+[data-bs-theme="dark"] .prm-party__name { color: #cbd5e1; }
+[data-bs-theme="dark"] .prm-amtcell__note { color: #94a3b8; }
+[data-bs-theme="dark"] .prm-supcat.prm-supcat--regular { color: #93c5fd; background: rgba(59,130,246,.16); border-color: rgba(59,130,246,.40); }
+[data-bs-theme="dark"] .prm-supcat.prm-supcat--star { color: #fde68a; background: rgba(234,179,8,.16); border-color: rgba(234,179,8,.45); }
+[data-bs-theme="dark"] .prm-supcat.prm-supcat--star svg { color: #fbbf24; }
+[data-bs-theme="dark"] .prm-supcat.prm-supcat--high { color: #fca5a5; background: rgba(239,68,68,.16); border-color: rgba(239,68,68,.40); }
+/* The wash keeps its meaning on the dark surface, at a weight that suits it. */
+[data-bs-theme="dark"] .prm-row.is-physreq { background: rgba(239,68,68,.12); }
+[data-bs-theme="dark"] .prm-page .ord-table tbody tr.prm-row.is-physreq:hover { background: rgba(239,68,68,.18); }
+[data-bs-theme="dark"] .prm-page .spi-seg-btn:not(.is-active) .spi-seg-c { background: rgba(148,163,184,.22); }
+
+/* ── Narrow screens ─────────────────────────────────────────────────────── */
+
+@media (max-width: 1100px) {
+  /* Too narrow for both: stack them, the search taking the full row at a fixed height. */
+  .prm-page .ord-list > .spi-segrow { flex-wrap: wrap; }
+  .prm-page .ord-list .spi-segrow .spi-search { flex: 1 1 100%; max-width: none; min-height: 44px; height: 44px; align-self: auto; }
+}
+@media (max-width: 768px) {
+  .prm-page .ord-table td { padding: 7px 8px; }
+  .prm-party__name { max-width: 70px; }
+}
+
+/* ── Reason For Decline popup ───────────────────────────────────────────────
+ * Shell, header and footer are the Bulk Sourcing modal's (srpt-* / pl-*).
+ * Only the header meta chips, the field grid and the footer note live here. */
+
+.prm-dc-box { width: min(1460px, calc(100vw - 24px)); }
+.prm-dc-badge { background: rgba(239,68,68,.18); border: 1px solid rgba(248,113,113,.45); color: #fecaca; }
+.prm-dc-badge .srpt-bdot { background: #f87171; }
+
+/* Header: Figma white glyph, neutral ID pill, wider subtitle tracking.
+   The right-hand chips are the Order payment popup's shared Chip. */
+.prm-dc-box .srpt-hicon { color: #fff; }
+.prm-dc-box .srpt-hicon svg { stroke: #fff; }
+.prm-dc-box .srpt-id-pill { color: #fff; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.34); }
+.prm-dc-box .srpt-sub { letter-spacing: .3px; }
+.prm-dc-meta { flex-wrap: nowrap; flex-shrink: 0; }
+
+.prm-dc-body { padding: 10px 12px; }
+
+/* The panel IS the shared guide strip (spi-bref); only its heading weight and body differ. */
+.prm-dc-panel { margin: 0; }
+.prm-dc-panel .spi-bref-title,
+.prm-dc-panel .spi-bref-label { font-weight: 700; letter-spacing: .2px; }
+.prm-dc-panel .prm-dc-grid { background: linear-gradient(180deg, #f0fdff 0%, #f8fafc 100%); }
+
+.prm-dc-grid {
+  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+  column-gap: 12px; row-gap: 10px; padding: 12px 10px 10px;
+}
+.prm-dc-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+/* Declined By takes two columns, the reason the remaining four. */
+.prm-dc-field:nth-child(7) { grid-column: span 2; }
+.prm-dc-field--wide { grid-column: span 4; }
+.prm-dc-label { font-size: 8.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #0c4a6e; }
+/* Panel strip text in the same navy instead of the shared cyan-blue. */
+.prm-dc-panel .spi-bref-label,
+.prm-dc-panel .spi-bref-sub { color: #0c4a6e; }
+/* Long values wrap inside the field instead of widening the grid. */
+.prm-dc-value {
+  display: flex; flex-direction: column; gap: 1px; min-height: 40px; justify-content: center;
+  overflow-wrap: anywhere;
+  padding: 9px 12px; border-radius: 8px;
+  background: #e8eef3; border: 1px solid #d5dfe7;
+  font-size: 12.5px; font-weight: 700; color: #2b4353;
+}
+.prm-dc-strong { font-weight: 800; color: #0c4a6e; font-family: 'Geist Mono', ui-monospace, monospace; letter-spacing: -.2px; }
+.prm-dc-person { font-size: 12.5px; font-weight: 700; color: #2b4353; overflow-wrap: anywhere; }
+.prm-dc-person__role { font-size: 9.5px; font-weight: 600; color: #7c8da3; }
+/* The reason is the one field that carries the decision's colour. */
+.prm-dc-reason { color: #2b4353; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; max-height: 132px; overflow-y: auto; }
+.prm-dc-field--wide .prm-dc-value { background: #fff4f4; border-color: #f7c9cc; justify-content: flex-start; min-height: 64px; }
+/* Declined By sits as tall as the reason beside it. */
+.prm-dc-field:nth-child(7) .prm-dc-value { min-height: 64px; }
+
+.prm-dc-foot { justify-content: space-between; }
+.prm-dc-foot__note {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-radius: 10px;
+  background: #fff; border: 1px solid #cdeef5;
+  font-size: 11px; font-weight: 600; color: #46687a;
+}
+.prm-dc-foot__k { font-size: 8.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #7c8da3; }
+.prm-dc-foot__note b { font-size: 13px; font-weight: 800; color: #0c4a6e; }
+.prm-dc-foot__sep { color: #cbd5e1; }
+.prm-dc-close {
+  height: 36px; padding: 0 22px; border: none; border-radius: 9px; cursor: pointer;
+  font-family: inherit; font-size: 12px; font-weight: 700; color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490);
+  box-shadow: 0 4px 12px -4px rgba(8,145,178,.55), inset 0 1px 0 rgba(255,255,255,.25);
+  transition: all .15s cubic-bezier(.22,1,.36,1);
+}
+.prm-dc-close:hover { background: linear-gradient(135deg, #0891b2, #0e7490 60%, #155e75); transform: translateY(-1px); }
+.prm-dc-close:active { transform: translateY(0); }
+
+@media (max-width: 900px) {
+  .prm-dc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .prm-dc-field:nth-child(7), .prm-dc-field--wide { grid-column: span 2; }
+  .prm-dc-meta .mpr-hero__chip { display: none; }
+}
+
+[data-bs-theme="dark"] .prm-dc-panel .prm-dc-grid { background: #0f1e2e; }
+[data-bs-theme="dark"] .prm-dc-value { background: rgba(148,163,184,.10); border-color: rgba(148,163,184,.22); color: #e2e8f0; }
+[data-bs-theme="dark"] .prm-dc-strong,
+[data-bs-theme="dark"] .prm-dc-person { color: #e2e8f0; }
+[data-bs-theme="dark"] .prm-dc-field--wide .prm-dc-value { background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.32); }
+[data-bs-theme="dark"] .prm-dc-reason { color: #fca5a5; }
+[data-bs-theme="dark"] .prm-dc-foot__note { background: #0f1e2e; border-color: rgba(103,232,249,.22); color: #cbd5e1; }
