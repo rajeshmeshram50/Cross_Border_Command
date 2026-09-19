@@ -44,21 +44,81 @@
   padding: 0 20px;
   font-size: 12px;
 }
-.ord-list .spi-seg-c {
-  min-width: 22px;
-  height: 22px;
-  padding: 0 7px;
+/* Search, to the prototype: a compact box in the same gradient as the tab
+   strip, held at the right — not the shared row's stretch-to-fill field. */
+.ord-list .spi-segrow .spi-search {
+  flex: 0 1 240px;
+  max-width: 280px;
+  height: 52px;
+  margin-left: auto;
+  padding: 0 16px 0 41px; /* 16px edge + 16px icon + 9px gap */
+  border-color: #d4f3f9;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f4fdff, #eafafd);
 }
-.ord-list .spi-segrow .spi-search { height: 41px; }
-/* 4 tabs: keep them on one row that scrolls sideways instead of wrapping. */
+.ord-list .spi-segrow .spi-search svg { left: 16px; color: #7ba6b8; }
+.ord-list .spi-segrow .spi-search input { font-size: 13px; }
+.ord-list .spi-segrow .spi-search input::placeholder { color: #9fb7c2; }
+[data-bs-theme="dark"] .ord-list .spi-segrow .spi-search { border-color: rgba(34, 211, 238, .2); background: rgba(12, 38, 48, .55); }
+[data-bs-theme="dark"] .ord-list .spi-segrow .spi-search svg { color: #5f8ea1; }
+/* 5 tabs: keep them on one row that scrolls sideways instead of wrapping. */
 .ord-list .spi-seg {
   flex-direction: row; /* the shared file stacks tabs vertically on small screens */
   flex-wrap: nowrap;
+  gap: 4px;
   max-width: 100%;
   overflow-x: auto;
   scrollbar-width: thin;
+  border-color: #d4f3f9;
+  background: linear-gradient(180deg, #f4fdff, #eafafd);
 }
-.ord-list .spi-seg-btn { flex-shrink: 0; white-space: nowrap; }
+
+/* Tabs, to the prototype's PO list values. The shared SPI tabs are slate at
+   rest; on this page every tab reads teal, so the strip looks like one control
+   rather than one lit tab among grey ones. */
+.ord-list .spi-seg-btn {
+  flex-shrink: 0;
+  gap: 7px;
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 11px;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: -.2px;
+  white-space: nowrap;
+  color: #0e7490;
+}
+.ord-list .spi-seg-btn:not(.is-active):hover { color: #0891b2; background: rgba(8, 145, 178, .06); }
+.ord-list .spi-seg-btn.is-active {
+  color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490);
+  box-shadow: 0 6px 16px -5px rgba(8, 145, 178, .55), inset 0 1px 0 rgba(255, 255, 255, .25);
+}
+.ord-list .spi-seg-c {
+  min-width: 18px;
+  height: auto;
+  margin-left: 1px;
+  padding: 2px 7px;
+  border: 1px solid #c2ecf3;
+  border-radius: 20px;
+  background: #e0f7fb;
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #0e7490;
+}
+.ord-list .spi-seg-btn.is-active .spi-seg-c {
+  border-color: rgba(255, 255, 255, .75);
+  background: rgba(255, 255, 255, .9);
+  color: #0b5563;
+}
+
+[data-bs-theme="dark"] .ord-list .spi-seg { border-color: rgba(34, 211, 238, .2); background: rgba(12, 38, 48, .55); }
+[data-bs-theme="dark"] .ord-list .spi-seg-btn { color: #67e8f9; }
+[data-bs-theme="dark"] .ord-list .spi-seg-btn:not(.is-active):hover { color: #a5f3fc; background: rgba(34, 211, 238, .08); }
+[data-bs-theme="dark"] .ord-list .spi-seg-btn.is-active { color: #fff; }
+[data-bs-theme="dark"] .ord-list .spi-seg-c { border-color: rgba(34, 211, 238, .28); background: rgba(34, 211, 238, .12); color: #67e8f9; }
+[data-bs-theme="dark"] .ord-list .spi-seg-btn.is-active .spi-seg-c { border-color: rgba(255, 255, 255, .6); background: rgba(255, 255, 255, .9); color: #0b5563; }
 
 /* Cancelled tab turns red when active (not in the shared SPI styles). */
 .spi-seg-btn.ord-seg-danger.is-active {
@@ -66,6 +126,29 @@
   box-shadow: 0 3px 10px -2px rgba(185, 28, 28, .5);
 }
 [data-bs-theme="dark"] .spi-seg-btn.ord-seg-danger.is-active { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+/* Idle it carries the prototype's muted red, so the tab reads as the exception
+   in the row without shouting like the active state does. */
+.spi-seg-btn.ord-seg-danger:not(.is-active) { color: #b0475a; }
+/* Stays red on hover — the generic teal hover above would otherwise win. */
+.ord-list .spi-seg-btn.ord-seg-danger:not(.is-active):hover { color: #b0475a; background: rgba(176, 71, 90, .06); }
+[data-bs-theme="dark"] .ord-list .spi-seg-btn.ord-seg-danger:not(.is-active):hover { color: #f8a1b0; background: rgba(176, 71, 90, .14); }
+.spi-seg-btn.ord-seg-danger:not(.is-active) .spi-seg-c {
+  color: #b0475a;
+  background: #fdeef1;
+  border-color: #f7d4dc;
+}
+[data-bs-theme="dark"] .spi-seg-btn.ord-seg-danger:not(.is-active) { color: #f8a1b0; }
+[data-bs-theme="dark"] .spi-seg-btn.ord-seg-danger:not(.is-active) .spi-seg-c {
+  color: #f8a1b0;
+  background: rgba(176, 71, 90, .2);
+  border-color: rgba(248, 161, 176, .3);
+}
+
+/* Tab label + its parenthetical qualifier. The qualifier is smaller and faded
+   so the tab name reads first — prototype values. */
+.ord-seg-lbl { white-space: nowrap; line-height: 1; }
+.ord-seg-sub { margin-left: 3px; font-size: 10.5px; font-weight: 700; opacity: .75; }
+.spi-seg-btn.is-active .ord-seg-sub { opacity: .85; }
 
 .ord-table-scroll {
   flex: 1 1 auto;
@@ -386,6 +469,11 @@
 .ord-pill--partial  { color: #b45309; background: #fef3c7; border-color: #fde68a; }
 .ord-pill--pending  { color: #b91c1c; background: #fee2e2; border-color: #fecaca; }
 .ord-pill--qa       { color: #6d28d9; background: #f1e9fd; border-color: #e2d4fa; }
+/* The two Payment Recovery states Payment Progress never has. */
+.ord-pill--na       { color: #64748b; background: #f1f5f9; border-color: #e2e8f0; }
+.ord-pill--na .ord-pill__dot { background: #94a3b8; }
+.ord-pill--await    { color: #7c5b17; background: #fef3c7; border-color: #fde68a; }
+.ord-pill--await .ord-pill__dot { background: #d97706; }
 
 .ord-statcell {
   display: flex;
@@ -663,6 +751,92 @@
   cursor: help;
 }
 .ord-card__tags .ord-cancelbadge { margin: 0; }
+
+/* ── Advance Receipt Refund Adjustment cell ──────────────────────────────
+   The block is centred, but the figure rows keep label-left / value-right so
+   the amounts line up with each other instead of drifting by label length. */
+.ord-adr { display: flex; flex-direction: column; align-items: center; gap: 5px; text-align: center; }
+.ord-adr__ref {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+.ord-adr__no {
+  padding: 3px 8px;
+  border: 1px solid #bfe3ec;
+  border-radius: 7px;
+  background: #e6f7fb;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: -.2px;
+  white-space: nowrap;
+  color: #0e7490;
+  transition: background .15s, border-color .15s, box-shadow .15s, transform .15s;
+}
+.ord-adr__ref:hover .ord-adr__no {
+  border-color: #93d7e6;
+  background: #d7f2f8;
+  box-shadow: 0 3px 9px -3px rgba(8, 145, 178, .45);
+  transform: translateY(-1px);
+}
+.ord-adr__ref:active .ord-adr__no { transform: translateY(0); }
+.ord-adr__ref:focus-visible { outline: 2px solid #22d3ee; outline-offset: 3px; border-radius: 9px; }
+/* How many older notes sit behind the one on show. */
+.ord-adr__n { padding: 2px 6px; border-radius: 6px; background: #cff2fa; font-size: 8.5px; font-weight: 800; color: #0e7490; }
+.ord-adr__dt { font-size: 9.5px; font-weight: 700; white-space: nowrap; color: #7c9aa4; }
+.ord-adr__fig {
+  display: flex;
+  flex-direction: column;
+  align-self: center;
+  gap: 3px;
+  min-width: 175px;
+  max-width: 100%;
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px solid #e8f1f5;
+  text-align: left;
+}
+.ord-adr__row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.ord-adr__l { font-size: 9px; font-weight: 700; letter-spacing: .02em; white-space: nowrap; color: #8fa9b4; }
+.ord-adr__v { font-size: 11.5px; font-weight: 800; white-space: nowrap; color: #0c4a6e; font-variant-numeric: tabular-nums; }
+/* What is coming back reads teal; what is being held back reads amber. */
+.ord-adr__row--refund .ord-adr__l { color: #0e7490; }
+.ord-adr__row--refund .ord-adr__v { color: #0891b2; }
+.ord-adr__row--none .ord-adr__l,
+.ord-adr__row--none .ord-adr__v { color: #b45309; }
+
+[data-bs-theme="dark"] .ord-adr__no { border-color: rgba(34, 211, 238, .28); background: rgba(34, 211, 238, .12); color: #67e8f9; }
+[data-bs-theme="dark"] .ord-adr__ref:hover .ord-adr__no { border-color: rgba(34, 211, 238, .5); background: rgba(34, 211, 238, .2); }
+[data-bs-theme="dark"] .ord-adr__n { background: rgba(34, 211, 238, .2); color: #67e8f9; }
+[data-bs-theme="dark"] .ord-adr__dt { color: #8296a8; }
+[data-bs-theme="dark"] .ord-adr__fig { border-top-color: rgba(148, 163, 184, .2); }
+[data-bs-theme="dark"] .ord-adr__l { color: #8296a8; }
+[data-bs-theme="dark"] .ord-adr__v { color: #e2e8f0; }
+[data-bs-theme="dark"] .ord-adr__row--refund .ord-adr__l,
+[data-bs-theme="dark"] .ord-adr__row--refund .ord-adr__v { color: #67e8f9; }
+[data-bs-theme="dark"] .ord-adr__row--none .ord-adr__l,
+[data-bs-theme="dark"] .ord-adr__row--none .ord-adr__v { color: #fbbf24; }
+
+/* ── Payment Recovery Status ─────────────────────────────────────────────
+   Everything else in this cell comes from Payment Progress (.ord-progress,
+   .ord-pill, .ord-paynote, .ord-btn--hist); these are the only additions. */
+.ord-recnote { display: block; margin-top: 7px; font-size: 9.5px; font-weight: 700; line-height: 1.45; color: #8fa9b4; }
+.ord-recnote.is-na { color: #94a3b8; }
+.ord-progress--na { opacity: .86; }
+
+[data-bs-theme="dark"] .ord-pill--na    { color: #94a3b8; background: rgba(148, 163, 184, .12); border-color: rgba(148, 163, 184, .28); }
+[data-bs-theme="dark"] .ord-pill--await { color: #fcd34d; background: rgba(245, 158, 11, .14); border-color: rgba(245, 158, 11, .35); }
+[data-bs-theme="dark"] .ord-recnote,
+[data-bs-theme="dark"] .ord-recnote.is-na { color: #8296a8; }
 
 /* Written after the zebra/hover rules so the pink tint wins. */
 .ord-table tbody.ord-po--cancelled td { background: #fef4f4; }
@@ -983,7 +1157,7 @@
     overflow-y: visible;
   }
 
-  /* All 4 tabs visible: two per row instead of one scrolling row. */
+  /* All 5 tabs visible: two per row instead of one scrolling row. */
   .ord-list > .spi-segrow {
     gap: 10px;
     padding: 10px;
@@ -996,6 +1170,8 @@
   .ord-list .spi-seg-btn {
     flex: 1 1 45%;
     min-width: 0;
+    height: auto; /* the desktop 42px would clip a label that wraps */
+    min-height: 42px;
     justify-content: center;
     gap: 6px;
     padding: 8px 10px;
@@ -1003,6 +1179,15 @@
     line-height: 1.25;
     text-align: center;
     white-space: normal;
+  }
+  .ord-list .ord-seg-lbl { white-space: normal; }
+  /* On a phone the search takes the full row again. */
+  .ord-list .spi-segrow .spi-search {
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: none;
+    height: 44px;
+    margin-left: 0;
   }
 }
 

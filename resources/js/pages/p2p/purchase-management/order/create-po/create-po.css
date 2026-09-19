@@ -1355,25 +1355,49 @@
   .cpf-form { padding: 8px 8px 0; }
   .cpf-form .spi-dt-body { padding: 8px 0 84px; }
 
+  /* All four steps in one row as compact tiles — no sideways scrolling. The
+     scrolling strip showed about one and a half cards, so you could not tell
+     where you were or that there were more. Colour carries the state (teal =
+     active, pale = done with a tick, grey = to do); the footer names the
+     current step in full. */
   .cpf-steps4 {
-    display: flex;
-    overflow-x: auto;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
     padding: 8px;
-    scroll-snap-type: x mandatory;
-    scrollbar-width: thin;
   }
   .cpf-form .spi-dt-step {
-    flex: 0 0 210px;
-    min-height: 72px;
-    padding: 9px 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 68px;
+    padding: 8px 5px;
+    border-radius: 12px;
     clip-path: none;
-    scroll-snap-align: start;
+    text-align: center;
   }
-  .cpf-form .spi-dt-step-big { font-size: 20px; margin-bottom: 2px; }
+  .cpf-form .spi-dt-step-lbl,
   .cpf-form .spi-dt-step-desc,
   .cpf-form .spi-dt-step-ghost { display: none; }
-  .cpf-form .spi-dt-step-badge { top: 8px; right: 10px; }
+  .cpf-form .spi-dt-step-big { margin-bottom: 3px; font-size: 20px; letter-spacing: -1px; }
+  .cpf-form .spi-dt-step-title {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: 9.5px;
+    line-height: 1.25;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+  }
+  /* The ACTIVE pill is redundant once the tile is teal; DONE shrinks to its tick. */
+  .cpf-form .spi-dt-step-badge:not(.spi-dt-step-badge-done) { display: none; }
+  .cpf-form .spi-dt-step-badge-done {
+    top: 5px;
+    right: 5px;
+    gap: 0;
+    padding: 2px;
+    font-size: 0;
+  }
 
   /* Header strip: title on top, buttons under it. */
   .cpf-form .spi-dt-head { flex-wrap: wrap; row-gap: 8px; padding: 9px 12px; }
@@ -1670,6 +1694,11 @@
 
 @media (max-width: 1000px) { .cdoc-vault__s { display: none; } }
 @media (max-width: 760px) {
+  /* The vault button drops to its own full-width row. Beside the title it
+     squeezed "Post PO Trade Document Management" to one word per line. */
+  .cpf-fill .spi-dt-sec-head .spi-dt-sec-mid { flex: 1 1 0; min-width: 0; }
+  .cpf-fill .spi-dt-sec-head .cpf-chev { order: 2; }
+  .cdoc-vault { order: 3; flex: 1 1 100%; justify-content: center; margin-left: 0; }
   .cdoc-vault { padding: 6px 12px; margin-right: 0; }
   .cdoc-vault__t { font-size: 11px; }
   .cdoc-actions { flex-direction: column; align-items: stretch; }
@@ -1741,7 +1770,14 @@
 /* Keep the header row visible while the rows scroll. */
 .cpf-fill .cdoc-tbl thead th { position: sticky; top: 0; z-index: 7; }
 .cpf-fill .cdoc-foot { margin-top: auto; padding-top: 14px; }
-@media (max-width: 760px) { .cpf-form .spi-dt-body > .cpf-fill { min-height: 0; } }
+/* Phones scroll the whole form, so there is no spare height to fill. A table
+   told to take "whatever is left" got none and collapsed to its header row
+   (measured 31px tall with 290px of rows inside). Size to content instead. */
+@media (max-width: 760px) {
+  .cpf-form .spi-dt-body > .cpf-fill,
+  .cpf-fill > .spi-dt-sec-body,
+  .cpf-fill .cpd-scroll { flex: 0 0 auto; min-height: 0; }
+}
 
 /* Documents card sits tighter: 8px around the table, like the list pages. */
 .cpf-fill > .spi-dt-sec-body { padding: 8px; }

@@ -7,16 +7,19 @@ import Step1LinkSupplier from './steps/Step1LinkSupplier';
 import Step2ProductDetails from './steps/Step2ProductDetails';
 import Step3Terms from './steps/Step3Terms';
 import Step4Documents from './steps/Step4Documents';
-import { usePoDraft } from './po-draft';
+import { usePoDraft, type PoEdit } from './po-draft';
+import { useToast } from '../../../../../contexts/ToastContext';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './create-po.css';
 import { IcoCard, IcoCheck, IcoChevronL, IcoChevronR, IcoDoc, IcoLines, IcoShip, IcoTarget, IcoUser, IcoX } from '../icons';
 
-// What the Create PO popup passes in: how this PO is linked.
+// What the Create PO popup passes in: how this PO is linked. `edit` is set
+// when Edit PO opens an existing order in this same form.
 export type PoLink = {
   mode: 'with' | 'without';
   shipmentId?: string;
   customer?: string;
+  edit?: PoEdit;
 };
 
 type Stage = { title: string; desc: string };
@@ -42,8 +45,16 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   // without the exception the hook locks this overlay too and nothing scrolls.
   useScrollLock(true, '.spi-dt-overlay');
   // The form owns what has been filled in, so each step can read the ones
-  // before it (Step 02 recaps Step 01).
-  const { draft, set } = usePoDraft();
+  // before it (Step 02 recaps Step 01). An edit starts from the saved PO.
+  const edit = link.edit;
+  const { draft, set } = usePoDraft(edit);
+
+  const toast = useToast();
+  useEffect(() => {
+    if (edit) toast.info(`Editing ${edit.po}`, 'Details pre-filled');
+    // Once, when the editor opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [stage, setStage] = useState(0);
   // The body is the scroller now (the header strip stays put), so this is
   // what gets scrolled back to the top on a stage change.
@@ -61,8 +72,18 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
 
   const isLast = stage === STAGES.length - 1;
   const goNext = () => { if (!isLast) setStage(stage + 1); };
-  // On stage 1 the back button returns to the link popup, not to a previous stage.
-  const goBack = () => { if (stage === 0) onChangeLink(); else setStage(stage - 1); };
+  // On stage 1 the back button returns to the link popup — except in an edit:
+  // that popup always starts a new PO, so re-linking there would quietly turn
+  // the order being edited into a fresh one. An edit goes back to the list.
+  const goBack = () => {
+    if (stage > 0) setStage(stage - 1);
+    else if (edit) onClose();
+    else onChangeLink();
+  };
+  const backLabel = stage > 0 ? 'Back' : edit ? 'Back to List' : 'Change Link';
+  const nextLabel = isLast && edit ? 'Update Purchase Order' : NEXT_LABEL[stage];
+  // An edit shows every reference the saved order already has.
+  const showRefs = link.mode === 'with' || !!edit;
 
   return createPortal(
     <div className="spi-dt-overlay cpf-form">
@@ -74,32 +95,45 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
               <div>
                 <div className="spi-dt-head-title">Purchase Order</div>
                 <div className="spi-dt-head-sub">
-                  {link.mode === 'with' ? 'Draft · not yet issued' : 'Draft · standalone, not yet issued'}
+                  {edit ? `Editing ${edit.po}`
+                    : link.mode === 'with' ? 'Draft · not yet issued' : 'Draft · standalone, not yet issued'}
                 </div>
               </div>
             </div>
 
             <div className="spi-dt-pills">
-              <HeadPill icon={<IcoLines />} label="PO NUMBER" value="PO/2025-26/001" mono />
-              {link.mode === 'with' && (
+              <HeadPill icon={<IcoLines />} label="PO NUMBER" value={edit?.po ?? 'PO/2025-26/001'} mono />
+              {showRefs && (
                 <>
                   <span className="spi-dt-dots">⋮</span>
                   <HeadPill icon={<IcoShip />} label="SHIPMENT ID" value={link.shipmentId ?? '—'} alt mono />
                   <span className="spi-dt-dots">⋮</span>
-                  <HeadPill icon={<IcoTarget />} label="OPPORTUNITY ID" value="OPP-001" mono />
+                  <HeadPill icon={<IcoTarget />} label="OPPORTUNITY ID" value={edit?.opportunity ?? 'OPP-001'} mono />
                   <span className="spi-dt-dots">⋮</span>
                   <HeadPill icon={<IcoLines />} label="PI NUMBER" value="PI/2025-26/001" alt mono />
-                  <span className="spi-dt-dots">⋮</span>
                   {/* A procurement is only linked once the PO is issued, so a
-                      fresh draft doesn't show that pill yet. */}
+                      fresh draft doesn't show it — a saved order does. */}
+                  {edit?.procurement && (
+                    <>
+                      <span className="spi-dt-dots">⋮</span>
+                      <HeadPill icon={<IcoLines />} label="PROCUREMENT ID" value={edit.procurement} mono />
+                    </>
+                  )}
+                  <span className="spi-dt-dots">⋮</span>
                   <HeadPill icon={<IcoUser />} label="CUSTOMER NAME" value={link.customer ?? '—'} />
                 </>
               )}
             </div>
 
             <div className="spi-dt-head-r">
-              <span className="spi-dt-divider" />
-              <button type="button" className="spi-dt-btn-pay"><IcoCard /> PO Payment</button>
+              {/* Payment is made against a PO that exists — a new draft has
+                  nothing to pay yet, so only an edit offers it. */}
+              {edit && (
+                <>
+                  <span className="spi-dt-divider" />
+                  <button type="button" className="spi-dt-btn-pay"><IcoCard /> PO Payment</button>
+                </>
+              )}
               <span className="spi-dt-divider" />
               <button type="button" className="spi-dt-btn-close" onClick={onClose}><IcoX /> Close</button>
             </div>
@@ -151,10 +185,10 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
           </div>
           <div className="spi-dt-foot-r">
             <button type="button" className="spi-dt-btn-ghost" onClick={goBack}>
-              <IcoChevronL /> {stage === 0 ? 'Change Link' : 'Back'}
+              <IcoChevronL /> {backLabel}
             </button>
             <button type="button" className={isLast ? 'spi-dt-btn-map' : 'spi-dt-btn-next'} onClick={goNext}>
-              {NEXT_LABEL[stage]} <IcoChevronR />
+              {nextLabel} <IcoChevronR />
             </button>
           </div>
         </div>

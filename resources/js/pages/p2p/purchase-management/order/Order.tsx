@@ -84,9 +84,12 @@ const GUIDE_STEPS: GuideStep[] = [
   },
 ];
 
-type TabKey = 'all' | 'with' | 'without' | 'cancelled';
+type TabKey = 'all' | 'with' | 'without' | 'cancelinit' | 'cancelclosed';
 
-type ListTab = { key: TabKey; label: string; danger?: boolean; icon: ReactNode };
+/* `sub` is the parenthetical half of a tab label. It renders quieter than the
+   label so "PO Cancellation Initiated" reads first and "(Recovery Pending)"
+   qualifies it, rather than the two competing. */
+type ListTab = { key: TabKey; label: string; sub?: string; danger?: boolean; icon: ReactNode };
 
 const tabIconProps = {
   width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
@@ -104,7 +107,7 @@ const LIST_TABS: ListTab[] = [
     ),
   },
   {
-    key: 'with', label: 'With Shipment ID PO',
+    key: 'with', label: "With Shipment ID PO's",
     icon: (
       <svg {...tabIconProps}>
         <rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" />
@@ -113,7 +116,7 @@ const LIST_TABS: ListTab[] = [
     ),
   },
   {
-    key: 'without', label: "All Other PO's (Without Shipment ID)",
+    key: 'without', label: "All Other PO's", sub: '(Without Shipment ID)',
     icon: (
       <svg {...tabIconProps}>
         <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
@@ -122,10 +125,18 @@ const LIST_TABS: ListTab[] = [
     ),
   },
   {
-    key: 'cancelled', label: 'Cancelled PO', danger: true,
+    key: 'cancelinit', label: 'PO Cancellation Initiated', sub: '(Recovery Pending)', danger: true,
     icon: (
       <svg {...tabIconProps}>
-        <circle cx="12" cy="12" r="9" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+        <circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15.5 14" />
+      </svg>
+    ),
+  },
+  {
+    key: 'cancelclosed', label: 'PO Cancellation Closed', sub: '(Recovery Completed)',
+    icon: (
+      <svg {...tabIconProps} strokeWidth={2.2}>
+        <circle cx="12" cy="12" r="9" /><polyline points="8 12.4 11 15.4 16 9.6" />
       </svg>
     ),
   },
@@ -154,7 +165,9 @@ const COLUMNS: Column[] = [
   { label: 'Zohobook Status',            width: 134 },
   { label: 'Physical Inspection Status', width: 190 },
   { label: 'Payment Progress Status',    width: 246 },
-  { label: 'Action',                     width: 360 },
+  { label: 'Advance Receipt Refund Adjustment', width: 238 },
+  { label: 'Payment Recovery Status',    width: 246 },
+  { label: 'Action',                     width: 412 },
 ];
 
 const TABLE_WIDTH = COLUMNS.reduce((total, col) => total + col.width, 0);
@@ -175,6 +188,17 @@ type RiskLevel = 'high' | 'medium' | 'low';
 
 type PaymentNote = { kind: 'ready' | 'waiting'; amount: number };
 
+export type AdvanceRefund = {
+  /** Latest note number; older ones are counted, not listed. */
+  no: string;
+  date: string;
+  count: number;
+  /** What went out to the supplier as an advance. */
+  paid: number;
+  /** What the credit note brings back. */
+  credited: number;
+};
+
 export type OrderRow = {
   po: string; poDate: string; physicalInspection: boolean;
   type: PoType; docType: DocType;
@@ -192,6 +216,15 @@ export type OrderRow = {
   paymentNote?: PaymentNote;
   cancelled?: boolean;
   cancelReason?: string;
+  /* The advance-receipt refund adjustment raised when the PO is cancelled.
+     Absent until one exists — a PO that never took an advance owes nothing. */
+  adr?: AdvanceRefund;
+  /* Amounts recovered from the supplier so far, one per recovery entry. */
+  recoveries?: number[];
+  /* Cancellation runs in two stages: initiating the refund adjustment moves the
+     PO to "Recovery Pending", and it moves itself to "Recovery Completed" once
+     every rupee released against it has been recovered. */
+  cancelStage?: 'initiated' | 'closed';
 };
 
 const PO_TYPE: Record<PoType, { label: string; icon: ReactNode }> = {
@@ -286,8 +319,59 @@ const SAMPLE_ROWS: OrderRow[] = [
         qa: 'QA-051', qaDate: '2026-03-16',
       },
     ],
-    zohoSynced: true, inspectionDone: true, paymentRequests: 1,
+    zohoSynced: true, inspectionDone: false, paymentRequests: 1,
     paymentNote: { kind: 'ready', amount: 71300 },
+    // Values from the prototype's own row. ₹20,800 of the ₹1,29,800 paid is
+    // held back, so ₹1,09,000 is recoverable; ₹49,100 of it is in (45%).
+    adr: { no: 'ADR/2025-26/026', date: '2026-04-02', count: 1, paid: 129800, credited: 109000 },
+    recoveries: [49100],
+  },
+  {
+    po: 'PO/2025-26/004', poDate: '2026-06-10', physicalInspection: true,
+    type: 'materials', docType: 'International',
+    shipment: 'SHP-014', shipmentDate: '2026-05-29',
+    opportunity: 'OPP-006', opportunityDate: '2026-05-01',
+    procurement: 'PROC-009', procurementDate: '2026-05-16',
+    supplier: 'Adani Enterprises', supplierCategory: 'high',
+    risk: 'high',
+    expectedDelivery: '2026-07-22',
+    total: 255500, net: 247800, paid: 0, balance: 247800,
+    // No supplier invoice raised yet, so SPI / GRN / QA all read "—".
+    invoices: [],
+    zohoSynced: false, inspectionDone: false, paymentRequests: 1,
+    paymentNote: { kind: 'ready', amount: 116500 },
+  },
+  {
+    po: 'PO/2025-26/007', poDate: '2026-05-28', physicalInspection: false,
+    type: 'services', docType: 'Domestics',
+    shipment: 'SHP-021', shipmentDate: '2026-05-16',
+    opportunity: 'OPP-011', opportunityDate: '2026-04-18',
+    procurement: 'PROC-015', procurementDate: '2026-05-03',
+    supplier: 'Mahindra Logistics', supplierCategory: 'regular',
+    risk: 'medium',
+    expectedDelivery: '2026-06-30',
+    total: 121500, net: 120300, paid: 60200, balance: 60100,
+    invoices: [
+      {
+        spi: 'SPI/2025-26/022', spiDate: '2026-06-04',
+        amount: 40100, paid: 40100, due: 0, status: 'full',
+        grn: 'GRN-022', grnDate: '2026-06-08',
+        qa: 'QA-022', qaDate: '2026-06-10',
+      },
+      {
+        spi: 'SPI/2025-26/023', spiDate: '2026-06-13',
+        amount: 40100, paid: 20100, due: 20000, status: 'partial',
+        grn: 'GRN-023', grnDate: '2026-06-17',
+        qa: 'QA-023', qaDate: '2026-06-19',
+      },
+      {
+        spi: 'SPI/2025-26/024', spiDate: '2026-06-22',
+        amount: 40100, paid: 0, due: 40100, status: 'pending',
+        grn: 'GRN-024', grnDate: '2026-06-26',
+        qa: 'QA-024', qaDate: '2026-06-28',
+      },
+    ],
+    zohoSynced: true, inspectionDone: false, paymentRequests: 2,
   },
   {
     po: 'PO/2025-26/008', poDate: '2026-06-20', physicalInspection: true,
@@ -434,7 +518,11 @@ const SAMPLE_ROWS: OrderRow[] = [
       },
     ],
     zohoSynced: true, inspectionDone: false, paymentRequests: 1,
-    cancelled: true, cancelReason: 'Budget not approved for this quarter',
+    cancelled: true, cancelReason: 'Budget not approved for this quarter', cancelStage: 'initiated',
+    // Part of the ₹66,200 paid is held back against cancellation charges, so
+    // "Not Refunded" shows. Two notes raised; one recovery logged so far (45%).
+    adr: { no: 'ADR/2025-26/031', date: '2026-07-04', count: 2, paid: 66200, credited: 56000 },
+    recoveries: [25200],
   },
   {
     po: 'PO/2025-26/009', poDate: '2026-06-21', physicalInspection: true,
@@ -461,7 +549,8 @@ const SAMPLE_ROWS: OrderRow[] = [
       },
     ],
     zohoSynced: false, inspectionDone: false, paymentRequests: 0,
-    cancelled: true, cancelReason: 'Supplier unable to meet delivery timeline',
+    cancelled: true, cancelReason: 'Supplier unable to meet delivery timeline', cancelStage: 'initiated',
+    // Cancelled before anything was paid: no note to raise, nothing to recover.
   },
   {
     po: 'PO/2025-26/020', poDate: '2026-05-21', physicalInspection: false,
@@ -494,7 +583,11 @@ const SAMPLE_ROWS: OrderRow[] = [
       },
     ],
     zohoSynced: true, inspectionDone: false, paymentRequests: 1,
-    cancelled: true, cancelReason: 'Supplier pricing revised beyond approved limit',
+    cancelled: true, cancelReason: 'Supplier pricing revised beyond approved limit', cancelStage: 'closed',
+    // Everything paid comes back and has been recovered in two entries — which
+    // is exactly what put this PO in the Closed tab.
+    adr: { no: 'ADR/2025-26/019', date: '2026-06-10', count: 1, paid: 263600, credited: 263600 },
+    recoveries: [150000, 113600],
   },
 ];
 
@@ -627,6 +720,17 @@ const ICON_CANCEL = (
 const ICON_EDIT = (
   <svg {...btnIconProps}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg>
 );
+// Money coming back — the return arrow.
+const ICON_RECOVER = (
+  <svg {...btnIconProps} strokeWidth={2.2}>
+    <polyline points="9 14 4 9 9 4" /><path d="M20 20v-7a4 4 0 0 0-4-4H4" />
+  </svg>
+);
+const ICON_NOTE = (
+  <svg {...btnIconProps} strokeWidth={2.6}>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+  </svg>
+);
 const ICON_VAULT = (
   <svg {...btnIconProps} strokeWidth={2.1}>
     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M9 12l2 2 4-4" />
@@ -732,7 +836,158 @@ function PaymentCell({ row, onManage }: { row: OrderRow; onManage: (row: OrderRo
   );
 }
 
-function ActionCell({ cancelled = false, cancelReason }: { cancelled?: boolean; cancelReason?: string }) {
+/* Advance Receipt Refund Adjustment — answers three things and no more: which
+   note, what went out, and what is coming back. The shortfall is only named
+   when the two don't match. The progress bar belongs to Payment Recovery
+   Status, which is where the movement actually happens. */
+function AdrCell({ adr }: { adr?: AdvanceRefund }) {
+  if (!adr) return <span className="ord-dash">—</span>;
+
+  const notRefunded = Math.max(0, adr.paid - adr.credited);
+  const title = (adr.count > 1 ? `${adr.count} credit notes — latest shown. ` : '')
+    + `Open ${adr.no} to view or update it`;
+
+  return (
+    <div className="ord-adr">
+      <button type="button" className="ord-adr__ref" title={title}>
+        <span className="ord-adr__no">{adr.no}</span>
+        {adr.count > 1 && <span className="ord-adr__n">+{adr.count - 1}</span>}
+      </button>
+      <div className="ord-adr__dt">{formatDate(adr.date)}</div>
+      <div className="ord-adr__fig">
+        <AdrRow label="Paid" value={formatMoney(adr.paid)} />
+        <AdrRow label="To Be Refunded" value={formatMoney(adr.credited)} tone="refund" />
+        {notRefunded > 0 && <AdrRow label="Not Refunded" value={formatMoney(notRefunded)} tone="none" />}
+      </div>
+    </div>
+  );
+}
+
+function AdrRow({ label, value, tone }: { label: string; value: string; tone?: 'refund' | 'none' }) {
+  return (
+    <div className={`ord-adr__row${tone ? ` ord-adr__row--${tone}` : ''}`}>
+      <span className="ord-adr__l">{label}</span>
+      <span className="ord-adr__v">{value}</span>
+    </div>
+  );
+}
+
+/* What the supplier owes back is what the credit note says, not everything
+   that was paid — an amount retained against cancellation charges is never
+   coming back. So the note sets the target, and until one exists there is
+   nothing to recover against. */
+function recoveryOf(row: OrderRow) {
+  const target = row.adr ? row.adr.credited : 0;
+  const entries = row.recoveries?.length ?? 0;
+  const logged = (row.recoveries ?? []).reduce((sum, amount) => sum + amount, 0);
+  const recovered = Math.min(logged, target);
+  return {
+    paid: row.paid,
+    target,
+    noteRaised: !!row.adr,
+    noteNo: row.adr?.no ?? '',
+    recovered,
+    pending: Math.max(0, target - recovered),
+    pct: target > 0 ? Math.round((recovered / target) * 100) : 0,
+    entries,
+    started: entries > 0,
+    complete: target > 0 && recovered >= target,
+  };
+}
+
+/* Payment Recovery Status — the mirror of Payment Progress for money coming
+   back rather than going out. It reuses that cell's progress, pill and note
+   styles; only the two states Payment Progress never has are new. */
+function RecoveryCell({ row }: { row: OrderRow }) {
+  const g = recoveryOf(row);
+  const entryWord = (n: number) => `${n} entr${n === 1 ? 'y' : 'ies'}`;
+
+  // Nothing released → nothing to recover. Say so rather than draw an empty bar.
+  if (g.paid <= 0) {
+    return (
+      <div className="ord-paycell">
+        <div className="ord-progress ord-progress--na">
+          <div className="ord-progress__top">
+            <span className="ord-pill ord-pill--na"><span className="ord-pill__dot" />Not Applicable</span>
+          </div>
+          <span className="ord-recnote is-na">Nothing released on this PO</span>
+        </div>
+      </div>
+    );
+  }
+
+  const tip = !g.noteRaised ? 'Raise the supplier credit note before recording any recovery'
+    : g.complete ? `Fully recovered under ${g.noteNo} — open the record of ${entryWord(g.entries)}`
+      : g.started ? `${formatMoney(g.pending)} still to recover from the supplier`
+        : `Nothing recovered yet — ${formatMoney(g.target)} is recoverable under ${g.noteNo}`;
+
+  const button = (
+    <button
+      type="button"
+      className={`ord-btn ord-btn--hist${g.complete ? ' is-record' : ''}`}
+      disabled={!g.noteRaised}
+      title={tip}
+    >
+      {ICON_RECOVER}
+      <span>{g.complete ? 'Recovery Complete' : 'Manage Recovery'}</span>
+      {g.entries > 0 && (
+        <i className={`ord-btn__count${g.complete ? ' ord-btn__count--ready' : ''}`}>{g.entries}</i>
+      )}
+    </button>
+  );
+
+  // Paid out, but no credit note yet — the note decides what is recoverable.
+  if (!g.noteRaised) {
+    return (
+      <div className="ord-paycell">
+        <div className="ord-progress">
+          <div className="ord-progress__top">
+            <span className="ord-pill ord-pill--await"><span className="ord-pill__dot" />Awaiting Credit Note</span>
+          </div>
+          <span className="ord-recnote" title={`The credit note sets how much of ${formatMoney(g.paid)} paid out is recoverable`}>
+            Credit note sets the recoverable amount
+          </span>
+        </div>
+        {button}
+      </div>
+    );
+  }
+
+  // Reuses Payment Progress's three states: full / partial / pending.
+  const status: PaymentStatus = g.complete ? 'full' : g.started ? 'partial' : 'pending';
+  const label = g.complete ? 'Fully Recovered' : g.started ? 'Partially Recovered' : 'Recovery Not Started';
+  const noteTitle = `${formatMoney(g.target)} recoverable under ${g.noteNo}`
+    + (g.entries ? ` · ${entryWord(g.entries)}` : '');
+
+  return (
+    <div className="ord-paycell">
+      <div className={`ord-progress is-${status}`}>
+        <div className="ord-progress__top">
+          <span className={`ord-pill ord-pill--${status}`}><span className="ord-pill__dot" />{label}</span>
+          <span className="ord-progress__pct">{g.pct}%</span>
+        </div>
+        <div className="ord-progress__bar">
+          <div className="ord-progress__fill" style={{ width: `${g.pct}%` }}>
+            <span className="ord-progress__sheen" />
+          </div>
+        </div>
+        <div className="ord-progress__meta">
+          <span className="ord-progress__paid"><span className="ord-progress__mdot" />{formatMoney(g.recovered)} recovered</span>
+          <span className="ord-progress__due"><span className="ord-progress__mdot" />{formatMoney(g.pending)} pending</span>
+        </div>
+        <span className={`ord-paynote ord-paynote--${g.complete ? 'ready' : 'waiting'}`} title={noteTitle}>
+          {ICON_NOTE}
+          {g.noteNo}{g.entries > 0 && ` · ${entryWord(g.entries)}`}
+        </span>
+      </div>
+      {button}
+    </div>
+  );
+}
+
+function ActionCell({ cancelled = false, cancelReason, onEdit }: {
+  cancelled?: boolean; cancelReason?: string; onEdit: () => void;
+}) {
   return (
     <div className="ord-actions">
       {cancelled ? (
@@ -742,7 +997,7 @@ function ActionCell({ cancelled = false, cancelReason }: { cancelled?: boolean; 
       ) : (
         <button type="button" className="ord-btn ord-btn--cancel" title="Cancel this Purchase Order">{ICON_CANCEL}<span>Cancel PO</span></button>
       )}
-      <button type="button" className="ord-btn ord-btn--edit" disabled={cancelled}>{ICON_EDIT}<span>Edit PO</span></button>
+      <button type="button" className="ord-btn ord-btn--edit" disabled={cancelled} onClick={onEdit}>{ICON_EDIT}<span>Edit PO</span></button>
       <button type="button" className="ord-btn ord-btn--vault">{ICON_VAULT}<span>Evidence Vault</span></button>
     </div>
   );
@@ -762,7 +1017,9 @@ function CancelBadge({ reason }: { reason?: string }) {
 function inTab(row: OrderRow, tab: TabKey): boolean {
   if (tab === 'with') return row.shipment !== null;
   if (tab === 'without') return row.shipment === null;
-  if (tab === 'cancelled') return !!row.cancelled;
+  // A cancelled PO with no recorded stage is still awaiting recovery.
+  if (tab === 'cancelinit') return !!row.cancelled && row.cancelStage !== 'closed';
+  if (tab === 'cancelclosed') return !!row.cancelled && row.cancelStage === 'closed';
   return true;
 }
 
@@ -797,8 +1054,9 @@ function useIsPhone() {
   return isPhone;
 }
 
-function OrderCard({ row, index, onManage, onInspect, inspected }: {
-  row: OrderRow; index: number; onManage: (row: OrderRow) => void; onInspect: (row: OrderRow) => void; inspected: boolean;
+function OrderCard({ row, index, onManage, onInspect, onEdit, inspected }: {
+  row: OrderRow; index: number; onManage: (row: OrderRow) => void; onInspect: (row: OrderRow) => void;
+  onEdit: (row: OrderRow) => void; inspected: boolean;
 }) {
   const category = SUPPLIER_CATEGORY[row.supplierCategory];
   const risk = RISK_LEVEL[row.risk];
@@ -903,7 +1161,20 @@ function OrderCard({ row, index, onManage, onInspect, inspected }: {
         <PaymentCell row={row} onManage={onManage} />
       </div>
 
-      <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} />
+      {/* Only worth a section on the card when a note actually exists. */}
+      {row.adr && (
+        <div className="ord-card__section">
+          <span className="ord-card__label">Advance Receipt Refund Adjustment</span>
+          <AdrCell adr={row.adr} />
+        </div>
+      )}
+
+      <div className="ord-card__section">
+        <span className="ord-card__label">Payment Recovery</span>
+        <RecoveryCell row={row} />
+      </div>
+
+      <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} onEdit={() => onEdit(row)} />
     </article>
   );
 }
@@ -925,6 +1196,23 @@ export default function Order() {
   // Create PO runs in two screens: the link popup, then the full-page form.
   const [createOpen, setCreateOpen] = useState(false);
   const [poLink, setPoLink] = useState<PoLink | null>(null);
+
+  // Edit PO opens the same form, straight past the link popup, pre-filled from
+  // the row (the form matches the supplier and fills the rest itself).
+  const openEdit = (row: OrderRow) => setPoLink({
+    mode: row.shipment ? 'with' : 'without',
+    shipmentId: row.shipment ?? undefined,
+    edit: {
+      po: row.po,
+      opportunity: row.opportunity,
+      procurement: row.procurement,
+      supplier: row.supplier,
+      poType: PO_TYPE[row.type].label,
+      docType: row.docType,
+      deliveryDate: row.expectedDelivery,
+      physInsp: row.physicalInspection,
+    },
+  });
 
   const [payRow, setPayRow] = useState<OrderRow | null>(null);
   const [payStartRaise, setPayStartRaise] = useState(false);
@@ -952,7 +1240,7 @@ export default function Order() {
   }, [activeTab, search]);
 
   const tabCounts = useMemo(() => {
-    const counts: Record<TabKey, number> = { all: 0, with: 0, without: 0, cancelled: 0 };
+    const counts: Record<TabKey, number> = { all: 0, with: 0, without: 0, cancelinit: 0, cancelclosed: 0 };
     for (const row of SAMPLE_ROWS) {
       for (const tab of LIST_TABS) {
         if (inTab(row, tab.key)) counts[tab.key] += 1;
@@ -1030,6 +1318,7 @@ export default function Order() {
       {poLink && !createOpen && (
         <Suspense fallback={<CreatePoSkeleton />}>
           <CreatePoForm
+            key={poLink.edit?.po ?? 'new'}
             link={poLink}
             onClose={() => setPoLink(null)}
             onChangeLink={() => setCreateOpen(true)}
@@ -1173,7 +1462,10 @@ export default function Order() {
                   onClick={() => selectTab(tab.key)}
                 >
                   <span className="spi-seg-ico">{tab.icon}</span>
-                  {tab.label}
+                  <span className="ord-seg-lbl">
+                    {tab.label}
+                    {tab.sub && <span className="ord-seg-sub">{tab.sub}</span>}
+                  </span>
                   <span className="spi-seg-c">{tabCounts[tab.key]}</span>
                 </button>
               );
@@ -1215,6 +1507,7 @@ export default function Order() {
                 index={start + index}
                 onManage={setPayRow}
                 onInspect={setInspectRow}
+                onEdit={openEdit}
                 inspected={inspectedOf(row)}
               />
             ))}
@@ -1338,7 +1631,9 @@ export default function Order() {
                               <InspectionCell required={row.physicalInspection} done={inspectedOf(row)} cancelled={row.cancelled} onOpen={() => setInspectRow(row)} />
                             </PoCell>
                             <PoCell span={span}><PaymentCell row={row} onManage={setPayRow} /></PoCell>
-                            <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} /></PoCell>
+                            <PoCell span={span}><AdrCell adr={row.adr} /></PoCell>
+                            <PoCell span={span}><RecoveryCell row={row} /></PoCell>
+                            <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} onEdit={() => openEdit(row)} /></PoCell>
                           </>
                         )}
                       </tr>

@@ -91,9 +91,18 @@ export const SUPPLIERS: Supplier[] = [
 ];
 
 // Options read "S-001 — Reliance Industries Ltd" so the picker shows the code too.
-export const SUPPLIER_OPTIONS = SUPPLIERS.map((s) => `${s.code} — ${s.key}`);
+export const supplierOption = (s: Supplier) => `${s.code} — ${s.key}`;
 
-export const supplierByOption = (option: string) => SUPPLIERS.find((s) => `${s.code} — ${s.key}` === option);
+export const SUPPLIER_OPTIONS = SUPPLIERS.map(supplierOption);
+
+export const supplierByOption = (option: string) => SUPPLIERS.find((s) => supplierOption(s) === option);
+
+/** The list shows "Adani Enterprises"; the master holds "Adani Enterprises Ltd". */
+export const supplierByName = (name: string) => {
+  const wanted = name.trim().toLowerCase();
+  // An empty name would "start" every key and match the first supplier.
+  return wanted ? SUPPLIERS.find((s) => s.key.toLowerCase().startsWith(wanted)) : undefined;
+};
 
 /** Per-section completion, used by the Supplier Legal Status panel. */
 export function legalSections(s: Supplier) {
