@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ClmQcDocument extends Model
 {
+    use BelongsToTenant;
     public const TYPE_CERT = 'cert';
     public const TYPE_COMP = 'comp';
     public const TYPES     = [self::TYPE_CERT, self::TYPE_COMP];

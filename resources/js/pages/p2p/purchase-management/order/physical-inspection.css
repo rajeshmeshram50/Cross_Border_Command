@@ -8,8 +8,7 @@
 }
 
 .pins-card.spi-mdl:focus,
-.pinsatt-card.spi-mdl:focus,
-.pinsdesc-card.spi-mdl:focus {
+.pinsatt-card.spi-mdl:focus {
   outline: none;
 }
 
@@ -25,7 +24,8 @@
   }
 }
 
-.pins-layer {
+.pins-layer,
+.prd-detail-overlay.pins-layer {
   z-index: 3010;
 }
 
@@ -1167,8 +1167,7 @@
   flex-shrink: 0;
 }
 
-.pinsatt-card.spi-mdl,
-.pinsdesc-card.spi-mdl {
+.pinsatt-card.spi-mdl {
   display: flex;
   flex-direction: column;
   max-height: 80vh;
@@ -1176,18 +1175,12 @@
   box-shadow: 0 26px 60px rgba(8, 40, 60, .28);
 }
 
-.pinsdesc-card.spi-mdl {
-  width: min(640px, 100%);
-}
-
-.pinsatt-card .spi-mdl-title,
-.pinsdesc-card .spi-mdl-title {
+.pinsatt-card .spi-mdl-title {
   font-size: 14px;
   font-weight: 800;
 }
 
-.pinsatt-card .spi-mdl-sub,
-.pinsdesc-card .spi-mdl-sub {
+.pinsatt-card .spi-mdl-sub {
   font-size: 10.5px;
   font-weight: 600;
 }
@@ -1213,26 +1206,6 @@
 .pinsatt-grid .pins-chip__thumb {
   width: 40px;
   height: 40px;
-}
-
-.pinsdesc-meta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  margin-bottom: 12px;
-}
-
-.pinsdesc-text {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.65;
-  color: #3a5161;
-}
-
-[data-bs-theme="dark"] .pinsdesc-text {
-  color: #cbd5e1;
 }
 
 @media (max-width: 1000px) {

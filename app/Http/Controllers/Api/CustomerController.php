@@ -288,7 +288,7 @@ class CustomerController extends Controller
         // (category|code) + the keys actually uploaded. Keyed by segment NAME.
         $segReq = [];
         foreach (\App\Support\SegmentGuard::names($row->segment) as $segName) {
-            $segReq[$segName] = \App\Support\SegmentGuard::docKeys((int) $row->client_id, $segName);
+            $segReq[$segName] = \App\Support\SegmentGuard::docKeys((int) $row->client_id, $segName, \App\Support\SegmentGuard::idsOf($row));
         }
         $data['segment_required_doc_keys'] = $segReq;
         $data['uploaded_doc_keys'] = \App\Support\SegmentGuard::uploadedDocKeys(
@@ -335,6 +335,7 @@ class CustomerController extends Controller
         [$clientId, $branchId] = $this->resolveOwnership($user);
 
         $data = $this->validatePayload($request, null, $clientId, $branchId);
+        $data = $this->withSegmentIds($data, $clientId, $branchId, []);
 
         $row = DB::transaction(function () use ($data, $user, $clientId, $branchId) {
             $primary = $data['primary_address'];
@@ -361,6 +362,7 @@ class CustomerController extends Controller
                 'legal_name'     => $data['legal_name']     ?? null,
                 'type'           => $data['type']           ?? null,
                 'segment'        => $data['segment']        ?? null,
+                'segment_ids'    => $data['segment_ids']    ?? null,
                 'classification' => $data['classification'] ?? null,
                 'risk_level'     => $data['risk_level']     ?? null,
                 'gst_applicable' => $data['gst_applicable'] ?? null,
@@ -405,6 +407,7 @@ class CustomerController extends Controller
         }
 
         $data = $this->validatePayload($request, (int) $customer->id, $customer->client_id, $customer->branch_id);
+        $data = $this->withSegmentIds($data, $customer->client_id, $customer->branch_id, \App\Support\SegmentGuard::ids($customer->segment_ids ?? []));
 
         $removedSegs = \App\Support\SegmentGuard::removedNames($customer->segment, $data['segment'] ?? null);
 
@@ -504,6 +507,7 @@ class CustomerController extends Controller
                 'legal_name'     => $data['legal_name']     ?? null,
                 'type'           => $data['type']           ?? null,
                 'segment'        => $data['segment']        ?? null,
+                'segment_ids'    => $data['segment_ids']    ?? null,
                 'classification' => $data['classification'] ?? null,
                 'risk_level'     => $data['risk_level']     ?? null,
                 'gst_applicable' => $data['gst_applicable'] ?? null,
@@ -598,6 +602,30 @@ class CustomerController extends Controller
     }
 
     /**
+     * The segment ids decide which segments a customer has; the `segment` names
+     * string is derived from them so name-based readers keep working. Older callers
+     * that post only names get them resolved, preferring the ids already saved.
+     */
+    private function withSegmentIds(array $data, ?int $clientId, ?int $branchId, array $currentIds): array
+    {
+        if (array_key_exists('segment_ids', $data) && $data['segment_ids'] !== null) {
+            $ids = \App\Support\SegmentGuard::ids($data['segment_ids']);
+            // Only segments this tenant can see.
+            $ids = $ids ? array_values(array_intersect($ids, \App\Models\ClmSegment::withoutGlobalScopes()
+                ->whereIn('id', $ids)
+                ->where(fn ($q) => $q->where('client_id', $clientId)->orWhereNull('client_id'))
+                ->pluck('id')->map(fn ($i) => (int) $i)->all())) : [];
+            $data['segment_ids'] = $ids ?: null;
+            $names = \App\Support\SegmentGuard::namesFor($ids);
+            $data['segment'] = $names !== '' ? $names : null;
+            return $data;
+        }
+        $ids = \App\Support\SegmentGuard::resolveIds($clientId, $branchId, \App\Support\SegmentGuard::names($data['segment'] ?? null), $currentIds);
+        $data['segment_ids'] = $ids ?: null;
+        return $data;
+    }
+
+    /**
      * Re-derive the segment of every consignee mapped to this customer from the
      * union of its customers' segments, so a segment added to the customer shows
      * on its consignees immediately (they must never drift — see
@@ -632,7 +660,11 @@ class CustomerController extends Controller
                 ),
             )));
             $finalSegment = \App\Support\SegmentGuard::mergeRetained($derived, $keep);
-            $consignee->update(['segment' => $finalSegment !== '' ? $finalSegment : null]);
+            $finalIds     = \App\Support\SegmentGuard::consigneeIds($custIds, $keep, $consignee);
+            $consignee->update([
+                'segment'     => $finalSegment !== '' ? $finalSegment : null,
+                'segment_ids' => $finalIds ?: null,
+            ]);
         }
     }
 
@@ -910,6 +942,9 @@ class CustomerController extends Controller
             'legalName'       => $c->legal_name,
             'type'            => $c->type,
             'segment'         => $c->segment,
+            // Ids + rows so screens can tell same-named Less / Highly Regulated segments apart.
+            'segment_ids'     => \App\Support\SegmentGuard::idsOf($c),
+            'segments'        => \App\Support\SegmentGuard::rowsFor(\App\Support\SegmentGuard::idsOf($c)),
             'classification'  => $c->classification,
             'riskLevel'       => $c->risk_level,
             'gstApplicable'   => $c->gst_applicable,
@@ -1037,6 +1072,8 @@ class CustomerController extends Controller
             ],
             'type'           => 'nullable|string|max:64',
             'segment'        => 'nullable|string|max:1024',
+            'segment_ids'    => 'nullable|array',
+            'segment_ids.*'  => 'integer',
             'classification' => 'nullable|string|max:64',
             'risk_level'     => 'nullable|string|max:32',
             /* Stage 1 — domestic GST flag. 'Yes' gates the GST Scrutiny popup.
@@ -1347,7 +1384,7 @@ class CustomerController extends Controller
                 ->tap($scope)
                 ->whereIn('code', $segmentCodesWithDocs ?: [''])
                 ->orderBy('id')
-                ->get(['id', 'name', 'code']);
+                ->get(['id', 'name', 'code', 'regulatory_status']);
 
             return [
                 'customer_types'           => $active(CustomerTypes::class,           ['id', 'name']),

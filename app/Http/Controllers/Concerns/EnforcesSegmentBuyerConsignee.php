@@ -103,29 +103,27 @@ trait EnforcesSegmentBuyerConsignee
             return null;
         }
 
-        // Customer's segment list (comma-joined names) → lowercased set.
-        $customerNames = SegmentGuard::names($customer->segment);
-        if (empty($customerNames)) {
+        // Match on segment IDS: "Sugar" (Less) and "Sugar" (Highly) are different segments.
+        $customerIds = SegmentGuard::idsOf($customer);
+        if (empty($customerIds)) {
             return null; // no segment on the customer → nothing to match against
         }
-        $customerSet = array_map('mb_strtolower', $customerNames);
+        $customerNames = array_map(fn ($r) => self::segmentWithStatus($r['name'], $r['regulatory_status']), SegmentGuard::rowsFor($customerIds));
 
-        // Mapped products that carry a segment, with the segment name resolved.
         $products = Product::where('client_id', $clientId)
             ->whereIn('id', $productIds)
             ->whereNotNull('segment_id')
-            ->with('segment:id,name')
+            ->with('segment:id,name,regulatory_status')
             ->get(['id', 'name', 'product_code', 'segment_id']);
 
         $mismatches = [];
         foreach ($products as $p) {
-            $segName = $p->segment?->name;
-            if (!$segName) {
+            if (!$p->segment) {
                 continue; // segment row missing → can't evaluate, allow
             }
-            if (!in_array(mb_strtolower($segName), $customerSet, true)) {
+            if (!in_array((int) $p->segment_id, $customerIds, true)) {
                 $label = $p->product_code ? "{$p->name} ({$p->product_code})" : $p->name;
-                $mismatches[$label] = $segName;
+                $mismatches[$label] = self::segmentWithStatus($p->segment->name, $p->segment->regulatory_status);
             }
         }
 
@@ -149,5 +147,12 @@ trait EnforcesSegmentBuyerConsignee
                 . ': ' . implode(', ', $customerNames) . '. '
                 . 'Map a product from the same segment as the customer (or update the customer\'s segment) before saving.',
         ], 422);
+    }
+
+    /** "Sugar (High Reg)" — names alone cannot tell same-named segments apart. */
+    private static function segmentWithStatus(string $name, ?string $status): string
+    {
+        $tag = $status === 'highly' ? 'High Reg' : ($status === 'less' ? 'Low Reg' : null);
+        return $tag ? "{$name} ({$tag})" : $name;
     }
 }

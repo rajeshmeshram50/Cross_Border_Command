@@ -2,6 +2,7 @@
 
 namespace App\Models\Masters;
 
+use App\Models\Concerns\BelongsToTenant;
 use App\Models\Branch;
 use App\Models\Client;
 use App\Models\User;
@@ -28,6 +29,7 @@ use Illuminate\Support\Facades\DB;
  */
 class Segments extends Model
 {
+    use BelongsToTenant;
     protected $table = 'clm_segments';
 
     protected $fillable = [
@@ -108,7 +110,8 @@ class Segments extends Model
      *  so codes produced by either entry point share a single counter. */
     private static function nextCode(?int $clientId): string
     {
-        $count = static::query()
+        // Company-wide counter — the branch tenant filter must not change it.
+        $count = static::withoutGlobalScope('tenant')
             ->when($clientId, fn ($q) => $q->where('client_id', $clientId))
             ->count();
         return sprintf('S-%03d', $count + 1);

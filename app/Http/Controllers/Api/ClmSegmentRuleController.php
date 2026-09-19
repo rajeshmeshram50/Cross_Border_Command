@@ -336,15 +336,15 @@ class ClmSegmentRuleController extends Controller
         // Resolve a category's codes (from doc_selections) to the actual
         // master rows + stamp the M|O requirement so the frontend can render
         // each row as Mandatory / Optional in one pass.
-        $resolveCat = function (string $cat, string $modelClass) use ($rule, $cid, $authMap) {
+        // Codes restart per branch, so documents come from the rule's own branch catalogue.
+        $docBranch = $rule?->branch_id ?? $segment?->branch_id;
+        $resolveCat = function (string $cat, string $modelClass) use ($rule, $cid, $authMap, $docBranch) {
             $sel = $rule?->doc_selections ?? [];
             $entries = $sel[$cat] ?? [];
             if (empty($entries) || !is_array($entries)) return [];
             $codes = array_keys($entries);
-            $rows = $modelClass::query()
-                ->where('client_id', $cid)
-                ->whereIn('code', $codes)
-                ->get();
+            $rows = \App\Support\SegmentGuard::branchCatalogue($modelClass::query(), $cid, $codes, $docBranch)
+                ->get()->unique('code');
             return $rows->map(function ($r) use ($entries, $authMap) {
                 // Each model has a slightly different shape — surface the
                 // intersection plus everything from the row's attributes

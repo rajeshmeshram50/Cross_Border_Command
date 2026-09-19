@@ -126,6 +126,7 @@ const P2P_LEAF: Record<string, string> = {
   '/p2p/order': 'p2p.order',
   // Same for the new Payment Request module — no module row of its own yet.
   '/p2p/payment-request': 'p2p.po',
+  '/p2p/advance-refund-adjustment': 'p2p.po',
 };
 
 // Known module prefixes — a path under any of these that fails to resolve to a

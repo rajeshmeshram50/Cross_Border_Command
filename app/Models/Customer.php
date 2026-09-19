@@ -36,10 +36,15 @@ class Customer extends Model
     protected $fillable = [
         'client_id', 'branch_id', 'created_by',
         'customer_code',
-        'company_name', 'legal_name', 'type', 'segment', 'classification', 'risk_level',
+        'company_name', 'legal_name', 'type', 'segment', 'segment_ids', 'classification', 'risk_level',
         'gst_applicable', 'gst_number',
         'website', 'primary_email', 'status', 'zoho_contact_id',
         'is_map_lead',
+    ];
+
+    // Source of truth for which segments; `segment` holds their names, derived from these.
+    protected $casts = [
+        'segment_ids' => 'array',
     ];
 
     /**

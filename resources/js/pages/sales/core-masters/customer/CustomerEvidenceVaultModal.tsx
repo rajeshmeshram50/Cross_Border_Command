@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
+import { SegmentItemBadge, type SegmentItem } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -83,6 +83,8 @@ export interface VaultShipmentRow {
 
 export interface VaultData {
   same_as_customer?:      boolean;
+  /** The owner's segments by id (customer / consignee vaults). */
+  segment_rows?:          SegmentItem[];
   total_documents:        number;
   verified_signed:        number;
   pending:                number;
@@ -170,7 +172,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
     uploadingRef.current = Math.max(0, uploadingRef.current + (busy ? 1 : -1));
     setUploading(uploadingRef.current > 0);
   }, []);
-  const [segPop, setSegPop] = useState<{ names: string[]; x: number; y: number } | null>(null);
+  const [segPop, setSegPop] = useState<{ items: SegmentItem[]; x: number; y: number } | null>(null);
   const [overview, setOverview] = useState<GroupKey | null>(null);
   const [ovShip, setOvShip] = useState<number | null>(null);
   const [ovShipFilter, setOvShipFilter] = useState<'buyer-eq-consignee' | 'buyer-neq-consignee'>('buyer-eq-consignee');
@@ -544,7 +546,11 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                   {customer.contactCity && <span className="cev-chip cev-chip-city">{customer.contactCity}</span>}
                   {customer.type && <span className="cev-chip cev-chip-type">{customer.type}</span>}
                   {customer.segment && (() => {
-                    const segs = String(customer.segment).split(',').map(s => s.trim()).filter(Boolean);
+                    // Segment rows from the vault API (id-exact); the name list is the fallback.
+                    const segItems: SegmentItem[] = vaultLive?.segment_rows?.length
+                      ? vaultLive.segment_rows
+                      : String(customer.segment).split(',').map(s => s.trim()).filter(Boolean).map(name => ({ name }));
+                    const segs = segItems.map(s => s.name);
                     if (segs.length === 0) return null;
                     const first = segs[0];
                     const extra = segs.length - 1;
@@ -553,15 +559,15 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                        button: the named segment carries the count inline and the
                        whole thing opens the full list. */
                     if (extra === 0) {
-                      return <Tooltip label={first}><span className="cev-chip cev-chip-seg" style={{ display: 'inline-flex', alignItems: 'center' }}>{short}<SegmentNameBadge name={first} /></span></Tooltip>;
+                      return <Tooltip label={first}><span className="cev-chip cev-chip-seg" style={{ display: 'inline-flex', alignItems: 'center' }}>{short}<SegmentItemBadge item={segItems[0]} /></span></Tooltip>;
                     }
                     return (
                       <Tooltip label={`${segs.length} segments — click to see all`}>
                         <button
                           type="button"
                           className="cev-chip cev-chip-seg sev-chip-more"
-                          onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { names: segs, x: b.left, y: b.bottom + 6 }); }}
-                        >{short}<SegmentNameBadge name={first} /><span className="cev-chip-seg-count">+{extra}</span></button>
+                          onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { items: segItems, x: b.left, y: b.bottom + 6 }); }}
+                        >{short}<SegmentItemBadge item={segItems[0]} /><span className="cev-chip-seg-count">+{extra}</span></button>
                       </Tooltip>
                     );
                   })()}
@@ -1016,13 +1022,13 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
         <>
           <div onClick={() => setSegPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 13000 }} />
           <div className="cev-seg-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 298), top: segPop.y, zIndex: 13001, width: 280, maxHeight: 320, overflowY: 'auto' }}>
-            <div className="cev-seg-pop-title">Segments ({segPop.names.length})</div>
-            {segPop.names.map((name, i) => (
+            <div className="cev-seg-pop-title">Segments ({segPop.items.length})</div>
+            {segPop.items.map(({ name, ...rest }, i) => (
               <div key={i} className={`cev-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
-                <Tooltip label={name}>
-                  <span className="cev-seg-pop-pill" style={{ flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                <Tooltip label={rest.code ? `${rest.code}: ${name}` : name}>
+                  <span className="cev-seg-pop-pill" style={{ flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rest.code ? `${rest.code}: ${name}` : name}</span>
                 </Tooltip>
-                <SegmentNameBadge name={name} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+                <SegmentItemBadge item={{ name, ...rest }} style={{ marginLeft: 'auto', flexShrink: 0 }} />
               </div>
             ))}
           </div>

@@ -80,12 +80,13 @@ class SegmentGuard
     public static function segmentsWithUploads(string $uploadableType, int $uploadableId, int $clientId, array $segmentNames): array
     {
         $blocked = [];
+        $ownerIds = self::ownerIds($uploadableType, $uploadableId);
 
         foreach ($segmentNames as $name) {
             $name = trim($name);
             if ($name === '') continue;
 
-            $keys = self::docKeys($clientId, $name);
+            $keys = self::docKeys($clientId, $name, $ownerIds);
             if (empty($keys)) continue;
 
             $hasUpload = SegmentDocUpload::query()
@@ -115,31 +116,32 @@ class SegmentGuard
      *
      * @return string[]
      */
-    public static function docKeys(int $clientId, string $segmentName): array
+    public static function docKeys(int $clientId, string $segmentName, array $ownerIds = []): array
     {
         $name = trim($segmentName);
         if ($name === '') return [];
 
-        // Resolve the segment id by name (tenant row first, else global).
-        $segId = ClmSegment::query()
-            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
-            ->where(fn ($q) => $q->where('client_id', $clientId)->orWhereNull('client_id'))
-            ->value('id');
-        if (!$segId) return [];
-
-        $sel = ClmSegmentRule::query()
-            ->where('client_id', $clientId)
-            ->where('segment_id', $segId)
-            ->value('doc_selections');
-        $sel = is_array($sel) ? $sel : (json_decode((string) $sel, true) ?: []);
+        // The owner's own segment(s) for this name first — two segments may share it.
+        $segIds = self::resolveIds($clientId, null, [$name], $ownerIds);
+        if (!$segIds) return [];
 
         $keys = [];
-        foreach ($sel as $cat => $codes) {
-            foreach (array_keys((array) $codes) as $code) {
-                $keys[] = $cat . '|' . (string) $code;
+        foreach (ClmSegmentRule::query()->where('client_id', $clientId)->whereIn('segment_id', $segIds)->pluck('doc_selections') as $sel) {
+            $sel = is_array($sel) ? $sel : (json_decode((string) $sel, true) ?: []);
+            foreach ($sel as $cat => $codes) {
+                foreach (array_keys((array) $codes) as $code) {
+                    $keys[] = $cat . '|' . (string) $code;
+                }
             }
         }
         return array_values(array_unique($keys));
+    }
+
+    /** Segment ids of an uploadable owner (customer / consignee), for docKeys(). */
+    private static function ownerIds(string $uploadableType, int $uploadableId): array
+    {
+        if (!in_array($uploadableType, [\App\Models\Customer::class, \App\Models\Consignee::class], true)) return [];
+        return self::idsOf($uploadableType::withoutGlobalScopes()->find($uploadableId));
     }
 
     /**
@@ -410,20 +412,21 @@ class SegmentGuard
      */
     public static function blockedByOrphanDocs(string $uploadableType, int $uploadableId, int $clientId, array $removedNames, array $remainingNames): array
     {
+        $ownerIds = self::ownerIds($uploadableType, $uploadableId);
         $removed = array_values(array_filter(array_map('trim', $removedNames), fn ($s) => $s !== ''));
         if (empty($removed)) return [];
 
         // Doc keys still required by a remaining segment survive (never orphaned).
         $keepKeys = [];
         foreach ($remainingNames as $name) {
-            $keepKeys = array_merge($keepKeys, self::docKeys($clientId, trim((string) $name)));
+            $keepKeys = array_merge($keepKeys, self::docKeys($clientId, trim((string) $name), $ownerIds));
         }
         $keepKeys = array_flip($keepKeys);
 
         $blocked = [];
         foreach ($removed as $name) {
             // Keys this segment requires that no remaining segment does.
-            $orphan = array_values(array_filter(self::docKeys($clientId, $name), fn ($k) => !isset($keepKeys[$k])));
+            $orphan = array_values(array_filter(self::docKeys($clientId, $name, $ownerIds), fn ($k) => !isset($keepKeys[$k])));
             if (empty($orphan)) continue;
             // Blocked only if one of those orphan docs is actually uploaded.
             $hasUpload = SegmentDocUpload::query()
@@ -456,20 +459,21 @@ class SegmentGuard
      */
     public static function orphanUploads(string $uploadableType, int $uploadableId, int $clientId, array $removedNames, array $remainingNames)
     {
+        $ownerIds = self::ownerIds($uploadableType, $uploadableId);
         $removed = array_values(array_filter(array_map('trim', $removedNames), fn ($s) => $s !== ''));
         if (empty($removed)) return collect();
 
         // Doc keys still required by a remaining segment survive (never orphaned).
         $keepKeys = [];
         foreach ($remainingNames as $name) {
-            $keepKeys = array_merge($keepKeys, self::docKeys($clientId, trim((string) $name)));
+            $keepKeys = array_merge($keepKeys, self::docKeys($clientId, trim((string) $name), $ownerIds));
         }
         $keepKeys = array_flip($keepKeys);
 
         // Collect every orphan (category, doc_code) across all removed segments.
         $orphanKeys = [];
         foreach ($removed as $name) {
-            foreach (self::docKeys($clientId, $name) as $k) {
+            foreach (self::docKeys($clientId, $name, $ownerIds) as $k) {
                 if (!isset($keepKeys[$k])) $orphanKeys[$k] = true;
             }
         }
@@ -496,6 +500,140 @@ class SegmentGuard
      *
      * @param  string[] $retain
      */
+    /* ── Segment IDs ───────────────────────────────────────────────────────
+     * Two segments may share a name (Less / Highly Regulated), so `segment_ids`
+     * is the source of truth and the `segment` names string is derived from it. */
+
+    /** @param mixed $ids @return int[] unique, in order */
+    public static function ids($ids): array
+    {
+        if (is_string($ids)) $ids = json_decode($ids, true);
+        return array_values(array_unique(array_filter(array_map('intval', (array) $ids))));
+    }
+
+    /** Comma-joined names for the given segment ids, in the same order. */
+    public static function namesFor(array $ids): string
+    {
+        $ids = self::ids($ids);
+        if (!$ids) return '';
+        $byId = ClmSegment::withoutGlobalScopes()->whereIn('id', $ids)->pluck('name', 'id');
+        return implode(', ', array_values(array_filter(array_map(fn ($id) => trim((string) ($byId[$id] ?? '')), $ids))));
+    }
+
+    /**
+     * Map names to ids. A name already covered by `$prefer` keeps that id; otherwise
+     * the same-branch row wins, then client-level, then the oldest.
+     *
+     * @param string[] $names @param int[] $prefer @return int[]
+     */
+    public static function resolveIds(?int $clientId, ?int $branchId, array $names, array $prefer = [], ?string $tier = null): array
+    {
+        $prefer = self::ids($prefer);
+        $tier = mb_strtolower(trim((string) $tier));
+        $preferByName = [];
+        if ($prefer) {
+            foreach (ClmSegment::withoutGlobalScopes()->whereIn('id', $prefer)->get(['id', 'name']) as $s) {
+                $preferByName[mb_strtolower(trim($s->name))][] = (int) $s->id;
+            }
+        }
+        $out = [];
+        foreach ($names as $name) {
+            $key = mb_strtolower(trim((string) $name));
+            if ($key === '') continue;
+            $ids = $preferByName[$key] ?? [];
+            if (!$ids) {
+                $id = ClmSegment::withoutGlobalScopes()
+                    ->whereRaw('LOWER(TRIM(name)) = ?', [$key])
+                    ->where(fn ($q) => $q->where('client_id', $clientId)->orWhereNull('client_id'))
+                    ->when($tier !== '', fn ($q) => $q->whereRaw('LOWER(TRIM(regulatory_status)) = ?', [$tier]))
+                    ->orderByRaw('CASE WHEN branch_id = ? THEN 0 WHEN branch_id IS NULL THEN 1 ELSE 2 END', [$branchId])
+                    ->orderBy('id')
+                    ->value('id');
+                $ids = $id ? [(int) $id] : [];
+            }
+            foreach ($ids as $id) if (!in_array($id, $out, true)) $out[] = $id;
+        }
+        return $out;
+    }
+
+    /**
+     * CLM document master rows for these codes. Codes restart per branch, so a known branch
+     * keeps only its own + client-level rows (own first); callers keep the first row per code.
+     */
+    public static function branchCatalogue($query, int $clientId, array $codes, ?int $branchId)
+    {
+        $query->where('client_id', $clientId)->whereIn('code', $codes);
+        if ($branchId) {
+            $query->where(fn ($q) => $q->where('branch_id', $branchId)->orWhereNull('branch_id'))
+                ->orderByRaw('CASE WHEN branch_id IS NULL THEN 1 ELSE 0 END');
+        }
+        return $query->orderBy('id');
+    }
+
+    /** Does a T&C library row apply to this segment? By stored ids; name + tier for rows not yet resolved. */
+    public static function tncMatches($tnc, $segment): bool
+    {
+        $ids = self::ids($tnc->segment_ids ?? []);
+        if ($ids) return in_array((int) $segment->id, $ids, true);
+        if (mb_strtolower(trim((string) $tnc->regulatory)) !== mb_strtolower(trim((string) $segment->regulatory_status))) return false;
+        return in_array(mb_strtolower(trim((string) $segment->name)), array_map('mb_strtolower', self::names($tnc->segment)), true);
+    }
+
+    /** Segment ids an owner carries — its stored ids, or its names resolved for rows saved before ids existed. */
+    public static function idsOf($owner): array
+    {
+        if (!$owner) return [];
+        $ids = self::ids($owner->segment_ids ?? []);
+        if ($ids) return $ids;
+        return self::resolveIds($owner->client_id ?? null, $owner->branch_id ?? null, self::names($owner->segment ?? null));
+    }
+
+    /** Union of the customers' segment ids — what a consignee inherits. @return int[] */
+    public static function idsForCustomers(array $customerIds): array
+    {
+        $out = [];
+        foreach (\App\Models\Customer::whereIn('id', array_filter(array_map('intval', $customerIds)))->get() as $c) {
+            foreach (self::idsOf($c) as $id) if (!in_array($id, $out, true)) $out[] = $id;
+        }
+        return $out;
+    }
+
+    /**
+     * A consignee's ids: its customers' union, plus any retained (locked) name the
+     * union dropped, mapped back through the consignee's previous ids first.
+     *
+     * @param string[] $retainNames @return int[]
+     */
+    public static function consigneeIds(array $customerIds, array $retainNames, $consignee): array
+    {
+        $ids = self::idsForCustomers($customerIds);
+        if (!$retainNames) return $ids;
+        $covered = array_map('mb_strtolower', self::names(self::namesFor($ids)));
+        $missing = array_values(array_filter($retainNames, fn ($n) => !in_array(mb_strtolower(trim($n)), $covered, true)));
+        if (!$missing) return $ids;
+        $extra = self::resolveIds($consignee->client_id ?? null, $consignee->branch_id ?? null, $missing, self::ids($consignee->segment_ids ?? []));
+        foreach ($extra as $id) if (!in_array($id, $ids, true)) $ids[] = $id;
+        return $ids;
+    }
+
+    /** @var array<int, array|null> rows already fetched this request — a list page shapes many owners */
+    private static array $rowCache = [];
+
+    /** {id, code, name, regulatory_status} rows for ids, in the same order. */
+    public static function rowsFor(array $ids): array
+    {
+        $ids = self::ids($ids);
+        if (!$ids) return [];
+        $missing = array_values(array_filter($ids, fn ($id) => !array_key_exists($id, self::$rowCache)));
+        if ($missing) {
+            foreach ($missing as $id) self::$rowCache[$id] = null;
+            foreach (ClmSegment::withoutGlobalScopes()->whereIn('id', $missing)->get(['id', 'code', 'name', 'regulatory_status']) as $s) {
+                self::$rowCache[(int) $s->id] = ['id' => (int) $s->id, 'code' => $s->code, 'name' => $s->name, 'regulatory_status' => $s->regulatory_status];
+            }
+        }
+        return array_values(array_filter(array_map(fn ($id) => self::$rowCache[$id] ?? null, $ids)));
+    }
+
     public static function mergeRetained(?string $derivedSegment, array $retain): string
     {
         $names = self::names($derivedSegment);

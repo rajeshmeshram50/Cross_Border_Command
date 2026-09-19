@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
-import { SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
+import { SegmentItemBadge, type SegmentItem } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import CustomerEvidenceVaultModal, { ShipmentDocPanel, ShipmentDocSendForSignature, ShipmentStatusPill, SevStat, sumRatios, RATIO_COL, type VaultShipmentDoc, type ShipmentSendParty } from '../customer/CustomerEvidenceVaultModal';
 import { VaultReuploadPopup, VaultDateBadge } from '../../../p2p/p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
@@ -103,6 +103,8 @@ export interface VaultShipmentRow {
 }
 
 export interface VaultData {
+  /** The consignee's segments by id. */
+  segment_rows?: SegmentItem[];
   /** True when this consignee was created with "Same as Customer" ticked —
    *  the two are one company, so the vault carries the customer's documents
    *  as well as its own. Sent by the API for exactly this decision. */
@@ -275,7 +277,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   useEffect(() => { if (!open) setCustVaultOpen(false); }, [open]);
   /* "+N more" segment overflow popover — a titled list (matches the CLM pages'
    * authority/segment popovers), opened on click from the header chip. */
-  const [segPop, setSegPop] = useState<{ title: string; items: { label: string; code?: string | null }[]; x: number; y: number } | null>(null);
+  const [segPop, setSegPop] = useState<{ title: string; items: { label: string; code?: string | null; seg?: SegmentItem }[]; x: number; y: number } | null>(null);
   // "Document Overview" popup — set to a group key to open the all-docs list.
   const [overview, setOverview] = useState<GroupKey | null>(null);
   const [overviewPage, setOverviewPage] = useState(1);
@@ -841,7 +843,11 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                     );
                   })()}
                   {consignee.segment && (() => {
-                    const segs = String(consignee.segment).split(',').map(s => s.trim()).filter(Boolean);
+                    // Segment rows from the vault API (id-exact); the name list is the fallback.
+                    const segItems: SegmentItem[] = vaultLive?.segment_rows?.length
+                      ? vaultLive.segment_rows
+                      : String(consignee.segment).split(',').map(s => s.trim()).filter(Boolean).map(name => ({ name }));
+                    const segs = segItems.map(s => s.name);
                     if (segs.length === 0) return null;
                     const first = segs[0];
                     const extra = segs.length - 1;
@@ -852,15 +858,15 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                        "+29 more" button beside it -- two chips spending twice
                        the width of a header this size to say one thing. */
                     if (extra === 0) {
-                      return <Tooltip label={first}><span className="cev-chip cev-chip-seg" style={{ display: 'inline-flex', alignItems: 'center' }}>{short}<SegmentNameBadge name={first} /></span></Tooltip>;
+                      return <Tooltip label={first}><span className="cev-chip cev-chip-seg" style={{ display: 'inline-flex', alignItems: 'center' }}>{short}<SegmentItemBadge item={segItems[0]} /></span></Tooltip>;
                     }
                     return (
                       <Tooltip label={`${segs.length} segments — click to see all`}>
                         <button
                           type="button"
                           className="cev-chip cev-chip-seg sev-chip-more"
-                          onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { title: 'Segments', items: segs.map(n => ({ label: n })), x: b.left, y: b.bottom + 6 }); }}
-                        >{short}<SegmentNameBadge name={first} /><span className="cev-chip-seg-count">+{extra}</span></button>
+                          onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { title: 'Segments', items: segItems.map(s => ({ label: s.name, code: s.code, seg: s })), x: b.left, y: b.bottom + 6 }); }}
+                        >{short}<SegmentItemBadge item={segItems[0]} /><span className="cev-chip-seg-count">+{extra}</span></button>
                       </Tooltip>
                     );
                   })()}
@@ -1588,7 +1594,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                       {it.label.length > 20 ? it.label.slice(0, 20) + '…' : it.label}
                     </span>
                   </Tooltip>
-                  {segPop.title === 'Segments' && <SegmentNameBadge name={it.label} style={{ marginLeft: 'auto', flexShrink: 0 }} />}
+                  {segPop.title === 'Segments' && <SegmentItemBadge item={it.seg ?? { name: it.label }} style={{ marginLeft: 'auto', flexShrink: 0 }} />}
                 </div>
               ))}
             </div>

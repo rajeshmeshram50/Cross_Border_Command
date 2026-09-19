@@ -826,6 +826,10 @@ export default function SalesMatrixDetail() {
       ? raw.split(',').map(s => s.trim()).filter(Boolean)
       : [];
   }, [serverHeader.customerRow]);
+  const customerSegmentIds = useMemo<number[]>(() => {
+    const ids = (serverHeader.customerRow as { segment_ids?: unknown } | null | undefined)?.segment_ids;
+    return Array.isArray(ids) ? ids.map(Number).filter(Boolean) : [];
+  }, [serverHeader.customerRow]);
   /* Currency ⇄ country gate (the mirror of the Product Directory's rule).
    * Once the lead's products have pinned a currency, only customers whose
    * country agrees with it may be mapped:
@@ -1802,6 +1806,7 @@ export default function SalesMatrixDetail() {
         leadId={resolvedLeadId ?? null}
         leadStage={furthestStage}
         customerSegments={customerSegments}
+        customerSegmentIds={customerSegmentIds}
         customerCountry={customerCountry}
         /* Opens for viewing, but Map / Edit / Unmap are gone — every one of
            them is refused by the server for a former owner. */

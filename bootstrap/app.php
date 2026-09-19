@@ -23,6 +23,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // that was issued before they were deactivated.
         $middleware->alias([
             'user.active' => \App\Http\Middleware\EnsureUserActive::class,
+            // Tenant (client/branch) for the request — read by the BelongsToTenant model scope.
+            'tenant' => \App\Http\Middleware\SetTenantContext::class,
+            'tenant.document' => \App\Http\Middleware\SetTenantFromDocument::class,
         ]);
 
         // Dev Tools → Load Testing. Inert unless the caller sends X-Profile: 1,

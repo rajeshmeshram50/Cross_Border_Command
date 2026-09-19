@@ -34,12 +34,10 @@ class ClmBuyerProfileController extends Controller
         $empty = ['buyers' => [], 'consignees' => [], 'ws_eq' => [], 'ws_neq' => [], 'wos_eq' => [], 'wos_neq' => []];
         if (!$cid) return response()->json(['status' => true, 'data' => $empty]);
 
-        /* ── 1. Segment masters (name→id, id→regulatory). ── */
+        /* ── 1. Segment masters (id→regulatory). ── */
         $segments = ClmSegment::where('client_id', $cid)->get(['id', 'name', 'code', 'regulatory_status']);
-        $segIdByName = [];
         $segRegById  = [];
         foreach ($segments as $s) {
-            $segIdByName[mb_strtolower(trim((string) $s->name))] = (int) $s->id;
             $segRegById[(int) $s->id] = (string) $s->regulatory_status;   // 'highly' | 'less'
         }
 
@@ -162,14 +160,6 @@ class ClmBuyerProfileController extends Controller
         }
 
         /* ── Closures shared by every section. ── */
-        $segIdsFromNames = function (?string $csv) use ($segIdByName): array {
-            $ids = [];
-            foreach (explode(',', (string) $csv) as $n) {
-                $k = mb_strtolower(trim($n));
-                if ($k !== '' && isset($segIdByName[$k])) $ids[] = $segIdByName[$k];
-            }
-            return array_values(array_unique($ids));
-        };
         // Buyer trade type from its primary-address country (India → domestic).
         $docTypeForCountry = fn(?string $country): string => trim((string) $country) === 'India' ? 'domestic' : 'international';
         $unionFor = function (array $segIds, string $docType) use ($selForSeg): array {
@@ -373,7 +363,7 @@ class ClmBuyerProfileController extends Controller
         $sr = 0;
         foreach ($customers as $c) {
             $sr++;
-            $segIds   = $segIdsFromNames($c->segment);
+            $segIds   = \App\Support\SegmentGuard::idsOf($c);   // own ids — names can be shared
             $prog     = $progressFor($unionFor($segIds, $docTypeForCountry(optional($c->primaryAddress)->country)), Customer::class . '#' . $c->id);
             $applic   = $agrIdsForSegments($segIds);
             /* Keep the customer's applicable trade-doc ids: the party-level
@@ -395,6 +385,8 @@ class ClmBuyerProfileController extends Controller
                 'db_id'   => (int) $c->id,
                 'name'    => $c->company_name,
                 'seg'     => $segNames,
+                // Each segment with its own Reg status, for the badges.
+                'segs'    => \App\Support\SegmentGuard::rowsFor($segIds),
                 'sc'      => '#0e7490',
                 'sb'      => '#f0fdff',
                 'country' => optional($c->primaryAddress)->country ?: '—',
@@ -465,7 +457,7 @@ class ClmBuyerProfileController extends Controller
                 ? Customer::class . '#' . $sameAsCust->id
                 : Consignee::class . '#' . $c->id;
             $segSource  = $sameAsCust ? $sameAsCust->segment : $c->segment;
-            $segIds = $segIdsFromNames($segSource);
+            $segIds = \App\Support\SegmentGuard::idsOf($sameAsCust ?: $c);
             $prog   = $progressFor($unionFor($segIds, $docTypeForCountry(optional($c->primaryAddress)->country)), $progOwner);
             $applic = $agrIdsForSegments($segIds);
             // Party-filter the agreement total to the CONSIGNEE side (same as the
@@ -494,6 +486,7 @@ class ClmBuyerProfileController extends Controller
                 'db_id'   => (int) $c->id,
                 'name'    => $c->company_name,
                 'seg'     => trim((string) $c->segment),
+                'segs'    => \App\Support\SegmentGuard::rowsFor(\App\Support\SegmentGuard::idsOf($c)),
                 'sc'      => '#0e7490',
                 'sb'      => '#f0fdff',
                 'country' => optional($c->primaryAddress)->country ?: '—',

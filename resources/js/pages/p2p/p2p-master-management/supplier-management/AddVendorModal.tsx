@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
-import SegmentBadge, { segmentLabel, SegmentBadgeLine, SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
+import SegmentBadge, { segmentLabel, SegmentBadgeLine, SegmentNameBadge, SegmentNameList } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
@@ -379,7 +379,7 @@ export default function AddVendorModal(props: {
   const [kycSub,   setKycSub]   = useState<KycSubTab>('owner');
   const [prevOpen, setPrevOpen] = useState(false);
 
-  type Opt = { value: string; label: string; reg?: string };
+  type Opt = { value: string; label: string; reg?: string; code?: string };
   const [vendorTypeOpts, setVendorTypeOpts]     = useState<Opt[]>([]);
   const [riskLevelOpts,  setRiskLevelOpts]      = useState<Opt[]>([]);
   const [segmentOpts,    setSegmentOpts]        = useState<Opt[]>([]);
@@ -920,7 +920,7 @@ export default function AddVendorModal(props: {
       setBehaviourOpts(toOpt(b.vendor_behaviour));
       setSegmentOpts(
         (b.segments || [])
-          .map(r => ({ value: String(r.id), label: String(r.title ?? r.name ?? ''), reg: (r as { regulatory_status?: string }).regulatory_status }))
+          .map(r => ({ value: String(r.id), label: String(r.title ?? r.name ?? ''), reg: (r as { regulatory_status?: string }).regulatory_status, code: (r as { code?: string }).code }))
           .filter(o => o.value !== '' && o.label !== '')
       );
       setComplianceOpts(toOpt(b.compliance_behaviours));
@@ -2632,6 +2632,7 @@ export default function AddVendorModal(props: {
               label: string;
               value: string;
               node?: React.ReactNode;   // rich value (e.g. segment badges); `value` stays the tooltip text
+              tip?: React.ReactNode;    // rich tooltip; falls back to `value`
               href?: string;        
               suffix?: string;      
             };
@@ -2659,7 +2660,9 @@ export default function AddVendorModal(props: {
                 { label: 'Legal Name',           value: legalName || '—' },
                 { label: 'Supplier Type',        value: labelFor(vendorType, SUPPLIER_TYPE_OPTS) || vendorType || '—' },
                 { label: 'Segment',              value: segment.map(s => segText(s)).join(', ') || '—',
-                  node: segment.length ? (() => { const o = segmentOpts.find(x => x.value === String(segment[0])); return <SegmentBadgeLine label={o?.label ?? String(segment[0])} status={o?.reg} more={segment.length - 1} />; })() : undefined },
+                  node: segment.length ? (() => { const o = segmentOpts.find(x => x.value === String(segment[0])); return <SegmentBadgeLine label={o?.label ?? String(segment[0])} status={o?.reg} more={segment.length - 1} />; })() : undefined,
+                  // One line per segment: code, name and its own High / Low badge.
+                  tip: segment.length ? <SegmentNameList items={segment.map(id => { const o = segmentOpts.find(x => x.value === String(id)); return { name: o?.label ?? String(id), code: o?.code ?? null, regulatory_status: o?.reg ?? null }; })} /> : undefined },
                 { label: 'Risk Level',           value: labelFor(riskLevel, riskLevelOpts) || '—' },
                 { label: 'Supplier Behaviour',   value: (SUPPLIER_BEHAVIOUR_OPTS.find(o => o.value === vendorBehaviour)?.label) || '—' },
                 { label: 'Supplier Category', value: (SUPPLIER_CATEGORY_OPTS.find(o => o.value === supplierCategory)?.label) || '—' },
@@ -2789,7 +2792,7 @@ export default function AddVendorModal(props: {
                                     {f.href ? (
                                       <Tooltip label={f.value}><a href={f.href} target="_blank" rel="noopener noreferrer" className="avm-prev-v avm-prev-link">{f.value}</a></Tooltip>
                                     ) : (
-                                      <Tooltip label={f.value}><span className="avm-prev-v">{f.node ?? f.value}</span></Tooltip>
+                                      <Tooltip label={f.tip ?? f.value}><span className="avm-prev-v">{f.node ?? f.value}</span></Tooltip>
                                     )}
                                     {f.suffix ? <span className="avm-prev-suffix">{f.suffix}</span> : null}
                                   </div>
@@ -5335,8 +5338,10 @@ export function MappedProductsViewPopup(props: {
   vendorId: number;
   code: string;
   name: string;
-  /** Segment names this supplier is onboarded for; gates the product list. */
+  /** Segment names this supplier is onboarded for (display only). */
   segments?: string[];
+  /** The supplier's segment ids — what gates the product list (names can be shared). */
+  segmentIds?: number[];
   onClose: () => void;
   /** Fired after a mapping is added, so the list's count badge can catch up. */
   onChanged?: () => void;
@@ -5414,7 +5419,7 @@ export function MappedProductsViewPopup(props: {
      the ones already mapped, minus anything outside the supplier's segments.
      Matched on segment NAME — the list row carries names, not ids. */
   const mappableOpts = useMemo(() => {
-    const segNames = new Set((props.segments ?? []).map(x => x.trim().toLowerCase()).filter(Boolean));
+    const segIds = new Set(props.segmentIds ?? []);
     const already  = new Set((rows ?? []).map(r => String(r.productId ?? '')));
     return productOpts
       .filter(o => {
@@ -5425,7 +5430,7 @@ export function MappedProductsViewPopup(props: {
            this filter.) */
         if (o.value === mapDraft.productId) return true;
         if (already.has(String(o.value))) return false;
-        return segNames.size === 0 || segNames.has(o.segment.trim().toLowerCase());
+        return segIds.size === 0 || (o.segmentId != null && segIds.has(o.segmentId));
       })
       /* Segment badge (CS-175), same as the wizard's Map Product step — this
          popup shares AddProductMappingPopup with it, so the two lists have to
@@ -5436,7 +5441,7 @@ export function MappedProductsViewPopup(props: {
         : o));
     // mapDraft.productId is a dependency now — the filter keeps whichever
     // product the draft points at, so the list has to recompute when it changes.
-  }, [productOpts, rows, props.segments, mapDraft.productId]);
+  }, [productOpts, rows, props.segmentIds, mapDraft.productId]);
 
   /* Ensure the dropdown is populated. Shared by add and edit: the edit form
      shows Product Name too (disabled), and an empty options list would render
@@ -5502,8 +5507,8 @@ export function MappedProductsViewPopup(props: {
         toast.info('Not in the list yet', 'The product was saved, but it needs a segment before it can be mapped.');
         return;
       }
-      const segNames = new Set((props.segments ?? []).map(x => x.trim().toLowerCase()).filter(Boolean));
-      if (segNames.size > 0 && !segNames.has(fresh.segment.trim().toLowerCase())) {
+      const segIds = new Set(props.segmentIds ?? []);
+      if (segIds.size > 0 && (fresh.segmentId == null || !segIds.has(fresh.segmentId))) {
         toast.info('Not in the list yet', `${fresh.name || 'The product'} is in a segment ${props.code} isn't onboarded for.`);
         return;
       }

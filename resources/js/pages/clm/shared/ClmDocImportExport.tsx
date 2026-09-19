@@ -119,21 +119,38 @@ export default function ClmDocImportExport(props: Props) {
          is the authority reference list — importing that by accident would
          report every one of its rows as a failure. */
       const sheet = wb.Sheets[wb.SheetNames[0]];
-      const json: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      if (!sheet) { toast.error('Invalid file', 'This is not a readable Excel or CSV file.'); return; }
+      /* raw:false → the cell's DISPLAYED text. With raw values a date typed
+         into Expiry arrives as an Excel serial ("46418.229…") and was saved
+         that way. */
+      const json: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false, dateNF: 'dd-mm-yyyy' });
+      const nameKeys = [nameLabel.toLowerCase(), 'name', 'document name', 'licence name', 'license name'];
+      const authKeys = ['authority', 'authorities', 'issuing authority', 'issuing authorities'];
+      const valKeys  = [validityLabel.toLowerCase(), 'validity', 'expiry'];
       const pick = (o: Record<string, any>, keys: string[]) => {
         const k = Object.keys(o).find(h => keys.includes(h.trim().toLowerCase()));
         return k ? String(o[k] ?? '').trim() : '';
       };
-      const nameKeys = [nameLabel.toLowerCase(), 'name', 'document name', 'licence name', 'license name'];
+      /* Headers are checked BEFORE rows: wrong headers, a missing header row
+         or a non-spreadsheet file all used to surface as "Empty sheet",
+         which tells the user nothing about what to fix. */
+      const headers = json.length ? Object.keys(json[0]).map(h => h.trim().toLowerCase()) : [];
+      if (json.length && (!headers.some(h => nameKeys.includes(h)) || !headers.some(h => authKeys.includes(h)))) {
+        toast.error('Columns not recognised', `The first row must be the headers: ${nameLabel}, Authority, ${validityLabel}. Download the sample sheet.`);
+        return;
+      }
       const rows = json
         .map((o, i) => ({
-          row: i + 2,
+          /* The real Excel row. sheet_to_json skips blank rows, so i + 2
+             drifted after the first blank line and the Failed tab pointed
+             at the wrong row. */
+          row: ((o as any).__rowNum__ ?? i + 1) + 1,
           name: pick(o, nameKeys),
-          authority: pick(o, ['authority', 'authorities', 'issuing authority']),
-          validity: pick(o, [validityLabel.toLowerCase(), 'validity', 'expiry']),
+          authority: pick(o, authKeys),
+          validity: pick(o, valKeys),
         }))
         .filter(r => r.name || r.authority || r.validity);
-      if (!rows.length) { toast.warning('Empty sheet', 'No rows found. Use the sample sheet format.'); return; }
+      if (!rows.length) { toast.warning('No data rows', 'No data rows found. Use the sample sheet: headers in row 1, data from row 2.'); return; }
       const { data } = await api.post<ClmImportResult>(`${endpoint}/import`, { rows });
       setResult({ imported: data.imported ?? [], failed: data.failed ?? [] });
       if ((data.imported ?? []).length) onImported();

@@ -108,9 +108,10 @@ class ClmSegmentController extends Controller
             if (!in_array($label, $map[$segId], true)) $map[$segId][] = $label;
         };
 
-        $addByName = function ($name, $refClientId, $refBranchId, $label, $scoped = true) use (&$map, $segsByName) {
+        $addByName = function ($name, $refClientId, $refBranchId, $label, $scoped = true, ?string $tier = null) use (&$map, $segsByName) {
             foreach ($segsByName[$name] ?? [] as $seg) {
                 if ($scoped && !self::referenceMayPointAt($seg, $refClientId, $refBranchId)) continue;
+                if ($tier !== null && $tier !== '' && $seg->regulatory_status !== $tier) continue;
                 $segId = (int) $seg->id;
                 if (!isset($map[$segId])) $map[$segId] = [];
                 if (!in_array($label, $map[$segId], true)) $map[$segId][] = $label;
@@ -123,7 +124,22 @@ class ClmSegmentController extends Controller
                 $addById($sid, 'Segment Rules');
             }
         }
-        foreach ([['vendors', 'Vendors'], ['products', 'Products'], ['customers', 'Customers']] as [$table, $label]) {
+        // Customers / consignees hold their segments as ids (segment_ids JSON).
+        foreach ([['customers', 'Customers'], ['consignees', 'Consignees']] as [$table, $label]) {
+            if ($this->schemaHas($table) && $this->schemaHas($table, 'segment_ids')) {
+                foreach ($ids as $sid) {
+                    if (DB::table($table)->whereNull('deleted_at')->whereJsonContains('segment_ids', (int) $sid)->exists()) {
+                        $addById($sid, $label);
+                    }
+                }
+            }
+        }
+        if ($this->schemaHas('clm_tnc_library', 'segment_ids')) {
+            foreach ($ids as $sid) {
+                if (DB::table('clm_tnc_library')->whereJsonContains('segment_ids', (int) $sid)->exists()) $addById($sid, 'T&C Library');
+            }
+        }
+        foreach ([['vendors', 'Vendors'], ['products', 'Products']] as [$table, $label]) {
             if ($this->schemaHas($table) && $this->schemaHas($table, 'segment_id')) {
                 foreach (DB::table($table)->whereIn('segment_id', $ids)->distinct()->pluck('segment_id') as $sid) {
                     $addById($sid, $label);
@@ -151,18 +167,16 @@ class ClmSegmentController extends Controller
         // pointing at (see referenceMayPointAt).
         foreach (
             [
-                ['customers', 'segment', 'Customers'],
-                ['consignees', 'segment', 'Consignees'],
-                ['clm_tnc_library', 'segment', 'T&C Library'],
                 ['clm_agreement_library', 'segment', 'Agreement Library'],
             ] as [$table, $col, $label]
         ) {
             if ($this->schemaHas($table) && $this->schemaHas($table, $col)) {
                 [$refCols, $refScoped] = $this->referenceStampColumns($table);
+                $tierCol = $this->schemaHas($table, 'regulatory') ? ['regulatory'] : [];
                 $refs = DB::table($table)->whereIn($col, $names)
-                    ->select(array_merge([$col], $refCols))->distinct()->get();
+                    ->select(array_merge([$col], $refCols, $tierCol))->distinct()->get();
                 foreach ($refs as $ref) {
-                    $addByName($ref->$col, $ref->client_id ?? null, $ref->branch_id ?? null, $label, $refScoped);
+                    $addByName($ref->$col, $ref->client_id ?? null, $ref->branch_id ?? null, $label, $refScoped, isset($ref->regulatory) ? strtolower(trim((string) $ref->regulatory)) : null);
                 }
             }
         }
@@ -391,7 +405,7 @@ class ClmSegmentController extends Controller
          * (QA #38). Scoped to the segment's own client + branch so a rename in
          * one branch never rewrites another branch's identically-named segment. */
         if (isset($data['name']) && $oldName !== '' && strcasecmp($oldName, (string) $row->name) !== 0) {
-            $this->cascadeSegmentRename($row->client_id, $oldName, (string) $row->name);
+            $this->cascadeSegmentRename((int) $row->id, $row->client_id, $oldName, (string) $row->name);
         }
 
         // A renamed / deactivated segment must reach the form dropdowns now.
@@ -409,10 +423,24 @@ class ClmSegmentController extends Controller
      * segment owned by another, so branch-scoping would miss them; names are
      * effectively client-unique.
      */
-    private function cascadeSegmentRename($clientId, string $old, string $new): void
+    private function cascadeSegmentRename(int $segmentId, $clientId, string $old, string $new): void
     {
+        if ($this->schemaHas('clm_tnc_library', 'segment_ids')) {
+            foreach (DB::table('clm_tnc_library')->whereJsonContains('segment_ids', $segmentId)->get(['id', 'segment_ids']) as $r) {
+                $names = \App\Support\SegmentGuard::namesFor(json_decode((string) $r->segment_ids, true) ?: []);
+                if ($names !== '') DB::table('clm_tnc_library')->where('id', $r->id)->update(['segment' => $names]);
+            }
+        }
         foreach (['customers', 'consignees'] as $table) {
             if (!$this->schemaHas($table, 'segment')) continue;
+            // By id: a same-named sibling segment must keep its name on its own parties.
+            if ($this->schemaHas($table, 'segment_ids')) {
+                foreach (DB::table($table)->whereNull('deleted_at')->whereJsonContains('segment_ids', $segmentId)->get(['id', 'segment_ids']) as $r) {
+                    $names = \App\Support\SegmentGuard::namesFor(json_decode((string) $r->segment_ids, true) ?: []);
+                    DB::table($table)->where('id', $r->id)->update(['segment' => $names !== '' ? $names : null]);
+                }
+                continue;
+            }
             $q = DB::table($table)
                 ->where('client_id', $clientId)
                 ->whereNull('deleted_at')
@@ -475,12 +503,13 @@ class ClmSegmentController extends Controller
         ) {
             $usedIn[] = 'Products';
         }
-        if (
-            $this->schemaHas('customers')
-            && $this->schemaHas('customers', 'segment_id')
-            && DB::table('customers')->where('segment_id', $row->id)->exists()
-        ) {
-            $usedIn[] = 'Customers';
+        foreach ([['customers', 'Customers'], ['consignees', 'Consignees']] as [$table, $label]) {
+            if (
+                $this->schemaHas($table, 'segment_ids')
+                && DB::table($table)->whereNull('deleted_at')->whereJsonContains('segment_ids', (int) $row->id)->exists()
+            ) {
+                $usedIn[] = $label;
+            }
         }
         // Some legacy tables store segment as a string (name or id-as-string).
         // The id arm is exact, so it stays unscoped; the name arm is ambiguous
@@ -500,6 +529,10 @@ class ClmSegmentController extends Controller
         ) {
             $usedIn[] = 'Vendor Directory';
         }
+        if ($this->schemaHas('clm_tnc_library', 'segment_ids')
+            && DB::table('clm_tnc_library')->whereJsonContains('segment_ids', (int) $row->id)->exists()) {
+            $usedIn[] = 'T&C Library';
+        }
 
         // String-typed `segment` columns — these store the segment NAME
         // (case-sensitive match — the segment name itself is the canonical
@@ -511,9 +544,6 @@ class ClmSegmentController extends Controller
         // delete was refused, and update() reuses the same map, so the name and
         // regulatory status were locked on a segment nobody had used yet.
         $nameStringTables = [
-            ['table' => 'customers',              'col' => 'segment', 'label' => 'Customers'],
-            ['table' => 'consignees',             'col' => 'segment', 'label' => 'Consignees'],
-            ['table' => 'clm_tnc_library',        'col' => 'segment', 'label' => 'T&C Library'],
             ['table' => 'clm_agreement_library',  'col' => 'segment', 'label' => 'Agreement Library'],
         ];
         /* A name shared with a sibling segment makes these checks meaningless.

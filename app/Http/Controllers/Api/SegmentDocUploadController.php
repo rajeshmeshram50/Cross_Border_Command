@@ -421,11 +421,11 @@ class SegmentDocUploadController extends Controller
         // SQL count predictable even when 10+ segments are picked.
         $authMap = ClmAuthority::idNameMap($cid);
         $masters = [
-            'kyc' => $this->fetchMasters(ClmKycDocument::class,    array_keys($unionByCat['kyc']), $cid, $authMap),
-            'dd'  => $this->fetchMasters(ClmDdDocument::class,     array_keys($unionByCat['dd']),  $cid, $authMap),
-            'tl'  => $this->fetchMasters(ClmTradeLicense::class,   array_keys($unionByCat['tl']),  $cid, $authMap),
-            'td'  => $this->fetchMasters(ClmTradeDocLibrary::class, array_keys($unionByCat['td']),  $cid, $authMap),
-            'qc'  => $this->fetchMasters(ClmQcDocument::class,     array_keys($unionByCat['qc']),  $cid, $authMap),
+            'kyc' => $this->fetchMasters(ClmKycDocument::class,    array_keys($unionByCat['kyc']), $cid, $authMap, $owner->branch_id ?? null),
+            'dd'  => $this->fetchMasters(ClmDdDocument::class,     array_keys($unionByCat['dd']),  $cid, $authMap, $owner->branch_id ?? null),
+            'tl'  => $this->fetchMasters(ClmTradeLicense::class,   array_keys($unionByCat['tl']),  $cid, $authMap, $owner->branch_id ?? null),
+            'td'  => $this->fetchMasters(ClmTradeDocLibrary::class, array_keys($unionByCat['td']),  $cid, $authMap, $owner->branch_id ?? null),
+            'qc'  => $this->fetchMasters(ClmQcDocument::class,     array_keys($unionByCat['qc']),  $cid, $authMap, $owner->branch_id ?? null),
         ];
 
         // 4. Pull the entity's actual uploads — group by category+code
@@ -559,6 +559,8 @@ class SegmentDocUploadController extends Controller
         if ($request->boolean('docs')) {
             return response()->json([
                 'data' => [
+                    // The owner's segments by id — two can share a name (Less / High).
+                    'segment_rows'           => in_array($type, ['customer', 'consignee'], true) ? \App\Support\SegmentGuard::rowsFor(\App\Support\SegmentGuard::idsOf($owner)) : [],
                     'same_as_customer'       => $sameAsCustomer,
                     'mirror_customer'        => $mirrorCustomer,
                     'company_dd'             => $company_dd,
@@ -849,6 +851,8 @@ class SegmentDocUploadController extends Controller
             'data' => [
                 'same_as_customer'       => $sameAsCustomer,
                 'mirror_customer'        => $mirrorCustomer,
+                // The owner's segments by id — two can share a name (Less / High).
+                'segment_rows'           => in_array($type, ['customer', 'consignee'], true) ? \App\Support\SegmentGuard::rowsFor(\App\Support\SegmentGuard::idsOf($owner)) : [],
                 'vendor_with_shipment'    => $vendorDeals['with_shipment'],
                 'vendor_without_shipment' => $vendorDeals['without_shipment'],
                 'vendor_deal_ratios'      => $vendorDeals['ratios'],
@@ -2211,7 +2215,7 @@ class SegmentDocUploadController extends Controller
         ];
         $missing = [];
         foreach ($missingCodesByCat as $cat => $codes) {
-            $masters = $this->fetchMasters($masterClass[$cat], $codes, $cid);
+            $masters = $this->fetchMasters($masterClass[$cat], $codes, $cid, null, $owner->branch_id ?? null);
             foreach ($codes as $code) {
                 $missing[] = [
                     'category' => $cat,
@@ -2380,19 +2384,9 @@ class SegmentDocUploadController extends Controller
         if ($type === 'product') {
             return $owner->segment_id ? [(int) $owner->segment_id] : [];
         }
-        // customer / consignee — comma-joined name string. Empty
-        // pieces drop out; the lookup is tenant-scoped.
-        $names = collect(explode(',', (string) ($owner->segment ?? '')))
-            ->map(fn($n) => trim($n))
-            ->filter()
-            ->values();
-        if ($names->isEmpty()) return [];
-        return ClmSegment::query()
-            ->where('client_id', $cid)
-            ->whereIn('name', $names)
-            ->pluck('id')
-            ->map(fn($x) => (int) $x)
-            ->all();
+        // Customer / consignee: their own segment ids. Matching by name pulled in
+        // every segment sharing it (Less AND Highly Regulated).
+        return \App\Support\SegmentGuard::idsOf($owner);
     }
 
     /**
@@ -2401,7 +2395,7 @@ class SegmentDocUploadController extends Controller
      * useful display attributes (name, authority, expiry…) without
      * leaking internal ids the frontend doesn't need.
      */
-    private function fetchMasters(string $modelClass, array $codes, int $cid, ?array $authMap = null): array
+    private function fetchMasters(string $modelClass, array $codes, int $cid, ?array $authMap = null, ?int $branchId = null): array
     {
         if (empty($codes)) return [];
         /* orderBy('id') is load-bearing, not tidiness (QA #102).
@@ -2420,11 +2414,8 @@ class SegmentDocUploadController extends Controller
          * duplication — that is a data cleanup, and which set to keep is not
          * this function's call — but it stops the same rule rendering as two
          * different documents. */
-        $rows = $modelClass::query()
-            ->where('client_id', $cid)
-            ->whereIn('code', $codes)
-            ->orderBy('id')
-            ->get();
+        // Codes restart per branch: take the owner's branch catalogue, then client-level rows.
+        $rows = \App\Support\SegmentGuard::branchCatalogue($modelClass::query(), $cid, $codes, $branchId)->get();
         // Document masters store the issuing authority by id (comma-joined for
         // multi-authority docs) — resolve to current names so the Evidence
         // Vault shows the authority name, not a raw id. Unknown tokens (e.g. a

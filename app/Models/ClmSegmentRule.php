@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ClmSegmentRule extends Model
 {
+    use BelongsToTenant;
     public const REG_HIGHLY = 'highly';
     public const REG_LESS   = 'less';
     public const REG_VALUES = [self::REG_HIGHLY, self::REG_LESS];

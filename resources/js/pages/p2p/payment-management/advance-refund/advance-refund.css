@@ -1,0 +1,98 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * Advance Receipt Refund Adjustment — only what the shared spi-* / ord-* /
+ * rpr-* / apay-* styles do not already cover. All classes are arf- prefixed.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/* Amber chip — the retention reason and the refund number in the recovery cell. */
+.arf-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:6px;
+  font-size:9.5px; font-weight:700; color:#92400e; background:#fffbeb; border:1px solid #fde68a; }
+
+/* "Amount Not Refunded" cell: the figure, with the reason the supplier keeps it. */
+.arf-nr { display:inline-flex; flex-direction:column; align-items:center; gap:3px; }
+.arf-nr__why { max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:help; }
+.arf-nr__none { font-size:9.5px; font-style:italic; color:#94a3b8; }
+
+/* Form: fields that span two of the four grid columns. */
+.arf-field--wide { grid-column: span 2; }
+
+/* Auto-filled, locked value inside an rpr-amtwrap box. */
+.arf-ro { justify-content:space-between; gap:8px; background:#f1f7fa; cursor:not-allowed; }
+.arf-ro .rpr-amtwrap__in { display:flex; align-items:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.arf-ro__tag { flex-shrink:0; font-size:9px; font-weight:800; letter-spacing:.05em; text-transform:uppercase;
+  color:#0891b2; background:#e0f7fb; border:1px solid #bbe9f1; border-radius:6px; padding:2px 6px; }
+
+/* Shortfall block — the part of what was paid the supplier is keeping. */
+.arf-short { margin-top:12px; padding:12px 14px; border:1.5px solid #fde68a; border-radius:12px;
+  background:linear-gradient(180deg,#fffdf5,#fffbeb); }
+.arf-short__top { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+.arf-short__ico { display:flex; align-items:center; justify-content:center; width:34px; height:34px; flex-shrink:0;
+  border-radius:10px; color:#b45309; background:#fef3c7; }
+.arf-short__lead { flex:1; min-width:0; }
+.arf-short__t { font-size:13px; font-weight:800; color:#92400e; }
+.arf-short__s { font-size:11.5px; color:#a16207; }
+.arf-short__fig { display:flex; flex-direction:column; align-items:flex-end; }
+.arf-short__figl { font-size:9px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:#a16207; }
+.arf-short__figv { font-size:17px; font-weight:800; color:#b45309; }
+.arf-short__figs { font-size:10.5px; color:#a16207; }
+
+/* Recovery history under the Payment Recovery form. */
+.arf-hist { margin-top:14px; border:1px solid #d6eef5; border-radius:12px; overflow-x:auto; }
+.arf-hist__empty { padding:16px; text-align:center; font-size:12px; color:#64748b; }
+
+/* List table: long headers wrap onto two lines like the prototype. */
+.arf-table thead th { white-space:normal; min-width:78px; max-width:120px; }
+.arf-table thead th.spi-c-sr { min-width:0; }
+
+/* Money owed back to us (TDS held, amount to be refunded). */
+.arf-amt--due { color:#dc2626; }
+
+/* Status pills (type, PO Active / Cancelled): Badge sets size + colour; add the thin border. */
+.arf-pill { white-space:nowrap; box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent); }
+
+/* Refund number chip inside the recovery cell. */
+.arf-refchip { align-self:center; font-family:'Geist Mono',ui-monospace,monospace; }
+
+/* Action column: square icon button beside the labelled one. */
+.arf-acts { display:flex; align-items:center; justify-content:center; gap:6px; }
+.arf-btn-sq { width:40px; padding:0; }
+.arf-btn-sq svg { width:14px; height:14px; }
+
+/* Evidence Vault type tags. */
+.arf-vtag { display:inline-block; padding:1px 7px; border-radius:6px; font-size:9.5px; font-weight:800;
+  border:1px solid transparent; }
+.arf-vtag--document { color:#0e7490; background:#e0f7fb; border-color:#bbe9f1; }
+.arf-vtag--release  { color:#1d4ed8; background:#dbeafe; border-color:#bfdbfe; }
+.arf-vtag--refund   { color:#047857; background:#dcfce7; border-color:#a7f3d0; }
+
+/* ── Dark mode ─────────────────────────────────────────────────────────── */
+[data-bs-theme="dark"] .arf-chip { color:#fcd34d; background:rgba(245,158,11,.14); border-color:rgba(245,158,11,.35); }
+[data-bs-theme="dark"] .arf-nr__none { color:#64748b; }
+[data-bs-theme="dark"] .arf-ro { background:rgba(15,29,51,.7); }
+[data-bs-theme="dark"] .arf-ro .rpr-amtwrap__in { color:#cbd5e1; }
+[data-bs-theme="dark"] .arf-ro__tag { color:#67e8f9; background:rgba(6,182,212,.14); border-color:rgba(6,182,212,.35); }
+[data-bs-theme="dark"] .arf-short { background:rgba(245,158,11,.08); border-color:rgba(245,158,11,.35); }
+[data-bs-theme="dark"] .arf-short__ico { color:#fcd34d; background:rgba(245,158,11,.18); }
+[data-bs-theme="dark"] .arf-short__t,
+[data-bs-theme="dark"] .arf-short__figv { color:#fcd34d; }
+[data-bs-theme="dark"] .arf-short__s,
+[data-bs-theme="dark"] .arf-short__figl,
+[data-bs-theme="dark"] .arf-short__figs { color:#fde68a; }
+[data-bs-theme="dark"] .arf-hist { border-color:rgba(148,163,184,.2); }
+[data-bs-theme="dark"] .arf-hist__empty { color:#94a3b8; }
+[data-bs-theme="dark"] .arf-amt--due { color:#f87171; }
+[data-bs-theme="dark"] .arf-vtag--document { color:#67e8f9; background:rgba(6,182,212,.14); border-color:rgba(6,182,212,.35); }
+[data-bs-theme="dark"] .arf-vtag--release  { color:#93c5fd; background:rgba(59,130,246,.14); border-color:rgba(59,130,246,.35); }
+[data-bs-theme="dark"] .arf-vtag--refund   { color:#86efac; background:rgba(34,197,94,.14); border-color:rgba(34,197,94,.35); }
+
+/* ── Responsive ────────────────────────────────────────────────────────── */
+/* rpr-formgrid drops to 2 columns at 1100px and 1 at 640px; wide fields follow. */
+@media (max-width: 640px) {
+  .arf-field--wide { grid-column: auto; }
+  .arf-short { padding:10px 12px; }
+  .arf-short__top { flex-wrap:wrap; }
+  .arf-short__fig { width:100%; flex-direction:row; align-items:baseline; gap:8px; flex-wrap:wrap; }
+}
+/* The header button label is long — let it wrap instead of overflowing on phones. */
+@media (max-width: 480px) {
+  .arf-head-btn { white-space:normal; text-align:left; line-height:1.3; }
+}

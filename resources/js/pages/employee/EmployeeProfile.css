@@ -3312,6 +3312,15 @@
   color: #a4661c;
   font-size: 13px;
 }
+/* Dark mode: amber tint on the dark surface instead of the light cream panel. */
+[data-bs-theme="dark"] .pyt-tax-banner,
+[data-layout-mode="dark"] .pyt-tax-banner {
+  background: rgba(245, 158, 11, 0.10);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+}
+[data-bs-theme="dark"] .pyt-tax-banner strong,
+[data-layout-mode="dark"] .pyt-tax-banner strong { color: #fcd34d; }
 .pyt-icon-16 { font-size: 16px; }
 .pyt-revise-btn {
   background: linear-gradient(135deg,#0a8a78,#0ab39c);

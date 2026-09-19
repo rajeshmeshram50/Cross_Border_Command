@@ -52,6 +52,16 @@ function amountValue(v: string): number {
   return Number.isNaN(n) ? 0 : n;
 }
 
+// Label/value pair for popup headers (used by the Advance Refund popups).
+export function Ref({ label, value, mono, extra }: { label: string; value: string; mono?: boolean; extra?: string }) {
+  return (
+    <div className={`apay-ref${mono ? ' apay-ref--mono' : ''}`}>
+      <span className="apay-ref__k">{label}{extra}</span>
+      <span className="apay-ref__v">{value}</span>
+    </div>
+  );
+}
+
 const blankIfDash = (v?: string) => (!v || v === '—' ? '' : v);
 
 export default function AddPaymentModal({

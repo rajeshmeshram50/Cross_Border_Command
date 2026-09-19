@@ -300,7 +300,7 @@ const RISK_LEVEL: Record<RiskLevel, { label: string; variant: BadgeVariant; icon
   low: { label: 'Low', variant: 'success', icon: ICON_CHECK },
 };
 
-const SAMPLE_ROWS: OrderRow[] = [
+export const SAMPLE_ROWS: OrderRow[] = [
   {
     po: 'PO/2025-26/049', poDate: '2026-03-03', physicalInspection: true,
     type: 'materials', docType: 'International',

@@ -181,16 +181,26 @@ export default function ClmAuthorityPage() {
     try {
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const sheet = wb.Sheets[wb.SheetNames[0]];
-      const json: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      if (!sheet) { toast.error('Invalid file', 'This is not a readable Excel or CSV file.'); return; }
+      // raw:false → displayed text, so dates/numbers arrive as typed.
+      const json: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false, dateNF: 'dd-mm-yyyy' });
       // Forgiving header match: "Authority Name" / "Name", "Description".
+      const nameKeys = ['authority name', 'name'];
+      const descKeys = ['description', 'desc'];
       const pick = (o: Record<string, any>, keys: string[]) => {
         const k = Object.keys(o).find(h => keys.includes(h.trim().toLowerCase()));
         return k ? String(o[k] ?? '').trim() : '';
       };
+      const headers = json.length ? Object.keys(json[0]).map(h => h.trim().toLowerCase()) : [];
+      if (json.length && (!headers.some(h => nameKeys.includes(h)) || !headers.some(h => descKeys.includes(h)))) {
+        toast.error('Columns not recognised', 'The first row must be the headers: Authority Name, Description. Download the sample sheet.');
+        return;
+      }
       const rows = json
-        .map((o, i) => ({ row: i + 2, name: pick(o, ['authority name', 'name']), description: pick(o, ['description', 'desc']) }))
+        // __rowNum__ is the real Excel row — i + 2 drifted after blank rows.
+        .map((o, i) => ({ row: ((o as any).__rowNum__ ?? i + 1) + 1, name: pick(o, nameKeys), description: pick(o, descKeys) }))
         .filter(r => r.name || r.description);
-      if (!rows.length) { toast.warning('Empty sheet', 'No rows found. Use the sample sheet format.'); return; }
+      if (!rows.length) { toast.warning('No data rows', 'No data rows found. Use the sample sheet: headers in row 1, data from row 2.'); return; }
       const { data } = await api.post<ImportResult>('/clm/authorities/import', { rows });
       setImportResult({ imported: data.imported ?? [], failed: data.failed ?? [] });
       if ((data.imported ?? []).length) reload();

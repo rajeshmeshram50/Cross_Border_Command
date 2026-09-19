@@ -2451,6 +2451,8 @@ type LeadRow = {
 };
 type CustomerRow = {
   dbId:      number;          // customers.id (numeric PK)
+  /** The customer's segment ids — tells same-named Less / Highly segments apart. */
+  segmentIds?: number[];
   code:      string;          // "C-012" (display, from customer_code)
   company:   string;
   country:   string;
@@ -2494,6 +2496,7 @@ type ProductMasterRow = {
      deleted row — products.segment_id carries no FK constraint, so that state
      is reachable and must not be treated as a mismatch. */
   segment: string | null;
+  segmentId?: number | null;
   segmentReg?: string | null;
 };
 type LoadedMasters = {
@@ -2701,6 +2704,7 @@ function shapeQpiMasters(
       /* ProductController eager-loads `segment`, so the NAME is already
          resolved here — no second lookup against the segment master. */
       segment: (r.segment?.name ?? '').trim() || null,
+      segmentId: r.segment_id ?? r.segment?.id ?? null,
       segmentReg: r.segment?.regulatory_status ?? null,
     });
   });
@@ -2738,6 +2742,7 @@ function shapeQpiMasters(
       gstNumber: String(r.gstNumber ?? r.gst_number ?? ''),
       // shapeCustomer passes `segment` through verbatim (comma-joined names).
       segment:   (r.segment ?? '').trim() || null,
+      segmentIds: Array.isArray(r.segment_ids) ? r.segment_ids.map(Number).filter(Boolean) : [],
     });
   });
   const consigneeOpts: MasterOpt[] = [];
@@ -3365,6 +3370,7 @@ export function CreateQuotationModal(props: {
               customerSegments={splitSegmentNames(
                 masters.customersRaw.find(c => c.dbId === form.customerId)?.segment
               )}
+              customerSegmentIds={masters.customersRaw.find(c => c.dbId === form.customerId)?.segmentIds}
             />
           )}
         </div>
@@ -3840,6 +3846,7 @@ export function CreatePIModal(props: {
               customerSegments={splitSegmentNames(
                 masters.customersRaw.find(c => c.dbId === form.customerId)?.segment
               )}
+              customerSegmentIds={masters.customersRaw.find(c => c.dbId === form.customerId)?.segmentIds}
             />
           )}
         </div>
@@ -4784,9 +4791,10 @@ function ProductsStep(props: {
      segment) means NO restriction — matching the server, which skips the check
      entirely in that case rather than blocking everything. */
   customerSegments: string[];
+  customerSegmentIds?: number[];
 }) {
   const { form, products, removeProduct, draft, setDraft, addProduct, terms, setTerms, shipping, setShipping, subTotal, grandTotal, theme,
-          productOptions, productsRaw, loadingProducts, homeStateCode, customerSegments } = props;
+          productOptions, productsRaw, loadingProducts, homeStateCode, customerSegments, customerSegmentIds } = props;
   const toast = useToast();
 
   /* Terms & Conditions is capped at TERMS_MAX_LEN (the server rejects longer).
@@ -4904,7 +4912,7 @@ function ProductsStep(props: {
   //      existing line, the user must remove it first — then the
   //      product reappears in the dropdown.
   // Stable identity for the segment list — see the memo's dependency note.
-  const customerSegmentKey = customerSegments.join('|').toLowerCase();
+  const customerSegmentKey = customerSegments.join('|').toLowerCase() + '#' + (customerSegmentIds ?? []).join(',');
 
   const visibleProductOptions = useMemo(() => {
     // Narrowed set for the selected opportunity isn't ready — show nothing
@@ -4955,7 +4963,9 @@ function ProductsStep(props: {
       // row — full segment name is on the badge's hover title.
       const short = seg.length > 24 ? `${seg.slice(0, 24)}…` : seg;
       const badge = { text: short, tone: 'violet' as const, title: segmentLabel(seg, prodRow?.segmentReg), reg: prodRow?.segmentReg ?? null };
-      const offSegment = segmentSet.size > 0 && !segmentSet.has(seg.toLowerCase());
+      const offSegment = customerSegmentIds?.length
+        ? prodRow?.segmentId != null && !customerSegmentIds.includes(Number(prodRow.segmentId))
+        : segmentSet.size > 0 && !segmentSet.has(seg.toLowerCase());
       const fullLabel = `${o.label} · ${segmentLabel(seg, prodRow?.segmentReg)}`;
       return offSegment
         ? { ...o, badge, fullLabel, disabled: true, disabledReason: 'Customer and product segment must match.' }

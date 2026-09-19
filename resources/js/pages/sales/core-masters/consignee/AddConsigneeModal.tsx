@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
-import { SegmentNameBadge, SegmentNameList } from '../../../../components/ui/SegmentBadge';
+import SegmentBadge, { SegmentNameList, type SegmentItem } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useTheme } from '../../../../contexts/ThemeContext';
@@ -126,16 +126,12 @@ const TD_STATUS_BADGE: Record<TdSigStatus, { label: string; bg: string; fg: stri
  * names) as "S-001: Name" using the segment master codes. Falls back to the
  * bare name when no code is known. Keeps every read-only display in sync with
  * the "code: name" labels the segment dropdown now shows. */
-function segDisplay(value: string | string[] | null | undefined, segs: { name: string; code?: string }[]): string {
-  const arr = Array.isArray(value)
-    ? value
-    : String(value ?? '').split(',').map(s => s.trim()).filter(Boolean);
-  if (arr.length === 0) return '';
-  return arr.map(n => {
-    const code = segs.find(s => s.name === n)?.code;
-    return code ? `${code}: ${n}` : n;
-  }).join(', ');
+/** Segment ids → badge items, in order; unknown ids are dropped. */
+function segItemsById(ids: (string | number)[] | null | undefined, segs: { id?: number; name: string; code?: string | null; regulatory_status?: string | null }[]): SegmentItem[] {
+  return (ids ?? []).map(v => segs.find(s => String(s.id) === String(v))).filter((s): s is NonNullable<typeof s> => !!s)
+    .map(s => ({ name: s.name, code: s.code ?? null, regulatory_status: s.regulatory_status ?? null }));
 }
+const segItemsText = (items: SegmentItem[]) => items.map(s => (s.code ? `${s.code}: ${s.name}` : s.name)).join(', ');
 
 /* Each row in the Address & Contact Details table — mirrors the
  * shape used by AddCustomerModal so the JSX patterns line up. */
@@ -310,6 +306,8 @@ type CustomerOption = {
   name: string;
   legalName: string;
   segment: string;
+  segment_ids: number[];
+  segments: SegmentItem[];
   type: string;
   classification: string;
   /* Optional fields surfaced from /customers — used by the "Same as
@@ -470,7 +468,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * segment name stored in form1.segment back to its DB id for the
    * /clm/segment-rules/for-segment/{id} call that drives Stage 2 doc
    * auto-population. MasterSelect itself only needs {value,label}. */
-  const [mSegmentIds, setMSegmentIds] = useState<{ id: number; name: string; code?: string }[]>([]);
+  const [mSegmentIds, setMSegmentIds] = useState<{ id: number; name: string; code?: string; regulatory_status?: string | null }[]>([]);
   const [mClassifications, setMClassifications] = useState<Opt[]>([]);
   const [mRiskLevels,      setMRiskLevels]      = useState<Opt[]>([]);
   const [mAddressTypes,    setMAddressTypes]    = useState<Opt[]>([]);
@@ -485,14 +483,16 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * segment NAME to match how the consignee stores its segments — drives the
    * Intl / Dom / +2 badges on the (read-only, customer-inherited) segment box. */
   const { typesByCode: segTypesByCode } = useRuledSegments(open);
-  const segTypesByName = useMemo(() => {
+  const segTypesById = useMemo(() => {
     const m = new Map<string, Set<SegDocType>>();
     for (const s of mSegmentIds) {
       const t = segTypesByCode.get(String(s.code ?? ''));
-      if (t && t.size) m.set(s.name, new Set(t));
+      if (t && t.size) m.set(String(s.id), new Set(t));
     }
     return m;
   }, [mSegmentIds, segTypesByCode]);
+  /** Segment id (as held in form1.segment) → name, for messages and name-keyed maps. */
+  const segNameOf = (v: string) => mSegmentIds.find(s => String(s.id) === String(v))?.name ?? String(v);
 
   // Stage 1 — Consignee Legal Identity
   const [idTab, setIdTab]         = useState<IdentityTab>('identification');
@@ -884,6 +884,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           name:          c.company    ?? '',
           legalName:     c.legalName  ?? c.company ?? '',
           segment:       c.segment    ?? '',
+          segment_ids:   Array.isArray(c.segment_ids) ? c.segment_ids : [],
+          segments:      Array.isArray(c.segments) ? c.segments : [],
           type:          c.type       ?? '',
           classification:c.classification ?? '',
           risk:          c.riskLevel  ?? '',
@@ -954,13 +956,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     const key = allSelected.map(c => c.db_id ?? c.id).join(',');
     if (segPrefillCustomerRef.current === key) return;
     segPrefillCustomerRef.current = key;
-    const seen = new Set<string>();
     const segs: string[] = [];
     for (const c of allSelected) {
-      for (const s of String(c.segment ?? '').split(',').map(x => x.trim()).filter(Boolean)) {
-        const k = s.toLowerCase();
-        if (!seen.has(k)) { seen.add(k); segs.push(s); }
-      }
+      for (const id of c.segment_ids ?? []) if (!segs.includes(String(id))) segs.push(String(id));
     }
     setForm1(prev => ({ ...prev, segment: segs }));
   }, [open, customer, extraCustomerIds, customerOptions, sameAsCustomer, consignee?.db_id]);
@@ -983,7 +981,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
        * multi-select. A Same-as-Customer consignee mirrors exactly ONE
        * customer (multi-mapping is blocked below), so the primary
        * customer's segment IS the full set. */
-      segment:        String(customer.segment ?? '').split(',').map(s => s.trim()).filter(Boolean),
+      segment:        (customer.segment_ids ?? []).map(String),
       classification: customer.classification ?? '',
       risk:           customer.risk ?? '',
       // Primary address type is locked to "Registered Office" in the UI
@@ -1084,9 +1082,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           /* Server still stores `segment` as a comma-joined string;
            * split back into the multi-select's array shape. Arrays
            * from a future PATCH also land here. */
-          segment:        Array.isArray(d.segment)
-                            ? d.segment.filter(Boolean)
-                            : String(d.segment ?? '').split(',').map(s => s.trim()).filter(Boolean),
+          segment:        Array.isArray(d.segment_ids) ? d.segment_ids.map(String) : [],
           classification: d.classification ?? '',
           risk:           d.riskLevel     ?? '',
           // Locked to "Registered Office" in the UI — see the disabled
@@ -1234,7 +1230,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     type IdNamed = { id: number | string; name?: string | null };
     type Bundle = {
       customer_types: IdNamed[];
-      segments: Array<{ id: number | string; name?: string | null; title?: string | null; code?: string | null }>;
+      segments: Array<{ id: number | string; name?: string | null; title?: string | null; code?: string | null; regulatory_status?: string | null }>;
       customer_classifications: IdNamed[];
       risk_levels: IdNamed[];
       address_types: IdNamed[];
@@ -1261,11 +1257,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         id: Number(x.id),
         name: String(x.title ?? x.name ?? ''),
         code: String(x.code ?? ''),
+        regulatory_status: x.regulatory_status ?? null,
       })).filter(s => s.name);
       // Label shows "<segment code>: <name>" (e.g. "S-001: Tobacco") in the
       // dropdown/chips; value stays the plain name so saving + DCP rule lookup
       // logic is unchanged.
-      setMSegments(segmentRows.map(s => ({ value: s.name, label: s.code ? `${s.code}: ${s.name}` : s.name })));
+      setMSegments(segmentRows.map(s => ({ value: String(s.id), label: s.code ? `${s.code}: ${s.name}` : s.name })));
       setMSegmentIds(segmentRows);
 
       setMClassifications(pickName(b.customer_classifications));
@@ -1339,10 +1336,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
      * segment owns, otherwise a segment with uploaded docs on an existing
      * consignee could be removed. */
     if (stage < 2 && maxStage < 2 && !consignee) return;
-    const names = (form1.segment ?? []).filter(Boolean);
-    if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setSegmentDocsLoading(false); return; }
-    const segRows = names
-      .map(n => mSegmentIds.find(s => s.name === n))
+    const picked = (form1.segment ?? []).filter(Boolean);
+    if (picked.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setSegmentDocsLoading(false); return; }
+    const segRows = picked
+      .map(v => mSegmentIds.find(s => String(s.id) === v))
       .filter((r): r is { id:number; name:string } => !!r);
     if (segRows.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setSegmentDocsLoading(false); return; }
 
@@ -1405,7 +1402,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           const rows: SegDocRow[] = Array.isArray(r?.[cat]) ? r[cat] : [];
           rows.forEach(d => { if (d?.code) codes.add(d.code); });
         });
-        codeMap[seg.name] = Array.from(codes);
+        codeMap[String(seg.id)] = Array.from(codes);
       });
       setSegCodeMap(codeMap);
       // Parallel state for the Send-for-Signature flow — same shape
@@ -1639,6 +1636,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   const activeLinkedCust = (activeLinkedId != null
     ? customerOptions.find(c => c.db_id === activeLinkedId)
     : null) ?? customer;
+  // By id: two segments may share a name (Less / High), so a name lookup picks the wrong one.
+  const linkedSegItems: SegmentItem[] = (() => {
+    const c = activeLinkedCust as { segments?: SegmentItem[]; segment_ids?: number[] } | null | undefined;
+    return c?.segments?.length ? c.segments : segItemsById(c?.segment_ids, mSegmentIds);
+  })();
 
   const confirmCustomer = () => {
     if (!customer) {
@@ -2093,7 +2095,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     /* Multi-segment is comma-joined for the legacy scalar column. The
      * first entry stays the "primary" segment so existing list-row
      * callers keep working. */
-    segment:          (form1.segment ?? []).length > 0 ? (form1.segment ?? []).join(', ') : null,
+    segment:          (form1.segment ?? []).length > 0 ? (form1.segment ?? []).map(segNameOf).join(', ') : null,
     classification:   form1.classification || null,
     risk_level:       form1.risk || null,
     website:          form1.website || null,
@@ -2244,7 +2246,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                       {customer.name}
                       <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 20, padding: '1px 7px' }}>CUSTOMER</span>
                     </div>
-                    <div className="acm-picked-meta">{customer.id} • {truncSegment(customer.segment)}<SegmentNameBadge name={customer.segment} /> • {customer.country}</div>
+                    <div className="acm-picked-meta">{customer.id} • {truncSegment(customer.segment)}{customer.segments.length === 1 && <SegmentBadge status={customer.segments[0].regulatory_status} style={{ marginLeft: 5 }} />} • {customer.country}</div>
                   </div>
                 </>
               ) : (
@@ -2348,7 +2350,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                         {isPrimary && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 20, padding: '1px 7px' }}>PRIMARY</span>}
                         {crossBorder && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#b45309', background: '#fef3c7', borderRadius: 20, padding: '1px 7px' }}>{isDomesticCountry(c.country) ? 'DOMESTIC' : 'INTERNATIONAL'}</span>}
                       </div>
-                      <div className="acm-pop-meta">{c.id} • {truncSegment(c.segment)}<SegmentNameBadge name={c.segment} /> • {c.country}</div>
+                      <div className="acm-pop-meta">{c.id} • {truncSegment(c.segment)}{c.segments.length === 1 && <SegmentBadge status={c.segments[0].regulatory_status} style={{ marginLeft: 5 }} />} • {c.country}</div>
                     </div>
                   </button>
                   );
@@ -2378,7 +2380,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                     {customer.name}
                     <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 20, padding: '1px 7px' }}>PRIMARY</span>
                   </div>
-                  <div className="acm-picked-meta">{customer.id} • {truncSegment(customer.segment)}<SegmentNameBadge name={customer.segment} /> • {customer.country}</div>
+                  <div className="acm-picked-meta">{customer.id} • {truncSegment(customer.segment)}{customer.segments.length === 1 && <SegmentBadge status={customer.segments[0].regulatory_status} style={{ marginLeft: 5 }} />} • {customer.country}</div>
                 </div>
                 {primaryLocked ? (
                   <span title="Locked — you're mapping under this customer" style={{ fontSize: 10, fontWeight: 700, color: '#6b7280', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
@@ -2532,7 +2534,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                           now means Domestic vs International. */}
                       <ReadInlineG label="Customer Category"    value={activeLinkedCust?.type} />
 
-                      <ReadInlineG label="Customer Segment"     value={segDisplay(activeLinkedCust?.segment, mSegmentIds)} node={<SegmentNameList compact names={activeLinkedCust?.segment} codeOf={n => mSegmentIds.find(s => s.name === n)?.code} />} tip={<SegmentNameList names={activeLinkedCust?.segment} codeOf={n => mSegmentIds.find(s => s.name === n)?.code} />} />
+                      <ReadInlineG label="Customer Segment"     value={segItemsText(linkedSegItems)} node={<SegmentNameList compact items={linkedSegItems} />} tip={<SegmentNameList items={linkedSegItems} />} />
                       <ReadInlineG label="Classification"       value={activeLinkedCust?.classification} />
                       <ReadInlineG label="Risk Level"           value={activeLinkedCust?.risk} />
                       <ReadInlineG label="Company Website"      value={activeLinkedCust?.website} />
@@ -2654,7 +2656,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               setTab={requestIdTab}
               form={form1}
               setForm={setForm1}
-              segTypesByName={segTypesByName}
+              segTypesById={segTypesById}
               segCodeMap={segCodeMap}
               uploadedCodes={Object.entries(segmentRefUploads)
                 .filter(([, v]) => !!(v && (v.url || v.file)))
@@ -2730,7 +2732,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                      * customer regardless). So on untick, clear the mirrored
                      * fields but KEEP the customer's segment instead of wiping
                      * it to []. */
-                    const inheritedSegs = String(customer?.segment ?? '').split(',').map(s => s.trim()).filter(Boolean);
+                    const inheritedSegs = (customer?.segment_ids ?? []).map(String);
                     /* Country survives the wipe for a DOMESTIC customer.
                        Such a customer trades only within India, so the field
                        is locked to India and disabled — the user cannot put it
@@ -2807,6 +2809,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               onDeleteLocation={(id) => setDelModal({ open: true, id })}
               masters={{
                 segments: mSegments,
+                segmentRows: mSegmentIds,
                 classifications: mClassifications,
                 riskLevels: mRiskLevels,
                 addressTypes: mAddressTypes,
@@ -2844,7 +2847,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               locations={locations}
               consigneeCode={consignee?.id}
               sameAsCustomer={sameAsCustomer}
-              segmentName={(form1.segment ?? []).join(', ')}
+              segmentName={(form1.segment ?? []).map(segNameOf).join(', ')}
               segmentDocs={segmentDocs}
               loading={segmentDocsLoading}
               segmentRefUploads={segmentRefUploads}
@@ -3275,6 +3278,8 @@ function Stage1FormShimmer() {
 /* ─── Stage 1 — Consignee Legal Identity ─── */
 type Stage1Masters = {
   segments:        { value: string; label: string }[];
+  /** Full rows (id → Reg status) behind `segments`. */
+  segmentRows?:    { id: number; name: string; code?: string; regulatory_status?: string | null }[];
   classifications: { value: string; label: string }[];
   riskLevels:      { value: string; label: string }[];
   addressTypes:    { value: string; label: string }[];
@@ -3299,7 +3304,7 @@ const Stage1 = ({
   tab, setTab, form, setForm, masters, errors, clearErr, validateField,
   sameAsCustomer, setSameAsCustomer, customer, mirrorAlreadyTakenByOther, mirrorLocked, onBlockedClick,
   locations, onAddLocation, onEditLocation, onDeleteLocation,
-  segCodeMap = {}, uploadedCodes = [], onBlockedSegmentRemove, segTypesByName,
+  segCodeMap = {}, uploadedCodes = [], onBlockedSegmentRemove, segTypesById,
 }: {
   tab: IdentityTab;
   setTab: (t: IdentityTab) => void;
@@ -3338,7 +3343,7 @@ const Stage1 = ({
   onBlockedSegmentRemove?: (segs: string[]) => void;
   /** Segment NAME → its Domestic/International rule types, for the Intl/Dom/+2
    *  badges shown on the inherited-segment box. */
-  segTypesByName?: Map<string, Set<SegDocType>>;
+  segTypesById?: Map<string, Set<SegDocType>>;
 }) => {
   /* When the "Same as Customer" toggle is on, Stage 1's basic
    * company + primary address fields lock to read-only — every
@@ -3499,6 +3504,7 @@ const Stage1 = ({
               {(() => {
                 const segVals = Array.isArray(form.segment) ? form.segment : (form.segment ? [form.segment] : []);
                 const labels = segVals.map((v: string) => masters.segments.find(s => s.value === v)?.label ?? v);
+                const regOf = (v: string) => masters.segmentRows?.find(s => String(s.id) === String(v))?.regulatory_status ?? null;
                 /* Intl / Dom / +2 badge for a segment NAME (form.segment holds
                  * names). Same visual language + clickable-"+2" as the customer
                  * segment dropdown: clicking +2 reveals the individual badges. */
@@ -3508,7 +3514,7 @@ const Stage1 = ({
                 const intlB = () => badgeEl('INT', 'International rule', '#3730a3', '#eef2ff', '#c7d2fe');
                 const domB  = () => badgeEl('DOM', 'Domestic rule', '#0f766e', '#ecfdf5', '#99f6e4');
                 const typeBadge = (name: string) => {
-                  const t = segTypesByName?.get(name);
+                  const t = segTypesById?.get(name);
                   if (!t || t.size === 0) return null;
                   const both = t.has('international') && t.has('domestic');
                   if (both) {
@@ -3526,7 +3532,7 @@ const Stage1 = ({
                       <span style={{ color: '#94a3b8', fontSize: 13 }}>Inherited from customer</span>
                     ) : (
                       <>
-                        <span className="acm-seg-firstchip" title={labels[0]} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{truncSegment(labels[0])}<SegmentNameBadge name={segVals[0]} style={{ marginLeft: 0 }} />{typeBadge(segVals[0])}</span>
+                        <span className="acm-seg-firstchip" title={labels[0]} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{truncSegment(labels[0])}<SegmentBadge status={regOf(segVals[0])} />{typeBadge(segVals[0])}</span>
                         {labels.length > 1 && (
                           <span role="button" onClick={() => setSegPopOpen(o => !o)} className="acm-seg-morebtn" title={segPopOpen ? 'Hide segments' : `View all ${labels.length} segments`}>
                             {segPopOpen ? 'Hide' : `+${labels.length}`}
@@ -3547,7 +3553,7 @@ const Stage1 = ({
                                 <span className="acm-seg-dot" style={{ flexShrink: 0 }} />
                                 <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l}</span>
                               </span>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, marginLeft: 'auto' }}><SegmentNameBadge name={segVals[i]} style={{ marginLeft: 0 }} />{typeBadge(segVals[i])}</span>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, marginLeft: 'auto' }}><SegmentBadge status={regOf(segVals[i])} />{typeBadge(segVals[i])}</span>
                             </div>
                           ))}
                         </div>
@@ -5010,15 +5016,16 @@ function ConsigneeHistoryStage1({ form, locations, consigneeCode, segments = [] 
   form: { companyName: string; legalName: string; website: string; segment: string[]; classification: string; risk: string; addressType: string; address: string; country: string; state: string; city: string; pin: string; contactName: string; designation: string; contactNo: string; email: string; whatsapp: string };
   locations: LocationRow[];
   consigneeCode?: string;
-  segments?: { name: string; code?: string }[];
+  segments?: { id?: number; name: string; code?: string; regulatory_status?: string | null }[];
 }) {
+  const segItems = segItemsById(form.segment, segments);
   return (
     <div className="acg-hs-mirror">
       <div className="acg-hs-grid">
         {consigneeCode && <ReadInlineG label="Consignee ID" value={consigneeCode} />}
         <ReadInlineG label="Company Name"        value={form.companyName} />
         <ReadInlineG label="Company Legal Name"  value={form.legalName} />
-        <ReadInlineG label="Customer Segment"    value={segDisplay(form.segment, segments)} node={<SegmentNameList compact names={form.segment} codeOf={n => segments.find(s => s.name === n)?.code} />} tip={<SegmentNameList names={form.segment} codeOf={n => segments.find(s => s.name === n)?.code} />} />
+        <ReadInlineG label="Customer Segment"    value={segItemsText(segItems)} node={<SegmentNameList compact items={segItems} />} tip={<SegmentNameList items={segItems} />} />
 
         <ReadInlineG label="Classification"      value={form.classification} />
         <ReadInlineG label="Risk Level"          value={form.risk} />
