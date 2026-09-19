@@ -194,7 +194,7 @@ export type OrderRow = {
   cancelReason?: string;
 };
 
-const PO_TYPE: Record<PoType, { label: string; icon: ReactNode }> = {
+export const PO_TYPE: Record<PoType, { label: string; icon: ReactNode }> = {
   materials: {
     label: 'Material / Goods',
     icon: (

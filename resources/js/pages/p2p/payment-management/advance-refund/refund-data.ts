@@ -4,13 +4,22 @@
 import type { BadgeVariant } from '../../../../components/ui/Badge';
 import { SAMPLE_ROWS, type OrderRow } from '../../purchase-management/order/Order';
 
-export type RefundRecovery = { amount: number; date: string };
+export type RefundRecovery = {
+  amount: number;
+  date: string;
+  /** Cheque / UTR number the refund came in on. */
+  reference?: string;
+  /** File name of the proof of payment. */
+  file?: string;
+};
 
 export type RefundAdjustment = {
   no: string;
   date: string;
   po: string;
   supplierRef: string;
+  /** File name of the supplier's refund reference document, if attached. */
+  attachment?: string;
   type: string;
   reason: string;
   /** Amount the supplier owes back. Whatever is paid above it stays with them. */
@@ -86,13 +95,16 @@ export const SEED_REFUNDS: RefundAdjustment[] = [
     no: 'ADR/2025-26/001', date: '2026-06-28', po: 'PO/2025-26/005', supplierRef: 'CN-7781',
     type: 'Purchase Order Cancellation', reason: 'PO cancelled — recovery of amount already paid',
     amount: 60000, retainedType: 'Cancellation Charges', retainedRemark: 'Supplier cancellation fee as per contract',
-    recoveries: [{ amount: 30000, date: '2026-07-06' }],
+    recoveries: [{ amount: 30000, date: '2026-07-06', reference: 'UTR884120', file: 'Refund_Advice_ADR_001.pdf' }],
   },
   {
     no: 'ADR/2025-26/002', date: '2026-06-15', po: 'PO/2025-26/020', supplierRef: '',
     type: 'Purchase Order Cancellation', reason: 'Supplier pricing revised beyond approved limit',
     amount: 263600, retainedType: '', retainedRemark: '',
-    recoveries: [{ amount: 150000, date: '2026-06-22' }, { amount: 113600, date: '2026-07-01' }],
+    recoveries: [
+      { amount: 150000, date: '2026-06-22', reference: 'UTR771034', file: 'Bank_Advice_771034.pdf' },
+      { amount: 113600, date: '2026-07-01', reference: 'CHQ004512' },
+    ],
   },
   {
     no: 'ADR/2025-26/003', date: '2026-05-02', po: 'PO/2025-26/054', supplierRef: 'SUP-RF-19',

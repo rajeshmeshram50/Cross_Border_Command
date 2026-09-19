@@ -336,3 +336,30 @@ export const IcoRefund = (p: IconProps) => (
     <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /><path d="M10 9h5M10 12h5M10 9c3 0 3 3 0 3l4 4" />
   </Svg>
 );
+
+export const IcoCart = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" />
+    <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+  </Svg>
+);
+
+export const IcoTrash = (p: IconProps) => (
+  <Svg {...p}>
+    <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    <path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+  </Svg>
+);
+
+export const IcoWallet = (p: IconProps) => (
+  <Svg size={18} stroke={2} {...p}>
+    <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" /><path d="M3 5v14a2 2 0 0 0 2 2h16v-5" /><path d="M18 12a2 2 0 0 0 0 4h4v-4z" />
+  </Svg>
+);
+
+export const IcoSave = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+    <polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" />
+  </Svg>
+);

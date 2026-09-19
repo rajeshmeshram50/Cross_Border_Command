@@ -13,11 +13,12 @@ import {
   IcoCheck, IcoClock, IcoDoc, IcoList, IcoPencil, IcoPlus, IcoRefund, IcoSearch, IcoChevron,
   IcoLink, IcoLines, IcoCard, IcoHistory, IcoAlert, IcoShield, IcoDocSm,
 } from '../../purchase-management/order/icons';
-import RefundAdjustmentModal from './RefundAdjustmentModal';
-import RecordRefundModal from './RecordRefundModal';
+import RefundPoPickerModal from './RefundPoPickerModal';
+import RefundAdjustmentForm from './RefundAdjustmentForm';
+import RecoverPaymentModal from './RecoverPaymentModal';
 import EvidenceVaultModal from './EvidenceVaultModal';
 import {
-  SEED_REFUNDS, TYPE_VARIANT, findPo, isCancellation, nextRefundNo, refundFigures, todayIso, typeLabel,
+  REFUNDABLE_POS, SEED_REFUNDS, TYPE_VARIANT, findPo, isCancellation, nextRefundNo, refundFigures, todayIso, typeLabel,
   type RefundAdjustment, type RefundRecovery,
 } from './refund-data';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
@@ -67,9 +68,12 @@ export default function AdvanceRefundAdjustment() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [guideOpen, setGuideOpen] = useState(true);
-  // undefined = closed, null = creating, a refund = editing it.
-  const [form, setForm] = useState<RefundAdjustment | null | undefined>(undefined);
-  const [recovering, setRecovering] = useState<RefundAdjustment | null>(null);
+  // Create: picker first, then the form for the chosen PO. Edit: the form straight away.
+  const [picking, setPicking] = useState(false);
+  const [form, setForm] = useState<{ po: string; edit?: RefundAdjustment } | null>(null);
+  // Refund no. whose recoveries are open — read live from the list so edits show at once.
+  const [recoveringNo, setRecoveringNo] = useState<string | null>(null);
+  const recovering = refunds.find((r) => r.no === recoveringNo) ?? null;
   const [vault, setVault] = useState<RefundAdjustment | null>(null);
 
   const counts = useMemo(() => {
@@ -91,17 +95,12 @@ export default function AdvanceRefundAdjustment() {
   const saveRefund = (next: RefundAdjustment) => {
     const exists = refunds.some((r) => r.no === next.no);
     setRefunds((list) => (exists ? list.map((r) => (r.no === next.no ? next : r)) : [next, ...list]));
-    setForm(undefined);
+    setForm(null);
     toast.success(exists ? 'Refund adjustment updated' : 'Advance receipt refund adjustment recorded', next.no);
   };
 
-  const saveRecovery = (entry: RefundRecovery) => {
-    if (!recovering) return;
-    const no = recovering.no;
-    setRefunds((list) => list.map((r) => (r.no === no ? { ...r, recoveries: [...r.recoveries, entry] } : r)));
-    setRecovering(null);
-    toast.success('Refund recovery recorded', `${money(entry.amount)} against ${no}`);
-  };
+  const saveRecoveries = (no: string, recoveries: RefundRecovery[]) =>
+    setRefunds((list) => list.map((r) => (r.no === no ? { ...r, recoveries } : r)));
 
   return (
     <div className="spi-root">
@@ -115,7 +114,7 @@ export default function AdvanceRefundAdjustment() {
             </div>
           </div>
         </div>
-        <button type="button" className="spi-head-btn arf-head-btn" onClick={() => setForm(null)}>
+        <button type="button" className="spi-head-btn arf-head-btn" onClick={() => setPicking(true)}>
           <IcoPlus size={13} /> Create Advance Receipt Refund Adjustment
         </button>
       </div>
@@ -199,7 +198,7 @@ export default function AdvanceRefundAdjustment() {
                 </td></tr>
               ) : visible.map((r, i) => (
                 <RefundRow key={r.no} sr={start + i + 1} refund={r}
-                  onEdit={() => setForm(r)} onRecover={() => setRecovering(r)} onVault={() => setVault(r)} />
+                  onEdit={() => setForm({ po: r.po, edit: r })} onRecover={() => setRecoveringNo(r.no)} onVault={() => setVault(r)} />
               ))}
             </tbody>
           </table>
@@ -209,18 +208,28 @@ export default function AdvanceRefundAdjustment() {
           onPageSize={(n) => { setPageSize(n); setPage(1); }} pageSizeOptions={PAGE_SIZES} />
       </div>
 
-      {form !== undefined && (
-        <RefundAdjustmentModal
-          edit={form ?? undefined}
+      {picking && (
+        <RefundPoPickerModal
+          options={REFUNDABLE_POS.filter((p) => !refunds.some((r) => r.po === p.po))}
+          onClose={() => setPicking(false)}
+          onContinue={(po) => { setPicking(false); setForm({ po }); }}
+        />
+      )}
+      {form && (
+        <RefundAdjustmentForm
+          po={form.po}
+          edit={form.edit}
           nextNo={nextRefundNo(refunds)}
           today={todayIso()}
-          takenPos={refunds.filter((r) => r.no !== form?.no).map((r) => r.po)}
           onSubmit={saveRefund}
-          onClose={() => setForm(undefined)}
+          onCancel={() => { const creating = !form.edit; setForm(null); if (creating) setPicking(true); }}
+          onClose={() => setForm(null)}
         />
       )}
       {vault && <EvidenceVaultModal refund={vault} onClose={() => setVault(null)} />}
-      {recovering && <RecordRefundModal refund={recovering} onSave={saveRecovery} onClose={() => setRecovering(null)} />}
+      {recovering && (
+        <RecoverPaymentModal refund={recovering} onChange={(list) => saveRecoveries(recovering.no, list)} onClose={() => setRecoveringNo(null)} />
+      )}
     </div>
   );
 }

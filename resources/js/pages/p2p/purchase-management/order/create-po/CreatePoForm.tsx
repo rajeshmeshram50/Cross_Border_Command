@@ -164,7 +164,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   );
 }
 
-function HeadPill({ icon, label, value, mono, alt }: { icon: React.ReactNode; label: string; value: string; mono?: boolean; alt?: boolean }) {
+export function HeadPill({ icon, label, value, mono, alt }: { icon: React.ReactNode; label: string; value: string; mono?: boolean; alt?: boolean }) {
   return (
     <div className="spi-dt-pill">
       <span className={`spi-dt-pill-ico ${alt ? 'spi-dt-pill-ico--alt' : ''}`}>{icon}</span>
