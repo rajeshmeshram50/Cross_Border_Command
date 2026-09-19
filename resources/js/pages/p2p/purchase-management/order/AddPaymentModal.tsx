@@ -63,7 +63,7 @@ function Ref({ label, value, mono, extra }: { label: string; value: string; mono
 export default function AddPaymentModal({
   requestId, supplier, poNumber, spiNumber, spiCount, approved, paid, onSave, onClose,
 }: AddPaymentProps) {
-  useScrollLock();
+  useScrollLock(true, '.apay-card');
 
   const cardRef = useRef<HTMLDivElement>(null);
   const amountRef = useRef<HTMLInputElement>(null);

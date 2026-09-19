@@ -5,6 +5,15 @@
   overflow: hidden;
   font-family: 'DM Sans', system-ui, sans-serif;
   box-shadow: 0 24px 60px rgba(8, 47, 73, .32);
+  container: mprcard / inline-size;
+}
+
+@media (min-width: 1025px) and (max-width: 1640px) {
+  .mpr-card.spi-mdl {
+    zoom: .8;
+    width: min(2100px, calc(97vw / .8));
+    max-height: calc(92vh / .8);
+  }
 }
 
 .mpr-card.spi-mdl:focus {
@@ -19,7 +28,7 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   flex-shrink: 0;
   padding: 13px 18px;
   background: linear-gradient(150deg, #062d3d 0%, #0a4d66 45%, #0e7490 100%);
@@ -46,6 +55,7 @@
 
 .mpr-hero__titleblock {
   display: flex;
+  flex: 0 1 auto;
   flex-direction: column;
   gap: 3px;
   min-width: 0;
@@ -72,6 +82,8 @@
   font-weight: 500;
   color: rgba(180, 230, 255, .7);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mpr-hero__badge {
@@ -98,17 +110,21 @@
 
 .mpr-hero__chips {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex: 0 1 auto;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
   margin-left: auto;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .mpr-hero__chip {
   position: relative;
   overflow: hidden;
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
+  justify-content: center;
   gap: 3px;
   min-width: 0;
   padding: 6px 12px 6px 14px;
@@ -160,9 +176,6 @@
   letter-spacing: -.1px;
   color: #fff;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 200px;
   text-shadow: 0 1px 4px rgba(0, 0, 0, .24);
 }
 
@@ -220,6 +233,10 @@
 
 [data-bs-theme="dark"] .mpr-bd {
   background: #0f172a;
+}
+
+.mpr-bd > * {
+  flex-shrink: 0;
 }
 
 .mpr-box .spi-bref-body {
@@ -333,7 +350,7 @@
   }
 }
 
-@media (max-width: 1280px) {
+@container mprcard (max-width: 1242px) {
   .mpr-tdsbtn span {
     display: none;
   }
@@ -1060,17 +1077,17 @@
 }
 
 .mpr-raise.spi-mdl-confirm {
-  background: linear-gradient(135deg, #b45309, #d97706 55%, #f59e0b);
-  box-shadow: 0 3px 10px rgba(217, 119, 6, .3);
+  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
+  box-shadow: 0 3px 10px rgba(8, 145, 178, .3);
 }
 
-@media (max-width: 1500px) {
+@container mprcard (max-width: 1455px) {
   .mpr-stats {
     grid-template-columns: repeat(3, 1fr);
   }
 }
 
-@media (max-width: 1240px) {
+@container mprcard (max-width: 1203px) {
   .mpr-row {
     grid-template-columns: 38px 100px minmax(88px, 1fr) 58px minmax(100px, 1fr) minmax(118px, 1fr) minmax(110px, 1fr) minmax(94px, 1fr) minmax(94px, 1fr) 160px;
   }
@@ -1081,7 +1098,7 @@
   }
 }
 
-@media (max-width: 1024px) {
+@container mprcard (max-width: 993px) {
 
   .mpr-row {
     grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
@@ -1130,7 +1147,7 @@
   }
 }
 
-@media (max-width: 860px) {
+@container mprcard (max-width: 834px) {
   .mpr-stats {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1142,12 +1159,14 @@
 }
 
 @media (max-width: 560px) {
-  .mpr-stats {
-    grid-template-columns: 1fr;
-  }
-
   .mpr-card.spi-mdl {
     width: 100%;
+  }
+}
+
+@container mprcard (max-width: 543px) {
+  .mpr-stats {
+    grid-template-columns: 1fr;
   }
 
   .mpr-bd {
@@ -1301,7 +1320,7 @@
   background: linear-gradient(135deg, #123f55, #0d5f7a 60%, #14708f);
 }
 
-@media (max-width: 1080px) {
+@container mprcard (max-width: 1048px) {
   .mpr-chip__k { display: none; }
   .mpr-chip__v { font-size: 13px; }
 }
@@ -1316,4 +1335,58 @@
   background: rgba(255, 255, 255, .16);
   border: 1px solid rgba(255, 255, 255, .32);
   white-space: nowrap;
+}
+
+@container mprcard (max-width: 1591px) {
+  .mpr-hero {
+    gap: 10px;
+    padding: 11px 14px;
+  }
+
+  .mpr-hero__title {
+    font-size: 14px;
+  }
+
+  .mpr-hero__chip {
+    padding: 6px 9px 6px 11px;
+  }
+
+  .mpr-hero__chip-lbl {
+    font-size: 7px;
+    letter-spacing: .05em;
+  }
+
+  .mpr-hero__chip-val {
+    font-size: 10.5px;
+  }
+
+  .mpr-hero__chip-line {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+  }
+
+  .mpr-hero__chip-meta {
+    font-size: 8.5px;
+    padding: 1px 5px;
+  }
+}
+
+@container mprcard (max-width: 1125px) {
+  .mpr-hero {
+    flex-wrap: wrap;
+  }
+
+  .mpr-hero__chips {
+    order: 2;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .mpr-hero__close {
+    order: 1;
+    margin-left: auto;
+  }
 }

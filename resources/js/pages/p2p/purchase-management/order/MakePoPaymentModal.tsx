@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import type { OrderRow } from './Order';
 import {
-  Box, HeroRefChips, ICON_X, PoSummaryCards, initials, money, shortDate,
+  Box, HeroRefChips, ICON_X, PoSummaryCards, TdsStrip, initials, money, shortDate,
 } from './payment-shared';
 import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './manage-payment-requests.css';
@@ -70,9 +70,6 @@ const ICON_DEL = (
     <path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
   </svg>
 );
-const ICON_TDS = (
-  <svg {...ic} strokeWidth={2.4}><line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" /></svg>
-);
 
 function Field({ label, mod, children }: { label: string; mod?: string; children: React.ReactNode }) {
   return (
@@ -87,7 +84,7 @@ export default function MakePoPaymentModal({
   row, requestId, requestDate, requestType, requestedAmount, approved, approver, approverRole,
   alreadyPaid, payments, tds, onRecord, onDelete, onOpenTds, onClose,
 }: MakePoPaymentProps) {
-  useScrollLock();
+  useScrollLock(true, '.mpr-card--pay');
 
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => { cardRef.current?.focus(); }, []);
@@ -126,7 +123,7 @@ export default function MakePoPaymentModal({
         </Suspense>
       )}
 
-      <div className="spi-mdl mpr-card" role="dialog" aria-modal="true" aria-labelledby="cpay-title" tabIndex={-1} ref={cardRef}>
+      <div className="spi-mdl mpr-card mpr-card--pay" role="dialog" aria-modal="true" aria-labelledby="cpay-title" tabIndex={-1} ref={cardRef}>
 
         <div className="mpr-hero">
           <div className="mpr-hero__icon">{ICON_CARD}</div>
@@ -178,17 +175,7 @@ export default function MakePoPaymentModal({
             title="PO Payment Details Summary"
             sub="How this PO’s value is made up and where it stands today · read-only"
             headerExtra={!row.cancelled && (
-              <div className="mpr-tds" onClick={(e) => e.stopPropagation()}>
-                <button
-                  type="button"
-                  className={`mpr-tdsbtn${tds > 0 ? ' mpr-tdsbtn--edit' : ''}`}
-                  onClick={onOpenTds}
-                  title={tds > 0 ? 'Revise the tax deducted at source on this PO' : 'Withhold tax at source against this PO'}
-                >
-                  <span className="mpr-tdsbtn__ico">{ICON_TDS}</span>
-                  <span>{tds > 0 ? 'Revise TDS' : 'Deduct TDS Here'}</span>
-                </button>
-              </div>
+              <TdsStrip tds={tds} total={row.total} supplier={row.supplier} onOpen={onOpenTds} />
             )}
           >
             <PoSummaryCards
@@ -261,8 +248,11 @@ export default function MakePoPaymentModal({
                       <span className="cpay-file">
                         <span className="cpay-file__ico">{ICON_DOC}</span>
                         <span className="cpay-file__name" title={p.file}>{p.file}</span>
-                        <button type="button" className="cpay-fbtn" title="View proof of payment">{ICON_EYE}</button>
-                        <button type="button" className="cpay-fbtn" title="Download proof of payment">{ICON_DL}</button>
+                        <span className="cpay-file__sep" />
+                        <span className="cpay-fbtns">
+                          <button type="button" className="cpay-fbtn cpay-fbtn--view" title="View proof of payment">{ICON_EYE}</button>
+                          <button type="button" className="cpay-fbtn cpay-fbtn--dl" title="Download proof of payment">{ICON_DL}</button>
+                        </span>
                       </span>
                     ) : <span className="cpay-noproof">Not attached</span>}
                   </span>

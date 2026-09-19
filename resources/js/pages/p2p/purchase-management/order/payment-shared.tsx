@@ -202,3 +202,53 @@ export function PoSummaryCards({ total, paid, balance, net, complete }: {
     </div>
   );
 }
+
+const ICON_TDS = (
+  <svg {...ic} strokeWidth={2.4}>
+    <line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" />
+  </svg>
+);
+
+const ICON_WALLET = (
+  <svg {...ic} strokeWidth={2.4}>
+    <path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4" />
+    <path d="M4 6v12a2 2 0 0 0 2 2h14v-4" />
+    <path d="M18 12a2 2 0 0 0 0 4h4v-4z" />
+  </svg>
+);
+
+export function TdsStrip({ tds, total, supplier, onOpen }: {
+  tds: number; total: number; supplier: string; onOpen: () => void;
+}) {
+  return (
+    <div className="mpr-tds" onClick={(e) => e.stopPropagation()}>
+      {tds > 0 && (
+        <>
+          <span className="mpr-chip mpr-chip--cut" title="Tax withheld at source on this PO · counted towards paid">
+            <span className="mpr-chip__ico">{ICON_TDS}</span>
+            <span className="mpr-chip__txt">
+              <span className="mpr-chip__k">TDS Deducted</span>
+              <b className="mpr-chip__v">{money(tds)}</b>
+            </span>
+          </span>
+          <span className="mpr-chip mpr-chip--net" title={`Payable to ${supplier} after TDS · ${money(total)} less ${money(tds)}`}>
+            <span className="mpr-chip__ico">{ICON_WALLET}</span>
+            <span className="mpr-chip__txt">
+              <span className="mpr-chip__k">Net Payable</span>
+              <b className="mpr-chip__v">{money(Math.max(0, total - tds))}</b>
+            </span>
+          </span>
+        </>
+      )}
+      <button
+        type="button"
+        className={`mpr-tdsbtn${tds > 0 ? ' mpr-tdsbtn--edit' : ''}`}
+        title={tds > 0 ? 'Revise the tax deducted at source on this PO' : 'Withhold tax at source against this PO'}
+        onClick={onOpen}
+      >
+        <span className="mpr-tdsbtn__ico">{ICON_TDS}</span>
+        <span>{tds > 0 ? 'Revise TDS' : 'Deduct TDS Here'}</span>
+      </button>
+    </div>
+  );
+}

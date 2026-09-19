@@ -57,7 +57,7 @@ export default function RaisePaymentRequestModal({
   row, nextId, requested, approvedTotal, pendingAmt, pendingCount, approvedUnpaid,
   requestCount, available, complete, onSubmit, onClose,
 }: RaiseRequestProps) {
-  useScrollLock();
+  useScrollLock(true, '.mpr-card--raise');
 
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => { cardRef.current?.focus(); }, []);
@@ -137,7 +137,7 @@ export default function RaisePaymentRequestModal({
 
   return createPortal(
     <div className="spi-mdl-backdrop">
-      <div className="spi-mdl mpr-card" role="dialog" aria-modal="true" aria-labelledby="rpr-title" tabIndex={-1} ref={cardRef}>
+      <div className="spi-mdl mpr-card mpr-card--raise" role="dialog" aria-modal="true" aria-labelledby="rpr-title" tabIndex={-1} ref={cardRef}>
 
         <div className="mpr-hero">
           <div className="mpr-hero__icon">{ICON_SEND}</div>
