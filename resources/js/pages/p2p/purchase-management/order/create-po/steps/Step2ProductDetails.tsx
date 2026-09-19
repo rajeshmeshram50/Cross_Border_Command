@@ -8,7 +8,7 @@ import MissingProducts, { missingCount } from './MissingProducts';
 import StageSummary from './StageSummary';
 import { supplierByOption } from '../sample-suppliers';
 import type { PoDraft, SetDraft } from '../po-draft';
-import { IcoBox, IcoChevron, IcoLines, IcoPin, IcoUser, IcoWarn } from '../../icons';
+import { IcoAlert, IcoBox, IcoChevron, IcoLines, IcoPin, IcoUser } from '../../icons';
 
 export default function Step2ProductDetails({ draft, set }: { draft: PoDraft; set: SetDraft }) {
   const [prodOpen, setProdOpen] = useState(true);
@@ -63,7 +63,7 @@ export default function Step2ProductDetails({ draft, set }: { draft: PoDraft; se
 
     <div className={`spi-dt-sec ${missOpen ? '' : 'is-collapsed'}`}>
       <div className="spi-dt-sec-head cpf-clickable" onClick={() => setMissOpen((o) => !o)}>
-        <div className="spi-dt-sec-ico cpf-ico-risk"><IcoWarn /></div>
+        <div className="spi-dt-sec-ico spi-dt-sec-ico-2"><IcoAlert /></div>
         <div className="spi-dt-sec-mid">
           <div className="spi-dt-sec-row">
             <span className="spi-dt-sec-lbl">Products</span>

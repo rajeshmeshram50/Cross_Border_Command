@@ -544,7 +544,7 @@ export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set:
 
         <div className="spi-dt-card">
           <div className="spi-dt-card-head cpf-clickable" onClick={() => setRiskOpen((o) => !o)}>
-            <div className="spi-dt-card-title"><span className="spi-dt-card-ico cpf-ico-risk"><IcoAlert /></span> Supplier Risk Alert</div>
+            <div className="spi-dt-card-title"><span className="spi-dt-card-ico spi-dt-card-ico-2"><IcoAlert /></span> Supplier Risk Alert</div>
             {/* The badge only says something once a supplier is chosen. */}
             <span className={`cpf-risk__badge cpf-risk__badge--${riskSev} ${picked ? '' : 'cpf-hide'}`}>
               {!picked ? ''
