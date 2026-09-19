@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\Client;
 use App\Models\Employee;
 use App\Models\Payslip;
+use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -173,6 +174,18 @@ class PayslipPdfService
         return $out;
     }
 
+    /** Login email of the branch's user account, or null when the branch has none. */
+    private function branchUserEmail(?int $branchId): ?string
+    {
+        if (!$branchId) return null;
+        return User::query()
+            ->where('branch_id', $branchId)
+            ->where('user_type', 'branch_user')
+            ->whereNotNull('email')
+            ->orderBy('id')
+            ->value('email');
+    }
+
     /* ───────────────────────── company header ───────────────────────── */
 
     /**
@@ -207,7 +220,9 @@ class PayslipPdfService
             'city'     => $branch?->city ?: $client?->city ?: '',
             'accent'   => $accent,
             'logo'     => $logo,
-            'hr_email' => $branch?->email ?: ($client?->email ?: null),
+            // The branch's own login account answers payslip queries; the Branch master's
+            // email field and the client address are only fallbacks.
+            'hr_email' => $this->branchUserEmail($branch?->id) ?: ($branch?->email ?: ($client?->email ?: null)),
         ];
     }
 
