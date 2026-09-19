@@ -1,12 +1,5 @@
-/* ─────────────────────────────────────────────────────────────────────────
- * Icons for the Order module (list, Create PO popup and the PO form).
- *
- * One definition each, imported wherever it is needed — the same glyphs were
- * previously re-declared in six files. Every icon draws in `currentColor`, so
- * the surrounding element's colour decides it (white inside a teal tile, teal
- * inside a card header), and takes `size` / `stroke` for the odd case that
- * needs a heavier or larger version.
- * ───────────────────────────────────────────────────────────────────────── */
+// One definition per icon, shared by the list, the popup and the PO form.
+// They draw in currentColor so the surrounding element decides the colour.
 import type { SVGProps } from 'react';
 
 type IconProps = { size?: number; stroke?: number } & Omit<SVGProps<SVGSVGElement>, 'stroke'>;
@@ -215,6 +208,48 @@ export const IcoX = (p: IconProps) => (
   <Svg size={14} stroke={2.4} {...p}>
     <line x1="18" y1="6" x2="6" y2="18" />
     <line x1="6" y1="6" x2="18" y2="18" />
+  </Svg>
+);
+
+/** Award ribbon — the signature completion certificate. */
+export const IcoCertificate = (p: IconProps) => (
+  <Svg size={14} stroke={2.3} {...p}>
+    <circle cx="12" cy="8" r="6" />
+    <polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88" />
+  </Svg>
+);
+
+export const IcoFolder = (p: IconProps) => (
+  <Svg size={15} stroke={2.3} {...p}>
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+  </Svg>
+);
+
+export const IcoPaperclip = (p: IconProps) => (
+  <Svg size={12} stroke={2.3} {...p}>
+    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+  </Svg>
+);
+
+export const IcoDownload = (p: IconProps) => (
+  <Svg size={13} stroke={2.4} {...p}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
+  </Svg>
+);
+
+export const IcoMail = (p: IconProps) => (
+  <Svg size={13} stroke={2.3} {...p}>
+    <rect x="2" y="4" width="20" height="16" rx="2" />
+    <polyline points="22 6 12 13 2 6" />
+  </Svg>
+);
+
+export const IcoSend = (p: IconProps) => (
+  <Svg size={13} stroke={2.3} {...p}>
+    <line x1="22" y1="2" x2="11" y2="13" />
+    <polygon points="22 2 15 22 11 13 2 9 22 2" />
   </Svg>
 );
 

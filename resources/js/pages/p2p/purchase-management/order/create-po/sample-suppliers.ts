@@ -1,7 +1,5 @@
-// Static supplier records for the Create PO form.
-// Frontend-only sample data — replaced by the suppliers API later.
-// The five compliance checklists every supplier is measured against.
-// Each parameter's document list is what makes up its "total".
+// Static supplier records and the five compliance checklists they are scored
+// against — frontend-only sample data, replaced by the suppliers API later.
 export const LEGAL_PARAMS: { name: string; docs: string[] }[] = [
   { name: 'Company Due Diligence', docs: ['Certificate of Incorporation', 'MOA & AOA', 'GST Registration Certificate', 'PAN Card'] },
   { name: 'Owner KYC Documents', docs: ['Director / Owner PAN', 'Aadhaar / ID Proof', 'Address Proof', 'Passport-size Photograph'] },

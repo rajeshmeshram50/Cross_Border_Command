@@ -1,12 +1,12 @@
-// Create PO — full-page form shell.
-// The wizard chrome (overlay, header strip, stage cards, footer) is the shared
-// P2P wizard design, so it reuses the existing spi-dt-* classes instead of
-// repeating them. create-po.css only holds what is different for this form.
+// Create PO — full-page form shell. The wizard chrome reuses the shared
+// spi-dt-* classes; create-po.css holds only what differs for this form.
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import Step1LinkSupplier from './steps/Step1LinkSupplier';
 import Step2ProductDetails from './steps/Step2ProductDetails';
+import Step3Terms from './steps/Step3Terms';
+import Step4Documents from './steps/Step4Documents';
 import { usePoDraft } from './po-draft';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './create-po.css';
@@ -132,8 +132,9 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
 
         <div className="spi-dt-body" ref={bodyRef}>
           {stage === 0 && <Step1LinkSupplier draft={draft} set={set} />}
-          {stage === 1 && <Step2ProductDetails draft={draft} />}
-          {stage > 1 && <div className="cpf-soon">{STAGES[stage].title} — coming next.</div>}
+          {stage === 1 && <Step2ProductDetails draft={draft} set={set} />}
+          {stage === 2 && <Step3Terms draft={draft} set={set} />}
+          {stage === 3 && <Step4Documents draft={draft} />}
         </div>
 
         <div className="spi-dt-foot">

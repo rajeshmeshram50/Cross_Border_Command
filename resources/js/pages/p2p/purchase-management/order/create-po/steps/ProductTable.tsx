@@ -49,9 +49,11 @@ type Props = {
   rows: PoLineRow[];
   stateCode: string;
   onChange: (index: number, patch: Partial<PoLineRow>) => void;
+  /** The summary on later steps shows the same table with plain values. */
+  readOnly?: boolean;
 };
 
-export default function ProductTable({ rows, stateCode, onChange }: Props) {
+export default function ProductTable({ rows, stateCode, onChange, readOnly }: Props) {
   const options = useMemo(() => PRODUCT_CATALOGUE.map(productOption), []);
   const lines = rows.map((r) => computeLine(r, stateCode));
   const totals = lines.reduce(
@@ -80,12 +82,12 @@ export default function ProductTable({ rows, stateCode, onChange }: Props) {
             <th colSpan={5}>Amounts</th>
           </tr>
           <tr>
-            <th className="cpd-th-left cpd-edh">Product (PO)</th>
+            <th className={`cpd-th-left ${readOnly ? '' : 'cpd-edh'}`}>Product (PO)</th>
             <th className="cpd-th-left">Description</th>
             <th>Qty (PI)</th>
-            <th className="cpd-edh">Qty (PO)</th>
+            <th className={readOnly ? undefined : 'cpd-edh'}>Qty (PO)</th>
             <th>Missing Qty</th>
-            <th className="cpd-edh">Product Rate</th>
+            <th className={readOnly ? undefined : 'cpd-edh'}>Product Rate</th>
             <th>CGST (%)</th>
             <th>SGST (%)</th>
             <th>CGST Amount</th>
@@ -115,21 +117,26 @@ export default function ProductTable({ rows, stateCode, onChange }: Props) {
                   </div>
                 </td>
 
-                <td className="cpd-td-left cpd-ed cpd-prodcell">
+                <td className={`cpd-td-left cpd-prodcell ${readOnly ? '' : 'cpd-ed'}`}>
                   <div className="cpd-prod">
-                  <div className="cpd-pick">
-                    <EditSelect
-                      value={productOption(po)}
-                      options={options}
-                      onChange={(v) => onChange(i, { poCode: v.split(' — ')[0] })}
-                    />
-                    <button type="button" className="cpd-iconbtn" title="Edit this product"><IcoPencil /></button>
-                  </div>
+                  {readOnly ? (
+                    <div className="cpd-prod__nm">{po.name}</div>
+                  ) : (
+                    <div className="cpd-pick">
+                      <EditSelect
+                        value={productOption(po)}
+                        options={options}
+                        onChange={(v) => onChange(i, { poCode: v.split(' — ')[0] })}
+                      />
+                      <button type="button" className="cpd-iconbtn" title="Edit this product"><IcoPencil /></button>
+                    </div>
+                  )}
                   <div className="cpd-prod__meta">
+                    {readOnly && <span className="cpd-code">{po.code}</span>}
                     <span className="cpd-kv">HSN <b>{po.hsn}</b></span>
                     <span className="cpd-prod__dot" />
                     <span className="cpd-kv">GST <b>{line.cgstPct + line.sgstPct}%</b></span>
-                    <button type="button" className="cpd-addbtn" title="Add another PO line"><IcoPlus /></button>
+                    {!readOnly && <button type="button" className="cpd-addbtn" title="Add another PO line"><IcoPlus /></button>}
                   </div>
                   </div>
                 </td>
@@ -137,21 +144,25 @@ export default function ProductTable({ rows, stateCode, onChange }: Props) {
                 <td className="cpd-td-left"><Description text={po.description} /></td>
 
                 <td>{row.pi.qtyPi}</td>
-                <td className="cpd-ed">
-                  <input
-                    className="cpd-in"
-                    value={row.qtyPo}
-                    onChange={(e) => onChange(i, { qtyPo: Number(e.target.value.replace(/[^\d]/g, '')) || 0 })}
-                  />
+                <td className={readOnly ? undefined : 'cpd-ed'}>
+                  {readOnly ? row.qtyPo : (
+                    <input
+                      className="cpd-in"
+                      value={row.qtyPo}
+                      onChange={(e) => onChange(i, { qtyPo: Number(e.target.value.replace(/[^\d]/g, '')) || 0 })}
+                    />
+                  )}
                 </td>
                 <td className={line.missing > 0 ? 'cpd-miss' : ''}>{line.missing}</td>
 
-                <td className="cpd-ed">
-                  <input
-                    className="cpd-in"
-                    value={row.rate}
-                    onChange={(e) => onChange(i, { rate: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 })}
-                  />
+                <td className={readOnly ? undefined : 'cpd-ed'}>
+                  {readOnly ? money(row.rate) : (
+                    <input
+                      className="cpd-in"
+                      value={row.rate}
+                      onChange={(e) => onChange(i, { rate: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 })}
+                    />
+                  )}
                 </td>
                 <td>{line.cgstPct}%</td>
                 <td>{line.sgstPct}%</td>
