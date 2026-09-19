@@ -310,3 +310,11 @@
     gap: 3px;
   }
 }
+
+[data-bs-theme="dark"] .rpr-err {
+  background: rgba(239, 68, 68, .12);
+  border-color: rgba(239, 68, 68, .38);
+  color: #fca5a5;
+}
+
+[data-bs-theme="dark"] .rpr-field label { color: #94a3b8; }

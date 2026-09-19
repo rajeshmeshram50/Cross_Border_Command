@@ -437,3 +437,11 @@
     flex: 1 1 auto;
   }
 }
+
+[data-bs-theme="dark"] .apay-err {
+  background: rgba(239, 68, 68, .12);
+  border-color: rgba(239, 68, 68, .38);
+  color: #fca5a5;
+}
+
+[data-bs-theme="dark"] .apay-f > label { color: #94a3b8; }

@@ -329,3 +329,10 @@ export const IcoBan = (p: IconProps) => (
     <line x1="5.6" y1="5.6" x2="18.4" y2="18.4" />
   </Svg>
 );
+
+/** Money coming back: a return arrow around a rupee stroke. */
+export const IcoRefund = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /><path d="M10 9h5M10 12h5M10 9c3 0 3 3 0 3l4 4" />
+  </Svg>
+);

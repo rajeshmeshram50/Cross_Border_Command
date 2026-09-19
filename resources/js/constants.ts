@@ -316,6 +316,7 @@ export const P2P_GROUPS: MenuGroup[] = [
       { id: 'p2p.order', icon: 'FileText', label: 'Order' },
       // Temporary placement under Purchase Management until the P2P nav redesign lands.
       { id: 'p2p.payment_request', icon: 'IndianRupee', label: 'Payment Request Management' },
+      { id: 'p2p.advance_refund', icon: 'FileInput', label: 'Advance Receipt Refund Adjustment' },
     ],
   },
 ];

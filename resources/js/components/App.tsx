@@ -125,6 +125,7 @@ const SupplierPurchaseInvoice = lazyPage(() => import('../pages/p2p/purchase-man
 const DebitNote = lazyPage(() => import('../pages/p2p/purchase-management/debit-note/DebitNote'));
 const Order = lazyPage(() => import('../pages/p2p/purchase-management/order/Order'));
 const PaymentRequestManagement = lazyPage(() => import('../pages/p2p/payment-management/payment-request/PaymentRequestManagement'));
+const AdvanceRefundAdjustment = lazyPage(() => import('../pages/p2p/payment-management/advance-refund/AdvanceRefundAdjustment'));
 const InventoryPutAway = lazyPage(() => import('../pages/inventory/InventoryPutAway'));
 const InventoryStickers = lazyPage(() => import('../pages/inventory/InventoryStickers'));
 const ScanLanding = lazyPage(() => import('../pages/inventory/ScanLanding'));
@@ -920,6 +921,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/p2p/debit-note" element={<DebitNote />} />
               <Route path="/p2p/order" element={<Order />} />
               <Route path="/p2p/payment-request" element={<PaymentRequestManagement />} />
+              <Route path="/p2p/advance-refund-adjustment" element={<AdvanceRefundAdjustment />} />
               <Route path="/developers/shipment" element={<DeveloperShipments />} />
               <Route path="/products" element={<Products />} />
               <Route path="/products/:id" element={<ProductView />} />
