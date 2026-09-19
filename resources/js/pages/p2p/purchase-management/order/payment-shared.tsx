@@ -85,6 +85,12 @@ const ICON_CHART = (
   </svg>
 );
 
+export const ICON_PENCIL = (
+  <svg {...ic} width="14" height="14" strokeWidth={2.2}>
+    <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+  </svg>
+);
+
 export const statIco = (d: ReactNode) => (
   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{d}</svg>
 );
@@ -140,12 +146,13 @@ export function Stat({ mod, icon, label, value, sub }: {
   );
 }
 
-export function Box({ label, title, sub, headerExtra, children }: {
-  label: string; title: string; sub: string; headerExtra?: ReactNode; children: ReactNode;
+export function Box({ label, title, sub, headerExtra, icon, className, children }: {
+  label: string; title: string; sub: string; headerExtra?: ReactNode;
+  icon?: ReactNode; className?: string; children: ReactNode;
 }) {
   const [open, setOpen] = useState(true);
   return (
-    <div className={`spi-bref mpr-box${open ? '' : ' is-collapsed'}`}>
+    <div className={`spi-bref mpr-box${className ? ' ' + className : ''}${open ? '' : ' is-collapsed'}`}>
       <div
         className="spi-bref-head"
         role="button"
@@ -156,7 +163,7 @@ export function Box({ label, title, sub, headerExtra, children }: {
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen((o) => !o); }
         }}
       >
-        <div className="spi-bref-ico">{ICON_CHART}</div>
+        <div className="spi-bref-ico">{icon ?? ICON_CHART}</div>
         <div className="spi-bref-mid">
           <div className="spi-bref-row">
             <div className="spi-bref-label">{label}</div>

@@ -32,6 +32,7 @@ export type MakePoPaymentProps = {
   payments: ReleasePayment[];
   tds: number;
   onRecord: (p: ReleasePayment) => void;
+  onUpdate: (index: number, p: ReleasePayment) => void;
   onDelete: (index: number) => void;
   onOpenTds: () => void;
   onClose: () => void;
@@ -82,7 +83,7 @@ function Field({ label, mod, children }: { label: string; mod?: string; children
 
 export default function MakePoPaymentModal({
   row, requestId, requestDate, requestType, requestedAmount, approved, approver, approverRole,
-  alreadyPaid, payments, tds, onRecord, onDelete, onOpenTds, onClose,
+  alreadyPaid, payments, tds, onRecord, onUpdate, onDelete, onOpenTds, onClose,
 }: MakePoPaymentProps) {
   useScrollLock(true, '.mpr-card--pay');
 
@@ -96,6 +97,9 @@ export default function MakePoPaymentModal({
   }, [onClose]);
 
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<number | null>(null);
+
+  const closeForm = () => { setAdding(false); setEditing(null); };
 
   const released = payments.reduce((s, p) => s + (p.amount || 0), 0);
   const paidOnRequest = alreadyPaid + released;
@@ -107,9 +111,10 @@ export default function MakePoPaymentModal({
 
   return createPortal(
     <div className="spi-mdl-backdrop">
-      {adding && (
+      {(adding || editing !== null) && (
         <Suspense fallback={null}>
           <AddPaymentModal
+            key={editing ?? 'new'}
             requestId={requestId}
             supplier={row.supplier}
             poNumber={row.po}
@@ -117,8 +122,13 @@ export default function MakePoPaymentModal({
             spiCount={row.invoices.length}
             approved={approved}
             paid={paidOnRequest}
-            onClose={() => setAdding(false)}
-            onSave={(p) => { onRecord(p); setAdding(false); }}
+            initial={editing !== null ? payments[editing] : undefined}
+            onClose={closeForm}
+            onSave={(p) => {
+              if (editing !== null) onUpdate(editing, p);
+              else onRecord(p);
+              closeForm();
+            }}
           />
         </Suspense>
       )}
@@ -268,7 +278,7 @@ export default function MakePoPaymentModal({
                       >
                         {ICON_MAIL}
                       </button>
-                      <button type="button" className="cpay-act cpay-act--edit" title="Edit payment">{ICON_EDIT}</button>
+                      <button type="button" className="cpay-act cpay-act--edit" title="Edit payment" onClick={() => setEditing(i)}>{ICON_EDIT}</button>
                       <button type="button" className="cpay-act cpay-act--del" title="Delete payment" onClick={() => onDelete(i)}>
                         {ICON_DEL}
                       </button>

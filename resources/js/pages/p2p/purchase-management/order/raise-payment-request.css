@@ -2,6 +2,7 @@
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 14px;
+  margin-top: 5px;
   margin-bottom: 6px;
 }
 
@@ -13,6 +14,7 @@
 }
 
 .rpr-field label {
+  margin-bottom: 0;
   font-size: 9.5px;
   font-weight: 800;
   letter-spacing: .05em;
@@ -173,6 +175,122 @@
 
 .rpr-recap__type.is-empty {
   color: #a8bcc7;
+}
+
+.rpr-details-box .spi-bref-head {
+  gap: 14px;
+  min-height: 70px;
+  flex-wrap: nowrap;
+  padding: 9px 12px;
+}
+
+.rpr-hdstats {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.rpr-hdstats .mpr-stats {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+}
+
+.rpr-hdstats .mpr-stat {
+  flex: 0 0 152px;
+  width: 152px;
+  gap: 0;
+  min-height: 54px;
+  padding: 9px 11px 9px 13px;
+  align-items: center;
+  border-radius: 11px;
+  background: #fff;
+  border: 1px solid #cfe3ec;
+  box-shadow: 0 2px 7px -2px rgba(8, 80, 110, .18);
+}
+
+.rpr-hdstats .mpr-stat > div {
+  min-width: 0;
+  width: 100%;
+}
+
+.rpr-hdstats .mpr-stat::after {
+  width: 4px;
+}
+
+.rpr-hdstats .mpr-stat__ico,
+.rpr-hdstats .mpr-stat__sub {
+  display: none;
+}
+
+.rpr-hdstats .mpr-stat__lbl {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  line-height: 1.25;
+  color: #5b7b8c;
+  white-space: nowrap;
+}
+
+.rpr-hdstats .mpr-stat__val {
+  margin-top: 3px;
+  font-size: 14.5px;
+  font-weight: 800;
+  letter-spacing: -.2px;
+  color: #0b3a4a;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-bs-theme="dark"] .rpr-hdstats .mpr-stat {
+  background: #0f1d33;
+  border-color: rgba(6, 182, 212, .25);
+}
+
+[data-bs-theme="dark"] .rpr-hdstats .mpr-stat__val {
+  color: #cffafe;
+}
+
+@container mprcard (max-width: 1319px) {
+  .rpr-hdstats .mpr-stat {
+    flex-basis: 134px;
+    width: 134px;
+    padding: 8px 8px 8px 10px;
+  }
+
+  .rpr-hdstats .mpr-stat__lbl {
+    font-size: 7.5px;
+    letter-spacing: .02em;
+  }
+
+  .rpr-hdstats .mpr-stat__val {
+    font-size: 13px;
+  }
+}
+
+@container mprcard (max-width: 970px) {
+  .rpr-details-box .spi-bref-head {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .rpr-hdstats {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .rpr-hdstats .mpr-stats {
+    flex-wrap: wrap;
+  }
+
+  .rpr-hdstats .mpr-stat {
+    flex: 1 1 150px;
+    width: auto;
+  }
 }
 
 @container mprcard (max-width: 1067px) {

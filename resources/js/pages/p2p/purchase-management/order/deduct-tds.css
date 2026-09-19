@@ -114,6 +114,7 @@
 }
 
 .mtds-f label {
+  margin-bottom: 0;
   font-size: 8.5px;
   font-weight: 800;
   letter-spacing: .05em;

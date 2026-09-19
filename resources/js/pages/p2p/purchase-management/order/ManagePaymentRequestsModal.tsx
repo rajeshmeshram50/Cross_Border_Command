@@ -278,6 +278,10 @@ export default function ManagePaymentRequestsModal({ row, onClose }: { row: Orde
               ...prev,
               [payReq.id]: [...(prev[payReq.id] ?? []), p],
             }))}
+            onUpdate={(i, p) => setReleases((prev) => ({
+              ...prev,
+              [payReq.id]: (prev[payReq.id] ?? []).map((x, ix) => (ix === i ? p : x)),
+            }))}
             onDelete={(i) => setReleases((prev) => ({
               ...prev,
               [payReq.id]: (prev[payReq.id] ?? []).filter((_, ix) => ix !== i),
