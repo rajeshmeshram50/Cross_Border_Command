@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ClmTradeLicense extends Model
 {
+    use BelongsToTenant;
     public const STATUS_ACTIVE   = 'active';
     public const STATUS_INACTIVE = 'inactive';
     public const STATUSES        = [self::STATUS_ACTIVE, self::STATUS_INACTIVE];

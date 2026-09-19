@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { SegmentNameBadge, SegmentNameList } from '../../../../components/ui/SegmentBadge';
+import SegmentBadge, { SegmentNameList } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
 import { CLM_CSS } from '../../../clm/shared/clmShared';
@@ -76,7 +76,7 @@ const DEFAULT_ADDRESS_TYPE = 'Registered Office';
  *    underlying column (segments uses `title`, the rest use `name`).
  *    States additionally carry country_id so we can filter by selected
  *    country at the UI layer. */
-interface MasterOpt { id: number; name: string; code?: string; }
+interface MasterOpt { id: number; name: string; code?: string; regulatory_status?: string | null; }
 interface StateOpt extends MasterOpt { country_id: number; }
 /** master_state_codes row, flattened. Keyed by state NAME (not id) because this
  *  form's State dropdown stores the display name — the supplier form matches on
@@ -240,7 +240,7 @@ const stageMemory = new Map<number, StageMemoryEntry>();
 // on the parent file. `db_id` is the underlying numeric primary key — needed
 // for PUT/DELETE; absent until the row has been persisted server-side.
 export interface EditCustomer {
-  id: string; db_id?: number; company: string; type: string; segment: string;
+  id: string; db_id?: number; company: string; type: string; segment: string; segment_ids?: number[];
   country: string; contact: string; phone: string; email: string;
   whatsapp: 'Yes' | 'No';
   gstApplicable?: 'Yes' | 'No';
@@ -465,17 +465,18 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
    * visible in the dropdown but can't be picked — a rule-less segment brings
    * no documents, so tagging a customer with it means nothing downstream. */
   const { ruledCodes: ruledSegCodes, typesByCode: segTypesByCode, loaded: segRulesLoaded } = useRuledSegments(open);
-  /* Segment NAME → the Domestic/International rule types it has. The customer
-   * segment field stores names, so re-key the by-code map onto names for the
-   * dropdown badges and the trade-type validation below. */
-  const segTypesByName = useMemo(() => {
+  /* Segment ID → its Domestic/International rule types. The segment field holds
+   * ids (two segments may share a name), so the by-code map is re-keyed onto ids. */
+  const segTypesById = useMemo(() => {
     const m = new Map<string, Set<SegDocType>>();
     for (const s of masters.segments) {
       const t = segTypesByCode.get(String(s.code ?? ''));
-      if (t && t.size) m.set(s.name, new Set(t));
+      if (t && t.size) m.set(String(s.id), new Set(t));
     }
     return m;
   }, [masters.segments, segTypesByCode]);
+  /** Segment id (as held in form.coSeg) → its name, for messages and the name-keyed server maps. */
+  const segNameOf = (v: string) => masters.segments.find(s => String(s.id) === String(v))?.name ?? String(v);
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -483,7 +484,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     type IdNamed = { id: number | string; name?: string | null };
     type Bundle = {
       customer_types: IdNamed[];
-      segments: Array<{ id: number | string; name?: string | null; title?: string | null; code?: string | null }>;
+      segments: Array<{ id: number | string; name?: string | null; title?: string | null; code?: string | null; regulatory_status?: string | null }>;
       customer_classifications: IdNamed[];
       risk_levels: IdNamed[];
       address_types: IdNamed[];
@@ -508,7 +509,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       // Segments — server returns `name`; the model also appends `title`
       // (alias) for legacy consumers. Read whichever is present.
       const segments: MasterOpt[] = (b.segments || [])
-        .map(r => ({ id: Number(r.id), name: String(r.title ?? r.name ?? ''), code: String(r.code ?? '') }))
+        .map(r => ({ id: Number(r.id), name: String(r.title ?? r.name ?? ''), code: String(r.code ?? ''), regulatory_status: r.regulatory_status ?? null }))
         .filter(r => r.name);
       // Countries — alpha-sort for the dropdown to mirror the previous
       // client-side sort.
@@ -953,8 +954,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     // during a refetch, so removing two segments in a row shouldn't stall.
     if (mastersLoading) return false;
     return (form.coSeg ?? [])
-      .filter((n: string) => masters.segments.some(s => s.name === n))
-      .every((n: string) => segCodeMap[n] !== undefined);
+      .filter((v: string) => masters.segments.some(s => String(s.id) === v))
+      .every((v: string) => segCodeMap[v] !== undefined);
   })();
 
   /* Per-row file uploads against the segment-rule reference rows in
@@ -1143,7 +1144,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       /* Segment is now multi-valued. The list row only carries a
        * single comma-separated string (legacy), so split on comma and
        * trim — empty pieces drop out. */
-      coSeg:    (customer?.segment ?? '').split(',').map(s => s.trim()).filter(Boolean),
+      coSeg:    (customer?.segment_ids ?? []).map(String),
       coClass:  '',
       coRisk:   '',
       /* Derived from the country now, not entered — kept in the shape only
@@ -1273,9 +1274,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
            * (the column is scalar) — split + trim back into an array
            * for the multi-select. Array shapes from a future PATCH
            * also land here once the backend column is widened. */
-          coSeg:    Array.isArray(d.segment)
-                      ? d.segment.filter(Boolean)
-                      : String(d.segment ?? '').split(',').map(s => s.trim()).filter(Boolean),
+          coSeg:    Array.isArray(d.segment_ids) ? d.segment_ids.map(String) : [],
           coClass:  d.classification ?? '',
           coRisk:   d.riskLevel     ?? '',
           // Fall back to 'No' (matching the create default) when the record
@@ -1390,10 +1389,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
      * with uploaded docs could be removed. */
     if (stage < 2 && maxStage < 2 && !isEdit) return;
 
-    const names = (form.coSeg ?? []).filter(Boolean);
-    if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTdDocs([]); setSegmentDocsLoading(false); return; }
-    const segRows = names
-      .map(n => masters.segments.find(s => s.name === n))
+    const picked = (form.coSeg ?? []).filter(Boolean);
+    if (picked.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTdDocs([]); setSegmentDocsLoading(false); return; }
+    const segRows = picked
+      .map(v => masters.segments.find(s => String(s.id) === v))
       .filter((r): r is { id:number; name:string } => !!r);
     if (segRows.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTdDocs([]); setSegmentDocsLoading(false); return; }
 
@@ -1458,7 +1457,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           const rows: SegDocRow[] = Array.isArray(r?.[cat]) ? r[cat] : [];
           rows.forEach(d => { if (d?.code) codes.add(d.code); });
         });
-        codeMap[seg.name] = Array.from(codes);
+        codeMap[String(seg.id)] = Array.from(codes);
       });
       setSegCodeMap(codeMap);
       /* Stage 3 Trade Documents = the merged segment-rule `td` set
@@ -1586,10 +1585,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         if (segRulesLoaded && f.country) {
           const custType: SegDocType = isDomesticCountry(f.country) ? 'domestic' : 'international';
           const custLabel = custType === 'domestic' ? 'Domestic' : 'International';
-          const mismatched = (f.coSeg as string[]).filter(name => {
-            const types = segTypesByName.get(name);
+          const mismatched = (f.coSeg as string[]).filter(id => {
+            const types = segTypesById.get(id);
             return types && types.size > 0 && !types.has(custType);
-          });
+          }).map(segNameOf);
           if (mismatched.length) {
             return `${mismatched.join(', ')} ${mismatched.length > 1 ? 'have' : 'has'} no ${custLabel} rule — this is a ${custLabel} customer, so the segment's document type must match.`;
           }
@@ -1794,7 +1793,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
      * legacy `customers.segment` column is scalar (string). Order is
      * preserved so the first entry stays the "primary" segment for
      * existing list-row callers that only read the first label. */
-    segment:        (form.coSeg ?? []).join(', '),
+    segment:        (form.coSeg ?? []).map(segNameOf).join(', '),
+    segment_ids:    (form.coSeg ?? []).map(Number).filter(Boolean),
     classification: form.coClass,
     risk_level:     form.coRisk,
     /* DERIVED from the primary address country, never from a user toggle:
@@ -2302,23 +2302,23 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               additional fields populate. */}
           {stage === 1 && showShimmer && <Stage1FormShimmer />}
           {stage === 1 && !showShimmer && tab === 'identification' && (
-            <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} currentCustomerId={savedDbId ?? customer?.db_id ?? null} unruledSegments={segRulesLoaded ? masters.segments.filter(s => !ruledSegCodes.has(s.code ?? '')).map(s => s.name) : []} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} segTypesByName={segTypesByName} guardSegmentRemove={(prev, vs) => {
+            <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} currentCustomerId={savedDbId ?? customer?.db_id ?? null} unruledSegments={segRulesLoaded ? masters.segments.filter(s => !ruledSegCodes.has(s.code ?? '')).map(s => String(s.id)) : []} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} segTypesById={segTypesById} guardSegmentRemove={(prev, vs) => {
               const removed = prev.filter(s => !vs.includes(s));
               if (!removed.length) return vs;
               /* A segment can't be removed when (1) a PRODUCT on a PI / Shipment
                * belongs to it, or (2) it has an uploaded document not shared with
                * any remaining segment. Block only those (re-add them) and let the
                * rest go through. Mirrors the server, which rejects the same at save. */
-              const lockedRemoved = removed.filter(s => lockedSegments.some(l => l.toLowerCase() === s.toLowerCase()));
+              const lockedRemoved = removed.filter(s => lockedSegments.some(l => l.toLowerCase() === segNameOf(s).toLowerCase()));
               // (2) Unique-document lock — uses the SAME server data the backend
               // uses (required category|code keys per segment + the uploaded keys),
               // so the UI blocks exactly what save does. A removed segment is
               // blocked when it requires an UPLOADED key that no REMAINING segment
               // requires (removing it would orphan that file).
               const uploadedSet = new Set(uploadedKeys);
-              const keepKeys = new Set(vs.flatMap(s => segReqKeys[s] ?? []));
+              const keepKeys = new Set(vs.flatMap(s => segReqKeys[segNameOf(s)] ?? []));
               const docRemoved = removed.filter(s => !lockedRemoved.includes(s)
-                && (segReqKeys[s] ?? []).some(k => uploadedSet.has(k) && !keepKeys.has(k)));
+                && (segReqKeys[segNameOf(s)] ?? []).some(k => uploadedSet.has(k) && !keepKeys.has(k)));
               /* Name the ACTUAL blocker. A segment is locked either because its
                * product sits on a Quotation / PI / Shipment, or — earlier in the
                * flow — because a product in it is merely mapped to an opportunity
@@ -2327,9 +2327,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
                * a quotation that had never been raised, and the message pointed
                * at nothing the user could go and fix. */
               if (lockedRemoved.length) {
-                const reasonOf = (s: string) => lockedSegmentReasons[s.trim().toLowerCase()] ?? 'pi';
-                const piNames   = lockedRemoved.filter(s => reasonOf(s) !== 'product');
-                const prodNames = lockedRemoved.filter(s => reasonOf(s) === 'product');
+                const reasonOf = (s: string) => lockedSegmentReasons[segNameOf(s).trim().toLowerCase()] ?? 'pi';
+                const piNames   = lockedRemoved.filter(s => reasonOf(s) !== 'product').map(segNameOf);
+                const prodNames = lockedRemoved.filter(s => reasonOf(s) === 'product').map(segNameOf);
                 if (piNames.length) {
                   // Deliberately generic: the Quotation / PI / Shipment lock names
                   // no document. Listing all three read as if all three existed
@@ -2343,7 +2343,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
                 }
               }
               if (docRemoved.length) {
-                toast.error('Cannot remove segment', `${docRemoved.join(', ')} — has its own uploaded document.`);
+                toast.error('Cannot remove segment', `${docRemoved.map(segNameOf).join(', ')} — has its own uploaded document.`);
               }
               const blocked = [...lockedRemoved, ...docRemoved];
               if (blocked.length) {
@@ -2388,7 +2388,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               docs={kycDocs}
               owners={kycOwners}
               loading={segmentDocsLoading}
-              segmentName={(form.coSeg ?? []).join(', ')}
+              segmentName={(form.coSeg ?? []).map(segNameOf).join(', ')}
               segmentDocs={segmentDocs}
               segmentRefUploads={segmentRefUploads}
               setSegmentRefUploads={setSegmentRefUploads}
@@ -3000,7 +3000,7 @@ function Stage2Shimmer() {
 /* Stage 3 (Evidence Vault) shimmer removed along with the stage itself. */
 
 /* ───── Stage 1 — Identification + Primary Address & Contact ───── */
-function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove, gstLocked, onCountryBlockedByGst, docsLocked = false, onCountryBlockedByDocs, mapLeadLocked = false, onCountryBlockedByLead, currentCustomerId, unruledSegments = [], segTypesByName }:
+function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove, gstLocked, onCountryBlockedByGst, docsLocked = false, onCountryBlockedByDocs, mapLeadLocked = false, onCountryBlockedByLead, currentCustomerId, unruledSegments = [], segTypesById }:
   { form: any; setF: (k: any, v: any) => void; masters: MasterLists; errors: Record<string, string>; clearErr: (k: string) => void; validateField: (k: string, nextForm: any) => void; guardSegmentRemove: (prev: string[], next: string[]) => string[];
     /** True when GST Scrutiny entries exist. Only guards the Country field now —
      *  the GST Applicable toggle it used to lock no longer exists. */
@@ -3030,7 +3030,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
     unruledSegments?: string[];
     /** Segment NAME → its Domestic/International rule types, for the dropdown
      *  badges (Intl / Dom / +2 when a segment has both). */
-    segTypesByName: Map<string, Set<SegDocType>> }) {
+    segTypesById: Map<string, Set<SegDocType>> }) {
   /* India (or not-yet-chosen) → domestic → GST fields render. Any other country
    * → international → they're hidden. Driven by the Primary Address & Contact
    * Person card's Country, which lives in this same component. */
@@ -3202,7 +3202,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
 
                 options={[...masters.segments]
                   .sort((a, b) => (b.code ?? '').localeCompare(a.code ?? '', undefined, { numeric: true }))
-                  .map(o => ({ value: o.name, label: o.code ? `${o.code}: ${o.name}` : o.name }))}
+                  .map(o => ({ value: String(o.id), label: o.code ? `${o.code}: ${o.name}` : o.name }))}
                 emptyText="No segment has a Document Control Panel rule yet"
                 placeholder="Select segment"
                 invalid={!!errors.coSeg}
@@ -3216,9 +3216,10 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 }}
                 disabledValues={unruledSegments}
                 disabledHint="no document rule defined in the Document Control Panel yet"
-                renderBadges={(name) => {
-                  const t = segTypesByName.get(name);
-                  if (!t || t.size === 0) return <SegmentNameBadge name={name} style={{ marginLeft: 0 }} />;
+                renderBadges={(id) => {
+                  const reg = <SegmentBadge status={masters.segments.find(s => String(s.id) === id)?.regulatory_status} />;
+                  const t = segTypesById.get(id);
+                  if (!t || t.size === 0) return reg;
                   const both = t.has('international') && t.has('domestic');
                   const badge = (text: string, title: string, color: string, bg: string, bd: string, onClick?: (e: React.MouseEvent) => void) => (
                     <span title={title} onClick={onClick} style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.02em', padding: '1px 6px', borderRadius: 10, whiteSpace: 'nowrap', color, background: bg, border: `1px solid ${bd}`, cursor: onClick ? 'pointer' : undefined }}>{text}</span>
@@ -3229,12 +3230,12 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                     // Collapsed: a clickable "+2"; expanded: the two individual
                     // badges. Stop propagation so the click doesn't toggle the
                     // segment's checkbox.
-                    return expandedSegBadges.has(name)
-                      ? <><SegmentNameBadge name={name} style={{ marginLeft: 0 }} />{intl()}{dom()}</>
-                      : <><SegmentNameBadge name={name} style={{ marginLeft: 0 }} />{badge('+2', 'Has both International & Domestic — click to show', '#6d28d9', '#f5f3ff', '#ddd6fe',
-                          (e) => { e.stopPropagation(); toggleSegBadge(name); })}</>;
+                    return expandedSegBadges.has(id)
+                      ? <>{reg}{intl()}{dom()}</>
+                      : <>{reg}{badge('+2', 'Has both International & Domestic — click to show', '#6d28d9', '#f5f3ff', '#ddd6fe',
+                          (e) => { e.stopPropagation(); toggleSegBadge(id); })}</>;
                   }
-                  return <><SegmentNameBadge name={name} style={{ marginLeft: 0 }} />{t.has('international') ? intl() : dom()}</>;
+                  return <>{reg}{t.has('international') ? intl() : dom()}</>;
                 }}
                 maxChips={2}
               />
@@ -5297,7 +5298,8 @@ function ReadInline({ label, value, span, node: rich, tip }: { label: string; va
  * Dense horizontal layout — every Stage 1 field shown as a tight
  * "Label : Value" pair laid out in a 4-column grid. No card chrome;
  * the parent history panel already frames the content. */
-function HistoryStage1({ form, locations, customerId, segments = [] }: { form: any; locations: LocationRow[]; customerId?: string; segments?: { name: string; code?: string }[] }) {
+function HistoryStage1({ form, locations, customerId, segments = [] }: { form: any; locations: LocationRow[]; customerId?: string; segments?: MasterOpt[] }) {
+  const segItems = (form.coSeg ?? []).map((v: string) => segments.find(s => String(s.id) === String(v))).filter(Boolean) as MasterOpt[];
   const wa = form.cpWa === 'yes' ? 'Yes' : form.cpWa === 'no' ? 'No' : '';
   return (
     <div className="acm-hs-mirror">
@@ -5308,7 +5310,7 @@ function HistoryStage1({ form, locations, customerId, segments = [] }: { form: a
         <ReadInline label="Customer Category"         value={form.coType} />
 
         <ReadInline label="Company Website"           value={form.coWeb} />
-        <ReadInline label="Customer Segment"          value={segDisplay(form.coSeg, segments)} node={<SegmentNameList compact names={form.coSeg} codeOf={n => segments.find(s => s.name === n)?.code} />} tip={<SegmentNameList names={form.coSeg} codeOf={n => segments.find(s => s.name === n)?.code} />} />
+        <ReadInline label="Customer Segment"          value={segItems.map(s => (s.code ? `${s.code}: ${s.name}` : s.name)).join(', ')} node={<SegmentNameList compact items={segItems} />} tip={<SegmentNameList items={segItems} />} />
         <ReadInline label="Classification"            value={form.coClass} />
         <ReadInline label="Risk Level"                value={form.coRisk} />
 

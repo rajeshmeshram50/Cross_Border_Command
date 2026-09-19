@@ -2295,17 +2295,10 @@ class SalesPdfController extends Controller
             $seg = $segById->get($segId);
             if (!$seg) continue;
 
-            $segNameLc = mb_strtolower((string) $seg->name);
-            $segReg    = (string) $seg->regulatory_status;
-
             foreach ($candidates as $row) {
-                if (isset($matched[$row->id])) continue;             // already emitted
-                if ((string) $row->regulatory !== $segReg) continue; // tier must agree
-                $tncSegs = array_filter(array_map(
-                    fn($s) => mb_strtolower(trim($s)),
-                    explode(',', (string) $row->segment)
-                ));
-                if (!in_array($segNameLc, $tncSegs, true)) continue; // segment must match
+                if (isset($matched[$row->id])) continue;
+                // By segment id: same-named Less / Highly segments are different segments.
+                if (!\App\Support\SegmentGuard::tncMatches($row, $seg)) continue;
                 $matched[$row->id] = [
                     'code'     => $row->code,
                     'category' => $row->category,
@@ -2384,17 +2377,10 @@ class SalesPdfController extends Controller
             $seg = $segById->get($segId);
             if (!$seg) continue;
 
-            $segNameLc = mb_strtolower((string) $seg->name);
-            $segReg    = (string) $seg->regulatory_status;
-
             foreach ($candidates as $row) {
                 if (isset($matched[$row->id])) continue;
-                if ((string) $row->regulatory !== $segReg) continue;
-                $tncSegs = array_filter(array_map(
-                    fn($s) => mb_strtolower(trim($s)),
-                    explode(',', (string) $row->segment)
-                ));
-                if (!in_array($segNameLc, $tncSegs, true)) continue;
+                // By segment id: same-named Less / Highly segments are different segments.
+                if (!\App\Support\SegmentGuard::tncMatches($row, $seg)) continue;
                 $matched[$row->id] = [
                     'code'     => $row->code,
                     'category' => $row->category,

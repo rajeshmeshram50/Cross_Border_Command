@@ -139,7 +139,7 @@ class ClmTncController extends Controller
         // branch — e.g. "Tobacco + Proforma Invoice" can exist only once. A row
         // may scope many segments (CSV, for "less" regulatory), so any overlap
         // with an existing same-category row is a duplicate. (CBC #18)
-        if ($dup = $this->findDuplicate($user->client_id, $user->branch_id, $data['category'], $data['segment'] ?? null)) {
+        if ($dup = $this->findDuplicate($user->client_id, $user->branch_id, $data['category'], $data['segment'] ?? null, null, $data['regulatory'] ?? null)) {
             return response()->json([
                 'status'  => false,
                 'message' => 'A Terms & Conditions entry already exists for this segment and document category (' . $dup->code . ').',
@@ -156,6 +156,7 @@ class ClmTncController extends Controller
                 'code'       => $code,
                 // '' preserved (?? only catches null) so note docs stay blank.
                 'segment'    => $data['segment'] ?? 'General',
+                'segment_ids' => $this->segmentIdsFor($user->client_id, $user->branch_id, $data['segment'] ?? '', $data['regulatory'] ?? 'highly'),
                 'regulatory' => $data['regulatory'] ?? 'highly',
                 'category'   => trim($data['category']),
                 'party'      => trim((string) ($data['party'] ?? '')),
@@ -200,15 +201,25 @@ class ClmTncController extends Controller
         // of category/segment this partial update omits. (CBC #18)
         $effCategory = $data['category'] ?? $row->category;
         $effSegment  = array_key_exists('segment', $data) ? $data['segment'] : $row->segment;
-        if ($dup = $this->findDuplicate($row->client_id, $row->branch_id, $effCategory, $effSegment, $row->id)) {
+        $effRegulatory = array_key_exists('regulatory', $data) ? $data['regulatory'] : $row->regulatory;
+        if ($dup = $this->findDuplicate($row->client_id, $row->branch_id, $effCategory, $effSegment, $row->id, $effRegulatory)) {
             return response()->json([
                 'status'  => false,
                 'message' => 'A Terms & Conditions entry already exists for this segment and document category (' . $dup->code . ').',
                 'errors'  => ['category' => ['This segment already has a "' . trim((string) $effCategory) . '" entry.']],
             ], 422);
         }
+        $data['segment_ids'] = $this->segmentIdsFor($row->client_id, $row->branch_id, $effSegment, $effRegulatory);
         $row->update($data);
         return response()->json(['status' => true, 'data' => $row->fresh()]);
+    }
+
+    /** The segments this row covers, resolved by name + tier within its branch — what PI/PO T&C fetch matches. */
+    private function segmentIdsFor(?int $clientId, ?int $branchId, ?string $segmentCsv, ?string $regulatory): ?array
+    {
+        $names = \App\Support\SegmentGuard::names($segmentCsv);
+        if (!$names || trim((string) $regulatory) === '') return null;
+        return \App\Support\SegmentGuard::resolveIds($clientId, $branchId, $names, [], $regulatory) ?: null;
     }
 
     /** Debit/Credit Note documents store no segment / regulatory / party. */
@@ -225,7 +236,7 @@ class ClmTncController extends Controller
      * one. Note-category docs carry no segment, so they're exempt. Scoped to the
      * SAME branch (T&C is branch-isolated — the same combo may exist per branch).
      */
-    private function findDuplicate(int $clientId, ?int $branchId, ?string $category, ?string $segmentCsv, $ignoreId = null): ?ClmTncLibrary
+    private function findDuplicate(int $clientId, ?int $branchId, ?string $category, ?string $segmentCsv, $ignoreId = null, ?string $regulatory = null): ?ClmTncLibrary
     {
         $cat = mb_strtolower(trim((string) $category));
         if ($cat === '' || $this->isNoteCategory($category)) return null;
@@ -237,6 +248,8 @@ class ClmTncController extends Controller
             ->whereRaw('LOWER(TRIM(category)) = ?', [$cat]);
         $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
         if ($ignoreId !== null) $query->where('id', '!=', $ignoreId);
+        // "Sugar" Less and "Sugar" Highly are different segments.
+        if ($regulatory !== null && $regulatory !== '') $query->whereRaw('LOWER(TRIM(regulatory)) = ?', [mb_strtolower(trim($regulatory))]);
 
         foreach ($query->get(['id', 'code', 'segment']) as $existing) {
             if (array_intersect($incoming, $this->segmentTokens($existing->segment))) {

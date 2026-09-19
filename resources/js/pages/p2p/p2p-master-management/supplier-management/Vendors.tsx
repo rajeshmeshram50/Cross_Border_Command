@@ -79,7 +79,7 @@ export type Vendor = {
   segment?: string;
   segments?: string[];
   /** Name + status kept apart so the list can draw the badge. */
-  segmentItems?: { name: string; reg?: string | null }[];
+  segmentItems?: { id?: number; name: string; reg?: string | null }[];
   risk?: string;
   /* Compliance Behaviour master value ("Compliant", "Under Review",
      "Flagged", …) — rendered as the Compliant Status pill. */
@@ -702,8 +702,8 @@ export default function Vendors() {
       // relation so suppliers created before multi-segment still show their
       // segment in the list (the list endpoint returns raw models — no fallback).
       segmentItems: (() => {
-        const arr = (row.segments ?? []).filter(s => s.name).map(s => ({ name: String(s.name), reg: s.regulatory_status }));
-        return arr.length ? arr : (row.segment?.name ? [{ name: row.segment.name, reg: row.segment.regulatory_status }] : []);
+        const arr = (row.segments ?? []).filter(s => s.name).map(s => ({ id: s.id, name: String(s.name), reg: s.regulatory_status }));
+        return arr.length ? arr : (row.segment?.name ? [{ id: row.segment.id, name: row.segment.name, reg: row.segment.regulatory_status }] : []);
       })(),
       segments:    (() => {
         const arr = (row.segments ?? []).filter(s => s.name).map(s => segmentLabel(s.name, s.regulatory_status));
@@ -1512,6 +1512,7 @@ useEffect(() => {
           code={mappedTarget.code}
           name={mappedTarget.companyName}
           segments={mappedTarget.segments}
+          segmentIds={(mappedTarget.segmentItems ?? []).map(s => s.id).filter((id): id is number => typeof id === 'number')}
           onClose={() => setMappedTarget(null)}
           /* A new mapping changes the count the badge behind this popup shows. */
           onChanged={() => void refresh({ silent: true })}

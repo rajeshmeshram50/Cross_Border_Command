@@ -56,7 +56,8 @@ type ProductOpt = {
   status?:      string | null;   // active | inactive | draft — shown in the picker
   /* Eager-loaded segment relation from GET /products — surfaced as a small
      violet badge in the picker next to the status pill. */
-  segment?:     { name: string | null; regulatory_status?: string | null } | null;
+  segment_id?:  number | null;
+  segment?:     { id?: number; name: string | null; regulatory_status?: string | null } | null;
 };
 
 type CurrencyOpt = {
@@ -159,6 +160,8 @@ type Props = {
    * user can't pick a product that would be rejected with a 422. Empty/absent
    * (customer has no segment) → nothing is disabled. */
   customerSegments?: string[];
+  /** The customer's segment ids — the match that tells same-named Less / Highly segments apart. */
+  customerSegmentIds?: number[];
   /* The mapped customer's country (customer.primary_address.country). Drives the
    * Domestic/Export currency gate — see `allowedCurrencies`. Absent/empty when
    * no customer is mapped yet, which leaves the currency unrestricted. */
@@ -178,7 +181,7 @@ const isIndia = (c?: string | null): boolean => {
  * customer has already been sent. Worth saying out loud before they commit. */
 const SHARED_PRICE_WARNING_STAGE = 4;
 
-export default function ProductDirectoryModal({ open, leadId, onClose, onAddProduct, onChanged, leadStage, customerSegments, customerCountry, readOnly = false }: Props) {
+export default function ProductDirectoryModal({ open, leadId, onClose, onAddProduct, onChanged, leadStage, customerSegments, customerSegmentIds, customerCountry, readOnly = false }: Props) {
   const toast = useToast();
   const confirm = useConfirm();
   const sharedPriceWarning = (leadStage ?? 1) >= SHARED_PRICE_WARNING_STAGE
@@ -866,7 +869,11 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                        product carries a segment that isn't among them, disable it
                        (greyed) — same rule the backend enforces on map. Products
                        with no segment stay enabled (rule can't be evaluated). */
-                    const offSegment = customerSegmentSet.size > 0 && !!seg && !customerSegmentSet.has(seg.toLowerCase());
+                    // By id when the customer's ids are known; the name set is the fallback.
+                    const prodSegId = p.segment_id ?? p.segment?.id ?? null;
+                    const offSegment = customerSegmentIds?.length
+                      ? prodSegId != null && !customerSegmentIds.includes(Number(prodSegId))
+                      : customerSegmentSet.size > 0 && !!seg && !customerSegmentSet.has(seg.toLowerCase());
                     return {
                       value: String(p.id),
                       // Padded code for display (P-25 → P-025), same as the table

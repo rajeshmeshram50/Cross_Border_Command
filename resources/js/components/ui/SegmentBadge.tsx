@@ -106,27 +106,29 @@ export function SegmentBadgeLine({ label, status, more = 0 }: { label: string; s
 }
 
 /** "S-001: Sugar [Reg-High], Rice [Reg-Low]" for a name list (array or comma string). */
-export function SegmentNameList({ names, codeOf, compact = false }: { names?: string | string[] | null; codeOf?: (name: string) => string | undefined; compact?: boolean }) {
+export type SegmentItem = { name: string; code?: string | null; regulatory_status?: string | null };
+
+/** Pass `items` (known segments, e.g. from `segments` in the API) — the name lookup is only a fallback. */
+export function SegmentNameList({ names, codeOf, compact = false, items }: {
+  names?: string | string[] | null; codeOf?: (name: string) => string | undefined; compact?: boolean; items?: SegmentItem[];
+}) {
   const statusOf = useSegmentStatusByName();
-  const arr = Array.isArray(names) ? names : String(names ?? '').split(',').map(s => s.trim()).filter(Boolean);
-  if (!arr.length) return <>—</>;
+  const rows: { label: string; status: string | null }[] = items
+    ? items.map(s => ({ label: s.code ? `${s.code}: ${s.name}` : s.name, status: s.regulatory_status ?? null }))
+    : (Array.isArray(names) ? names : String(names ?? '').split(',').map(s => s.trim()).filter(Boolean))
+        .map(n => { const code = codeOf?.(n); return { label: code ? `${code}: ${n}` : n, status: statusOf(n) }; });
+  if (!rows.length) return <>—</>;
   // One-line cells: truncate only the first name so its badge and the "+N" stay visible.
-  if (compact) {
-    const code = codeOf?.(arr[0]);
-    return <SegmentBadgeLine label={code ? `${code}: ${arr[0]}` : arr[0]} status={statusOf(arr[0])} more={arr.length - 1} />;
-  }
+  if (compact) return <SegmentBadgeLine label={rows[0].label} status={rows[0].status} more={rows.length - 1} />;
   return (
     <>
-      {arr.map((n, i) => {
-        const code = codeOf?.(n);
-        return (
-          <span key={`${n}-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 6 }}>
-            {code ? `${code}: ${n}` : n}
-            <SegmentBadge status={statusOf(n)} />
-            {i < arr.length - 1 ? ',' : ''}
-          </span>
-        );
-      })}
+      {rows.map((r, i) => (
+        <span key={`${r.label}-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 6 }}>
+          {r.label}
+          <SegmentBadge status={r.status} />
+          {i < rows.length - 1 ? ',' : ''}
+        </span>
+      ))}
     </>
   );
 }

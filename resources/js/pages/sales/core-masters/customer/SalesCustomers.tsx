@@ -1,5 +1,5 @@
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
+import SegmentBadge, { SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
 import './SalesCustomers.css';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -37,7 +37,7 @@ const CustomerEvidenceVaultModal = lazyPage(() => import('./CustomerEvidenceVaul
  * tooltip on names that fit. Used by the table cell AND the "+N" popover — the
  * popover pills had no hover reveal at all, so a long name like
  * "Travel & Luggagewww…" was unreadable there. */
-function SegChip({ name, split = false }: { name: string; split?: boolean }) {
+function SegChip({ name, status, split = false }: { name: string; status?: string | null; split?: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
   const clipped = useIsClipped(ref, name);
   /* List cell: one pill carrying the badge. Popup row (`split`): the name pill and
@@ -47,14 +47,18 @@ function SegChip({ name, split = false }: { name: string; split?: boolean }) {
     return (
       <>
         {clipped ? <Tooltip label={name}>{pill}</Tooltip> : pill}
-        <SegmentNameBadge name={name} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+        {status !== undefined
+          ? <SegmentBadge status={status} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+          : <SegmentNameBadge name={name} style={{ marginLeft: 'auto', flexShrink: 0 }} />}
       </>
     );
   }
   const chip = (
     <span className="smc-seg smc-seg--withbadge">
       <span ref={ref} className="smc-seg-name">{name}</span>
-      <SegmentNameBadge name={name} style={{ marginLeft: 0 }} />
+      {status !== undefined
+        ? <SegmentBadge status={status} style={{ marginLeft: 0, flexShrink: 0 }} />
+        : <SegmentNameBadge name={name} style={{ marginLeft: 0 }} />}
     </span>
   );
   return clipped ? <Tooltip label={name}>{chip}</Tooltip> : chip;
@@ -63,6 +67,8 @@ function SegChip({ name, split = false }: { name: string; split?: boolean }) {
 type Customer = {
   id: string; db_id?: number;
   company: string; type: string; segment: string;
+  /** Each segment with its own Reg status — two may share a name. */
+  segments?: { id: number; code?: string | null; name: string; regulatory_status?: string | null }[];
   country: string; country_iso?: string | null; contact: string; phone: string; email: string;
   whatsapp: 'Yes' | 'No'; consignees: number;
   riskLevel?: string | null; city?: string | null;
@@ -135,7 +141,7 @@ export default function SalesCustomers() {
   const [tabSwitching, setTabSwitching] = useState(false);
   const [q, setQ] = useState('');
   const [wdhOpen, setWdhOpen] = useState(false);
-  const [segOpen, setSegOpen] = useState<{ id: string | number; names: string[]; x: number; y: number } | null>(null);
+  const [segOpen, setSegOpen] = useState<{ id: string | number; items: { name: string; status?: string | null }[]; x: number; y: number } | null>(null);
   // The segments popover is pinned to fixed x/y captured on click; a resize
   // (maximize/minimize/zoom) or scroll makes those coords stale and the popover
   // drifts away from its badge. Close it on either so it never shows stranded —
@@ -401,21 +407,24 @@ export default function SalesCustomers() {
       accessorKey: 'segment',
       meta: { align: 'start' },
       cell: (info: any) => {
-        const segList = String(info.getValue() ?? '').split(',').map((s: string) => s.trim()).filter(Boolean);
+        const row = info.row.original as Customer;
+        const segList: { name: string; status?: string | null }[] = row.segments?.length
+          ? row.segments.map(s => ({ name: s.name, status: s.regulatory_status ?? null }))
+          : String(info.getValue() ?? '').split(',').map((s: string) => s.trim()).filter(Boolean).map((name: string) => ({ name }));
         if (segList.length === 0) return <span className="text-muted">—</span>;
         const extra = segList.length - 1;
-        const rowId = (info.row.original as Customer).id;
+        const rowId = row.id;
         return (
           <span className="d-inline-flex align-items-center" style={{ gap: 4, maxWidth: '100%', minWidth: 0 }}>
             {/* Pill truncates via CSS (.smc-seg); SegChip hangs the hover
                 reveal on it when the name is really cut (QA #39 / #43). */}
-            <SegChip name={segList[0]} />
+            <SegChip name={segList[0].name} status={segList[0].status} />
             {extra > 0 && (
               <Tooltip label={`View ${extra} more`}>
                 <button
                   type="button"
                   className="smc-seg-more"
-                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(prev => prev?.id === rowId ? null : { id: rowId, names: segList, x: b.left, y: b.bottom + 4 }); }}
+                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(prev => prev?.id === rowId ? null : { id: rowId, items: segList, x: b.left, y: b.bottom + 4 }); }}
                 >+{extra}</button>
               </Tooltip>
             )}
@@ -783,18 +792,18 @@ export default function SalesCustomers() {
         // Show ~3 segment rows at a time; the rest go behind the scrollbar.
         // Title stays pinned — only the rows list scrolls.
         const ROWS_MAX_H = 108;            // ≈ 3 rows (~34px each)
-        const estH = Math.min(24 + ROWS_MAX_H + 16, 40 + segOpen.names.length * 34);
+        const estH = Math.min(24 + ROWS_MAX_H + 16, 40 + segOpen.items.length * 34);
         const left = Math.max(8, Math.min(segOpen.x, window.innerWidth - 230));
         const top  = Math.max(8, Math.min(segOpen.y, window.innerHeight - estH - 8));
         return createPortal(
           <>
             <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1090 }} />
             <div className="smc-seg-pop" style={{ position: 'fixed', left, top, zIndex: 1091, width: 268, borderRadius: 12, padding: 8 }}>
-              <div className="smc-seg-pop-title">Segments ({segOpen.names.length})</div>
+              <div className="smc-seg-pop-title">Segments ({segOpen.items.length})</div>
               <div style={{ maxHeight: ROWS_MAX_H, overflowY: 'auto' }}>
-                {segOpen.names.map((name, i) => (
+                {segOpen.items.map((it, i) => (
                   <div key={i} className={`smc-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
-                    <SegChip name={name} split />
+                    <SegChip name={it.name} status={it.status} split />
                   </div>
                 ))}
               </div>
