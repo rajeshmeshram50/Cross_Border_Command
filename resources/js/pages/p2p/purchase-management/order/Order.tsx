@@ -6,11 +6,13 @@ import CreatePoModal from './CreatePoModal';
 // The PO form is a screen of its own: loaded only when one is being created,
 // so the list page doesn't carry it. The type import costs nothing at runtime.
 import type { PoLink } from './create-po/CreatePoForm';
+import type { InspectionDraft, InspectionRecord } from './inspection-shared';
 const CreatePoForm = lazy(() => import('./create-po/CreatePoForm'));
 import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './order.css';
 
 const ManagePaymentRequestsModal = lazy(() => import('./ManagePaymentRequestsModal'));
+const PhysicalInspectionModal = lazy(() => import('./PhysicalInspectionModal'));
 
 type GuideStep = { num: string; title: string; desc: string; icon: ReactNode };
 
@@ -648,7 +650,9 @@ function ZohoCell({ synced, cancelled = false }: { synced: boolean; cancelled?: 
   );
 }
 
-function InspectionCell({ required, done, cancelled = false }: { required: boolean; done: boolean; cancelled?: boolean }) {
+function InspectionCell({ required, done, cancelled = false, onOpen }: {
+  required: boolean; done: boolean; cancelled?: boolean; onOpen: () => void;
+}) {
   if (!required) {
     return (
       <div className="ord-statcell">
@@ -661,7 +665,7 @@ function InspectionCell({ required, done, cancelled = false }: { required: boole
       {done
         ? <span className="ord-status ord-status--ok"><span className="ord-status__dot" />Completed</span>
         : <span className="ord-status ord-status--bad"><span className="ord-status__dot" />Pending</span>}
-      <button type="button" className={`ord-btn ord-btn--insp${done ? ' is-done' : ''}`} disabled={cancelled}>
+      <button type="button" className={`ord-btn ord-btn--insp${done ? ' is-done' : ''}`} disabled={cancelled} onClick={onOpen}>
         {done ? ICON_TICK : ICON_EYE}
         <span>{done ? 'Inspection Done' : 'Physical Inspection'}</span>
       </button>
@@ -793,7 +797,9 @@ function useIsPhone() {
   return isPhone;
 }
 
-function OrderCard({ row, index, onManage }: { row: OrderRow; index: number; onManage: (row: OrderRow) => void }) {
+function OrderCard({ row, index, onManage, onInspect, inspected }: {
+  row: OrderRow; index: number; onManage: (row: OrderRow) => void; onInspect: (row: OrderRow) => void; inspected: boolean;
+}) {
   const category = SUPPLIER_CATEGORY[row.supplierCategory];
   const risk = RISK_LEVEL[row.risk];
   const count = row.invoices.length;
@@ -888,7 +894,7 @@ function OrderCard({ row, index, onManage }: { row: OrderRow; index: number; onM
         </div>
         <div className="ord-card__block">
           <span className="ord-card__label">Physical Inspection</span>
-          <InspectionCell required={row.physicalInspection} done={row.inspectionDone} cancelled={row.cancelled} />
+          <InspectionCell required={row.physicalInspection} done={inspected} cancelled={row.cancelled} onOpen={() => onInspect(row)} />
         </div>
       </div>
 
@@ -921,6 +927,13 @@ export default function Order() {
   const [poLink, setPoLink] = useState<PoLink | null>(null);
 
   const [payRow, setPayRow] = useState<OrderRow | null>(null);
+  const [payStartRaise, setPayStartRaise] = useState(false);
+
+  const [inspectRow, setInspectRow] = useState<OrderRow | null>(null);
+  const [inspections, setInspections] = useState<Record<string, InspectionRecord | null>>({});
+  const [inspDrafts, setInspDrafts] = useState<Record<string, InspectionDraft>>({});
+  const inspectedOf = (r: OrderRow) => (r.po in inspections ? !!inspections[r.po] : r.inspectionDone);
+  const inspectPo = inspectRow?.po ?? '';
 
   const [activeTab, setActiveTab] = useState<TabKey>('all');
 
@@ -1024,9 +1037,44 @@ export default function Order() {
         </Suspense>
       )}
 
+      {inspectRow && (
+        <Suspense fallback={null}>
+          <PhysicalInspectionModal
+            row={inspectRow}
+            record={inspectPo in inspections ? inspections[inspectPo] : undefined}
+            draft={inspDrafts[inspectPo]}
+            onDraftChange={(d) => setInspDrafts((prev) => ({ ...prev, [inspectPo]: d }))}
+            onSignOff={(r) => {
+              setInspections((prev) => ({ ...prev, [inspectPo]: r }));
+              setInspectRow(null);
+            }}
+            onWithdraw={() => {
+              setInspections((prev) => ({ ...prev, [inspectPo]: null }));
+              setInspDrafts((prev) => {
+                const next = { ...prev };
+                delete next[inspectPo];
+                return next;
+              });
+              setInspectRow(null);
+            }}
+            onContinue={() => {
+              const r = inspectRow;
+              setInspectRow(null);
+              setPayStartRaise(true);
+              setPayRow(r);
+            }}
+            onClose={() => setInspectRow(null)}
+          />
+        </Suspense>
+      )}
+
       {payRow && (
         <Suspense fallback={null}>
-          <ManagePaymentRequestsModal row={payRow} onClose={() => setPayRow(null)} />
+          <ManagePaymentRequestsModal
+            row={payRow}
+            startWithRaise={payStartRaise}
+            onClose={() => { setPayRow(null); setPayStartRaise(false); }}
+          />
         </Suspense>
       )}
 
@@ -1161,7 +1209,14 @@ export default function Order() {
           <div className="ord-cards" ref={cardsRef}>
 
             {pageRows.map((row, index) => (
-              <OrderCard key={row.po} row={row} index={start + index} onManage={setPayRow} />
+              <OrderCard
+                key={row.po}
+                row={row}
+                index={start + index}
+                onManage={setPayRow}
+                onInspect={setInspectRow}
+                inspected={inspectedOf(row)}
+              />
             ))}
           </div>
         ) : (
@@ -1280,7 +1335,7 @@ export default function Order() {
                           <>
                             <PoCell span={span}><ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} /></PoCell>
                             <PoCell span={span}>
-                              <InspectionCell required={row.physicalInspection} done={row.inspectionDone} cancelled={row.cancelled} />
+                              <InspectionCell required={row.physicalInspection} done={inspectedOf(row)} cancelled={row.cancelled} onOpen={() => setInspectRow(row)} />
                             </PoCell>
                             <PoCell span={span}><PaymentCell row={row} onManage={setPayRow} /></PoCell>
                             <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} /></PoCell>

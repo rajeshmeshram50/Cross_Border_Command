@@ -205,7 +205,9 @@ function TdsLoading() {
   );
 }
 
-export default function ManagePaymentRequestsModal({ row, onClose }: { row: OrderRow; onClose: () => void }) {
+export default function ManagePaymentRequestsModal({ row, startWithRaise = false, onClose }: {
+  row: OrderRow; startWithRaise?: boolean; onClose: () => void;
+}) {
   useScrollLock(true, '.mpr-card--history');
 
   const cardRef = useRef<HTMLDivElement>(null);
@@ -219,7 +221,7 @@ export default function ManagePaymentRequestsModal({ row, onClose }: { row: Orde
 
   const [tds, setTds] = useState(0);
   const [tdsOpen, setTdsOpen] = useState(false);
-  const [raiseOpen, setRaiseOpen] = useState(false);
+  const [raiseOpen, setRaiseOpen] = useState(startWithRaise);
   const [added, setAdded] = useState<PaymentRequest[]>([]);
   const [payReq, setPayReq] = useState<PaymentRequest | null>(null);
   const [releases, setReleases] = useState<Record<string, ReleasePayment[]>>({});
