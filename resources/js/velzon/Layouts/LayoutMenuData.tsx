@@ -378,7 +378,7 @@ const Navdata = () => {
           // leaf) — same pattern as sales.sign_tracker.
           .filter((c) => isSuperAdmin || perms[c.id]?.can_view
             || (c.id === 'hr.devices' && !!perms['hr.attendance']?.can_view)
-            || ((c.id === 'p2p.order' || c.id === 'p2p.payment_request') && !!perms['p2p.po']?.can_view))
+            || (c.id === 'p2p.payment_request' && !!perms['p2p.po']?.can_view))
           .map((c) => ({
             id: c.id,
             label: c.label,
@@ -414,7 +414,7 @@ const Navdata = () => {
             // so it rides on the Quotation Vs PI permission.
             if (c.id === 'sales.sign_tracker') return !!perms['sales.quotation_vs_pi']?.can_view;
             // Order has no DB module row — it rides on the Purchase Order grant.
-            if (c.id === 'p2p.order' || c.id === 'p2p.payment_request') return !!perms['p2p.po']?.can_view;
+            if (c.id === 'p2p.payment_request') return !!perms['p2p.po']?.can_view;
             return !!perms[c.id]?.can_view;
           })
           .map((c) => ({
