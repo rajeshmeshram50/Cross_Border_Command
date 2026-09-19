@@ -10,9 +10,11 @@ export function Field({ label, children, full, req }: { label: string; children:
 
 /* Every dropdown in the form is the app's standard MasterSelect — a search box
    on top, options below — so the PO form behaves like every other screen.
-   The options here are plain strings, so each is both value and label. */
-export function EditSelect({ value, options, onChange, placeholder }: {
-  value: string; options: string[]; onChange: (v: string) => void; placeholder?: string;
+   The options here are plain strings, so each is both value and label.
+   Also used outside this form (Refund Adjustment, Payment Request), which
+   pass `invalid` to flag a required field — keep that prop working. */
+export function EditSelect({ value, options, onChange, placeholder, invalid }: {
+  value: string; options: string[]; onChange: (v: string) => void; placeholder?: string; invalid?: boolean;
 }) {
   return (
     <MasterSelect
@@ -20,6 +22,7 @@ export function EditSelect({ value, options, onChange, placeholder }: {
       options={options.map((o) => ({ value: o, label: o }))}
       onChange={onChange}
       placeholder={placeholder ?? '— Select —'}
+      invalid={invalid}
     />
   );
 }

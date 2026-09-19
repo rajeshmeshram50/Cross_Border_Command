@@ -46,6 +46,8 @@ export type PaymentRequestRow = {
   percentOfTotal: number;
   /** Set only when status is 'declined'. */
   decline: DeclineRecord | null;
+  /** Remark and files recorded with an approve / decline decision. */
+  decision?: { on: string; by: PartyRef; note: string; files: string[] };
 };
 
 export const STATUS_LABEL: Record<RequestStatus, string> = {
@@ -192,5 +194,33 @@ const ROWS: PaymentRequestRow[] = [
 
 /** Stands in for `GET /p2p/payment-requests` until the API lands. */
 export async function fetchPaymentRequests(): Promise<PaymentRequestRow[]> {
-  return ROWS;
+  return ROWS.map(r => ({ ...r }));
+}
+
+export type Decision =
+  | { kind: 'approve'; amount: number; note: string; files: string[]; by: PartyRef }
+  | { kind: 'decline'; reason: string; files: string[]; by: PartyRef };
+
+/** Stands in for `POST /p2p/payment-requests/{id}/approve|decline`. Only a
+    request still awaiting approval can be decided. */
+export async function decidePaymentRequest(requestId: string, d: Decision): Promise<PaymentRequestRow> {
+  const row = ROWS.find(r => r.requestId === requestId);
+  if (!row) throw new Error('This request is no longer available.');
+  if (row.status !== 'awaiting') throw new Error(`${requestId} has already been ${row.status}.`);
+  const on = new Date().toISOString().slice(0, 10);
+  if (d.kind === 'approve') {
+    row.status = 'approved';
+    row.approvedAmount = d.amount;
+    row.approvedNote = d.amount < row.requestedAmount
+      ? `₹${(row.requestedAmount - d.amount).toLocaleString('en-IN')} held back`
+      : `₹${d.amount.toLocaleString('en-IN')} due`;
+    row.decision = { on, by: d.by, note: d.note, files: d.files };
+  } else {
+    row.status = 'declined';
+    row.approvedAmount = null;
+    row.approvedNote = 'declined';
+    row.decline = { on, by: d.by, reason: d.reason };
+    row.decision = { on, by: d.by, note: d.reason, files: d.files };
+  }
+  return { ...row };
 }

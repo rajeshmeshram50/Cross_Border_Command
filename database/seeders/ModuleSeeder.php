@@ -468,6 +468,7 @@ class ModuleSeeder extends Seeder
                 ['name' => 'Supplier Purchase Invoice (SPI)', 'slug' => 'p2p.spi', 'icon' => 'CreditCard', 'description' => 'Process supplier invoices & taxes'],
                 ['name' => 'Debit Note',                     'slug' => 'p2p.debit_note', 'icon' => 'FileText', 'description' => 'Issue & track supplier debit notes for returns & adjustments'],
                 ['name' => 'Order',                          'slug' => 'p2p.order', 'icon' => 'FileText', 'description' => 'Raise purchase orders and track their documents & payments'],
+                ['name' => 'Payment Request Management',     'slug' => 'p2p.payment_request', 'icon' => 'IndianRupee', 'description' => 'Review, approve or decline payment requests raised on POs and SPIs'],
             ],
         ];
 

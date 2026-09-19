@@ -1,10 +1,12 @@
 // P2P → Payment Request Management: every payment request raised on a PO or an SPI.
 // Static data for now (see paymentRequestData.ts); the layout reuses the shared P2P styles.
-import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import Badge, { type BadgeVariant } from '../../../../components/ui/Badge';
 import { IcoAlert, IcoArrowR, IcoCard, IcoStar, IcoChat, IcoCheck, IcoChevron, IcoCircleX, IcoClock, IcoEye, IcoFile, IcoList, IcoScales, IcoSearch, IcoSend } from '../../icons';
 import DeclineReasonModal from './DeclineReasonModal';
+// The request view is a screen of its own, loaded only when one is opened.
+const PaymentRequestDetail = lazy(() => import('./PaymentRequestDetail'));
 import {
   fetchPaymentRequests, STATUS_LABEL, SUPPLIER_TAG_LABEL,
   type DocRef, type PartyRef, type PaymentRequestRow, type RequestStatus, type SupplierTag,
@@ -143,12 +145,16 @@ export default function PaymentRequestManagement() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const [reasonRow, setReasonRow] = useState<PaymentRequestRow | null>(null);
+  const [viewId, setViewId] = useState<string | null>(null);
+  const closeView = useCallback(() => setViewId(null), []);
 
+  const [reload, setReload] = useState(0);
   useEffect(() => {
     let live = true;
     void fetchPaymentRequests().then(list => { if (live) { setRows(list); setLoading(false); } });
     return () => { live = false; };
-  }, []);
+  }, [reload]);
+  const refresh = useCallback(() => setReload(n => n + 1), []);
 
   const counts = useMemo(() => ({
     all: rows.length,
@@ -339,7 +345,7 @@ export default function PaymentRequestManagement() {
 
                     <td>
                       <div className="prm-acts">
-                        <button type="button" className="ord-btn prm-viewbtn" title={`View ${row.requestId}`}>
+                        <button type="button" className="ord-btn prm-viewbtn" title={`View ${row.requestId}`} onClick={() => setViewId(row.requestId)}>
                           <span className="prm-viewbtn__ico"><IcoEye size={9} /></span>
                           <span>View Request</span>
                         </button>
@@ -371,6 +377,11 @@ export default function PaymentRequestManagement() {
       </div>
 
       {reasonRow && <DeclineReasonModal row={reasonRow} onClose={() => setReasonRow(null)} />}
+      {viewId && (
+        <Suspense fallback={null}>
+          <PaymentRequestDetail requestId={viewId} onBack={closeView} onOpenRequest={setViewId} onChanged={refresh} />
+        </Suspense>
+      )}
     </div>
   );
 }

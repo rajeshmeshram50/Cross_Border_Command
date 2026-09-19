@@ -142,9 +142,9 @@ const LIST_TABS: ListTab[] = [
   },
 ];
 
-type Column = { label: string; width: number; groupEnd?: boolean };
+export type Column = { label: string; width: number; groupEnd?: boolean };
 
-const COLUMNS: Column[] = [
+export const ORDER_COLUMNS: Column[] = [
   { label: 'Sr. No',                     width: 44 },
   { label: 'PO Number',                  width: 150 },
   { label: 'PO Type',                    width: 132 },
@@ -170,11 +170,11 @@ const COLUMNS: Column[] = [
   { label: 'Action',                     width: 412 },
 ];
 
-const TABLE_WIDTH = COLUMNS.reduce((total, col) => total + col.width, 0);
+const TABLE_WIDTH = ORDER_COLUMNS.reduce((total, col) => total + col.width, 0);
 
 type PaymentStatus = 'full' | 'partial' | 'pending';
 
-type InvoiceLine = {
+export type InvoiceLine = {
   spi: string; spiDate: string;
   amount: number; paid: number; due: number; status: PaymentStatus;
   grn: string; grnDate: string;
@@ -1013,6 +1013,121 @@ function CancelBadge({ reason }: { reason?: string }) {
   return <Badge appearance="outline" variant="danger" icon={ICON_X_SM} className="ord-cancelbadge" title={reason}>Cancelled</Badge>;
 }
 
+// One PO as it appears on the list: a <tbody> spanning a row per mapped SPI.
+// Payment Request Management reuses it (without the Action column) for its status tabs.
+export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, showActions = true }: {
+  row: OrderRow; sr: number; inspected: boolean;
+  onInspect: (row: OrderRow) => void; onManage: (row: OrderRow) => void;
+  onEdit?: (row: OrderRow) => void; showActions?: boolean;
+}) {
+  const lines = row.invoices.length > 0 ? row.invoices : [null];
+  const span = lines.length;
+
+  return (
+    <tbody className={row.cancelled ? 'ord-po--cancelled' : undefined}>
+      {lines.map((line, lineIndex) => {
+        const isFirst = lineIndex === 0;
+        const isLast = lineIndex === span - 1;
+        const rowClass = [isFirst ? 'is-first' : '', isLast ? 'is-last' : '']
+          .filter(Boolean).join(' ');
+
+        return (
+          <tr key={line ? line.spi : 'no-invoice'} className={rowClass || undefined}>
+
+            {isFirst && (
+              <>
+
+                <PoCell span={span}><span className="ord-srnum">{sr}</span></PoCell>
+
+                <PoCell span={span}>
+                  <IdCell id={row.po} date={row.poDate} />
+                  {row.physicalInspection && (
+                    <Badge appearance="outline" variant="danger" icon={ICON_WARN} className="ord-physinsp">Physical Inspection</Badge>
+                  )}
+                  {row.cancelled && <CancelBadge reason={row.cancelReason} />}
+                </PoCell>
+
+                <PoCell span={span}>
+                  <span className={`ord-typepill ord-typepill--${row.type}`}>
+                    <span className="ord-typepill__ico">{PO_TYPE[row.type].icon}</span>
+                    {PO_TYPE[row.type].label}
+                  </span>
+                </PoCell>
+
+                <PoCell span={span}>
+                  <span className={`ord-doctype ord-doctype--${row.docType === 'International' ? 'intl' : 'dom'}`}>
+                    {row.docType}
+                  </span>
+                </PoCell>
+
+                <PoCell span={span}>
+                  {row.shipment
+                    ? <IdCell id={row.shipment} date={row.shipmentDate} />
+                    : <span className="ord-dash">—</span>}
+                </PoCell>
+                <PoCell span={span}><IdCell id={row.opportunity} date={row.opportunityDate} /></PoCell>
+                <PoCell span={span}><IdCell id={row.procurement} date={row.procurementDate} /></PoCell>
+
+                <PoCell span={span}>
+                  <div className="ord-supplier">
+                    <span className="ord-supplier__name" title={row.supplier}>{row.supplier}</span>
+                    <Badge
+                      appearance="outline"
+                      variant={SUPPLIER_CATEGORY[row.supplierCategory].variant}
+                      icon={SUPPLIER_CATEGORY[row.supplierCategory].icon}
+                      className="ord-supplier__cat"
+                    >
+                      {SUPPLIER_CATEGORY[row.supplierCategory].label}
+                    </Badge>
+                  </div>
+                </PoCell>
+
+                <PoCell span={span}>
+                  <Badge appearance="outline" variant={RISK_LEVEL[row.risk].variant} icon={RISK_LEVEL[row.risk].icon} className="ord-risk">
+                    {RISK_LEVEL[row.risk].label}
+                  </Badge>
+                </PoCell>
+
+                <PoCell span={span}><span className="ord-edd">{formatDate(row.expectedDelivery)}</span></PoCell>
+
+                <PoCell span={span}><span className="ord-amt">{formatMoney(row.total)}</span></PoCell>
+                <PoCell span={span}><span className="ord-amt ord-amt--net">{formatMoney(row.net)}</span></PoCell>
+                <PoCell span={span}><span className="ord-amt ord-amt--paid">{formatMoney(row.paid)}</span></PoCell>
+                <PoCell span={span} groupEnd>
+                  <span className="ord-amt ord-amt--bal">{formatMoney(row.balance)}</span>
+                </PoCell>
+              </>
+            )}
+
+            {line ? (
+              <InvoiceCells line={line} index={lineIndex} count={span} />
+            ) : (
+              <>
+                <td className="ord-doc ord-doc--spi"><span className="ord-dash">—</span></td>
+                <td className="ord-doc ord-doc--grn"><span className="ord-dash">—</span></td>
+                <td className="ord-doc ord-doc--qa"><span className="ord-dash">—</span></td>
+              </>
+            )}
+
+            {isFirst && (
+              <>
+                <PoCell span={span}><ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} /></PoCell>
+                <PoCell span={span}>
+                  <InspectionCell required={row.physicalInspection} done={inspected} cancelled={row.cancelled} onOpen={() => onInspect(row)} />
+                </PoCell>
+                <PoCell span={span}><PaymentCell row={row} onManage={onManage} /></PoCell>
+                <PoCell span={span}><AdrCell adr={row.adr} /></PoCell>
+                <PoCell span={span}><RecoveryCell row={row} /></PoCell>
+                {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} onEdit={() => onEdit?.(row)} /></PoCell>}
+              </>
+            )}
+          </tr>
+        );
+      })}
+    </tbody>
+  );
+}
+
 function inTab(row: OrderRow, tab: TabKey): boolean {
   if (tab === 'with') return row.shipment !== null;
   if (tab === 'without') return row.shipment === null;
@@ -1517,14 +1632,14 @@ export default function Order() {
           <table className="ord-table" style={{ width: TABLE_WIDTH }}>
 
             <colgroup>
-              {COLUMNS.map((col) => (
+              {ORDER_COLUMNS.map((col) => (
                 <col key={col.label} style={{ width: col.width }} />
               ))}
             </colgroup>
 
             <thead>
               <tr>
-                {COLUMNS.map((col) => (
+                {ORDER_COLUMNS.map((col) => (
                   <th key={col.label} className={col.groupEnd ? 'ord-table__group-end' : undefined}>
                     {col.label}
                   </th>
@@ -1532,115 +1647,17 @@ export default function Order() {
               </tr>
             </thead>
 
-            {pageRows.map((row, poIndex) => {
-
-              const lines = row.invoices.length > 0 ? row.invoices : [null];
-              const span = lines.length;
-
-              return (
-                <tbody key={row.po} className={row.cancelled ? 'ord-po--cancelled' : undefined}>
-                  {lines.map((line, lineIndex) => {
-                    const isFirst = lineIndex === 0;
-                    const isLast = lineIndex === span - 1;
-                    const rowClass = [isFirst ? 'is-first' : '', isLast ? 'is-last' : '']
-                      .filter(Boolean).join(' ');
-
-                    return (
-                      <tr key={line ? line.spi : 'no-invoice'} className={rowClass || undefined}>
-
-                        {isFirst && (
-                          <>
-
-                            <PoCell span={span}><span className="ord-srnum">{start + poIndex + 1}</span></PoCell>
-
-                            <PoCell span={span}>
-                              <IdCell id={row.po} date={row.poDate} />
-                              {row.physicalInspection && (
-                                <Badge appearance="outline" variant="danger" icon={ICON_WARN} className="ord-physinsp">Physical Inspection</Badge>
-                              )}
-                              {row.cancelled && <CancelBadge reason={row.cancelReason} />}
-                            </PoCell>
-
-                            <PoCell span={span}>
-                              <span className={`ord-typepill ord-typepill--${row.type}`}>
-                                <span className="ord-typepill__ico">{PO_TYPE[row.type].icon}</span>
-                                {PO_TYPE[row.type].label}
-                              </span>
-                            </PoCell>
-
-                            <PoCell span={span}>
-                              <span className={`ord-doctype ord-doctype--${row.docType === 'International' ? 'intl' : 'dom'}`}>
-                                {row.docType}
-                              </span>
-                            </PoCell>
-
-                            <PoCell span={span}>
-                              {row.shipment
-                                ? <IdCell id={row.shipment} date={row.shipmentDate} />
-                                : <span className="ord-dash">—</span>}
-                            </PoCell>
-                            <PoCell span={span}><IdCell id={row.opportunity} date={row.opportunityDate} /></PoCell>
-                            <PoCell span={span}><IdCell id={row.procurement} date={row.procurementDate} /></PoCell>
-
-                            <PoCell span={span}>
-                              <div className="ord-supplier">
-                                <span className="ord-supplier__name" title={row.supplier}>{row.supplier}</span>
-                                <Badge
-                                  appearance="outline"
-                                  variant={SUPPLIER_CATEGORY[row.supplierCategory].variant}
-                                  icon={SUPPLIER_CATEGORY[row.supplierCategory].icon}
-                                  className="ord-supplier__cat"
-                                >
-                                  {SUPPLIER_CATEGORY[row.supplierCategory].label}
-                                </Badge>
-                              </div>
-                            </PoCell>
-
-                            <PoCell span={span}>
-                              <Badge appearance="outline" variant={RISK_LEVEL[row.risk].variant} icon={RISK_LEVEL[row.risk].icon} className="ord-risk">
-                                {RISK_LEVEL[row.risk].label}
-                              </Badge>
-                            </PoCell>
-
-                            <PoCell span={span}><span className="ord-edd">{formatDate(row.expectedDelivery)}</span></PoCell>
-
-                            <PoCell span={span}><span className="ord-amt">{formatMoney(row.total)}</span></PoCell>
-                            <PoCell span={span}><span className="ord-amt ord-amt--net">{formatMoney(row.net)}</span></PoCell>
-                            <PoCell span={span}><span className="ord-amt ord-amt--paid">{formatMoney(row.paid)}</span></PoCell>
-                            <PoCell span={span} groupEnd>
-                              <span className="ord-amt ord-amt--bal">{formatMoney(row.balance)}</span>
-                            </PoCell>
-                          </>
-                        )}
-
-                        {line ? (
-                          <InvoiceCells line={line} index={lineIndex} count={span} />
-                        ) : (
-                          <>
-                            <td className="ord-doc ord-doc--spi"><span className="ord-dash">—</span></td>
-                            <td className="ord-doc ord-doc--grn"><span className="ord-dash">—</span></td>
-                            <td className="ord-doc ord-doc--qa"><span className="ord-dash">—</span></td>
-                          </>
-                        )}
-
-                        {isFirst && (
-                          <>
-                            <PoCell span={span}><ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} /></PoCell>
-                            <PoCell span={span}>
-                              <InspectionCell required={row.physicalInspection} done={inspectedOf(row)} cancelled={row.cancelled} onOpen={() => setInspectRow(row)} />
-                            </PoCell>
-                            <PoCell span={span}><PaymentCell row={row} onManage={setPayRow} /></PoCell>
-                            <PoCell span={span}><AdrCell adr={row.adr} /></PoCell>
-                            <PoCell span={span}><RecoveryCell row={row} /></PoCell>
-                            <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} onEdit={() => openEdit(row)} /></PoCell>
-                          </>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              );
-            })}
+            {pageRows.map((row, poIndex) => (
+              <OrderRowBody
+                key={row.po}
+                row={row}
+                sr={start + poIndex + 1}
+                inspected={inspectedOf(row)}
+                onInspect={setInspectRow}
+                onManage={setPayRow}
+                onEdit={openEdit}
+              />
+            ))}
           </table>
         </div>
         )}
@@ -1736,11 +1753,11 @@ function OrderListSkeleton({ phone }: { phone: boolean }) {
     <div className="ord-table-scroll">
       <table className="ord-table" style={{ width: TABLE_WIDTH }}>
         <colgroup>
-          {COLUMNS.map((col) => <col key={col.label} style={{ width: col.width }} />)}
+          {ORDER_COLUMNS.map((col) => <col key={col.label} style={{ width: col.width }} />)}
         </colgroup>
         <thead>
           <tr>
-            {COLUMNS.map((col) => (
+            {ORDER_COLUMNS.map((col) => (
               <th key={col.label} className={col.groupEnd ? 'ord-table__group-end' : undefined}>{col.label}</th>
             ))}
           </tr>
@@ -1749,7 +1766,7 @@ function OrderListSkeleton({ phone }: { phone: boolean }) {
           <tbody key={rowIndex}>
             {[0, 1].map((line) => (
               <tr key={line} className="ord-skel-tr">
-                {COLUMNS.map((col) => (
+                {ORDER_COLUMNS.map((col) => (
                   <td key={col.label} className={col.groupEnd ? 'ord-table__group-end' : undefined}>
                     <span className="spi-sk-bar" style={{ width: Math.round(col.width * 0.6) }} />
                   </td>

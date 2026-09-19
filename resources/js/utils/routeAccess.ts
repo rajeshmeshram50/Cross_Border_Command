@@ -125,7 +125,7 @@ const P2P_LEAF: Record<string, string> = {
   // rides on the Purchase Order grant, same pattern as sales.sign_tracker.
   '/p2p/order': 'p2p.order',
   // Same for the new Payment Request module — no module row of its own yet.
-  '/p2p/payment-request': 'p2p.po',
+  '/p2p/payment-request': 'p2p.payment_request',
   '/p2p/advance-refund-adjustment': 'p2p.po',
 };
 
