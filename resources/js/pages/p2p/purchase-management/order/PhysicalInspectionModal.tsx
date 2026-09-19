@@ -10,7 +10,7 @@ import {
   type InspectionDraft, type InspectionLine, type InspectionProduct, type InspectionRecord, type ProofFile, type Verdict,
 } from './inspection-shared';
 import InspectionAttachmentsModal from './InspectionAttachmentsModal';
-import ProductDescriptionModal from './ProductDescriptionModal';
+import InspectionProductView from './InspectionProductView';
 import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './physical-inspection.css';
 
@@ -93,16 +93,16 @@ export default function PhysicalInspectionModal({
   useEffect(() => { cardRef.current?.focus(); }, []);
 
   const [attFor, setAttFor] = useState<string | null>(null);
-  const [descFor, setDescFor] = useState<InspectionProduct | null>(null);
+  const [viewFor, setViewFor] = useState<InspectionProduct | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || attFor || descFor) return;
+      if (e.key !== 'Escape' || attFor || viewFor) return;
       onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, attFor, descFor]);
+  }, [onClose, attFor, viewFor]);
 
   const rec = useMemo(
     () => (record === undefined ? (row.inspectionDone ? seedRecord(row) : null) : record),
@@ -213,7 +213,7 @@ export default function PhysicalInspectionModal({
           onClose={() => setAttFor(null)}
         />
       )}
-      {descFor && <ProductDescriptionModal product={descFor} onClose={() => setDescFor(null)} />}
+      {viewFor && <InspectionProductView product={viewFor} onClose={() => setViewFor(null)} />}
 
       <div className="spi-mdl pins-card" role="dialog" aria-modal="true" aria-labelledby="pins-title" tabIndex={-1} ref={cardRef}>
 
@@ -288,7 +288,7 @@ export default function PhysicalInspectionModal({
                       </td>
                       <td className="pins-desc">
                         <span className="pins-desc__txt">{p.desc}</span>
-                        <button type="button" className="pins-desc__more" onClick={() => setDescFor(p)}>… Read more</button>
+                        <button type="button" className="pins-desc__more" onClick={() => setViewFor(p)}>… Read more</button>
                       </td>
                       <td className="pins-td-c"><span className="pins-qty">{p.qty}</span></td>
                       <td className="pins-td-c">
