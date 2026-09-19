@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
-import SegmentBadge, { segmentLabel, SegmentBadgeLine, SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
+import SegmentBadge, { segmentLabel, SegmentBadgeLine, SegmentNameBadge, SegmentNameList } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
@@ -379,7 +379,7 @@ export default function AddVendorModal(props: {
   const [kycSub,   setKycSub]   = useState<KycSubTab>('owner');
   const [prevOpen, setPrevOpen] = useState(false);
 
-  type Opt = { value: string; label: string; reg?: string };
+  type Opt = { value: string; label: string; reg?: string; code?: string };
   const [vendorTypeOpts, setVendorTypeOpts]     = useState<Opt[]>([]);
   const [riskLevelOpts,  setRiskLevelOpts]      = useState<Opt[]>([]);
   const [segmentOpts,    setSegmentOpts]        = useState<Opt[]>([]);
@@ -920,7 +920,7 @@ export default function AddVendorModal(props: {
       setBehaviourOpts(toOpt(b.vendor_behaviour));
       setSegmentOpts(
         (b.segments || [])
-          .map(r => ({ value: String(r.id), label: String(r.title ?? r.name ?? ''), reg: (r as { regulatory_status?: string }).regulatory_status }))
+          .map(r => ({ value: String(r.id), label: String(r.title ?? r.name ?? ''), reg: (r as { regulatory_status?: string }).regulatory_status, code: (r as { code?: string }).code }))
           .filter(o => o.value !== '' && o.label !== '')
       );
       setComplianceOpts(toOpt(b.compliance_behaviours));
@@ -2632,6 +2632,7 @@ export default function AddVendorModal(props: {
               label: string;
               value: string;
               node?: React.ReactNode;   // rich value (e.g. segment badges); `value` stays the tooltip text
+              tip?: React.ReactNode;    // rich tooltip; falls back to `value`
               href?: string;        
               suffix?: string;      
             };
@@ -2659,7 +2660,9 @@ export default function AddVendorModal(props: {
                 { label: 'Legal Name',           value: legalName || '—' },
                 { label: 'Supplier Type',        value: labelFor(vendorType, SUPPLIER_TYPE_OPTS) || vendorType || '—' },
                 { label: 'Segment',              value: segment.map(s => segText(s)).join(', ') || '—',
-                  node: segment.length ? (() => { const o = segmentOpts.find(x => x.value === String(segment[0])); return <SegmentBadgeLine label={o?.label ?? String(segment[0])} status={o?.reg} more={segment.length - 1} />; })() : undefined },
+                  node: segment.length ? (() => { const o = segmentOpts.find(x => x.value === String(segment[0])); return <SegmentBadgeLine label={o?.label ?? String(segment[0])} status={o?.reg} more={segment.length - 1} />; })() : undefined,
+                  // One line per segment: code, name and its own High / Low badge.
+                  tip: segment.length ? <SegmentNameList items={segment.map(id => { const o = segmentOpts.find(x => x.value === String(id)); return { name: o?.label ?? String(id), code: o?.code ?? null, regulatory_status: o?.reg ?? null }; })} /> : undefined },
                 { label: 'Risk Level',           value: labelFor(riskLevel, riskLevelOpts) || '—' },
                 { label: 'Supplier Behaviour',   value: (SUPPLIER_BEHAVIOUR_OPTS.find(o => o.value === vendorBehaviour)?.label) || '—' },
                 { label: 'Supplier Category', value: (SUPPLIER_CATEGORY_OPTS.find(o => o.value === supplierCategory)?.label) || '—' },
@@ -2789,7 +2792,7 @@ export default function AddVendorModal(props: {
                                     {f.href ? (
                                       <Tooltip label={f.value}><a href={f.href} target="_blank" rel="noopener noreferrer" className="avm-prev-v avm-prev-link">{f.value}</a></Tooltip>
                                     ) : (
-                                      <Tooltip label={f.value}><span className="avm-prev-v">{f.node ?? f.value}</span></Tooltip>
+                                      <Tooltip label={f.tip ?? f.value}><span className="avm-prev-v">{f.node ?? f.value}</span></Tooltip>
                                     )}
                                     {f.suffix ? <span className="avm-prev-suffix">{f.suffix}</span> : null}
                                   </div>

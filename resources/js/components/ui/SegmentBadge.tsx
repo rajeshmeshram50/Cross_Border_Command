@@ -89,6 +89,12 @@ export function useSegmentStatusByName(): (name?: string | null) => string | nul
 }
 
 /** Badge for a segment known only by name (Reg-High when the name has both). Renders nothing when unknown. */
+/** Badge for a segment item: its own tier when known, else the name lookup. */
+export function SegmentItemBadge({ item, style }: { item: SegmentItem; style?: CSSProperties }) {
+  if (item.regulatory_status !== undefined) return <SegmentBadge status={item.regulatory_status} style={{ marginLeft: 5, flexShrink: 0, ...style }} />;
+  return <SegmentNameBadge name={item.name} style={style} />;
+}
+
 export function SegmentNameBadge({ name, style }: { name?: string | null; style?: CSSProperties }) {
   const statusOf = useSegmentStatusByName();
   return <SegmentBadge status={statusOf(name)} style={{ marginLeft: 5, flexShrink: 0, ...style }} />;

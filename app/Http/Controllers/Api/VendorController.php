@@ -2045,7 +2045,7 @@ class VendorController extends Controller
                 'vendor_types'          => $active(VendorTypes::class,          ['id', 'name']),
                 'risk_levels'           => $active(RiskLevels::class,           ['id', 'name']),
                 'vendor_behaviour'      => $active(VendorBehaviour::class,      ['id', 'name']),
-                'segments'              => $active(Segments::class,             ['id', 'name', 'regulatory_status']),
+                'segments'              => $active(Segments::class,             ['id', 'code', 'name', 'regulatory_status']),
                 'compliance_behaviours' => $active(ComplianceBehaviours::class, ['id', 'name']),
                 'classifications'       => $active(CustomerClassifications::class, ['id', 'name']),
                 'address_types'         => $active(AddressTypes::class,           ['id', 'name']),
