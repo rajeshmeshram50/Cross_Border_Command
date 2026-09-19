@@ -13,6 +13,7 @@
 }
 
 .cpay-f label {
+  margin-bottom: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -372,55 +373,103 @@
 .cpay-file {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   max-width: 100%;
-  padding: 4px 8px;
-  border-radius: 9px;
-  background: #f4fbfd;
-  border: 1px solid #dceef4;
+  padding: 5px 6px 5px 8px;
+  border-radius: 13px;
+  background: linear-gradient(180deg, #fff, #f4fbfd);
+  border: 1.5px solid #cfe8f1;
+  box-shadow: 0 3px 10px -5px rgba(8, 80, 110, .35), inset 0 1px 0 #fff;
 }
 
 [data-bs-theme="dark"] .cpay-file {
   background: rgba(6, 182, 212, .08);
-  border-color: rgba(6, 182, 212, .25);
+  border-color: rgba(6, 182, 212, .3);
+  box-shadow: none;
 }
 
 .cpay-file__ico {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
   flex-shrink: 0;
-  color: #0e7490;
+  border-radius: 8px;
+  color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #0891b2 65%, #0e7490);
+  box-shadow: 0 3px 8px -3px rgba(8, 145, 178, .65), inset 0 1px 0 rgba(255, 255, 255, .35);
 }
 
 .cpay-file__name {
-  font-size: 10px;
-  font-weight: 700;
+  max-width: 112px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: -.1px;
   color: #0c4a6e;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 [data-bs-theme="dark"] .cpay-file__name {
   color: #cffafe;
 }
 
+.cpay-file__sep {
+  width: 1px;
+  height: 20px;
+  flex-shrink: 0;
+  background: #dcecf3;
+}
+
+[data-bs-theme="dark"] .cpay-file__sep {
+  background: rgba(6, 182, 212, .3);
+}
+
+.cpay-fbtns {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
 .cpay-fbtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 30px;
+  height: 30px;
   flex-shrink: 0;
-  border-radius: 6px;
+  border: none;
+  border-radius: 9px;
   cursor: pointer;
-  color: #0e7490;
-  background: #fff;
-  border: 1px solid #c4eef5;
+  color: #fff;
+  transition: filter .15s, box-shadow .15s, transform .12s;
+}
+
+.cpay-fbtn--view {
+  background: linear-gradient(135deg, #22d3ee, #0891b2 65%, #0e7490);
+  box-shadow: 0 3px 9px -3px rgba(8, 145, 178, .7), inset 0 1px 0 rgba(255, 255, 255, .3);
+}
+
+.cpay-fbtn--dl {
+  background: linear-gradient(135deg, #0e7490, #0c4a6e);
+  box-shadow: 0 3px 9px -3px rgba(12, 74, 110, .7), inset 0 1px 0 rgba(255, 255, 255, .22);
 }
 
 .cpay-fbtn:hover {
-  border-color: #22d3ee;
-  background: #f0fdff;
+  filter: brightness(1.1);
+}
+
+.cpay-fbtn:active {
+  transform: translateY(1px);
+}
+
+.cpay-file__ico svg,
+.cpay-fbtn svg {
+  width: 13px;
+  height: 13px;
 }
 
 .cpay-noproof {
@@ -461,18 +510,18 @@
 }
 
 .cpay-act--mail {
-  background: linear-gradient(135deg, #22d3ee 0%, #0891b2 60%, #0e7490 100%);
-  box-shadow: 0 4px 12px -3px rgba(8, 145, 178, .65);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, .2), rgba(255, 255, 255, 0) 54%), linear-gradient(90deg, #0e7490, #22b8d6 52%, #5ee0f2);
+  box-shadow: 0 2px 8px -3px rgba(12, 74, 110, .55), inset 0 1px 0 rgba(255, 255, 255, .25);
 }
 
 .cpay-act--edit {
-  background: linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%);
-  box-shadow: 0 4px 12px -3px rgba(124, 58, 237, .6);
+  background: linear-gradient(135deg, #22d3ee 0%, #0891b2 60%, #0e7490 100%);
+  box-shadow: 0 4px 12px -3px rgba(8, 145, 178, .65), inset 0 1px 0 rgba(255, 255, 255, .35);
 }
 
 .cpay-act--del {
-  background: linear-gradient(135deg, #fb7185 0%, #dc2626 100%);
-  box-shadow: 0 4px 12px -3px rgba(220, 38, 38, .55);
+  background: linear-gradient(135deg, #fb7185 0%, #ef4444 45%, #b91c1c 100%);
+  box-shadow: 0 4px 12px -3px rgba(220, 38, 38, .6), inset 0 1px 0 rgba(255, 255, 255, .32);
 }
 
 .cpay-act:disabled {
@@ -531,13 +580,13 @@
   color: #8aa5b2;
 }
 
-@media (max-width: 1180px) {
+@container mprcard (max-width: 1145px) {
   .cpay-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 1024px) {
+@container mprcard (max-width: 993px) {
   .cpay-cols {
     grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
     gap: 8px 12px;
@@ -570,7 +619,7 @@
   }
 }
 
-@media (max-width: 760px) {
+@container mprcard (max-width: 737px) {
   .cpay-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
