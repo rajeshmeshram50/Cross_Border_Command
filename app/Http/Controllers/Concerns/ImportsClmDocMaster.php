@@ -84,7 +84,8 @@ trait ImportsClmDocMaster
                while quietly losing an authority. */
             $ids = [];
             $unknown = [];
-            foreach (explode(',', $auth) as $tok) {
+            // Comma, semicolon or a line break (Alt+Enter in Excel) all separate.
+            foreach (preg_split('/[,;\r\n]+/', $auth) as $tok) {
                 $tok = trim($tok);
                 if ($tok === '') continue;
                 $id = ctype_digit($tok)

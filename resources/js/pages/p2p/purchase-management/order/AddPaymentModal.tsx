@@ -51,7 +51,7 @@ function amountValue(v: string): number {
   return Number.isNaN(n) ? 0 : n;
 }
 
-function Ref({ label, value, mono, extra }: { label: string; value: string; mono?: boolean; extra?: string }) {
+export function Ref({ label, value, mono, extra }: { label: string; value: string; mono?: boolean; extra?: string }) {
   return (
     <div className={`apay-ref${mono ? ' apay-ref--mono' : ''}`}>
       <span className="apay-ref__k">{label}{extra}</span>

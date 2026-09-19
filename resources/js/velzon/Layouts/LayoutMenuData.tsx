@@ -21,6 +21,7 @@ const iconMap: Record<string, string> = {
   Package: "ri-box-3-line",
   Store:   "ri-store-2-line",
   FileText: "ri-file-text-line",
+  FileInput: "ri-file-download-line",
   KeyRound: "ri-key-2-line",
   Compass:  "ri-compass-3-line",
   ShoppingBag: "ri-shopping-bag-3-line",
@@ -128,6 +129,7 @@ const LEAF_DESC: Record<string, string> = {
   "p2p.debit_note": "Issue & track supplier debit notes for returns & adjustments.",
   "p2p.order": "New purchase order module (in development).",
   "p2p.payment_request": "Review and action every pending PO payment request.",
+  "p2p.advance_refund": "Adjust refunds against advances already released.",
 };
 
 const slugToPath = (slug: string): string => {
@@ -237,6 +239,7 @@ const p2pLeafLink = (leafId: string): string => {
     case "p2p.debit_note":    return "/p2p/debit-note";
     case "p2p.order":         return "/p2p/order";
     case "p2p.payment_request": return "/p2p/payment-request";
+    case "p2p.advance_refund":  return "/p2p/advance-refund-adjustment";
     default:                  return "/p2p";
   }
 };
@@ -378,7 +381,7 @@ const Navdata = () => {
           // leaf) — same pattern as sales.sign_tracker.
           .filter((c) => isSuperAdmin || perms[c.id]?.can_view
             || (c.id === 'hr.devices' && !!perms['hr.attendance']?.can_view)
-            || (c.id === 'p2p.payment_request' && !!perms['p2p.po']?.can_view))
+            || ((c.id === 'p2p.payment_request' || c.id === 'p2p.advance_refund') && !!perms['p2p.po']?.can_view))
           .map((c) => ({
             id: c.id,
             label: c.label,
@@ -414,7 +417,7 @@ const Navdata = () => {
             // so it rides on the Quotation Vs PI permission.
             if (c.id === 'sales.sign_tracker') return !!perms['sales.quotation_vs_pi']?.can_view;
             // Order has no DB module row — it rides on the Purchase Order grant.
-            if (c.id === 'p2p.payment_request') return !!perms['p2p.po']?.can_view;
+            if (c.id === 'p2p.payment_request' || c.id === 'p2p.advance_refund') return !!perms['p2p.po']?.can_view;
             return !!perms[c.id]?.can_view;
           })
           .map((c) => ({
