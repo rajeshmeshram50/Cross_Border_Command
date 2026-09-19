@@ -1,5 +1,5 @@
 .apay-card {
-  width: min(630px, 95vw);
+  width: min(860px, 95vw);
   max-height: 92vh;
   display: flex;
   flex-direction: column;
@@ -19,83 +19,62 @@
 }
 
 .apay-hd {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 12px;
   flex-shrink: 0;
-  padding: 13px 16px;
+  padding: 16px 18px;
   color: #fff;
-  background: linear-gradient(100deg, #062a3c, #0d5b78 52%, #1391b1);
+  background: linear-gradient(110deg, #0e7490, #0891b2 60%, #06b6d4);
+}
+
+.apay-hd::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(130% 180% at 88% -30%, rgba(255, 255, 255, .3), transparent 56%);
+}
+
+.apay-hd > * {
+  position: relative;
+  z-index: 1;
 }
 
 .apay-hd__ico {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   border-radius: 11px;
   flex-shrink: 0;
-  color: #062a3c;
-  background: linear-gradient(135deg, #a5f3fc, #22d3ee 55%, #06b6d4);
-  box-shadow: 0 3px 10px -2px rgba(34, 211, 238, .6), inset 0 1px 0 rgba(255, 255, 255, .6);
+  color: #fff;
+  background: rgba(255, 255, 255, .2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3);
 }
 
 .apay-hd__ico svg {
-  width: 17px;
-  height: 17px;
-}
-
-.apay-hd__txt {
-  flex: 1;
-  min-width: 0;
+  width: 18px;
+  height: 18px;
 }
 
 .apay-hd__t {
-  font-size: 14px;
+  flex: 0 0 auto;
+  font-size: 16px;
   font-weight: 800;
-  letter-spacing: -.2px;
-}
-
-.apay-hd__refs {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 6px;
-}
-
-.apay-ref {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  padding: 5px 11px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, .1);
-  border: 1px solid rgba(255, 255, 255, .16);
-}
-
-.apay-ref__k {
-  font-size: 7.5px;
-  font-weight: 800;
-  letter-spacing: .09em;
-  text-transform: uppercase;
-  color: rgba(178, 232, 255, .72);
+  letter-spacing: -.35px;
   white-space: nowrap;
 }
 
-.apay-ref__v {
-  font-size: 11.5px;
-  font-weight: 800;
-  color: #fff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 180px;
+.apay-hd .mpr-hero__chips {
+  gap: 6px;
 }
 
-.apay-ref--mono .apay-ref__v {
+.apay-chip--mono .mpr-hero__chip-val {
   font-family: 'Geist Mono', ui-monospace, Menlo, monospace;
   font-size: 11px;
 }
@@ -110,8 +89,8 @@
   flex-shrink: 0;
   cursor: pointer;
   color: #fff;
-  background: rgba(255, 255, 255, .14);
-  border: 1.5px solid rgba(255, 255, 255, .24);
+  background: rgba(255, 255, 255, .18);
+  border: 1.5px solid rgba(255, 255, 255, .3);
   transition: background .15s;
 }
 
@@ -250,6 +229,7 @@
 }
 
 .apay-f > label {
+  margin-bottom: 0;
   font-size: 10.5px;
   font-weight: 800;
   letter-spacing: .04em;
@@ -308,6 +288,7 @@
 }
 
 .apay-drop {
+  margin-bottom: 0;
   display: flex;
   align-items: center;
   gap: 13px;
@@ -345,6 +326,15 @@
 .apay-drop__ico svg {
   width: 18px;
   height: 18px;
+}
+
+.apay-drop__txt {
+  flex: 1;
+  min-width: 0;
+}
+
+.apay-file-in {
+  display: none;
 }
 
 .apay-drop__t {
@@ -412,6 +402,25 @@
   border-radius: 10px;
   font-size: 11.5px;
   font-weight: 800;
+}
+
+@media (max-width: 920px) {
+  .apay-hd {
+    flex-wrap: wrap;
+  }
+
+  .apay-hd .mpr-hero__chips {
+    order: 2;
+    width: 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .apay-hd__x {
+    order: 1;
+    margin-left: auto;
+  }
 }
 
 @media (max-width: 560px) {

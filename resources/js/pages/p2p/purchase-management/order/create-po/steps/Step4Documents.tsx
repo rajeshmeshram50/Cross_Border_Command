@@ -6,7 +6,11 @@ import StageSummary from './StageSummary';
 import type { PoDraft } from '../po-draft';
 import { PO_DOCUMENTS } from '../sample-documents';
 import { formatDmy } from '../../../../../../utils/formatDmy';
-import { IcoCertificate, IcoChevron, IcoDownload, IcoFolder, IcoMail, IcoPaperclip, IcoSend, IcoShield } from '../../icons';
+import { IcoCertificate, IcoChevron, IcoDownload, IcoFolder, IcoHistory, IcoMail, IcoPaperclip, IcoSend, IcoShield } from '../../icons';
+
+const isSigned = (doc: { status: string }) => doc.status === 'signed';
+/* Why the signed-only actions are greyed out, shown on hover. */
+const NOT_SIGNED_YET = 'Available once the document is signed';
 
 export default function Step4Documents({ draft }: { draft: PoDraft }) {
   const [open, setOpen] = useState(true);
@@ -44,7 +48,9 @@ export default function Step4Documents({ draft }: { draft: PoDraft }) {
 
         <div className="spi-dt-sec-body cpd-body">
           <div className="cpd-scroll">
-            <table className="cpd-tbl cpd-tbl--pd cdoc-tbl">
+            {/* Not the --pd compact variant: that one is tuned for the product
+                grid's 15 columns. The documents table is roomier in the Figma. */}
+            <table className="cpd-tbl cdoc-tbl">
               <thead>
                 <tr>
                   <th className="cdoc-check">
@@ -82,8 +88,11 @@ export default function Step4Documents({ draft }: { draft: PoDraft }) {
                     <td>{formatDmy(doc.generatedOn)}</td>
                     <td>{formatDmy(doc.validUpTo)}</td>
                     <td>
+                      {/* The name needs its own span — text-overflow does
+                          nothing on a flex container, so without it a long
+                          file name is chopped off instead of ellipsised. */}
                       <button type="button" className="cdoc-file" title={doc.file}>
-                        <IcoPaperclip size={12} /> {doc.file}
+                        <IcoPaperclip size={12} /><span>{doc.file}</span>
                       </button>
                     </td>
                     <td>
@@ -92,15 +101,39 @@ export default function Step4Documents({ draft }: { draft: PoDraft }) {
                       </span>
                     </td>
                     <td>
+                      {/* Every row carries the same four actions, disabled when
+                          they don't apply yet. Hiding them made the column ragged
+                          and hid what the row will be able to do once it's signed. */}
                       <div className="cdoc-actions">
                         <button type="button" className="cdoc-btn"><IcoDownload size={13} /> Download Draft Document</button>
-                        {doc.status === 'signed' && (
-                          <>
-                            <button type="button" className="cdoc-btn cdoc-btn--signed"><IcoDownload size={13} /> Download Signed Document</button>
-                            {/* Zoho Sign's completion certificate, once the document is signed. */}
-                            <button type="button" className="cdoc-btn cdoc-btn--cert"><IcoCertificate size={14} /> Download Certificate</button>
-                          </>
-                        )}
+                        <button
+                          type="button"
+                          className="cdoc-btn cdoc-btn--signed"
+                          disabled={!isSigned(doc)}
+                          title={isSigned(doc) ? undefined : NOT_SIGNED_YET}
+                        >
+                          <IcoDownload size={13} /> Download Signed Document
+                        </button>
+                        {/* Where this document sits in the Zoho Sign journey. */}
+                        <button
+                          type="button"
+                          className="cdoc-icobtn"
+                          title="Signing Tracker"
+                          aria-label="Signing Tracker"
+                        >
+                          <IcoHistory size={15} />
+                        </button>
+                        {/* Zoho Sign's completion certificate. Icon only — the
+                            row already carries two labelled downloads. */}
+                        <button
+                          type="button"
+                          className="cdoc-icobtn cdoc-icobtn--cert"
+                          disabled={!isSigned(doc)}
+                          title={isSigned(doc) ? 'Download Certificate' : NOT_SIGNED_YET}
+                          aria-label="Download Certificate"
+                        >
+                          <IcoCertificate size={15} />
+                        </button>
                       </div>
                     </td>
                   </tr>

@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import type { ReleasePayment } from './MakePoPaymentModal';
-import { ICON_X, money } from './payment-shared';
+import { Chip, ICON_X, money } from './payment-shared';
 import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import './manage-payment-requests.css';
 import './add-payment.css';
 
 export type AddPaymentProps = {
@@ -14,6 +15,7 @@ export type AddPaymentProps = {
   spiCount: number;
   approved: number;
   paid: number;
+  initial?: ReleasePayment;
   onSave: (p: ReleasePayment) => void;
   onClose: () => void;
 };
@@ -45,12 +47,12 @@ const ICON_ALERT = (
   </svg>
 );
 
-// Fields are free text so a pasted "1,14,500.00" must not stop at the comma.
 function amountValue(v: string): number {
   const n = parseFloat(String(v).replace(/[,\s₹]/g, ''));
   return Number.isNaN(n) ? 0 : n;
 }
 
+// Label/value pair for popup headers (used by the Advance Refund popups).
 export function Ref({ label, value, mono, extra }: { label: string; value: string; mono?: boolean; extra?: string }) {
   return (
     <div className={`apay-ref${mono ? ' apay-ref--mono' : ''}`}>
@@ -60,10 +62,12 @@ export function Ref({ label, value, mono, extra }: { label: string; value: strin
   );
 }
 
+const blankIfDash = (v?: string) => (!v || v === '—' ? '' : v);
+
 export default function AddPaymentModal({
-  requestId, supplier, poNumber, spiNumber, spiCount, approved, paid, onSave, onClose,
+  requestId, supplier, poNumber, spiNumber, spiCount, approved, paid, initial, onSave, onClose,
 }: AddPaymentProps) {
-  useScrollLock();
+  useScrollLock(true, '.apay-card');
 
   const cardRef = useRef<HTMLDivElement>(null);
   const amountRef = useRef<HTMLInputElement>(null);
@@ -75,14 +79,19 @@ export default function AddPaymentModal({
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const room = Math.max(0, approved - paid);
+  const editing = !!initial;
+  const room = Math.max(0, approved - paid + (initial?.amount ?? 0));
 
-  const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [bank, setBank] = useState('');
-  const [utr, setUtr] = useState('');
+  const [amount, setAmount] = useState(
+    initial ? (Number(initial.amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '',
+  );
+  const [date, setDate] = useState(blankIfDash(initial?.date) || new Date().toISOString().slice(0, 10));
+  const [bank, setBank] = useState(blankIfDash(initial?.bank));
+  const [utr, setUtr] = useState(blankIfDash(initial?.utr));
   const [file, setFile] = useState('');
   const [error, setError] = useState('');
+
+  const shownFile = file || initial?.file || '';
 
   const save = () => {
     const amt = amountValue(amount);
@@ -96,7 +105,7 @@ export default function AddPaymentModal({
       bank: bank.trim() || '—',
       utr: utr.trim() || '—',
       date: date.trim() || '—',
-      file: file || undefined,
+      file: shownFile || undefined,
     });
   };
 
@@ -106,21 +115,19 @@ export default function AddPaymentModal({
 
         <div className="apay-hd">
           <span className="apay-hd__ico">{ICON_CARD}</span>
-          <div className="apay-hd__txt">
-            <div className="apay-hd__t" id="apay-title">Add New Payment</div>
-            <div className="apay-hd__refs">
-              <Ref label="Request ID" value={requestId} mono />
-              {supplier && <Ref label="Supplier" value={supplier} />}
-              <Ref label="PO Number" value={poNumber} mono />
-              {spiNumber && (
-                <Ref
-                  label={spiCount > 1 ? 'SPI Numbers' : 'SPI Number'}
-                  value={spiNumber}
-                  mono
-                  extra={spiCount > 1 ? ` +${spiCount - 1}` : ''}
-                />
-              )}
-            </div>
+          <div className="apay-hd__t" id="apay-title">{editing ? 'Edit Payment' : 'Add New Payment'}</div>
+          <div className="mpr-hero__chips">
+            <Chip label="Request ID" value={requestId} mod="apay-chip--mono" />
+            {supplier && <Chip label="Supplier" value={supplier} />}
+            <Chip label="PO Number" value={poNumber} mod="apay-chip--mono" />
+            {spiNumber && (
+              <Chip
+                label={spiCount > 1 ? 'SPI Numbers' : 'SPI Number'}
+                value={spiNumber}
+                mod="apay-chip--mono"
+                extra={spiCount > 1 ? <span className="mpr-hero__chip-meta">+{spiCount - 1}</span> : undefined}
+              />
+            )}
           </div>
           <button type="button" className="apay-hd__x" onClick={onClose} aria-label="Close">{ICON_X}</button>
         </div>
@@ -174,15 +181,17 @@ export default function AddPaymentModal({
               <label htmlFor="apay-file">Proof of Payment</label>
               <label className="apay-drop" htmlFor="apay-file">
                 <div className="apay-drop__ico">{ICON_UPLOAD}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="apay-drop__t">Click to upload proof of payment</div>
-                  <div className="apay-drop__s">{file ? file : 'PDF, JPG or PNG · No file chosen'}</div>
+                <div className="apay-drop__txt">
+                  <div className="apay-drop__t">
+                    {editing && shownFile ? 'Click to replace proof of payment' : 'Click to upload proof of payment'}
+                  </div>
+                  <div className="apay-drop__s">{shownFile || 'PDF, JPG or PNG · No file chosen'}</div>
                 </div>
                 <input
                   id="apay-file"
+                  className="apay-file-in"
                   type="file"
                   accept=".pdf,.jpg,.jpeg,.png"
-                  style={{ display: 'none' }}
                   onChange={(e) => setFile(e.target.files?.[0]?.name ?? '')}
                 />
               </label>

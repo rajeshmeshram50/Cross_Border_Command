@@ -92,9 +92,9 @@ export default function ProductTable({ rows, stateCode, onChange, readOnly }: Pr
             <th>SGST (%)</th>
             <th>CGST Amount</th>
             <th>SGST Amount</th>
-            <th>Product Cost<span className="cpd-th-sub">Without GST</span></th>
+            <th>Product Cost<span className="cpd-th-sub cpd-th-sub--wo">Without GST</span></th>
             <th>Total GST Amount</th>
-            <th className="cpd-th-final">Total Product Cost<span className="cpd-th-sub">With GST</span></th>
+            <th className="cpd-th-final">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">With GST</span></th>
           </tr>
         </thead>
 

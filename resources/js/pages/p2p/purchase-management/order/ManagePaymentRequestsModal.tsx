@@ -5,7 +5,7 @@ import type { OrderRow } from './Order';
 import type { NewRequest } from './RaisePaymentRequestModal';
 import type { ReleasePayment } from './MakePoPaymentModal';
 import {
-  APPROVERS, Box, HeroRefChips, ICON_X, PoSummaryCards, STAT_ICONS, Stat,
+  APPROVERS, Box, HeroRefChips, ICON_X, PoSummaryCards, STAT_ICONS, Stat, TdsStrip,
   initials, money, shiftIso, shortDate, valueBreakdown,
 } from './payment-shared';
 
@@ -92,16 +92,6 @@ const ICON_EYE = (
   <svg {...ic}><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>
 );
 const ICON_CHECK = <svg {...ic} strokeWidth={3}><path d="M20 6 9 17l-5-5" /></svg>;
-const ICON_TDS = (
-  <svg {...ic} strokeWidth={2.4}><line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" /></svg>
-);
-const ICON_WALLET = (
-  <svg {...ic} strokeWidth={2.4}>
-    <path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4" />
-    <path d="M4 6v12a2 2 0 0 0 2 2h14v-4" />
-    <path d="M18 12a2 2 0 0 0 0 4h4v-4z" />
-  </svg>
-);
 
 const STATUS: Record<ReqStatus, { cls: string; label: string }> = {
   approved: { cls: 'mpr-st--done', label: 'Approved' },
@@ -215,8 +205,10 @@ function TdsLoading() {
   );
 }
 
-export default function ManagePaymentRequestsModal({ row, onClose }: { row: OrderRow; onClose: () => void }) {
-  useScrollLock();
+export default function ManagePaymentRequestsModal({ row, startWithRaise = false, onClose }: {
+  row: OrderRow; startWithRaise?: boolean; onClose: () => void;
+}) {
+  useScrollLock(true, '.mpr-card--history');
 
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => { cardRef.current?.focus(); }, []);
@@ -229,7 +221,7 @@ export default function ManagePaymentRequestsModal({ row, onClose }: { row: Orde
 
   const [tds, setTds] = useState(0);
   const [tdsOpen, setTdsOpen] = useState(false);
-  const [raiseOpen, setRaiseOpen] = useState(false);
+  const [raiseOpen, setRaiseOpen] = useState(startWithRaise);
   const [added, setAdded] = useState<PaymentRequest[]>([]);
   const [payReq, setPayReq] = useState<PaymentRequest | null>(null);
   const [releases, setReleases] = useState<Record<string, ReleasePayment[]>>({});
@@ -288,6 +280,10 @@ export default function ManagePaymentRequestsModal({ row, onClose }: { row: Orde
               ...prev,
               [payReq.id]: [...(prev[payReq.id] ?? []), p],
             }))}
+            onUpdate={(i, p) => setReleases((prev) => ({
+              ...prev,
+              [payReq.id]: (prev[payReq.id] ?? []).map((x, ix) => (ix === i ? p : x)),
+            }))}
             onDelete={(i) => setReleases((prev) => ({
               ...prev,
               [payReq.id]: (prev[payReq.id] ?? []).filter((_, ix) => ix !== i),
@@ -344,7 +340,7 @@ export default function ManagePaymentRequestsModal({ row, onClose }: { row: Orde
         </Suspense>
       )}
 
-      <div className="spi-mdl mpr-card" role="dialog" aria-modal="true" aria-labelledby="mpr-title" tabIndex={-1} ref={cardRef}>
+      <div className="spi-mdl mpr-card mpr-card--history" role="dialog" aria-modal="true" aria-labelledby="mpr-title" tabIndex={-1} ref={cardRef}>
 
         <div className="mpr-hero">
           <div className="mpr-hero__icon">{ICON_HISTORY}</div>
@@ -380,35 +376,7 @@ export default function ManagePaymentRequestsModal({ row, onClose }: { row: Orde
             title="PO Payment Details Summary"
             sub="How this PO’s value is made up and where it stands today · read-only"
             headerExtra={!row.cancelled && (
-              <div className="mpr-tds" onClick={(e) => e.stopPropagation()}>
-                {tds > 0 && (
-                  <>
-                    <span className="mpr-chip mpr-chip--cut" title={`Tax withheld at source on this PO · counted towards paid`}>
-                      <span className="mpr-chip__ico">{ICON_TDS}</span>
-                      <span className="mpr-chip__txt">
-                        <span className="mpr-chip__k">TDS Deducted</span>
-                        <b className="mpr-chip__v">{money(tds)}</b>
-                      </span>
-                    </span>
-                    <span className="mpr-chip mpr-chip--net" title={`Payable to ${row.supplier} after TDS · ${money(row.total)} less ${money(tds)}`}>
-                      <span className="mpr-chip__ico">{ICON_WALLET}</span>
-                      <span className="mpr-chip__txt">
-                        <span className="mpr-chip__k">Net Payable</span>
-                        <b className="mpr-chip__v">{money(Math.max(0, row.total - tds))}</b>
-                      </span>
-                    </span>
-                  </>
-                )}
-                <button
-                  type="button"
-                  className={`mpr-tdsbtn${tds > 0 ? ' mpr-tdsbtn--edit' : ''}`}
-                  title={tds > 0 ? 'Revise the tax deducted at source on this PO' : 'Withhold tax at source against this PO'}
-                  onClick={() => setTdsOpen(true)}
-                >
-                  <span className="mpr-tdsbtn__ico">{ICON_TDS}</span>
-                  <span>{tds > 0 ? 'Revise TDS' : 'Deduct TDS Here'}</span>
-                </button>
-              </div>
+              <TdsStrip tds={tds} total={row.total} supplier={row.supplier} onOpen={() => setTdsOpen(true)} />
             )}
           >
             <PoSummaryCards total={row.total} paid={row.paid} balance={row.balance} net={row.net} complete={f.complete} />
