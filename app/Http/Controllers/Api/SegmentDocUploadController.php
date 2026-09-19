@@ -559,6 +559,8 @@ class SegmentDocUploadController extends Controller
         if ($request->boolean('docs')) {
             return response()->json([
                 'data' => [
+                    // The owner's segments by id — two can share a name (Less / High).
+                    'segment_rows'           => in_array($type, ['customer', 'consignee'], true) ? \App\Support\SegmentGuard::rowsFor(\App\Support\SegmentGuard::idsOf($owner)) : [],
                     'same_as_customer'       => $sameAsCustomer,
                     'mirror_customer'        => $mirrorCustomer,
                     'company_dd'             => $company_dd,
@@ -849,6 +851,8 @@ class SegmentDocUploadController extends Controller
             'data' => [
                 'same_as_customer'       => $sameAsCustomer,
                 'mirror_customer'        => $mirrorCustomer,
+                // The owner's segments by id — two can share a name (Less / High).
+                'segment_rows'           => in_array($type, ['customer', 'consignee'], true) ? \App\Support\SegmentGuard::rowsFor(\App\Support\SegmentGuard::idsOf($owner)) : [],
                 'vendor_with_shipment'    => $vendorDeals['with_shipment'],
                 'vendor_without_shipment' => $vendorDeals['without_shipment'],
                 'vendor_deal_ratios'      => $vendorDeals['ratios'],

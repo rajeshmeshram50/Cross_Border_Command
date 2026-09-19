@@ -4,7 +4,7 @@
 import { useMemo, useState } from 'react';
 import { EditSelect, Field } from '../form-fields';
 import GstNoticeModal, { type GstNotice } from '../GstNoticeModal';
-import type { PoDraft, SetDraft } from '../po-draft';
+import { supplierFields, type PoDraft, type SetDraft } from '../po-draft';
 import { MasterDatePicker } from '../../../../../../components/ui/MasterDatePicker';
 import { formatDmy } from '../../../../../../utils/formatDmy';
 import {
@@ -183,28 +183,10 @@ export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set:
   const [gstOpen, setGstOpen] = useState(true);
   const [legalOpen, setLegalOpen] = useState(true);
 
+  // One update, from the same helper edit mode uses to pre-fill.
   const pickSupplier = (option: string) => {
-    setSupplier(option);
     const s = supplierByOption(option);
-    if (!s) return;
-    setLegalName(s.legalName);
-    setSupType(s.type);
-    setRisk(s.risk);
-    setCategory(s.category);
-    setAddress(s.addr);
-    setCountry(s.country);
-    setState(s.state);
-    setStateCode(s.stateCode);
-    setCity(s.city);
-    setContact(s.contact);
-    setDesignation(s.desig);
-    setPhone(s.phone);
-    setEmail(s.email);
-    setScrutinyDate(s.scrutiny);
-    setGstNo(s.gstNo);
-    setGstStatus(s.gstStatus);
-    setFilingDate(s.filing);
-    setRemarks(s.remarks);
+    set(s ? { supplier: option, ...supplierFields(s) } : { supplier: option });
   };
 
   // GST scrutiny — filled from the supplier, still editable.

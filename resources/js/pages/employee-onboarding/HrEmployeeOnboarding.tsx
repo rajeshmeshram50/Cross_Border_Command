@@ -2669,7 +2669,7 @@ function InitiateOnboardingModal({
           setObEsi(!!active.esi_applicable || ded.some((d: SalBreakComp) => d.code === 'esi'));
           setObPt(!!active.pt_applicable  || ded.some((d: SalBreakComp) => d.code === 'pt'));
           // What was on the server — a save that matches this is skipped.
-          obBaselineRef.current = breakupSignature(earn, ded, !!active.pf_applicable, !!active.esi_applicable, !!active.pt_applicable);
+          obBaselineRef.current = `${breakupSignature(earn, ded, !!active.pf_applicable, !!active.esi_applicable, !!active.pt_applicable)}|${Math.round((Number(active.monthly_gross) || 0) * 12)}`;
         } else {
           seedFresh();
         }
@@ -2856,15 +2856,22 @@ function InitiateOnboardingModal({
      signature check, same endpoint. A save that would store what is already on
      the server is skipped rather than stacking an identical revision. */
   const persistObBreakup = async (empId: number): Promise<void> => {
-    if (!s1.detailed_breakup) return;
-    const earn = obEarnings
+    const monthly = obMonthlyOf(s1.annual_salary);
+    const typed = obEarnings
       .filter(c => c.label.trim() && Number(c.amount) >= 0)
       .map((c, i) => ({ code: (c.code || `comp_${i + 1}`).trim(), label: c.label.trim(), amount: Number(c.amount) || 0 }));
-    if (!earn.length) return;
+    // Toggle off still stores a structure (the seeded split), else Salary Setup shows "Set Salary" (#151).
+    // A stored breakup that already totals the CTC is kept, as on the Employee form (#133).
+    const storedAgreesWithCtc = typed.length > 0 && obSalaryAnnual > 0 && obMatches;
+    const earn = (s1.detailed_breakup || storedAgreesWithCtc)
+      ? typed
+      : (monthly > 0 ? seedBreakup(monthly) : typed);
+    if (!earn.some(c => c.amount > 0)) return;
     const ded = obDeductions
       .filter(c => c.label.trim())
       .map((c, i) => ({ code: (c.code || `ded_${i + 1}`).trim(), label: c.label.trim(), amount: Number(c.amount) || 0 }));
-    const sig = breakupSignature(earn, ded, !!s1.pf_eligible, obEsi, obPt);
+    // CTC is part of the signature so a salary-only change is not skipped.
+    const sig = `${breakupSignature(earn, ded, !!s1.pf_eligible, obEsi, obPt)}|${obSalaryAnnual}`;
     if (obBaselineRef.current === sig) return;
 
     await api.post('/salary-structures', {
@@ -2873,6 +2880,9 @@ function InitiateOnboardingModal({
       earnings: earn,
       deductions: ded,
       pf_applicable: !!s1.pf_eligible,
+      // Validated against the CTC on screen and written to annual_salary, same as the Employee form.
+      annual_ctc: obSalaryAnnual > 0 ? obSalaryAnnual : undefined,
+      pf_type: s1.pf_eligible ? String(s1.pf_type || '').toLowerCase() || null : null,
       esi_applicable: obEsi,
       pt_applicable: obPt,
     });

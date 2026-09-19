@@ -126,16 +126,12 @@ const TD_STATUS_BADGE: Record<TdSigStatus, { label: string; bg: string; fg: stri
  * names) as "S-001: Name" using the segment master codes. Falls back to the
  * bare name when no code is known. Keeps every read-only display in sync with
  * the "code: name" labels the segment dropdown now shows. */
-function segDisplay(value: string | string[] | null | undefined, segs: { name: string; code?: string }[]): string {
-  const arr = Array.isArray(value)
-    ? value
-    : String(value ?? '').split(',').map(s => s.trim()).filter(Boolean);
-  if (arr.length === 0) return '';
-  return arr.map(n => {
-    const code = segs.find(s => s.name === n)?.code;
-    return code ? `${code}: ${n}` : n;
-  }).join(', ');
+/** Segment ids → badge items, in order; unknown ids are dropped. */
+function segItemsById(ids: (string | number)[] | null | undefined, segs: { id?: number; name: string; code?: string | null; regulatory_status?: string | null }[]): SegmentItem[] {
+  return (ids ?? []).map(v => segs.find(s => String(s.id) === String(v))).filter((s): s is NonNullable<typeof s> => !!s)
+    .map(s => ({ name: s.name, code: s.code ?? null, regulatory_status: s.regulatory_status ?? null }));
 }
+const segItemsText = (items: SegmentItem[]) => items.map(s => (s.code ? `${s.code}: ${s.name}` : s.name)).join(', ');
 
 /* Each row in the Address & Contact Details table — mirrors the
  * shape used by AddCustomerModal so the JSX patterns line up. */
@@ -1640,6 +1636,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   const activeLinkedCust = (activeLinkedId != null
     ? customerOptions.find(c => c.db_id === activeLinkedId)
     : null) ?? customer;
+  // By id: two segments may share a name (Less / High), so a name lookup picks the wrong one.
+  const linkedSegItems: SegmentItem[] = (() => {
+    const c = activeLinkedCust as { segments?: SegmentItem[]; segment_ids?: number[] } | null | undefined;
+    return c?.segments?.length ? c.segments : segItemsById(c?.segment_ids, mSegmentIds);
+  })();
 
   const confirmCustomer = () => {
     if (!customer) {
@@ -2533,7 +2534,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                           now means Domestic vs International. */}
                       <ReadInlineG label="Customer Category"    value={activeLinkedCust?.type} />
 
-                      <ReadInlineG label="Customer Segment"     value={segDisplay(activeLinkedCust?.segment, mSegmentIds)} node={<SegmentNameList compact names={activeLinkedCust?.segment} codeOf={n => mSegmentIds.find(s => s.name === n)?.code} />} tip={<SegmentNameList names={activeLinkedCust?.segment} codeOf={n => mSegmentIds.find(s => s.name === n)?.code} />} />
+                      <ReadInlineG label="Customer Segment"     value={segItemsText(linkedSegItems)} node={<SegmentNameList compact items={linkedSegItems} />} tip={<SegmentNameList items={linkedSegItems} />} />
                       <ReadInlineG label="Classification"       value={activeLinkedCust?.classification} />
                       <ReadInlineG label="Risk Level"           value={activeLinkedCust?.risk} />
                       <ReadInlineG label="Company Website"      value={activeLinkedCust?.website} />
@@ -5015,15 +5016,16 @@ function ConsigneeHistoryStage1({ form, locations, consigneeCode, segments = [] 
   form: { companyName: string; legalName: string; website: string; segment: string[]; classification: string; risk: string; addressType: string; address: string; country: string; state: string; city: string; pin: string; contactName: string; designation: string; contactNo: string; email: string; whatsapp: string };
   locations: LocationRow[];
   consigneeCode?: string;
-  segments?: { name: string; code?: string }[];
+  segments?: { id?: number; name: string; code?: string; regulatory_status?: string | null }[];
 }) {
+  const segItems = segItemsById(form.segment, segments);
   return (
     <div className="acg-hs-mirror">
       <div className="acg-hs-grid">
         {consigneeCode && <ReadInlineG label="Consignee ID" value={consigneeCode} />}
         <ReadInlineG label="Company Name"        value={form.companyName} />
         <ReadInlineG label="Company Legal Name"  value={form.legalName} />
-        <ReadInlineG label="Customer Segment"    value={segDisplay(form.segment, segments)} node={<SegmentNameList compact names={form.segment} codeOf={n => segments.find(s => s.name === n)?.code} />} tip={<SegmentNameList names={form.segment} codeOf={n => segments.find(s => s.name === n)?.code} />} />
+        <ReadInlineG label="Customer Segment"    value={segItemsText(segItems)} node={<SegmentNameList compact items={segItems} />} tip={<SegmentNameList items={segItems} />} />
 
         <ReadInlineG label="Classification"      value={form.classification} />
         <ReadInlineG label="Risk Level"          value={form.risk} />
