@@ -1,9 +1,10 @@
 // Create Purchase Order — step 1: choose how the PO links to the procurement workflow.
-// Reuses the SPI "Map Invoice" modal styles (spi-mdl-*) and its dropdown; no CSS of its own.
+// Reuses the SPI "Map Invoice" modal styles (spi-mdl-*) and the app's MasterSelect
+// dropdown. Where the prototype differs, order.css overrides them under .ord-cpo only.
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
-import { ModalSelect } from '../supplier-purchase-invoice/MapSupplierPurchaseInvoiceModal';
+import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import type { PoLink } from './create-po/CreatePoForm';
 import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import { IcoCheck, IcoChevronR, IcoClock, IcoDoc, IcoLink, IcoWarn, IcoX } from './icons';
@@ -53,17 +54,18 @@ export default function CreatePoModal({ onClose, onConfirm, initial }: Props) {
   // No close on backdrop click: a stray click must not lose the user's choices.
   return createPortal(
     <div className="spi-mdl-backdrop">
-      <div className="spi-mdl" role="dialog" aria-modal="true" aria-labelledby="cpo-title">
+      {/* ord-cpo scopes this popup's Figma values; the base spi-mdl styles are shared with SPI. */}
+      <div className="spi-mdl ord-cpo" role="dialog" aria-modal="true" aria-labelledby="cpo-title">
         <div className="spi-mdl-head">
           <div className="spi-mdl-head-left">
-            <div className="spi-mdl-head-ico"><IcoDoc /></div>
+            <div className="spi-mdl-head-ico"><IcoDoc size={22} stroke={2.1} /></div>
             <div>
               <div className="spi-mdl-title" id="cpo-title">Create Purchase Order</div>
               <div className="spi-mdl-sub">Choose how to link this PO to your procurement workflow.</div>
             </div>
           </div>
           <button type="button" className="spi-mdl-x" onClick={onClose} aria-label="Close">
-            <IcoX />
+            <IcoX size={15} />
           </button>
         </div>
 
@@ -71,18 +73,18 @@ export default function CreatePoModal({ onClose, onConfirm, initial }: Props) {
           <div className="spi-mdl-seclabel">LINK TO PROCUREMENT WORKFLOW</div>
 
           <button type="button" className={`spi-mdl-card ${mode === 'with' ? 'is-sel is-teal' : ''}`} onClick={() => setMode('with')}>
-            <div className="spi-mdl-card-ico spi-mdl-ico-teal"><IcoLink /></div>
+            <div className="spi-mdl-card-ico spi-mdl-ico-teal"><IcoLink size={20} /></div>
             <div className="spi-mdl-card-mid">
               <div className="spi-mdl-card-title">With Shipment ID <span className="spi-mdl-badge spi-mdl-badge-teal">RECOMMENDED</span></div>
               <div className="spi-mdl-card-desc">3-way match &amp; complete audit trail.</div>
             </div>
-            <span className={`spi-mdl-radio ${mode === 'with' ? 'is-on-teal' : ''}`}>{mode === 'with' && <IcoCheck />}</span>
+            <span className={`spi-mdl-radio ${mode === 'with' ? 'is-on-teal' : ''}`}>{mode === 'with' && <IcoCheck size={13} />}</span>
           </button>
 
           {mode === 'with' && (
             <div className="spi-mdl-field">
-              <label className="spi-mdl-fieldlabel"><IcoLink size={13} /> SELECT SHIPMENT ID <span className="spi-mdl-req">*</span></label>
-              <ModalSelect
+              <label className="spi-mdl-fieldlabel"><IcoLink size={20} /> SELECT SHIPMENT ID <span className="spi-mdl-req">*</span></label>
+              <MasterSelect
                 value={shipment}
                 placeholder="Select Shipment ID…"
                 options={SHIPMENT_OPTIONS}
@@ -92,12 +94,12 @@ export default function CreatePoModal({ onClose, onConfirm, initial }: Props) {
           )}
 
           <button type="button" className={`spi-mdl-card ${mode === 'without' ? 'is-sel is-amber' : ''}`} onClick={() => setMode('without')}>
-            <div className="spi-mdl-card-ico spi-mdl-ico-amber"><IcoWarn /></div>
+            <div className="spi-mdl-card-ico spi-mdl-ico-amber"><IcoWarn size={20} /></div>
             <div className="spi-mdl-card-mid">
               <div className="spi-mdl-card-title">All Other PO’s (Without Shipment ID) <span className="spi-mdl-badge spi-mdl-badge-amber">STANDALONE</span></div>
               <div className="spi-mdl-card-desc">Create a PO not linked to any shipment.</div>
             </div>
-            <span className={`spi-mdl-radio ${mode === 'without' ? 'is-on-amber' : ''}`}>{mode === 'without' && <IcoCheck />}</span>
+            <span className={`spi-mdl-radio ${mode === 'without' ? 'is-on-amber' : ''}`}>{mode === 'without' && <IcoCheck size={13} />}</span>
           </button>
 
           {mode === 'without' && (

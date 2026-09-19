@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
-import { ModalSelect } from '../supplier-purchase-invoice/MapSupplierPurchaseInvoiceModal';
+import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import type { OrderRow } from './Order';
 import {
   APPROVERS, Box, HeroRefChips, PAYMENT_TYPES, PoSummaryCards, STAT_ICONS, Stat,
@@ -172,7 +172,7 @@ export default function RaisePaymentRequestModal({
             <div className="rpr-formgrid">
               <div className="rpr-field">
                 <label htmlFor="rpr-type">Payment Type</label>
-                <ModalSelect
+                <MasterSelect
                   value={type}
                   placeholder="Select type…"
                   options={TYPE_OPTIONS}
@@ -221,7 +221,7 @@ export default function RaisePaymentRequestModal({
 
               <div className="rpr-field">
                 <label htmlFor="rpr-approver">Request To</label>
-                <ModalSelect
+                <MasterSelect
                   value={approver}
                   placeholder="Select approver…"
                   options={APPROVER_OPTIONS}

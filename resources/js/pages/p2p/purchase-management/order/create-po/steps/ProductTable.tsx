@@ -45,6 +45,19 @@ export function computeLine(row: PoLineRow, stateCode: string): LineTotals {
 
 const money = (n: number) => '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
+/* Input caps. Without them a 10-digit quantity times a 10-digit rate runs past
+   what a number can show exactly (it turns into 1.0e+42) and the amount
+   columns stretch the table off the screen. 6 digits of quantity (9,99,999)
+   and 7 of rate (₹99,99,999) keep every total readable on one line. */
+const QTY_DIGITS = 6;
+const RATE_DIGITS = 7;
+const cleanQty = (raw: string) => Number(raw.replace(/\D/g, '').slice(0, QTY_DIGITS)) || 0;
+const cleanRate = (raw: string) => {
+  const [whole = '', frac] = raw.replace(/[^\d.]/g, '').split('.');
+  const n = Number(`${whole.slice(0, RATE_DIGITS)}${frac !== undefined ? `.${frac.slice(0, 2)}` : ''}`);
+  return Number.isFinite(n) ? n : 0;
+};
+
 type Props = {
   rows: PoLineRow[];
   stateCode: string;
@@ -148,8 +161,10 @@ export default function ProductTable({ rows, stateCode, onChange, readOnly }: Pr
                   {readOnly ? row.qtyPo : (
                     <input
                       className="cpd-in"
+                      inputMode="numeric"
+                      maxLength={QTY_DIGITS}
                       value={row.qtyPo}
-                      onChange={(e) => onChange(i, { qtyPo: Number(e.target.value.replace(/[^\d]/g, '')) || 0 })}
+                      onChange={(e) => onChange(i, { qtyPo: cleanQty(e.target.value) })}
                     />
                   )}
                 </td>
@@ -159,8 +174,10 @@ export default function ProductTable({ rows, stateCode, onChange, readOnly }: Pr
                   {readOnly ? money(row.rate) : (
                     <input
                       className="cpd-in"
+                      inputMode="decimal"
+                      maxLength={RATE_DIGITS + 3}
                       value={row.rate}
-                      onChange={(e) => onChange(i, { rate: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 })}
+                      onChange={(e) => onChange(i, { rate: cleanRate(e.target.value) })}
                     />
                   )}
                 </td>

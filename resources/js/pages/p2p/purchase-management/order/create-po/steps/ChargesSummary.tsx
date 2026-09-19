@@ -22,7 +22,7 @@ export default function ChargesSummary({ base, gst, charges, onChange }: Props) 
   return (
     <div className="cpd-sum">
       <div className="cpd-sum__charges">
-        <div className="cpd-sum__hd"><span className="cpf-ro-dash" />Additional Charges</div>
+        <div className="cpd-sum__hd">Additional Charges</div>
         <div className="cpd-chg-grid">
           <Charge label="Shipping Charges" value={charges.ship} onChange={(v) => onChange({ ship: v })} />
           <Charge label="Packaging Charges" value={charges.pack} onChange={(v) => onChange({ pack: v })} />
@@ -40,6 +40,14 @@ export default function ChargesSummary({ base, gst, charges, onChange }: Props) 
   );
 }
 
+/* Up to ₹99,99,999.99 per charge. type="number" ignores maxLength, so the cap is
+   applied to the value — an uncapped charge overflowed the Cost Summary. */
+const CHARGE_DIGITS = 7;
+const capCharge = (raw: string) => {
+  const [whole = '', frac] = raw.split('.');
+  return frac === undefined ? whole.slice(0, CHARGE_DIGITS) : `${whole.slice(0, CHARGE_DIGITS)}.${frac.slice(0, 2)}`;
+};
+
 function Charge({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <div className="cpd-chg-f">
@@ -53,7 +61,7 @@ function Charge({ label, value, onChange }: { label: string; value: string; onCh
           step="0.01"
           placeholder="0.00"
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => onChange(capCharge(e.target.value))}
         />
       </div>
     </div>

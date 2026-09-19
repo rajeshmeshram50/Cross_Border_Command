@@ -8,10 +8,12 @@ import Step2ProductDetails from './steps/Step2ProductDetails';
 import Step3Terms from './steps/Step3Terms';
 import Step4Documents from './steps/Step4Documents';
 import { usePoDraft, type PoEdit } from './po-draft';
+import { gstCheck } from './gst-check';
+import GstNoticeModal, { type GstNotice } from './GstNoticeModal';
 import { useToast } from '../../../../../contexts/ToastContext';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './create-po.css';
-import { IcoCard, IcoCheck, IcoChevronL, IcoChevronR, IcoDoc, IcoLines, IcoShip, IcoTarget, IcoUser, IcoX } from '../icons';
+import { IcoCheck, IcoChevronL, IcoChevronR, IcoDoc, IcoLines, IcoShip, IcoTarget, IcoUser, IcoX } from '../icons';
 
 // What the Create PO popup passes in: how this PO is linked. `edit` is set
 // when Edit PO opens an existing order in this same form.
@@ -71,7 +73,23 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   }, [onClose]);
 
   const isLast = stage === STAGES.length - 1;
-  const goNext = () => { if (!isLast) setStage(stage + 1); };
+
+  // The supplier's GST position gates the PO at submission, so its action sits
+  // beside "Submit PO & Next" on Step 03 — only when the check calls for one
+  // (scrutiny expired, or a return overdue). Step 01 just reports the status.
+  const gst = gstCheck(draft);
+  const [gstNotice, setGstNotice] = useState<GstNotice | null>(null);
+  const showGstAction = stage === 2 && !!gst.notice;
+  /* The GST check blocks the PO from getting past Step 03 — as in the
+     prototype. Submitting (or jumping to Step 04 from the stepper) opens the
+     matching popup instead: expired scrutiny must be refreshed, an overdue
+     return needs a senior's approval. */
+  const gstBlocksAt = (target: number) => target > 2 && !!gst.notice;
+  const goTo = (target: number) => {
+    if (gstBlocksAt(target)) { setGstNotice(gst.notice); return; }
+    setStage(target);
+  };
+  const goNext = () => { if (!isLast) goTo(stage + 1); };
   // On stage 1 the back button returns to the link popup — except in an edit:
   // that popup always starts a new PO, so re-linking there would quietly turn
   // the order being edited into a fresh one. An edit goes back to the list.
@@ -126,14 +144,6 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
             </div>
 
             <div className="spi-dt-head-r">
-              {/* Payment is made against a PO that exists — a new draft has
-                  nothing to pay yet, so only an edit offers it. */}
-              {edit && (
-                <>
-                  <span className="spi-dt-divider" />
-                  <button type="button" className="spi-dt-btn-pay"><IcoCard /> PO Payment</button>
-                </>
-              )}
               <span className="spi-dt-divider" />
               <button type="button" className="spi-dt-btn-close" onClick={onClose}><IcoX /> Close</button>
             </div>
@@ -147,8 +157,8 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
                 role="button"
                 tabIndex={0}
                 title={`Go to Step ${i + 1}`}
-                onClick={() => setStage(i)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStage(i); } }}
+                onClick={() => goTo(i)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goTo(i); } }}
               >
                 <div className="spi-dt-step-top">
                   <span className="spi-dt-step-lbl">STEP {String(i + 1).padStart(2, '0')}</span>
@@ -187,12 +197,22 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
             <button type="button" className="spi-dt-btn-ghost" onClick={goBack}>
               <IcoChevronL /> {backLabel}
             </button>
+            {showGstAction && (
+              <button
+                type="button"
+                className={`spi-dt-btn-next cpf-foot-gst--${gst.notice!.tone}`}
+                onClick={() => setGstNotice(gst.notice)}
+              >
+                {gst.state.action}
+              </button>
+            )}
             <button type="button" className={isLast ? 'spi-dt-btn-map' : 'spi-dt-btn-next'} onClick={goNext}>
               {nextLabel} <IcoChevronR />
             </button>
           </div>
         </div>
       </div>
+      {gstNotice && <GstNoticeModal notice={gstNotice} onClose={() => setGstNotice(null)} />}
     </div>,
     document.body,
   );

@@ -3,7 +3,7 @@
 // The address, legal, GST and risk panels follow in the next sections.
 import { useMemo, useState } from 'react';
 import { EditSelect, Field } from '../form-fields';
-import GstNoticeModal, { type GstNotice } from '../GstNoticeModal';
+import { gstCheck } from '../gst-check';
 import { supplierFields, type PoDraft, type SetDraft } from '../po-draft';
 import { MasterDatePicker } from '../../../../../../components/ui/MasterDatePicker';
 import { formatDmy } from '../../../../../../utils/formatDmy';
@@ -24,18 +24,6 @@ const COUNTRIES = ['India', 'United Arab Emirates', 'United States', 'United Kin
 const STATES = ['Maharashtra', 'Gujarat', 'Karnataka', 'Tamil Nadu', 'Delhi', 'Telangana', 'West Bengal', 'Uttar Pradesh'];
 const GST_STATUSES = ['Active', 'Inactive', 'Suspended', 'Cancelled', 'Provisional'];
 
-// A scrutiny or filing date older than this is treated as out of date.
-const GST_STALE_MONTHS = 3;
-
-/** Months between a date and today, to one decimal (7.2), as the banner shows
- *  it. An average month of 30.44 days keeps it in step with the prototype. */
-function monthsAgo(iso: string): number | null {
-  if (!iso) return null;
-  const then = new Date(iso);
-  if (Number.isNaN(then.getTime())) return null;
-  return Math.max(0, Math.round(((Date.now() - then.getTime()) / (86400000 * 30.44)) * 10) / 10);
-}
-
 /** Whole days between a date and today; null when there is no date. */
 function daysAgo(iso: string): number | null {
   if (!iso) return null;
@@ -43,8 +31,6 @@ function daysAgo(iso: string): number | null {
   if (Number.isNaN(then.getTime())) return null;
   return Math.max(0, Math.floor((Date.now() - then.getTime()) / 86400000));
 }
-
-type GstState = { tone: 'idle' | 'ok' | 'stop' | 'warn'; title: string; note: string; action?: string };
 
 type Severity = 'high' | 'med' | 'ok';
 type RiskItem = { sev: Severity; title: string; note: string; tag: string };
@@ -86,27 +72,6 @@ function riskItems(s: Supplier, physInsp: boolean): RiskItem[] {
   else items.push({ sev: 'ok', title: 'Compliance documents complete', note: `All ${total} KYC, licence and agreement documents are on file in the Evidence Vault.`, tag: 'Documents' });
 
   return items;
-}
-
-/** Stale scrutiny blocks the PO; a stale return only needs senior approval. */
-function gstState(supplier: string, scrutinyAge: number | null, filingAge: number | null): GstState {
-  if (!supplier) {
-    return { tone: 'idle', title: 'Select a supplier to run the GST compliance check', note: `Scrutiny and filing dates are checked against a ${GST_STALE_MONTHS}-month window.` };
-  }
-  if (scrutinyAge === null || scrutinyAge >= GST_STALE_MONTHS) {
-    return { tone: 'stop', title: 'GST scrutiny required', note: `Scrutiny is older than ${GST_STALE_MONTHS} months. Refresh it on the supplier record before this PO can move forward.`, action: 'Review requirement' };
-  }
-  if (filingAge === null || filingAge >= GST_STALE_MONTHS) {
-    return { tone: 'warn', title: 'Senior approval required', note: `Scrutiny is current, but the last GST return is older than ${GST_STALE_MONTHS} months. A senior must approve this PO.`, action: 'Send for senior approval' };
-  }
-  return { tone: 'ok', title: 'GST compliance cleared', note: `Scrutiny and filing are both inside the ${GST_STALE_MONTHS}-month window. This PO can proceed.` };
-}
-
-/** The oldest date a scrutiny or return may carry and still be accepted. */
-function cutoffDate(): string {
-  const d = new Date();
-  d.setMonth(d.getMonth() - GST_STALE_MONTHS);
-  return d.toISOString().slice(0, 10);
 }
 
 export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set: SetDraft }) {
@@ -201,28 +166,9 @@ export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set:
   const remarks = draft.remarks;
   const setRemarks = (v: string) => set({ remarks: v });
 
-  // Both dates are checked against the same 3-month window.
-  const scrutinyAge = monthsAgo(scrutinyDate);
-  const filingAge = monthsAgo(filingDate);
-  const gst = gstState(supplier, scrutinyAge, filingAge);
-
-  // The banner's action opens the matching notice popup.
-  const [notice, setNotice] = useState<GstNotice | null>(null);
-  const openNotice = () => {
-    if (gst.tone !== 'stop' && gst.tone !== 'warn') return;
-    const s = supplierByOption(supplier);
-    setNotice({
-      tone: gst.tone,
-      supplier: s?.key ?? '—',
-      code: s?.code ?? '—',
-      scrutiny: scrutinyDate,
-      filing: filingDate,
-      scrutinyAge,
-      filingAge,
-      cutoff: cutoffDate(),
-      months: GST_STALE_MONTHS,
-    });
-  };
+  // Both dates are checked against the same 3-month window. The action it
+  // calls for lives on Step 03, next to Submit PO — the banner only reports.
+  const { state: gst, scrutinyAge, filingAge } = gstCheck(draft);
 
   // Risk alerts are re-derived from the chosen supplier, never stored.
   const [riskOpen, setRiskOpen] = useState(true);
@@ -252,7 +198,6 @@ export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set:
 
   return (
     <>
-    {notice && <GstNoticeModal notice={notice} onClose={() => setNotice(null)} />}
 
     <div className={`spi-dt-sec ${poOpen ? '' : 'is-collapsed'}`}>
       <div className="spi-dt-sec-head" onClick={() => setPoOpen((o) => !o)}>
@@ -441,8 +386,7 @@ export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set:
               </>
             ) : (
               <>
-                <span className="spi-dt-minus cpf-push">{legalOpen ? '–' : '+'}</span>
-                <span className="cpf-lgbar"><span className="cpf-lgbar__fill is-empty" /></span>
+                <span className="cpf-lgbar cpf-push"><span className="cpf-lgbar__fill is-empty" /></span>
                 <span className="cpf-lgpct">0%</span>
               </>
             )}
@@ -501,7 +445,6 @@ export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set:
                 </span>
               )}
             </span>
-            {gst.action && <button type="button" className="cpf-gst__btn" onClick={openNotice}>{gst.action}</button>}
           </div>
 
           <div className="spi-dt-grid4">
@@ -534,7 +477,6 @@ export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set:
                   : nMed ? `${nMed} warning${nMed === 1 ? '' : 's'}`
                     : 'All clear'}
             </span>
-            <span className="spi-dt-minus">{riskOpen ? '–' : '+'}</span>
             <span className={`cpf-chev ${riskOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
           </div>
           {riskOpen && (
@@ -547,7 +489,6 @@ export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set:
                       <div className="cpf-risk__sum-t">{verdict}</div>
                       <div className="cpf-risk__sum-x">{nOk} of {risks.length} checks passed · risk rating, category, GST registration, filing, scrutiny and documents</div>
                     </div>
-                    <span className="cpf-risk__sum-score">{nOk}/{risks.length}</span>
                   </div>
                   {mandatory && (
                     <div className="cpf-guide">

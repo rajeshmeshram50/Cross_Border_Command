@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
+import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import { formatDmy } from '../../../../../utils/formatDmy';
 import { IcoShieldAlert, IcoUser } from '../icons';
 
@@ -25,6 +26,7 @@ const APPROVERS = [
   'Sneha Kulkarni · Finance Controller',
   'Amit Deshpande · Director',
 ];
+const APPROVER_OPTIONS = APPROVERS.map((a) => ({ value: a, label: a }));
 
 export default function GstNoticeModal({ notice, onClose }: { notice: GstNotice; onClose: () => void }) {
   useScrollLock(true, '.cgst-card');
@@ -90,15 +92,8 @@ export default function GstNoticeModal({ notice, onClose }: { notice: GstNotice;
           ) : (
             <>
               <div className="cgst-field">
-                <label htmlFor="cgst-approver">Send to</label>
-                <select
-                  id="cgst-approver"
-                  className="cgst-sel"
-                  value={approver}
-                  onChange={(e) => setApprover(e.target.value)}
-                >
-                  {APPROVERS.map((a) => <option key={a} value={a}>{a}</option>)}
-                </select>
+                <label>Send to</label>
+                <MasterSelect value={approver} options={APPROVER_OPTIONS} onChange={setApprover} />
               </div>
               <div className="cgst-field">
                 <label htmlFor="cgst-note">Note for the approver <span className="cgst-opt">optional</span></label>

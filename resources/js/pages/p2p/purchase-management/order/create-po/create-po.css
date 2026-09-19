@@ -66,7 +66,6 @@
 }
 .cpf-form .spi-dt-field { gap: 5px; }
 .cpf-form .spi-dt-inp,
-.cpf-form .spi-dt-select-edit,
 .cpf-form .spi-dt-textarea { background: #f9fdfe; }
 .cpf-form .spi-dt-inp:focus,
 .cpf-form .spi-dt-textarea:focus { background: #fff; }
@@ -143,7 +142,6 @@
   transition: color .15s;
 }
 [data-bs-theme="dark"] .cpf-form .spi-dt-inp,
-[data-bs-theme="dark"] .cpf-form .spi-dt-select-edit,
 [data-bs-theme="dark"] .cpf-form .spi-dt-textarea { background: #0c1c24; }
 [data-bs-theme="dark"] .cpf-form .spi-dt-toggle { background: #0c1c24; border-color: rgba(34, 211, 238, .25); }
 [data-bs-theme="dark"] .cpf-form .spi-dt-field-lbl { color: #94a3b8; }
@@ -495,22 +493,6 @@
   color: #64809a;
 }
 .cpf-gst__sep { width: 1px; height: 11px; margin: 0 3px; background: #dbe7ee; }
-.cpf-gst__btn {
-  flex-shrink: 0;
-  align-self: center;
-  padding: 8px 14px;
-  border: none;
-  border-radius: 9px;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 800;
-  color: #fff;
-  cursor: pointer;
-  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
-  box-shadow: 0 3px 10px rgba(8, 145, 178, .3);
-  transition: transform .15s, box-shadow .15s;
-}
-.cpf-gst__btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(8, 145, 178, .42); }
 
 .cpf-gst--ok { border-color: #bbf7d0; background: linear-gradient(180deg, #f6fefa, #eafaf0); }
 .cpf-gst--ok .cpf-gst__ico { background: #dcfce7; color: #15803d; }
@@ -519,12 +501,10 @@
 .cpf-gst--warn { border-color: #fde68a; background: linear-gradient(180deg, #fffdf5, #fef7e7); }
 .cpf-gst--warn .cpf-gst__ico { background: #fef3c7; color: #b45309; }
 .cpf-gst--warn .cpf-gst__t { color: #92400e; }
-.cpf-gst--warn .cpf-gst__btn { background: linear-gradient(135deg, #b45309, #d97706 55%, #f59e0b); box-shadow: 0 3px 10px rgba(217, 119, 6, .3); }
 
 .cpf-gst--stop { border-color: #fecaca; background: linear-gradient(180deg, #fffafa, #fdeeee); }
 .cpf-gst--stop .cpf-gst__ico { background: #fee2e2; color: #b91c1c; }
 .cpf-gst--stop .cpf-gst__t { color: #991b1b; }
-.cpf-gst--stop .cpf-gst__btn { background: linear-gradient(135deg, #b91c1c, #dc2626 55%, #ef4444); box-shadow: 0 3px 10px rgba(220, 38, 38, .3); }
 
 [data-bs-theme="dark"] .cpf-gst { background: #13242e; border-color: rgba(148, 163, 184, .22); }
 [data-bs-theme="dark"] .cpf-gst__t { color: #e2e8f0; }
@@ -665,7 +645,10 @@
 .cgst-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 2500100;
+  /* Above the Create PO form (1200) and the P2P popups (3000), but BELOW the
+     MasterSelect menu (11000) — that menu is portalled to <body>, so any higher
+     and the "Send to" list would open behind this popup. */
+  z-index: 10500;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -775,7 +758,6 @@
   color: #5b7585;
 }
 .cgst-opt { font-size: 9px; font-weight: 700; letter-spacing: .03em; text-transform: none; color: #a8bcc7; }
-.cgst-sel,
 .cgst-ta {
   width: 100%;
   padding: 10px 12px;
@@ -788,18 +770,7 @@
   color: #0f172a;
   outline: none;
 }
-.cgst-sel {
-  appearance: none;
-  height: 40px;
-  padding-right: 32px;
-  cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235b7585' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 11px center;
-  background-size: 14px;
-}
 .cgst-ta { min-height: 52px; resize: none; }
-.cgst-sel:focus,
 .cgst-ta:focus { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34, 211, 238, .15); }
 
 .cgst-ft {
@@ -841,13 +812,10 @@
 [data-bs-theme="dark"] .cgst-rows { border-color: rgba(148, 163, 184, .2); }
 [data-bs-theme="dark"] .cgst-row__v { color: #67e8f9; }
 [data-bs-theme="dark"] .cgst-note { background: rgba(34, 211, 238, .08); border-color: rgba(34, 211, 238, .2); color: #94a3b8; }
-[data-bs-theme="dark"] .cgst-sel,
 [data-bs-theme="dark"] .cgst-ta { background: #0c1c24; border-color: rgba(34, 211, 238, .22); color: #e2e8f0; }
 [data-bs-theme="dark"] .cgst-ft { background: #0c1c24; border-top-color: rgba(148, 163, 184, .16); }
 [data-bs-theme="dark"] .cgst-btn--ghost { background: #1e293b; color: #cbd5e1; border-color: rgba(148, 163, 184, .25); }
 
-/* Step 02 summary: the little dash before each group heading. */
-.cpf-ro-dash { width: 12px; height: 2px; border-radius: 2px; background: currentColor; flex-shrink: 0; }
 
 /* ── Step 02 · PI vs PO product table ─────────────────────────────────────
    Grouped header, two sticky columns and tinted editable cells. Values from
@@ -980,7 +948,6 @@
 }
 .cpd-in:focus { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34, 211, 238, .14); }
 .cpd-pick { display: flex; align-items: center; gap: 5px; min-width: 0; }
-.cpd-pick .spi-dt-select-edit { min-height: 0; padding: 6px 8px; }
 .cpd-iconbtn,
 .cpd-addbtn {
   display: inline-flex;
@@ -1045,8 +1012,10 @@
 .cpd-more:hover { color: #06b6d4; text-decoration: underline; text-underline-offset: 2px; }
 .cpd-desc__wrap.is-open .cpd-more { position: static; padding-left: 4px; background: none; }
 
-/* The PO picker fills its column like the prototype's .cpd-dd--prod. */
-.cpd-pick .spi-dt-select-edit { width: 100%; min-width: 186px; height: 30px; font-size: 11px; font-weight: 700; color: #0f172a; }
+/* The PO picker (a MasterSelect) fills its column like the prototype's
+   .cpd-dd--prod, and stays compact enough for a table row. */
+.cpd-pick > :first-child { flex: 1 1 auto; min-width: 186px; }
+.cpd-pick .master-select-toggle { height: 30px; padding: 6px 8px; font-size: 11px; font-weight: 700; }
 
 /* Zebra rows, with the sticky columns following the same tint. */
 .cpd-tbl tbody tr:nth-child(even) { --cpd-rowbg: #f8fcfe; background: #f8fcfe; }
@@ -1186,7 +1155,7 @@
   font-weight: 800;
   color: #b91c1c;
 }
-.cpd-tbl--miss .spi-dt-select-edit { min-height: 0; height: 34px; padding: 6px 10px; font-size: 11.5px; }
+.cpd-tbl--miss .master-select-toggle { height: 34px; padding: 6px 10px; font-size: 11.5px; }
 
 [data-bs-theme="dark"] .cpd-sum__charges { background: #0e1b24; border-color: rgba(148, 163, 184, .2); }
 [data-bs-theme="dark"] .cpd-chg-in { background: #0c1c24; border-color: rgba(34, 211, 238, .22); color: #e2e8f0; }
@@ -1260,17 +1229,17 @@
 .cpf-form .cpd-body { display: block; padding: 14px; }
 
 /* ── Scroll smoothness ───────────────────────────────────────────────────
-   Two things made this form repaint heavily while scrolling:
-   · the five header pills carry backdrop-filter: blur(6px), so every frame
-     re-samples what is behind them — they look the same without it;
-   · the sticky table header + sticky columns give the compositor many
-     layers, so the sticky cells are promoted instead.
+   The five header pills carry backdrop-filter: blur(6px), so every scroll
+   frame re-sampled what is behind them — they look the same without it.
+
+   No will-change on the table header cells: it gave each its own GPU layer,
+   where Chrome drops sub-pixel text smoothing and the labels read soft on a
+   scaled (125%) display. Frame times measured the same without it.
 
    NOTE: never put a transform / will-change: transform on .cpf-form itself —
    it becomes the containing block for the position:fixed footer, which then
    floats into the middle of the page instead of sitting at the bottom. */
 .cpf-form .spi-dt-pill { backdrop-filter: none; -webkit-backdrop-filter: none; }
-.cpf-form .cpd-tbl thead th { will-change: transform; }
 
 /* ── Only the body scrolls ───────────────────────────────────────────────
    The header strip and the four step cards stay put while the form scrolls
@@ -1315,7 +1284,6 @@
 
 /* Editable cells: the tint and both controls. */
 [data-bs-theme="dark"] .cpd-ed { background: rgba(34, 211, 238, .1); box-shadow: inset 1px 0 0 rgba(34, 211, 238, .22), inset -1px 0 0 rgba(34, 211, 238, .22); }
-[data-bs-theme="dark"] .cpf-form .cpd-pick .spi-dt-select-edit,
 [data-bs-theme="dark"] .cpd-tbl--pd .cpd-in {
   background: #0c1c24;
   border-color: rgba(34, 211, 238, .22);
@@ -1415,7 +1383,7 @@
   .cpd-tbl--pd td.cpd-prodcell { min-width: 170px; }
   .cpd-tbl--pd td.cpd-prodcell.cpd-ed { min-width: 190px; }
   .cpd-tbl--pd .cpd-desc { min-width: 150px; max-width: 180px; }
-  .cpd-tbl--pd .cpd-pick .spi-dt-select-edit { min-width: 120px; }
+  .cpd-tbl--pd .cpd-pick > :first-child { min-width: 120px; }
 
   /* Charges and totals sit one under the other. */
   .cpd-sum { gap: 10px; }
@@ -1820,3 +1788,207 @@
 .cdoc-vault:hover .cdoc-vault__s { color: rgba(205, 242, 253, .92); }
 /* Respect a reduced-motion preference. */
 @media (prefers-reduced-motion: reduce) { .cdoc-vault::before { animation: none; opacity: 0; } }
+
+/* ── Supplier sections, to the prototype (measured against it) ──────────────
+   Supplier Legal Status, GST Scrutiny and Supplier Risk Alert. Values are the
+   prototype's own .splegal-* / .cgst-ban / .pof-risk* rules, restated on our
+   class names. ─────────────────────────────────────────────────────────── */
+
+/* Card header icon: the prototype has no outer ring. */
+.cpf-form .spi-dt-card-head .spi-dt-card-ico { box-shadow: 0 2px 6px rgba(8, 145, 178, .35); }
+
+/* Legal header: compliance badge, vault button, bar and percentage. */
+.cpf-form .spi-dt-legal-badge {
+  padding: 4px 11px;
+  border: 1px solid #dce8ed;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  line-height: 1.5;
+}
+.cpf-form .spi-dt-legal-badge.warn { border-color: #fde68a; background: #fef3c7; color: #92400e; }
+.cpf-form .spi-dt-legal-badge.ok { border-color: #a5f3fc; background: #cffafe; color: #0e7490; }
+.cpf-form .cpf-vault {
+  margin-left: 0;
+  letter-spacing: .005em;
+  line-height: normal;
+  box-shadow: 0 1px 2px rgba(8, 47, 73, .18), 0 6px 16px -4px rgba(8, 145, 178, .55), inset 0 1px 0 rgba(255, 255, 255, .32);
+}
+.cpf-form .cpf-lgbar {
+  width: clamp(150px, 18vw, 250px);
+  height: 10px;
+  margin-left: 0;
+  background: linear-gradient(180deg, #dceff5, #e9f6fa);
+  box-shadow: inset 0 1px 3px rgba(8, 47, 73, .16), inset 0 0 0 1px rgba(8, 47, 73, .05);
+}
+.cpf-form .cpf-lgbar__fill { position: relative; box-shadow: 0 0 10px rgba(8, 145, 178, .35); }
+.cpf-form .cpf-lgbar__fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .42), rgba(255, 255, 255, .06) 55%, rgba(8, 47, 73, .10));
+  pointer-events: none;
+}
+.cpf-form .cpf-lgpct {
+  min-width: 42px;
+  font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1.5;
+}
+
+/* Legal cards (Standard / Case to Case): layered gradients, fine diagonal
+   texture, top highlight line and a glowing bar. */
+.cpf-form .cpf-lg__tab {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(135% 150% at 4% -10%, rgba(255, 255, 255, .22), rgba(255, 255, 255, 0) 46%),
+    radial-gradient(90% 130% at 100% 120%, rgba(255, 255, 255, .16), rgba(255, 255, 255, 0) 55%),
+    linear-gradient(118deg, #0b6b87 0%, #0891b2 46%, #06b6d4 80%, #22d3ee 100%);
+  box-shadow: 0 1px 2px rgba(8, 47, 73, .18), 0 12px 28px -10px rgba(8, 145, 178, .55), inset 0 1px 0 rgba(255, 255, 255, .30), inset 0 0 0 1px rgba(255, 255, 255, .13);
+}
+.cpf-form .cpf-lg__tab--warn {
+  background:
+    radial-gradient(135% 150% at 4% -10%, rgba(255, 255, 255, .22), rgba(255, 255, 255, 0) 46%),
+    radial-gradient(90% 130% at 100% 120%, rgba(255, 255, 255, .14), rgba(255, 255, 255, 0) 55%),
+    linear-gradient(118deg, #a5540a 0%, #d97706 48%, #f59e0b 82%, #fbbf24 100%);
+  box-shadow: 0 1px 2px rgba(69, 26, 3, .18), 0 12px 28px -10px rgba(217, 119, 6, .50), inset 0 1px 0 rgba(255, 255, 255, .30), inset 0 0 0 1px rgba(255, 255, 255, .13);
+}
+.cpf-form .cpf-lg__tab--bad {
+  background:
+    radial-gradient(135% 150% at 4% -10%, rgba(255, 255, 255, .22), rgba(255, 255, 255, 0) 46%),
+    radial-gradient(90% 130% at 100% 120%, rgba(255, 255, 255, .14), rgba(255, 255, 255, 0) 55%),
+    linear-gradient(118deg, #a11414 0%, #dc2626 48%, #ef4444 82%, #f87171 100%);
+  box-shadow: 0 1px 2px rgba(69, 10, 10, .18), 0 12px 28px -10px rgba(220, 38, 38, .50), inset 0 1px 0 rgba(255, 255, 255, .30), inset 0 0 0 1px rgba(255, 255, 255, .13);
+}
+.cpf-form .cpf-lg__tab::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: .5;
+  background: repeating-linear-gradient(118deg, rgba(255, 255, 255, .055) 0 1px, transparent 1px 13px);
+  -webkit-mask-image: linear-gradient(105deg, #000, transparent 62%);
+  mask-image: linear-gradient(105deg, #000, transparent 62%);
+  pointer-events: none;
+}
+.cpf-form .cpf-lg__tab::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 16%;
+  right: 16%;
+  z-index: 1;
+  height: 1.5px;
+  border-radius: 0 0 3px 3px;
+  background: linear-gradient(90deg, transparent, rgba(207, 250, 254, .85), rgba(255, 255, 255, .95), rgba(207, 250, 254, .85), transparent);
+}
+.cpf-form .cpf-lg__tab--warn::after { background: linear-gradient(90deg, transparent, rgba(254, 243, 199, .85), rgba(255, 255, 255, .95), rgba(254, 243, 199, .85), transparent); }
+.cpf-form .cpf-lg__tab--bad::after { background: linear-gradient(90deg, transparent, rgba(254, 226, 226, .85), rgba(255, 255, 255, .95), rgba(254, 226, 226, .85), transparent); }
+.cpf-form .cpf-lg__hd,
+.cpf-form .cpf-lg__bar { position: relative; z-index: 2; }
+.cpf-form .cpf-lg__ico { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), inset 0 -3px 8px rgba(8, 47, 73, .14), 0 2px 6px rgba(8, 47, 73, .16); }
+.cpf-form .cpf-lg__cnt { letter-spacing: -.02em; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28); }
+.cpf-form .cpf-lg__bar { box-shadow: inset 0 1px 3px rgba(3, 42, 58, .38), inset 0 -1px 0 rgba(255, 255, 255, .12); }
+.cpf-form .cpf-lg__fill {
+  position: relative;
+  background: linear-gradient(90deg, #a5f3fc 0%, #e0fbff 58%, #fff 100%);
+  box-shadow: 0 0 14px rgba(224, 251, 255, .55), inset 0 1px 0 rgba(255, 255, 255, .9);
+}
+.cpf-form .cpf-lg__tab--warn .cpf-lg__fill {
+  background: linear-gradient(90deg, #fde68a 0%, #fff7e0 58%, #fff 100%);
+  box-shadow: 0 0 14px rgba(255, 247, 224, .55), inset 0 1px 0 rgba(255, 255, 255, .9);
+}
+.cpf-form .cpf-lg__tab--bad .cpf-lg__fill {
+  background: linear-gradient(90deg, #fecaca 0%, #ffe9e9 58%, #fff 100%);
+  box-shadow: 0 0 14px rgba(255, 233, 233, .55), inset 0 1px 0 rgba(255, 255, 255, .9);
+}
+/* The bright pin at the leading edge of each bar. */
+.cpf-form .cpf-lg__fill::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  width: 4px;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 8px 2px rgba(255, 255, 255, .85);
+}
+
+/* GST banner button height (the prototype uses normal line height). */
+/* Step 03 footer: the GST action sits left of Submit PO when the supplier's
+   GST position needs one. Same shape as the footer's own buttons; the colour
+   says which — red for a block, amber for a senior approval. */
+.cpf-form .spi-dt-btn-next.cpf-foot-gst--stop {
+  background: linear-gradient(135deg, #b91c1c, #dc2626 55%, #ef4444);
+  box-shadow: 0 3px 10px rgba(220, 38, 38, .3);
+}
+.cpf-form .spi-dt-btn-next.cpf-foot-gst--warn {
+  background: linear-gradient(135deg, #b45309, #d97706 55%, #f59e0b);
+  box-shadow: 0 3px 10px rgba(217, 119, 6, .3);
+}
+/* The banner sits straight in the card, outside the padded fields area, so it
+   was flush against the header and the card edges. Prototype: 14px under the
+   header, 15px in from each side. */
+.cpf-form .spi-dt-card > .cpf-gst { margin: 14px 14px 0; }
+/* ...and 11px down to the first field row, as in the prototype. */
+.cpf-form .spi-dt-card > .cpf-gst + * { padding-top: 11px; }
+
+/* Risk summary: tinted by verdict, with a solid gradient icon. */
+.cpf-form .cpf-risk__sum { margin-bottom: 11px; }
+.cpf-form .cpf-risk__sum--high { border-color: #fca5a5; background: linear-gradient(110deg, #fff5f5, #fee2e2); }
+.cpf-form .cpf-risk__sum--med { border-color: #fcd97a; background: linear-gradient(110deg, #fffbeb, #fef3c7); }
+.cpf-form .cpf-risk__sum--ok { border-color: #a7ecc0; background: linear-gradient(110deg, #f3fdf7, #dcfce7); }
+.cpf-form .cpf-risk__sum-ico { width: 28px; height: 28px; border-radius: 9px; color: #fff; }
+.cpf-form .cpf-risk__sum--high .cpf-risk__sum-ico { background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 3px 8px rgba(220, 38, 38, .3); }
+.cpf-form .cpf-risk__sum--med .cpf-risk__sum-ico { background: linear-gradient(135deg, #fbbf24, #d97706); box-shadow: 0 3px 8px rgba(217, 119, 6, .3); }
+.cpf-form .cpf-risk__sum--ok .cpf-risk__sum-ico { background: linear-gradient(135deg, #4ade80, #16a34a); box-shadow: 0 3px 8px rgba(22, 163, 74, .3); }
+.cpf-form .cpf-risk__sum-t { letter-spacing: -.1px; line-height: 1.5; }
+.cpf-form .cpf-risk__sum-x { margin-top: 2px; line-height: 1.45; color: #64748b; }
+
+/* Mandatory guidelines panel. */
+.cpf-form .cpf-guide { margin-bottom: 11px; background: #fff; box-shadow: 0 2px 10px rgba(220, 38, 38, .08); }
+.cpf-form .cpf-guide__hd { padding: 9px 12px; background: linear-gradient(110deg, #b91c1c, #dc2626 55%, #ef4444); }
+.cpf-form .cpf-guide__ico { background: rgba(255, 255, 255, .2); }
+.cpf-form .cpf-guide__t { font-size: 11.5px; letter-spacing: .01em; line-height: 1.5; }
+.cpf-form .cpf-guide__tag { border-color: rgba(255, 255, 255, .32); background: rgba(255, 255, 255, .18); }
+.cpf-form .cpf-guide__ck {
+  width: 19px;
+  height: 19px;
+  margin-top: 1px;
+  background: linear-gradient(135deg, #f87171, #dc2626);
+  box-shadow: 0 2px 6px rgba(220, 38, 38, .3);
+}
+.cpf-form .cpf-guide__rt { letter-spacing: -.1px; }
+.cpf-form .cpf-guide__rx { line-height: 1.45; color: #7f5b5b; }
+
+/* Check rows: stronger tints, and a solid gradient dot with a white icon. */
+.cpf-form .cpf-risk__row--high { border-color: #fca5a5; background: linear-gradient(180deg, #fff7f7, #fee2e2); }
+.cpf-form .cpf-risk__row--med { border-color: #fde68a; background: linear-gradient(180deg, #fffbeb, #fef3c7); }
+.cpf-form .cpf-risk__row--ok { border-color: #bbf7d0; background: linear-gradient(180deg, #f6fefa, #dcfce7); }
+.cpf-form .cpf-risk__dot { color: #fff; }
+.cpf-form .cpf-risk__row--high .cpf-risk__dot { background: linear-gradient(135deg, #ef4444, #dc2626); }
+.cpf-form .cpf-risk__row--med .cpf-risk__dot { background: linear-gradient(135deg, #fbbf24, #d97706); }
+.cpf-form .cpf-risk__row--ok .cpf-risk__dot { background: linear-gradient(135deg, #4ade80, #16a34a); }
+.cpf-form .cpf-risk__d { line-height: 1.45; }
+
+/* Dark: keep the surfaces dark; the solid icons read on both themes. */
+[data-bs-theme="dark"] .cpf-form .spi-dt-legal-badge.warn { border-color: rgba(245, 158, 11, .34); background: rgba(245, 158, 11, .16); color: #fbbf24; }
+[data-bs-theme="dark"] .cpf-form .spi-dt-legal-badge.ok { border-color: rgba(34, 211, 238, .3); background: rgba(34, 211, 238, .14); color: #67e8f9; }
+[data-bs-theme="dark"] .cpf-form .cpf-lgbar { background: rgba(148, 163, 184, .22); }
+[data-bs-theme="dark"] .cpf-form .cpf-risk__sum--high,
+[data-bs-theme="dark"] .cpf-form .cpf-risk__row--high { border-color: rgba(239, 68, 68, .38); background: rgba(239, 68, 68, .12); }
+[data-bs-theme="dark"] .cpf-form .cpf-risk__sum--med,
+[data-bs-theme="dark"] .cpf-form .cpf-risk__row--med { border-color: rgba(245, 158, 11, .38); background: rgba(245, 158, 11, .12); }
+[data-bs-theme="dark"] .cpf-form .cpf-risk__sum--ok,
+[data-bs-theme="dark"] .cpf-form .cpf-risk__row--ok { border-color: rgba(34, 197, 94, .38); background: rgba(34, 197, 94, .12); }
+[data-bs-theme="dark"] .cpf-form .cpf-risk__sum-x { color: #94a3b8; }
+[data-bs-theme="dark"] .cpf-form .cpf-guide { background: #0e1b24; }
+[data-bs-theme="dark"] .cpf-form .cpf-guide__rx { color: #fca5a5; }

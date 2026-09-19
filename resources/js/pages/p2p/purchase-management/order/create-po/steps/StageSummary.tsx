@@ -134,12 +134,12 @@ export default function StageSummary({ draft, upto }: { draft: PoDraft; upto: 1 
 
             <div className="spi-dt-sumstep-body">
               <div>
-                <div className="spi-dt-rogroup-hd"><span className="cpf-ro-dash" />Product Details</div>
+                <div className="spi-dt-rogroup-hd">Product Details</div>
                 <ProductTable rows={draft.lines} stateCode={stateCode} onChange={() => {}} readOnly />
               </div>
 
               <div>
-                <div className="spi-dt-rogroup-hd"><span className="cpf-ro-dash" />Additional Charges</div>
+                <div className="spi-dt-rogroup-hd">Additional Charges</div>
                 <div className="spi-dt-robox"><div className="spi-dt-rogrid">
                   <RO label="Shipping Charges" value={money(Number(draft.charges.ship) || 0)} />
                   <RO label="Packaging Charges" value={money(Number(draft.charges.pack) || 0)} />
@@ -148,7 +148,7 @@ export default function StageSummary({ draft, upto }: { draft: PoDraft; upto: 1 
               </div>
 
               <div>
-                <div className="spi-dt-rogroup-hd"><span className="cpf-ro-dash" />Cost Summary</div>
+                <div className="spi-dt-rogroup-hd">Cost Summary</div>
                 <div className="spi-dt-robox"><div className="spi-dt-rogrid">
                   <RO label="Product Cost (Without GST)" value={money(base)} />
                   <RO label="Total GST Amount" value={money(gst)} />
@@ -184,7 +184,7 @@ export default function StageSummary({ draft, upto }: { draft: PoDraft; upto: 1 
 function Group({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="spi-dt-rogroup-hd"><span className="cpf-ro-dash" />{label}</div>
+      <div className="spi-dt-rogroup-hd">{label}</div>
       <div className="spi-dt-robox"><div className="spi-dt-rogrid">{children}</div></div>
     </div>
   );

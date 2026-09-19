@@ -165,10 +165,13 @@
   border-radius: 8px;
 }
 
+/* No will-change here. It put this 3,500px table on its own GPU layer, where
+   Chrome drops sub-pixel text smoothing, so on a scaled (125%) Windows display
+   every cell read soft. The scroller already composites; frame times measured
+   the same without it (16.5 vs 16.7 ms). */
 .ord-table {
   table-layout: fixed;
   border-collapse: collapse;
-  will-change: transform; /* own GPU layer: smooth horizontal scroll */
 }
 .ord-table th,
 .ord-table td {
@@ -597,12 +600,10 @@
   font-weight: 800;
   font-style: normal;
   color: #fff;
-  background: rgba(255, 255, 255, .24);
-}
-
-.ord-btn__count--ready {
-  color: #053b2b;
-  background: #34d399;
+  /* Always this translucent white on the dark buttons. The prototype has a
+     green "ready" variant in its code, but overrides it back to this on these
+     buttons, so green never actually shows. */
+  background: rgba(255, 255, 255, .26);
 }
 
 .ord-paycell {
@@ -1213,3 +1214,185 @@
 .ord-skel-w120 { width: 120px; }
 .ord-skel-w140 { width: 140px; }
 [data-bs-theme="dark"] .ord-skel-tr td { border-bottom-color: rgba(148, 163, 184, .16); }
+
+/* ── Create PO link popup ────────────────────────────────────────────────
+   Prototype values (.cpo-modal). The base .spi-mdl-* rules live in
+   p2p-common.css and are shared with SPI, so everything here is scoped to
+   .ord-cpo and the SPI popups are untouched. */
+.spi-mdl.ord-cpo {
+  width: min(540px, 100%);
+  /* The app's base tightens text by .02em; the prototype's popup uses normal
+     spacing (titles that want tighter set their own). */
+  letter-spacing: normal;
+  border: 1px solid #a5f3fc;
+  box-shadow: 0 30px 80px rgba(8, 47, 73, .5), 0 0 0 1px rgba(165, 243, 252, .6);
+}
+
+/* Header: tighter, with the prototype's two light pools. */
+.ord-cpo .spi-mdl-head { position: relative; overflow: hidden; padding: 14px 18px; }
+.ord-cpo .spi-mdl-head::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 0% 120%, rgba(8, 47, 73, .35), transparent 55%);
+  pointer-events: none;
+}
+.ord-cpo .spi-mdl-head::after {
+  content: '';
+  position: absolute;
+  top: -60%;
+  right: -5%;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, .28), transparent 65%);
+  pointer-events: none;
+}
+/* Content above both light pools, or the dark one greys the white icon. */
+.ord-cpo .spi-mdl-head > * { position: relative; z-index: 1; }
+.ord-cpo .spi-mdl-head-ico {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7), 0 4px 12px rgba(8, 47, 73, .25);
+}
+/* Title + subtitle block — the prototype nudges it down 1px. */
+.ord-cpo .spi-mdl-head-left > div:last-child { padding-top: 1px; }
+.ord-cpo .spi-mdl-title { font-weight: 800; letter-spacing: -.4px; }
+.ord-cpo .spi-mdl-sub { line-height: 1.35; }
+.ord-cpo .spi-mdl-x { width: 32px; height: 32px; border-radius: 10px; transition: background .15s, transform .15s; }
+.ord-cpo .spi-mdl-x:hover { background: rgba(255, 255, 255, .36); transform: rotate(90deg); }
+
+.ord-cpo .spi-mdl-body { padding: 16px 18px 0; background: linear-gradient(180deg, #f6fdfe 0%, #fff 18%); }
+
+/* Option cards: a 4px accent bar on the left lights up with the choice. */
+.ord-cpo .spi-mdl-card {
+  position: relative;
+  overflow: hidden;
+  padding: 15px 16px;
+  border-radius: 16px;
+  background: linear-gradient(170deg, #fff, #f7fcfe);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04), inset 0 1px 0 rgba(255, 255, 255, .6);
+}
+.ord-cpo .spi-mdl-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+  background: transparent;
+  transition: background .18s;
+}
+.ord-cpo .spi-mdl-card:not(.is-sel):hover { transform: translateY(-1px); box-shadow: 0 12px 28px -10px rgba(8, 145, 178, .22); }
+.ord-cpo .spi-mdl-card.is-sel.is-teal {
+  border-color: #0891b2;
+  background: linear-gradient(120deg, #f2feff, #e3f8fc);
+  box-shadow: 0 10px 26px -10px rgba(8, 145, 178, .4);
+}
+.ord-cpo .spi-mdl-card.is-sel.is-teal::before { background: linear-gradient(180deg, #22d3ee, #0891b2); }
+.ord-cpo .spi-mdl-card.is-sel.is-amber {
+  border-color: #f59e0b;
+  background: linear-gradient(120deg, #fffdf3, #fef3c7);
+  box-shadow: 0 10px 26px -10px rgba(217, 119, 6, .38);
+}
+.ord-cpo .spi-mdl-card.is-sel.is-amber::before { background: linear-gradient(180deg, #fbbf24, #d97706); }
+/* The chosen option's icon turns solid. */
+.ord-cpo .spi-mdl-ico-amber { box-shadow: 0 4px 12px -2px rgba(217, 119, 6, .22), inset 0 1px 0 rgba(255, 255, 255, .5); }
+.ord-cpo .spi-mdl-card.is-sel .spi-mdl-ico-teal {
+  background: linear-gradient(140deg, #22d3ee, #0891b2);
+  color: #fff;
+  box-shadow: 0 8px 18px -3px rgba(8, 145, 178, .55), inset 0 1px 0 rgba(255, 255, 255, .4);
+}
+.ord-cpo .spi-mdl-card.is-sel .spi-mdl-ico-amber {
+  background: linear-gradient(140deg, #fbbf24, #d97706);
+  color: #fff;
+  box-shadow: 0 8px 18px -3px rgba(217, 119, 6, .55), inset 0 1px 0 rgba(255, 255, 255, .4);
+}
+.ord-cpo .spi-mdl-card-title { font-weight: 800; letter-spacing: -.2px; line-height: 1.33; }
+/* RECOMMENDED / STANDALONE are pills in the prototype, not square tags. */
+.ord-cpo .spi-mdl-badge { padding: 2px 8px; border-radius: 20px; font-size: 8px; letter-spacing: .07em; line-height: 1.5; }
+.ord-cpo .spi-mdl-badge-teal { background: #e0f7fb; }
+.ord-cpo .spi-mdl-card-desc { font-weight: 500; line-height: 1.35; }
+/* White tick: the icon draws in currentColor and would otherwise inherit dark text. */
+.ord-cpo .spi-mdl-radio { width: 24px; height: 24px; color: #fff; box-shadow: inset 0 1px 2px rgba(15, 23, 42, .06); }
+
+.ord-cpo .spi-mdl-fieldlabel { font-size: 9.5px; }
+
+/* Standalone note, when "without shipment" is picked. */
+.ord-cpo .spi-mdl-warn {
+  gap: 9px;
+  margin-bottom: 0;
+  border-radius: 13px;
+  background: linear-gradient(110deg, #fffbeb, #fff7e6);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.ord-cpo .spi-mdl-warn b { color: #b45309; }
+
+/* Footer sits inside the body's margins, divider inset — not a full-width bar. */
+.ord-cpo .spi-mdl-foot { margin: 22px 18px 0; padding: 18px 0; border-top-color: #eef4f7; }
+.ord-cpo .spi-mdl-audit { gap: 7px; border: 1px solid #e8eff3; border-radius: 20px; background: #f5f9fb; font-size: 10px; color: #8aa0af; }
+/* Stretch so both buttons share the taller one's height, as in the prototype. */
+.ord-cpo .spi-mdl-foot-btns { align-items: stretch; }
+.ord-cpo .spi-mdl-cancel,
+.ord-cpo .spi-mdl-confirm { padding: 12px 22px; border-radius: 13px; font-weight: 800; line-height: normal; }
+.ord-cpo .spi-mdl-confirm {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .2), rgba(255, 255, 255, 0) 50%),
+    linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
+  box-shadow: 0 8px 20px -4px rgba(8, 145, 178, .5);
+}
+.ord-cpo .spi-mdl-confirm:hover:not(:disabled) { box-shadow: 0 12px 26px -4px rgba(8, 145, 178, .6); }
+.ord-cpo .spi-mdl-confirm:disabled { opacity: .45; box-shadow: none; }
+
+/* Dark: the rules above out-rank the shared dark ones, so restate them here. */
+[data-bs-theme="dark"] .spi-mdl.ord-cpo { border-color: rgba(34, 211, 238, .28); }
+[data-bs-theme="dark"] .ord-cpo .spi-mdl-body { background: transparent; }
+[data-bs-theme="dark"] .ord-cpo .spi-mdl-card { background: #13242e; box-shadow: none; }
+[data-bs-theme="dark"] .ord-cpo .spi-mdl-card.is-sel.is-teal {
+  border-color: #22d3ee;
+  background: linear-gradient(90deg, rgba(34, 211, 238, .14), rgba(34, 211, 238, .04));
+}
+[data-bs-theme="dark"] .ord-cpo .spi-mdl-card.is-sel.is-amber {
+  border-color: #f59e0b;
+  background: linear-gradient(90deg, rgba(245, 158, 11, .14), rgba(245, 158, 11, .04));
+}
+[data-bs-theme="dark"] .ord-cpo .spi-mdl-foot { border-top-color: rgba(148, 163, 184, .14); }
+[data-bs-theme="dark"] .ord-cpo .spi-mdl-badge-teal { background: rgba(34, 211, 238, .16); }
+[data-bs-theme="dark"] .ord-cpo .spi-mdl-warn { background: rgba(245, 158, 11, .1); }
+[data-bs-theme="dark"] .ord-cpo .spi-mdl-warn b { color: #fbbf24; }
+[data-bs-theme="dark"] .ord-cpo .spi-mdl-audit { border-color: rgba(148, 163, 184, .2); background: rgba(255, 255, 255, .06); color: #94a3b8; }
+
+@media (max-width: 600px) {
+  .ord-cpo .spi-mdl-head { padding: 14px; gap: 11px; }
+  .ord-cpo .spi-mdl-head-ico { width: 40px; height: 40px; }
+  .ord-cpo .spi-mdl-title { font-size: 15.5px; }
+  .ord-cpo .spi-mdl-sub { font-size: 11px; }
+  .ord-cpo .spi-mdl-body { padding: 14px 14px 0; }
+  .ord-cpo .spi-mdl-card { padding: 13px 12px; gap: 12px; }
+  .ord-cpo .spi-mdl-card-ico { width: 42px; height: 42px; }
+  .ord-cpo .spi-mdl-foot { margin: 18px 14px 0; padding: 14px 0; }
+  .ord-cpo .spi-mdl-foot-btns { flex: 1 1 100%; }
+  .ord-cpo .spi-mdl-cancel,
+  .ord-cpo .spi-mdl-confirm { flex: 1; justify-content: center; }
+}
+
+/* ── Dropdowns (MasterSelect) in teal, not the app's default violet ─────────
+   Its menu is portalled to <body>, so it can't be scoped by an ancestor
+   class. body:has(.ord-page) limits this to while the Order page is open —
+   the form and popups sit outside .ord-page but the page stays mounted. */
+body:has(.ord-page) .master-select-toggle:hover:not(:disabled) {
+  border-color: rgba(8, 145, 178, .55);
+  box-shadow: 0 2px 6px rgba(8, 145, 178, .08);
+}
+body:has(.ord-page) .master-select-wrap.show .master-select-toggle {
+  border-color: #0891b2 !important;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, .15), 0 4px 12px rgba(8, 145, 178, .12) !important;
+}
+body:has(.ord-page) .master-select-wrap.show .master-select-chev { color: #0891b2; }
+body:has(.ord-page) .master-select-search-input:focus { border-color: #0891b2; box-shadow: 0 0 0 2px rgba(34, 211, 238, .18); }
+body:has(.ord-page) .master-select-item.active { background: rgba(8, 145, 178, .10) !important; color: #0e7490 !important; }
+[data-bs-theme="dark"] body:has(.ord-page) .master-select-item:hover,
+[data-bs-theme="dark"] body:has(.ord-page) .master-select-item:focus { background: rgba(34, 211, 238, .18) !important; }
+[data-bs-theme="dark"] body:has(.ord-page) .master-select-item.active { background: rgba(34, 211, 238, .16) !important; color: #67e8f9 !important; }

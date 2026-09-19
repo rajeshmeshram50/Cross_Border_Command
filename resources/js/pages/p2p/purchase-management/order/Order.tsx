@@ -782,7 +782,6 @@ function PaymentCell({ row, onManage }: { row: OrderRow; onManage: (row: OrderRo
   const status: PaymentStatus = pct >= 100 ? 'full' : pct > 0 ? 'partial' : 'pending';
   const label = status === 'full' ? 'Payment Completed' : PAYMENT_LABEL[status];
   const done = status === 'full';
-  const isReady = row.paymentNote?.kind === 'ready';
 
   const noteText = !row.paymentNote ? ''
     : row.paymentNote.kind === 'ready'
@@ -829,7 +828,7 @@ function PaymentCell({ row, onManage }: { row: OrderRow; onManage: (row: OrderRo
         <span>{done ? 'View Request Details' : 'Manage Payment Requests'}</span>
 
         {row.paymentRequests > 0 && (
-          <i className={`ord-btn__count${isReady ? ' ord-btn__count--ready' : ''}`}>{row.paymentRequests}</i>
+          <i className="ord-btn__count">{row.paymentRequests}</i>
         )}
       </button>
     </div>
@@ -931,7 +930,7 @@ function RecoveryCell({ row }: { row: OrderRow }) {
       {ICON_RECOVER}
       <span>{g.complete ? 'Recovery Complete' : 'Manage Recovery'}</span>
       {g.entries > 0 && (
-        <i className={`ord-btn__count${g.complete ? ' ord-btn__count--ready' : ''}`}>{g.entries}</i>
+        <i className="ord-btn__count">{g.entries}</i>
       )}
     </button>
   );
