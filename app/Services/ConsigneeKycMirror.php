@@ -97,7 +97,6 @@ class ConsigneeKycMirror
         $core = [
             'company_name'   => $customer->company_name,
             'legal_name'     => $customer->legal_name,
-            'segment'        => $customer->segment,
             'classification' => $customer->classification,
             'risk_level'     => $customer->risk_level,
             'website'        => $customer->website,
@@ -113,6 +112,11 @@ class ConsigneeKycMirror
             ->all())->all();
 
         foreach ($mirrors as $consignee) {
+            // Segments are the union over ALL the consignee's customers (ids + names), never
+            // just this customer's — copying one customer here wiped the rest of the union.
+            $custIds = $consignee->customers()->pluck('customers.id')->all() ?: [$customer->id];
+            $core['segment']     = \App\Support\SegmentGuard::forCustomers($custIds) ?: null;
+            $core['segment_ids'] = \App\Support\SegmentGuard::idsForCustomers($custIds) ?: null;
             DB::transaction(function () use ($consignee, $core, $addressRows) {
                 $consignee->update($core);
 

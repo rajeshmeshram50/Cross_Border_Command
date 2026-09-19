@@ -32,13 +32,14 @@ class Consignee extends Model
         'client_id', 'branch_id', 'created_by',
         'customer_id',
         'consignee_code',
-        'company_name', 'legal_name', 'segment', 'classification', 'risk_level',
+        'company_name', 'legal_name', 'segment', 'segment_ids', 'classification', 'risk_level',
         'website', 'primary_email', 'status',
         'same_as_customer',
     ];
 
     protected $casts = [
         'same_as_customer' => 'boolean',
+        'segment_ids'      => 'array',
     ];
 
     public function client(): BelongsTo

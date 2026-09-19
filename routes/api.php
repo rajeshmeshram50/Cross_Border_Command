@@ -101,17 +101,17 @@ Route::post('/razorpay/webhook', [RazorpayWebhookController::class, 'handle']);
 
 
 Route::get('/sales/quotations/{id}/view',        [SalesPdfController::class, 'publicViewQuotation'])
-    ->middleware('signed')
+    ->middleware(['signed', 'tenant.document:quotations'])
     ->name('sales.quotation.view');
 Route::get('/sales/proforma-invoices/{id}/view', [SalesPdfController::class, 'publicViewProformaInvoice'])
-    ->middleware('signed')
+    ->middleware(['signed', 'tenant.document:proforma_invoices'])
     ->name('sales.pi.view');
 Route::get('/p2p/purchase-orders/{id}/view',     [SalesPdfController::class, 'publicViewPurchaseOrder'])
-    ->middleware('signed')
+    ->middleware(['signed', 'tenant.document:purchase_orders'])
     ->whereNumber('id')
     ->name('p2p.po.view');
 Route::get('/p2p/debit-notes/{id}/view',         [SalesPdfController::class, 'publicViewDebitNote'])
-    ->middleware('signed')
+    ->middleware(['signed', 'tenant.document:debit_notes'])
     ->whereNumber('id')
     ->name('p2p.dn.view');
 
@@ -124,7 +124,7 @@ Route::get('/announcements/{id}/attachment',     [AnnouncementController::class,
     ->name('announcements.attachment');
 
 // Protected
-Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
+Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/change-password', [AuthController::class, 'changePassword']);

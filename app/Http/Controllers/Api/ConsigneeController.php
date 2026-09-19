@@ -277,6 +277,7 @@ class ConsigneeController extends Controller
                  * didn't fire saved with an empty segment against a field the
                  * user couldn't edit. See SegmentGuard::forCustomers(). */
                 'segment'          => SegmentGuard::forCustomers($data['customer_ids']) ?: null,
+                'segment_ids'      => SegmentGuard::idsForCustomers($data['customer_ids']) ?: null,
                 'classification'   => $data['classification'] ?? null,
                 'risk_level'       => $data['risk_level']     ?? null,
                 'website'          => $data['website']        ?? null,
@@ -364,8 +365,9 @@ class ConsigneeController extends Controller
         if (!empty($keep)) {
             $derivedSegment = SegmentGuard::mergeRetained($derivedSegment, $keep);
         }
+        $derivedIds = SegmentGuard::consigneeIds($data['customer_ids'], $keep, $consignee);
 
-        $row = DB::transaction(function () use ($consignee, $data, $derivedSegment) {
+        $row = DB::transaction(function () use ($consignee, $data, $derivedSegment, $derivedIds) {
             $primary = $data['primary_address'];
 
             $consignee->update([
@@ -373,6 +375,7 @@ class ConsigneeController extends Controller
                 'company_name'     => $data['company_name'],
                 'legal_name'       => $data['legal_name']     ?? null,
                 'segment'          => $derivedSegment ?: null,
+                'segment_ids'      => $derivedIds ?: null,
                 'classification'   => $data['classification'] ?? null,
                 'risk_level'       => $data['risk_level']     ?? null,
                 'website'          => $data['website']        ?? null,
@@ -595,8 +598,9 @@ class ConsigneeController extends Controller
             $derived = SegmentGuard::forCustomers(
                 $consignee->customers()->pluck('customers.id')->all()
             );
-            if ($derived !== (string) $consignee->segment) {
-                $consignee->update(['segment' => $derived ?: null]);
+            $derivedIds = SegmentGuard::idsForCustomers($consignee->customers()->pluck('customers.id')->all());
+            if ($derived !== (string) $consignee->segment || $derivedIds !== SegmentGuard::ids($consignee->segment_ids ?? [])) {
+                $consignee->update(['segment' => $derived ?: null, 'segment_ids' => $derivedIds ?: null]);
             }
         });
 
@@ -624,6 +628,7 @@ class ConsigneeController extends Controller
                     'code'    => $m->customer_code,
                     'name'    => $m->company_name,
                     'segment' => $m->segment,
+                    'segments' => SegmentGuard::rowsFor(SegmentGuard::idsOf($m)),
                     'type'    => $m->type,
                     'risk'    => $m->risk_level,
                     'status'  => $m->status,
@@ -646,6 +651,8 @@ class ConsigneeController extends Controller
             'company'         => $c->company_name,
             'legalName'       => $c->legal_name,
             'segment'         => $c->segment,
+            'segment_ids'     => SegmentGuard::idsOf($c),
+            'segments'        => SegmentGuard::rowsFor(SegmentGuard::idsOf($c)),
             'classification'  => $c->classification,
             'riskLevel'       => $c->risk_level,
             'website'         => $c->website,

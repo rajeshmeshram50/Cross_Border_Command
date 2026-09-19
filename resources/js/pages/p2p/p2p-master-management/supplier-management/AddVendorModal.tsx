@@ -5335,8 +5335,10 @@ export function MappedProductsViewPopup(props: {
   vendorId: number;
   code: string;
   name: string;
-  /** Segment names this supplier is onboarded for; gates the product list. */
+  /** Segment names this supplier is onboarded for (display only). */
   segments?: string[];
+  /** The supplier's segment ids — what gates the product list (names can be shared). */
+  segmentIds?: number[];
   onClose: () => void;
   /** Fired after a mapping is added, so the list's count badge can catch up. */
   onChanged?: () => void;
@@ -5414,7 +5416,7 @@ export function MappedProductsViewPopup(props: {
      the ones already mapped, minus anything outside the supplier's segments.
      Matched on segment NAME — the list row carries names, not ids. */
   const mappableOpts = useMemo(() => {
-    const segNames = new Set((props.segments ?? []).map(x => x.trim().toLowerCase()).filter(Boolean));
+    const segIds = new Set(props.segmentIds ?? []);
     const already  = new Set((rows ?? []).map(r => String(r.productId ?? '')));
     return productOpts
       .filter(o => {
@@ -5425,7 +5427,7 @@ export function MappedProductsViewPopup(props: {
            this filter.) */
         if (o.value === mapDraft.productId) return true;
         if (already.has(String(o.value))) return false;
-        return segNames.size === 0 || segNames.has(o.segment.trim().toLowerCase());
+        return segIds.size === 0 || (o.segmentId != null && segIds.has(o.segmentId));
       })
       /* Segment badge (CS-175), same as the wizard's Map Product step — this
          popup shares AddProductMappingPopup with it, so the two lists have to
@@ -5436,7 +5438,7 @@ export function MappedProductsViewPopup(props: {
         : o));
     // mapDraft.productId is a dependency now — the filter keeps whichever
     // product the draft points at, so the list has to recompute when it changes.
-  }, [productOpts, rows, props.segments, mapDraft.productId]);
+  }, [productOpts, rows, props.segmentIds, mapDraft.productId]);
 
   /* Ensure the dropdown is populated. Shared by add and edit: the edit form
      shows Product Name too (disabled), and an empty options list would render
@@ -5502,8 +5504,8 @@ export function MappedProductsViewPopup(props: {
         toast.info('Not in the list yet', 'The product was saved, but it needs a segment before it can be mapped.');
         return;
       }
-      const segNames = new Set((props.segments ?? []).map(x => x.trim().toLowerCase()).filter(Boolean));
-      if (segNames.size > 0 && !segNames.has(fresh.segment.trim().toLowerCase())) {
+      const segIds = new Set(props.segmentIds ?? []);
+      if (segIds.size > 0 && (fresh.segmentId == null || !segIds.has(fresh.segmentId))) {
         toast.info('Not in the list yet', `${fresh.name || 'The product'} is in a segment ${props.code} isn't onboarded for.`);
         return;
       }
