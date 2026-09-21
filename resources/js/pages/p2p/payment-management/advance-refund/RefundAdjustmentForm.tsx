@@ -11,11 +11,12 @@ import { HeadPill } from '../../purchase-management/order/create-po/CreatePoForm
 import { PO_TYPE } from '../../purchase-management/order/po-list/Order';
 import { money, shortDate, supplierCode } from '../../purchase-management/order/manage-payment/payment-shared';
 import {
-  IcoAlert, IcoCart, IcoChevron, IcoChevronL, IcoChevronR, IcoDocSm, IcoLines, IcoLock, IcoPaperclip,
-  IcoShield, IcoShip, IcoTarget, IcoUser, IcoX,
+  IcoAlert, IcoCart, IcoChevron, IcoChevronL, IcoChevronR, IcoDocSm, IcoLock, IcoPaperclip,
+  IcoShield, IcoUser, IcoX,
 } from '../../icons';
 import EvidenceVaultModal from './EvidenceVaultModal';
 import { REFUND_TYPES, RETAIN_REASONS, findPo, type RefundAdjustment } from './refund-data';
+import { supplierByName } from '../payment-request/payment-request-suppliers';
 import { useEscapeClose } from './useEscapeClose';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './advance-refund.css';
@@ -34,6 +35,28 @@ type Props = {
 
 const MAX_FILE = 2 * 1024 * 1024;
 
+/* The prototype marks every reference pill (PO, shipment, opportunity,
+   procurement) with the same three-bar glyph; only the supplier pill differs. */
+/* Between the pills: three faint dots, as in the prototype — not a text glyph. */
+const Dots = () => <span className="arf-dots" aria-hidden><i /><i /><i /></span>;
+
+const IcoRef = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M4 7h16M4 12h10M4 17h7" />
+  </svg>
+);
+
+/* Neither the payment term nor the transport mode is carried on the PO row yet,
+   so — as in the prototype — they are derived from the PO number: stable per
+   order, not re-rolled on every render. Replace with the real fields when the
+   PO record carries them. */
+const TERMS = ['Net 30 Days', 'Net 45 Days', 'Net 60 Days', '50% Advance · 50% On Delivery', 'Against Delivery'];
+function derivedTerms(po: string, docType: string) {
+  const n = Number(po.match(/(\d+)\s*$/)?.[1] ?? 1) || 1;
+  const pool = /^inter/i.test(docType) ? ['Sea', 'Air'] : ['Road', 'Rail'];
+  return { term: TERMS[n % TERMS.length], transport: pool[n % pool.length] };
+}
+
 export default function RefundAdjustmentForm({ po, edit, nextNo, today, onSubmit, onCancel, onClose }: Props) {
   // Freeze the page behind, but keep the form's own scroller working.
   useScrollLock(true, '.spi-dt-overlay');
@@ -42,6 +65,9 @@ export default function RefundAdjustmentForm({ po, edit, nextNo, today, onSubmit
   const paid = row?.paid ?? 0;
   const tds = row ? Math.max(0, row.total - row.net) : 0;
   const recovered = edit ? edit.recoveries.reduce((s, x) => s + x.amount, 0) : 0;
+  const derived = row ? derivedTerms(row.po, row.docType) : { term: '', transport: '' };
+  // The full supplier record, when the supplier is on file in the master.
+  const sup = row ? supplierByName(row.supplier) : undefined;
 
   const [supplierRef, setSupplierRef] = useState(edit?.supplierRef ?? '');
   const [attachment, setAttachment] = useState(edit?.attachment ?? '');
@@ -119,16 +145,17 @@ export default function RefundAdjustmentForm({ po, edit, nextNo, today, onSubmit
             </div>
             <div className="spi-dt-pills">
               <HeadPill icon={<IcoUser />} label="SUPPLIER" value={row?.supplier ?? '—'} />
-              <span className="spi-dt-dots">⋮</span>
-              <HeadPill icon={<IcoLines />} label="PO NUMBER" value={po} alt mono />
-              <span className="spi-dt-dots">⋮</span>
-              <HeadPill icon={<IcoShip />} label="SHIPMENT ID" value={row?.shipment ?? '—'} mono />
-              <span className="spi-dt-dots">⋮</span>
-              <HeadPill icon={<IcoTarget />} label="OPPORTUNITY ID" value={row?.opportunity ?? '—'} alt mono />
-              <span className="spi-dt-dots">⋮</span>
-              <HeadPill icon={<IcoLines />} label="PROCUREMENT ID" value={row?.procurement ?? '—'} mono />
+              <Dots />
+              <HeadPill icon={<IcoRef />} label="PO NUMBER" value={po} alt mono />
+              <Dots />
+              <HeadPill icon={<IcoRef />} label="SHIPMENT ID" value={row?.shipment ?? '—'} mono />
+              <Dots />
+              <HeadPill icon={<IcoRef />} label="OPPORTUNITY ID" value={row?.opportunity ?? '—'} alt mono />
+              <Dots />
+              <HeadPill icon={<IcoRef />} label="PROCUREMENT ID" value={row?.procurement ?? '—'} mono />
             </div>
             <div className="spi-dt-head-r">
+              <span className="spi-dt-divider" />
               <Tooltip label="Refund, PO and payment proofs" themed>
                 <button type="button" className="spi-dt-btn-pay" onClick={() => setVault(true)}><IcoShield /> Evidence Vault</button>
               </Tooltip>
@@ -140,34 +167,60 @@ export default function RefundAdjustmentForm({ po, edit, nextNo, today, onSubmit
         <div className="spi-dt-body">
           <Section icon={<IcoCart />} label="Purchase Order" title="Purchase Order Details" sub="The order this refund is raised against"
             badge="Read-only" open={open.po} onToggle={() => toggle('po')}>
-            <div className="spi-dt-robox"><div className="spi-dt-rogrid arf-rogrid8">
-              <Ro label="PO NUMBER" value={po} />
+            <div className="arf-rogrid">
+              <Ro label="PO NUMBER" value={po} mono />
               <Ro label="PO TYPE" value={row ? PO_TYPE[row.type].label : '—'} />
               <Ro label="DOCUMENT TYPE" value={row?.docType ?? '—'} />
               <Ro label="EXPECTED DELIVERY DATE" value={row ? shortDate(row.expectedDelivery) : '—'} />
+              <Ro label="PO PAYMENT TERM" value={derived.term} />
+              <Ro label="MODE OF TRANSPORT" value={derived.transport} />
               <Ro label="PHYSICAL INSPECTION REQUIRED" value={row?.physicalInspection ? 'Yes' : 'No'} />
               <Ro label="TOTAL PO AMOUNT (GRAND TOTAL)" value={money(row?.total ?? 0)} />
               <Ro label="TDS DEDUCTED" value={money(tds)} />
               <Ro label="NET PAYABLE AMOUNT" value={money(row?.net ?? 0)} />
               <Ro label="TOTAL PAID AMOUNT" value={money(paid)} hl />
               <Ro label="BALANCE AMOUNT" value={money(row?.balance ?? 0)} />
-            </div></div>
+            </div>
           </Section>
 
           <Section icon={<IcoUser />} label="Supplier" title="Supplier Details" sub="Party the refund is due from"
-            badge="Partial" open={open.sup} onToggle={() => toggle('sup')}>
-            <div className="spi-dt-robox"><div className="spi-dt-rogrid arf-rogrid2">
-              <Ro label="SUPPLIER" value={row?.supplier ?? '—'} />
-              <Ro label="SUPPLIER CODE" value={row ? supplierCode(row.supplier) : '—'} />
-            </div></div>
-            <div className="spi-mdl-warn arf-note">
-              <span>Full supplier record is not on file in the supplier master — only the details carried on the purchase order are shown.</span>
-            </div>
+            badge={sup ? 'Read-only' : 'Partial'} open={open.sup} onToggle={() => toggle('sup')}>
+            {sup ? (
+              <div className="arf-rogrid arf-rogrid--sup">
+                <Ro label="SUPPLIER" value={row?.supplier ?? '—'} />
+                <Ro label="COMPANY LEGAL NAME" value={sup.legalName} />
+                <Ro label="SUPPLIER TYPE" value={sup.type} />
+                <Ro label="SUPPLIER CATEGORY" value={sup.category} />
+                <Ro label="SUPPLIER SEGMENT" value={sup.segment} />
+                <Ro label="SUPPLIER RISK LEVEL" value={sup.risk} />
+                <Ro label="GST IN / TIN" value={sup.gstNo} mono />
+                <Ro label="GST STATUS" value={sup.gstStatus} />
+                <Ro label="REGISTERED OFFICE ADDRESS" value={sup.addr} span2 />
+                <Ro label="COUNTRY" value={sup.country} />
+                <Ro label="STATE" value={sup.state} />
+                <Ro label="STATE CODE" value={sup.stateCode} mono />
+                <Ro label="CITY" value={sup.city} />
+                <Ro label="CONTACT PERSON NAME" value={sup.contact} />
+                <Ro label="DESIGNATION" value={sup.desig} />
+                <Ro label="CONTACT NUMBER" value={sup.phone} mono />
+                <Ro label="EMAIL ID" value={sup.email} />
+              </div>
+            ) : (
+              <>
+                <div className="arf-rogrid">
+                  <Ro label="SUPPLIER" value={row?.supplier ?? '—'} />
+                  <Ro label="SUPPLIER CODE" value={row ? supplierCode(row.supplier) : '—'} mono />
+                </div>
+                <div className="arf-miss">
+                  Full supplier record is not on file in the supplier master — only the details carried on the purchase order are shown.
+                </div>
+              </>
+            )}
           </Section>
 
           <Section icon={<IcoDocSm />} label="Refund" title="Advance Receipt Refund Adjustment Details"
             sub="Identity of this refund and the amount due back from the supplier" badge="Auto" open={open.refund} onToggle={() => toggle('refund')}>
-            <div className="spi-dt-grid4">
+            <div className="arf-rgrid">
               <Auto label="ADVANCE REFUND NO." value={draft.no} />
               <Auto label="ADVANCE REFUND DATE" value={shortDate(draft.date)} />
               <Field label="SUPPLIER ADVANCE REFUND REFERENCE NO. (OPTIONAL)">
@@ -186,12 +239,10 @@ export default function RefundAdjustmentForm({ po, edit, nextNo, today, onSubmit
                 <EditSelect value={type} options={REFUND_TYPES} placeholder="— Select Refund Type —" invalid={invalid.type}
                   onChange={(v) => { setType(v); clear('type'); }} />
               </Field>
-              <div className="arf-span3">
-                <Field label="ADVANCE REFUND ADJUSTMENT REASON" req>
-                  <input className={`spi-dt-inp${invalid.reason ? ' is-invalid' : ''}`} placeholder="Why this refund is being raised"
-                    value={reason} onChange={(e) => { setReason(e.target.value); clear('reason'); }} />
-                </Field>
-              </div>
+              <Field label="ADVANCE REFUND ADJUSTMENT REASON" req>
+                <input className={`spi-dt-inp${invalid.reason ? ' is-invalid' : ''}`} placeholder="Why this refund is being raised"
+                  value={reason} onChange={(e) => { setReason(e.target.value); clear('reason'); }} />
+              </Field>
               <Auto label="TOTAL PO AMOUNT (GRAND TOTAL)" value={money(row?.total ?? 0)} />
               <Auto label="TDS DEDUCTED AMOUNT" value={money(tds)} />
               <Auto label="NET PAYABLE AMOUNT" value={money(row?.net ?? 0)} />
@@ -282,11 +333,13 @@ function Section({ icon, label, title, sub, badge, open, onToggle, children }: {
   );
 }
 
-function Ro({ label, value, hl }: { label: string; value: string; hl?: boolean }) {
+/** One read-only cell: `mono` for codes and numbers, `span2` for the address,
+    `hl` for the figure the refund is measured against. */
+function Ro({ label, value, hl, mono, span2 }: { label: string; value: string; hl?: boolean; mono?: boolean; span2?: boolean }) {
   return (
-    <div className={`spi-dt-ro${hl ? ' arf-ro-hl' : ''}`}>
-      <div className="spi-dt-ro-lbl">{label}</div>
-      <div className="spi-dt-ro-val">{value}</div>
+    <div className={`arf-ro${hl ? ' arf-ro--key' : ''}${span2 ? ' arf-ro--span2' : ''}`}>
+      <span className="arf-ro__l">{label}</span>
+      <span className={`arf-ro__v${mono ? ' arf-ro__v--mono' : ''}`}>{value || '—'}</span>
     </div>
   );
 }

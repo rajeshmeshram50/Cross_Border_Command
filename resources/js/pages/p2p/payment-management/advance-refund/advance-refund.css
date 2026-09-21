@@ -14,69 +14,351 @@
 
 /* Full-page form: fields spanning several spi-dt-grid4 columns. */
 .arf-span2 { grid-column: span 2; }
-.arf-span3 { grid-column: span 3; }
-/* Supplier block: two read-only cells side by side. */
-.arf-rogrid2 { grid-template-columns: repeat(2,1fr); }
-/* Total Paid Amount — the figure the refund is measured against. */
-.arf-ro-hl { background:#ecfbfe; box-shadow: inset 0 0 0 1.5px #22d3ee; }
-.arf-ro-hl .spi-dt-ro-val { font-size:15px; font-weight:800; color:#0e7490; }
-/* Note under the supplier block (spi-mdl-warn look, compact like the prototype). */
-.arf-note { margin:0; padding:9px 14px; font-size:11.5px; }
 
-/* Purchase Order Details: 8 across, the unused tail of the last row shaded. */
-.arf-rogrid8 { grid-template-columns: repeat(8,1fr); background:#e8f0f4; }
-.arf-rogrid8 .spi-dt-ro { background:#fff; }
 
 /* ── Full-page form: prototype density (scoped to this form only) ── */
-.arf-form .spi-dt-head { flex-wrap:nowrap; }
-.arf-form .spi-dt-head-l { flex:0 1 auto; min-width:0; }
-.arf-form .spi-dt-head-title { font-size:13.5px; }
-.arf-form .spi-dt-pills { flex-wrap:nowrap; min-width:0; }
-.arf-form .spi-dt-pill { padding:6px 11px; gap:7px; }
-.arf-form .spi-dt-pill-ico { width:24px; height:24px; }
-.arf-form .spi-dt-pill-val { font-size:11.5px; }
-.arf-form .spi-dt-head-r { flex-shrink:0; }
+/* Header strip, to the prototype (P2P Version 1, measured at 1920): 60px tall,
+   the reference pills pushed right up against the two buttons, one hairline
+   between them. */
+.arf-form .spi-dt-head { flex-wrap:nowrap; gap:12px; padding:9px 14px; letter-spacing:normal; }
+.arf-form .spi-dt-head-l { flex:0 1 auto; min-width:0; gap:9px; padding-left:6px; }
+.arf-form .spi-dt-head-ico {
+  border:1px solid rgba(255, 255, 255, .3);
+  background:linear-gradient(135deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
+}
+.arf-form .spi-dt-head-ico svg { width:17px; height:17px; }
+.arf-form .spi-dt-head-title { font-size:14.5px; font-weight:800; letter-spacing:-.4px; }
+.arf-form .spi-dt-head-sub { letter-spacing:normal; }
+.arf-form .spi-dt-pills { flex-wrap:nowrap; gap:7px; min-width:0; margin-left:auto; }
+.arf-form .spi-dt-pill { height:42px; padding:7px 14px; gap:9px; }
+.arf-form .spi-dt-pill-ico { width:26px; height:26px; }
+.arf-form .spi-dt-pill-ico svg { width:11px; height:11px; }
+.arf-form .spi-dt-pill-val { font-size:12.5px; }
+/* margin-left:0 — the pills take the auto margin; sharing it left a gap.
+   7px between the hairline and the buttons, 13px between the two buttons. */
+.arf-form .spi-dt-head-r { flex-shrink:0; gap:7px; margin-left:0; }
+.arf-form .spi-dt-head-r .spi-dt-btn-close { margin-left:6px; }
+/* The hairline sits 6px after the last pill (the strip's own gap is 12). */
+.arf-form .spi-dt-head-r { margin-left:-6px; }
+.arf-form .spi-dt-head-r .spi-dt-divider { height:32px; margin:0; }
+.arf-dots { display:flex; flex-direction:column; gap:2px; padding:0 1px; }
+.arf-dots > i { width:2.5px; height:2.5px; border-radius:50%; background:rgba(8, 145, 178, .3); }
+[data-bs-theme="dark"] .arf-dots > i { background:rgba(103, 232, 249, .35); }
+.arf-form .spi-dt-head-r .spi-dt-btn-pay,
+.arf-form .spi-dt-head-r .spi-dt-btn-close {
+  height:42px;
+  padding:11px;
+  gap:5px;
+  border-radius:10px;
+  font-size:10.5px;
+  font-weight:700;
+  letter-spacing:.02em;
+}
+/* The prototype's vault button carries an empty sheen element that takes one
+   more flex gap; the extra right padding reproduces its rendered 123px. */
+.arf-form .spi-dt-head-r .spi-dt-btn-pay { padding-right:17px; }
+.arf-form .spi-dt-head-r .spi-dt-btn-pay svg,
+.arf-form .spi-dt-head-r .spi-dt-btn-close svg { width:11px; height:11px; }
 .arf-form .spi-dt-body { gap:8px; }
 .arf-form .spi-dt-sec-body { padding:8px; gap:8px; }
-/* Editable fields: teal dot on the label and a teal border; no red asterisk. */
+/* ── Form fields, to the prototype (P2P Version 1, measured at 1920) ──────
+   Labels 9.5px/800 slate; the editable ones teal with a ringed dot. Frozen
+   (AUTO) boxes are a cool grey slab; editable boxes carry a cyan ring. */
 .arf-form .spi-dt-req { display:none; }
-.arf-form .spi-dt-field:has(input:not([readonly]), .spi-dt-file, .spi-dt-select-edit) > .spi-dt-field-lbl { color:#0e7490; }
-.arf-form .spi-dt-field:has(input:not([readonly]), .spi-dt-file, .spi-dt-select-edit) > .spi-dt-field-lbl::before {
-  content:''; display:inline-block; width:5px; height:5px; margin:0 6px 1px 0; border-radius:50%; background:#22d3ee; vertical-align:middle; }
+.arf-form .spi-dt-field { gap:5px; }
+.arf-form .spi-dt-field-lbl { display:flex; align-items:center; gap:6px; font-size:9.5px; font-weight:800; line-height:1.5; letter-spacing:.05em; color:#5b7585; }
+.arf-form .spi-dt-field:has(input:not([readonly]), .spi-dt-file, .master-select-wrap) > .spi-dt-field-lbl { color:#0e7490; }
+.arf-form .spi-dt-field:has(input:not([readonly]), .spi-dt-file, .master-select-wrap) > .spi-dt-field-lbl::before {
+  content:''; flex-shrink:0; width:5px; height:5px; border-radius:50%; background:#0891b2; box-shadow:0 0 0 3px rgba(34, 211, 238, .18); }
+/* Editable: input, dropdown, attachment. */
 .arf-form .spi-dt-inp:not([readonly]):not(.is-invalid),
 .arf-form .spi-dt-file:not(.is-invalid),
-.arf-form .spi-dt-select-edit:not(.is-invalid) { border-color:#67e8f9; }
+.arf-form .master-select-toggle:not(.is-invalid) {
+  border:1.5px solid #22d3ee;
+  background:#fff;
+  box-shadow:0 0 0 3.5px rgba(34, 211, 238, .16), 0 2px 8px -2px rgba(8, 145, 178, .28);
+}
+.arf-form .spi-dt-inp:not([readonly]):focus,
+.arf-form .master-select-toggle:focus-within {
+  outline:none;
+  border-color:#0891b2;
+  box-shadow:0 0 0 3.5px rgba(34, 211, 238, .26), 0 3px 10px -2px rgba(8, 145, 178, .34);
+}
+.arf-form .spi-dt-inp:not([readonly]) { height:40px; padding:0 12px; border-radius:9px; font-size:12.5px; font-weight:600; letter-spacing:normal; color:#0f172a; }
+.arf-form .spi-dt-inp:not([readonly])::placeholder { color:#9fb6c2; font-weight:600; }
+/* The refund-type dropdown: the prototype shows its prompt in ink, not grey. */
+.arf-form .master-select-toggle { height:40px; padding:0 9px 0 13px; border-radius:9px; }
+.arf-form .master-select-placeholder,
+.arf-form .master-select-value-text { font-size:12.5px; font-weight:600; line-height:normal; letter-spacing:normal; color:#0b3a4a; }
+/* Frozen (AUTO) values. */
+.arf-form .spi-dt-inp[readonly] {
+  height:40px;
+  padding:0 70px 0 12px;
+  border:1.5px solid #c2d2db;
+  border-radius:9px;
+  background:linear-gradient(180deg, #dde6ec, #d2dee5);
+  font-size:12.5px;
+  font-weight:700;
+  letter-spacing:.2px;
+  color:#4a6375;
+  font-variant-numeric:tabular-nums;
+}
+.arf-form .spi-dt-auto {
+  padding:3px 7px;
+  border:1px solid #d3e0e7;
+  border-radius:20px;
+  background:#eaf1f5;
+  font-size:8.5px;
+  font-weight:800;
+  letter-spacing:.05em;
+  color:#5f7c8b;
+}
+/* Attachment picker. */
+.arf-form .spi-dt-file { height:42px; gap:9px; padding:0 8px 0 12px; border-radius:11px; }
+.arf-form .spi-dt-file-txt { font-size:13px; letter-spacing:normal; }
+.arf-form .spi-dt-file-btn { padding:5px 11px; border:1px solid #cdeef6; border-radius:8px; background:#e6f7fb; font-size:11px; font-weight:800; letter-spacing:normal; color:#0e7490; }
 
-/* ── PO picker popup: compact header, tinted body, one-row footer ── */
-.arf-pick { width:min(660px,100%); }
-.arf-pick .spi-mdl-head { padding:12px 18px; }
-.arf-pick .spi-mdl-head-ico { width:36px; height:36px; }
-.arf-pick .spi-mdl-title { font-size:14.5px; }
-.arf-pick .spi-mdl-sub { font-size:11px; margin-top:1px; }
-.arf-pick .spi-mdl-body,
-.arf-pick .spi-mdl-foot { background:#f5fbfd; }
-.arf-pick .spi-mdl-body { padding:14px 18px; }
+/* Refund details: the prototype's 20-column grid — four fields across, then
+   type (5) + reason (15), then the five amounts at 4 each. */
+.arf-rgrid { display:grid; grid-template-columns:repeat(20, minmax(0, 1fr)); gap:16px 14px; }
+.arf-rgrid > .spi-dt-field:nth-child(-n+5) { grid-column:span 5; }
+.arf-rgrid > .spi-dt-field:nth-child(6) { grid-column:span 15; }
+.arf-rgrid > .spi-dt-field:nth-child(n+7) { grid-column:span 4; }
 
-/* PO picker: label row, then the dropdown with search. */
+/* Inside the "amount not being refunded" block the two fields turn amber and
+   split 1 : 3, as in the prototype (.cnshort). */
+.arf-short .spi-dt-grid4 { grid-template-columns:1fr 3fr; gap:16px 14px; }
+.arf-short .spi-dt-grid4 > .arf-span2 { grid-column:auto; }
+/* :has() matches the weight of the teal rule above, so amber wins here. */
+.arf-form .arf-short .spi-dt-field:has(input, .master-select-wrap) > .spi-dt-field-lbl { color:#b45309; }
+.arf-form .arf-short .spi-dt-field:has(input, .master-select-wrap) > .spi-dt-field-lbl::before { background:#d97706; box-shadow:0 0 0 3px rgba(251, 191, 36, .25); }
+.arf-form .arf-short .spi-dt-inp:not([readonly]):not(.is-invalid),
+.arf-form .arf-short .master-select-toggle:not(.is-invalid) {
+  border-color:#fbbf24;
+  box-shadow:0 0 0 3.5px rgba(251, 191, 36, .18), 0 2px 8px -2px rgba(217, 119, 6, .28);
+}
+.arf-form .arf-short .spi-dt-inp:not([readonly]):focus,
+.arf-form .arf-short .master-select-toggle:focus-within {
+  border-color:#d97706;
+  box-shadow:0 0 0 3.5px rgba(251, 191, 36, .3), 0 3px 10px -2px rgba(217, 119, 6, .36);
+}
+
+/* Read-only cells (PO + supplier): hairline grid on a tinted ground. */
+.arf-rogrid {
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(215px, 1fr));
+  gap:1px;
+  overflow:hidden;
+  border-radius:12px;
+  background:#e4eff4;
+  box-shadow:0 0 0 1px #e4eff4;
+}
+.arf-rogrid--sup { grid-template-columns:repeat(6, minmax(0, 1fr)); }
+.arf-ro { display:flex; flex-direction:column; gap:5px; min-width:0; padding:12px 14px; background:#fff; letter-spacing:normal; }
+.arf-ro--span2 { grid-column:span 2; }
+.arf-ro__l { font-size:8.5px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:#7c9aa4; }
+.arf-ro__v { font-size:12.5px; font-weight:700; line-height:1.35; color:#0c4a6e; word-break:break-word; }
+.arf-ro__v--mono { font-family:'Geist Mono', ui-monospace, monospace; font-size:11.5px; letter-spacing:-.2px; }
+/* Total Paid Amount — the figure the refund is measured against. */
+.arf-ro--key { position:relative; z-index:1; background:linear-gradient(140deg, #ecfbff, #daf1fa); box-shadow:inset 0 0 0 2px #0891b2; }
+.arf-ro--key .arf-ro__l { color:#0e7490; }
+.arf-ro--key .arf-ro__v { font-size:14.5px; font-weight:800; letter-spacing:-.3px; color:#0c4a6e; }
+/* Supplier not on file in the master. */
+.arf-miss {
+  margin-top:8px;
+  padding:11px 14px;
+  border-radius:11px;
+  background:#fdf7e8;
+  box-shadow:inset 0 0 0 1px #f0e0b8;
+  font-size:11px;
+  font-weight:600;
+  line-height:1.5;
+  letter-spacing:normal;
+  color:#8a6d3b;
+}
+
+/* Section header: bolder title, squarer badge — the prototype's values. */
+.arf-form .spi-dt-sec-title { font-weight:800; letter-spacing:-.2px; }
+.arf-form .spi-dt-sec-lbl { font-weight:800; letter-spacing:-.2px; }
+.arf-form .spi-dt-fields-badge {
+  padding:5px 11px;
+  border:none;
+  border-radius:8px;
+  background:#e6f7fb;
+  box-shadow:inset 0 0 0 1px #bfe3ec;
+  font-size:9px;
+  letter-spacing:.06em;
+}
+
+/* ── PO picker popup ("Create Advance Receipt Refund Adjustment") ──────────
+   The prototype's own values, measured against it (P2P Version 1, 1920).
+   The shell is the shared spi-mdl-* popup, so everything is scoped to
+   .arf-pick (the dialog) and .arf-pick-pop (its dropdown, portalled). */
+.spi-mdl-backdrop:has(> .arf-pick) { background:rgba(6, 26, 38, .5); }
+.arf-pick {
+  width:min(660px, 94vw);
+  border-radius:22px;
+  letter-spacing:normal;
+  background:linear-gradient(180deg, #fff, #f7fbfd);
+  box-shadow:0 32px 70px -18px rgba(4, 26, 40, .55), inset 0 2px 0 rgba(255, 255, 255, .9), 0 0 0 1px rgba(17, 74, 101, .1);
+}
+/* Header: deep-to-bright teal with a soft sheen in the top-right corner. */
+.arf-pick .spi-mdl-head {
+  position:relative;
+  overflow:hidden;
+  padding:18px 20px;
+  border-radius:22px 22px 0 0;
+  background:linear-gradient(118deg, #0c4a6e, #0e7490 42%, #0891b2 74%, #22d3ee);
+}
+.arf-pick .spi-mdl-head::after {
+  content:'';
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:radial-gradient(130% 200% at 86% -55%, rgba(255, 255, 255, .3), transparent 58%);
+}
+.arf-pick .spi-mdl-head > * { position:relative; z-index:1; }
+/* The prototype's sheen layer ends up as an empty flex item in its header and
+   takes a 13px gap slot, so its icon sits 33px in, not 20. Matched here. */
+.arf-pick .spi-mdl-head-left { gap:13px; }
+.arf-pick .spi-mdl-head-ico { margin-left:13px; }
+.arf-pick .spi-mdl-head-ico {
+  width:40px;
+  height:40px;
+  border-radius:12px;
+  color:#fff;
+  background:rgba(255, 255, 255, .18);
+  box-shadow:inset 0 0 0 1px rgba(255, 255, 255, .3);
+}
+.arf-pick .spi-mdl-head-ico svg { width:20px; height:20px; }
+.arf-pick .spi-mdl-title { font-size:15px; font-weight:800; letter-spacing:-.3px; line-height:1.25; }
+.arf-pick .spi-mdl-sub { margin-top:2px; font-size:10.5px; font-weight:600; color:#fff; opacity:.9; }
+.arf-pick .spi-mdl-x { width:32px; height:32px; border-radius:10px; background:rgba(255, 255, 255, .18); }
+.arf-pick .spi-mdl-x:hover { background:rgba(255, 255, 255, .3); }
+.arf-pick .spi-mdl-x svg { width:16px; height:16px; }
+
+/* Body: label row, then the dropdown. */
+.arf-pick .spi-mdl-body { display:flex; flex-direction:column; gap:8px; padding:16px; background:linear-gradient(180deg, #fbfeff, #f6fcfe); }
 .arf-pick-lblrow { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
-.arf-pick-lblrow .spi-mdl-seclabel { color:#0e7490; }
-.arf-pick-count { font-size:10.5px; font-weight:700; color:#94a3b8; }
-.arf-pick-dd { height:52px; }
-.arf-pick-line { flex:1; min-width:0; display:flex; align-items:center; gap:12px; }
+.arf-pick-lblrow .spi-mdl-seclabel { margin:0; font-size:9px; font-weight:800; letter-spacing:.1em; color:#0891b2; }
+.arf-pick-count { font-size:9.5px; font-weight:700; color:#93aeba; }
+.arf-pick-dd {
+  height:52px;
+  padding:0 12px 0 14px;
+  border:1.5px solid #d7e9f0;
+  border-radius:14px;
+  background:#fff;
+  box-shadow:0 1px 2px rgba(15, 23, 42, .04);
+}
+.arf-pick-dd:hover { border-color:#a5dce8; }
+.arf-pick-dd.is-open { border-color:#22d3ee; box-shadow:0 0 0 3px rgba(34, 211, 238, .14); }
+.arf-pick-dd .spi-mdl-dd-val.is-placeholder { font-size:13px; font-weight:600; color:#9fb7c2; }
+.arf-pick-dd .spi-mdl-dd-chev { color:#7ba6b8; transition:transform .18s; }
+.arf-pick-dd .spi-mdl-dd-chev svg { width:16px; height:16px; }
+.arf-pick-dd.is-open .spi-mdl-dd-chev { transform:rotate(180deg); }
+
+/* One option row / the chosen value: PO chip, supplier, amount paid. */
+.arf-pick-line { flex:1; min-width:0; display:flex; align-items:center; gap:10px; }
 .arf-pick-id { flex-shrink:0; }
-.arf-pick-dd .arf-pick-id { align-items:flex-start; }
-.arf-pick-sup { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:700; color:#1e3a4c; }
-.arf-pick-paid { flex-shrink:0; font-weight:800; color:#047857; font-variant-numeric:tabular-nums; }
-.arf-pick-paid small { font-size:10px; font-weight:600; color:#94a3b8; }
-.arf-pick-dd .arf-pick-paid { padding:3px 10px; border-radius:20px; background:#ecfdf5; border:1px solid #a7f3d0; }
-/* The shared panel scrolls as a whole; here the search stays put and only the list scrolls. */
-.arf-pick-pop { max-height:none; overflow:hidden; padding:0; }
-.arf-pick-search { position:relative; display:flex; align-items:center; margin:10px; }
-.arf-pick-search svg { position:absolute; left:12px; color:#94a3b8; }
-.arf-pick-search input { width:100%; height:38px; padding:0 12px 0 34px; border:1.5px solid #22d3ee; border-radius:10px;
-  font-family:inherit; font-size:12.5px; font-weight:600; color:#0f172a; background:#fff; outline:none;
-  box-shadow: 0 0 0 3px rgba(34,211,238,.12); }
-.arf-pick-list { max-height:280px; overflow-y:auto; padding:0 5px 5px; border-top:1px solid #eef4f7; }
+.arf-pick-dd .arf-pick-line { gap:9px; }
+.arf-pick-dd .arf-pick-id,
+.arf-pick-pop .arf-pick-id { align-items:flex-start; gap:3px; }
+.arf-pick-dd .ord-idpill,
+.arf-pick-pop .ord-idpill {
+  padding:3px 7px;
+  border:1.5px solid #c4eef5;
+  border-radius:8px;
+  background:#f0fdff;
+  font-size:10.5px;
+  font-weight:800;
+  letter-spacing:normal;
+  line-height:normal;
+}
+/* line-height: normal on both, as in the prototype — the app's 1.45 made each
+   option row 4px taller (58 vs 54). */
+.arf-pick-pop .ord-idcell__date { font-size:8.5px; font-weight:700; line-height:normal; color:#9fb7c2; }
+.arf-pick-sup { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:700; color:#22414f; }
+.arf-pick-dd .arf-pick-sup { font-size:12.5px; color:#0f172a; }
+.arf-pick-paid { flex-shrink:0; display:flex; align-items:baseline; gap:4px; font-size:11.5px; font-weight:800; color:#047857; font-variant-numeric:tabular-nums; }
+.arf-pick-paid small { font-size:8.5px; font-weight:700; color:#93aeba; }
+/* Chosen value: the amount sits in a green pill, "paid" part of the label. */
+.arf-pick-dd .arf-pick-paid { margin-left:auto; padding:3px 10px; border:1px solid #bbf7d0; border-radius:20px; background:#ecfdf5; }
+.arf-pick-dd .arf-pick-paid small { font:inherit; color:inherit; }
+
+/* Dropdown panel: search on top (stays put), the list scrolls. */
+.arf-pick-pop {
+  max-height:none;
+  overflow:hidden;
+  padding:0;
+  border:1.5px solid #d7e9f0;
+  border-radius:14px;
+  letter-spacing:normal;
+  box-shadow:0 18px 44px -16px rgba(12, 74, 110, .42), 0 2px 8px rgba(15, 23, 42, .07);
+}
+.arf-pick-search { position:relative; display:flex; align-items:center; margin:0; padding:10px 12px; border-bottom:1px solid #eef5f8; background:#fbfeff; }
+.arf-pick-search svg { position:absolute; left:23px; top:50%; width:15px; height:15px; transform:translateY(-50%); color:#9fb7c2; }
+.arf-pick-search input {
+  width:100%;
+  height:36px;
+  padding:0 12px 0 34px;
+  border:1.5px solid #e3edf2;
+  border-radius:10px;
+  background:#fff;
+  font-family:inherit;
+  font-size:12.5px;
+  font-weight:600;
+  color:#0c4a6e;
+  outline:none;
+}
+.arf-pick-search input:focus { border-color:#22d3ee; box-shadow:0 0 0 3px rgba(34, 211, 238, .12); }
+.arf-pick-list { max-height:248px; overflow-y:auto; padding:6px; overscroll-behavior:contain; }
+.arf-pick-pop .spi-mdl-dd-opt { gap:10px; padding:9px 10px; border-radius:10px; }
+.arf-pick-pop .spi-mdl-dd-opt:hover { background:#f0fbfd; }
+.arf-pick-pop .spi-mdl-dd-opt.is-sel { background:#e0f7fb; box-shadow:inset 0 0 0 1.5px #a5dce8; }
+/* The prototype marks the chosen row by its tint alone — no tick. */
+.arf-pick-pop .spi-mdl-dd-opt-ck { display:none; }
+
+/* Footer: Cancel (white, hairline ring) + Continue (teal, glossy top). */
+.arf-pick .spi-mdl-foot {
+  gap:8px;
+  padding:8px 16px 16px;
+  border-top-color:#e4f0f5;
+  border-radius:0 0 22px 22px;
+  background:linear-gradient(180deg, #f8fcfe, #f3fafd);
+}
+.arf-pick .spi-mdl-cancel,
+.arf-pick .spi-mdl-confirm {
+  height:44px;
+  padding:0 22px;
+  border:none;
+  border-radius:12px;
+  font-size:12.5px;
+  font-weight:800;
+  letter-spacing:-.1px;
+}
+.arf-pick .spi-mdl-cancel { color:#41677a; background:#fff; box-shadow:inset 0 0 0 1.5px #dcebf1; }
+.arf-pick .spi-mdl-cancel:hover { color:#0c4a6e; background:#f4fbfd; box-shadow:inset 0 0 0 1.5px #a5dced; }
+.arf-pick .spi-mdl-confirm {
+  position:relative;
+  overflow:hidden;
+  background:linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490);
+  box-shadow:0 12px 26px -11px rgba(8, 145, 178, .95), inset 0 1px 0 rgba(255, 255, 255, .3);
+}
+.arf-pick .spi-mdl-confirm::before {
+  content:'';
+  position:absolute;
+  top:0;
+  left:0;
+  right:0;
+  height:50%;
+  pointer-events:none;
+  background:linear-gradient(180deg, rgba(255, 255, 255, .22), transparent);
+}
+.arf-pick .spi-mdl-confirm:disabled { opacity:.42; box-shadow:none; transform:none; cursor:not-allowed; }
+.arf-pick .spi-mdl-foot-btns { gap:8px; }
+.arf-pick .spi-mdl-cancel,
+.arf-pick .spi-mdl-confirm { gap:8px; }
+.arf-pick .spi-mdl-confirm svg { width:15px; height:15px; stroke-width:2.8; }
 
 /* Shortfall block — the part of what was paid the supplier is keeping. */
 .arf-short { margin-top:12px; padding:12px 14px; border:1.5px solid #fde68a; border-radius:12px;
@@ -92,9 +374,6 @@
 .arf-short__figv { font-size:17px; font-weight:800; color:#b45309; }
 .arf-short__figs { font-size:10.5px; color:#a16207; }
 
-/* Recovery history under the Payment Recovery form. */
-.arf-hist { margin-top:14px; border:1px solid #d6eef5; border-radius:12px; overflow-x:auto; }
-.arf-hist__empty { padding:16px; text-align:center; font-size:12px; color:#64748b; }
 
 /* One spacing unit for the whole page: 8px between the blocks, inside the
    banner, the "What We Are Doing Here" box, its step cards and the toolbar.
@@ -125,6 +404,13 @@
    on white, keeps the search at 620px on the right, and uses 15px tab icons
    with a softer idle colour. Spacing follows the page's 8px rhythm above. */
 .arf-list .spi-segrow { margin:0; padding:8px; gap:8px; background:#fff; }
+/* The table scrolls sideways (1906px wide). With a transparent scroll box
+   Chrome will not hand the scroll to the GPU — it would lose the sharp LCD
+   text — so it repaints the whole table on the main thread every frame, and
+   the sticky header visibly trails the rows. An opaque background lets it
+   composite the scroll. */
+.arf-list .spi-tablewrap { background:#fff; }
+[data-bs-theme="dark"] .arf-list .spi-tablewrap { background:#0e1b24; }
 .arf-list .spi-segrow--search { margin-bottom:0; }
 .arf-list .spi-seg-btn:not(.is-active) { color:#6b8499; }
 .arf-list .spi-seg-ico svg { width:15px; height:15px; }
@@ -262,6 +548,10 @@
 .arf-pill--short-supply        { color:#4338ca; background:#eef2ff; border-color:#c7d2fe; }
 .arf-pill--gst-adjustment      { color:#0f766e; background:#ccfbf1; border-color:#99f6e4; }
 .arf-pill--po-active           { color:#0369a1; background:#e0f2fe; border-color:#bae6fd; }
+/* The two refund types, in the prototype's own pairs: green as its "refund"
+   tag, amber as its partial-recovery state. */
+.arf-pill--full-refund         { color:#047857; background:#ecfdf5; border-color:#bbf7d0; }
+.arf-pill--partial-refund      { color:#b45309; background:#fef3c7; border-color:#fde68a; }
 /* The two PO-status pills carry a slightly stronger dot than their text. */
 .arf-pill--po-active > span:first-child   { background:#0284c7; }
 .arf-pill--po-cancelled > span:first-child { background:#dc2626; }
@@ -289,36 +579,69 @@
 .arf-btn-sq { width:40px; padding:0; }
 .arf-btn-sq svg { width:14px; height:14px; }
 
-/* ── Evidence Vault: grouped file cards ── */
-.arf-vault { width:min(720px,100%); }
-.arf-vault .spi-mdl-head { padding:14px 18px; }
-.arf-vault .spi-mdl-title { font-size:15px; }
-.arf-vault .spi-mdl-sub { font-size:11px; font-weight:700; }
-.arf-vault-body { display:flex; flex-direction:column; gap:14px; padding:18px; background:#f5fbfd; }
-.arf-vault .spi-mdl-foot { background:#f5fbfd; }
-.arf-vg { padding:10px; border:1px solid #d6eef5; border-radius:14px; background:#fff; }
-.arf-vg-head { display:flex; align-items:center; gap:10px; padding:2px 2px 10px; margin-bottom:8px; border-bottom:1px solid #eef4f7; }
-.arf-vg-ico { display:flex; align-items:center; justify-content:center; width:28px; height:28px; flex-shrink:0; border-radius:8px;
-  color:#fff; background:linear-gradient(135deg,#22d3ee,#0891b2); box-shadow:0 3px 8px rgba(8,145,178,.3); }
+/* ── Evidence Vault ─────────────────────────────────────────────────────────
+   The shell is the PO picker's (.arf-pick: header, sheen, body, footer); only
+   the width and the scrolling body differ. Group cards and file rows are the
+   prototype's own values (P2P Version 1, .scnv-*). */
+.arf-pick.arf-vault { width:min(720px, 94vw); }
+/* Its body is roomier than the picker's: the prototype's CSS says 16px / 8px,
+   but a later rule wins and it renders 18px 20px 20px with 14px between the
+   groups on a bluer ground — matched to what it renders. */
+.arf-pick .arf-vault-body {
+  max-height:62vh;
+  overflow-y:auto;
+  gap:14px;
+  padding:18px 20px 20px;
+  background:linear-gradient(180deg, #eef7fb, #f5fbfd);
+}
+.arf-vg { padding:8px; border:1px solid #dbedf4; border-radius:14px; background:#fff; box-shadow:0 1px 2px rgba(15, 23, 42, .04); letter-spacing:normal; }
+.arf-vg-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; padding:4px 4px 8px; border-bottom:1px solid #eef5f8; }
+.arf-vg-ico {
+  display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  width:28px; height:28px; border-radius:9px;
+  color:#fff; background:linear-gradient(135deg, #22d3ee, #0891b2); box-shadow:0 4px 10px -3px rgba(8, 145, 178, .55);
+}
 .arf-vg-ico svg { width:14px; height:14px; }
-.arf-vg-txt { flex:1; min-width:0; }
-.arf-vg-title { font-size:13px; font-weight:800; color:#0f172a; }
-.arf-vg-sub { font-size:10.5px; font-weight:600; color:#94a3b8; }
-.arf-vg-count { display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px; padding:0 6px;
-  border-radius:999px; font-size:10.5px; font-weight:800; color:#0891b2; background:#e0f7fb; border:1px solid #bbe9f1; }
-.arf-vf { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid #eef4f7; border-radius:10px; background:#fbfeff; }
+.arf-vg-txt { display:flex; flex-direction:column; gap:1px; min-width:0; }
+.arf-vg-title { font-size:12.5px; font-weight:800; letter-spacing:-.2px; color:#0f172a; }
+.arf-vg-sub { overflow:hidden; font-size:9.5px; font-weight:600; color:#93aeba; white-space:nowrap; text-overflow:ellipsis; }
+.arf-vg-count {
+  flex-shrink:0; min-width:22px; margin-left:auto; padding:2px 8px;
+  border:1px solid #c2ecf3; border-radius:20px; background:#e0f7fb;
+  font-size:10px; font-weight:800; text-align:center; color:#0e7490;
+}
+.arf-vg-none { padding:14px 8px; font-size:11px; font-weight:600; text-align:center; color:#9fb7c2; }
+/* One file. */
+.arf-vf { display:flex; align-items:center; gap:8px; padding:8px; border:1px solid #eef5f8; border-radius:11px; background:linear-gradient(180deg, #fbfdfe, #f6fafc); }
 .arf-vf + .arf-vf { margin-top:8px; }
-.arf-vf-badge { display:flex; align-items:center; justify-content:center; width:32px; height:32px; flex-shrink:0; border-radius:8px;
-  font-size:8.5px; font-weight:900; color:#fff; background:linear-gradient(135deg,#fb7185,#e11d48); box-shadow:0 3px 8px rgba(225,29,72,.28); }
-.arf-vf-txt { flex:1; min-width:0; }
-.arf-vf-name { font-size:12.5px; font-weight:700; color:#1e293b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.arf-vf-meta { font-size:10.5px; font-weight:600; color:#94a3b8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.arf-vf-btn { height:32px; padding:0 12px; font-size:11px; }
+.arf-vf:hover { border-color:#cfe9f0; background:#f7fdfe; }
+.arf-vf-badge {
+  display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  width:32px; height:32px; border-radius:9px;
+  font-size:7.5px; font-weight:800; letter-spacing:.06em; color:#fff;
+  background:linear-gradient(135deg, #fb7185, #e11d48); box-shadow:0 3px 8px -3px rgba(225, 29, 72, .6);
+}
+.arf-vf-txt { display:flex; flex:1; flex-direction:column; gap:2px; min-width:0; }
+.arf-vf-name { overflow:hidden; font-size:11.5px; font-weight:800; color:#22414f; white-space:nowrap; text-overflow:ellipsis; }
+.arf-vf-meta { overflow:hidden; font-size:9.5px; font-weight:600; color:#93aeba; white-space:nowrap; text-overflow:ellipsis; }
 /* Release / Refund tag on a payment proof. */
-.arf-vtag { flex-shrink:0; display:inline-block; padding:2px 9px; border-radius:999px; font-size:8.5px; font-weight:800;
-  letter-spacing:.08em; text-transform:uppercase; border:1px solid transparent; }
-.arf-vtag--release { color:#0e7490; background:#ecfeff; border-color:#a5f3fc; }
-.arf-vtag--refund  { color:#047857; background:#f0fdf4; border-color:#bbf7d0; }
+.arf-vtag { flex-shrink:0; padding:3px 8px; border:1px solid transparent; border-radius:20px; font-size:8px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+.arf-vtag--release { color:#0e7490; background:#e0f7fb; border-color:#c2ecf3; }
+.arf-vtag--refund  { color:#047857; background:#ecfdf5; border-color:#bbf7d0; }
+/* View / Download. */
+.arf-vf-acts { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.arf-vact {
+  display:inline-flex; align-items:center; gap:5px; height:30px; padding:0 10px;
+  border:none; border-radius:9px; cursor:pointer;
+  font-family:inherit; font-size:10px; font-weight:800; color:#fff;
+  background:linear-gradient(135deg, #22b8d6, #0e7490);
+  box-shadow:0 3px 9px -3px rgba(8, 145, 178, .6), inset 0 1px 0 rgba(255, 255, 255, .22);
+  transition:transform .15s, box-shadow .15s;
+}
+.arf-vact svg { width:13px; height:13px; flex-shrink:0; }
+.arf-vact:hover { transform:translateY(-1px); box-shadow:0 6px 14px -4px rgba(8, 145, 178, .65); }
+.arf-vact--get { background:linear-gradient(135deg, #3b82a6, #1e4f6b); box-shadow:0 3px 9px -3px rgba(30, 79, 107, .6), inset 0 1px 0 rgba(255, 255, 255, .18); }
+.arf-vact--get:hover { box-shadow:0 6px 14px -4px rgba(30, 79, 107, .65); }
 
 /* ── Recover Payment popup: prototype size, not the full-width payment popup ── */
 .mpr-card.spi-mdl.arf-rec { width:min(1180px, 96vw); max-height:92vh; }
@@ -345,14 +668,17 @@
 /* ── Dark mode ─────────────────────────────────────────────────────────── */
 [data-bs-theme="dark"] .arf-chip { color:#fcd34d; background:rgba(245,158,11,.14); border-color:rgba(245,158,11,.35); }
 [data-bs-theme="dark"] .arf-nr__none { color:#64748b; }
-[data-bs-theme="dark"] .arf-ro-hl { background:rgba(34,211,238,.1); }
-[data-bs-theme="dark"] .arf-ro-hl .spi-dt-ro-val { color:#67e8f9; }
-[data-bs-theme="dark"] .arf-rogrid8 { background:rgba(148,163,184,.08); }
-[data-bs-theme="dark"] .arf-rogrid8 .spi-dt-ro { background:#0c1c24; }
-[data-bs-theme="dark"] .arf-form .spi-dt-field:has(input:not([readonly]), .spi-dt-file, .spi-dt-select-edit) > .spi-dt-field-lbl { color:#67e8f9; }
+[data-bs-theme="dark"] .arf-form .spi-dt-field:has(input:not([readonly]), .spi-dt-file, .master-select-wrap) > .spi-dt-field-lbl { color:#67e8f9; }
 [data-bs-theme="dark"] .arf-form .spi-dt-inp:not([readonly]):not(.is-invalid),
 [data-bs-theme="dark"] .arf-form .spi-dt-file:not(.is-invalid),
-[data-bs-theme="dark"] .arf-form .spi-dt-select-edit:not(.is-invalid) { border-color:rgba(34,211,238,.45); }
+[data-bs-theme="dark"] .arf-form .master-select-toggle:not(.is-invalid) { border-color:rgba(34,211,238,.45); background:#0c1c24; }
+[data-bs-theme="dark"] .arf-form .spi-dt-inp[readonly] { border-color:#1c4553; background:#0b1e27; color:#9db3c1; }
+[data-bs-theme="dark"] .arf-rogrid { background:rgba(148,163,184,.12); box-shadow:0 0 0 1px rgba(148,163,184,.12); }
+[data-bs-theme="dark"] .arf-ro { background:#0c1c24; }
+[data-bs-theme="dark"] .arf-ro__v { color:#e2e8f0; }
+[data-bs-theme="dark"] .arf-ro--key { background:rgba(34,211,238,.1); }
+[data-bs-theme="dark"] .arf-ro--key .arf-ro__v { color:#67e8f9; }
+[data-bs-theme="dark"] .arf-miss { background:rgba(245,158,11,.1); color:#fcd34d; box-shadow:inset 0 0 0 1px rgba(245,158,11,.3); }
 [data-bs-theme="dark"] .arf-pick .spi-mdl-body,
 [data-bs-theme="dark"] .arf-pick .spi-mdl-foot { background:transparent; }
 [data-bs-theme="dark"] .arf-pick-count { color:#7c93a8; }
@@ -368,16 +694,12 @@
 [data-bs-theme="dark"] .arf-short__s,
 [data-bs-theme="dark"] .arf-short__figl,
 [data-bs-theme="dark"] .arf-short__figs { color:#fde68a; }
-[data-bs-theme="dark"] .arf-hist { border-color:rgba(148,163,184,.2); }
-[data-bs-theme="dark"] .arf-hist__empty { color:#94a3b8; }
 [data-bs-theme="dark"] .arf-amt--due { color:#f87171; }
 [data-bs-theme="dark"] .arf-table .arf-amt--due  { color:#f87171; }
 [data-bs-theme="dark"] .arf-table .arf-amt--tds  { color:#fb7185; }
 [data-bs-theme="dark"] .arf-table .arf-amt--zero { color:#64748b; }
 [data-bs-theme="dark"] .arf-vtag--release { color:#67e8f9; background:rgba(6,182,212,.14); border-color:rgba(6,182,212,.35); }
 [data-bs-theme="dark"] .arf-vtag--refund  { color:#86efac; background:rgba(34,197,94,.14); border-color:rgba(34,197,94,.35); }
-[data-bs-theme="dark"] .arf-vault-body,
-[data-bs-theme="dark"] .arf-vault .spi-mdl-foot { background:transparent; }
 [data-bs-theme="dark"] .arf-vg { background:#0c1c24; border-color:rgba(34,211,238,.2); }
 [data-bs-theme="dark"] .arf-vg-head { border-bottom-color:rgba(148,163,184,.14); }
 [data-bs-theme="dark"] .arf-vg-title,
@@ -393,27 +715,38 @@
   .arf-form .spi-dt-head { flex-wrap:wrap; row-gap:8px; padding-top:8px; padding-bottom:8px; }
   .arf-form .spi-dt-pills { flex-wrap:wrap; }
 }
-@media (max-width: 1400px) {
-  .arf-rogrid8 { grid-template-columns: repeat(4,1fr); }
-}
 /* spi-dt-grid4 drops to 2 columns at 1100px; spans follow it down. */
 @media (max-width: 1100px) {
-  .arf-span3 { grid-column: 1 / -1; }
-  .arf-rogrid8 { grid-template-columns: repeat(2,1fr); }
+}
+@media (max-width: 1400px) {
+  .arf-rgrid { grid-template-columns:repeat(4, minmax(0, 1fr)); }
+  .arf-rgrid > .spi-dt-field:nth-child(-n+5),
+  .arf-rgrid > .spi-dt-field:nth-child(n+7) { grid-column:auto; }
+  .arf-rgrid > .spi-dt-field:nth-child(6) { grid-column:span 3; }
+}
+@media (max-width: 1280px) { .arf-rogrid--sup { grid-template-columns:repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 940px)  { .arf-rogrid--sup { grid-template-columns:repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 820px) {
+  .arf-short .spi-dt-grid4 { grid-template-columns:1fr; }
+  .arf-rgrid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .arf-rgrid > .spi-dt-field:nth-child(5),
+  .arf-rgrid > .spi-dt-field:nth-child(6) { grid-column:span 2; }
+}
+@media (max-width: 680px) {
+  .arf-rogrid--sup { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .arf-rogrid--sup .arf-ro--span2 { grid-column:1 / -1; }
 }
 /* Picker footer: buttons share the width; the long label may wrap. */
 @media (max-width: 560px) {
-  /* Vault rows: name and tag on top, the two buttons share the line under them. */
-  .arf-vf { flex-wrap:wrap; }
-  .arf-vf-txt { flex-basis:calc(100% - 42px); }
-  .arf-vf-btn { flex:1 1 0; }
-  .arf-vault-body { padding:12px; }
+  /* Vault rows: icon-only buttons and a wrapping meta line, as in the prototype. */
+  .arf-vact span { display:none; }
+  .arf-vact { padding:0 9px; }
+  .arf-vf-meta { white-space:normal; }
   .arf-pick .spi-mdl-foot-btns { width:100%; }
   .arf-pick .spi-mdl-foot-btns button { flex:1 1 auto; white-space:normal; }
 }
 @media (max-width: 640px) {
-  .arf-span2, .arf-span3 { grid-column: 1 / -1; }
-  .arf-rogrid2, .arf-rogrid8 { grid-template-columns: 1fr; }
+  .arf-span2 { grid-column: 1 / -1; }
   .arf-pick-line { gap:8px; }
   .arf-pick-sup { font-size:12px; }
   .arf-short { padding:10px 12px; }
