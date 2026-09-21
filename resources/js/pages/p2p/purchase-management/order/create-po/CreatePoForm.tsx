@@ -13,6 +13,7 @@ import { draftFromDetail, itemsBody, rowFromPi, stage1Body, usePoDraft } from '.
 import { gstCheck } from './gst-check';
 import { legalFromVault } from './supplier-checks';
 import { usePoLookups, type PoLookups } from './use-po-lookups';
+import { FitTip } from './form-fields';
 import GstNoticeModal, { type GstNotice } from './GstNoticeModal';
 import { PoApiError, poApi, poLookupApi, type PoDetail, type ShipmentOption, type TaxMode } from '../api/po-api';
 import { useToast } from '../../../../../contexts/ToastContext';
@@ -35,6 +36,9 @@ export type StepCtx = {
   taxMode: TaxMode;
   piCode: string | null;
   detail: PoDetail | null;
+  /** Saves Step 02's lines and charges without leaving the step. */
+  saveLines: () => Promise<void>;
+  saving: boolean;
 };
 
 type Stage = { title: string; desc: string };
@@ -143,7 +147,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     // supplier chooser or wizard, the Evidence Vault, a product's detail view):
     // those close themselves on the same key, and closing the whole form too
     // would throw away everything filled in.
-    const OVER_FORM = '.cgst-backdrop, .supch-ov, .avm-backdrop, .sev-overlay, .prd-detail-overlay';
+    const OVER_FORM = '.cgst-backdrop, .supch-ov, .avm-backdrop, .apm-backdrop, .sev-overlay, .prd-detail-overlay';
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || document.querySelector(OVER_FORM)) return;
       onClose();
@@ -153,6 +157,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   }, [onClose]);
 
   const isLast = stage === STAGES.length - 1;
+  const isSubmit = stage === 2;
 
   // The supplier's GST position gates the PO at submission, so its action sits
   // beside "Submit PO & Next" on Step 03 — only when the check calls for one.
@@ -219,6 +224,19 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     }
   };
 
+  // Step 02's own Save button: bank the lines without moving on.
+  const saveLines = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      if (await saveStage2()) toast.success('Product details saved', `${itemsBody(draft).lines.length} line(s) on this PO.`);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const goTo = (target: number) => {
     if (target === stage) return;
     if (target > reached) { toast.info('Save this step first', 'Use the button below to save and continue.'); return; }
@@ -244,7 +262,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     customer: link.shipment?.customer ?? detail?.customer_name ?? null,
     procurement: detail?.procurement_request_code ?? null,
   };
-  const ctx: StepCtx = { lookups, taxMode: detail?.tax_mode ?? 'intra', piCode: refs.pi, detail };
+  const ctx: StepCtx = { lookups, taxMode: detail?.tax_mode ?? 'intra', piCode: refs.pi, detail, saveLines, saving };
 
   return createPortal(
     <div className="spi-dt-overlay cpf-form">
@@ -356,13 +374,15 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
                 {gst.state.action}
               </button>
             )}
+            {/* Step 03 is where the PO is actually submitted, so that button is
+                the green one, with a tick — every other step is teal. */}
             <button
               type="button"
-              className={isLast ? 'spi-dt-btn-map' : 'spi-dt-btn-next'}
+              className={isSubmit ? 'spi-dt-btn-map' : 'spi-dt-btn-next'}
               onClick={goNext}
               disabled={saving || booting}
             >
-              {nextLabel} <IcoChevronR />
+              {isSubmit && <IcoCheck />} {nextLabel} <IcoChevronR />
             </button>
           </div>
         </div>
@@ -379,7 +399,9 @@ export function HeadPill({ icon, label, value, mono, alt }: { icon: React.ReactN
       <span className={`spi-dt-pill-ico ${alt ? 'spi-dt-pill-ico--alt' : ''}`}>{icon}</span>
       <div className="spi-dt-pill-txt">
         <div className="spi-dt-pill-lbl">{label}</div>
-        <div className={`spi-dt-pill-val ${mono ? 'spi-dt-pill-val--mono' : ''}`} title={value}>{value}</div>
+        <FitTip label={value}>
+          <div className={`spi-dt-pill-val ${mono ? 'spi-dt-pill-val--mono' : ''}`}>{value}</div>
+        </FitTip>
       </div>
     </div>
   );

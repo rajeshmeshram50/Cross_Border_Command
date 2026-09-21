@@ -65,10 +65,14 @@
   color: #5b7585;
 }
 .cpf-form .spi-dt-field { gap: 5px; }
+/* One fill for every editable control in this form. The text inputs carried a
+   faint tint while the dropdowns and the date picker were transparent, so a
+   dropdown looked white inside a card but took the section's tint outside one
+   — the same field reading two different ways down the page. */
 .cpf-form .spi-dt-inp,
-.cpf-form .spi-dt-textarea { background: #f9fdfe; }
-.cpf-form .spi-dt-inp:focus,
-.cpf-form .spi-dt-textarea:focus { background: #fff; }
+.cpf-form .spi-dt-textarea,
+.cpf-form .master-select-toggle,
+.cpf-form .master-datepicker-toggle { background: #fff; }
 /* Read-only (supplier-master data): the SPI grey box, restated because the
    rule above out-ranks it and made locked fields look editable. */
 .cpf-form .spi-dt-inp[readonly],
@@ -156,7 +160,9 @@
   transition: color .15s;
 }
 [data-bs-theme="dark"] .cpf-form .spi-dt-inp,
-[data-bs-theme="dark"] .cpf-form .spi-dt-textarea { background: #0c1c24; }
+[data-bs-theme="dark"] .cpf-form .spi-dt-textarea,
+[data-bs-theme="dark"] .cpf-form .master-select-toggle,
+[data-bs-theme="dark"] .cpf-form .master-datepicker-toggle { background: #0c1c24; }
 [data-bs-theme="dark"] .cpf-form .spi-dt-toggle { background: #0c1c24; border-color: rgba(34, 211, 238, .25); }
 [data-bs-theme="dark"] .cpf-form .spi-dt-field-lbl { color: #94a3b8; }
 
@@ -899,7 +905,10 @@
 
 .cpd-tbl tbody td {
   padding: 14px 12px;
-  border-bottom: 1px solid #eef6f9;
+  /* The prototype's row divider — its .cpd-tbl--pd rule says #eef6f9, but the
+     base .cpd-tbl rule comes later at the same specificity, so #eef4f7 is what
+     it actually draws. Measured, not read. */
+  border-bottom: 1px solid #eef4f7;
   font-weight: 600;
   color: #334155;
   text-align: center;
@@ -921,26 +930,29 @@
 
 /* The product block stacks its name over the meta line. */
 .cpd-prod { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+/* The prototype's rendered values (12.5px is written in its CSS but a later
+   rule wins, exactly as with the row divider). */
 .cpd-prod__nm { font-size: 12px; font-weight: 800; color: #0f2a38; white-space: normal; }
 .cpd-prod__meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   row-gap: 2px;
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 600;
-  color: #7c98a6;
+  color: #7f97a5;
 }
 .cpd-prod__meta b { color: #0c4a6e; font-weight: 800; }
 .cpd-prod__dot { width: 3px; height: 3px; border-radius: 50%; background: #c3d4dd; flex-shrink: 0; }
 .cpd-code {
   padding: 2px 7px;
-  border: 1px solid #bfe9f3;
+  border: 1px solid #cffafe;
   border-radius: 5px;
-  background: linear-gradient(135deg, #eafcff, #d9f4fb);
+  background: #ecfeff;
   font-family: 'Geist Mono', ui-monospace, monospace;
-  font-size: 9px;
+  font-size: 10px;
+  letter-spacing: .2px;
   font-weight: 800;
   color: #0c4a6e;
 }
@@ -962,6 +974,9 @@
 }
 .cpd-in:focus { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34, 211, 238, .14); }
 .cpd-pick { display: flex; align-items: center; gap: 5px; min-width: 0; }
+/* The PO product dropdown is the app's MasterSelect; in the table it takes the
+   prototype's box (7px corner, #e6eef3 edge) instead of the app default. */
+.cpf-form .cpd-pick .master-select-toggle { border-radius: 7px; border-color: #e6eef3; }
 .cpd-iconbtn,
 .cpd-addbtn {
   display: inline-flex;
@@ -1067,9 +1082,20 @@
 [data-bs-theme="dark"] .cpd-scroll { border-color: rgba(148, 163, 184, .2); }
 
 /* ── Step 02 · additional charges + totals ───────────────────────────────── */
-.cpd-sum { display: grid; grid-template-columns: 1fr 340px; gap: 14px; margin-top: 14px; align-items: start; }
+/* Step 02 keeps its own Save — the wizard footer only moves between steps.
+   It sits in the charges column with `margin-top:auto`, so it settles on the
+   bottom edge of that column: level with the Grand Total bar next to it. */
+.cpd-sum__left { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.cpd-savebar { display: flex; justify-content: flex-end; margin-top: auto; }
+/* A plain button, not a second banner: it keeps the footer's size and sits
+   centred against the Grand Total bar beside it (the bar is 12px taller, so
+   half of that lifts the button off the bottom edge). */
+.cpd-savebar { padding-bottom: 3px; }
+.cpd-savebar .spi-dt-btn-next { padding: 10px 30px; font-size: 12.5px; }
+
+.cpd-sum { display: grid; grid-template-columns: 1fr 340px; gap: 14px; margin-top: 14px; align-items: stretch; }
 @media (max-width: 1100px) { .cpd-sum { grid-template-columns: 1fr; } }
-.cpd-sum__charges { padding: 12px 13px; border: 1px solid #e3eef3; border-radius: 12px; background: #fbfeff; }
+.cpd-sum__charges { padding: 12px 13px; border: 1px solid #e3eef3; border-radius: 12px; background: #fbfdff; }
 .cpd-sum__hd {
   display: flex;
   align-items: center;
@@ -1093,10 +1119,12 @@
   padding: 9px 12px 9px 24px;
   border: 1.5px solid #e6eef3;
   border-radius: 9px;
-  background: #f9fdfe;
+  background: #fff;
   font-family: inherit;
   font-size: 12.5px;
   font-weight: 700;
+  /* The prototype's box is 36px tall; the form's 1.45 line-height made ours 39. */
+  line-height: 1.2;
   text-align: right;
   color: #0f172a;
   outline: none;
@@ -1114,8 +1142,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 11px 14px;
-  border-bottom: 1px solid #e3eef3;
+  padding: 10px 15px;
+  border-bottom: 1px solid #e2eef3;
 }
 .cpd-totrow__k { font-size: 10.5px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: #52708a; }
 .cpd-totrow__v { min-width: 0; font-size: 13px; font-weight: 800; color: #0c4a6e; font-variant-numeric: tabular-nums; }
@@ -1136,19 +1164,21 @@
    narrow screen, pushes the table past its box. width:0 takes it out of the
    column's size; min-width:100% then fills whatever the header gave it. */
 .cpd-tbl .cpf-fit { display: block; width: 0; min-width: 100%; max-width: none; }
-/* Since the values no longer size the columns, the headers do: wide enough
-   for an everyday amount (₹12,34,567.89) on any screen. */
-.cpd-tbl--pd th.cpd-th-amt { min-width: 112px; }
-.cpd-tbl--pd th.cpd-th-num { min-width: 88px; }
+/* Since the values no longer size the columns, the headers do. The floors are
+   the prototype's own column widths at 1920 (measured against it), so a long
+   number is ellipsised instead of stealing width from Product / Description. */
+.cpd-tbl--pd th.cpd-th-amt { min-width: 88px; }
+/* The two tax columns are narrower than the cost ones in the prototype. */
+.cpd-tbl--pd th.cpd-th-amt--tax { min-width: 82px; }
+.cpd-tbl--pd th.cpd-th-num { min-width: 72px; }
 /* Same for the qty / rate boxes while they're not being edited. */
 .cpd-tbl .cpd-in { text-overflow: ellipsis; }
 .cpd-totrow--grand {
   border-bottom: none;
-  padding: 13px 14px;
   background: linear-gradient(110deg, #0e7490, #0891b2 60%, #06b6d4);
 }
 .cpd-totrow--grand .cpd-totrow__k { color: rgba(255, 255, 255, .85); }
-.cpd-totrow--grand .cpd-totrow__v { font-size: 15px; color: #fff; }
+.cpd-totrow--grand .cpd-totrow__v { font-size: 16px; color: #fff; }
 
 /* ── Step 02 · missing product details ──────────────────────────────────── */
 .cpd-misscount {
@@ -1244,15 +1274,19 @@
 .cpd-tbl--pd tfoot .cpd-stick--1 { width: 274px; min-width: 274px; }
 
 /* Compact variant: tighter cells and inputs, so numbers are never clipped. */
-.cpd-tbl--pd tbody td { padding: 10px 6px; }
-/* Figma: input.cpd-in--num is 56 x 26.21, #F9FDFE, padding 5px 6px. */
+/* The prototype's own compact cell padding (measured: 6px 7px). */
+.cpd-tbl--pd tbody td,
+.cpd-tbl--pd tfoot td { padding: 6px 7px; }
+/* Figma: input.cpd-in--num is 56 x 26.21, padding 5px 6px. The fill is white
+   here rather than the prototype's #F9FDFE, so every field in this form reads
+   the same — the tinted CELL already marks it as editable. */
 .cpd-tbl--pd .cpd-in {
   width: 56px;
   min-width: 56px;
   padding: 5px 6px;
-  background: #f9fdfe;
+  background: #fff;
 }
-.cpd-tbl--pd tfoot td { padding: 11px 6px; }
+
 
 /* Header labels wrap at the 88px cap set above, exactly as the prototype does.
    Forcing them onto one line made the row taller and the dividers heavier. */
@@ -1281,8 +1315,11 @@
 /* "+ Add Supplier" opens the Supplier master's chooser (.supch-ov) and wizard
    (.avm-backdrop) at z-index 1090, with their own popups at 1100–1180 — all
    under this form (1200). Raising them would bury those inner popups, so the
-   form steps down beneath them instead, only while they are open. */
+   form steps down beneath them instead, only while they are open. The product
+   wizard (.apm-backdrop) sits on the same ladder, opened from the step-02
+   table's edit / add buttons. */
 body:has(.supch-ov) .spi-dt-overlay.cpf-form,
+body:has(.apm-backdrop) .spi-dt-overlay.cpf-form,
 body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 
 /* ── Only the body scrolls ───────────────────────────────────────────────
@@ -1550,7 +1587,8 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
     inset 0 -10px 18px -12px rgba(34, 211, 238, .45);
   transition: filter .15s, transform .12s, box-shadow .15s;
 }
-.cdoc-vault:hover { transform: translateY(-1px); filter: brightness(1.08); }
+/* Hover, the sheen sweep and the reduced-motion guard live further down,
+   with the rest of the prototype-matching pill rules. */
 .cdoc-vault__ico {
   display: flex;
   align-items: center;
@@ -1563,11 +1601,19 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
   background: linear-gradient(145deg, #a5f3fc, #22d3ee 55%, #06b6d4);
   box-shadow: 0 3px 10px -3px rgba(34, 211, 238, .8), inset 0 1px 0 rgba(255, 255, 255, .6);
 }
-.cdoc-vault__t { white-space: nowrap; }
+.cdoc-vault__t { font-size: 12.5px; font-weight: 800; letter-spacing: -.1px; color: #fff; white-space: nowrap; }
+/* The name says what the button does, the bracket says what is inside — so a
+   hairline divides them and the bracket reads as a caption, not more label. */
+.cdoc-vault__t + .cdoc-vault__s {
+  margin-left: 11px;
+  padding-left: 11px;
+  border-left: 1px solid rgba(148, 225, 247, .32);
+}
 .cdoc-vault__s {
   font-size: 10.5px;
-  font-weight: 600;
-  color: rgba(224, 251, 255, .8);
+  font-weight: 700;
+  letter-spacing: .01em;
+  color: rgba(178, 232, 250, .78);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1582,7 +1628,22 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 
 .cdoc-tbl .cdoc-check { width: 44px; }
 .cdoc-tbl input[type="checkbox"] { width: 15px; height: 15px; accent-color: #0891b2; cursor: pointer; }
-.cdoc-ref { margin-top: 3px; font-size: 10px; font-weight: 600; color: #7c98a6; }
+.cdoc-ref { margin-top: 3px; font-size: 10px; font-weight: 600; color: #8aa0ad; }
+/* Step 04 borrows the step-02 product classes, but the prototype gives this
+   table its own type: a lighter document name and a teal, slightly larger
+   code pill (its .cptd-docname / .cptd-code). Scoped to this table so the
+   product table keeps its own. */
+.cdoc-tbl .cpd-prod__nm { font-size: 12px; font-weight: 700; letter-spacing: normal; color: #0f2a38; }
+.cdoc-tbl .cpd-code {
+  padding: 3px 7px;
+  border-radius: 6px;
+  border-color: #bfecef;
+  background: #e4f9fa;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: -.3px;
+  color: #0e7490;
+}
 .cdoc-req {
   display: inline-flex;
   padding: 3px 10px;

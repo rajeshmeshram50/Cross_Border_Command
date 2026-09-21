@@ -11,11 +11,13 @@ import { vaultTargetOf } from '../supplier-checks';
 import { PoApiError, poDocumentApi, poSignatureApi, type PoDocument } from '../../api/po-api';
 import type { VaultData } from '../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 import { formatDmy } from '../../../../../../utils/formatDmy';
+import { FitTip } from '../form-fields';
 import { useToast } from '../../../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../../../contexts/ConfirmContext';
 import { IcoCertificate, IcoChevron, IcoDownload, IcoFolder, IcoHistory, IcoMail, IcoPaperclip, IcoSend, IcoShield, IcoUpload } from '../../shared/icons';
 
 const SupplierEvidenceVaultModal = lazy(() => import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
+const warmVault = () => { void import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'); };
 const SigningTrackerModal = lazy(() => import('../../../../../sales/opportunity-pipeline/SigningTrackerModal').then((m) => ({ default: m.SigningTrackerModal })));
 
 const isSigned = (doc: PoDocument) => doc.status === 'signed';
@@ -190,10 +192,12 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
           </div>
 
           {/* Everything the supplier has on file, one click away. */}
-          <button type="button" className="cdoc-vault cpf-push" disabled={!vaultTarget} onClick={(e) => { e.stopPropagation(); setVaultOpen(true); }}>
+          <button type="button" className="cdoc-vault cpf-push" disabled={!vaultTarget} onPointerEnter={warmVault} onClick={(e) => { e.stopPropagation(); setVaultOpen(true); }}>
             <span className="cdoc-vault__ico"><IcoShield size={14} /></span>
             <span className="cdoc-vault__t">Supplier Evidence Vault</span>
-            <span className="cdoc-vault__s">(KYC, Due Diligence, Trade Licenses, Trade Documents and Agreements)</span>
+            <FitTip label="KYC, Due Diligence, Trade Licenses, Trade Documents and Agreements">
+              <span className="cdoc-vault__s">(KYC, Due Diligence, Trade Licenses, Trade Documents and Agreements)</span>
+            </FitTip>
           </button>
           <span className={`cpf-chev ${open ? '' : 'is-closed'}`}><IcoChevron /></span>
         </div>
@@ -243,8 +247,8 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                       <td>
                         {/* The name needs its own span — text-overflow does nothing on a flex container. */}
                         {doc.file_path ? (
-                          <button type="button" className="cdoc-file" title={doc.original_name ?? ''} onClick={() => downloadDraft(doc)}>
-                            <IcoPaperclip size={12} /><span>{doc.original_name ?? 'Attachment'}</span>
+                          <button type="button" className="cdoc-file" onClick={() => downloadDraft(doc)}>
+                            <IcoPaperclip size={12} /><FitTip label={doc.original_name ?? 'Attachment'}><span>{doc.original_name ?? 'Attachment'}</span></FitTip>
                           </button>
                         ) : doc.doc_kind === 'purchase_order' ? (
                           <button type="button" className="cdoc-btn" disabled={busy === `gen:${doc.id}`} onClick={() => generate(doc)}>

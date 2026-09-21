@@ -7,9 +7,12 @@ import { EditSelect, FitInput, FitText } from '../form-fields';
 import type { PoLineRow } from '../po-draft';
 import type { ProductOpt } from '../use-po-lookups';
 import type { TaxMode } from '../../api/po-api';
-import { IcoPlus, IcoTrash } from '../../shared/icons';
+import { IcoPencil, IcoPlus, IcoTrash } from '../../shared/icons';
+import { useToast } from '../../../../../../contexts/ToastContext';
 // The Product Management detail view, opened by "Read more" on a description.
 const InspectionProductView = lazy(() => import('../../physical-inspection/InspectionProductView'));
+// The product master's Add / Edit wizard, opened by the cell's two buttons.
+const AddProductModal = lazy(() => import('../../../../p2p-master-management/product-management/AddProductModal'));
 /* Hovering "Read more" starts the same downloads the click needs, so the view
    is already in memory when the click lands. */
 const warmProductView = () => {
@@ -94,16 +97,22 @@ type Props = {
   products: ProductOpt[];
   taxMode: TaxMode;
   onChange: (index: number, patch: Partial<PoLineRow>) => void;
-  onAdd?: () => void;
   onRemove?: (index: number) => void;
+  /** A product was added or edited in the master — reload the picker list. */
+  onProductsChanged?: () => void;
   /** The summary on later steps shows the same table with plain values. */
   readOnly?: boolean;
 };
 
-export default function ProductTable({ rows, products, taxMode, onChange, onAdd, onRemove, readOnly }: Props) {
+export default function ProductTable({ rows, products, taxMode, onChange, onRemove, onProductsChanged, readOnly }: Props) {
   const options = useMemo(() => products.map(productLabel), [products]);
   // The product whose detail view is open, from "Read more" on its description.
   const [detailId, setDetailId] = useState<number | null>(null);
+  /* The product master's own Add / Edit wizard, opened from the two buttons in
+     the PO product cell: the pencil edits the line's product, + adds a new one. */
+  const [editing, setEditing] = useState<number | null>(null);
+  const [adding, setAdding] = useState(false);
+  const toast = useToast();
   const inter = taxMode === 'inter';
   // Read-only recaps show only what is ordered.
   const shown = readOnly ? rows.filter((r) => r.qtyPo > 0) : rows;
@@ -122,6 +131,24 @@ export default function ProductTable({ rows, products, taxMode, onChange, onAdd,
       {detailId != null && (
         <Suspense fallback={null}>
           <InspectionProductView productId={detailId} onClose={() => setDetailId(null)} />
+        </Suspense>
+      )}
+      {/* One wizard, two entry points: with an id it edits that product, with
+          none it creates one. It saves to the product master itself. */}
+      {(adding || editing != null) && (
+        <Suspense fallback={null}>
+          <AddProductModal
+            productId={editing}
+            hideSupplierMapping
+            onClose={() => { setAdding(false); setEditing(null); }}
+            onSaved={(_id, finalised) => {
+              if (!finalised) return;
+              toast.success(editing != null ? 'Product updated' : 'Product added', 'Saved in the product master.');
+              setAdding(false);
+              setEditing(null);
+              onProductsChanged?.();
+            }}
+          />
         </Suspense>
       )}
       <table className="cpd-tbl cpd-tbl--pd">
@@ -144,8 +171,8 @@ export default function ProductTable({ rows, products, taxMode, onChange, onAdd,
             {/* An inter-state supplier is taxed IGST instead of CGST + SGST. */}
             <th>{inter ? 'IGST (%)' : 'CGST (%)'}</th>
             <th>{inter ? '—' : 'SGST (%)'}</th>
-            <th className="cpd-th-amt">{inter ? 'IGST Amount' : 'CGST Amount'}</th>
-            <th className="cpd-th-amt">{inter ? '—' : 'SGST Amount'}</th>
+            <th className="cpd-th-amt cpd-th-amt--tax">{inter ? 'IGST Amount' : 'CGST Amount'}</th>
+            <th className="cpd-th-amt cpd-th-amt--tax">{inter ? '—' : 'SGST Amount'}</th>
             <th className="cpd-th-amt">Product Cost<span className="cpd-th-sub cpd-th-sub--wo">Without GST</span></th>
             <th className="cpd-th-amt">Total GST Amount</th>
             <th className="cpd-th-amt cpd-th-final">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">With GST</span></th>
@@ -154,7 +181,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onAdd,
 
         <tbody>
           {shown.length === 0 && (
-            <tr><td colSpan={15} className="cpd-empty">No product lines yet{readOnly ? '.' : ' — add one with the + button.'}</td></tr>
+            <tr><td colSpan={15} className="cpd-empty">No product lines yet{readOnly ? '.' : ' — add one with "+ Add Product Line".'}</td></tr>
           )}
           {shown.map((row, i) => {
             const line = lines[i];
@@ -200,6 +227,10 @@ export default function ProductTable({ rows, products, taxMode, onChange, onAdd,
                           if (picked) onChange(index, { productId: picked.id, ...(row.pi ? {} : { rate: picked.price }) });
                         }}
                       />
+                      <button type="button" className="cpd-iconbtn" title="Edit this product in the product master"
+                        disabled={row.productId == null} onClick={() => row.productId != null && setEditing(row.productId)}>
+                        <IcoPencil />
+                      </button>
                       {!row.pi && onRemove && (
                         <button type="button" className="cpd-iconbtn" title="Remove this line" onClick={() => onRemove(index)}><IcoTrash /></button>
                       )}
@@ -210,8 +241,10 @@ export default function ProductTable({ rows, products, taxMode, onChange, onAdd,
                     <span className="cpd-kv">HSN <b>{hsn}</b></span>
                     <span className="cpd-prod__dot" />
                     <span className="cpd-kv">{gstCell}</span>
-                    {!readOnly && onAdd && i === shown.length - 1 && (
-                      <button type="button" className="cpd-addbtn" title="Add a product that is not on the PI" onClick={onAdd}><IcoPlus /></button>
+                    {!readOnly && (
+                      <button type="button" className="cpd-addbtn" title="Add a new product to the master" onClick={() => setAdding(true)}>
+                        <IcoPlus />
+                      </button>
                     )}
                   </div>
                   </div>

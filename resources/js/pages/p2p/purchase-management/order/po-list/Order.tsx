@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState, type KeyboardEven
 import WorklistPager from '../../../../../components/ui/WorklistPager';
 import Badge, { type BadgeVariant } from '../../../../../components/ui/Badge';
 import CreatePoModal from '../create-po/CreatePoModal';
+import { FitTip } from '../create-po/form-fields';
 import { poApi, type PoListRow } from '../api/po-api';
 import { useToast } from '../../../../../contexts/ToastContext';
 // The PO form is a screen of its own: loaded only when one is being created,
@@ -849,7 +850,7 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
 
                 <PoCell span={span}>
                   <div className="ord-supplier">
-                    <span className="ord-supplier__name" title={row.supplier}>{row.supplier}</span>
+                    <FitTip label={row.supplier}><span className="ord-supplier__name">{row.supplier}</span></FitTip>
                     <Badge
                       appearance="outline"
                       variant={categoryOf(row).variant}
@@ -979,7 +980,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, inspected 
       <div className="ord-card__split">
         <div className="ord-card__block">
           <span className="ord-card__label">Supplier</span>
-          <span className="ord-supplier__name">{row.supplier}</span>
+          <FitTip label={row.supplier}><span className="ord-supplier__name">{row.supplier}</span></FitTip>
           <Badge appearance="outline" variant={category.variant} icon={category.icon} className="ord-supplier__cat">{category.label}</Badge>
         </div>
         <div className="ord-card__block ord-card__block--end">

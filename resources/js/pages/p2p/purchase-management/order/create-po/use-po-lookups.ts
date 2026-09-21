@@ -23,6 +23,8 @@ export type PoLookups = {
   countries: string[];
   portsLoading: string[];
   portsDischarge: string[];
+  /** Re-fetch the product master (after a product is added or edited). */
+  reloadProducts: () => void;
 };
 
 type Row = Record<string, unknown>;
@@ -46,6 +48,7 @@ function toProduct(p: Row): ProductOpt {
 
 export const EMPTY_LOOKUPS: PoLookups = {
   loading: true, suppliers: [], products: [], currencies: [], incoterms: [], countries: [], portsLoading: [], portsDischarge: [],
+  reloadProducts: () => {},
 };
 
 export function usePoLookups(onError: (what: string, message: string) => void): PoLookups {
@@ -73,5 +76,11 @@ export function usePoLookups(onError: (what: string, message: string) => void): 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return lookups;
+  const reloadProducts = () => {
+    poLookupApi.products()
+      .then((rows) => setLookups((l) => ({ ...l, products: rows.map(toProduct).filter((p) => p.id && p.name) })))
+      .catch((e) => onError('Products', e?.firstError ?? 'Could not load.'));
+  };
+
+  return { ...lookups, reloadProducts };
 }

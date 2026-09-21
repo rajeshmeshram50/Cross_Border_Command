@@ -1,28 +1,39 @@
 // Label + field and the dropdown for this form. The field wears the shared
 // P2P wizard classes; the dropdown is the app's MasterSelect.
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { cloneElement, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import Tooltip from '../../../../../components/ui/Tooltip';
 
-/* A value that must stay on one line in a fixed-width cell. When it doesn't
-   fit it ends in "…", and the full value shows in the tooltip — only then,
-   so short numbers don't get a pointless hover. */
-export function FitText({ text, className }: { text: string; className?: string }) {
-  const ref = useRef<HTMLSpanElement>(null);
+/* Anything this module cuts off must be readable somewhere, so every element
+   that can end in "…" is wrapped in this: it watches the element and turns the
+   app's own tooltip on only once the text really is cut. Never the browser's
+   native `title` — that ignores the app's theme, waits a second to appear and
+   is clipped inside scrollers. */
+export function FitTip({ label, children }: { label: string; children: ReactElement }) {
+  const ref = useRef<HTMLElement | null>(null);
   const [cut, setCut] = useState(false);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const check = () => setCut(el.scrollWidth > el.clientWidth + 1);
     check();
+    // The same text can start fitting (or stop) when its column resizes.
     const ro = new ResizeObserver(check);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [text]);
+  }, [label]);
+  // Tooltip merges this ref with its own, so the element stays measurable.
+  return <Tooltip label={label} disabled={!cut}>{cloneElement(children, { ref } as never)}</Tooltip>;
+}
+
+/* A value that must stay on one line in a fixed-width cell. When it doesn't
+   fit it ends in "…", and the full value shows in the tooltip — only then,
+   so short numbers don't get a pointless hover. */
+export function FitText({ text, className }: { text: string; className?: string }) {
   return (
-    <Tooltip label={text} disabled={!cut}>
-      <span ref={ref} className={`cpf-fit${className ? ` ${className}` : ''}`}>{text}</span>
-    </Tooltip>
+    <FitTip label={text}>
+      <span className={`cpf-fit${className ? ` ${className}` : ''}`}>{text}</span>
+    </FitTip>
   );
 }
 
@@ -59,8 +70,8 @@ export function EditSelect({ value, options, onChange, placeholder, invalid, rea
 }) {
   if (readOnly) {
     return (
-      <div className="spi-dt-select" title={value || undefined} aria-readonly="true">
-        <span>{value || placeholder || '—'}</span>
+      <div className="spi-dt-select" aria-readonly="true">
+        <FitTip label={value}><span>{value || placeholder || '—'}</span></FitTip>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
       </div>
     );

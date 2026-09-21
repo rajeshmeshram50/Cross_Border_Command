@@ -6,6 +6,7 @@ import ProductTable, { computeLine } from './ProductTable';
 import ChargesSummary, { type Charges } from './ChargesSummary';
 import MissingProducts, { missingCount } from './MissingProducts';
 import StageSummary from './StageSummary';
+import { FitTip } from '../form-fields';
 import { manualRow, type PoDraft, type PoLineRow, type SetDraft } from '../po-draft';
 import type { StepCtx } from '../CreatePoForm';
 import { IcoAlert, IcoBox, IcoChevron, IcoLines, IcoPin, IcoUser } from '../../shared/icons';
@@ -62,11 +63,24 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
           Tinted cells are editable — PO product, quantity and rate. Everything else is carried from the PI or calculated.
           {' '}{ctx.taxMode === 'inter' ? 'Inter-state supplier: IGST applies.' : 'Intra-state supplier: CGST + SGST apply.'}
         </div>
-        <ProductTable rows={lines} products={products} taxMode={ctx.taxMode} onChange={patchLine} onAdd={addLine} onRemove={removeLine} />
-        {lines.length === 0 && (
-          <button type="button" className="cpf-addbtn cpd-addfirst" onClick={addLine}>+ Add Product</button>
-        )}
-        <ChargesSummary base={base} gst={gst} charges={draft.charges} onChange={patchCharges} />
+        <ProductTable rows={lines} products={products} taxMode={ctx.taxMode} onChange={patchLine} onRemove={removeLine}
+          onProductsChanged={ctx.lookups.reloadProducts} />
+        {/* A product the PI doesn't carry goes on its own line. */}
+        <button type="button" className="cpf-addbtn cpd-addfirst" onClick={addLine}>+ Add Product Line</button>
+        {/* The wizard footer moves to the next step; this Save banks the lines
+            and charges without leaving Step 02. It rides in the summary row so
+            it sits beside the Grand Total. */}
+        <ChargesSummary
+          base={base}
+          gst={gst}
+          charges={draft.charges}
+          onChange={patchCharges}
+          action={(
+            <button type="button" className="spi-dt-btn-next" disabled={ctx.saving} onClick={() => { void ctx.saveLines(); }}>
+              {ctx.saving ? 'Saving…' : 'Save'}
+            </button>
+          )}
+        />
       </div>
     </div>
 
@@ -101,7 +115,7 @@ function RefPill({ icon, label, value }: { icon: React.ReactNode; label: string;
       <span className="spi-dt-pill-ico">{icon}</span>
       <div className="spi-dt-pill-txt">
         <div className="spi-dt-pill-lbl">{label}</div>
-        <div className="spi-dt-pill-val" title={value}>{value}</div>
+        <FitTip label={value}><div className="spi-dt-pill-val">{value}</div></FitTip>
       </div>
     </div>
   );
