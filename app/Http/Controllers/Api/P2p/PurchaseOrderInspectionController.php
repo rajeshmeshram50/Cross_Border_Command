@@ -26,6 +26,8 @@ class PurchaseOrderInspectionController extends Controller
 
     // Photos, videos and PDFs — what a phone camera or scanner produces.
     private const FILE_RULE = 'file|max:20480|mimetypes:image/*,video/*,application/pdf';
+    // Most proof files one line (or the sign-off note) can hold in total.
+    private const MAX_PROOF = 10;
 
     public function __construct(private PurchaseOrderService $svc) {}
 
@@ -138,9 +140,22 @@ class PurchaseOrderInspectionController extends Controller
             // Proof can be attached before the verdict is chosen.
             'verdict' => ['nullable', 'required_without:files', Rule::in(PoPhysicalInspection::VERDICTS)],
             'remark'  => 'nullable|string|max:1000',
-            'files'   => 'nullable|array|max:10',
+            'files'   => 'nullable|array|max:' . self::MAX_PROOF,
             'files.*' => self::FILE_RULE,
         ]);
+
+        // New proof is added to what the line already holds, so the cap is on
+        // the total — checked before anything is written to storage.
+        $adding = count($request->file('files', []));
+        if ($adding > 0) {
+            $held = count(PoPhysicalInspection::where('purchase_order_item_id', $line->id)->first()?->proof_files ?? []);
+            if ($held + $adding > self::MAX_PROOF) {
+                $room = max(0, self::MAX_PROOF - $held);
+                return $this->fail($room === 0
+                    ? 'This product already has ' . self::MAX_PROOF . ' proof files — remove one to add another.'
+                    : "Only {$room} more proof file(s) can be added to this product (up to " . self::MAX_PROOF . ' in total).');
+            }
+        }
 
         $stored = $this->storeFiles($request, 'files', $order->id);
         $this->inTransaction('save the inspection line', function () use ($line, $order, $request, $stored) {
@@ -184,7 +199,7 @@ class PurchaseOrderInspectionController extends Controller
         if ($order instanceof JsonResponse) return $order;
         $request->validate([
             'note'    => 'nullable|string|max:1000',
-            'files'   => 'nullable|array|max:10',
+            'files'   => 'nullable|array|max:' . self::MAX_PROOF,
             'files.*' => self::FILE_RULE,
         ]);
 
