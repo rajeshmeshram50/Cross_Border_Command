@@ -67,7 +67,15 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   }, [stage]);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    // Esc closes the form — unless a popup is open over it (GST notice, the
+    // supplier chooser or wizard, the Evidence Vault, a product's detail view):
+    // those close themselves on the same key, and closing the whole form too
+    // would throw away everything filled in.
+    const OVER_FORM = '.cgst-backdrop, .supch-ov, .avm-backdrop, .sev-overlay, .prd-detail-overlay';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || document.querySelector(OVER_FORM)) return;
+      onClose();
+    };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);

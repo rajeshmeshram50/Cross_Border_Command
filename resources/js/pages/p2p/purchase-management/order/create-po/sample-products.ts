@@ -1,5 +1,6 @@
 // Static product lines for Step 02, mirroring the prototype's sample PI.
 // Frontend-only data — replaced by the PI / product APIs later.
+import { INSPECTION_PRODUCTS, type InspectionProduct } from '../inspection-shared';
 export type ProductLine = {
   code: string;
   name: string;
@@ -38,6 +39,20 @@ export const PRODUCT_CATALOGUE: ProductLine[] = [
 ];
 
 export const productOption = (p: ProductLine) => `${p.code} — ${p.name}`;
+
+/* "Read more" on a PO line opens the Product Management detail view, the same
+   popup Physical Inspection opens. Most of these codes are already described
+   in full for the inspection screen, so that record is used as it stands; a
+   catalogue-only product falls back to what the PO line itself carries. */
+export function detailProduct(p: ProductLine): InspectionProduct {
+  const known = INSPECTION_PRODUCTS.find((i) => i.code === p.code);
+  if (known) return known;
+  return {
+    code: p.code, name: p.name, hsn: p.hsn, qty: p.qtyPi, gst: p.gst, price: p.rate,
+    uom: 'Piece', uomShort: 'PCS', segment: '—', condition: 'New', packaging: '—',
+    brand: '—', desc: p.description,
+  };
+}
 
 /** Within the same state the tax splits 9 / 9; across states it is half each. */
 export function gstSplit(gst: number, stateCode: string): { cgst: number; sgst: number } {

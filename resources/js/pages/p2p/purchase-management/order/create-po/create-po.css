@@ -69,6 +69,20 @@
 .cpf-form .spi-dt-textarea { background: #f9fdfe; }
 .cpf-form .spi-dt-inp:focus,
 .cpf-form .spi-dt-textarea:focus { background: #fff; }
+/* Read-only (supplier-master data): the SPI grey box, restated because the
+   rule above out-ranks it and made locked fields look editable. */
+.cpf-form .spi-dt-inp[readonly],
+.cpf-form .spi-dt-textarea[readonly],
+.cpf-form .spi-dt-inp[readonly]:focus,
+.cpf-form .spi-dt-textarea[readonly]:focus {
+  border-color: #e3ebf0;
+  background: #f1f6f9;
+  color: #3f566a;
+  box-shadow: none;
+  cursor: default;
+}
+[data-bs-theme="dark"] .cpf-form .spi-dt-inp[readonly],
+[data-bs-theme="dark"] .cpf-form .spi-dt-textarea[readonly] { border-color: #1c4553; background: #0b1e27; color: #9db3c1; }
 .cpf-form .spi-dt-card-head { padding: 10px 13px; }
 /* Icons: tiles already match (36/11 and 26/8); the glyphs inside were a size
    or two bigger than the prototype's, and its header text is heavier. */
@@ -1104,7 +1118,30 @@
   border-bottom: 1px solid #e3eef3;
 }
 .cpd-totrow__k { font-size: 10.5px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: #52708a; }
-.cpd-totrow__v { font-size: 13px; font-weight: 800; color: #0c4a6e; font-variant-numeric: tabular-nums; }
+.cpd-totrow__v { min-width: 0; font-size: 13px; font-weight: 800; color: #0c4a6e; font-variant-numeric: tabular-nums; }
+
+/* One-line values (FitText): a long number ends in "…" instead of widening its
+   column; the tooltip carries the full value. */
+.cpf-fit {
+  display: inline-block;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.cpd-totrow__v .cpf-fit { max-width: 100%; }
+/* Inside the product table the value must not size its column at all —
+   otherwise a long number steals width from the other columns and, on a
+   narrow screen, pushes the table past its box. width:0 takes it out of the
+   column's size; min-width:100% then fills whatever the header gave it. */
+.cpd-tbl .cpf-fit { display: block; width: 0; min-width: 100%; max-width: none; }
+/* Since the values no longer size the columns, the headers do: wide enough
+   for an everyday amount (₹12,34,567.89) on any screen. */
+.cpd-tbl--pd th.cpd-th-amt { min-width: 112px; }
+.cpd-tbl--pd th.cpd-th-num { min-width: 88px; }
+/* Same for the qty / rate boxes while they're not being edited. */
+.cpd-tbl .cpd-in { text-overflow: ellipsis; }
 .cpd-totrow--grand {
   border-bottom: none;
   padding: 13px 14px;
@@ -1240,6 +1277,13 @@
    it becomes the containing block for the position:fixed footer, which then
    floats into the middle of the page instead of sitting at the bottom. */
 .cpf-form .spi-dt-pill { backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+/* "+ Add Supplier" opens the Supplier master's chooser (.supch-ov) and wizard
+   (.avm-backdrop) at z-index 1090, with their own popups at 1100–1180 — all
+   under this form (1200). Raising them would bury those inner popups, so the
+   form steps down beneath them instead, only while they are open. */
+body:has(.supch-ov) .spi-dt-overlay.cpf-form,
+body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 
 /* ── Only the body scrolls ───────────────────────────────────────────────
    The header strip and the four step cards stay put while the form scrolls
@@ -1797,7 +1841,17 @@
 /* Card header icon: the prototype has no outer ring. */
 .cpf-form .spi-dt-card-head .spi-dt-card-ico { box-shadow: 0 2px 6px rgba(8, 145, 178, .35); }
 
-/* Legal header: compliance badge, vault button, bar and percentage. */
+/* Legal header: compliance badge, vault button, bar and percentage.
+   The shared card header spreads its children (space-between), which reads
+   right only when all six are there. With no supplier picked there are four,
+   and the bar drifted into the middle of the row. Here the group is held
+   together on the right instead, so both states line up the same. */
+.cpf-form .cpf-lghead { justify-content: flex-start; }
+.cpf-form .cpf-lgbadge--none {
+  min-width: 44px;
+  text-align: center;
+  color: #7f9bab;
+}
 .cpf-form .spi-dt-legal-badge {
   padding: 4px 11px;
   border: 1px solid #dce8ed;

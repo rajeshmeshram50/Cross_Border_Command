@@ -1,5 +1,7 @@
 // Step 02 · Additional charges and the running totals for the PO.
 // The three charge fields are the only inputs; everything else adds up.
+import { FitText } from '../form-fields';
+
 export type Charges = { ship: string; pack: string; other: string };
 
 export const EMPTY_CHARGES: Charges = { ship: '', pack: '', other: '' };
@@ -40,9 +42,11 @@ export default function ChargesSummary({ base, gst, charges, onChange }: Props) 
   );
 }
 
-/* Up to ₹99,99,999.99 per charge. type="number" ignores maxLength, so the cap is
-   applied to the value — an uncapped charge overflowed the Cost Summary. */
-const CHARGE_DIGITS = 7;
+/* No visible limit — the summary shows long totals as "…" with the full value
+   on hover. 12 digits is only a safety net: past ~15 a JavaScript number
+   can't hold the value exactly. type="number" ignores maxLength, so the
+   ceiling is applied to the value. */
+const CHARGE_DIGITS = 12;
 const capCharge = (raw: string) => {
   const [whole = '', frac] = raw.split('.');
   return frac === undefined ? whole.slice(0, CHARGE_DIGITS) : `${whole.slice(0, CHARGE_DIGITS)}.${frac.slice(0, 2)}`;
@@ -72,7 +76,7 @@ function TotRow({ label, value, grand }: { label: string; value: string; grand?:
   return (
     <div className={`cpd-totrow ${grand ? 'cpd-totrow--grand' : ''}`}>
       <div className="cpd-totrow__k">{label}</div>
-      <div className="cpd-totrow__v">{value}</div>
+      <div className="cpd-totrow__v"><FitText text={value} /></div>
     </div>
   );
 }

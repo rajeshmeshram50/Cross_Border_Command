@@ -1,5 +1,8 @@
 // Static supplier records and the five compliance checklists they are scored
 // against — frontend-only sample data, replaced by the suppliers API later.
+import type { SupplierVaultTarget, VaultData, VaultDoc } from '../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
+import { formatDmy } from '../../../../../utils/formatDmy';
+
 export const LEGAL_PARAMS: { name: string; docs: string[] }[] = [
   { name: 'Company Due Diligence', docs: ['Certificate of Incorporation', 'MOA & AOA', 'GST Registration Certificate', 'PAN Card'] },
   { name: 'Owner KYC Documents', docs: ['Director / Owner PAN', 'Aadhaar / ID Proof', 'Address Proof', 'Passport-size Photograph'] },
@@ -119,6 +122,55 @@ export function legalTotals(s: Supplier) {
   const total = LEGAL_PARAMS.reduce((sum, p) => sum + p.docs.length, 0);
   const done = LEGAL_PARAMS.reduce((sum, p, i) => sum + Math.min(s.legalDone[i] ?? 0, p.docs.length), 0);
   return { done, total, pct: total ? Math.round((done / total) * 100) : 0 };
+}
+
+/* The Supplier master's Evidence Vault, fed from the same checklist the Legal
+   Status panel counts — so the vault's numbers match the panel it opens from.
+   These suppliers have no database row, so there is nothing for the vault to
+   fetch; the first `legalDone[i]` documents of each checklist are verified,
+   the rest pending. A verified one carries a file name (that's what the vault
+   counts as uploaded) but no link — there is no real file behind it. */
+export function supplierVaultTarget(s: Supplier): SupplierVaultTarget {
+  return {
+    id: s.code, company: s.legalName, risk: s.risk, segment: s.segment, country: s.country,
+    type: s.type, contact: s.contact, contactCity: s.city, email: s.email,
+  };
+}
+
+export function supplierVaultData(s: Supplier): VaultData {
+  let id = 0;
+  const docs = (i: number, expiry: string): VaultDoc[] => LEGAL_PARAMS[i].docs.map((name, n) => {
+    const ok = n < (s.legalDone[i] ?? 0);
+    return {
+      id: ++id, name, requirement: 'M',
+      status: ok ? 'Verified' : 'Pending',
+      issue_date: ok ? '02-Apr-2025' : null,
+      expiry: ok ? expiry : null,
+      attachment: ok ? `${name.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')}.pdf` : null,
+    };
+  });
+  const companyDd = docs(0, 'Lifetime');
+  const ownerKyc = docs(1, 'Lifetime');
+  const licenses = docs(2, '31-Mar-2028');
+  const tradeDocs = [...docs(3, '31-Mar-2027'), ...docs(4, '31-Mar-2028')];
+  const all = [...companyDd, ...ownerKyc, ...licenses, ...tradeDocs];
+  const verified = all.filter((d) => d.status === 'Verified').length;
+  return {
+    total_documents: all.length,
+    verified_signed: verified,
+    pending: all.length - verified,
+    company_dd_count: companyDd.length,
+    owner_kyc_count: ownerKyc.length,
+    trade_license_count: licenses.length,
+    trade_documents_count: tradeDocs.length,
+    total_shipments: 0,
+    company_dd: companyDd,
+    owner_kyc: ownerKyc,
+    trade_licenses: licenses,
+    trade_documents: tradeDocs,
+    shipment_agreements: [],
+    last_updated: formatDmy(new Date().toISOString().slice(0, 10)),
+  };
 }
 
 /** A high-risk category together with a high/medium rating pins this PO:

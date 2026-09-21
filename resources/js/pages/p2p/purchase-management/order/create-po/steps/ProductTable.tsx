@@ -1,10 +1,23 @@
 // Step 02 · Product Details — PI vs PO mapping with live tax and cost.
 // Only three cells are editable (PO product, Qty PO, Rate); everything else is
 // carried from the PI or calculated, which is what the legend line says.
-import { useMemo, useState } from 'react';
-import { EditSelect } from '../form-fields';
-import { PRODUCT_CATALOGUE, gstSplit, productOption, type ProductLine } from '../sample-products';
+import { lazy, Suspense, useMemo, useState } from 'react';
+import { EditSelect, FitInput, FitText } from '../form-fields';
+import { PRODUCT_CATALOGUE, detailProduct, gstSplit, productOption, type ProductLine } from '../sample-products';
 import { IcoPencil, IcoPlus } from '../../icons';
+// The Product Management detail view, opened by "Read more" on a description.
+const InspectionProductView = lazy(() => import('../../InspectionProductView'));
+/* Hovering "Read more" starts the same downloads the click needs, so the view
+   is already in memory when the click lands. BOTH modules are warmed: the
+   wrapper lazy-loads ProductView inside itself, and ProductView (with its
+   stylesheet and the master kit it pulls) is nearly all of the weight — warming
+   only the wrapper leaves the wait exactly where it was.
+   Fire-and-forget: the imports are idempotent and React.lazy reuses the very
+   same promise, so an in-flight prefetch is awaited, never repeated. */
+const warmProductView = () => {
+  void import('../../InspectionProductView');
+  void import('../../../../p2p-master-management/product-management/ProductView');
+};
 
 export type PoLineRow = {
   pi: ProductLine;
@@ -45,12 +58,13 @@ export function computeLine(row: PoLineRow, stateCode: string): LineTotals {
 
 const money = (n: number) => '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
-/* Input caps. Without them a 10-digit quantity times a 10-digit rate runs past
-   what a number can show exactly (it turns into 1.0e+42) and the amount
-   columns stretch the table off the screen. 6 digits of quantity (9,99,999)
-   and 7 of rate (₹99,99,999) keep every total readable on one line. */
-const QTY_DIGITS = 6;
-const RATE_DIGITS = 7;
+/* No visible limit: long values end in "…" and show in full on hover
+   (FitText / FitInput). The 12-digit ceiling is only a safety net — past ~15
+   digits a JavaScript number can't hold the value exactly and quietly rounds
+   it, and qty x rate at that size turns into 1.0e+42 notation. */
+const QTY_DIGITS = 12;
+const RATE_DIGITS = 12;
+const plain = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const cleanQty = (raw: string) => Number(raw.replace(/\D/g, '').slice(0, QTY_DIGITS)) || 0;
 const cleanRate = (raw: string) => {
   const [whole = '', frac] = raw.replace(/[^\d.]/g, '').split('.');
@@ -68,6 +82,8 @@ type Props = {
 
 export default function ProductTable({ rows, stateCode, onChange, readOnly }: Props) {
   const options = useMemo(() => PRODUCT_CATALOGUE.map(productOption), []);
+  // The product whose detail view is open, from "Read more" on its description.
+  const [detail, setDetail] = useState<ProductLine | null>(null);
   const lines = rows.map((r) => computeLine(r, stateCode));
   const totals = lines.reduce(
     (sum, l) => ({
@@ -84,6 +100,11 @@ export default function ProductTable({ rows, stateCode, onChange, readOnly }: Pr
 
   return (
     <div className="cpd-scroll">
+      {detail && (
+        <Suspense fallback={null}>
+          <InspectionProductView product={detailProduct(detail)} onClose={() => setDetail(null)} />
+        </Suspense>
+      )}
       <table className="cpd-tbl cpd-tbl--pd">
         <thead>
           <tr className="cpd-grp">
@@ -98,16 +119,16 @@ export default function ProductTable({ rows, stateCode, onChange, readOnly }: Pr
             <th className={`cpd-th-left ${readOnly ? '' : 'cpd-edh'}`}>Product (PO)</th>
             <th className="cpd-th-left">Description</th>
             <th>Qty (PI)</th>
-            <th className={readOnly ? undefined : 'cpd-edh'}>Qty (PO)</th>
+            <th className={`cpd-th-num ${readOnly ? '' : 'cpd-edh'}`}>Qty (PO)</th>
             <th>Missing Qty</th>
-            <th className={readOnly ? undefined : 'cpd-edh'}>Product Rate</th>
+            <th className={`cpd-th-num ${readOnly ? '' : 'cpd-edh'}`}>Product Rate</th>
             <th>CGST (%)</th>
             <th>SGST (%)</th>
-            <th>CGST Amount</th>
-            <th>SGST Amount</th>
-            <th>Product Cost<span className="cpd-th-sub cpd-th-sub--wo">Without GST</span></th>
-            <th>Total GST Amount</th>
-            <th className="cpd-th-final">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">With GST</span></th>
+            <th className="cpd-th-amt">CGST Amount</th>
+            <th className="cpd-th-amt">SGST Amount</th>
+            <th className="cpd-th-amt">Product Cost<span className="cpd-th-sub cpd-th-sub--wo">Without GST</span></th>
+            <th className="cpd-th-amt">Total GST Amount</th>
+            <th className="cpd-th-amt cpd-th-final">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">With GST</span></th>
           </tr>
         </thead>
 
@@ -154,15 +175,16 @@ export default function ProductTable({ rows, stateCode, onChange, readOnly }: Pr
                   </div>
                 </td>
 
-                <td className="cpd-td-left"><Description text={po.description} /></td>
+                <td className="cpd-td-left"><Description text={po.description} onOpen={() => setDetail(po)} /></td>
 
                 <td>{row.pi.qtyPi}</td>
                 <td className={readOnly ? undefined : 'cpd-ed'}>
-                  {readOnly ? row.qtyPo : (
-                    <input
+                  {readOnly ? <FitText text={plain(row.qtyPo)} /> : (
+                    <FitInput
                       className="cpd-in"
                       inputMode="numeric"
                       maxLength={QTY_DIGITS}
+                      tooltip={plain(row.qtyPo)}
                       value={row.qtyPo}
                       onChange={(e) => onChange(i, { qtyPo: cleanQty(e.target.value) })}
                     />
@@ -171,11 +193,12 @@ export default function ProductTable({ rows, stateCode, onChange, readOnly }: Pr
                 <td className={line.missing > 0 ? 'cpd-miss' : ''}>{line.missing}</td>
 
                 <td className={readOnly ? undefined : 'cpd-ed'}>
-                  {readOnly ? money(row.rate) : (
-                    <input
+                  {readOnly ? <FitText text={money(row.rate)} /> : (
+                    <FitInput
                       className="cpd-in"
                       inputMode="decimal"
                       maxLength={RATE_DIGITS + 3}
+                      tooltip={money(row.rate)}
                       value={row.rate}
                       onChange={(e) => onChange(i, { rate: cleanRate(e.target.value) })}
                     />
@@ -184,11 +207,11 @@ export default function ProductTable({ rows, stateCode, onChange, readOnly }: Pr
                 <td>{line.cgstPct}%</td>
                 <td>{line.sgstPct}%</td>
 
-                <td>{money(line.cgstAmt)}</td>
-                <td>{money(line.sgstAmt)}</td>
-                <td>{money(line.base)}</td>
-                <td className="cpd-gst">{money(line.gstAmt)}</td>
-                <td className="cpd-final">{money(line.withGst)}</td>
+                <td><FitText text={money(line.cgstAmt)} /></td>
+                <td><FitText text={money(line.sgstAmt)} /></td>
+                <td><FitText text={money(line.base)} /></td>
+                <td className="cpd-gst"><FitText text={money(line.gstAmt)} /></td>
+                <td className="cpd-final"><FitText text={money(line.withGst)} /></td>
               </tr>
             );
           })}
@@ -199,14 +222,14 @@ export default function ProductTable({ rows, stateCode, onChange, readOnly }: Pr
             <td className="cpd-foot-lbl cpd-stick cpd-stick--1" colSpan={2}>Totals</td>
             <td colSpan={2} />
             <td>{totals.piQty}</td>
-            <td>{totals.poQty}</td>
+            <td><FitText text={plain(totals.poQty)} /></td>
             <td>{totals.miss}</td>
             <td colSpan={3} />
-            <td>{money(totals.cgst)}</td>
-            <td>{money(totals.sgst)}</td>
-            <td>{money(totals.base)}</td>
-            <td>{money(totals.gst)}</td>
-            <td className="cpd-final">{money(totals.withGst)}</td>
+            <td><FitText text={money(totals.cgst)} /></td>
+            <td><FitText text={money(totals.sgst)} /></td>
+            <td><FitText text={money(totals.base)} /></td>
+            <td><FitText text={money(totals.gst)} /></td>
+            <td className="cpd-final"><FitText text={money(totals.withGst)} /></td>
           </tr>
         </tfoot>
       </table>
@@ -214,15 +237,15 @@ export default function ProductTable({ rows, stateCode, onChange, readOnly }: Pr
   );
 }
 
-/** Long trade descriptions are clipped to three lines until "Read more". */
-function Description({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
+/** Long trade descriptions are clipped to three lines; "Read more" opens the
+    product's own detail view rather than unfolding the cell. */
+function Description({ text, onOpen }: { text: string; onOpen: () => void }) {
   return (
     <div className="cpd-desc">
-      <span className={`cpd-desc__wrap ${open ? 'is-open' : ''}`}>
+      <span className="cpd-desc__wrap">
         {text}
-        <button type="button" className="cpd-more" onClick={() => setOpen((o) => !o)}>
-          {open ? 'Show less' : '… Read more'}
+        <button type="button" className="cpd-more" onClick={onOpen} onPointerEnter={warmProductView} title="Open the product details">
+          … Read more
         </button>
       </span>
     </div>

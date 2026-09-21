@@ -1,16 +1,22 @@
 // Create PO — Step 01: PO Link Supplier Details.
 // Section 1: Purchase Order (basic details). Section 2: Supplier.
 // The address, legal, GST and risk panels follow in the next sections.
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { EditSelect, Field } from '../form-fields';
 import { gstCheck } from '../gst-check';
+// Only fetched when "+ Add Supplier" is clicked.
+const AddSupplierFlow = lazy(() => import('../AddSupplierFlow'));
+// The Supplier master's own Evidence Vault — fetched on first open, and on
+// hover before that, so the click itself never waits for the download.
+const SupplierEvidenceVaultModal = lazy(() => import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
+const warmVault = () => { void import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'); };
 import { SevIcon, riskItems, type Severity } from '../supplier-checks';
 import { supplierFields, type PoDraft, type SetDraft } from '../po-draft';
 import { MasterDatePicker } from '../../../../../../components/ui/MasterDatePicker';
 import { formatDmy } from '../../../../../../utils/formatDmy';
 import {
   LEGAL_PARAMS, RISK_GUIDELINES, RISK_LEVELS, SUPPLIER_CATEGORIES, SUPPLIER_OPTIONS, SUPPLIER_TYPES,
-  isRiskMandatory, legalSections, legalTotals, supplierByOption, type Supplier,
+  isRiskMandatory, legalSections, legalTotals, supplierByOption, supplierVaultData, supplierVaultTarget, type Supplier,
 } from '../sample-suppliers';
 import { IcoAlert, IcoCheck, IcoChevron, IcoClock, IcoDocSm, IcoFile, IcoLock, IcoOk, IcoPin, IcoPlus, IcoShield, IcoStop, IcoUser, IcoWarn } from '../../icons';
 
@@ -95,6 +101,10 @@ export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set:
 
   // Every card collapses from its own header.
   const [supCardOpen, setSupCardOpen] = useState(true);
+  // "+ Add Supplier": the Supplier master's own Domestic / International
+  // chooser, then its onboarding wizard.
+  const [addingSupplier, setAddingSupplier] = useState(false);
+  const [vaultOpen, setVaultOpen] = useState(false);
   const [addrOpen, setAddrOpen] = useState(true);
   const [gstOpen, setGstOpen] = useState(true);
   const [legalOpen, setLegalOpen] = useState(true);
@@ -124,6 +134,11 @@ export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set:
   // Risk alerts are re-derived from the chosen supplier, never stored.
   const [riskOpen, setRiskOpen] = useState(true);
   const picked = useMemo(() => supplierByOption(supplier), [supplier]);
+  /* Everything the supplier master fills in is read-only once a master supplier
+     is picked — the PO shows the master record, it doesn't edit it (the GST
+     banner already says to refresh scrutiny on the supplier record). With no
+     supplier, or one outside the master, the fields stay editable. */
+  const locked = !!picked;
   // Only re-run the six checks when the supplier or the inspection flag moves,
   // not on every keystroke in the form.
   const risks = useMemo(() => (picked ? riskItems(picked, physInsp) : []), [picked, physInsp]);
@@ -143,12 +158,31 @@ export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set:
   const legal = useMemo(() => (picked ? legalTotals(picked) : { done: 0, total: 0, pct: 0 }), [picked]);
   const legalTone = legal.pct === 100 ? 'ok' : legal.pct >= 60 ? 'warn' : 'bad';
   const sections = useMemo(() => (picked ? legalSections(picked) : []), [picked]);
+  const vault = useMemo(() => (picked ? { supplier: supplierVaultTarget(picked), data: supplierVaultData(picked) } : null), [picked]);
 
   // The PO is raised today — shown read-only, never typed in.
   const today = formatDmy(new Date().toISOString().slice(0, 10));
 
   return (
     <>
+    {addingSupplier && (
+      <Suspense fallback={null}>
+        <AddSupplierFlow onClose={() => setAddingSupplier(false)} />
+      </Suspense>
+    )}
+    {/* View only: the PO shows the supplier's documents, the supplier
+        master is where they get uploaded or changed. */}
+    {vaultOpen && vault && (
+      <Suspense fallback={null}>
+        <SupplierEvidenceVaultModal
+          open
+          viewOnly
+          supplier={vault.supplier}
+          data={vault.data}
+          onClose={() => setVaultOpen(false)}
+        />
+      </Suspense>
+    )}
 
     <div className={`spi-dt-sec ${poOpen ? '' : 'is-collapsed'}`}>
       <div className="spi-dt-sec-head" onClick={() => setPoOpen((o) => !o)}>
@@ -255,7 +289,7 @@ export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set:
           <div className="spi-dt-card-head cpf-clickable" onClick={() => setSupCardOpen((o) => !o)}>
             <div className="spi-dt-card-title"><span className="spi-dt-card-ico"><IcoUser /></span> Supplier Details</div>
             {/* Onboard a supplier that isn't in the list yet. */}
-            <button type="button" className="cpf-addbtn" title="Onboard a supplier that is not in this list" onClick={(e) => e.stopPropagation()}>
+            <button type="button" className="cpf-addbtn" title="Onboard a supplier that is not in this list" onClick={(e) => { e.stopPropagation(); setAddingSupplier(true); }}>
               <IcoPlus /> Add Supplier
             </button>
             <span className="spi-dt-fields-badge cpf-push">5 FIELDS</span>
@@ -267,16 +301,16 @@ export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set:
               <EditSelect value={supplier} options={SUPPLIER_OPTIONS} onChange={pickSupplier} placeholder="— Select Supplier —" />
             </Field>
             <Field label="COMPANY LEGAL NAME">
-              <input className="spi-dt-inp" placeholder="Registered legal entity name" value={legalName} onChange={(e) => setLegalName(e.target.value)} />
+              <input className="spi-dt-inp" placeholder="Registered legal entity name" value={legalName} onChange={(e) => setLegalName(e.target.value)} readOnly={locked} />
             </Field>
             <Field label="SUPPLIER TYPE">
-              <EditSelect value={supType} options={SUPPLIER_TYPES} onChange={setSupType} />
+              <EditSelect value={supType} options={SUPPLIER_TYPES} onChange={setSupType} readOnly={locked} />
             </Field>
             <Field label="RISK LEVEL">
-              <EditSelect value={risk} options={RISK_LEVELS} onChange={setRisk} />
+              <EditSelect value={risk} options={RISK_LEVELS} onChange={setRisk} readOnly={locked} />
             </Field>
             <Field label="SUPPLIER CATEGORY">
-              <EditSelect value={category} options={SUPPLIER_CATEGORIES} onChange={setCategory} />
+              <EditSelect value={category} options={SUPPLIER_CATEGORIES} onChange={setCategory} readOnly={locked} />
             </Field>
           </div>
           )}
@@ -291,45 +325,45 @@ export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set:
           {addrOpen && (
           <div className="spi-dt-grid4">
             <Field label="REGISTERED OFFICE ADDRESS" full>
-              <input className="spi-dt-inp" placeholder="Building / street / area / landmark, with PIN code" value={address} onChange={(e) => setAddress(e.target.value)} />
+              <input className="spi-dt-inp" placeholder="Building / street / area / landmark, with PIN code" value={address} onChange={(e) => setAddress(e.target.value)} readOnly={locked} />
             </Field>
             <Field label="COUNTRY">
-              <EditSelect value={country} options={COUNTRIES} onChange={setCountry} />
+              <EditSelect value={country} options={COUNTRIES} onChange={setCountry} readOnly={locked} />
             </Field>
             <Field label="STATE">
-              <EditSelect value={state} options={STATES} onChange={setState} />
+              <EditSelect value={state} options={STATES} onChange={setState} readOnly={locked} />
             </Field>
             <Field label="STATE CODE">
-              <input className="spi-dt-inp" placeholder="e.g. 27" value={stateCode} onChange={(e) => setStateCode(e.target.value)} />
+              <input className="spi-dt-inp" placeholder="e.g. 27" value={stateCode} onChange={(e) => setStateCode(e.target.value)} readOnly={locked} />
             </Field>
             <Field label="CITY">
-              <input className="spi-dt-inp" placeholder="Enter city" value={city} onChange={(e) => setCity(e.target.value)} />
+              <input className="spi-dt-inp" placeholder="Enter city" value={city} onChange={(e) => setCity(e.target.value)} readOnly={locked} />
             </Field>
             <Field label="CONTACT PERSON NAME">
-              <input className="spi-dt-inp" placeholder="Full name" value={contact} onChange={(e) => setContact(e.target.value)} />
+              <input className="spi-dt-inp" placeholder="Full name" value={contact} onChange={(e) => setContact(e.target.value)} readOnly={locked} />
             </Field>
             <Field label="DESIGNATION">
-              <input className="spi-dt-inp" placeholder="e.g. Procurement Manager" value={designation} onChange={(e) => setDesignation(e.target.value)} />
+              <input className="spi-dt-inp" placeholder="e.g. Procurement Manager" value={designation} onChange={(e) => setDesignation(e.target.value)} readOnly={locked} />
             </Field>
             <Field label="CONTACT NUMBER">
-              <input className="spi-dt-inp" placeholder="+91 " value={phone} onChange={(e) => setPhone(e.target.value)} />
+              <input className="spi-dt-inp" placeholder="+91 " value={phone} onChange={(e) => setPhone(e.target.value)} readOnly={locked} />
             </Field>
             <Field label="EMAIL ID">
-              <input className="spi-dt-inp" type="email" placeholder="name@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <input className="spi-dt-inp" type="email" placeholder="name@company.com" value={email} onChange={(e) => setEmail(e.target.value)} readOnly={locked} />
             </Field>
           </div>
           )}
         </div>
 
         <div className="spi-dt-card">
-          <div className="spi-dt-card-head cpf-clickable" onClick={() => setLegalOpen((o) => !o)}>
+          <div className="spi-dt-card-head cpf-clickable cpf-lghead" onClick={() => setLegalOpen((o) => !o)}>
             <div className="spi-dt-card-title">
               <span className="spi-dt-card-ico spi-dt-card-ico-2"><IcoShield /></span> Supplier Legal Status
             </div>
             {picked ? (
               <>
                 <span className={`cpf-push spi-dt-legal-badge ${legal.pct === 100 ? 'ok' : 'warn'}`}>{legal.pct === 100 ? '100% Compliant' : `${legal.pct}% · Needs Review`}</span>
-                <button type="button" className="cpf-vault" onClick={(e) => e.stopPropagation()}>
+                <button type="button" className="cpf-vault" onPointerEnter={warmVault} onClick={(e) => { e.stopPropagation(); setVaultOpen(true); }}>
                   <IcoShield /> <span>Visit Supplier Evidence Vault</span>
                 </button>
                 <span className="cpf-lgbar"><span className={`cpf-lgbar__fill cpf-fill-${legalTone}`} style={{ width: `${legal.pct}%` }} /></span>
@@ -337,7 +371,9 @@ export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set:
               </>
             ) : (
               <>
-                <span className="cpf-lgbar cpf-push"><span className="cpf-lgbar__fill is-empty" /></span>
+                {/* No supplier yet: the badge's slot still shows, as a dash. */}
+                <span className="cpf-push spi-dt-legal-badge cpf-lgbadge--none">–</span>
+                <span className="cpf-lgbar"><span className="cpf-lgbar__fill is-empty" /></span>
                 <span className="cpf-lgpct">0%</span>
               </>
             )}
@@ -400,19 +436,23 @@ export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set:
 
           <div className="spi-dt-grid4">
             <Field label="SCRUTINY DATE">
-              <MasterDatePicker value={scrutinyDate} onChange={setScrutinyDate} />
+              {locked
+                ? <input className="spi-dt-inp" readOnly value={scrutinyDate ? formatDmy(scrutinyDate) : ''} placeholder="—" />
+                : <MasterDatePicker value={scrutinyDate} onChange={setScrutinyDate} />}
             </Field>
             <Field label="GST NUMBER">
-              <input className="spi-dt-inp" placeholder="15-digit GSTIN" value={gstNo} onChange={(e) => setGstNo(e.target.value)} />
+              <input className="spi-dt-inp" placeholder="15-digit GSTIN" value={gstNo} onChange={(e) => setGstNo(e.target.value)} readOnly={locked} />
             </Field>
             <Field label="GST STATUS">
-              <EditSelect value={gstStatus} options={GST_STATUSES} onChange={setGstStatus} />
+              <EditSelect value={gstStatus} options={GST_STATUSES} onChange={setGstStatus} readOnly={locked} />
             </Field>
             <Field label="LAST FILING DATE">
-              <MasterDatePicker value={filingDate} onChange={setFilingDate} />
+              {locked
+                ? <input className="spi-dt-inp" readOnly value={filingDate ? formatDmy(filingDate) : ''} placeholder="—" />
+                : <MasterDatePicker value={filingDate} onChange={setFilingDate} />}
             </Field>
             <Field label="PREV. INVOICE / REMARKS" full>
-              <textarea className="spi-dt-textarea" placeholder="Notes on previous invoices, filing history or scrutiny remarks…" value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+              <textarea className="spi-dt-textarea" placeholder="Notes on previous invoices, filing history or scrutiny remarks…" value={remarks} onChange={(e) => setRemarks(e.target.value)} readOnly={locked} />
             </Field>
           </div>
           </>)}
