@@ -14,6 +14,7 @@ import type { PoLink } from '../create-po/CreatePoForm';
 const CreatePoForm = lazy(() => import('../create-po/CreatePoForm'));
 const PhysicalInspectionModal = lazy(() => import('../physical-inspection/PhysicalInspectionModal'));
 const CancelPoModal = lazy(() => import('../cancel-po/CancelPoModal'));
+const PoEvidenceVaultModal = lazy(() => import('../evidence-vault/PoEvidenceVaultModal'));
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './order.css';
 
@@ -761,8 +762,8 @@ function RecoveryCell({ row }: { row: OrderRow }) {
   );
 }
 
-function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel }: {
-  cancelled?: boolean; cancelReason?: string; onEdit: () => void; onCancel?: () => void;
+function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onVault }: {
+  cancelled?: boolean; cancelReason?: string; onEdit: () => void; onCancel?: () => void; onVault?: () => void;
 }) {
   return (
     <div className="ord-actions">
@@ -774,7 +775,7 @@ function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel }: {
         <button type="button" className="ord-btn ord-btn--cancel" title="Cancel this Purchase Order" onClick={onCancel}>{ICON_CANCEL}<span>Cancel PO</span></button>
       )}
       <button type="button" className="ord-btn ord-btn--edit" disabled={cancelled} onClick={onEdit}>{ICON_EDIT}<span>Edit PO</span></button>
-      <button type="button" className="ord-btn ord-btn--vault">{ICON_VAULT}<span>Evidence Vault</span></button>
+      <button type="button" className="ord-btn ord-btn--vault" title="Evidence Vault — the order, its documents and payment proofs" onClick={onVault}>{ICON_VAULT}<span>Evidence Vault</span></button>
     </div>
   );
 }
@@ -804,10 +805,10 @@ function RiskBadge({ risk }: { risk: RiskLevel | null }) {
 
 // One PO as it appears on the list: a <tbody> spanning a row per mapped SPI.
 // Payment Request Management reuses it (without the Action column) for its status tabs.
-export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, onZoho, onCancel, showActions = true }: {
+export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, onZoho, onCancel, onVault, showActions = true }: {
   row: OrderRow; sr: number; inspected: boolean;
   onInspect: (row: OrderRow) => void; onManage: (row: OrderRow) => void;
-  onEdit?: (row: OrderRow) => void; onZoho?: (row: OrderRow) => void; onCancel?: (row: OrderRow) => void; showActions?: boolean;
+  onEdit?: (row: OrderRow) => void; onZoho?: (row: OrderRow) => void; onCancel?: (row: OrderRow) => void; onVault?: (row: OrderRow) => void; showActions?: boolean;
 }) {
   const lines = row.invoices.length > 0 ? row.invoices : [null];
   const span = lines.length;
@@ -905,7 +906,7 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
                 <PoCell span={span}><AdrCell adr={row.adr} /></PoCell>
                 <PoCell span={span}><RecoveryCell row={row} /></PoCell>
                 <PoCell span={span}><StatusBadge row={row} /></PoCell>
-                {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} onEdit={() => onEdit?.(row)} onCancel={onCancel && (() => onCancel(row))} /></PoCell>}
+                {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} onEdit={() => onEdit?.(row)} onCancel={onCancel && (() => onCancel(row))} onVault={onVault && (() => onVault(row))} /></PoCell>}
               </>
             )}
           </tr>
@@ -933,9 +934,9 @@ function useIsPhone() {
   return isPhone;
 }
 
-function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, inspected }: {
+function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, onVault, inspected }: {
   row: OrderRow; index: number; onManage: (row: OrderRow) => void; onInspect: (row: OrderRow) => void;
-  onEdit: (row: OrderRow) => void; onZoho: (row: OrderRow) => void; onCancel: (row: OrderRow) => void; inspected: boolean;
+  onEdit: (row: OrderRow) => void; onZoho: (row: OrderRow) => void; onCancel: (row: OrderRow) => void; onVault: (row: OrderRow) => void; inspected: boolean;
 }) {
   const category = categoryOf(row);
   const count = row.invoices.length;
@@ -1052,7 +1053,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, 
         <RecoveryCell row={row} />
       </div>
 
-      <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} onEdit={() => onEdit(row)} onCancel={() => onCancel(row)} />
+      <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} onEdit={() => onEdit(row)} onCancel={() => onCancel(row)} onVault={() => onVault(row)} />
     </article>
   );
 }
@@ -1096,6 +1097,8 @@ export default function Order() {
   const [cancelRow, setCancelRow] = useState<OrderRow | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const onCancel = (row: OrderRow) => { if (row.id) setCancelRow(row); };
+  const [vaultRow, setVaultRow] = useState<OrderRow | null>(null);
+  const onVault = (row: OrderRow) => { if (row.id) setVaultRow(row); };
   const confirmCancel = async () => {
     if (!cancelRow?.id || cancelling) return;
     setCancelling(true);
@@ -1205,6 +1208,15 @@ export default function Order() {
             link={poLink}
             onClose={() => { setPoLink(null); loadRows(); }}
             onChangeLink={() => setCreateOpen(true)}
+          />
+        </Suspense>
+      )}
+
+      {vaultRow?.id && (
+        <Suspense fallback={null}>
+          <PoEvidenceVaultModal
+            po={{ id: vaultRow.id, po: vaultRow.po, supplier: vaultRow.supplier, poDate: vaultRow.poDate }}
+            onClose={() => setVaultRow(null)}
           />
         </Suspense>
       )}
@@ -1370,6 +1382,7 @@ export default function Order() {
                 onEdit={openEdit}
                 onZoho={onZoho}
                 onCancel={onCancel}
+                onVault={onVault}
                 inspected={row.inspectionDone}
               />
             ))}
@@ -1408,6 +1421,7 @@ export default function Order() {
                 onEdit={openEdit}
                 onZoho={onZoho}
                 onCancel={onCancel}
+                onVault={onVault}
               />
             ))}
           </table>

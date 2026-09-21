@@ -193,12 +193,14 @@ class PoDocumentService
             $sig->expiry_date       = now()->addDays($expiryDays);
             $sig->metadata          = ['purchase_order_id' => $po->id, 'po_code' => $po->code, 'sent_at' => now()->toIso8601String()];
             $sig->created_by        = $userId;
-            $sig->save();
-
-            PurchaseOrderDocument::whereIn('id', $docs->pluck('id'))->update([
-                'status' => PurchaseOrderDocument::STATUS_SENT, 'sent_at' => now(),
-                'signature_request_id' => $sig->id, 'updated_by' => $userId,
-            ]);
+            // Zoho is already called above; only the local writes share the transaction.
+            DB::transaction(function () use ($sig, $docs, $userId) {
+                $sig->save();
+                PurchaseOrderDocument::whereIn('id', $docs->pluck('id'))->update([
+                    'status' => PurchaseOrderDocument::STATUS_SENT, 'sent_at' => now(),
+                    'signature_request_id' => $sig->id, 'updated_by' => $userId,
+                ]);
+            });
             return $sig;
         } finally {
             foreach ($files as $f) @unlink($f['path']);

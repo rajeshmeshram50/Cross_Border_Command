@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\P2p;
 
+use App\Http\Controllers\Api\P2p\Concerns\RunsInTransaction;
 use App\Http\Controllers\Controller;
 use App\Models\P2p\PurchaseOrder;
 use App\Models\P2p\PurchaseOrderDocument;
@@ -20,6 +21,8 @@ use Illuminate\Validation\Rule;
  */
 class PurchaseOrderDocumentController extends Controller
 {
+    use RunsInTransaction;
+
     public function __construct(private PurchaseOrderService $svc, private PoDocumentService $docs) {}
 
     private function ok($data, int $code = 200): JsonResponse
@@ -93,8 +96,10 @@ class PurchaseOrderDocumentController extends Controller
             'file'        => 'nullable|file|max:10240|mimes:pdf,doc,docx,jpg,jpeg,png',
         ]);
 
-        $doc = DB::transaction(function () use ($order, $user, $data, $request) {
-            $file = $request->file('file');
+        // The file is stored first; if the row can't be written it is removed again.
+        $file = $request->file('file');
+        $path = $file?->store("p2p/po-documents/{$order->id}", 'public');
+        $doc = $this->inTransaction('add the document', function () use ($order, $user, $data, $file, $path) {
             return PurchaseOrderDocument::create([
                 'client_id'         => $order->client_id,
                 'branch_id'         => $order->branch_id,
@@ -105,7 +110,7 @@ class PurchaseOrderDocumentController extends Controller
                 'is_required'       => $data['is_required'] ?? 'no',
                 'generated_on'      => now()->toDateString(),
                 'valid_up_to'       => $data['valid_up_to'] ?? null,
-                'file_path'         => $file?->store("p2p/po-documents/{$order->id}", 'public'),
+                'file_path'         => $path,
                 'original_name'     => $file?->getClientOriginalName(),
                 'mime_type'         => $file?->getClientMimeType(),
                 'size_bytes'        => $file?->getSize(),
@@ -113,7 +118,7 @@ class PurchaseOrderDocumentController extends Controller
                 'created_by'        => $user->id,
                 'updated_by'        => $user->id,
             ]);
-        });
+        }, [$path]);
 
         return $this->ok($this->shape($doc), 201);
     }
@@ -127,14 +132,16 @@ class PurchaseOrderDocumentController extends Controller
 
         $file = $request->file('file');
         $old = $document->file_path;
-        $document->update([
-            'file_path'     => $file->store("p2p/po-documents/{$order->id}", 'public'),
+        $path = $file->store("p2p/po-documents/{$order->id}", 'public');
+        $this->inTransaction('attach the file', fn () => $document->update([
+            'file_path'     => $path,
             'original_name' => $file->getClientOriginalName(),
             'mime_type'     => $file->getClientMimeType(),
             'size_bytes'    => $file->getSize(),
             'generated_on'  => now()->toDateString(),
             'updated_by'    => $request->user()->id,
-        ]);
+        ]), [$path]);
+        // The old file goes only once the new one is safely recorded.
         if ($old) Storage::disk('public')->delete($old);
         return $this->ok($this->shape($document->fresh()));
     }
@@ -150,7 +157,7 @@ class PurchaseOrderDocumentController extends Controller
         $attrs = ['status' => $data['status'], 'updated_by' => $request->user()->id];
         if ($data['status'] === PurchaseOrderDocument::STATUS_SENT) $attrs['sent_at'] = now();
         if ($data['status'] === PurchaseOrderDocument::STATUS_SIGNED) $attrs += ['signed_at' => now(), 'sent_at' => $document->sent_at ?? now()];
-        $document->update($attrs);
+        $this->inTransaction('update the document status', fn () => $document->update($attrs));
         return $this->ok($this->shape($document->fresh()));
     }
 
@@ -234,8 +241,10 @@ class PurchaseOrderDocumentController extends Controller
         [, $document] = $this->find($po, $doc);
         if ($document->status === PurchaseOrderDocument::STATUS_SIGNED) return $this->fail('A signed document cannot be deleted.');
         if ($document->is_required === 'yes') return $this->fail('A required document cannot be deleted.');
-        $document->update(['updated_by' => $request->user()->id]);
-        $document->delete();
+        $this->inTransaction('delete the document', function () use ($document, $request) {
+            $document->update(['updated_by' => $request->user()->id]);
+            $document->delete();
+        });
         return $this->ok(['id' => $doc, 'deleted' => true]);
     }
 }

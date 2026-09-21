@@ -103,11 +103,13 @@ type Props = {
   onProductsChanged?: () => void;
   /** Per-row cell errors, keyed by row key. */
   errors?: LineErrors;
+  /** A PO without a shipment has no PI: its PI columns are left out. */
+  standalone?: boolean;
   /** The summary on later steps shows the same table with plain values. */
   readOnly?: boolean;
 };
 
-export default function ProductTable({ rows, products, taxMode, onChange, onRemove, onProductsChanged, errors = {}, readOnly }: Props) {
+export default function ProductTable({ rows, products, taxMode, onChange, onRemove, onProductsChanged, errors = {}, standalone = false, readOnly }: Props) {
   const options = useMemo(() => products.map(productLabel), [products]);
   // The product whose detail view is open, from "Read more" on its description.
   const [detailId, setDetailId] = useState<number | null>(null);
@@ -117,6 +119,10 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
   const [adding, setAdding] = useState(false);
   const toast = useToast();
   const inter = taxMode === 'inter';
+  const withPi = !standalone;
+  // Inter-state is one IGST pair; intra-state splits into CGST + SGST.
+  const taxCols = inter ? 1 : 2;
+  const colCount = 1 + (withPi ? 1 : 0) + 2 + (withPi ? 3 : 1) + 1 + taxCols + taxCols + 3;
   // Read-only recaps show only what is ordered.
   const shown = readOnly ? rows.filter((r) => r.qtyPo > 0) : rows;
   const lines = shown.map((r) => computeLine(r, products, taxMode));
@@ -154,28 +160,27 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
           />
         </Suspense>
       )}
-      <table className="cpd-tbl cpd-tbl--pd">
+      <table className={`cpd-tbl cpd-tbl--pd${withPi ? '' : ' cpd-tbl--nopi'}`}>
         <thead>
           <tr className="cpd-grp">
             <th rowSpan={2} className="cpd-stick cpd-stick--1">Sr. No</th>
-            <th rowSpan={2} className="cpd-stick cpd-stick--2 cpd-th-left">Product (PI)</th>
+            {withPi && <th rowSpan={2} className="cpd-stick cpd-stick--2 cpd-th-left">Product (PI)</th>}
             <th colSpan={2}>Purchase Order Entry</th>
-            <th colSpan={3}>Quantities</th>
-            <th colSpan={3}>Rate &amp; Tax</th>
-            <th colSpan={5}>Amounts</th>
+            <th colSpan={withPi ? 3 : 1}>{withPi ? 'Quantities' : 'Quantity'}</th>
+            <th colSpan={1 + taxCols}>Rate &amp; Tax</th>
+            <th colSpan={taxCols + 3}>Amounts</th>
           </tr>
           <tr>
-            <th className={`cpd-th-left ${readOnly ? '' : 'cpd-edh'}`}>Product (PO)</th>
+            <th className={`cpd-th-left ${readOnly ? '' : 'cpd-edh'}`}>{withPi ? 'Product (PO)' : 'Product'}</th>
             <th className="cpd-th-left">Description</th>
-            <th>Qty (PI)</th>
-            <th className={`cpd-th-num ${readOnly ? '' : 'cpd-edh'}`}>Qty (PO)</th>
-            <th>Missing Qty</th>
+            {withPi && <th>Qty (PI)</th>}
+            <th className={`cpd-th-num ${readOnly ? '' : 'cpd-edh'}`}>{withPi ? 'Qty (PO)' : 'Qty'}</th>
+            {withPi && <th>Missing Qty</th>}
             <th className={`cpd-th-num ${readOnly ? '' : 'cpd-edh'}`}>Product Rate</th>
-            {/* An inter-state supplier is taxed IGST instead of CGST + SGST. */}
-            <th>{inter ? 'IGST (%)' : 'CGST (%)'}</th>
-            <th>{inter ? '—' : 'SGST (%)'}</th>
-            <th className="cpd-th-amt cpd-th-amt--tax">{inter ? 'IGST Amount' : 'CGST Amount'}</th>
-            <th className="cpd-th-amt cpd-th-amt--tax">{inter ? '—' : 'SGST Amount'}</th>
+            {inter ? <th>IGST (%)</th> : <><th>CGST (%)</th><th>SGST (%)</th></>}
+            {inter
+              ? <th className="cpd-th-amt cpd-th-amt--tax">IGST Amount</th>
+              : <><th className="cpd-th-amt cpd-th-amt--tax">CGST Amount</th><th className="cpd-th-amt cpd-th-amt--tax">SGST Amount</th></>}
             <th className="cpd-th-amt">Product Cost<span className="cpd-th-sub cpd-th-sub--wo">Without GST</span></th>
             <th className="cpd-th-amt">Total GST Amount</th>
             <th className="cpd-th-amt cpd-th-final">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">With GST</span></th>
@@ -184,7 +189,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
 
         <tbody>
           {shown.length === 0 && (
-            <tr><td colSpan={15} className="cpd-empty">No product lines yet{readOnly ? '.' : ' — add one with "+ Add Product Line".'}</td></tr>
+            <tr><td colSpan={colCount} className="cpd-empty">No product lines yet{readOnly ? '.' : ' — add one with "+ Add Product Line".'}</td></tr>
           )}
           {shown.map((row, i) => {
             const line = lines[i];
@@ -200,21 +205,23 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             return (
               <tr key={row.key}>
                 <td className="cpd-stick cpd-stick--1">{i + 1}</td>
-                <td className="cpd-stick cpd-stick--2 cpd-td-left cpd-prodcell">
-                  <div className="cpd-prod">
-                    {row.pi ? (
-                      <>
-                        <div className="cpd-prod__nm">{row.pi.product_name}</div>
-                        <div className="cpd-prod__meta">
-                          {row.pi.product_code && <span className="cpd-code">{row.pi.product_code}</span>}
-                          <span className="cpd-kv">HSN <b>{row.pi.hsn_code || '—'}</b></span>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="cpd-prod__nm cpd-dash">Not on PI</div>
-                    )}
-                  </div>
-                </td>
+                {withPi && (
+                  <td className="cpd-stick cpd-stick--2 cpd-td-left cpd-prodcell">
+                    <div className="cpd-prod">
+                      {row.pi ? (
+                        <>
+                          <div className="cpd-prod__nm">{row.pi.product_name}</div>
+                          <div className="cpd-prod__meta">
+                            {row.pi.product_code && <span className="cpd-code">{row.pi.product_code}</span>}
+                            <span className="cpd-kv">HSN <b>{row.pi.hsn_code || '—'}</b></span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="cpd-prod__nm cpd-dash">Not on PI</div>
+                      )}
+                    </div>
+                  </td>
+                )}
 
                 <td className={`cpd-td-left cpd-prodcell ${readOnly ? '' : 'cpd-ed'}${rowErr.product ? ' cpd-cell-err' : ''}`}>
                   <div className="cpd-prod">
@@ -261,9 +268,11 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                     : <span className="cpd-dash">—</span>}
                 </td>
 
-                <td title={row.pi && row.pi.ordered_qty > 0 ? `${plain(row.pi.ordered_qty)} already on other POs · ${plain(row.pi.pending_qty)} pending` : undefined}>
-                  {row.pi ? plain(row.pi.pi_quantity) : '—'}
-                </td>
+                {withPi && (
+                  <td title={row.pi && row.pi.ordered_qty > 0 ? `${plain(row.pi.ordered_qty)} already on other POs · ${plain(row.pi.pending_qty)} pending` : undefined}>
+                    {row.pi ? plain(row.pi.pi_quantity) : '—'}
+                  </td>
+                )}
                 <td className={readOnly ? undefined : `cpd-ed${rowErr.qty ? ' cpd-cell-err' : ''}`}>
                   {readOnly ? <FitText text={plain(row.qtyPo)} /> : (
                     <FitInput
@@ -277,7 +286,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                   )}
                   {rowErr.qty && <div className="cpd-cell-msg">{rowErr.qty}</div>}
                 </td>
-                <td className={line.missing > 0 ? 'cpd-miss' : ''}>{row.pi ? plain(line.missing) : '—'}</td>
+                {withPi && <td className={line.missing > 0 ? 'cpd-miss' : ''}>{row.pi ? plain(line.missing) : '—'}</td>}
 
                 <td className={readOnly ? undefined : `cpd-ed${rowErr.rate ? ' cpd-cell-err' : ''}`}>
                   {readOnly ? <FitText text={money(row.rate)} /> : (
@@ -292,11 +301,11 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                   )}
                   {rowErr.rate && <div className="cpd-cell-msg">{rowErr.rate}</div>}
                 </td>
-                <td>{inter ? line.igstPct : line.cgstPct}%</td>
-                <td>{inter ? '—' : `${line.sgstPct}%`}</td>
+                {inter ? <td>{line.igstPct}%</td> : <><td>{line.cgstPct}%</td><td>{line.sgstPct}%</td></>}
 
-                <td><FitText text={money(inter ? line.igstAmt : line.cgstAmt)} /></td>
-                <td>{inter ? '—' : <FitText text={money(line.sgstAmt)} />}</td>
+                {inter
+                  ? <td><FitText text={money(line.igstAmt)} /></td>
+                  : <><td><FitText text={money(line.cgstAmt)} /></td><td><FitText text={money(line.sgstAmt)} /></td></>}
                 <td><FitText text={money(line.base)} /></td>
                 <td className="cpd-gst"><FitText text={money(line.gstAmt)} /></td>
                 <td className="cpd-final"><FitText text={money(line.withGst)} /></td>
@@ -307,14 +316,16 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
 
         <tfoot>
           <tr>
-            <td className="cpd-foot-lbl cpd-stick cpd-stick--1" colSpan={2}>Totals</td>
-            <td colSpan={2} />
-            <td>{plain(totals.piQty)}</td>
+            {withPi
+              ? <><td className="cpd-foot-lbl cpd-stick cpd-stick--1" colSpan={2}>Totals</td><td colSpan={2} /></>
+              : <td className="cpd-foot-lbl" colSpan={3}>Totals</td>}
+            {withPi && <td>{plain(totals.piQty)}</td>}
             <td><FitText text={plain(totals.poQty)} /></td>
-            <td>{plain(totals.miss)}</td>
-            <td colSpan={3} />
-            <td><FitText text={money(inter ? totals.igst : totals.cgst)} /></td>
-            <td>{inter ? '—' : <FitText text={money(totals.sgst)} />}</td>
+            {withPi && <td>{plain(totals.miss)}</td>}
+            <td colSpan={1 + taxCols} />
+            {inter
+              ? <td><FitText text={money(totals.igst)} /></td>
+              : <><td><FitText text={money(totals.cgst)} /></td><td><FitText text={money(totals.sgst)} /></td></>}
             <td><FitText text={money(totals.base)} /></td>
             <td><FitText text={money(totals.gst)} /></td>
             <td className="cpd-final"><FitText text={money(totals.withGst)} /></td>

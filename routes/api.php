@@ -431,8 +431,13 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::put   ('/{id}/items',                     [$po, 'updateItems'])->whereNumber('id');  // Stage 02
         Route::put   ('/{id}/terms',                     [$po, 'updateTerms'])->whereNumber('id');  // Stage 03 (+ submit)
         Route::get   ('/{id}/qty-history',               [$po, 'qtyHistory'])->whereNumber('id');
-        Route::post  ('/{id}/gst-approval/request',      [$po, 'requestGstApproval'])->whereNumber('id');
-        Route::post  ('/{id}/gst-approval/decide',       [$po, 'decideGstApproval'])->whereNumber('id');
+        // Senior approval when the supplier's GST return is overdue (raised here, decided from the Inbox)
+        $gap = \App\Http\Controllers\Api\P2p\PoGstApprovalController::class;
+        Route::post  ('/{id}/gst-approval/request',      [$gap, 'store'])->whereNumber('id');
+        Route::get   ('/gst-approvals/approvers',        [$gap, 'approvers']);
+        Route::get   ('/gst-approvals',                  [$gap, 'index']);
+        Route::get   ('/gst-approvals/{approval}',       [$gap, 'show'])->whereNumber('approval');
+        Route::post  ('/gst-approvals/{approval}/decide', [$gap, 'decide'])->whereNumber('approval');
         Route::post  ('/{id}/cancel',                    [$po, 'cancel'])->whereNumber('id');
         Route::delete('/{id}',                           [$po, 'destroy'])->whereNumber('id');
 

@@ -138,7 +138,7 @@ export default function StageSummary({ draft, ctx, upto }: { draft: PoDraft; ctx
             <div className="spi-dt-sumstep-body">
               <div>
                 <div className="spi-dt-rogroup-hd">Product Details</div>
-                <ProductTable rows={draft.lines} products={products} taxMode={ctx.taxMode} onChange={() => {}} readOnly />
+                <ProductTable rows={draft.lines} products={products} taxMode={ctx.taxMode} onChange={() => {}} readOnly standalone={ctx.detail?.link_type === 'standalone'} />
               </div>
 
               <div>

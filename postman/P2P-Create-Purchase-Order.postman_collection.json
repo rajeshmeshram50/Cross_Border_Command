@@ -79,6 +79,16 @@
     {
       "key": "sig_id",
       "value": ""
+    },
+    {
+      "key": "approver_user_id",
+      "value": "",
+      "description": "User id of the senior (from Approvers list)"
+    },
+    {
+      "key": "approval_id",
+      "value": "",
+      "description": "Set by Request approval"
     }
   ],
   "auth": {
@@ -653,10 +663,39 @@
       ]
     },
     {
-      "name": "3. GST approval",
+      "name": "3. GST senior approval",
       "item": [
         {
+          "name": "Approvers list (buyer)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/orders/gst-approvals/approvers",
+            "description": "Active users of the client except the caller. Put the senior's id in {{approver_user_id}}."
+          }
+        },
+        {
           "name": "Request approval (buyer)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.data && j.data.id) pm.collectionVariables.set('approval_id', j.data.id);"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -671,13 +710,88 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"note\": \"Supplier confirmed GSTR-3B for last quarter is being filed this week.\"\n}"
+              "raw": "{\n  \"requested_to\": {{approver_user_id}},\n  \"note\": \"Supplier confirmed GSTR-3B for last quarter is being filed this week.\"\n}"
             },
             "url": "{{base_url}}/p2p/orders/{{po_id}}/gst-approval/request"
           }
         },
         {
-          "name": "Decide (approver — different user)",
+          "name": "Expect 422 — submit while pending",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"terms\": \"x\",\n  \"submit\": \"yes\"\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/terms"
+          }
+        },
+        {
+          "name": "Inbox — pending (approver)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{approver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/orders/gst-approvals?page=1&per_page=10"
+          }
+        },
+        {
+          "name": "Review details (approver)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{approver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/orders/gst-approvals/{{approval_id}}"
+          }
+        },
+        {
+          "name": "Expect 422 — decide without reason",
           "request": {
             "auth": {
               "type": "bearer",
@@ -702,12 +816,72 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"decision\": \"approved\",\n  \"note\": \"Approved — filing proof to follow.\"\n}"
+              "raw": "{\n  \"decision\": \"approved\"\n}"
             },
-            "url": "{{base_url}}/p2p/orders/{{po_id}}/gst-approval/decide"
+            "url": "{{base_url}}/p2p/orders/gst-approvals/{{approval_id}}/decide"
+          }
+        },
+        {
+          "name": "Decide (approver)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{approver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"approved\",\n  \"reason\": \"One-time approval — filing proof to follow this week.\"\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/gst-approvals/{{approval_id}}/decide",
+            "description": "decision: approved | rejected. Reason is required either way."
+          }
+        },
+        {
+          "name": "Inbox — history (approver)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{approver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/orders/gst-approvals?history=1"
           }
         }
-      ]
+      ],
+      "description": "Only when the supplier's GST return is overdue (gate approval_required). A stale scrutiny (blocked) cannot be approved past."
     },
     {
       "name": "4. Documents (Stage 04)",

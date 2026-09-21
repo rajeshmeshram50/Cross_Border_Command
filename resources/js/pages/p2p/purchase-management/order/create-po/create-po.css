@@ -825,6 +825,19 @@
 .cgst-btn--warn { background: linear-gradient(135deg, #b45309, #d97706 55%, #f59e0b); box-shadow: 0 3px 10px rgba(217, 119, 6, .3); }
 .cgst-btn--stop { background: linear-gradient(135deg, #b91c1c, #dc2626 55%, #ef4444); box-shadow: 0 3px 10px rgba(220, 38, 38, .3); }
 
+.cgst-req { color: #dc2626; }
+.cgst-err { font-size: 10.5px; font-weight: 700; color: #dc2626; }
+.cgst-btn:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+/* Where the last senior-approval request stands. */
+.cgst-state { padding: 9px 11px; border-radius: 10px; font-size: 11.5px; font-weight: 600; line-height: 1.45; border: 1px solid; }
+.cgst-state b { font-weight: 800; }
+.cgst-state--pending { color: #92400e; background: #fffbeb; border-color: #fde68a; }
+.cgst-state--ok { color: #166534; background: #f0fdf4; border-color: #bbf7d0; }
+.cgst-state--bad { color: #991b1b; background: #fef2f2; border-color: #fecaca; }
+[data-bs-theme="dark"] .cgst-state--pending { color: #fcd34d; background: rgba(245, 158, 11, .12); border-color: rgba(245, 158, 11, .3); }
+[data-bs-theme="dark"] .cgst-state--ok { color: #4ade80; background: rgba(22, 163, 74, .12); border-color: rgba(34, 197, 94, .3); }
+[data-bs-theme="dark"] .cgst-state--bad { color: #fca5a5; background: rgba(220, 38, 38, .12); border-color: rgba(248, 113, 113, .3); }
+
 [data-bs-theme="dark"] .cgst-card { background: #0e1b24; }
 [data-bs-theme="dark"] .cgst-lead { color: #cbd5e1; }
 [data-bs-theme="dark"] .cgst-lead b { color: #e2e8f0; }
@@ -1272,6 +1285,9 @@
 .cpd-tbl--pd td.cpd-prodcell.cpd-ed { min-width: 240px; }
 .cpd-tbl--pd .cpd-desc { min-width: 170px; max-width: 250px; }
 .cpd-tbl--pd tfoot .cpd-stick--1 { width: 274px; min-width: 274px; }
+/* A PO without a PI: Sr No keeps its narrow width; Totals spans the entry columns. */
+.cpd-tbl--nopi .cpd-stick--1 { width: 42px; min-width: 42px; }
+.cpd-tbl--nopi tfoot .cpd-foot-lbl { text-align: left; }
 
 /* Compact variant: tighter cells and inputs, so numbers are never clipped. */
 /* The prototype's own compact cell padding (measured: 6px 7px). */
@@ -2048,6 +2064,11 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 .cpf-form .spi-dt-btn-next.cpf-foot-gst--warn {
   background: linear-gradient(135deg, #b45309, #d97706 55%, #f59e0b);
   box-shadow: 0 3px 10px rgba(217, 119, 6, .3);
+}
+/* Senior approved: the request is done, the PO can be submitted. */
+.cpf-form .spi-dt-btn-next.cpf-foot-gst--ok {
+  background: linear-gradient(135deg, #15803d, #16a34a 55%, #22c55e);
+  box-shadow: 0 3px 10px rgba(22, 163, 74, .3);
 }
 /* The banner sits straight in the card, outside the padded fields area, so it
    was flush against the header and the card edges. Prototype: 14px under the

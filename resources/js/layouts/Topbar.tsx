@@ -317,7 +317,8 @@ function NotificationRow({ item, onClick }: { item: InAppNotification; onClick: 
       const t = new Date(to).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
       return `${item.data?.leave_type ?? 'Leave'} · ${f}${f !== t ? ` – ${t}` : ''} · ${days ?? 0} day${days === 1 ? '' : 's'}`;
     }
-    return item.data?.leave_type ?? '';
+    // Other kinds (e.g. PO approvals) carry their detail in `message`.
+    return item.data?.leave_type ?? item.data?.message ?? '';
   })();
   const when = (() => {
     const d = new Date(item.created_at);

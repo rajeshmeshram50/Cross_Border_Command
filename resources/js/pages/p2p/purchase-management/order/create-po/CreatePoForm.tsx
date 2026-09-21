@@ -164,7 +164,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
             // Earlier POs on this shipment may have ordered some PI lines in full.
             const open = pi.lines.filter((l) => l.pending_qty > 0);
             set({ lines: open.map(rowFromPi) });
-            if (pi.lines.length && !open.length) toast.info('Nothing left to order on this PI', 'Every PI line is already on earlier POs — add products manually if needed.');
+            if (pi.lines.length && !open.length) toast.info('Nothing left to order on this PI', 'Every PI line is already on earlier POs — raise a standalone PO for anything extra.');
           }
         }
       } catch (e) {
@@ -205,6 +205,18 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   const gst = gstCheck(draft);
   const [gstNotice, setGstNotice] = useState<GstNotice | null>(null);
   const showGstAction = stage === 2 && !!gst.notice;
+  // Only an overdue return can be approved past; a stale scrutiny always blocks.
+  const approval = gst.notice?.tone === 'warn' ? detail?.gst_approval ?? null : null;
+  const gstCleared = !gst.notice || approval?.status === 'approved';
+  const gstActionLabel = approval?.status === 'pending' ? 'Awaiting senior approval'
+    : approval?.status === 'approved' ? 'Senior approved'
+      : approval?.status === 'rejected' ? 'Rejected — send again' : gst.state.action;
+
+  /** After a request is sent: re-read the PO so Step 03 shows where it stands. */
+  const reloadApproval = async () => {
+    if (!poId) return;
+    try { setDetail(await poApi.show(poId)); } catch (e) { fail(e); }
+  };
 
   /* ── Saving each stage ── */
 
@@ -259,7 +271,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
 
   const saveStage3 = async (): Promise<boolean> => {
     // Same rule the server applies on submit; stopping here opens the matching popup.
-    if (gst.notice) { setGstNotice(gst.notice); return false; }
+    if (!gstCleared) { setGstNotice(gst.notice); return false; }
     const d = await poApi.saveTerms(poId as number, { terms: draft.terms, submit: 'yes' });
     setDetail(d);
     toast.success(isEdit ? `${d.code} updated` : `${d.code} submitted`, 'Documents are ready on the next step.');
@@ -438,10 +450,10 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
             {showGstAction && (
               <button
                 type="button"
-                className={`spi-dt-btn-next cpf-foot-gst--${gst.notice!.tone}`}
+                className={`spi-dt-btn-next cpf-foot-gst--${approval?.status === 'approved' ? 'ok' : gst.notice!.tone}`}
                 onClick={() => setGstNotice(gst.notice)}
               >
-                {gst.state.action}
+                {approval?.status === 'approved' && <IcoCheck />} {gstActionLabel}
               </button>
             )}
             {/* Step 03 is where the PO is actually submitted, so that button is
@@ -457,7 +469,9 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
           </div>
         </div>
       </div>
-      {gstNotice && <GstNoticeModal notice={gstNotice} onClose={() => setGstNotice(null)} />}
+      {gstNotice && (
+        <GstNoticeModal notice={gstNotice} onClose={() => setGstNotice(null)} poId={poId} approval={approval} onSent={reloadApproval} />
+      )}
     </div>,
     document.body,
   );

@@ -14,6 +14,8 @@ import HeaderFooterPanel, {
   type HeaderConfig, type FooterConfig,
 } from './hrms/doc-templates/HeaderFooterPanel';
 import { leaveRequestsApi, ApiLeaveRequest } from './hrms/leavePlansApi';
+import PoApprovalInboxSection from './p2p/purchase-management/order/gst-approval/PoApprovalInboxSection';
+import { poApprovalApi } from './p2p/purchase-management/order/api/po-api';
 import '../../css/recruitment.css';
 import './Inbox.css';
 
@@ -77,6 +79,13 @@ export default function Inbox() {
   const [rows, setRows] = useState<SignatureRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'new' | 'updated'>('new');
+  // PO senior-approval counts, reported by their section (it pages on the server).
+  const [poNewCount, setPoNewCount] = useState(0);
+  const [poHistCount, setPoHistCount] = useState(0);
+  // The history section mounts only on its tab; its count is needed for the tab badge now.
+  useEffect(() => {
+    poApprovalApi.inbox({ history: true, per_page: 1 }).then((r) => setPoHistCount(r.meta.total)).catch(() => {});
+  }, []);
   const [leaveRows, setLeaveRows] = useState<ApiLeaveRequest[]>([]);
   const [leaveLoading, setLeaveLoading] = useState(true);
   const [leaveActing, setLeaveActing] = useState<{ id: number; verdict: 'approve' | 'reject' } | null>(null);
@@ -498,7 +507,7 @@ export default function Inbox() {
                 <i className="ri-mail-unread-line me-1" />
                 {loading || leaveLoading || expenseLoading || myUpdatesLoading
                   ? '…'
-                  : `${rows.length + leaveRows.length + expenseRows.length} pending${myUpdates.length ? ` · ${myUpdates.length} update${myUpdates.length === 1 ? '' : 's'}` : ''}`}
+                  : `${rows.length + leaveRows.length + expenseRows.length + poNewCount} pending${myUpdates.length ? ` · ${myUpdates.length} update${myUpdates.length === 1 ? '' : 's'}` : ''}`}
               </span>
               {/* Back — history.back() with a /dashboard fallback. */}
               <button
@@ -518,8 +527,8 @@ export default function Inbox() {
           {/* New / Updated tabs — segregate items waiting on your action from
               the history of items you've already signed/approved. */}
           {(() => {
-            const newCount = rows.length + leaveRows.length + expenseRows.length;
-            const updatedCount = histLeave.length + histExpense.length + histDocs.length + myUpdates.length;
+            const newCount = rows.length + leaveRows.length + expenseRows.length + poNewCount;
+            const updatedCount = histLeave.length + histExpense.length + histDocs.length + myUpdates.length + poHistCount;
             const TabBtn = ({ id, label, icon, count, tone }: { id: 'new' | 'updated'; label: string; icon: string; count: number; tone: string }) => {
               const active = tab === id;
               return (
@@ -813,6 +822,10 @@ export default function Inbox() {
             </CardBody>
           </Card>
           )}
+
+          {/* PO senior approvals — overdue supplier GST; the review opens as a full page. */}
+          {tab === 'new' && <PoApprovalInboxSection onCount={setPoNewCount} />}
+          {tab === 'updated' && <PoApprovalInboxSection history onCount={setPoHistCount} />}
 
           {/* ── Updated (History) tab: the same Leave / Expense / Document
                  containers, listing items you've already acted on. ── */}

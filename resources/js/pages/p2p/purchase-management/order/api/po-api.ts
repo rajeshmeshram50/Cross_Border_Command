@@ -56,6 +56,7 @@ export type DocTypeKey = 'domestic' | 'international';
 export type LinkType = 'with_shipment' | 'standalone';
 export type TaxMode = 'intra' | 'inter';
 export type GstGate = 'clear' | 'approval_required' | 'blocked';
+export type GstApprovalStatus = 'pending' | 'approved' | 'rejected';
 
 /** Link and supplier codes the server adds to list rows and the detail. */
 export type PoLinkRefs = {
@@ -118,7 +119,10 @@ export type PoDetail = PoLinkRefs & {
   shipment_order_id: number | null; proforma_invoice_id: number | null; lead_id: number | null;
   vendor_id: number | null; home_state_code: string | null; tax_mode: TaxMode | null;
   gst_gate: GstGate | null; gst_scrutiny_date: string | null; gst_last_filing_date: string | null;
-  gst_approval_status: 'pending' | 'approved' | 'rejected' | null; gst_approval_note: string | null;
+  gst_approval_status: GstApprovalStatus | null; gst_approval_note: string | null;
+  /** The latest senior-approval request on this PO. */
+  gst_approval: { id: number; status: GstApprovalStatus; reason: string | null; requested_to_name: string | null;
+    requested_at: string | null; decided_at: string | null } | null;
   taxable_total: string; total_cgst: string; total_sgst: string; total_igst: string;
   shipping_charges: string; packaging_charges: string; other_charges: string; grand_total: string;
   terms: string | null; submitted_at: string | null; cancel_reason: string | null;
@@ -239,12 +243,6 @@ export const poApi = {
 
   qtyHistory: (id: number) =>
     call('PO qty history', () => api.get(`/p2p/orders/${id}/qty-history`), dataOf<PoQtyHistoryRow[]>),
-
-  requestGstApproval: (id: number, note?: string) =>
-    call('PO GST approval request', () => api.post(`/p2p/orders/${id}/gst-approval/request`, { note }), dataOf<PoDetail>),
-
-  decideGstApproval: (id: number, decision: 'approved' | 'rejected', note?: string) =>
-    call('PO GST approval decision', () => api.post(`/p2p/orders/${id}/gst-approval/decide`, { decision, note }), dataOf<PoDetail>),
 
   cancel: (id: number, reason: string) =>
     call('PO cancel', () => api.post(`/p2p/orders/${id}/cancel`, { reason }), dataOf<PoDetail>),
@@ -374,4 +372,80 @@ export const poLookupApi = {
   /** Any master list by slug: currencies, incoterms, countries, port_of_loading, port_of_discharge. */
   master: (slug: string) =>
     call(`PO master ${slug}`, () => api.get(`/master/${slug}`), (b) => listOf<Record<string, unknown>>(b)),
+};
+
+/* ══════════════════════════ Senior GST approval ══════════════════════════ */
+
+/** A user who can be asked to approve; department / designation come from their employee record. */
+export type GstApprover = {
+  id: number; name: string; email: string | null; user_type: string | null;
+  employee_id: number | null; emp_code: string | null; department: string | null; designation: string | null;
+};
+
+export type GstApprovalRequest = {
+  id: number; purchase_order_id: number; status: GstApprovalStatus;
+  requested_by: number; requested_by_name: string | null;
+  requested_to: number; requested_to_name: string | null;
+  request_note: string | null; requested_at: string | null;
+  reason: string | null; decided_at: string | null;
+};
+
+/** One Inbox row: the request with its PO and supplier. */
+export type GstApprovalInboxRow = {
+  id: number; purchase_order_id: number; status: GstApprovalStatus;
+  request_note: string | null; reason: string | null; requested_at: string | null; decided_at: string | null;
+  po_code: string; po_date: string | null; po_status: PoStatus; currency_code: string | null; grand_total: number;
+  gst_last_filing_date: string | null; supplier_code: string | null; supplier_name: string | null;
+  requested_by_name: string | null; requested_by_designation: string | null; requested_by_department: string | null;
+};
+export type GstApprovalInboxMeta = { total: number; per_page: number; current_page: number; last_page: number };
+
+/** Everything the senior's review page shows. */
+export type GstApprovalReview = {
+  request: GstApprovalRequest;
+  can_decide: boolean;
+  po: {
+    id: number; code: string; po_date: string | null; status: PoStatus | 'deleted';
+    po_type: PoTypeKey | null; document_type: DocTypeKey | null; link_type: LinkType | null;
+    currency_code: string | null; exchange_rate: number;
+    mode_of_transport: string | null; expected_delivery_date: string | null; delivery_location: string | null; payment_type: string | null;
+    inco_term: string | null; port_of_loading: string | null; port_of_discharge: string | null;
+    tax_mode: TaxMode | null; physical_inspection: YesNo | null;
+    taxable_total: number; total_cgst: number; total_sgst: number; total_igst: number;
+    shipping_charges: number; packaging_charges: number; other_charges: number; grand_total: number;
+    created_by_name: string | null;
+    shipment_code: string | null; pi_code: string | null; customer_name: string | null; opportunity_code: string | null;
+  };
+  supplier: { code: string | null; name: string | null; gstin: string | null; state_code: string | null; risk: string | null; category: string | null } | null;
+  gst: { gate: GstGate; scrutiny_date: string | null; filing_date: string | null; gstin: string | null; stale_months: number } | null;
+  lines: { line_no: number; product_code: string | null; product_name: string | null; hsn_code: string | null; uom: string | null;
+    quantity: number; rate: number; gst_pct: number; taxable_amount: number; gst_amount: number; line_total: number }[];
+  tax_label: string;
+  history: GstApprovalRequest[];
+};
+
+export const poApprovalApi = {
+  /** Users the request can be sent to. */
+  approvers: () =>
+    call('GST approvers', () => api.get('/p2p/orders/gst-approvals/approvers'), dataOf<GstApprover[]>),
+
+  /** Raised from Step 03 when the supplier's GST return is overdue. */
+  request: (poId: number, body: { requested_to: number; note?: string }) =>
+    call('GST approval request', () => api.post(`/p2p/orders/${poId}/gst-approval/request`, body), dataOf<GstApprovalRequest>),
+
+  /** Requests sent to the caller; history = already decided. */
+  inbox: (params: { history?: boolean; page?: number; per_page?: number } = {}) =>
+    call('GST approval inbox', () => api.get('/p2p/orders/gst-approvals', {
+      params: { history: params.history ? 1 : 0, page: params.page ?? 1, per_page: params.per_page ?? 10 },
+    }), (b) => {
+      const body = b as { data?: GstApprovalInboxRow[]; meta?: GstApprovalInboxMeta } | null;
+      return { rows: body?.data ?? [], meta: body?.meta ?? { total: 0, per_page: 10, current_page: 1, last_page: 1 } };
+    }),
+
+  show: (id: number) =>
+    call('GST approval details', () => api.get(`/p2p/orders/gst-approvals/${id}`), dataOf<GstApprovalReview>),
+
+  /** Approve or reject; the reason is required either way. */
+  decide: (id: number, decision: 'approved' | 'rejected', reason: string) =>
+    call('GST approval decision', () => api.post(`/p2p/orders/gst-approvals/${id}/decide`, { decision, reason }), dataOf<GstApprovalRequest>),
 };

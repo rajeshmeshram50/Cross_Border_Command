@@ -5,7 +5,9 @@ import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { formatDmy } from '../../../../../utils/formatDmy';
+import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import { IcoShieldAlert, IcoUser } from '../shared/icons';
+import { PoApiError, poApprovalApi, type GstApprover, type PoDetail } from '../api/po-api';
 
 export type GstNotice = {
   tone: 'stop' | 'warn';
@@ -20,17 +22,54 @@ export type GstNotice = {
   months: number;
 };
 
-/** `onSend` sends the senior-approval request; without it the action says it is coming soon. */
-export default function GstNoticeModal({ notice, onClose, onSend }: {
-  notice: GstNotice; onClose: () => void; onSend?: (note: string) => void;
+type Approval = NonNullable<PoDetail['gst_approval']>;
+
+// Approvers rarely change within a session.
+let approversCache: GstApprover[] | null = null;
+
+/** `poId` + `onSent` send the senior-approval request; `approval` is the one already raised. */
+export default function GstNoticeModal({ notice, onClose, poId, approval, onSent }: {
+  notice: GstNotice; onClose: () => void; poId?: number | null; approval?: Approval | null; onSent?: () => void;
 }) {
   useScrollLock(true, '.cgst-card');
   const toast = useToast();
   const [note, setNote] = useState('');
-  const send = () => {
-    if (onSend) onSend(note);
-    else toast.info('Feature coming soon', 'Senior approval requests will be available shortly.');
-    onClose();
+  const [approverId, setApproverId] = useState('');
+  const [approvers, setApprovers] = useState<GstApprover[]>(approversCache ?? []);
+  const [loadingApprovers, setLoadingApprovers] = useState(!approversCache);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+
+  const stop = notice.tone === 'stop';
+  const pending = approval?.status === 'pending';
+  const approved = approval?.status === 'approved';
+  const canSend = !stop && !pending && !approved;
+
+  useEffect(() => {
+    if (!canSend || approversCache) return;
+    poApprovalApi.approvers()
+      .then((rows) => { approversCache = rows; setApprovers(rows); })
+      .catch((e) => toast.error('Could not load approvers', e instanceof PoApiError ? e.firstError : 'Please try again.'))
+      .finally(() => setLoadingApprovers(false));
+  }, [canSend, toast]);
+
+  const send = async () => {
+    if (!poId) { toast.warning('Save the PO first', 'The request is raised on a saved purchase order.'); return; }
+    if (!approverId) { setError('Select the senior to send this request to.'); return; }
+    setSending(true);
+    try {
+      await poApprovalApi.request(poId, { requested_to: Number(approverId), note: note.trim() || undefined });
+      const who = approvers.find((a) => String(a.id) === approverId)?.name ?? 'the senior';
+      toast.success('Sent for senior approval', `${who} will see it in their Inbox.`);
+      onSent?.();
+      onClose();
+    } catch (e) {
+      const msg = e instanceof PoApiError ? e.firstError : 'Please try again.';
+      setError(msg);
+      toast.error('Could not send the request', msg);
+    } finally {
+      setSending(false);
+    }
   };
 
   useEffect(() => {
@@ -39,7 +78,20 @@ export default function GstNoticeModal({ notice, onClose, onSend }: {
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const stop = notice.tone === 'stop';
+  // Name first, then department and designation as tags; the company admin has no employee record.
+  const options = approvers.map((a) => {
+    const badges = [
+      ...(a.department ? [{ text: a.department, tone: 'gray' as const }] : []),
+      ...(a.designation ? [{ text: a.designation, tone: 'violet' as const }] : []),
+      ...(!a.employee_id && a.user_type === 'client_admin' ? [{ text: 'Company admin', tone: 'green' as const }] : []),
+    ];
+    return {
+      value: String(a.id),
+      label: a.emp_code ? `${a.name} (${a.emp_code})` : a.name,
+      fullLabel: [a.name, a.department, a.designation].filter(Boolean).join(' · '),
+      badges,
+    };
+  });
 
   return createPortal(
     <div className="cgst-backdrop">
@@ -60,7 +112,7 @@ export default function GstNoticeModal({ notice, onClose, onSend }: {
             <p className="cgst-lead">
               This supplier’s GST scrutiny was last completed <b>{notice.scrutinyAge?.toFixed(1)} months ago</b>, outside
               the {notice.months}-month window. The purchase order cannot proceed until scrutiny is refreshed on the
-              supplier record.
+              supplier record — a senior approval cannot clear this.
             </p>
           ) : (
             <p className="cgst-lead">
@@ -87,15 +139,31 @@ export default function GstNoticeModal({ notice, onClose, onSend }: {
             {!stop && <Row label="Required on or after" value={formatDmy(notice.cutoff)} />}
           </div>
 
+          {approval && !stop && <ApprovalState approval={approval} />}
+
           {stop ? (
             <div className="cgst-note">Once scrutiny is updated, reopen this PO and the check will re-run automatically.</div>
-          ) : (
+          ) : canSend && (
             <>
+              <div className="cgst-field">
+                <label>Send to <span className="cgst-req">*</span></label>
+                <MasterSelect
+                  value={approverId}
+                  options={options}
+                  placeholder={loadingApprovers ? 'Loading…' : '— Select senior —'}
+                  loading={loadingApprovers}
+                  invalid={!!error && !approverId}
+                  emptyText="No other active users in your company"
+                  onChange={(v) => { setApproverId(v); setError(''); }}
+                />
+                {error && <span className="cgst-err">{error}</span>}
+              </div>
               <div className="cgst-field">
                 <label htmlFor="cgst-note">Note for the approver <span className="cgst-opt">optional</span></label>
                 <textarea
                   id="cgst-note"
                   className="cgst-ta"
+                  maxLength={1000}
                   placeholder="Why this PO should still go through…"
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
@@ -106,15 +174,33 @@ export default function GstNoticeModal({ notice, onClose, onSend }: {
         </div>
 
         <div className="cgst-ft">
-          <button type="button" className="cgst-btn cgst-btn--ghost" onClick={onClose}>Cancel</button>
-          <button type="button" className={`cgst-btn cgst-btn--${notice.tone}`} onClick={stop ? onClose : send}>
-            {stop ? 'Open Supplier GST Scrutiny' : 'Send for Senior Approval'}
-          </button>
+          <button type="button" className="cgst-btn cgst-btn--ghost" onClick={onClose}>{canSend ? 'Cancel' : 'Close'}</button>
+          {stop && (
+            <button type="button" className="cgst-btn cgst-btn--stop" onClick={onClose}>Open Supplier GST Scrutiny</button>
+          )}
+          {canSend && (
+            <button type="button" className="cgst-btn cgst-btn--warn" onClick={send} disabled={sending}>
+              {sending ? 'Sending…' : approval?.status === 'rejected' ? 'Send Again for Approval' : 'Send for Senior Approval'}
+            </button>
+          )}
         </div>
       </div>
     </div>,
     document.body,
   );
+}
+
+/** Where the last request stands: waiting, approved, or rejected with the senior's reason. */
+function ApprovalState({ approval }: { approval: Approval }) {
+  const who = approval.requested_to_name ?? 'the senior';
+  const when = (d: string | null) => (d ? formatDmy(d.slice(0, 10)) : '');
+  if (approval.status === 'pending') {
+    return <div className="cgst-state cgst-state--pending">Waiting on <b>{who}</b> since {when(approval.requested_at)}. You can submit once it is approved.</div>;
+  }
+  if (approval.status === 'approved') {
+    return <div className="cgst-state cgst-state--ok">Approved by <b>{who}</b> on {when(approval.decided_at)} — “{approval.reason}”. You can submit the PO.</div>;
+  }
+  return <div className="cgst-state cgst-state--bad">Rejected by <b>{who}</b> on {when(approval.decided_at)} — “{approval.reason}”. Send it again, or fix the supplier’s GST.</div>;
 }
 
 function Row({ label, value, tag, tagTone = 'ok' }: { label: string; value: string; tag?: string; tagTone?: 'ok' | 'warn' | 'stop' }) {
@@ -128,4 +214,3 @@ function Row({ label, value, tag, tagTone = 'ok' }: { label: string; value: stri
     </div>
   );
 }
-

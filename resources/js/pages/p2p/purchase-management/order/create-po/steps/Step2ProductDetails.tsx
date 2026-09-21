@@ -16,6 +16,7 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
   const [missOpen, setMissOpen] = useState(true);
   const { products } = ctx.lookups;
   const sup = draft.supplier;
+  const standalone = ctx.detail?.link_type === 'standalone';
 
   const lines = draft.lines;
   const patchLine = (index: number, patch: Partial<PoLineRow>) =>
@@ -53,8 +54,12 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
           <RefPill icon={<IcoUser />} label="SUPPLIER NAME" value={sup?.name ?? '—'} />
           <span className="spi-dt-dots">⋮</span>
           <RefPill icon={<IcoPin />} label="STATE CODE" value={sup?.stateCode ?? '—'} />
-          <span className="spi-dt-dots">⋮</span>
-          <RefPill icon={<IcoLines />} label="PI NUMBER" value={ctx.piCode ?? '—'} />
+          {!standalone && (
+            <>
+              <span className="spi-dt-dots">⋮</span>
+              <RefPill icon={<IcoLines />} label="PI NUMBER" value={ctx.piCode ?? '—'} />
+            </>
+          )}
         </div>
         <span className={`cpf-chev ${prodOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
       </div>
@@ -62,14 +67,19 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
       <div className="spi-dt-sec-body cpd-body">
         <div className="cpd-legend">
           <span className="cpd-legend__sw" />
-          Tinted cells are editable — PO product, quantity and rate. Everything else is carried from the PI or calculated.
+          {standalone
+            ? 'Tinted cells are editable — product, quantity and rate. Everything else is calculated.'
+            : 'Tinted cells are editable — PO product, quantity and rate. Everything else is carried from the PI or calculated.'}
           {' '}{ctx.taxMode === 'inter' ? 'Inter-state supplier: IGST applies.' : 'Intra-state supplier: CGST + SGST apply.'}
         </div>
         {ctx.linesGeneral && <div className="cpd-general-err" role="alert">{ctx.linesGeneral}</div>}
         <ProductTable rows={lines} products={products} taxMode={ctx.taxMode} onChange={patchLine} onRemove={removeLine}
-          onProductsChanged={ctx.lookups.reloadProducts} errors={ctx.lineErrors} />
+          onProductsChanged={ctx.lookups.reloadProducts} errors={ctx.lineErrors} standalone={standalone} />
         {/* A product the PI doesn't carry goes on its own line. */}
-        <button type="button" className="cpf-addbtn cpd-addfirst" onClick={addLine}>+ Add Product Line</button>
+        {/* A shipment PO orders only its PI lines; extra products go on a standalone PO. */}
+        {ctx.detail?.link_type !== 'with_shipment' && (
+          <button type="button" className="cpf-addbtn cpd-addfirst" onClick={addLine}>+ Add Product Line</button>
+        )}
         {/* The wizard footer moves to the next step; this Save banks the lines
             and charges without leaving Step 02. It rides in the summary row so
             it sits beside the Grand Total. */}

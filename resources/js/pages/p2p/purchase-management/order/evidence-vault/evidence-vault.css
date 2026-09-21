@@ -1,0 +1,66 @@
+/* PO Evidence Vault — values from the P2P Version 1 prototype (.scnpick-hd / .scnv-*);
+   the modal shell (.porec-*) comes from cancel-po.css. Dark theme added here. */
+
+.scnpick-hd { position: relative; overflow: hidden; background: linear-gradient(120deg, #0e7490 0%, #0891b2 45%, #22d3ee 100%); }
+.scnpick-hd::after { content: none; }
+.scnpick-hd__sheen { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 88% -40%, rgba(255, 255, 255, .35), transparent 60%); }
+.scnpick-hd > * { position: relative; z-index: 1; }
+.scnpick-hd .porec-hd__ico { background: rgba(255, 255, 255, .18); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .3); }
+
+.porec-box.scnv-box { width: min(720px, 94vw); overflow: hidden; }
+.porec-box.scnv-box .porec-ft { padding: 8px 16px 16px; background: linear-gradient(180deg, #f8fcfe, #f3fafd); border-top: 0; }
+.porec-bd.scnv-bd { gap: 8px; padding: 16px; max-height: 62vh; overflow-y: auto; background: linear-gradient(180deg, #fbfeff, #f6fcfe); }
+
+.scnv-grp { border: 1px solid #dbedf4; border-radius: 14px; background: #fff; padding: 8px; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
+.scnv-grp__hd { display: flex; align-items: center; gap: 8px; padding: 4px 4px 8px; margin-bottom: 8px; border-bottom: 1px solid #eef5f8; }
+.scnv-grp__ico { width: 28px; height: 28px; border-radius: 9px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2); box-shadow: 0 4px 10px -3px rgba(8, 145, 178, .55); }
+.scnv-grp__ico svg { width: 14px; height: 14px; }
+.scnv-grp__txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.scnv-grp__t { font-size: 12.5px; font-weight: 800; color: #0f172a; letter-spacing: -.2px; }
+.scnv-grp__s { font-size: 9.5px; font-weight: 600; color: #93aeba; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scnv-grp__n { margin-left: auto; flex-shrink: 0; min-width: 22px; text-align: center; font-size: 10px; font-weight: 800; color: #0e7490; background: #e0f7fb; border: 1px solid #c2ecf3; border-radius: 20px; padding: 2px 8px; }
+
+.scnv-doc { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 11px; background: linear-gradient(180deg, #fbfdfe, #f6fafc); border: 1px solid #eef5f8; }
+.scnv-doc + .scnv-doc { margin-top: 8px; }
+.scnv-doc:hover { border-color: #cfe9f0; background: #f7fdfe; }
+.scnv-doc__ico { width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 7.5px; font-weight: 800; letter-spacing: .06em; color: #fff; }
+.scnv-doc__ico.is-pdf { background: linear-gradient(135deg, #fb7185, #e11d48); box-shadow: 0 3px 8px -3px rgba(225, 29, 72, .6); }
+.scnv-doc__ico.is-jpg { background: linear-gradient(135deg, #a78bfa, #7c3aed); box-shadow: 0 3px 8px -3px rgba(124, 58, 237, .55); }
+.scnv-doc__txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.scnv-doc__n { font-size: 11.5px; font-weight: 800; color: #22414f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scnv-doc__m { font-size: 9.5px; font-weight: 600; color: #93aeba; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scnv-tag { flex-shrink: 0; font-size: 8px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; border-radius: 20px; padding: 3px 8px; }
+.scnv-tag.is-out { color: #0e7490; background: #e0f7fb; border: 1px solid #c2ecf3; }
+.scnv-tag.is-in { color: #047857; background: #ecfdf5; border: 1px solid #bbf7d0; }
+.scnv-tag.is-sig { color: #6d28d9; background: #f5f3ff; border: 1px solid #ddd6fe; }
+.scnv-doc__acts { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.scnv-act {
+  display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border: none;
+  border-radius: 9px; cursor: pointer; font-family: inherit; font-size: 10px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #22b8d6, #0e7490);
+  box-shadow: 0 3px 9px -3px rgba(8, 145, 178, .6), inset 0 1px 0 rgba(255, 255, 255, .22);
+  transition: transform .16s, box-shadow .16s, filter .16s;
+}
+.scnv-act svg { width: 13px; height: 13px; flex-shrink: 0; }
+.scnv-act:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 14px -4px rgba(8, 145, 178, .65); }
+.scnv-act:disabled { opacity: .45; cursor: not-allowed; }
+.scnv-act--get { background: linear-gradient(135deg, #3b82a6, #1e4f6b); box-shadow: 0 3px 9px -3px rgba(30, 79, 107, .6), inset 0 1px 0 rgba(255, 255, 255, .18); }
+.scnv-act--get:hover:not(:disabled) { box-shadow: 0 6px 14px -4px rgba(30, 79, 107, .65); }
+.scnv-none { padding: 14px 8px; text-align: center; font-size: 11px; font-weight: 600; color: #9fb7c2; }
+
+@media (max-width: 620px) {
+  .scnv-act span { display: none; }
+  .scnv-act { padding: 0 9px; }
+  .scnv-doc__m { white-space: normal; }
+}
+
+/* ── Dark theme ── */
+[data-bs-theme="dark"] .porec-bd.scnv-bd, [data-bs-theme="dark"] .porec-box.scnv-box .porec-ft { background: #16212c; }
+[data-bs-theme="dark"] .scnv-grp { background: #1b2733; border-color: rgba(148, 163, 184, .16); }
+[data-bs-theme="dark"] .scnv-grp__hd { border-bottom-color: rgba(148, 163, 184, .14); }
+[data-bs-theme="dark"] .scnv-grp__t, [data-bs-theme="dark"] .scnv-doc__n { color: #e2e8f0; }
+[data-bs-theme="dark"] .scnv-grp__s, [data-bs-theme="dark"] .scnv-doc__m, [data-bs-theme="dark"] .scnv-none { color: #94a3b8; }
+[data-bs-theme="dark"] .scnv-grp__n { color: #67e8f9; background: rgba(8, 145, 178, .16); border-color: rgba(34, 211, 238, .3); }
+[data-bs-theme="dark"] .scnv-doc { background: rgba(148, 163, 184, .06); border-color: rgba(148, 163, 184, .14); }
+[data-bs-theme="dark"] .scnv-doc:hover { background: rgba(8, 145, 178, .1); border-color: rgba(34, 211, 238, .3); }
+[data-bs-theme="dark"] .scnv-tag.is-sig { color: #c4b5fd; background: rgba(124, 58, 237, .16); border-color: rgba(167, 139, 250, .3); }

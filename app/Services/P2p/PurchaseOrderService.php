@@ -49,16 +49,23 @@ class PurchaseOrderService
         return $this->nextCode($clientId, 'PO', PurchaseOrder::withoutGlobalScope('tenant')->withTrashed());
     }
 
+    /** The number the next PO would get — a read only: no lock, nothing reserved or written. */
+    public function previewPoCode(int $clientId): string
+    {
+        return $this->nextCode($clientId, 'PO', PurchaseOrder::withoutGlobalScope('tenant')->withTrashed(), false);
+    }
+
     /** Next DOC/<FY>/<SEQ>, one sequence per client. */
     public function nextDocCode(int $clientId): string
     {
         return $this->nextCode($clientId, 'DOC', PurchaseOrderDocument::withoutGlobalScope('tenant')->withTrashed());
     }
 
-    private function nextCode(int $clientId, string $prefix, Builder $query): string
+    private function nextCode(int $clientId, string $prefix, Builder $query, bool $allocate = true): string
     {
         $fy = $this->financialYear();
-        DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
+        // Allocation locks the client row so two saves never take the same number.
+        if ($allocate) DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
 
         $max = 0;
         $rows = $query->where('client_id', $clientId)->where('code', 'like', "{$prefix}/{$fy}/%")->pluck('code');

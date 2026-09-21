@@ -12,6 +12,7 @@ use App\Models\Vendor;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -96,6 +97,17 @@ class PurchaseOrder extends Model
     public function inspections(): HasMany
     {
         return $this->hasMany(PoPhysicalInspection::class, 'purchase_order_id');
+    }
+
+    public function gstApprovals(): HasMany
+    {
+        return $this->hasMany(PoGstApproval::class, 'purchase_order_id');
+    }
+
+    /** The latest senior-approval request — the one that decides whether the PO may be submitted. */
+    public function latestGstApproval(): HasOne
+    {
+        return $this->hasOne(PoGstApproval::class, 'purchase_order_id')->latestOfMany();
     }
 
     public function vendor(): BelongsTo        { return $this->belongsTo(Vendor::class)->withTrashed(); }

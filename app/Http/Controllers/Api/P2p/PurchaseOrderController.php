@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers\Api\P2p;
 
+use App\Http\Controllers\Api\P2p\Concerns\RunsInTransaction;
 use App\Http\Controllers\Controller;
+use App\Models\P2p\PoGstApproval;
 use App\Models\P2p\PoItemQtyHistory;
 use App\Models\P2p\PurchaseOrder;
 use App\Models\P2p\PurchaseOrderDocument;
@@ -24,6 +26,8 @@ use Illuminate\Validation\ValidationException;
  */
 class PurchaseOrderController extends Controller
 {
+    use RunsInTransaction;
+
     public function __construct(private PurchaseOrderService $svc) {}
 
     private function ok($data, int $code = 200): JsonResponse
@@ -52,11 +56,11 @@ class PurchaseOrderController extends Controller
 
     /* ══════════════════════════ LOOKUPS ══════════════════════════ */
 
-    /** GET /p2p/orders/next-code — preview only; the real code is allocated on create. */
+    /** GET /p2p/orders/next-code — preview only; nothing is written until Step 01 is saved. */
     public function nextCode(Request $request): JsonResponse
     {
         $user = $this->tenantUser($request);
-        $code = DB::transaction(fn () => $this->svc->nextPoCode((int) $user->client_id));
+        $code = $this->svc->previewPoCode((int) $user->client_id);
         return $this->ok(['code' => $code, 'financial_year' => $this->svc->financialYear()]);
     }
 
@@ -214,7 +218,7 @@ class PurchaseOrderController extends Controller
         $resolved = $this->resolveStage1($data, $user);
         if ($resolved instanceof JsonResponse) return $resolved;
 
-        $po = DB::transaction(function () use ($user, $data, $resolved) {
+        $po = $this->inTransaction('create the PO', function () use ($user, $data, $resolved) {
             return PurchaseOrder::create($this->stage1Attributes($data, $resolved) + [
                 'client_id'    => $user->client_id,
                 'branch_id'    => $user->branch_id,
@@ -244,13 +248,15 @@ class PurchaseOrderController extends Controller
         $resolved = $this->resolveStage1($data, $user);
         if ($resolved instanceof JsonResponse) return $resolved;
 
-        DB::transaction(function () use ($po, $user, $data, $resolved) {
+        $this->inTransaction('save Stage 01', function () use ($po, $user, $data, $resolved) {
             $vendorChanged = (int) $po->vendor_id !== (int) $data['vendor_id'];
             $attrs = $this->stage1Attributes($data, $resolved) + ['updated_by' => $user->id];
             // A different supplier invalidates any GST approval taken on the old one.
             if ($vendorChanged) {
                 $attrs += ['gst_approval_status' => null, 'gst_approval_by' => null, 'gst_approval_at' => null,
                     'gst_approval_requested_by' => null, 'gst_approval_requested_at' => null, 'gst_approval_note' => null];
+                // Open requests were about the old supplier; decided rejections stay as history.
+                $po->gstApprovals()->whereIn('status', [PoGstApproval::STATUS_PENDING, PoGstApproval::STATUS_APPROVED])->delete();
             }
             if ($attrs['physical_inspection'] === $po->physical_inspection) unset($attrs['inspection_status']);
             $taxChanged = $po->tax_mode !== $attrs['tax_mode'];
@@ -382,6 +388,12 @@ class PurchaseOrderController extends Controller
             }
         }
 
+        // A shipment PO orders only its PI lines; a product the PI doesn't carry needs a standalone PO.
+        if ($po->link_type === 'with_shipment') {
+            foreach ($data['lines'] as $i => $line) {
+                if (empty($line['pi_item_id'])) $errors["lines.$i.product_id"] = ['A PO against a shipment orders only its PI lines — remove this line.'];
+            }
+        }
         $manual = collect($data['lines'])->filter(fn ($l) => empty($l['pi_item_id']))->pluck('product_id');
         if ($manual->count() !== $manual->unique()->count()) {
             $errors['lines'] = ['The same product appears on two lines without a PI line — merge them into one.'];
@@ -405,7 +417,7 @@ class PurchaseOrderController extends Controller
         }
         if ($errors) throw ValidationException::withMessages($errors);
 
-        DB::transaction(function () use ($po, $user, $data, $piItems, $products, $orderedElsewhere) {
+        $this->inTransaction('save the product lines', function () use ($po, $user, $data, $piItems, $products, $orderedElsewhere) {
             $po->update([
                 'shipping_charges'  => $data['shipping_charges'] ?? 0,
                 'packaging_charges' => $data['packaging_charges'] ?? 0,
@@ -526,12 +538,19 @@ class PurchaseOrderController extends Controller
             if ($gst['gate'] === 'blocked') {
                 return $this->fail('GST scrutiny is older than ' . PurchaseOrderService::GST_STALE_MONTHS . ' months — refresh it on the supplier record before submitting.', 422, ['gst' => $gst]);
             }
-            if ($gst['gate'] === 'approval_required' && $po->gst_approval_status !== 'approved') {
-                return $this->fail('The supplier\'s last GST return is overdue — senior approval is required before submitting.', 422, ['gst' => $gst, 'gst_approval_status' => $po->gst_approval_status]);
+            // Hard rule: an overdue return needs the latest request to be approved by the senior.
+            $approval = $po->latestGstApproval()->first();
+            if ($gst['gate'] === 'approval_required' && $approval?->status !== PoGstApproval::STATUS_APPROVED) {
+                $msg = match ($approval?->status) {
+                    PoGstApproval::STATUS_PENDING  => 'Senior approval is still pending — the PO can be submitted once it is approved.',
+                    PoGstApproval::STATUS_REJECTED => 'The senior rejected this PO: ' . $approval->reason,
+                    default => 'The supplier\'s last GST return is overdue — send it for senior approval before submitting.',
+                };
+                return $this->fail($msg, 422, ['gst' => $gst, 'gst_approval_status' => $approval?->status]);
             }
         }
 
-        DB::transaction(function () use ($po, $user, $data, $submit) {
+        $this->inTransaction($submit ? 'submit the PO' : 'save the terms', function () use ($po, $user, $data, $submit) {
             $attrs = ['terms' => $data['terms'] ?? null, 'current_step' => max((int) $po->current_step, 3), 'updated_by' => $user->id];
             if ($submit && $po->status === PurchaseOrder::STATUS_DRAFT) {
                 $attrs += ['status' => PurchaseOrder::STATUS_SUBMITTED, 'submitted_at' => now(), 'submitted_by' => $user->id, 'current_step' => 4];
@@ -566,40 +585,6 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /* ══════════════════════════ GST APPROVAL ══════════════════════════ */
-
-    /** POST /p2p/orders/{id}/gst-approval/request */
-    public function requestGstApproval(Request $request, int $id): JsonResponse
-    {
-        $user = $this->tenantUser($request);
-        $po = $this->findPo($id);
-        $data = $request->validate(['note' => 'nullable|string|max:1000']);
-        if ($po->gst_gate !== 'approval_required') return $this->fail('This PO does not need GST approval.');
-        if ($po->gst_approval_status === 'approved') return $this->fail('GST approval is already granted.');
-
-        $po->update(['gst_approval_status' => 'pending', 'gst_approval_requested_by' => $user->id,
-            'gst_approval_requested_at' => now(), 'gst_approval_note' => $data['note'] ?? null, 'updated_by' => $user->id]);
-        return $this->ok($this->shapeDetail($po->fresh()));
-    }
-
-    /** POST /p2p/orders/{id}/gst-approval/decide — the requester cannot decide their own request. */
-    public function decideGstApproval(Request $request, int $id): JsonResponse
-    {
-        $user = $this->tenantUser($request);
-        $po = $this->findPo($id);
-        $data = $request->validate([
-            'decision' => ['required', Rule::in(['approved', 'rejected'])],
-            'note'     => 'nullable|required_if:decision,rejected|string|max:1000',
-        ]);
-        if ($po->gst_approval_status !== 'pending') return $this->fail('There is no pending GST approval on this PO.');
-        if ((int) $po->gst_approval_requested_by === (int) $user->id) {
-            return $this->fail('You requested this approval — another person must decide it.', 403);
-        }
-        $po->update(['gst_approval_status' => $data['decision'], 'gst_approval_by' => $user->id,
-            'gst_approval_at' => now(), 'gst_approval_note' => $data['note'] ?? $po->gst_approval_note, 'updated_by' => $user->id]);
-        return $this->ok($this->shapeDetail($po->fresh()));
-    }
-
     /* ══════════════════════════ CANCEL / DELETE ══════════════════════════ */
 
     /** POST /p2p/orders/{id}/cancel — releases every line's quantity back to the PI. */
@@ -610,7 +595,7 @@ class PurchaseOrderController extends Controller
         $data = $request->validate(['reason' => 'required|string|max:1000']);
         if ($po->isCancelled()) return $this->fail('This PO is already cancelled.');
 
-        DB::transaction(function () use ($po, $user, $data) {
+        $this->inTransaction('cancel the PO', function () use ($po, $user, $data) {
             $this->releaseAll($po, 'cancelled', $user->id);
             $po->update(['status' => PurchaseOrder::STATUS_CANCELLED, 'cancelled_at' => now(),
                 'cancelled_by' => $user->id, 'cancel_reason' => $data['reason'], 'updated_by' => $user->id]);
@@ -625,7 +610,7 @@ class PurchaseOrderController extends Controller
         $po = $this->findPo($id);
         if ($po->status !== PurchaseOrder::STATUS_DRAFT) return $this->fail('Only a draft PO can be deleted — cancel a submitted PO instead.');
 
-        DB::transaction(function () use ($po, $user) {
+        $this->inTransaction('delete the PO', function () use ($po, $user) {
             $this->releaseAll($po, 'deleted', $user->id);
             $po->update(['updated_by' => $user->id]);
             $po->delete();
@@ -788,6 +773,13 @@ class PurchaseOrderController extends Controller
         }
         $out = $po->toArray() + ($this->linkRefs(collect([$po]))[$po->id] ?? []);
         $out['created_by_name'] = $po->creator?->name;
+        // Step 03 shows where the senior-approval request stands.
+        $ap = $po->latestGstApproval()->first();
+        $out['gst_approval'] = $ap ? [
+            'id' => $ap->id, 'status' => $ap->status, 'reason' => $ap->reason,
+            'requested_to_name' => DB::table('users')->where('id', $ap->requested_to)->value('name'),
+            'requested_at' => $ap->requested_at?->toIso8601String(), 'decided_at' => $ap->decided_at?->toIso8601String(),
+        ] : null;
         // Supplier is read live from vendors (same shape as the Stage 01 supplier lookup).
         $v = $po->vendor_id ? $this->loadVendorAnyState((int) $po->vendor_id) : null;
         $out['supplier'] = $v ? [

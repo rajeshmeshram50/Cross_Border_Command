@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\P2p;
 
+use App\Http\Controllers\Api\P2p\Concerns\RunsInTransaction;
 use App\Http\Controllers\Controller;
 use App\Models\P2p\PoPhysicalInspection;
 use App\Models\P2p\PurchaseOrder;
@@ -21,6 +22,8 @@ use Illuminate\Validation\Rule;
  */
 class PurchaseOrderInspectionController extends Controller
 {
+    use RunsInTransaction;
+
     // Photos, videos and PDFs — what a phone camera or scanner produces.
     private const FILE_RULE = 'file|max:20480|mimetypes:image/*,video/*,application/pdf';
 
@@ -139,15 +142,18 @@ class PurchaseOrderInspectionController extends Controller
             'files.*' => self::FILE_RULE,
         ]);
 
-        $row = PoPhysicalInspection::firstOrNew(['purchase_order_item_id' => $line->id], ['purchase_order_id' => $order->id]);
-        $row->fill([
-            'verdict'      => $request->input('verdict', $row->verdict),
-            'remark'       => $request->has('remark') ? $request->input('remark') : $row->remark,
-            // New proof is added to what is already there, never replacing it.
-            'proof_files'  => array_merge($row->proof_files ?? [], $this->storeFiles($request, 'files', $order->id)),
-            'inspected_by' => $request->user()->id,
-            'inspected_at' => now(),
-        ])->save();
+        $stored = $this->storeFiles($request, 'files', $order->id);
+        $this->inTransaction('save the inspection line', function () use ($line, $order, $request, $stored) {
+            $row = PoPhysicalInspection::firstOrNew(['purchase_order_item_id' => $line->id], ['purchase_order_id' => $order->id]);
+            $row->fill([
+                'verdict'      => $request->input('verdict', $row->verdict),
+                'remark'       => $request->has('remark') ? $request->input('remark') : $row->remark,
+                // New proof is added to what is already there, never replacing it.
+                'proof_files'  => array_merge($row->proof_files ?? [], $stored),
+                'inspected_by' => $request->user()->id,
+                'inspected_at' => now(),
+            ])->save();
+        }, array_column($stored, 'path'));
 
         return $this->ok($this->summary($order));
     }
@@ -162,9 +168,11 @@ class PurchaseOrderInspectionController extends Controller
         $row = PoPhysicalInspection::where('purchase_order_item_id', $order->items()->findOrFail($item)->id)->firstOrFail();
         $files = array_values($row->proof_files ?? []);
         if (!isset($files[$index])) return $this->fail('That file is no longer on this line.', 404);
-        Storage::disk('public')->delete($files[$index]['path']);
+        $gone = $files[$index]['path'];
         array_splice($files, $index, 1);
-        $row->update(['proof_files' => $files]);
+        $this->inTransaction('remove the proof file', fn () => $row->update(['proof_files' => $files]));
+        // The stored file is deleted only after the row no longer points at it.
+        Storage::disk('public')->delete($gone);
 
         return $this->ok($this->summary($order));
     }
@@ -183,14 +191,15 @@ class PurchaseOrderInspectionController extends Controller
         $unmarked = $order->items()->whereDoesntHave('inspection', fn ($q) => $q->whereNotNull('verdict'))->count();
         if ($unmarked > 0) return $this->fail("{$unmarked} line(s) have no verdict yet — mark every line before signing off.");
 
-        $order->update([
+        $stored = $this->storeFiles($request, 'files', $order->id);
+        $this->inTransaction('sign off the inspection', fn () => $order->update([
             'inspection_status'     => 'completed',
             'inspection_note'       => $request->input('note'),
-            'inspection_note_files' => $this->storeFiles($request, 'files', $order->id),
+            'inspection_note_files' => $stored,
             'inspected_by'          => $request->user()->id,
             'inspected_at'          => now(),
             'updated_by'            => $request->user()->id,
-        ]);
+        ]), array_column($stored, 'path'));
         return $this->ok($this->summary($order->fresh()));
     }
 
@@ -201,7 +210,7 @@ class PurchaseOrderInspectionController extends Controller
         if ($order instanceof JsonResponse) return $order;
         if ($order->inspection_status !== 'completed') return $this->fail('There is no sign-off to withdraw.');
 
-        $order->update(['inspection_status' => 'pending', 'inspected_by' => null, 'inspected_at' => null, 'updated_by' => $request->user()->id]);
+        $this->inTransaction('withdraw the sign-off', fn () => $order->update(['inspection_status' => 'pending', 'inspected_by' => null, 'inspected_at' => null, 'updated_by' => $request->user()->id]));
         return $this->ok($this->summary($order->fresh()));
     }
 }
