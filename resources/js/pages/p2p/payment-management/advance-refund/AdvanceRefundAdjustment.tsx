@@ -2,7 +2,7 @@
 // released on a purchase order, and the recovery of those refunds. Uses the shared
 // SPI/Order list shell (spi-*, ord-*) and the Order module's sample POs until the
 // API is connected.
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Badge from '../../../../components/ui/Badge';
 import Tooltip from '../../../../components/ui/Tooltip';
 import WorklistPager from '../../../../components/ui/WorklistPager';
@@ -69,6 +69,9 @@ const EMPTY: Record<TabKey, string> = {
 };
 
 const PAGE_SIZES = [5, 10, 15];
+/* How long the list shimmer shows. The rows are sample data until the API is
+   connected; then the fetch itself drives `loading` and this goes. */
+const LOAD_MS = 600;
 
 const inTab = (r: RefundAdjustment, tab: TabKey) => {
   if (tab === 'all') return true;
@@ -98,6 +101,60 @@ export default function AdvanceRefundAdjustment() {
   const [recoveringNo, setRecoveringNo] = useState<string | null>(null);
   const recovering = refunds.find((r) => r.no === recoveringNo) ?? null;
   const [vault, setVault] = useState<RefundAdjustment | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const t = window.setTimeout(() => setLoading(false), LOAD_MS);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  /* Fit the screen, like the CLM Segment Master and Suppliers: the list card
+     always reaches the bottom of the viewport (pager pinned there, even when
+     empty), and rows per page are as many as fit inside it — until the user
+     picks a count themselves. */
+  const [fillH, setFillH] = useState<number | undefined>(undefined);
+  const autoFit = useRef(true);
+  const rowH = useRef(57);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const recompute = () => {
+      const card = cardRef.current;
+      if (!card) return;
+      // Phones and small tablets (as on Suppliers): the page scrolls normally
+      // with a content-height card — fitting there leaves room for one row.
+      if (window.innerWidth <= 820) {
+        setFillH(undefined);
+        if (autoFit.current) setPageSize(10);
+        return;
+      }
+      const footer = document.querySelector<HTMLElement>('.footer');
+      const bottom = window.innerHeight - (footer?.offsetHeight ?? 0) - 16;
+      const cardH = Math.max(320, Math.floor(bottom - card.getBoundingClientRect().top));
+      setFillH((prev) => (prev === cardH ? prev : cardH));
+      if (!autoFit.current) return;
+      // Space the rows get = card minus toolbar, header, the table's horizontal
+      // scrollbar and pager (all measured, so it holds at any zoom or row height).
+      const q = (s: string) => card.querySelector<HTMLElement>(s)?.offsetHeight ?? 0;
+      const wrap = card.querySelector<HTMLElement>('.spi-tablewrap');
+      const bar = wrap ? wrap.offsetHeight - wrap.clientHeight : 0;
+      // No rows (empty search) → keep the last real row height, so the count
+      // doesn't jump when the rows come back. The shimmer rows are built to the
+      // real row's height, so they are measured the same way.
+      const row = q('.arf-table tbody tr:not(.arf-empty-row)') || rowH.current;
+      rowH.current = row;
+      const pager = card.querySelector<HTMLElement>('.wl-pager');
+      const pagerH = pager ? pager.offsetHeight + parseFloat(getComputedStyle(pager).marginTop) : 0;
+      const room = cardH - 2 - q('.spi-segrow') - q('.arf-table thead') - bar - pagerH;
+      const fit = Math.max(1, Math.floor(room / row));
+      setPageSize((prev) => (prev === fit ? prev : fit));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    if (rootRef.current) ro.observe(rootRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [guideOpen, loading]);
 
   const counts = useMemo(() => {
     const c: Record<TabKey, number> = { all: 0, pending: 0, recovered: 0 };
@@ -126,7 +183,7 @@ export default function AdvanceRefundAdjustment() {
     setRefunds((list) => list.map((r) => (r.no === no ? { ...r, recoveries } : r)));
 
   return (
-    <div className="spi-root arf-page">
+    <div className="spi-root arf-page" ref={rootRef}>
       <div className="spi-head">
         <div className="spi-head-left">
           <div className="spi-head-icon"><IcoRefund size={19} /></div>
@@ -170,7 +227,7 @@ export default function AdvanceRefundAdjustment() {
         </div>
       </div>
 
-      <div className="spi-card arf-list">
+      <div className="spi-card arf-list" ref={cardRef} style={fillH ? { minHeight: fillH } : undefined}>
         <div className="spi-segrow spi-segrow--search">
           <div className="spi-seg" role="tablist" aria-label="Refund adjustment views">
             {TABS.map((t) => (
@@ -179,7 +236,7 @@ export default function AdvanceRefundAdjustment() {
                 onClick={() => { setTab(t.key); setPage(1); }}>
                 <span className="spi-seg-ico">{t.icon}</span>
                 {t.label}
-                <span className="spi-seg-c">{counts[t.key]}</span>
+                <span className="spi-seg-c">{loading ? <span className="spi-sk-bar arf-sk-count" /> : counts[t.key]}</span>
               </button>
             ))}
           </div>
@@ -215,8 +272,10 @@ export default function AdvanceRefundAdjustment() {
               </tr>
             </thead>
             <tbody>
-              {visible.length === 0 ? (
-                <tr><td colSpan={16}>
+              {loading ? (
+                Array.from({ length: pageSize }).map((_, i) => <SkeletonRow key={i} />)
+              ) : visible.length === 0 ? (
+                <tr className="arf-empty-row"><td colSpan={16}>
                   <div className="spi-empty"><div className="spi-empty-t">No refund adjustments found</div><div className="spi-empty-s">{q ? 'Try a different search.' : EMPTY[tab]}</div></div>
                 </td></tr>
               ) : visible.map((r, i) => (
@@ -228,7 +287,7 @@ export default function AdvanceRefundAdjustment() {
         </div>
 
         <WorklistPager total={filtered.length} page={curPage} pageSize={pageSize} onPage={setPage}
-          onPageSize={(n) => { setPageSize(n); setPage(1); }} pageSizeOptions={PAGE_SIZES} />
+          onPageSize={(n) => { autoFit.current = false; setPageSize(n); setPage(1); }} pageSizeOptions={PAGE_SIZES} />
       </div>
 
       {picking && (
@@ -254,6 +313,48 @@ export default function AdvanceRefundAdjustment() {
         <RecoverPaymentModal refund={recovering} onChange={(list) => saveRecoveries(recovering.no, list)} onClose={() => setRecoveringNo(null)} />
       )}
     </div>
+  );
+}
+
+/* Shimmer row, shaped like a real one — ID pills over their dates, the type
+   pill, the amounts, the tall recovery cell and the action buttons — so the
+   table keeps its height and nothing jumps when the rows arrive. Bars are the
+   shared P2P shimmer (.spi-sk-bar); sizes are in advance-refund.css. */
+function SkeletonRow() {
+  // Refund / PO numbers are long pills; opportunity / procurement IDs short ones.
+  const id = (short = false) => (
+    <span className="arf-sk-stack"><span className={`spi-sk-bar arf-sk-pill${short ? ' arf-sk-pill--sm' : ''}`} /><span className="spi-sk-bar arf-sk-date" /></span>
+  );
+  const num = <span className="arf-sk-stack"><span className="spi-sk-bar arf-sk-num" /></span>;
+  return (
+    <tr className="arf-sk-tr" aria-hidden>
+      <td><span className="arf-sk-stack"><span className="spi-sk-bar arf-sk-sr" /></span></td>
+      <td>{id()}</td>
+      <td>{id()}</td>
+      <td><span className="arf-sk-stack"><span className="spi-sk-bar arf-sk-sm" /></span></td>
+      <td>{id(true)}</td>
+      <td>{id(true)}</td>
+      <td><span className="arf-sk-stack"><span className="spi-sk-bar arf-sk-tag" /></span></td>
+      <td>{num}</td>
+      <td>{num}</td>
+      <td>{num}</td>
+      <td>{num}</td>
+      <td>{num}</td>
+      <td>{num}</td>
+      <td>
+        <span className="arf-sk-stack arf-sk-stack--rec">
+          <span className="arf-sk-stack">
+            <span className="spi-sk-bar arf-sk-tag arf-sk-tag--sm" />
+            <span className="spi-sk-bar arf-sk-track" />
+            <span className="spi-sk-bar arf-sk-date" />
+          </span>
+          <span className="spi-sk-bar arf-sk-chip" />
+          <span className="spi-sk-bar arf-sk-btn" />
+        </span>
+      </td>
+      <td><span className="arf-sk-stack"><span className="spi-sk-bar arf-sk-tag" /><span className="spi-sk-bar arf-sk-date" /></span></td>
+      <td><span className="arf-sk-act"><span className="spi-sk-bar arf-sk-sq" /><span className="spi-sk-bar arf-sk-vault" /></span></td>
+    </tr>
   );
 }
 

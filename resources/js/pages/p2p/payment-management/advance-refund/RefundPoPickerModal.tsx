@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { money, fmtDate } from '../../purchase-management/order/manage-payment/payment-shared';
-import { IcoCheck, IcoChevron, IcoChevronR, IcoRefund, IcoSearch, IcoX } from '../../icons';
+import { IcoCheck, IcoChevron, IcoChevronR, IcoSearch, IcoX } from '../../icons';
 import type { OrderRow } from '../../purchase-management/order/po-list/Order';
 import { useEscapeClose } from './useEscapeClose';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
@@ -30,7 +30,15 @@ export default function RefundPoPickerModal({ options, onClose, onContinue }: Pr
       <div className="spi-mdl arf-pick" role="dialog" aria-modal="true" aria-labelledby="arf-pick-title">
         <div className="spi-mdl-head">
           <div className="spi-mdl-head-left">
-            <div className="spi-mdl-head-ico"><IcoRefund /></div>
+            {/* The prototype's mark: a document with a return arrow (credited back). */}
+            <div className="spi-mdl-head-ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <polyline points="12 18 9 15 12 12" />
+                <path d="M9 15h5a2 2 0 0 0 2-2v-1" />
+              </svg>
+            </div>
             <div>
               <div className="spi-mdl-title" id="arf-pick-title">Create Advance Receipt Refund Adjustment</div>
               <div className="spi-mdl-sub">Pick the purchase order the supplier is crediting back</div>

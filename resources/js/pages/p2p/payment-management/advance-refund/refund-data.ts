@@ -30,10 +30,9 @@ export type RefundAdjustment = {
   recoveries: RefundRecovery[];
 };
 
-export const REFUND_TYPES = [
-  'Purchase Order Cancellation', 'Full Refund', 'Partial Refund', 'Rate Difference',
-  'Quantity Difference', 'Quality Rejection', 'GST Adjustment', 'Short Supply', 'Other',
-];
+/* The refund is either the whole amount paid or part of it; the reason it is
+   raised is written in the adjustment reason, not picked from a list. */
+export const REFUND_TYPES = ['Full Refund', 'Partial Refund'];
 
 export const RETAIN_REASONS = [
   'Cancellation Charges', 'Restocking Fee', 'Freight / Logistics Already Incurred',
@@ -42,6 +41,8 @@ export const RETAIN_REASONS = [
 ];
 
 export const TYPE_VARIANT: Record<string, BadgeVariant> = {
+  'Full Refund': 'success',
+  'Partial Refund': 'warning',
   'Purchase Order Cancellation': 'danger',
   'Rate Difference': 'warning',
   'Quantity Difference': 'info',
@@ -94,13 +95,13 @@ export const todayIso = () => {
 export const SEED_REFUNDS: RefundAdjustment[] = [
   {
     no: 'ADR/2025-26/001', date: '2026-06-28', po: 'PO/2025-26/005', supplierRef: 'CN-7781',
-    type: 'Purchase Order Cancellation', reason: 'PO cancelled — recovery of amount already paid',
+    type: 'Partial Refund', reason: 'PO cancelled — recovery of amount already paid',
     amount: 60000, retainedType: 'Cancellation Charges', retainedRemark: 'Supplier cancellation fee as per contract',
     recoveries: [{ amount: 30000, date: '2026-07-06', reference: 'UTR884120', file: 'Refund_Advice_ADR_001.pdf' }],
   },
   {
     no: 'ADR/2025-26/002', date: '2026-06-15', po: 'PO/2025-26/020', supplierRef: '',
-    type: 'Purchase Order Cancellation', reason: 'Supplier pricing revised beyond approved limit',
+    type: 'Full Refund', reason: 'Supplier pricing revised beyond approved limit',
     amount: 263600, retainedType: '', retainedRemark: '',
     recoveries: [
       { amount: 150000, date: '2026-06-22', reference: 'UTR771034', file: 'Bank_Advice_771034.pdf' },
@@ -109,7 +110,7 @@ export const SEED_REFUNDS: RefundAdjustment[] = [
   },
   {
     no: 'ADR/2025-26/003', date: '2026-05-02', po: 'PO/2025-26/054', supplierRef: 'SUP-RF-19',
-    type: 'Rate Difference', reason: 'Rate billed above the agreed purchase order rate',
+    type: 'Partial Refund', reason: 'Rate billed above the agreed purchase order rate',
     amount: 8400, retainedType: 'Work Already Completed', retainedRemark: 'Goods delivered — only the rate excess comes back',
     recoveries: [],
   },
