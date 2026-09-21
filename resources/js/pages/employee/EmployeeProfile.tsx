@@ -3385,7 +3385,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </span>
               <div>
                 <h5 className="text-white fw-bold mb-0 ep-fs-14">
-                  {claimMode === 'expense' ? 'Submit New Expense Claim' : 'Advance Request — Recoverable Payout'}
+                  {claimMode === 'expense' ? 'Submit New Expense Claim' : advUsedFor === 'company' ? 'Advance Request — Company Expense' : 'Advance Request — Recoverable Payout'}
                 </h5>
                 <small className="ep-claim-hero-sub">
                   {/* "Receipt required above ₹500" removed from both Expense and
@@ -3741,7 +3741,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <i className="ri-money-dollar-circle-line" />
                   </span>
                   <div className="flex-grow-1">
-                    <h6 className="mb-1 fw-bold ep-claim-banner-title">Advance Request — Recoverable Payout</h6>
+                    <h6 className="mb-1 fw-bold ep-claim-banner-title">{advUsedFor === 'company' ? 'Advance Request — Company Expense' : 'Advance Request — Recoverable Payout'}</h6>
                     <small className="ep-claim-banner-sub">{advUsedFor === 'company' ? 'Company-paid advance · not recovered from salary · Approval flow required' : 'Amount will be recovered through payroll deduction · Approval flow required'}</small>
                   </div>
                   <span className="ep-claim-flow-pill">APPROVAL FLOW</span>
@@ -4105,6 +4105,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       .adv-dist-table tbody tr:hover { background: #faf5ff; }
                       .adv-dist-table tbody tr:last-child td { border-bottom: none; }
                       .adv-dist-table .ep-claim-input { width: 100%; }
+                      /* Dark mode: the wrap was pinned white under dark inputs. */
+                      [data-bs-theme="dark"] .adv-dist-wrap,
+                      [data-layout-mode="dark"] .adv-dist-wrap { background: rgba(255,255,255,.03); border-color: rgba(124,92,252,.32); scrollbar-color: rgba(255,255,255,.2) transparent; }
+                      [data-bs-theme="dark"] .adv-dist-table tbody td,
+                      [data-layout-mode="dark"] .adv-dist-table tbody td { border-bottom-color: rgba(255,255,255,.06); }
+                      [data-bs-theme="dark"] .adv-dist-table tbody tr:hover,
+                      [data-layout-mode="dark"] .adv-dist-table tbody tr:hover { background: rgba(124,92,252,.08); }
                     `}</style>
                     <div style={{ position: 'relative' }}>
                     {/* When the Amount isn't set yet the rows are disabled; this

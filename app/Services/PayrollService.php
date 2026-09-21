@@ -612,8 +612,18 @@ class PayrollService
             $amount                   = 0.0;
         }
 
+        // Which salary version priced this cycle — same rule as the payslip.
+        $ver = \App\Models\SalaryStructure::versionsInForce(
+            (int) $employee->id,
+            Carbon::parse($period->period_start ?? $start)->startOfDay(),
+            Carbon::parse($period->period_end ?? $end)->endOfDay(),
+        );
+
         return [
             'cycle'         => $lwd->format('F Y'),
+            'salary_version'      => $ver['version'],
+            'salary_version_from' => $ver['from'],
+            'salary_versions'     => $ver['all'],
             'monthly_gross' => (float) ($slip['gross_earnings'] ?? 0),
             'month_days'    => (int) $end->day,
             // Kept for the existing "X of Y days" caption; paid_days is the
