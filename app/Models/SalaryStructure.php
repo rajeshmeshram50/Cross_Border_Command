@@ -44,6 +44,41 @@ class SalaryStructure extends Model
     }
 
     /**
+     * Salary versions in force during a pay window: the one the window opened
+     * on, plus every revision effective inside it. Shared by the payslip and
+     * the exit F&F so both name the same version for the same month.
+     *
+     * @return array{version: ?int, from: ?string, all: int[]}
+     */
+    public static function versionsInForce(int $employeeId, \Carbon\Carbon $winStart, \Carbon\Carbon $winEnd): array
+    {
+        $rows = static::where('employee_id', $employeeId)
+            ->whereIn('status', ['active', 'superseded'])
+            ->whereDate('effective_from', '<=', $winEnd)
+            ->orderBy('effective_from')
+            ->orderBy('version')
+            ->orderByRaw("CASE WHEN status = 'active' THEN 1 ELSE 0 END")
+            ->orderBy('id')
+            ->get(['id', 'version', 'effective_from']);
+
+        if ($rows->isEmpty()) {
+            return ['version' => null, 'from' => null, 'all' => []];
+        }
+
+        $opener = $rows->last(fn ($r) => \Carbon\Carbon::parse($r->effective_from)->lte($winStart));
+        $inside = $rows->filter(fn ($r) => \Carbon\Carbon::parse($r->effective_from)->gt($winStart));
+        $used   = collect([$opener])->filter()->concat($inside)->unique('id')->values();
+        // No opener: the first structure began mid-window and prices it alone.
+        $primary = $used->last() ?: $rows->last();
+
+        return [
+            'version' => (int) $primary->version,
+            'from'    => \Carbon\Carbon::parse($primary->effective_from)->toDateString(),
+            'all'     => $used->pluck('version')->map(fn ($v) => (int) $v)->values()->all(),
+        ];
+    }
+
+    /**
      * Basic component amount — the base PF and gratuity are charged on.
      *
      * Resolved in three steps, because matching the CODE alone was silently

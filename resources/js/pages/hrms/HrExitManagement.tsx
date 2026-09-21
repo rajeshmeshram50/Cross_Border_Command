@@ -5660,6 +5660,15 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
     { label: 'LOP days',     value: b.lop_days, hint: 'Days docked as loss of pay (absent / unpaid leave).' },
     { label: 'OT hours',     value: b.overtime_hours, hint: 'Approved overtime hours this cycle.' },
   ].filter(s => Number(s.value) > 0 || s.label === 'Paid days');
+  /* Which salary structure version priced this cycle — the same rule and the
+     same "v1 → v2" range the payslip shows when a revision lands mid-month. */
+  const verList: number[] = Array.isArray(payroll?.salary_versions) ? payroll.salary_versions : [];
+  const verLabel = payroll?.salary_version
+    ? (verList.length > 1 ? `v${verList[0]} → v${verList[verList.length - 1]}` : `v${payroll.salary_version}`)
+    : null;
+  const verFrom = payroll?.salary_version_from
+    ? new Date(payroll.salary_version_from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : null;
 
   return (
     <>
@@ -5681,6 +5690,14 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
       <div className="ep-fnf-bd-head">
         <span>Breakdown — {payroll.cycle}</span>
         <div className="ep-fnf-bd-stats">
+          {verLabel && (
+            <span
+              className="is-ver"
+              title={`Salary structure version that priced this cycle${verFrom ? ` · effective from ${verFrom}` : ''}`}
+            >
+              <em>Salary Version</em>{verLabel}
+            </span>
+          )}
           {stats.map(s => (
             <span key={s.label} title={s.hint}><em>{s.label}</em>{Number(s.value)}</span>
           ))}

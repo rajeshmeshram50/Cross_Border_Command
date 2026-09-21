@@ -2358,34 +2358,13 @@ class PayrollController extends Controller
         $winEnd   = Carbon::parse($period->period_end
             ?? Carbon::create((int) $period->year, (int) $period->month, 1)->endOfMonth())->endOfDay();
 
-        $rows = \App\Models\SalaryStructure::where('employee_id', $slip->employee_id)
-            ->whereIn('status', ['active', 'superseded'])
-            ->whereDate('effective_from', '<=', $winEnd)
-            ->orderBy('effective_from')
-            ->orderBy('version')
-            ->orderByRaw("CASE WHEN status = 'active' THEN 1 ELSE 0 END")
-            ->orderBy('id')
-            ->get(['id', 'version', 'effective_from']);
-
-        if ($rows->isEmpty()) {
-            return ['salaryVersion' => null, 'salaryVersionFrom' => null, 'salaryVersions' => []];
-        }
-
-        /* In force DURING the window = the one the month opened on (the last
-         * version effective on or before the first day), plus every revision
-         * that took effect inside it. */
-        $opener = $rows->last(fn ($r) => Carbon::parse($r->effective_from)->lte($winStart));
-        $inside = $rows->filter(fn ($r) => Carbon::parse($r->effective_from)->gt($winStart));
-
-        $used = collect([$opener])->filter()->concat($inside)->unique('id')->values();
-        // No opener means the employee's first structure began mid-month; the
-        // month is then priced on that one alone from its start date.
-        $primary = $used->last() ?: $rows->last();
+        // Same rule the exit F&F uses — see SalaryStructure::versionsInForce().
+        $v = \App\Models\SalaryStructure::versionsInForce((int) $slip->employee_id, $winStart, $winEnd);
 
         return [
-            'salaryVersion'     => (int) $primary->version,
-            'salaryVersionFrom' => Carbon::parse($primary->effective_from)->toDateString(),
-            'salaryVersions'    => $used->pluck('version')->map(fn ($v) => (int) $v)->values()->all(),
+            'salaryVersion'     => $v['version'],
+            'salaryVersionFrom' => $v['from'],
+            'salaryVersions'    => $v['all'],
         ];
     }
     private function structureGrossMap($slips, $period = null): array

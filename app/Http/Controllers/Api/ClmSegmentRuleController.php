@@ -433,7 +433,10 @@ class ClmSegmentRuleController extends Controller
 
     private function nextRuleCode(int $clientId): string
     {
-        $codes = ClmSegmentRule::where('client_id', $clientId)->pluck('rule_code')->all();
+        // rule_code is unique per CLIENT, but the tenant scope narrows reads to the
+        // user's branch — so it must be lifted here or another branch's code is reused.
+        $codes = ClmSegmentRule::withoutGlobalScope('tenant')
+            ->where('client_id', $clientId)->pluck('rule_code')->all();
         $maxN  = 0;
         $taken = [];
         foreach ($codes as $c) {

@@ -1540,8 +1540,8 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
                   {row.stage}
                 </span>
               } />
-              <Field label="Reason" value={row.reason} />
             </div>
+            <ReasonBlock text={row.reason} />
           </div>
 
           <div className="rec-view-card mt-3">
@@ -1574,6 +1574,44 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
   );
 }
 
+/* Full-width reason, clamped to three lines. overflow-wrap lets an unbroken
+   string wrap instead of stretching the card into a narrow column. */
+function ReasonBlock({ text }: { text?: string | null }) {
+  const [open, setOpen] = useState(false);
+  const [long, setLong] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) setLong(el.scrollHeight > el.clientHeight + 1);
+  }, [text]);
+  return (
+    <div className="rec-view-field mt-3">
+      <div className="rec-view-label">Reason</div>
+      <div
+        ref={ref}
+        className="rec-view-value"
+        style={{
+          overflowWrap: 'anywhere', whiteSpace: 'pre-wrap', lineHeight: 1.5,
+          ...(open ? {} : { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }),
+        }}
+      >
+        {text || <span className="text-muted">—</span>}
+      </div>
+      {(long || open) && (
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          className="btn btn-link p-0 mt-1 fw-semibold d-inline-flex align-items-center gap-1 text-decoration-none"
+          style={{ fontSize: 12, color: 'var(--vz-primary)' }}
+        >
+          {open ? 'Show less' : 'Read more'}
+          <i className={open ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 function ApprovalTimelineList({
   chain, reportingManager, appliedOn,
 }: {
@@ -1596,9 +1634,12 @@ function ApprovalTimelineList({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(3, minmax(0,1fr))',
+          // One column per step, so a two-step chain spans the card instead of
+          // leaving an empty third slot.
+          gridTemplateColumns: `repeat(${Math.max(chain.length, 1)}, minmax(0,1fr))`,
           alignItems: 'flex-start',
           gap: 0,
+          padding: '4px 0 2px',
         }}
       >
         {chain.map((n, i) => {
@@ -1696,7 +1737,7 @@ function ApprovalTimelineList({
       {comments.length > 0 && (
         <div className="mt-3 px-3 py-2 rounded" style={{ background: dark ? 'rgba(124,92,252,0.16)' : '#f3eeff', border: `1px solid ${dark ? 'rgba(124,92,252,0.35)' : '#d8c8ff'}` }}>
           {comments.map((c, i) => (
-            <div key={i} className="text-body" style={{ fontSize: 11.5, marginTop: i > 0 ? 6 : 0 }}>
+            <div key={i} className="text-body" style={{ fontSize: 11.5, marginTop: i > 0 ? 6 : 0, overflowWrap: 'anywhere' }}>
               <span className="fw-bold" style={{ color: dark ? '#c4b5fd' : '#5a3fd1' }}>{c.role}</span>
               <span className="text-muted"> · {c.name}: </span>
               <span className="fst-italic">"{c.comment}"</span>

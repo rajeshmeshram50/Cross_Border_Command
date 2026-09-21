@@ -6994,6 +6994,13 @@
   font-style: normal; font-weight: 600; text-transform: none;
   color: var(--vz-secondary-color);
 }
+/* Salary version — an identifier, not a day count, so it gets the accent. */
+.ep-fnf-bd-stats span.is-ver { color: #6d28d9; background: #f5f3ff; border-color: #ddd6fe; cursor: help; }
+.ep-fnf-bd-stats span.is-ver em { color: #7c3aed; }
+[data-bs-theme="dark"] .ep-fnf-bd-stats span.is-ver,
+[data-layout-mode="dark"] .ep-fnf-bd-stats span.is-ver { color: #c4b5fd; background: rgba(124,58,237,.16); border-color: rgba(167,139,250,.35); }
+[data-bs-theme="dark"] .ep-fnf-bd-stats span.is-ver em,
+[data-layout-mode="dark"] .ep-fnf-bd-stats span.is-ver em { color: #a78bfa; }
 /* align-items: start — the two cards hold different numbers of rows (the
    monthly package on the left, the cycle's earnings AND deductions on the
    right). Left to stretch, the shorter card grows to match its neighbour and
