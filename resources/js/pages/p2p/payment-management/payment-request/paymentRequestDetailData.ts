@@ -4,7 +4,8 @@
    `fetchPaymentRequestDetail` with the real GET is the only change needed. */
 import type { OrderRow } from '../../purchase-management/order/po-list/Order';
 import type { Supplier } from './payment-request-suppliers';
-import { INSPECTION_PRODUCTS, type InspectionProduct } from '../../purchase-management/order/physical-inspection/inspection-shared';
+import type { InspectionProduct } from '../../purchase-management/order/physical-inspection/inspection-shared';
+import { INSPECTION_PRODUCTS } from './payment-request-products';
 import { fetchPaymentRequests, type PaymentRequestRow } from './paymentRequestData';
 
 export type PaymentRelease = {

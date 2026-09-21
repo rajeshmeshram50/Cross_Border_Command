@@ -9,7 +9,6 @@ import type { PoDraft } from '../po-draft';
 import type { StepCtx } from '../CreatePoForm';
 import { vaultTargetOf } from '../supplier-checks';
 import { PoApiError, poDocumentApi, poSignatureApi, type PoDocument } from '../../api/po-api';
-import type { VaultData } from '../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 import { formatDmy } from '../../../../../../utils/formatDmy';
 import { FitTip } from '../form-fields';
 import { useToast } from '../../../../../../contexts/ToastContext';
@@ -70,6 +69,15 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(reload, [poId]);
+
+  // The PO PDF is rendered by a background job after submit — check back until it lands.
+  const awaitingPdf = docs.some((d) => d.doc_kind === 'purchase_order' && !d.file_path && d.status === 'pending');
+  const polls = useRef(0);
+  useEffect(() => {
+    if (!awaitingPdf || !poId || polls.current >= 30) return;
+    const t = window.setTimeout(() => { polls.current += 1; poDocumentApi.list(poId).then(setDocs).catch(() => {}); }, 4000);
+    return () => window.clearTimeout(t);
+  }, [awaitingPdf, poId, docs]);
 
   const run = async (key: string, task: () => Promise<void>) => {
     if (busy) return;
@@ -170,7 +178,8 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
 
       {vaultOpen && vaultTarget && (
         <Suspense fallback={null}>
-          <SupplierEvidenceVaultModal open viewOnly supplier={vaultTarget} data={draft.vault as VaultData | null} onClose={() => setVaultOpen(false)} />
+          {/* Not view-only: missing documents can be uploaded here, and the legal status refreshes. */}
+        <SupplierEvidenceVaultModal open supplier={vaultTarget} onVaultChange={ctx.refreshVault} onClose={() => setVaultOpen(false)} />
         </Suspense>
       )}
       {tracking?.signature_request_id != null && (
@@ -250,6 +259,8 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                           <button type="button" className="cdoc-file" onClick={() => downloadDraft(doc)}>
                             <IcoPaperclip size={12} /><FitTip label={doc.original_name ?? 'Attachment'}><span>{doc.original_name ?? 'Attachment'}</span></FitTip>
                           </button>
+                        ) : doc.doc_kind === 'purchase_order' && awaitingPdf && polls.current < 30 ? (
+                          <span className="cpd-dash">Generating PDF…</span>
                         ) : doc.doc_kind === 'purchase_order' ? (
                           <button type="button" className="cdoc-btn" disabled={busy === `gen:${doc.id}`} onClick={() => generate(doc)}>
                             <IcoFolder size={13} /> {busy === `gen:${doc.id}` ? 'Generating…' : 'Generate PDF'}

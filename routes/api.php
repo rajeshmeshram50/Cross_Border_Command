@@ -450,6 +450,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         // Physical inspection
         Route::get   ('/{po}/inspection',                [$ins, 'show'])->whereNumber('po');
         Route::post  ('/{po}/inspection/lines/{item}',   [$ins, 'updateLine'])->whereNumber('po')->whereNumber('item');
+        Route::delete('/{po}/inspection/lines/{item}/files/{index}', [$ins, 'removeFile'])->whereNumber('po')->whereNumber('item')->whereNumber('index');
         Route::post  ('/{po}/inspection/sign-off',       [$ins, 'signOff'])->whereNumber('po');
         Route::post  ('/{po}/inspection/withdraw',       [$ins, 'withdraw'])->whereNumber('po');
     });

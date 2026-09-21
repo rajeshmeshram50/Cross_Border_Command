@@ -14,6 +14,11 @@ import { gstCheck } from './gst-check';
 import { legalFromVault } from './supplier-checks';
 import { usePoLookups, type PoLookups } from './use-po-lookups';
 import { FitTip } from './form-fields';
+import {
+  linesFromServer, scrollToFirstError, stage1FromServer, validateLines, validateStage1,
+  type FieldErrors, type LineErrors,
+} from './validation';
+import type { PoDraft, PoLineRow } from './po-draft';
 import GstNoticeModal, { type GstNotice } from './GstNoticeModal';
 import { PoApiError, poApi, poLookupApi, type PoDetail, type ShipmentOption, type TaxMode } from '../api/po-api';
 import { useToast } from '../../../../../contexts/ToastContext';
@@ -39,6 +44,14 @@ export type StepCtx = {
   /** Saves Step 02's lines and charges without leaving the step. */
   saveLines: () => Promise<void>;
   saving: boolean;
+  /** Re-read the supplier's vault after documents are uploaded from it. */
+  refreshVault: () => void;
+  /** Inline errors — shown once the step has been saved (or failed on the server). */
+  errors: FieldErrors;
+  lineErrors: LineErrors;
+  /** Step 02 lines as last saved; null until they have been saved once. */
+  savedLines: PoLineRow[] | null;
+  linesGeneral?: string;
 };
 
 type Stage = { title: string; desc: string };
@@ -64,7 +77,19 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   // without the exception the hook locks this overlay too and nothing scrolls.
   useScrollLock(true, '.spi-dt-overlay');
   const toast = useToast();
-  const { draft, set, replace } = usePoDraft();
+  const { draft, set: setDraft, replace } = usePoDraft();
+  // Errors appear after the first Save on a step, then follow the user's edits live.
+  const [shown, setShown] = useState<[boolean, boolean]>([false, false]);
+  const [serverErrors, setServerErrors] = useState<FieldErrors>({});
+  const [serverLineErrors, setServerLineErrors] = useState<LineErrors>({});
+  const set = (patch: Partial<PoDraft>) => {
+    setDraft(patch);
+    const keys = Object.keys(patch).map((k) => (k === 'vendorId' ? 'supplier' : k));
+    if (keys.some((k) => k in serverErrors)) {
+      setServerErrors((cur) => Object.fromEntries(Object.entries(cur).filter(([k]) => !keys.includes(k))));
+    }
+    if ('lines' in patch && Object.keys(serverLineErrors).length) setServerLineErrors({});
+  };
   const lookups = usePoLookups((what, message) => toast.error(`Could not load ${what.toLowerCase()}`, message));
 
   const isEdit = link.editId != null;
@@ -74,6 +99,8 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   const [booting, setBooting] = useState(true);
   const [saving, setSaving] = useState(false);
   const [supplierLoading, setSupplierLoading] = useState(false);
+  // The lines as last saved — what Missing Product Details reports on.
+  const [savedLines, setSavedLines] = useState<PoLineRow[] | null>(null);
   const [stage, setStage] = useState(0);
   // The furthest stage the stepper may open — every stage before it is saved.
   const [reached, setReached] = useState(0);
@@ -103,6 +130,13 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     }
   };
 
+  const refreshVault = () => {
+    if (!draft.vendorId) return;
+    poLookupApi.supplierVault(draft.vendorId)
+      .then((vault) => set({ vault, legal: legalFromVault(vault) }))
+      .catch(fail);
+  };
+
   // Open: an edit loads the saved PO; a new PO previews its code and seeds the PI lines.
   useEffect(() => {
     let alive = true;
@@ -112,7 +146,9 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
           const d = await poApi.show(link.editId);
           const pi = d.shipment_order_id ? (await poApi.piLines(d.shipment_order_id, d.id)).lines : [];
           if (!alive) return;
-          replace(draftFromDetail(d, pi));
+          const loaded = draftFromDetail(d, pi);
+          replace(loaded);
+          if (d.items.length) setSavedLines(loaded.lines);
           setDetail(d);
           setReached(Math.min(3, d.current_step ?? 1));
           if (d.vendor_id) void loadSupplier(d.vendor_id);
@@ -124,7 +160,12 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
           ]);
           if (!alive) return;
           setNextCode(code.code);
-          if (pi) set({ lines: pi.lines.map(rowFromPi) });
+          if (pi) {
+            // Earlier POs on this shipment may have ordered some PI lines in full.
+            const open = pi.lines.filter((l) => l.pending_qty > 0);
+            set({ lines: open.map(rowFromPi) });
+            if (pi.lines.length && !open.length) toast.info('Nothing left to order on this PI', 'Every PI line is already on earlier POs — add products manually if needed.');
+          }
         }
       } catch (e) {
         if (alive) fail(e);
@@ -167,14 +208,27 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
 
   /* ── Saving each stage ── */
 
+  /** Marks the step's errors visible and says how many fields need attention. */
+  const blockWith = (count: number, what: string): false => {
+    toast.warning('Please fix the highlighted fields', `${count} ${what} need${count === 1 ? 's' : ''} attention.`);
+    scrollToFirstError();
+    return false;
+  };
+
   const saveStage1 = async (): Promise<boolean> => {
-    if (!draft.vendorId) { toast.warning('Select a supplier', 'Pick the supplier this PO is issued to.'); return false; }
-    if (draft.docType === 'International' && (!draft.currency || !draft.exchangeRate || !draft.incoTerm)) {
-      toast.warning('International details missing', 'Currency, exchange rate and INCO term are required for an international PO.');
-      return false;
-    }
+    setShown(([, b]) => [true, b]);
+    const e = validateStage1(draft);
+    if (Object.keys(e).length) return blockWith(Object.keys(e).length, Object.keys(e).length === 1 ? 'field' : 'fields');
     const body = stage1Body(draft, shipmentId);
-    const d = poId ? await poApi.updateStage1(poId, body) : await poApi.create(body);
+    let d: PoDetail;
+    try {
+      d = poId ? await poApi.updateStage1(poId, body) : await poApi.create(body);
+    } catch (err) {
+      const mapped = err instanceof PoApiError ? stage1FromServer(err.fieldErrors) : {};
+      if (!Object.keys(mapped).length) throw err;
+      setServerErrors(mapped);
+      return blockWith(Object.keys(mapped).length, Object.keys(mapped).length === 1 ? 'field' : 'fields');
+    }
     setPoId(d.id);
     setDetail(d);
     // A high-risk supplier makes the server force inspection on.
@@ -184,13 +238,22 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   };
 
   const saveStage2 = async (): Promise<boolean> => {
-    if (draft.lines.some((l) => !l.pi && !l.productId)) {
-      toast.warning('Product missing', 'Pick a product on every added line, or remove the line.');
-      return false;
+    setShown(([a]) => [a, true]);
+    const v = validateLines(draft.lines, lookups.products);
+    const bad = Object.keys(v.rows).length;
+    if (bad || v.general) {
+      if (!bad) { toast.warning('No products ordered', v.general); return false; }
+      return blockWith(bad, bad === 1 ? 'line' : 'lines');
     }
-    const body = itemsBody(draft);
-    if (body.lines.length === 0) { toast.warning('No products ordered', 'Enter a quantity on at least one line.'); return false; }
-    setDetail(await poApi.saveItems(poId as number, body));
+    try {
+      setDetail(await poApi.saveItems(poId as number, itemsBody(draft)));
+      setSavedLines(draft.lines);
+    } catch (err) {
+      const mapped = err instanceof PoApiError ? linesFromServer(err.fieldErrors, draft.lines) : {};
+      if (!Object.keys(mapped).length) throw err;
+      setServerLineErrors(mapped);
+      return blockWith(Object.keys(mapped).length, Object.keys(mapped).length === 1 ? 'line' : 'lines');
+    }
     return true;
   };
 
@@ -262,7 +325,14 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     customer: link.shipment?.customer ?? detail?.customer_name ?? null,
     procurement: detail?.procurement_request_code ?? null,
   };
-  const ctx: StepCtx = { lookups, taxMode: detail?.tax_mode ?? 'intra', piCode: refs.pi, detail, saveLines, saving };
+  const ctx: StepCtx = { lookups, taxMode: detail?.tax_mode ?? 'intra', piCode: refs.pi, detail, saveLines, saving, refreshVault, savedLines,
+    errors: shown[0] ? { ...serverErrors, ...validateStage1(draft) } : serverErrors,
+    ...(() => {
+      if (!shown[1]) return { lineErrors: serverLineErrors };
+      const v = validateLines(draft.lines, lookups.products);
+      return { lineErrors: { ...serverLineErrors, ...v.rows }, linesGeneral: v.general };
+    })(),
+  };
 
   return createPortal(
     <div className="spi-dt-overlay cpf-form">

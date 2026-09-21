@@ -77,7 +77,10 @@ export type PoListRow = PoLinkRefs & {
   cancel_reason: string | null; items_count: number | null; created_at: string | null;
 };
 
-export type PoListMeta = { total: number; page: number; per_page: number; last_page: number };
+export type PoListTab = 'all' | 'with' | 'without' | 'cancelinit' | 'cancelclosed';
+
+/** Paging for the current tab, plus every tab's total (same search and filters). */
+export type PoListMeta = { total: number; page: number; per_page: number; last_page: number; counts: Record<PoListTab, number> };
 
 export type PoItem = {
   id: number; line_no: number; pi_item_id: number | null; product_id: number | null; description: string | null;
@@ -162,16 +165,28 @@ export type PiLine = {
   pi_quantity: number; ordered_qty: number; pending_qty: number;
 };
 
+export type InspectionFile = { index: number; path: string; name: string; mime: string; size: number; url: string };
+
+export type InspectionVerdict = 'correct' | 'damaged' | 'mismatched';
+
 export type InspectionSummary = {
-  purchase_order_id: number; code: string; physical_inspection: YesNo | null;
+  purchase_order_id: number; code: string; po_date: string | null; status: PoStatus;
+  shipment_code: string | null; shipment_date: string | null;
+  pi_code: string | null; pi_date: string | null;
+  opportunity_code: string | null; procurement_request_code: string | null;
+  supplier_code: string | null; supplier_name: string | null; grand_total: number;
+  physical_inspection: YesNo | null;
   inspection_status: 'not_required' | 'pending' | 'completed' | null;
-  lines_total: number; lines_marked: number; inspection_note: string | null;
-  inspected_by: number | null; inspected_at: string | null;
+  lines_total: number; lines_marked: number;
+  inspection_note: string | null; inspection_note_files: InspectionFile[];
+  inspected_by: number | null; inspected_by_name: string | null; inspected_at: string | null;
   lines: {
-    purchase_order_item_id: number; line_no: number; product_code: string | null; product_name: string | null;
-    quantity: number; verdict: 'correct' | 'damaged' | 'mismatched' | null; remark: string | null;
-    proof_files: { path: string; name: string; mime: string; size: number; url: string }[];
-    inspected_at: string | null;
+    purchase_order_item_id: number; line_no: number; product_id: number | null;
+    product_code: string | null; product_name: string | null; hsn_code: string | null; uom: string | null;
+    gst_pct: number; description: string | null; quantity: number;
+    verdict: InspectionVerdict | null; remark: string | null;
+    proof_files: InspectionFile[];
+    inspected_by_name: string | null; inspected_at: string | null;
   }[];
 };
 
@@ -197,7 +212,8 @@ export const poApi = {
   nextCode: () =>
     call('PO next code', () => api.get('/p2p/orders/next-code'), dataOf<{ code: string; financial_year: string }>),
 
-  list: (params: { status?: PoStatus; search?: string; link_type?: LinkType; shipment_order_id?: number; procurement_request_id?: number; vendor_id?: number; per_page?: number; page?: number } = {}) =>
+  /** Server-paged: `per_page` defaults to 10 on the server. */
+  list: (params: { tab?: PoListTab; status?: PoStatus; search?: string; link_type?: LinkType; shipment_order_id?: number; procurement_request_id?: number; vendor_id?: number; per_page?: number; page?: number } = {}) =>
     call('PO list', () => api.get('/p2p/orders', { params }), (b) => {
       const body = b as { data?: PoListRow[]; meta?: PoListMeta } | null;
       return { rows: body?.data ?? [], meta: body?.meta ?? null };
@@ -309,13 +325,17 @@ export const poInspectionApi = {
   show: (poId: number) =>
     call('PO inspection', () => api.get(`/p2p/orders/${poId}/inspection`), dataOf<InspectionSummary>),
 
-  markLine: (poId: number, itemId: number, line: { verdict: 'correct' | 'damaged' | 'mismatched'; remark?: string; files?: File[] }) => {
+  /** Verdict and/or proof for one line — saved immediately; files are added to what is there. */
+  markLine: (poId: number, itemId: number, line: { verdict?: InspectionVerdict; remark?: string; files?: File[] }) => {
     const fd = new FormData();
-    fd.append('verdict', line.verdict);
+    if (line.verdict) fd.append('verdict', line.verdict);
     if (line.remark) fd.append('remark', line.remark);
     (line.files ?? []).forEach((f) => fd.append('files[]', f));
     return call('PO inspection line', () => api.post(`/p2p/orders/${poId}/inspection/lines/${itemId}`, fd, multipart), dataOf<InspectionSummary>);
   },
+
+  removeFile: (poId: number, itemId: number, index: number) =>
+    call('PO inspection file remove', () => api.delete(`/p2p/orders/${poId}/inspection/lines/${itemId}/files/${index}`), dataOf<InspectionSummary>),
 
   signOff: (poId: number, note?: string, files: File[] = []) => {
     const fd = new FormData();

@@ -81,33 +81,70 @@ class PurchaseOrderController extends Controller
 
     /* ══════════════════════════ LIST / SHOW ══════════════════════════ */
 
-    /** GET /p2p/orders?status=&search=&link_type=&shipment_order_id=&procurement_request_id=&vendor_id=&per_page= */
+    // The list's tabs, as SQL conditions. No payments exist on the new PO yet, so a
+    // cancelled PO has nothing to recover: it is closed at once, never "recovery pending".
+    private const TABS = [
+        'all'          => 'TRUE',
+        'with'         => "link_type = 'with_shipment'",
+        'without'      => "COALESCE(link_type, 'standalone') <> 'with_shipment'",
+        'cancelinit'   => 'FALSE',
+        'cancelclosed' => "status = 'cancelled'",
+    ];
+
+    // Only what a list row shows (plus the ids its references are read through).
+    private const LIST_COLUMNS = [
+        'id', 'code', 'po_date', 'status', 'current_step', 'po_type', 'document_type', 'vendor_id', 'link_type',
+        'shipment_order_id', 'proforma_invoice_id', 'procurement_request_id', 'procurement_request_code',
+        'expected_delivery_date', 'grand_total', 'physical_inspection', 'inspection_status', 'cancel_reason', 'created_at',
+    ];
+
+    /**
+     * GET /p2p/orders?tab=&search=&status=&link_type=&shipment_order_id=&procurement_request_id=&vendor_id=&page=&per_page=
+     * Server-side paging (10 by default); meta.counts gives every tab's total in one query.
+     */
     public function index(Request $request): JsonResponse
     {
         $request->validate([
-            'status'   => ['nullable', Rule::in([PurchaseOrder::STATUS_DRAFT, PurchaseOrder::STATUS_SUBMITTED, PurchaseOrder::STATUS_CANCELLED])],
+            'tab'       => ['nullable', Rule::in(array_keys(self::TABS))],
+            'status'    => ['nullable', Rule::in([PurchaseOrder::STATUS_DRAFT, PurchaseOrder::STATUS_SUBMITTED, PurchaseOrder::STATUS_CANCELLED])],
             'link_type' => ['nullable', Rule::in(PurchaseOrder::LINK_TYPES)],
-            'per_page' => 'nullable|integer|min:1|max:100',
+            'per_page'  => 'nullable|integer|min:1|max:50',
+            'search'    => 'nullable|string|max:100',
         ]);
-        $q = PurchaseOrder::query()->withCount('items')
-            ->with(['vendor:id,vendor_code,company_name,legal_name,risk_level_id,supplier_category', 'vendor.riskLevel:id,name']);
-        if ($s = $request->query('status')) $q->where('status', $s);
-        if ($id = $request->integer('shipment_order_id')) $q->where('shipment_order_id', $id);
-        if ($id = $request->integer('vendor_id')) $q->where('vendor_id', $id);
-        if ($t = $request->query('link_type')) $q->where('link_type', $t);
-        if ($id = $request->integer('procurement_request_id')) $q->where('procurement_request_id', $id);
+
+        // Filters every tab shares; the tab itself is applied after the counts.
+        $base = PurchaseOrder::query();
+        if ($s = $request->query('status')) $base->where('status', $s);
+        if ($id = $request->integer('shipment_order_id')) $base->where('shipment_order_id', $id);
+        if ($id = $request->integer('vendor_id')) $base->where('vendor_id', $id);
+        if ($t = $request->query('link_type')) $base->where('link_type', $t);
+        if ($id = $request->integer('procurement_request_id')) $base->where('procurement_request_id', $id);
         if ($s = trim((string) $request->query('search'))) {
-            $q->where(fn ($w) => $w->where('code', 'ilike', "%{$s}%")
+            $base->where(fn ($w) => $w->where('code', 'ilike', "%{$s}%")
                 ->orWhereHas('vendor', fn ($v) => $v->where('vendor_code', 'ilike', "%{$s}%")
                     ->orWhere('company_name', 'ilike', "%{$s}%")
                     ->orWhere('legal_name', 'ilike', "%{$s}%")));
         }
-        $page = $q->orderByDesc('id')->paginate($request->integer('per_page') ?: 20);
+
+        $counts = (clone $base)->toBase()->selectRaw(implode(', ', array_map(
+            fn ($key, $cond) => "COUNT(*) FILTER (WHERE {$cond}) AS \"{$key}\"", array_keys(self::TABS), self::TABS,
+        )))->first();
+
+        $tab = $request->query('tab', 'all');
+        $page = $base->whereRaw(self::TABS[$tab])
+            ->select(self::LIST_COLUMNS)
+            ->with(['vendor:id,vendor_code,company_name,legal_name,risk_level_id,supplier_category', 'vendor.riskLevel:id,name'])
+            ->orderByDesc('id')
+            ->paginate($request->integer('per_page') ?: 10);
         $refs = $this->linkRefs(collect($page->items()));
+
         return response()->json([
             'status' => true,
             'data'   => collect($page->items())->map(fn ($po) => $this->shapeRow($po) + ($refs[$po->id] ?? []))->all(),
-            'meta'   => ['total' => $page->total(), 'page' => $page->currentPage(), 'per_page' => $page->perPage(), 'last_page' => $page->lastPage()],
+            'meta'   => [
+                'total' => $page->total(), 'page' => $page->currentPage(), 'per_page' => $page->perPage(), 'last_page' => $page->lastPage(),
+                'counts' => array_map('intval', (array) $counts),
+            ],
         ]);
     }
 
@@ -128,23 +165,25 @@ class PurchaseOrderController extends Controller
 
     /* ══════════════════════════ STAGE 01 ══════════════════════════ */
 
+    /** Stage 01 rules (CS-403): all eight basic fields, plus the seven trade fields on an international PO. */
     private function stage1Rules(): array
     {
+        $intl = 'required_if:document_type,international|nullable';
         return [
             'po_type'                => ['required', Rule::in(PurchaseOrder::PO_TYPES)],
             'document_type'          => ['required', Rule::in(PurchaseOrder::DOC_TYPES)],
-            'mode_of_transport'      => 'nullable|string|max:40',
-            'expected_delivery_date' => 'nullable|date',
-            'delivery_location'      => 'nullable|string|max:255',
-            'payment_type'           => 'nullable|string|max:60',
-            'physical_inspection'    => ['nullable', Rule::in(PurchaseOrder::YES_NO)],
-            'currency_code'          => 'nullable|required_if:document_type,international|string|max:8',
-            'exchange_rate'          => 'nullable|required_if:document_type,international|numeric|gt:0',
-            'inco_term'              => 'nullable|required_if:document_type,international|string|max:32',
-            'port_of_loading'        => 'nullable|string|max:128',
-            'port_of_discharge'      => 'nullable|string|max:128',
-            'final_destination'      => 'nullable|string|max:128',
-            'country_of_origin'      => 'nullable|string|max:128',
+            'mode_of_transport'      => ['required', Rule::in(PurchaseOrder::TRANSPORT_MODES)],
+            'expected_delivery_date' => 'required|date|after_or_equal:today',
+            'delivery_location'      => 'required|string|max:255',
+            'payment_type'           => 'required|string|max:60',
+            'physical_inspection'    => ['required', Rule::in(PurchaseOrder::YES_NO)],
+            'currency_code'          => "{$intl}|string|max:8",
+            'exchange_rate'          => "{$intl}|numeric|gt:0",
+            'inco_term'              => [...explode('|', $intl), Rule::in(PurchaseOrder::INCO_TERMS)],
+            'port_of_loading'        => "{$intl}|string|max:255",
+            'port_of_discharge'      => "{$intl}|string|max:255",
+            'final_destination'      => "{$intl}|string|max:128",
+            'country_of_origin'      => "{$intl}|string|max:128",
             'link_type'                => ['required', Rule::in(PurchaseOrder::LINK_TYPES)],
             'shipment_order_id'        => 'nullable|required_if:link_type,with_shipment|prohibited_if:link_type,standalone|integer',
             'link_procurement'         => ['nullable', 'required_if:link_type,with_shipment', 'prohibited_if:link_type,standalone', Rule::in(PurchaseOrder::YES_NO)],
@@ -154,11 +193,24 @@ class PurchaseOrderController extends Controller
         ];
     }
 
+    private function stage1Messages(): array
+    {
+        return [
+            'required_if'                           => 'This field is required on an international PO.',
+            'expected_delivery_date.after_or_equal' => 'Expected delivery date cannot be earlier than today.',
+            'port_of_loading.max'                   => 'Port of loading may not exceed 255 characters.',
+            'port_of_discharge.max'                 => 'Port of discharge may not exceed 255 characters.',
+            'exchange_rate.gt'                      => 'Exchange rate must be greater than 0.',
+            'mode_of_transport.in'                  => 'Mode of transport must be Sea, Road or Air.',
+            'inco_term.in'                          => 'INCO term must be CIF, C&F, EXW or FOB.',
+        ];
+    }
+
     /** POST /p2p/orders — Stage 01: create the PO as a draft. */
     public function store(Request $request): JsonResponse
     {
         $user = $this->tenantUser($request);
-        $data = $request->validate($this->stage1Rules());
+        $data = $request->validate($this->stage1Rules(), $this->stage1Messages());
         $resolved = $this->resolveStage1($data, $user);
         if ($resolved instanceof JsonResponse) return $resolved;
 
@@ -185,7 +237,7 @@ class PurchaseOrderController extends Controller
         $po = $this->findPo($id);
         if ($po->isLocked()) return $this->fail('This PO is cancelled or has a signed document and can no longer be edited.');
 
-        $data = $request->validate($this->stage1Rules());
+        $data = $request->validate($this->stage1Rules(), $this->stage1Messages());
         if (($data['shipment_order_id'] ?? null) != $po->shipment_order_id && $po->items()->exists()) {
             return $this->fail('Remove the product lines before changing the shipment — they are matched to its PI.');
         }
@@ -222,6 +274,9 @@ class PurchaseOrderController extends Controller
         }
         $vendor = $this->loadVendor((int) $data['vendor_id']);
         if (!$vendor) return $this->fail('Supplier not found', 422, ['errors' => ['vendor_id' => ['Supplier not found.']]]);
+        if (str_contains(strtolower((string) $vendor->supplier_category), 'blacklist')) {
+            return $this->fail('Blacklisted supplier', 422, ['errors' => ['vendor_id' => ['This supplier is blacklisted — a purchase order cannot be raised on it.']]]);
+        }
 
         $home = $this->svc->homeStateCode($user->branch_id);
         return [
@@ -484,15 +539,8 @@ class PurchaseOrderController extends Controller
             $po->update($attrs);
             if ($submit) $this->ensureDefaultDocuments($po, $user->id);
         });
-        // The PO PDF reflects the submitted content; a render failure never undoes the submit.
-        if ($submit) {
-            $doc = $po->documents()->where('doc_kind', 'purchase_order')->first();
-            try {
-                if ($doc) app(\App\Services\P2p\PoDocumentService::class)->generatePoDocument($po->fresh(), $doc, $user->id);
-            } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::error('PO PDF generation failed', ['po' => $po->id, 'err' => $e->getMessage()]);
-            }
-        }
+        // dompdf takes seconds, so the PO PDF renders in the background; Step 04 polls for it.
+        if ($submit) \App\Jobs\P2p\GeneratePoDocumentPdf::dispatch($po->id, $user->id)->afterCommit();
 
         return $this->ok($this->shapeDetail($po->fresh()));
     }
@@ -725,7 +773,6 @@ class PurchaseOrderController extends Controller
             'physical_inspection' => $po->physical_inspection,
             'inspection_status'   => $po->inspection_status,
             'cancel_reason'       => $po->cancel_reason,
-            'items_count'         => $po->items_count ?? null,
             'created_at'          => $po->created_at?->toIso8601String(),
         ];
     }

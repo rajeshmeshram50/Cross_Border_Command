@@ -5,18 +5,25 @@ namespace App\Http\Controllers\Api\P2p;
 use App\Http\Controllers\Controller;
 use App\Models\P2p\PoPhysicalInspection;
 use App\Models\P2p\PurchaseOrder;
+use App\Models\User;
 use App\Services\P2p\PurchaseOrderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 /**
  * P2P · Physical inspection of a submitted PO — a verdict and proof per line,
  * then a sign-off on the PO header. /api/p2p/orders/{po}/inspection
+ * Each verdict and upload is saved as it is made, so an inspection can be
+ * paused and resumed.
  */
 class PurchaseOrderInspectionController extends Controller
 {
+    // Photos, videos and PDFs — what a phone camera or scanner produces.
+    private const FILE_RULE = 'file|max:20480|mimetypes:image/*,video/*,application/pdf';
+
     public function __construct(private PurchaseOrderService $svc) {}
 
     private function ok($data): JsonResponse
@@ -48,32 +55,63 @@ class PurchaseOrderInspectionController extends Controller
         ])->all();
     }
 
+    private function withUrls(?array $files): array
+    {
+        return collect($files ?? [])->values()->map(fn ($f, $i) => $f + ['index' => $i, 'url' => file_url($f['path'])])->all();
+    }
+
+    /** Header references, every line with its product details, and the sign-off. */
     private function summary(PurchaseOrder $po): array
     {
-        $po->load(['items.inspection']);
+        $po->load(['items.inspection', 'vendor:id,vendor_code,company_name,legal_name']);
         $live = $this->svc->lineDetails($po->items);
+
+        // Product description and GST for the "Read more" column.
+        $products = DB::table('products')->whereIn('id', $po->items->pluck('product_id')->filter())->pluck('description', 'id');
+        $ship = $po->shipment_order_id ? DB::table('shipment_orders')->find($po->shipment_order_id) : null;
+        $pi   = $po->proforma_invoice_id ? DB::table('proforma_invoices')->find($po->proforma_invoice_id) : null;
+        $names = User::whereIn('id', array_filter([$po->inspected_by, ...$po->items->pluck('inspection.inspected_by')->all()]))->pluck('name', 'id');
+
         $lines = $po->items->map(fn ($it) => [
             'purchase_order_item_id' => $it->id,
             'line_no'                => $it->line_no,
+            'product_id'             => $it->product_id,
             'product_code'           => $live[$it->id]['product_code'],
             'product_name'           => $live[$it->id]['product_name'],
+            'hsn_code'               => $live[$it->id]['hsn_code'],
+            'uom'                    => $live[$it->id]['uom'],
+            'gst_pct'                => (float) $it->gst_pct,
+            'description'            => $it->description ?: ($products[$it->product_id] ?? null),
             'quantity'               => (float) $it->quantity,
             'verdict'                => $it->inspection?->verdict,
             'remark'                 => $it->inspection?->remark,
-            'proof_files'            => collect($it->inspection?->proof_files ?? [])
-                ->map(fn ($f) => $f + ['url' => Storage::disk('public')->url($f['path'])])->all(),
+            'proof_files'            => $this->withUrls($it->inspection?->proof_files),
+            'inspected_by_name'      => $it->inspection?->inspected_by ? ($names[$it->inspection->inspected_by] ?? null) : null,
             'inspected_at'           => $it->inspection?->inspected_at?->toIso8601String(),
         ])->all();
 
         return [
             'purchase_order_id'   => $po->id,
             'code'                => $po->code,
+            'po_date'             => $po->po_date?->toDateString(),
+            'status'              => $po->status,
+            'shipment_code'       => $ship->shipment_code ?? null,
+            'shipment_date'       => isset($ship->created_at) ? substr((string) $ship->created_at, 0, 10) : null,
+            'pi_code'             => $pi->code ?? null,
+            'pi_date'             => isset($pi->created_at) ? substr((string) $pi->created_at, 0, 10) : null,
+            'opportunity_code'    => $pi->opp_code ?? null,
+            'procurement_request_code' => $po->procurement_request_code,
+            'supplier_code'       => $po->vendor?->vendor_code,
+            'supplier_name'       => $po->vendor ? ($po->vendor->legal_name ?: $po->vendor->company_name) : null,
+            'grand_total'         => (float) $po->grand_total,
             'physical_inspection' => $po->physical_inspection,
             'inspection_status'   => $po->inspection_status,
             'lines_total'         => count($lines),
             'lines_marked'        => collect($lines)->whereNotNull('verdict')->count(),
             'inspection_note'     => $po->inspection_note,
+            'inspection_note_files' => $this->withUrls($po->inspection_note_files),
             'inspected_by'        => $po->inspected_by,
+            'inspected_by_name'   => $po->inspected_by ? ($names[$po->inspected_by] ?? null) : null,
             'inspected_at'        => $po->inspected_at?->toIso8601String(),
             'lines'               => $lines,
         ];
@@ -85,7 +123,7 @@ class PurchaseOrderInspectionController extends Controller
         return $this->ok($this->summary(PurchaseOrder::findOrFail($po)));
     }
 
-    /** POST /p2p/orders/{po}/inspection/lines/{item} (multipart) — verdict, remark, proof files. */
+    /** POST /p2p/orders/{po}/inspection/lines/{item} (multipart) — verdict and/or proof files for one line. */
     public function updateLine(Request $request, int $po, int $item): JsonResponse
     {
         $order = $this->inspectable($po);
@@ -94,21 +132,39 @@ class PurchaseOrderInspectionController extends Controller
 
         $line = $order->items()->findOrFail($item);
         $request->validate([
-            'verdict'  => ['required', Rule::in(PoPhysicalInspection::VERDICTS)],
-            'remark'   => 'nullable|string|max:1000',
-            'files'    => 'nullable|array|max:10',
-            'files.*'  => 'file|max:10240|mimes:jpg,jpeg,png,webp,pdf,mp4,mov',
+            // Proof can be attached before the verdict is chosen.
+            'verdict' => ['nullable', 'required_without:files', Rule::in(PoPhysicalInspection::VERDICTS)],
+            'remark'  => 'nullable|string|max:1000',
+            'files'   => 'nullable|array|max:10',
+            'files.*' => self::FILE_RULE,
         ]);
 
         $row = PoPhysicalInspection::firstOrNew(['purchase_order_item_id' => $line->id], ['purchase_order_id' => $order->id]);
         $row->fill([
-            'verdict'      => $request->input('verdict'),
-            'remark'       => $request->input('remark'),
+            'verdict'      => $request->input('verdict', $row->verdict),
+            'remark'       => $request->has('remark') ? $request->input('remark') : $row->remark,
             // New proof is added to what is already there, never replacing it.
             'proof_files'  => array_merge($row->proof_files ?? [], $this->storeFiles($request, 'files', $order->id)),
             'inspected_by' => $request->user()->id,
             'inspected_at' => now(),
         ])->save();
+
+        return $this->ok($this->summary($order));
+    }
+
+    /** DELETE /p2p/orders/{po}/inspection/lines/{item}/files/{index} — remove one proof file. */
+    public function removeFile(int $po, int $item, int $index): JsonResponse
+    {
+        $order = $this->inspectable($po);
+        if ($order instanceof JsonResponse) return $order;
+        if ($order->inspection_status === 'completed') return $this->fail('Inspection is signed off — withdraw the sign-off to change a line.');
+
+        $row = PoPhysicalInspection::where('purchase_order_item_id', $order->items()->findOrFail($item)->id)->firstOrFail();
+        $files = array_values($row->proof_files ?? []);
+        if (!isset($files[$index])) return $this->fail('That file is no longer on this line.', 404);
+        Storage::disk('public')->delete($files[$index]['path']);
+        array_splice($files, $index, 1);
+        $row->update(['proof_files' => $files]);
 
         return $this->ok($this->summary($order));
     }
@@ -121,7 +177,7 @@ class PurchaseOrderInspectionController extends Controller
         $request->validate([
             'note'    => 'nullable|string|max:1000',
             'files'   => 'nullable|array|max:10',
-            'files.*' => 'file|max:10240|mimes:jpg,jpeg,png,webp,pdf,mp4,mov',
+            'files.*' => self::FILE_RULE,
         ]);
 
         $unmarked = $order->items()->whereDoesntHave('inspection', fn ($q) => $q->whereNotNull('verdict'))->count();

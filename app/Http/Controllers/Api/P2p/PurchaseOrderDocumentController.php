@@ -45,7 +45,7 @@ class PurchaseOrderDocumentController extends Controller
         $ids = $sig && is_array($sig->trade_doc_ids) ? array_map('intval', $sig->trade_doc_ids) : [];
         $pos = array_search((int) $d->id, $ids, true);
         return $d->toArray() + [
-            'file_url'         => $d->file_path ? Storage::disk('public')->url($d->file_path) : null,
+            'file_url'         => $d->file_path ? file_url($d->file_path) : null,
             // For the signing tracker: /clm/signature-requests/{id}, signed file at {index}
             'signature_status' => $sig?->status,
             'signature_index'  => $pos === false ? null : $pos,

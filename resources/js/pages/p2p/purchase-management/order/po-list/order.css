@@ -1396,3 +1396,17 @@ body:has(.ord-page) .master-select-item.active { background: rgba(8, 145, 178, .
 [data-bs-theme="dark"] body:has(.ord-page) .master-select-item:hover,
 [data-bs-theme="dark"] body:has(.ord-page) .master-select-item:focus { background: rgba(34, 211, 238, .18) !important; }
 [data-bs-theme="dark"] body:has(.ord-page) .master-select-item.active { background: rgba(34, 211, 238, .16) !important; color: #67e8f9 !important; }
+
+/* Server paging: a refresh keeps the rows and dims them instead of emptying the table. */
+.ord-table-scroll.is-refreshing { opacity: 0.6; transition: opacity 0.15s; pointer-events: none; }
+.ord-more { min-height: 32px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #64748b; }
+
+/* PO Status column: Draft / Submitted / Cancelled, same pill as the cancel badge. */
+.ord-status-badge {
+  display: flex; align-items: center; gap: 4px; width: fit-content; margin: 0 auto;
+  padding: 2px 8px; font-size: 8.5px; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; cursor: help;
+}
+/* The shared status icons carry no size of their own — the badge sets it. */
+.ord-status-badge svg { flex-shrink: 0; width: 10px; height: 10px; }
+.ord-po-cell > .ord-cancelbadge { margin: 0 auto; }
+.ord-card__tags .ord-status-badge { margin: 0; }

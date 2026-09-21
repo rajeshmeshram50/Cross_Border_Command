@@ -1,0 +1,146 @@
+/* Cancel PO — confirm prompt (.pocan-*) and refund-adjustment gate (.pocn-* / .porec-*).
+   Values from the P2P Version 1 prototype; dark theme added here. */
+
+.pocan-modal, .porec-modal {
+  position: fixed; inset: 0; z-index: 1400; display: flex; align-items: center; justify-content: center; padding: 24px;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  background: rgba(6, 26, 38, .5); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  animation: pocan-fade .18s ease;
+}
+@keyframes pocan-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pocan-rise { from { transform: translateY(10px) scale(.97); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ── Confirm: red is spent on the mark and the confirm only ── */
+.pocan-box {
+  position: relative; overflow: hidden; isolation: isolate;
+  width: min(408px, 92vw); padding: 24px 24px 18px; text-align: center;
+  background: linear-gradient(180deg, #ffffff, #f7fbfd); border-radius: 22px;
+  box-shadow: 0 32px 70px -18px rgba(4, 26, 40, .55), 0 2px 0 rgba(255, 255, 255, .9) inset, 0 0 0 1px rgba(17, 74, 101, .10);
+  animation: pocan-rise .26s cubic-bezier(.22, 1, .36, 1);
+}
+.pocan-aura {
+  position: absolute; z-index: 0; top: -120px; left: 50%; width: 320px; height: 220px; margin-left: -160px;
+  pointer-events: none; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(248, 113, 113, .30), rgba(248, 113, 113, 0));
+}
+.pocan-box > *:not(.pocan-aura) { position: relative; z-index: 1; }
+.pocan-ico {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  width: 54px; height: 54px; margin: 2px auto 14px; border-radius: 18px; color: #fff;
+  background: linear-gradient(145deg, #fb7185, #dc2626 52%, #8f1414);
+  box-shadow: 0 12px 26px -10px rgba(220, 38, 38, .85), inset 0 1px 0 rgba(255, 255, 255, .45), inset 0 -8px 14px -10px rgba(0, 0, 0, .5);
+}
+.pocan-ico svg { width: 26px; height: 26px; }
+.pocan-ico__ring { position: absolute; inset: -7px; border-radius: 24px; pointer-events: none; box-shadow: 0 0 0 1.5px rgba(248, 113, 113, .35), 0 0 0 8px rgba(248, 113, 113, .10); }
+.pocan-t { font-size: 16.5px; font-weight: 800; letter-spacing: -.4px; color: #14344a; line-height: 1.3; }
+.pocan-chips { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; margin-top: 11px; }
+.pocan-chip {
+  display: inline-flex; align-items: center; height: 26px; padding: 0 11px; border-radius: 9px; max-width: 100%;
+  font-size: 10.5px; font-weight: 800; letter-spacing: -.05px; color: #3f6275;
+  background: linear-gradient(180deg, #ffffff, #eef5f9); box-shadow: inset 0 0 0 1px rgba(17, 74, 101, .13);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pocan-chip--id { font-family: 'Geist Mono', ui-monospace, monospace; color: #075e73; background: linear-gradient(180deg, #e9fbff, #d5f3fb); box-shadow: inset 0 0 0 1px rgba(8, 145, 178, .26); }
+.pocan-chip--amt { color: #92400e; background: linear-gradient(180deg, #fffaf0, #fdf0d9); box-shadow: inset 0 0 0 1px rgba(217, 119, 6, .26); font-variant-numeric: tabular-nums; }
+.pocan-note {
+  display: flex; align-items: flex-start; gap: 8px; margin-top: 14px; padding: 10px 12px;
+  border-radius: 12px; text-align: left; font-size: 10.5px; font-weight: 700; color: #9b4444; line-height: 1.55;
+  background: linear-gradient(90deg, #fdeeee, #fdf5f5); box-shadow: inset 0 0 0 1px rgba(220, 38, 38, .16);
+}
+.pocan-note svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; color: #e04a4a; }
+.pocan-note b { color: #7f1d1d; font-weight: 800; }
+.pocan-ft { display: flex; gap: 10px; margin-top: 18px; }
+.pocan-btn {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  height: 44px; border: none; border-radius: 12px; cursor: pointer;
+  font-family: inherit; font-size: 12px; font-weight: 800; letter-spacing: -.15px;
+  transition: filter .15s, transform .12s, box-shadow .15s;
+}
+.pocan-btn:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+.pocan-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+.pocan-btn--keep { color: #3c5c6e; background: linear-gradient(180deg, #ffffff, #f2f8fb); box-shadow: inset 0 0 0 1.5px #d6e8f0, 0 1px 2px rgba(9, 43, 61, .06); }
+.pocan-btn--keep:hover:not(:disabled) { color: #0e7490; background: linear-gradient(180deg, #ffffff, #eaf7fb); box-shadow: inset 0 0 0 1.5px #9ad9ea, 0 4px 12px -4px rgba(9, 43, 61, .22); transform: translateY(-1px); }
+.pocan-btn--go {
+  color: #fff;
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, .22), rgba(255, 255, 255, 0) 52%), linear-gradient(90deg, #fb7185, #e02424 48%, #8f1414);
+  box-shadow: 0 10px 22px -10px rgba(190, 18, 18, .9), inset 0 1px 0 rgba(255, 255, 255, .3);
+}
+.pocan-btn--go:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); box-shadow: 0 14px 26px -10px rgba(190, 18, 18, .95), inset 0 1px 0 rgba(255, 255, 255, .35); }
+
+/* ── Refund-adjustment gate: teal throughout — a constructive step, not a destructive one ── */
+.porec-box {
+  position: relative; display: flex; flex-direction: column; max-height: 92vh;
+  background: linear-gradient(180deg, #ffffff, #f7fbfd); border-radius: 22px; overflow: hidden;
+  box-shadow: 0 32px 70px -18px rgba(4, 26, 40, .55), 0 2px 0 rgba(255, 255, 255, .9) inset, 0 0 0 1px rgba(17, 74, 101, .10);
+  animation: pocan-rise .26s cubic-bezier(.22, 1, .36, 1);
+}
+.pocn-box { width: min(640px, 94vw); }
+.porec-hd { position: relative; overflow: hidden; display: flex; align-items: center; gap: 13px; padding: 18px 20px; color: #fff; background: linear-gradient(118deg, #0c4a6e, #0e7490 42%, #0891b2 74%, #22d3ee); }
+.porec-hd::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(130% 200% at 86% -55%, rgba(255, 255, 255, .3), transparent 58%); }
+.porec-hd > * { position: relative; z-index: 1; }
+.porec-hd__ico { width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(145deg, rgba(255, 255, 255, .3), rgba(255, 255, 255, .1)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .32); }
+.porec-hd__ico svg { width: 20px; height: 20px; }
+.porec-hd__t { font-size: 15px; font-weight: 800; letter-spacing: -.3px; line-height: 1.25; }
+.porec-hd__s { font-size: 10.5px; font-weight: 600; opacity: .9; margin-top: 2px; }
+.porec-hd__x { margin-left: auto; width: 32px; height: 32px; border: none; border-radius: 10px; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; background: rgba(255, 255, 255, .18); transition: background .15s; }
+.porec-hd__x:hover { background: rgba(255, 255, 255, .3); }
+.porec-hd__x svg { width: 16px; height: 16px; }
+.porec-bd { overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 18px 20px 20px; background: linear-gradient(180deg, #eef7fb, #f5fbfd); }
+.porec-ft { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid #e4f0f5; background: linear-gradient(180deg, #fbfeff, #f4fafc); }
+
+.pocn-hero { position: relative; overflow: hidden; display: flex; align-items: center; gap: 15px; padding: 16px 18px; border-radius: 17px; background: linear-gradient(132deg, #f0fdff, #e2f6fc 52%, #d4effa); box-shadow: inset 0 0 0 1px rgba(8, 145, 178, .2), inset 0 1px 0 rgba(255, 255, 255, .9), 0 12px 28px -20px rgba(8, 145, 178, .9); }
+.pocn-hero::after { content: ''; position: absolute; right: -46px; top: -72px; width: 200px; height: 200px; border-radius: 50%; pointer-events: none; background: radial-gradient(circle, rgba(34, 211, 238, .26), transparent 68%); }
+.pocn-hero__ico { position: relative; z-index: 1; width: 46px; height: 46px; border-radius: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; background: linear-gradient(140deg, #22d3ee, #0891b2 58%, #0e7490); box-shadow: 0 10px 20px -10px rgba(8, 145, 178, .95), inset 0 1px 0 rgba(255, 255, 255, .4); }
+.pocn-hero__ico svg { width: 22px; height: 22px; }
+.pocn-hero__txt { position: relative; z-index: 1; min-width: 0; }
+.pocn-hero__lbl { font-size: 9px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: #0e7490; }
+.pocn-hero__amt { font-size: 25px; font-weight: 800; letter-spacing: -.8px; line-height: 1.08; margin-top: 3px; color: #0c4a6e; font-variant-numeric: tabular-nums; }
+.pocn-hero__sub { font-size: 10.5px; font-weight: 600; color: #5b8aa0; margin-top: 4px; }
+.pocn-lead { font-size: 12px; font-weight: 600; line-height: 1.62; color: #41677a; }
+.pocn-lead b { color: #0c4a6e; font-weight: 800; }
+/* A rail, so the three steps read as one sequence rather than three cards. */
+.pocn-steps { position: relative; display: flex; flex-direction: column; gap: 8px; }
+.pocn-steps::before { content: ''; position: absolute; left: 27px; top: 30px; bottom: 30px; width: 2px; border-radius: 2px; background: linear-gradient(180deg, #0891b2, rgba(8, 145, 178, .14)); }
+.pocn-step { position: relative; display: flex; align-items: flex-start; gap: 13px; padding: 13px 15px; border-radius: 14px; background: #fff; box-shadow: inset 0 0 0 1px #e7f1f5; }
+.pocn-step.is-now { background: linear-gradient(102deg, #f5feff, #e9f8fd); box-shadow: inset 0 0 0 1.5px #9fd9ec, inset 0 1px 0 rgba(255, 255, 255, .9), 0 12px 26px -18px rgba(8, 145, 178, .95); }
+.pocn-step__n { position: relative; z-index: 1; width: 27px; height: 27px; border-radius: 9px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; color: #8fa9b4; background: #f4f8fa; box-shadow: inset 0 0 0 1px #e2ebf0; }
+.pocn-step.is-now .pocn-step__n { color: #fff; background: linear-gradient(140deg, #22d3ee, #0891b2 60%, #0e7490); box-shadow: 0 6px 14px -6px rgba(8, 145, 178, .95), inset 0 1px 0 rgba(255, 255, 255, .4); }
+.pocn-step__t { font-size: 12.5px; font-weight: 800; color: #0c4a6e; line-height: 1.3; letter-spacing: -.1px; }
+.pocn-step.is-next .pocn-step__t { color: #8aa6b1; }
+.pocn-step__s { font-size: 10.5px; font-weight: 600; color: #7c9aa4; margin-top: 3px; line-height: 1.45; }
+.pocn-step__now { margin-left: auto; align-self: center; flex-shrink: 0; padding: 4px 9px; border-radius: 7px; font-size: 8.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #0e7490; background: rgba(255, 255, 255, .85); box-shadow: inset 0 0 0 1px rgba(8, 145, 178, .28); }
+.pocn-hint { display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 11px; font-weight: 600; color: #7c9aa4; text-align: center; }
+.pocn-hint svg { width: 13px; height: 13px; color: #0891b2; flex-shrink: 0; }
+.pocn-hint b { color: #0c4a6e; font-weight: 800; }
+.pocn-btn { height: 44px; padding: 0 22px; border: none; border-radius: 12px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; font-family: inherit; font-size: 12.5px; font-weight: 800; letter-spacing: -.1px; transition: transform .18s cubic-bezier(.22, 1, .36, 1), box-shadow .18s, background .18s, color .18s; }
+.pocn-btn--ghost { color: #41677a; background: #fff; box-shadow: inset 0 0 0 1.5px #dcebf1; }
+.pocn-btn--ghost:hover { color: #0c4a6e; background: #f4fbfd; box-shadow: inset 0 0 0 1.5px #a5dced; }
+.pocn-btn--go { position: relative; overflow: hidden; color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490); box-shadow: 0 12px 26px -11px rgba(8, 145, 178, .95), inset 0 1px 0 rgba(255, 255, 255, .3); }
+.pocn-btn--go::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; pointer-events: none; background: linear-gradient(180deg, rgba(255, 255, 255, .22), transparent); }
+.pocn-btn--go > * { position: relative; z-index: 1; }
+.pocn-btn--go:hover { transform: translateY(-1.5px); box-shadow: 0 16px 32px -11px rgba(8, 145, 178, 1), inset 0 1px 0 rgba(255, 255, 255, .3); }
+
+@media (max-width: 576px) {
+  .porec-ft { flex-direction: column-reverse; }
+  .pocn-btn { width: 100%; white-space: normal; }
+}
+
+/* ── Dark theme ── */
+[data-bs-theme="dark"] .pocan-box, [data-bs-theme="dark"] .porec-box { background: linear-gradient(180deg, #1b2733, #16212c); box-shadow: 0 32px 70px -18px rgba(0, 0, 0, .7), 0 0 0 1px rgba(148, 163, 184, .14); }
+[data-bs-theme="dark"] .pocan-t { color: #e2e8f0; }
+[data-bs-theme="dark"] .pocan-chip { color: #cbd5e1; background: rgba(148, 163, 184, .12); box-shadow: inset 0 0 0 1px rgba(148, 163, 184, .2); }
+[data-bs-theme="dark"] .pocan-chip--id { color: #67e8f9; background: rgba(8, 145, 178, .16); }
+[data-bs-theme="dark"] .pocan-chip--amt { color: #fcd34d; background: rgba(217, 119, 6, .16); }
+[data-bs-theme="dark"] .pocan-note { color: #fca5a5; background: rgba(220, 38, 38, .12); }
+[data-bs-theme="dark"] .pocan-note b { color: #fecaca; }
+[data-bs-theme="dark"] .pocan-btn--keep { color: #cbd5e1; background: rgba(148, 163, 184, .1); box-shadow: inset 0 0 0 1.5px rgba(148, 163, 184, .25); }
+[data-bs-theme="dark"] .porec-bd { background: #16212c; }
+[data-bs-theme="dark"] .porec-ft { background: #1b2733; border-top-color: rgba(148, 163, 184, .14); }
+[data-bs-theme="dark"] .pocn-hero { background: rgba(8, 145, 178, .12); box-shadow: inset 0 0 0 1px rgba(8, 145, 178, .3); }
+[data-bs-theme="dark"] .pocn-hero__amt, [data-bs-theme="dark"] .pocn-step__t, [data-bs-theme="dark"] .pocn-lead b, [data-bs-theme="dark"] .pocn-hint b { color: #e2e8f0; }
+[data-bs-theme="dark"] .pocn-lead, [data-bs-theme="dark"] .pocn-hero__sub, [data-bs-theme="dark"] .pocn-step__s, [data-bs-theme="dark"] .pocn-hint { color: #94a3b8; }
+[data-bs-theme="dark"] .pocn-step { background: rgba(148, 163, 184, .06); box-shadow: inset 0 0 0 1px rgba(148, 163, 184, .16); }
+[data-bs-theme="dark"] .pocn-step.is-now { background: rgba(8, 145, 178, .14); box-shadow: inset 0 0 0 1.5px rgba(34, 211, 238, .4); }
+[data-bs-theme="dark"] .pocn-step__n { background: rgba(148, 163, 184, .12); color: #94a3b8; }
+[data-bs-theme="dark"] .pocn-step__now { background: rgba(8, 145, 178, .2); color: #67e8f9; }
+[data-bs-theme="dark"] .pocn-btn--ghost { color: #cbd5e1; background: transparent; box-shadow: inset 0 0 0 1.5px rgba(148, 163, 184, .3); }

@@ -7,6 +7,7 @@ import { EditSelect, FitInput, FitText } from '../form-fields';
 import type { PoLineRow } from '../po-draft';
 import type { ProductOpt } from '../use-po-lookups';
 import type { TaxMode } from '../../api/po-api';
+import type { LineErrors } from '../validation';
 import { IcoPencil, IcoPlus, IcoTrash } from '../../shared/icons';
 import { useToast } from '../../../../../../contexts/ToastContext';
 // The Product Management detail view, opened by "Read more" on a description.
@@ -100,11 +101,13 @@ type Props = {
   onRemove?: (index: number) => void;
   /** A product was added or edited in the master — reload the picker list. */
   onProductsChanged?: () => void;
+  /** Per-row cell errors, keyed by row key. */
+  errors?: LineErrors;
   /** The summary on later steps shows the same table with plain values. */
   readOnly?: boolean;
 };
 
-export default function ProductTable({ rows, products, taxMode, onChange, onRemove, onProductsChanged, readOnly }: Props) {
+export default function ProductTable({ rows, products, taxMode, onChange, onRemove, onProductsChanged, errors = {}, readOnly }: Props) {
   const options = useMemo(() => products.map(productLabel), [products]);
   // The product whose detail view is open, from "Read more" on its description.
   const [detailId, setDetailId] = useState<number | null>(null);
@@ -190,6 +193,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             const poName = po?.name ?? (row.pi && row.productId === row.pi.product_id ? row.pi.product_name : '') ?? '';
             const hsn = po?.hsn || row.pi?.hsn_code || '—';
             const desc = po?.description || row.pi?.description || '';
+            const rowErr = readOnly ? {} : (errors[row.key] ?? {});
             const gstCell = line.gstPct === null
               ? <span className="cpd-miss" title="Set the GST % on the product master">GST not set</span>
               : <>GST <b>{line.gstPct}%</b></>;
@@ -212,7 +216,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                   </div>
                 </td>
 
-                <td className={`cpd-td-left cpd-prodcell ${readOnly ? '' : 'cpd-ed'}`}>
+                <td className={`cpd-td-left cpd-prodcell ${readOnly ? '' : 'cpd-ed'}${rowErr.product ? ' cpd-cell-err' : ''}`}>
                   <div className="cpd-prod">
                   {readOnly ? (
                     <div className="cpd-prod__nm">{poName || '—'}</div>
@@ -247,6 +251,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                       </button>
                     )}
                   </div>
+                  {rowErr.product && <div className="cpd-cell-msg">{rowErr.product}</div>}
                   </div>
                 </td>
 
@@ -259,7 +264,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                 <td title={row.pi && row.pi.ordered_qty > 0 ? `${plain(row.pi.ordered_qty)} already on other POs · ${plain(row.pi.pending_qty)} pending` : undefined}>
                   {row.pi ? plain(row.pi.pi_quantity) : '—'}
                 </td>
-                <td className={readOnly ? undefined : 'cpd-ed'}>
+                <td className={readOnly ? undefined : `cpd-ed${rowErr.qty ? ' cpd-cell-err' : ''}`}>
                   {readOnly ? <FitText text={plain(row.qtyPo)} /> : (
                     <FitInput
                       className="cpd-in"
@@ -270,10 +275,11 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                       onChange={(e) => onChange(index, { qtyPo: cleanQty(e.target.value) })}
                     />
                   )}
+                  {rowErr.qty && <div className="cpd-cell-msg">{rowErr.qty}</div>}
                 </td>
                 <td className={line.missing > 0 ? 'cpd-miss' : ''}>{row.pi ? plain(line.missing) : '—'}</td>
 
-                <td className={readOnly ? undefined : 'cpd-ed'}>
+                <td className={readOnly ? undefined : `cpd-ed${rowErr.rate ? ' cpd-cell-err' : ''}`}>
                   {readOnly ? <FitText text={money(row.rate)} /> : (
                     <FitInput
                       className="cpd-in"
@@ -284,6 +290,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                       onChange={(e) => onChange(index, { rate: cleanRate(e.target.value) })}
                     />
                   )}
+                  {rowErr.rate && <div className="cpd-cell-msg">{rowErr.rate}</div>}
                 </td>
                 <td>{inter ? line.igstPct : line.cgstPct}%</td>
                 <td>{inter ? '—' : `${line.sgstPct}%`}</td>

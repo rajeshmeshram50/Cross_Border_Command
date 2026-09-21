@@ -54,8 +54,15 @@ export function FitInput({ tooltip, ...props }: React.InputHTMLAttributes<HTMLIn
 }
 
 /* Label + control, one cell of a wizard field grid. */
-export function Field({ label, children, full, req }: { label: string; children: ReactNode; full?: boolean; req?: boolean }) {
-  return <div className={`spi-dt-field ${full ? 'spi-dt-field-full' : ''}`}><label className="spi-dt-field-lbl">{label}{req && <span className="spi-dt-req">*</span>}</label>{children}</div>;
+/* `error` shows under the control (the control itself is flagged by its own invalid prop). */
+export function Field({ label, children, full, req, error }: { label: string; children: ReactNode; full?: boolean; req?: boolean; error?: string }) {
+  return (
+    <div className={`spi-dt-field ${full ? 'spi-dt-field-full' : ''}`}>
+      <label className="spi-dt-field-lbl">{label}{req && <span className="spi-dt-req">*</span>}</label>
+      {children}
+      {error && <div className="cpf-err" role="alert">{error}</div>}
+    </div>
+  );
 }
 
 /* Every dropdown in the form is the app's standard MasterSelect — a search box
