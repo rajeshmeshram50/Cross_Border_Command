@@ -5,8 +5,12 @@ import { lazy, Suspense, useMemo, useState } from 'react';
 import { EditSelect, FitInput, FitText } from '../form-fields';
 import { PRODUCT_CATALOGUE, detailProduct, gstSplit, productOption, type ProductLine } from '../sample-products';
 import { IcoPencil, IcoPlus } from '../../icons';
+import api from '../../../../../../api';
+import { useToast } from '../../../../../../contexts/ToastContext';
 // The Product Management detail view, opened by "Read more" on a description.
 const InspectionProductView = lazy(() => import('../../InspectionProductView'));
+// The product master's Add / Edit wizard, opened by the cell's two buttons.
+const AddProductModal = lazy(() => import('../../../../p2p-master-management/product-management/AddProductModal'));
 /* Hovering "Read more" starts the same downloads the click needs, so the view
    is already in memory when the click lands. BOTH modules are warmed: the
    wrapper lazy-loads ProductView inside itself, and ProductView (with its
@@ -58,6 +62,12 @@ export function computeLine(row: PoLineRow, stateCode: string): LineTotals {
 
 const money = (n: number) => '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
+/** "P-002" and "P-02" are the same product — compare prefix + number. */
+const codeKey = (code: string) => {
+  const m = code.trim().toUpperCase().match(/^(.*?)(\d+)$/);
+  return m ? `${m[1]}${Number(m[2])}` : code.trim().toUpperCase();
+};
+
 /* No visible limit: long values end in "…" and show in full on hover
    (FitText / FitInput). The 12-digit ceiling is only a safety net — past ~15
    digits a JavaScript number can't hold the value exactly and quietly rounds
@@ -84,6 +94,32 @@ export default function ProductTable({ rows, stateCode, onChange, readOnly }: Pr
   const options = useMemo(() => PRODUCT_CATALOGUE.map(productOption), []);
   // The product whose detail view is open, from "Read more" on its description.
   const [detail, setDetail] = useState<ProductLine | null>(null);
+  /* The product master's own Add / Edit wizard, opened from the two buttons in
+     the PO product cell. `editing` holds the product master id the pencil
+     resolved; `adding` is the blank Add Product form. */
+  const [editing, setEditing] = useState<number | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [busyCode, setBusyCode] = useState<string | null>(null);
+  const toast = useToast();
+
+  /* These PO lines carry a product CODE, not a master id, and the codes are
+     padded for display (P-002 is the master's P-02). So the pencil asks the
+     products API for the code and opens the wizard on whatever it matches. */
+  const openEditor = async (line: ProductLine) => {
+    setBusyCode(line.code);
+    try {
+      const res = await api.get('/products', { params: { lite: 1, q: line.code.replace(/-0+/, '-'), per_page: 50 } });
+      const rows: { id: number; product_code?: string }[] = res.data?.data ?? res.data ?? [];
+      const wanted = codeKey(line.code);
+      const hit = rows.find((r) => codeKey(r.product_code ?? '') === wanted);
+      if (hit) setEditing(hit.id);
+      else toast.info('Not in the product master', `${line.code} has no product record to edit yet.`);
+    } catch {
+      toast.error('Could not open the product', 'The product master did not respond.');
+    } finally {
+      setBusyCode(null);
+    }
+  };
   const lines = rows.map((r) => computeLine(r, stateCode));
   const totals = lines.reduce(
     (sum, l) => ({
@@ -105,6 +141,24 @@ export default function ProductTable({ rows, stateCode, onChange, readOnly }: Pr
           <InspectionProductView product={detailProduct(detail)} onClose={() => setDetail(null)} />
         </Suspense>
       )}
+      {/* One wizard, two entry points: with an id it edits that product, with
+          none it creates one. It saves to the product master itself, so the PO
+          lines here are untouched either way. */}
+      {(adding || editing != null) && (
+        <Suspense fallback={null}>
+          <AddProductModal
+            productId={editing}
+            hideSupplierMapping
+            onClose={() => { setAdding(false); setEditing(null); }}
+            onSaved={(_id, finalised) => {
+              if (!finalised) return;
+              toast.success(editing != null ? 'Product updated' : 'Product added', 'Saved in the product master.');
+              setAdding(false);
+              setEditing(null);
+            }}
+          />
+        </Suspense>
+      )}
       <table className="cpd-tbl cpd-tbl--pd">
         <thead>
           <tr className="cpd-grp">
@@ -124,8 +178,8 @@ export default function ProductTable({ rows, stateCode, onChange, readOnly }: Pr
             <th className={`cpd-th-num ${readOnly ? '' : 'cpd-edh'}`}>Product Rate</th>
             <th>CGST (%)</th>
             <th>SGST (%)</th>
-            <th className="cpd-th-amt">CGST Amount</th>
-            <th className="cpd-th-amt">SGST Amount</th>
+            <th className="cpd-th-amt cpd-th-amt--tax">CGST Amount</th>
+            <th className="cpd-th-amt cpd-th-amt--tax">SGST Amount</th>
             <th className="cpd-th-amt">Product Cost<span className="cpd-th-sub cpd-th-sub--wo">Without GST</span></th>
             <th className="cpd-th-amt">Total GST Amount</th>
             <th className="cpd-th-amt cpd-th-final">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">With GST</span></th>
@@ -162,7 +216,15 @@ export default function ProductTable({ rows, stateCode, onChange, readOnly }: Pr
                         options={options}
                         onChange={(v) => onChange(i, { poCode: v.split(' — ')[0] })}
                       />
-                      <button type="button" className="cpd-iconbtn" title="Edit this product"><IcoPencil /></button>
+                      <button
+                        type="button"
+                        className="cpd-iconbtn"
+                        title="Edit this product in the product master"
+                        disabled={busyCode === po.code}
+                        onClick={() => void openEditor(po)}
+                      >
+                        <IcoPencil />
+                      </button>
                     </div>
                   )}
                   <div className="cpd-prod__meta">
@@ -170,7 +232,11 @@ export default function ProductTable({ rows, stateCode, onChange, readOnly }: Pr
                     <span className="cpd-kv">HSN <b>{po.hsn}</b></span>
                     <span className="cpd-prod__dot" />
                     <span className="cpd-kv">GST <b>{line.cgstPct + line.sgstPct}%</b></span>
-                    {!readOnly && <button type="button" className="cpd-addbtn" title="Add another PO line"><IcoPlus /></button>}
+                    {!readOnly && (
+                      <button type="button" className="cpd-addbtn" title="Add a new product to the master" onClick={() => setAdding(true)}>
+                        <IcoPlus />
+                      </button>
+                    )}
                   </div>
                   </div>
                 </td>

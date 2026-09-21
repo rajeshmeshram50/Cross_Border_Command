@@ -1,10 +1,17 @@
 // Create PO — Step 04: Post PO Trade Document Management.
 // The recap of stages 01–03, then the documents raised against this PO with
 // their signature status. Selecting rows enables the two send actions.
-import { useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import StageSummary from './StageSummary';
+import { supplierByOption, supplierVaultData, supplierVaultTarget } from '../sample-suppliers';
+// The Supplier master's own Evidence Vault, as on Step 01 — warmed on hover so
+// the click never waits for the download.
+const SupplierEvidenceVaultModal = lazy(() => import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
+const warmVault = () => { void import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'); };
 import type { PoDraft } from '../po-draft';
 import { PO_DOCUMENTS } from '../sample-documents';
+import { FitTip } from '../form-fields';
+import { useToast } from '../../../../../../contexts/ToastContext';
 import { formatDmy } from '../../../../../../utils/formatDmy';
 import { IcoCertificate, IcoChevron, IcoDownload, IcoFolder, IcoHistory, IcoMail, IcoPaperclip, IcoSend, IcoShield } from '../../icons';
 
@@ -15,6 +22,20 @@ const NOT_SIGNED_YET = 'Available once the document is signed';
 export default function Step4Documents({ draft }: { draft: PoDraft }) {
   const [open, setOpen] = useState(true);
   const [selected, setSelected] = useState<string[]>([]);
+  const [vaultOpen, setVaultOpen] = useState(false);
+  // The supplier picked on Step 01 is whose vault this opens.
+  const picked = useMemo(() => supplierByOption(draft.supplier), [draft.supplier]);
+  const vault = useMemo(
+    () => (picked ? { supplier: supplierVaultTarget(picked), data: supplierVaultData(picked) } : null),
+    [picked],
+  );
+  // A PO can reach this step without a master supplier (a standalone draft, or
+  // one typed in by hand) — then there is no vault to show, so say that.
+  const toast = useToast();
+  const openVault = () => {
+    if (vault) { setVaultOpen(true); return; }
+    toast.info('No supplier selected', 'Pick a supplier on Step 01 to see its evidence vault.');
+  };
 
   const allSelected = selected.length === PO_DOCUMENTS.length;
   const toggleAll = () => setSelected(allSelected ? [] : PO_DOCUMENTS.map((d) => d.code));
@@ -24,6 +45,19 @@ export default function Step4Documents({ draft }: { draft: PoDraft }) {
   return (
     <>
       <StageSummary draft={draft} upto={3} />
+      {/* View only: the PO shows what the supplier has on file, the supplier
+          master is where those documents are managed. */}
+      {vaultOpen && vault && (
+        <Suspense fallback={null}>
+          <SupplierEvidenceVaultModal
+            open
+            viewOnly
+            supplier={vault.supplier}
+            data={vault.data}
+            onClose={() => setVaultOpen(false)}
+          />
+        </Suspense>
+      )}
 
       <div className={`spi-dt-sec cpf-fill ${open ? '' : 'is-collapsed'}`}>
         <div className="spi-dt-sec-head cpf-clickable" onClick={() => setOpen((o) => !o)}>
@@ -38,10 +72,17 @@ export default function Step4Documents({ draft }: { draft: PoDraft }) {
           </div>
 
           {/* Everything the supplier has on file, one click away. */}
-          <button type="button" className="cdoc-vault cpf-push" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className="cdoc-vault cpf-push"
+            onPointerEnter={warmVault}
+            onClick={(e) => { e.stopPropagation(); openVault(); }}
+          >
             <span className="cdoc-vault__ico"><IcoShield size={14} /></span>
             <span className="cdoc-vault__t">Supplier Evidence Vault</span>
-            <span className="cdoc-vault__s">(KYC, Due Diligence, Trade Licenses, Trade Documents and Agreements)</span>
+            <FitTip label="KYC, Due Diligence, Trade Licenses, Trade Documents and Agreements">
+              <span className="cdoc-vault__s">(KYC, Due Diligence, Trade Licenses, Trade Documents and Agreements)</span>
+            </FitTip>
           </button>
           <span className={`cpf-chev ${open ? '' : 'is-closed'}`}><IcoChevron /></span>
         </div>
@@ -91,8 +132,8 @@ export default function Step4Documents({ draft }: { draft: PoDraft }) {
                       {/* The name needs its own span — text-overflow does
                           nothing on a flex container, so without it a long
                           file name is chopped off instead of ellipsised. */}
-                      <button type="button" className="cdoc-file" title={doc.file}>
-                        <IcoPaperclip size={12} /><span>{doc.file}</span>
+                      <button type="button" className="cdoc-file">
+                        <IcoPaperclip size={12} /><FitTip label={doc.file}><span>{doc.file}</span></FitTip>
                       </button>
                     </td>
                     <td>

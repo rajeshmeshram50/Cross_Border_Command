@@ -9,11 +9,13 @@ import Step3Terms from './steps/Step3Terms';
 import Step4Documents from './steps/Step4Documents';
 import { usePoDraft, type PoEdit } from './po-draft';
 import { gstCheck } from './gst-check';
+import { FitTip } from './form-fields';
 import GstNoticeModal, { type GstNotice } from './GstNoticeModal';
 import { useToast } from '../../../../../contexts/ToastContext';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './create-po.css';
 import { IcoCheck, IcoChevronL, IcoChevronR, IcoDoc, IcoLines, IcoShip, IcoTarget, IcoUser, IcoX } from '../icons';
+
 
 // What the Create PO popup passes in: how this PO is linked. `edit` is set
 // when Edit PO opens an existing order in this same form.
@@ -71,7 +73,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     // supplier chooser or wizard, the Evidence Vault, a product's detail view):
     // those close themselves on the same key, and closing the whole form too
     // would throw away everything filled in.
-    const OVER_FORM = '.cgst-backdrop, .supch-ov, .avm-backdrop, .sev-overlay, .prd-detail-overlay';
+    const OVER_FORM = '.cgst-backdrop, .supch-ov, .avm-backdrop, .apm-backdrop, .sev-overlay, .prd-detail-overlay';
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || document.querySelector(OVER_FORM)) return;
       onClose();
@@ -81,6 +83,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   }, [onClose]);
 
   const isLast = stage === STAGES.length - 1;
+  const isSubmit = stage === 2;
 
   // The supplier's GST position gates the PO at submission, so its action sits
   // beside "Submit PO & Next" on Step 03 — only when the check calls for one
@@ -214,8 +217,10 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
                 {gst.state.action}
               </button>
             )}
-            <button type="button" className={isLast ? 'spi-dt-btn-map' : 'spi-dt-btn-next'} onClick={goNext}>
-              {nextLabel} <IcoChevronR />
+            {/* Step 03 is where the PO is actually submitted, so that button is
+                the green one, with a tick — every other step is teal. */}
+            <button type="button" className={isSubmit ? 'spi-dt-btn-map' : 'spi-dt-btn-next'} onClick={goNext}>
+              {isSubmit && <IcoCheck />} {nextLabel} <IcoChevronR />
             </button>
           </div>
         </div>
@@ -232,7 +237,9 @@ export function HeadPill({ icon, label, value, mono, alt }: { icon: React.ReactN
       <span className={`spi-dt-pill-ico ${alt ? 'spi-dt-pill-ico--alt' : ''}`}>{icon}</span>
       <div className="spi-dt-pill-txt">
         <div className="spi-dt-pill-lbl">{label}</div>
-        <div className={`spi-dt-pill-val ${mono ? 'spi-dt-pill-val--mono' : ''}`} title={value}>{value}</div>
+        <FitTip label={value}>
+          <div className={`spi-dt-pill-val ${mono ? 'spi-dt-pill-val--mono' : ''}`}>{value}</div>
+        </FitTip>
       </div>
     </div>
   );

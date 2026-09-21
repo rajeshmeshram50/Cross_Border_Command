@@ -1,5 +1,6 @@
 // Step 02 · Additional charges and the running totals for the PO.
 // The three charge fields are the only inputs; everything else adds up.
+import type { ReactNode } from 'react';
 import { FitText } from '../form-fields';
 
 export type Charges = { ship: string; pack: string; other: string };
@@ -16,20 +17,25 @@ type Props = {
   gst: number;
   charges: Charges;
   onChange: (patch: Partial<Charges>) => void;
+  /** The step's Save, placed beside the Grand Total and level with it. */
+  action?: ReactNode;
 };
 
-export default function ChargesSummary({ base, gst, charges, onChange }: Props) {
+export default function ChargesSummary({ base, gst, charges, onChange, action }: Props) {
   const total = chargesTotal(charges);
 
   return (
     <div className="cpd-sum">
-      <div className="cpd-sum__charges">
-        <div className="cpd-sum__hd">Additional Charges</div>
-        <div className="cpd-chg-grid">
-          <Charge label="Shipping Charges" value={charges.ship} onChange={(v) => onChange({ ship: v })} />
-          <Charge label="Packaging Charges" value={charges.pack} onChange={(v) => onChange({ pack: v })} />
-          <Charge label="Other Charges" value={charges.other} onChange={(v) => onChange({ other: v })} />
+      <div className="cpd-sum__left">
+        <div className="cpd-sum__charges">
+          <div className="cpd-sum__hd">Additional Charges</div>
+          <div className="cpd-chg-grid">
+            <Charge label="Shipping Charges" value={charges.ship} onChange={(v) => onChange({ ship: v })} />
+            <Charge label="Packaging Charges" value={charges.pack} onChange={(v) => onChange({ pack: v })} />
+            <Charge label="Other Charges" value={charges.other} onChange={(v) => onChange({ other: v })} />
+          </div>
         </div>
+        {action && <div className="cpd-savebar">{action}</div>}
       </div>
 
       <div className="cpd-totbox">

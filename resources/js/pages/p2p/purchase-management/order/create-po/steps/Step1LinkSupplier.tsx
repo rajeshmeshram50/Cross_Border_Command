@@ -2,7 +2,7 @@
 // Section 1: Purchase Order (basic details). Section 2: Supplier.
 // The address, legal, GST and risk panels follow in the next sections.
 import { lazy, Suspense, useMemo, useState } from 'react';
-import { EditSelect, Field } from '../form-fields';
+import { EditSelect, Field, FitTip } from '../form-fields';
 import { gstCheck } from '../gst-check';
 // Only fetched when "+ Add Supplier" is clicked.
 const AddSupplierFlow = lazy(() => import('../AddSupplierFlow'));
@@ -388,8 +388,8 @@ export default function Step1LinkSupplier({ draft, set }: { draft: PoDraft; set:
                       <div className="cpf-lg__hd">
                         <span className="cpf-lg__ico">{sec.params.length > 2 ? <IcoShield /> : <IcoDocSm />}</span>
                         <span className="cpf-lg__txt">
-                          <span className="cpf-lg__nm">{sec.name}</span>
-                          <span className="cpf-lg__sub">{sec.sub}</span>
+                          <FitTip label={sec.name}><span className="cpf-lg__nm">{sec.name}</span></FitTip>
+                          <FitTip label={sec.sub}><span className="cpf-lg__sub">{sec.sub}</span></FitTip>
                         </span>
                         <span className="cpf-lg__cnt">{sec.done} / {sec.total}</span>
                         <span className="cpf-lg__pct">{sec.pct}%</span>

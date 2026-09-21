@@ -6,8 +6,10 @@ import ProductTable, { computeLine, type PoLineRow } from './ProductTable';
 import ChargesSummary, { type Charges } from './ChargesSummary';
 import MissingProducts, { missingCount } from './MissingProducts';
 import StageSummary from './StageSummary';
+import { FitTip } from '../form-fields';
 import { supplierByOption } from '../sample-suppliers';
 import type { PoDraft, SetDraft } from '../po-draft';
+import { useToast } from '../../../../../../contexts/ToastContext';
 import { IcoAlert, IcoBox, IcoChevron, IcoLines, IcoPin, IcoUser } from '../../icons';
 
 export default function Step2ProductDetails({ draft, set }: { draft: PoDraft; set: SetDraft }) {
@@ -26,6 +28,12 @@ export default function Step2ProductDetails({ draft, set }: { draft: PoDraft; se
   const base = computed.reduce((sum, l) => sum + l.base, 0);
   const gst = computed.reduce((sum, l) => sum + l.gstAmt, 0);
   const missing = missingCount(lines, stateCode);
+
+  /* Static data for now, so there is nothing to post — the toast reports what
+     was banked, and this is the one place to call the API from later. */
+  const toast = useToast();
+  const saveProducts = () =>
+    toast.success('Product details saved', `${lines.length} product${lines.length === 1 ? '' : 's'} on this PO.`);
 
   return (
     <>
@@ -57,7 +65,20 @@ export default function Step2ProductDetails({ draft, set }: { draft: PoDraft; se
       <div className="spi-dt-sec-body cpd-body">
         <div className="cpd-legend"><span className="cpd-legend__sw" />Tinted cells are editable — PO product, quantity and rate. Everything else is carried from the PI or calculated.</div>
         <ProductTable rows={lines} stateCode={stateCode} onChange={patchLine} />
-        <ChargesSummary base={base} gst={gst} charges={draft.charges} onChange={patchCharges} />
+        {/* The wizard footer moves to the next step; this Save banks the lines
+            and charges without leaving Step 02. It rides in the summary row so
+            it sits beside the Grand Total. */}
+        <ChargesSummary
+          base={base}
+          gst={gst}
+          charges={draft.charges}
+          onChange={patchCharges}
+          action={(
+            <button type="button" className="spi-dt-btn-next" onClick={saveProducts}>
+              Save
+            </button>
+          )}
+        />
       </div>
     </div>
 
@@ -89,7 +110,7 @@ function RefPill({ icon, label, value }: { icon: React.ReactNode; label: string;
       <span className="spi-dt-pill-ico">{icon}</span>
       <div className="spi-dt-pill-txt">
         <div className="spi-dt-pill-lbl">{label}</div>
-        <div className="spi-dt-pill-val" title={value}>{value}</div>
+        <FitTip label={value}><div className="spi-dt-pill-val">{value}</div></FitTip>
       </div>
     </div>
   );
