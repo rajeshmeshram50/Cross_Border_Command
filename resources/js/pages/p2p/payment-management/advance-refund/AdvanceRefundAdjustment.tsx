@@ -89,7 +89,8 @@ export default function AdvanceRefundAdjustment() {
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [guideOpen, setGuideOpen] = useState(true);
+  // The "What We Are Doing Here" strip starts folded; the list is what people come for.
+  const [guideOpen, setGuideOpen] = useState(false);
   // Create: picker first, then the form for the chosen PO. Edit: the form straight away.
   const [picking, setPicking] = useState(false);
   const [form, setForm] = useState<{ po: string; edit?: RefundAdjustment } | null>(null);

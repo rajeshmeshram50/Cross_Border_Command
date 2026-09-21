@@ -96,16 +96,35 @@
 .arf-hist { margin-top:14px; border:1px solid #d6eef5; border-radius:12px; overflow-x:auto; }
 .arf-hist__empty { padding:16px; text-align:center; font-size:12px; color:#64748b; }
 
-/* Tab strip + search, to the prototype (measured at 1920). The shared p2p
-   toolbar is a little tighter and stretches the search across the row; the
-   prototype sits the toolbar on white with 14px round it, keeps the search at
-   620px on the right, and uses 15px tab icons with a softer idle colour. */
+/* One spacing unit for the whole page: 8px between the blocks, inside the
+   banner, the "What We Are Doing Here" box, its step cards and the toolbar.
+   The shared classes mix 6 / 7 / 10 / 12 / 14 / 18 / 20px; only this page is
+   reset. (Table cells keep the prototype's own 12px 7px.) */
+/* The shared .spi-root pulls the page up by 6px, leaving only 2px under the
+   nav; without it the page-content's own 8px padding is the gap. */
+.arf-page { gap:8px; margin-top:0; }
+.arf-page > .spi-head { padding:0 8px; }
+.arf-page .spi-bref-head { padding:8px; gap:8px; }
+.arf-page .spi-bref-body {
+  padding:8px;
+  gap:8px;
+  transition:max-height .3s cubic-bezier(.22, 1, .36, 1), opacity .22s, padding .3s cubic-bezier(.22, 1, .36, 1);
+}
+/* Collapsed, the shared rule folds the body with max-height:0 — but padding
+   can't shrink below itself, so it has to go too or a 16px band stays open. */
+.arf-page .spi-bref.is-collapsed .spi-bref-body { padding-top:0; padding-bottom:0; }
+.arf-page .spi-bref-body .spi-step { margin:0; padding:8px; }
+
 /* The app body tightens text by -0.264px; the prototype doesn't, which made
    every label on this page a few px narrower (7px across one tab). Set on the
    page root so the header and step cards get it too; anything that sets its
    own spacing — titles, table headers — keeps it. */
 .arf-page { letter-spacing:normal; }
-.arf-list .spi-segrow { margin:0; padding:14px; background:#fff; }
+/* Tab strip + search, to the prototype (measured at 1920). The shared p2p
+   toolbar stretches the search across the row; the prototype sits the toolbar
+   on white, keeps the search at 620px on the right, and uses 15px tab icons
+   with a softer idle colour. Spacing follows the page's 8px rhythm above. */
+.arf-list .spi-segrow { margin:0; padding:8px; gap:8px; background:#fff; }
 .arf-list .spi-segrow--search { margin-bottom:0; }
 .arf-list .spi-seg-btn:not(.is-active) { color:#6b8499; }
 .arf-list .spi-seg-ico svg { width:15px; height:15px; }
