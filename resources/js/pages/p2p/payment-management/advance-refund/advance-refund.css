@@ -96,15 +96,190 @@
 .arf-hist { margin-top:14px; border:1px solid #d6eef5; border-radius:12px; overflow-x:auto; }
 .arf-hist__empty { padding:16px; text-align:center; font-size:12px; color:#64748b; }
 
-/* List table: long headers wrap onto two lines like the prototype. */
-.arf-table thead th { white-space:normal; min-width:78px; max-width:120px; }
+/* One spacing unit for the whole page: 8px between the blocks, inside the
+   banner, the "What We Are Doing Here" box, its step cards and the toolbar.
+   The shared classes mix 6 / 7 / 10 / 12 / 14 / 18 / 20px; only this page is
+   reset. (Table cells keep the prototype's own 12px 7px.) */
+/* The shared .spi-root pulls the page up by 6px, leaving only 2px under the
+   nav; without it the page-content's own 8px padding is the gap. */
+.arf-page { gap:8px; margin-top:0; }
+.arf-page > .spi-head { padding:0 8px; }
+.arf-page .spi-bref-head { padding:8px; gap:8px; }
+.arf-page .spi-bref-body {
+  padding:8px;
+  gap:8px;
+  transition:max-height .3s cubic-bezier(.22, 1, .36, 1), opacity .22s, padding .3s cubic-bezier(.22, 1, .36, 1);
+}
+/* Collapsed, the shared rule folds the body with max-height:0 — but padding
+   can't shrink below itself, so it has to go too or a 16px band stays open. */
+.arf-page .spi-bref.is-collapsed .spi-bref-body { padding-top:0; padding-bottom:0; }
+.arf-page .spi-bref-body .spi-step { margin:0; padding:8px; }
+
+/* The app body tightens text by -0.264px; the prototype doesn't, which made
+   every label on this page a few px narrower (7px across one tab). Set on the
+   page root so the header and step cards get it too; anything that sets its
+   own spacing — titles, table headers — keeps it. */
+.arf-page { letter-spacing:normal; }
+/* Tab strip + search, to the prototype (measured at 1920). The shared p2p
+   toolbar stretches the search across the row; the prototype sits the toolbar
+   on white, keeps the search at 620px on the right, and uses 15px tab icons
+   with a softer idle colour. Spacing follows the page's 8px rhythm above. */
+.arf-list .spi-segrow { margin:0; padding:8px; gap:8px; background:#fff; }
+.arf-list .spi-segrow--search { margin-bottom:0; }
+.arf-list .spi-seg-btn:not(.is-active) { color:#6b8499; }
+.arf-list .spi-seg-ico svg { width:15px; height:15px; }
+.arf-list .spi-segrow .spi-search {
+  flex:0 0 620px;
+  width:620px;
+  max-width:620px;
+  height:43px;
+  padding-left:38px;
+}
+.arf-list .spi-search input { font-size:13px; }
+/* Count badges: 22px tall (which is what makes the tabs 42), teal numbers on
+   the idle tabs. */
+.arf-list .spi-seg-c { height:22px; min-width:22px; padding:0 7px; border-radius:20px; }
+.arf-list .spi-seg-btn:not(.is-active) .spi-seg-c { color:#0e7490; background:#dce9f0; }
+.arf-list .spi-seg-btn.is-active .spi-seg-c { background:rgba(255, 255, 255, .24); }
+
+/* Buttons and chips, to the prototype (measured at 1920). */
+/* "Create Advance Receipt Refund Adjustment": 40px tall, 0 20px, 12px/700. */
+.arf-head-btn { height:40px; padding:0 20px; font-size:12px; font-weight:700; letter-spacing:.02em; }
+
+/* Row actions: the pencil is a 40px teal square with a 16px icon, the vault
+   button a slate-blue diagonal with a 14px shield and lighter type. */
+.arf-table .ord-btn--edit { border-radius:11px; background:linear-gradient(135deg, #22b8d6, #0e7490); }
+.arf-table .ord-btn--edit svg { width:16px; height:16px; }
+.arf-table .ord-btn--vault {
+  gap:6px;
+  padding:0 13px;
+  border-radius:11px;
+  background:linear-gradient(135deg, #3b82a6, #1e4f6b);
+  box-shadow:0 4px 12px -4px rgba(30, 79, 107, .6), inset 0 1px 0 rgba(255, 255, 255, .2);
+  font-size:10.5px;
+  font-weight:700;
+  letter-spacing:.1px;
+}
+.arf-table .ord-btn--vault svg { width:14px; height:14px; }
+
+/* Why the supplier keeps part of the money: an amber pill with a dot, like the
+   prototype's (8px/800, fully rounded), not a square chip. */
+.arf-table .arf-nr__why {
+  gap:5px;
+  height:19px;
+  padding:0 7px;
+  border-radius:999px;
+  background:#fef3c7;
+  border-color:#fde68a;
+  color:#b45309;
+  font-size:8px;
+  font-weight:800;
+  letter-spacing:.02em;
+}
+.arf-table .arf-nr__why::before {
+  content:'';
+  flex-shrink:0;
+  width:5px;
+  height:5px;
+  border-radius:50%;
+  background:currentColor;
+}
+
+/* Letter-spacing the shared classes bring in that the prototype doesn't use. */
+.arf-table .ord-idpill { letter-spacing:normal; }
+.arf-pill { letter-spacing:.02em; }
+
+/* List table: long headers wrap onto two lines like the prototype.
+   The shared .spi-table is a touch tighter than this screen's prototype, so
+   its header and cell metrics are restated here (measured against it: 9px /
+   .45px header, 12px 7px cells, #edf5f8 divider). Scoped to .arf-table so the
+   SPI list keeps its own. */
+.arf-table thead th {
+  white-space:normal;
+  min-width:78px;
+  max-width:120px;
+  padding:12px 7px;
+  font-size:9px;
+  letter-spacing:.45px;
+  color:#6b8a97;
+}
 .arf-table thead th.spi-c-sr { min-width:0; }
+.arf-table tbody td { padding:12px 7px; border-bottom-color:#edf5f8; }
+
+/* The prototype pins every column and lets the table scroll sideways, rather
+   than stretching columns to the viewport. These are its own widths, measured
+   at 1920 (36 … 178, 1906 in total). */
+.arf-table { table-layout:fixed; width:1906px; min-width:1906px; }
+.arf-table thead th { max-width:none; }
+.arf-table thead th:nth-child(1)  { width:36px;  min-width:36px; }
+.arf-table thead th:nth-child(2)  { width:126px; min-width:126px; }
+.arf-table thead th:nth-child(3)  { width:146px; min-width:146px; }
+.arf-table thead th:nth-child(4)  { width:104px; min-width:104px; }
+.arf-table thead th:nth-child(5)  { width:100px; min-width:100px; }
+.arf-table thead th:nth-child(6)  { width:100px; min-width:100px; }
+.arf-table thead th:nth-child(7)  { width:132px; min-width:132px; }
+.arf-table thead th:nth-child(8)  { width:100px; min-width:100px; }
+.arf-table thead th:nth-child(9)  { width:90px;  min-width:90px; }
+.arf-table thead th:nth-child(10) { width:98px;  min-width:98px; }
+.arf-table thead th:nth-child(11) { width:98px;  min-width:98px; }
+.arf-table thead th:nth-child(12) { width:122px; min-width:122px; }
+.arf-table thead th:nth-child(13) { width:104px; min-width:104px; }
+.arf-table thead th:nth-child(14) { width:258px; min-width:258px; }
+.arf-table thead th:nth-child(15) { width:114px; min-width:114px; }
+.arf-table thead th:nth-child(16) { width:178px; min-width:178px; }
 
 /* Money owed back to us (TDS held, amount to be refunded). */
 .arf-amt--due { color:#dc2626; }
+/* Amount columns in the list, to the prototype: 12px, TDS in rose, the amount
+   still to be refunded in red, a nil "not refunded" greyed out. Scoped by
+   .arf-table on purpose — a child component imports this stylesheet before the
+   page imports order.css, so .ord-amt lands later and would win an equal-
+   specificity tie (which is why the old .arf-amt--due never showed). */
+.arf-table .ord-amt       { font-size:12px; }
+.arf-table .arf-amt--tds  { color:#9f1239; }
+.arf-table .arf-amt--due  { color:#b91c1c; }
+.arf-table .arf-amt--zero { color:#94a8b5; }
 
-/* Status pills (type, PO Active / Cancelled): Badge sets size + colour; add the thin border. */
-.arf-pill { white-space:nowrap; box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent); }
+/* Status pills (type, PO Active / Cancelled). The prototype gives them a flat
+   pastel fill with a matching edge and its own colour per credit-note type,
+   rather than the Badge's translucent wash — so the geometry and all six pairs
+   are restated here (measured: 22px tall, 9px/800, 0 9px, fully rounded). */
+.arf-pill {
+  height:22px;
+  padding:0 9px;
+  border-radius:999px;
+  border:1px solid currentColor;
+  font-size:9px;
+  font-weight:800;
+  white-space:nowrap;
+  box-shadow:none;
+}
+.arf-pill--purchase-order-cancellation,
+.arf-pill--po-cancelled { color:#b91c1c; background:#fee2e2; border-color:#fecaca; }
+.arf-pill--rate-difference     { color:#b45309; background:#fef3c7; border-color:#fde68a; }
+.arf-pill--quantity-difference { color:#0e7490; background:#e0f7fb; border-color:#bbe9f1; }
+.arf-pill--quality-rejection   { color:#a21caf; background:#fdf2f8; border-color:#f3cfe8; }
+.arf-pill--short-supply        { color:#4338ca; background:#eef2ff; border-color:#c7d2fe; }
+.arf-pill--gst-adjustment      { color:#0f766e; background:#ccfbf1; border-color:#99f6e4; }
+.arf-pill--po-active           { color:#0369a1; background:#e0f2fe; border-color:#bae6fd; }
+/* The two PO-status pills carry a slightly stronger dot than their text. */
+.arf-pill--po-active > span:first-child   { background:#0284c7; }
+.arf-pill--po-cancelled > span:first-child { background:#dc2626; }
+/* The Badge carries a `px-2` class, and Bootstrap's own `.px-2` (also loaded
+   here, via Velzon) sets it with !important — so only !important can give the
+   prototype's 9px sides back. Scoped to this table. */
+.arf-table .arf-pill { padding-left:9px !important; padding-right:9px !important; }
+
+/* ID pills and the date under them — the prototype's own values. */
+.arf-table .ord-idpill {
+  padding:4px 7px;
+  border-radius:7px;
+  border-color:#c4eef5;
+  background:#f0fdff;
+  font-size:10px;
+  font-weight:800;
+}
+.arf-table .ord-idcell__date { font-size:9.5px; font-weight:700; color:#8aa5b2; }
 
 /* Refund number chip inside the recovery cell. */
 .arf-refchip { align-self:center; font-family:'Geist Mono',ui-monospace,monospace; }
@@ -196,6 +371,9 @@
 [data-bs-theme="dark"] .arf-hist { border-color:rgba(148,163,184,.2); }
 [data-bs-theme="dark"] .arf-hist__empty { color:#94a3b8; }
 [data-bs-theme="dark"] .arf-amt--due { color:#f87171; }
+[data-bs-theme="dark"] .arf-table .arf-amt--due  { color:#f87171; }
+[data-bs-theme="dark"] .arf-table .arf-amt--tds  { color:#fb7185; }
+[data-bs-theme="dark"] .arf-table .arf-amt--zero { color:#64748b; }
 [data-bs-theme="dark"] .arf-vtag--release { color:#67e8f9; background:rgba(6,182,212,.14); border-color:rgba(6,182,212,.35); }
 [data-bs-theme="dark"] .arf-vtag--refund  { color:#86efac; background:rgba(34,197,94,.14); border-color:rgba(34,197,94,.35); }
 [data-bs-theme="dark"] .arf-vault-body,
