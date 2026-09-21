@@ -411,12 +411,63 @@
    composite the scroll. */
 .arf-list .spi-tablewrap { background:#fff; }
 [data-bs-theme="dark"] .arf-list .spi-tablewrap { background:#0e1b24; }
+
+/* ── Dark mode for everything restyled to the prototype above ──────────────
+   Found by scanning the page in dark mode for light surfaces and text under
+   3:1 contrast: list toolbar, status pills, picker, form and vault. */
+/* List: toolbar row, idle tabs and their count badges. */
+[data-bs-theme="dark"] .arf-list .spi-segrow { background:#0e1b24; }
+[data-bs-theme="dark"] .arf-list .spi-seg-btn:not(.is-active) { color:#94a3b8; }
+[data-bs-theme="dark"] .arf-list .spi-seg-btn:not(.is-active) .spi-seg-c { color:#67e8f9; background:rgba(34,211,238,.14); }
+/* Status / type pills: a lighter tone of their own colour on a tint of it. */
+[data-bs-theme="dark"] .arf-pill { background:color-mix(in srgb, currentColor 14%, transparent); border-color:color-mix(in srgb, currentColor 38%, transparent); }
+[data-bs-theme="dark"] .arf-pill--purchase-order-cancellation,
+[data-bs-theme="dark"] .arf-pill--po-cancelled   { color:#fca5a5; }
+[data-bs-theme="dark"] .arf-pill--rate-difference,
+[data-bs-theme="dark"] .arf-pill--partial-refund { color:#fcd34d; }
+[data-bs-theme="dark"] .arf-pill--quantity-difference { color:#67e8f9; }
+[data-bs-theme="dark"] .arf-pill--quality-rejection   { color:#f0abfc; }
+[data-bs-theme="dark"] .arf-pill--short-supply        { color:#a5b4fc; }
+[data-bs-theme="dark"] .arf-pill--gst-adjustment      { color:#5eead4; }
+[data-bs-theme="dark"] .arf-pill--po-active           { color:#7dd3fc; }
+[data-bs-theme="dark"] .arf-pill--full-refund         { color:#86efac; }
+[data-bs-theme="dark"] .arf-pill--po-active > span:first-child { background:#38bdf8; }
+[data-bs-theme="dark"] .arf-pill--po-cancelled > span:first-child { background:#f87171; }
+/* Picker + vault popups: the white Cancel / Close, the search strip, the
+   dropdown's rows and the chosen value. */
+[data-bs-theme="dark"] .arf-pick .spi-mdl-foot { border-top-color:rgba(148,163,184,.14); }
+[data-bs-theme="dark"] .arf-pick .spi-mdl-cancel { color:#cbd5e1; background:rgba(255,255,255,.04); box-shadow:inset 0 0 0 1.5px rgba(148,163,184,.28); }
+[data-bs-theme="dark"] .arf-pick .spi-mdl-cancel:hover { color:#fff; background:rgba(34,211,238,.1); box-shadow:inset 0 0 0 1.5px rgba(34,211,238,.45); }
+[data-bs-theme="dark"] .arf-pick-search { background:rgba(255,255,255,.02); border-bottom-color:rgba(148,163,184,.14); }
+[data-bs-theme="dark"] .arf-pick-search input { color:#e2e8f0; background:#0c1c24; border-color:rgba(34,211,238,.25); }
+[data-bs-theme="dark"] .arf-pick-pop .spi-mdl-dd-opt:hover { background:rgba(34,211,238,.08); }
+[data-bs-theme="dark"] .arf-pick-pop .spi-mdl-dd-opt.is-sel { background:rgba(34,211,238,.14); box-shadow:inset 0 0 0 1.5px rgba(34,211,238,.35); }
+[data-bs-theme="dark"] .arf-pick-sup,
+[data-bs-theme="dark"] .arf-pick-dd .arf-pick-sup { color:#e2e8f0; }
+[data-bs-theme="dark"] .arf-pick-paid { color:#6ee7b7; }
+[data-bs-theme="dark"] .arf-pick-dd .arf-pick-paid { background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.35); }
+[data-bs-theme="dark"] .arf-pick-dd .ord-idpill,
+[data-bs-theme="dark"] .arf-pick-pop .ord-idpill { color:#67e8f9; background:rgba(34,211,238,.1); border-color:rgba(34,211,238,.35); }
+/* Form: section badges and toggles, AUTO tags, Browse, the dropdown prompt,
+   and the highlighted Total Paid label. */
+[data-bs-theme="dark"] .arf-form .spi-dt-fields-badge { color:#67e8f9; background:rgba(34,211,238,.1); box-shadow:inset 0 0 0 1px rgba(34,211,238,.3); }
+[data-bs-theme="dark"] .arf-form .spi-dt-sec-toggle { color:#67e8f9; background:rgba(34,211,238,.08); border-color:rgba(34,211,238,.3); }
+[data-bs-theme="dark"] .arf-form .spi-dt-auto { color:#94a3b8; background:rgba(255,255,255,.05); border-color:rgba(148,163,184,.25); }
+[data-bs-theme="dark"] .arf-form .spi-dt-file-btn { color:#67e8f9; background:rgba(34,211,238,.1); border-color:rgba(34,211,238,.3); }
+[data-bs-theme="dark"] .arf-form .master-select-placeholder,
+[data-bs-theme="dark"] .arf-form .master-select-value-text { color:#e2e8f0; }
+[data-bs-theme="dark"] .arf-ro--key .arf-ro__l { color:#67e8f9; }
+[data-bs-theme="dark"] .arf-ro__l { color:#7c93a8; }
+
 .arf-list .spi-segrow--search { margin-bottom:0; }
 .arf-list .spi-seg-btn:not(.is-active) { color:#6b8499; }
 .arf-list .spi-seg-ico svg { width:15px; height:15px; }
+/* 620px while there is room; it gives way on narrower screens instead of
+   running past the card. */
 .arf-list .spi-segrow .spi-search {
-  flex:0 0 620px;
+  flex:0 1 620px;
   width:620px;
+  min-width:0;
   max-width:620px;
   height:43px;
   padding-left:38px;
@@ -709,6 +760,56 @@
 [data-bs-theme="dark"] .arf-vg-count { color:#67e8f9; background:rgba(6,182,212,.14); border-color:rgba(6,182,212,.35); }
 [data-bs-theme="dark"] .arf-vf { background:rgba(255,255,255,.03); border-color:rgba(148,163,184,.14); }
 
+/* ── Loading shimmer ───────────────────────────────────────────────────────
+   The bars are the shared P2P shimmer (.spi-sk-bar in the list, .spi-dt-sk in
+   the form, both already dark-mode aware); only their sizes live here. List
+   rows copy a real row's shape so the fitted page size holds when data lands. */
+.arf-sk-stack { display:flex; flex-direction:column; align-items:center; gap:6px; }
+.arf-sk-act { display:flex; align-items:center; justify-content:center; gap:8px; }
+.arf-sk-sr { width:14px; }
+.arf-sk-pill { width:112px; max-width:100%; height:22px; border-radius:7px; }
+.arf-sk-pill--sm { width:72px; }
+.arf-sk-date { width:66px; height:8px; }
+.arf-sk-sm { width:40px; }
+.arf-sk-num { width:72px; height:13px; }
+.arf-sk-tag { width:92px; height:20px; border-radius:20px; }
+.arf-sk-track { width:170px; height:6px; }
+/* Recovery cell = progress block (42) + ADR chip (19) + button (40), 8px apart:
+   117px, the real cell's height. */
+.arf-sk-stack--rec { gap:8px; }
+.arf-sk-tag--sm { height:16px; }
+.arf-sk-chip { width:104px; height:19px; border-radius:6px; }
+.arf-sk-btn { width:150px; height:40px; border-radius:10px; }
+.arf-sk-sq { width:38px; height:38px; border-radius:10px; }
+.arf-sk-vault { width:120px; height:38px; border-radius:10px; }
+.arf-list .spi-seg-c .arf-sk-count { width:10px; height:8px; }
+.arf-list .spi-seg-btn.is-active .arf-sk-count { background:rgba(255, 255, 255, .5); }
+/* Form: header placeholders, section heads and the field labels / values. */
+.arf-sk { pointer-events:none; }
+.arf-sk-mid { display:flex; flex:1 1 auto; flex-direction:column; gap:7px; min-width:0; }
+.arf-form .spi-dt-head-l .arf-sk-mid { margin-left:11px; }
+.arf-sk-w160 { width:160px; max-width:100%; }
+.arf-sk-w200 { width:200px; max-width:100%; }
+.arf-sk-w280 { width:280px; max-width:100%; }
+.arf-sk-thin { height:8px; }
+.arf-sk-hpill { width:150px; height:40px; border-radius:12px; flex:0 1 150px; }
+/* Section heads: the badge + toggle the real head carries on its right. */
+.arf-sk-badge { width:78px; height:24px; margin-left:auto; border-radius:8px; flex-shrink:0; }
+.arf-sk-toggle { width:26px; height:26px; border-radius:8px; flex-shrink:0; }
+/* On the teal header gradients the default pale bar all but vanishes; a teal
+   tint keeps the shapes readable there. */
+.arf-form .spi-dt-head .spi-dt-sk,
+.arf-form .spi-dt-sec-head .spi-dt-sk { background:rgba(8, 145, 178, .14); }
+[data-bs-theme="dark"] .arf-form .spi-dt-head .spi-dt-sk,
+[data-bs-theme="dark"] .arf-form .spi-dt-sec-head .spi-dt-sk { background:rgba(34, 211, 238, .14); }
+.arf-sk-l { width:55%; height:8px; }
+.arf-sk-v { width:78%; height:13px; }
+/* Margins stand in for the text's line height, so a placeholder cell or field
+   is as tall as the real one (read-only cell 59px, field label 14px). */
+.arf-ro .arf-sk-l { margin:3px 0 2px; }
+.arf-ro .arf-sk-v { margin:2px 0; }
+.spi-dt-field .arf-sk-l { margin:3px 0; }
+
 /* ── Responsive ────────────────────────────────────────────────────────── */
 /* Header: pills and buttons share one row only while there is room. */
 @media (max-width: 1500px) {
@@ -753,7 +854,46 @@
   .arf-short__top { flex-wrap:wrap; }
   .arf-short__fig { width:100%; flex-direction:row; align-items:baseline; gap:8px; flex-wrap:wrap; }
 }
-/* The header button label is long — let it wrap instead of overflowing on phones. */
+/* The header button label is long: narrower side padding keeps it on one
+   centred line down to 360px; below that it wraps, still centred. */
 @media (max-width: 480px) {
-  .arf-head-btn { white-space:normal; text-align:left; line-height:1.3; }
+  .arf-page .arf-head-btn { padding:0 12px; white-space:normal; text-align:center; line-height:1.3; }
+}
+
+/* ── Phones (≤640px), checked at 360 and 390 ───────────────────────────── */
+@media (max-width: 640px) {
+  /* Page header, on the guide strip's grid below it: 8px padding all round
+     (the title was touching the top edge), the same 36px icon held at the top
+     of the text instead of centred on four lines, so both cards' text starts
+     on one left edge. */
+  .arf-page > .spi-head { padding:8px; gap:8px; }
+  .arf-page .spi-head-left { padding-left:0; gap:8px; align-items:flex-start; }
+  .arf-page .spi-head-icon { width:36px; height:36px; flex:0 0 36px; border-radius:11px; }
+  .arf-page .spi-head-title { font-size:14px; line-height:1.3; }
+  .arf-page .spi-head-sub { margin-top:4px; line-height:1.45; }
+  .arf-page .arf-head-btn { width:100%; justify-content:center; }
+  /* List toolbar: the stacked tabs take the full width, each badge sits at the
+     right end of its tab, and the search fills the row under them. */
+  .arf-list .spi-segrow .spi-seg { width:100%; }
+  .arf-list .spi-seg-btn .spi-seg-c { margin-left:auto; }
+  .arf-list .spi-segrow .spi-search { flex:1 1 auto; width:100%; max-width:none; }
+  /* Guide strip: "What We Are Doing Here" drops under the page name instead of
+     running under the toggle. */
+  .arf-page .spi-bref-row { flex-wrap:wrap; row-gap:2px; }
+  .arf-page .spi-bref-sep { display:none; }
+  .arf-page .spi-bref-label { flex-basis:100%; }
+
+  /* Form section heads: the small eyebrow repeats the title, and next to it
+     the title broke onto two lines — the title alone reads cleaner. */
+  .arf-form .spi-dt-sec-lbl,
+  .arf-form .spi-dt-sec-sep { display:none; }
+  /* Refund fields: one per row, so numbers and labels are never cut. */
+  .arf-rgrid { grid-template-columns:minmax(0, 1fr); }
+  .arf-rgrid > .spi-dt-field:nth-child(n) { grid-column:1 / -1; }
+  /* Footer: the single step dot says nothing on one step; Cancel keeps its
+     own width and Submit takes the rest, so its label stays on one line. */
+  .arf-form .spi-dt-foot .spi-dt-dots { display:none; }
+  .arf-form .spi-dt-foot-r { width:100%; margin-left:0; }
+  .arf-form .spi-dt-foot-r > button { justify-content:center; min-width:0; }
+  .arf-form .spi-dt-foot-r > .spi-dt-btn-next { flex:1 1 auto; }
 }

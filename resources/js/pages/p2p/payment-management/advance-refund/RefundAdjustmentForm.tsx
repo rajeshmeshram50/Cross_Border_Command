@@ -1,7 +1,7 @@
 // Create / edit an Advance Receipt Refund Adjustment — full-page form, opened
 // after the PO is picked (or straight away when editing). Reuses the shared P2P
 // wizard shell (spi-dt-*) and its Field / EditSelect / HeadPill pieces.
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -57,6 +57,10 @@ function derivedTerms(po: string, docType: string) {
   return { term: TERMS[n % TERMS.length], transport: pool[n % pool.length] };
 }
 
+/* How long the form shimmer shows while the PO and supplier are looked up.
+   Sample data for now; once the API is connected the fetch drives `loading`. */
+const LOAD_MS = 450;
+
 export default function RefundAdjustmentForm({ po, edit, nextNo, today, onSubmit, onCancel, onClose }: Props) {
   // Freeze the page behind, but keep the form's own scroller working.
   useScrollLock(true, '.spi-dt-overlay');
@@ -79,6 +83,11 @@ export default function RefundAdjustmentForm({ po, edit, nextNo, today, onSubmit
   const [invalid, setInvalid] = useState<Record<string, boolean>>({});
   const [open, setOpen] = useState({ po: true, sup: true, refund: true });
   const [vault, setVault] = useState(false);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const t = window.setTimeout(() => setLoading(false), LOAD_MS);
+    return () => window.clearTimeout(t);
+  }, []);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Esc closes the vault first when it is open (it registers its own handler).
@@ -136,6 +145,20 @@ export default function RefundAdjustmentForm({ po, edit, nextNo, today, onSubmit
       <div className="spi-dt">
         <div className="spi-dt-topcard">
           <div className="spi-dt-head">
+            {loading ? (
+              <>
+                <div className="spi-dt-head-l">
+                  <div className="spi-dt-sk spi-dt-sk-ico" />
+                  <div className="arf-sk-mid">
+                    <div className="spi-dt-sk spi-dt-sk-line arf-sk-w280" />
+                    <div className="spi-dt-sk spi-dt-sk-line arf-sk-w160 arf-sk-thin" />
+                  </div>
+                </div>
+                <div className="spi-dt-pills" aria-hidden>
+                  {[0, 1, 2, 3, 4].map((i) => <div key={i} className="spi-dt-sk arf-sk-hpill" />)}
+                </div>
+              </>
+            ) : (<>
             <div className="spi-dt-head-l">
               <div className="spi-dt-head-ico"><IcoDocSm /><span className="spi-dt-head-dot" /></div>
               <div>
@@ -154,16 +177,18 @@ export default function RefundAdjustmentForm({ po, edit, nextNo, today, onSubmit
               <Dots />
               <HeadPill icon={<IcoRef />} label="PROCUREMENT ID" value={row?.procurement ?? '—'} mono />
             </div>
+            </>)}
             <div className="spi-dt-head-r">
               <span className="spi-dt-divider" />
               <Tooltip label="Refund, PO and payment proofs" themed>
-                <button type="button" className="spi-dt-btn-pay" onClick={() => setVault(true)}><IcoShield /> Evidence Vault</button>
+                <button type="button" className="spi-dt-btn-pay" disabled={loading} onClick={() => setVault(true)}><IcoShield /> Evidence Vault</button>
               </Tooltip>
               <button type="button" className="spi-dt-btn-close" onClick={onClose}><IcoX /> Close</button>
             </div>
           </div>
         </div>
 
+        {loading ? <FormSkeleton fullSupplier={!!sup} /> : (
         <div className="spi-dt-body">
           <Section icon={<IcoCart />} label="Purchase Order" title="Purchase Order Details" sub="The order this refund is raised against"
             badge="Read-only" open={open.po} onToggle={() => toggle('po')}>
@@ -286,6 +311,7 @@ export default function RefundAdjustmentForm({ po, edit, nextNo, today, onSubmit
             )}
           </Section>
         </div>
+        )}
 
         <div className="spi-dt-foot">
           <div className="spi-dt-foot-l">
@@ -297,7 +323,7 @@ export default function RefundAdjustmentForm({ po, edit, nextNo, today, onSubmit
           </div>
           <div className="spi-dt-foot-r">
             <button type="button" className="spi-dt-btn-ghost" onClick={onCancel}><IcoChevronL /> Cancel</button>
-            <button type="button" className="spi-dt-btn-next" onClick={submit}>
+            <button type="button" className="spi-dt-btn-next" disabled={loading} onClick={submit}>
               {edit ? 'Update Refund Adjustment' : 'Submit Refund Adjustment'} <IcoChevronR />
             </button>
           </div>
@@ -307,6 +333,59 @@ export default function RefundAdjustmentForm({ po, edit, nextNo, today, onSubmit
       {vault && <EvidenceVaultModal refund={draft} onClose={() => setVault(false)} />}
     </div>,
     document.body,
+  );
+}
+
+/* Shimmer for the form body, on the real grids (.arf-rogrid / .arf-rgrid) so
+   it takes the same shape at every width: PO details, supplier details (full
+   master record or the short PO-only one) and the refund fields. Bars are the
+   shared wizard shimmer (.spi-dt-sk); sizes are in advance-refund.css. */
+function FormSkeleton({ fullSupplier }: { fullSupplier: boolean }) {
+  const ro = (k: number, span2 = false) => (
+    <div key={k} className={`arf-ro${span2 ? ' arf-ro--span2' : ''}`}>
+      <span className="spi-dt-sk spi-dt-sk-line arf-sk-l" />
+      <span className="spi-dt-sk spi-dt-sk-line arf-sk-v" />
+    </div>
+  );
+  const head = (
+    <div className="spi-dt-sec-head">
+      <div className="spi-dt-sk spi-dt-sk-ico" />
+      <div className="arf-sk-mid">
+        <div className="spi-dt-sk spi-dt-sk-line arf-sk-w200" />
+        <div className="spi-dt-sk spi-dt-sk-line arf-sk-w280 arf-sk-thin" />
+      </div>
+      <div className="spi-dt-sk arf-sk-badge" />
+      <div className="spi-dt-sk arf-sk-toggle" />
+    </div>
+  );
+  return (
+    <div className="spi-dt-body arf-sk" aria-busy="true" aria-label="Loading refund adjustment">
+      <div className="spi-dt-sec">
+        {head}
+        <div className="spi-dt-sec-body"><div className="arf-rogrid">{Array.from({ length: 12 }).map((_, i) => ro(i))}</div></div>
+      </div>
+      <div className="spi-dt-sec">
+        {head}
+        <div className="spi-dt-sec-body">
+          {fullSupplier
+            ? <div className="arf-rogrid arf-rogrid--sup">{Array.from({ length: 17 }).map((_, i) => ro(i, i === 8))}</div>
+            : <div className="arf-rogrid">{ro(0)}{ro(1)}</div>}
+        </div>
+      </div>
+      <div className="spi-dt-sec">
+        {head}
+        <div className="spi-dt-sec-body">
+          <div className="arf-rgrid">
+            {Array.from({ length: 11 }).map((_, i) => (
+              <div key={i} className="spi-dt-field">
+                <span className="spi-dt-sk spi-dt-sk-line arf-sk-l" />
+                <span className="spi-dt-sk spi-dt-sk-field" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
