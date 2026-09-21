@@ -1,11 +1,11 @@
 import { Suspense, lazy, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { useScrollLock } from '../../../../hooks/useScrollLock';
-import type { ProductDto } from '../../p2p-master-management/product-management/ProductView';
+import { useScrollLock } from '../../../../../hooks/useScrollLock';
+import type { ProductDto } from '../../../p2p-master-management/product-management/ProductView';
 import type { InspectionProduct } from './inspection-shared';
 import './physical-inspection.css';
 
-const ProductView = lazy(() => import('../../p2p-master-management/product-management/ProductView'));
+const ProductView = lazy(() => import('../../../p2p-master-management/product-management/ProductView'));
 
 function toProductDto(p: InspectionProduct): ProductDto {
   const gstAmount = Math.round(p.price * p.gst) / 100;
@@ -49,11 +49,12 @@ function toProductDto(p: InspectionProduct): ProductDto {
   };
 }
 
-export default function InspectionProductView({ product, onClose }: {
-  product: InspectionProduct; onClose: () => void;
+/** Opens a sample product (`product`) or a real product master record (`productId`). */
+export default function InspectionProductView({ product, productId, onClose }: {
+  product?: InspectionProduct; productId?: number; onClose: () => void;
 }) {
   useScrollLock(true, '.pins-pv');
-  const dto = useMemo(() => toProductDto(product), [product]);
+  const dto = useMemo(() => (product ? toProductDto(product) : undefined), [product]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -71,7 +72,7 @@ export default function InspectionProductView({ product, onClose }: {
     >
       <div className="prd-detail-overlay pins-layer pins-pv">
         <div className="prd-detail-modal">
-          <ProductView productId={dto.id} preview={dto} onClose={onClose} />
+          <ProductView productId={productId ?? dto?.id} preview={dto} onClose={onClose} />
         </div>
       </div>
     </Suspense>,

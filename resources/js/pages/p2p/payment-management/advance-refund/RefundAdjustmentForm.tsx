@@ -8,8 +8,8 @@ import { useToast } from '../../../../contexts/ToastContext';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { Field, EditSelect } from '../../purchase-management/order/create-po/form-fields';
 import { HeadPill } from '../../purchase-management/order/create-po/CreatePoForm';
-import { PO_TYPE } from '../../purchase-management/order/Order';
-import { money, shortDate, supplierCode } from '../../purchase-management/order/payment-shared';
+import { PO_TYPE } from '../../purchase-management/order/po-list/Order';
+import { money, shortDate, supplierCode } from '../../purchase-management/order/manage-payment/payment-shared';
 import {
   IcoAlert, IcoCart, IcoChevron, IcoChevronL, IcoChevronR, IcoDocSm, IcoLines, IcoLock, IcoPaperclip,
   IcoShield, IcoShip, IcoTarget, IcoUser, IcoX,

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useScrollLock } from '../../../../hooks/useScrollLock';
+import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import type { ReleasePayment } from './MakePoPaymentModal';
 import { Chip, ICON_X, money } from './payment-shared';
-import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './manage-payment-requests.css';
 import './add-payment.css';
 

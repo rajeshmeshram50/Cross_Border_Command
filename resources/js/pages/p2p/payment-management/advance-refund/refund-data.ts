@@ -2,7 +2,8 @@
 // screen derives from a refund. Rows are raised against the Order module's
 // purchase orders (static sample data until the API is connected).
 import type { BadgeVariant } from '../../../../components/ui/Badge';
-import { SAMPLE_ROWS, type OrderRow } from '../../purchase-management/order/Order';
+import type { OrderRow } from '../../purchase-management/order/po-list/Order';
+import { SAMPLE_ROWS } from './refund-sample-orders';
 
 export type RefundRecovery = {
   amount: number;

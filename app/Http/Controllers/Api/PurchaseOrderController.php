@@ -1299,7 +1299,7 @@ class PurchaseOrderController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $v = Vendor::with(['primaryAddress', 'vendorType', 'gstScrutiny' => fn($g) => $g->latest('id')])
+        $v = Vendor::with(['primaryAddress', 'vendorType', 'riskLevel', 'gstScrutiny' => fn($g) => $g->latest('id')])
             ->forUser($user, $request->integer('branch_id') ?: null)
             ->findOrFail($id);
 
@@ -1326,7 +1326,10 @@ class PurchaseOrderController extends Controller
             'code' => $v->vendor_code,
             'segments' => $segNames,
             'name' => $v->company_name ?: $v->legal_name,
+            'legalName' => $v->legal_name,
             'type' => optional($v->vendorType)->name,
+            'risk' => optional($v->riskLevel)->name,
+            'category' => $v->supplier_category,
             'addr' => optional($a)->address_line,
             'country' => $country,
             'state' => $state,

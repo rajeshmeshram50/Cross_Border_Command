@@ -7,14 +7,14 @@ import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
-import { Box, Chip, ICON_X, STAT_ICONS, Stat, money, shortDate, supplierCode } from '../../purchase-management/order/payment-shared';
+import { Box, Chip, ICON_X, STAT_ICONS, Stat, money, shortDate, supplierCode } from '../../purchase-management/order/manage-payment/payment-shared';
 import { IcoCheck, IcoDocSm, IcoDownload, IcoEye, IcoPencil, IcoPlus, IcoRefund, IcoTrash } from '../../icons';
 import AddRecoveryModal from './AddRecoveryModal';
 import { findPo, refundFigures, type RefundAdjustment, type RefundRecovery } from './refund-data';
 import { useEscapeClose } from './useEscapeClose';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
-import '../../purchase-management/order/manage-payment-requests.css';
-import '../../purchase-management/order/make-po-payment.css';
+import '../../purchase-management/order/manage-payment/manage-payment-requests.css';
+import '../../purchase-management/order/manage-payment/make-po-payment.css';
 import './advance-refund.css';
 
 type Props = {

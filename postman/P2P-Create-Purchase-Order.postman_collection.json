@@ -1,0 +1,1017 @@
+{
+  "info": {
+    "name": "P2P · Create Purchase Order (/api/p2p/orders)",
+    "_postman_id": "8a2b6c1e-p2p-orders-0001",
+    "description": "New P2P purchase-order backend. Run 0. Auth first — it stores {{token}}. Stage 01 (Create) stores {{po_id}}.\n\nNOTE: /api/login deletes the user's other tokens — logging in here logs that user out of the browser. Use a test user.\n\nEnums: link_type = with_shipment | standalone · link_procurement = yes | no (only with a shipment) · po_type = material_goods | services | ffd_transporter · document_type = domestic | international · toggles (physical_inspection, submit, is_required) = yes | no · verdict = correct | damaged | mismatched · document status = sent | signed.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000/api"
+    },
+    {
+      "key": "email",
+      "value": "agrotech@mailinator.com"
+    },
+    {
+      "key": "password",
+      "value": "CHANGE_ME"
+    },
+    {
+      "key": "approver_email",
+      "value": "igc@mailinator.com"
+    },
+    {
+      "key": "approver_password",
+      "value": "CHANGE_ME"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "approver_token",
+      "value": ""
+    },
+    {
+      "key": "shipment_id",
+      "value": "12"
+    },
+    {
+      "key": "vendor_id",
+      "value": "4"
+    },
+    {
+      "key": "pi_item_1",
+      "value": "7"
+    },
+    {
+      "key": "pi_item_2",
+      "value": "8"
+    },
+    {
+      "key": "pi_item_3",
+      "value": "9"
+    },
+    {
+      "key": "po_id",
+      "value": ""
+    },
+    {
+      "key": "doc_id",
+      "value": ""
+    },
+    {
+      "key": "item_id",
+      "value": ""
+    },
+    {
+      "key": "blocked_vendor_id",
+      "value": "5",
+      "description": "GST gate blocked — use to test the submit block"
+    },
+    {
+      "key": "product_id",
+      "value": "83",
+      "description": "Branch-3 product with GST % set — for manual lines"
+    },
+    {
+      "key": "sig_id",
+      "value": ""
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "0. Auth",
+      "item": [
+        {
+          "name": "Login (buyer)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.token) pm.collectionVariables.set('token', j.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": "{{base_url}}/login"
+          }
+        },
+        {
+          "name": "Login (GST approver — a different user)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.token) pm.collectionVariables.set('approver_token', j.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{approver_email}}\",\n  \"password\": \"{{approver_password}}\"\n}"
+            },
+            "url": "{{base_url}}/login"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Lookups",
+      "item": [
+        {
+          "name": "Next PO code (preview)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/orders/next-code"
+          }
+        },
+        {
+          "name": "Shipments dropdown (existing API)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/purchase-orders/shipments",
+            "description": "Existing endpoint, shared with the older PO screen."
+          }
+        },
+        {
+          "name": "Suppliers dropdown (existing API)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/purchase-orders/suppliers",
+            "description": "Existing endpoint. document_type tells whether the supplier is domestic or international."
+          }
+        },
+        {
+          "name": "Supplier detail (existing API)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/purchase-orders/suppliers/{{vendor_id}}",
+            "description": "Existing endpoint: address, stateCode, gstNo, scrutiny and filing dates. The GST gate and tax mode are decided by the server on Stage 01 save."
+          }
+        },
+        {
+          "name": "PI lines with pending qty",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/orders/shipments/{{shipment_id}}/pi-lines?exclude_po=",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "orders",
+                "shipments",
+                "{{shipment_id}}",
+                "pi-lines"
+              ],
+              "query": [
+                {
+                  "key": "exclude_po",
+                  "value": "",
+                  "description": "PO being edited — its own lines are not counted as already ordered"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Purchase Order",
+      "item": [
+        {
+          "name": "Stage 01 · Create draft",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.data && j.data.id) pm.collectionVariables.set('po_id', j.data.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"po_type\": \"material_goods\",\n  \"document_type\": \"domestic\",\n  \"mode_of_transport\": \"Road\",\n  \"expected_delivery_date\": \"2026-10-15\",\n  \"delivery_location\": \"Central Warehouse, Mumbai\",\n  \"payment_type\": \"Advance\",\n  \"physical_inspection\": \"yes\",\n  \"link_type\": \"with_shipment\",\n  \"shipment_order_id\": {{shipment_id}},\n  \"link_procurement\": \"yes\",\n  \"procurement_request_id\": 1,\n  \"procurement_request_code\": \"PROC-001\",\n  \"vendor_id\": {{vendor_id}}\n}"
+            },
+            "url": "{{base_url}}/p2p/orders"
+          }
+        },
+        {
+          "name": "Stage 01 · Create draft (standalone, no shipment)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.data && j.data.id) pm.collectionVariables.set('po_id', j.data.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"po_type\": \"services\",\n  \"document_type\": \"domestic\",\n  \"mode_of_transport\": \"Road\",\n  \"expected_delivery_date\": \"2026-10-20\",\n  \"delivery_location\": \"Head Office, Pune\",\n  \"payment_type\": \"Credit\",\n  \"physical_inspection\": \"no\",\n  \"link_type\": \"standalone\",\n  \"vendor_id\": {{vendor_id}}\n}"
+            },
+            "url": "{{base_url}}/p2p/orders"
+          }
+        },
+        {
+          "name": "Stage 01 · Update (international example)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"po_type\": \"material_goods\",\n  \"document_type\": \"international\",\n  \"mode_of_transport\": \"Sea\",\n  \"expected_delivery_date\": \"2026-11-01\",\n  \"delivery_location\": \"Nhava Sheva\",\n  \"payment_type\": \"Letter of Credit (LC)\",\n  \"physical_inspection\": \"yes\",\n  \"currency_code\": \"USD\",\n  \"exchange_rate\": 83.25,\n  \"inco_term\": \"FOB\",\n  \"port_of_loading\": \"Nhava Sheva\",\n  \"port_of_discharge\": \"Jebel Ali\",\n  \"final_destination\": \"Dubai\",\n  \"country_of_origin\": \"India\",\n  \"link_type\": \"with_shipment\",\n  \"shipment_order_id\": {{shipment_id}},\n  \"link_procurement\": \"no\",\n  \"vendor_id\": {{vendor_id}}\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/stage-1"
+          }
+        },
+        {
+          "name": "Stage 02 · Product lines (2-way match) + charges",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.data && j.data.items && j.data.items.length) pm.collectionVariables.set('item_id', j.data.items[0].id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lines\": [\n    { \"pi_item_id\": {{pi_item_1}}, \"quantity\": 1, \"rate\": 700 },\n    { \"pi_item_id\": {{pi_item_2}}, \"quantity\": 5, \"rate\": 200, \"description\": \"Partial — balance on next PO\" }\n  ],\n  \"shipping_charges\": 100,\n  \"packaging_charges\": 0,\n  \"other_charges\": 0\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/items"
+          }
+        },
+        {
+          "name": "Stage 02 · Expect 422 — PI line whose product has no GST % (pi_item_3)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lines\": [\n    { \"pi_item_id\": {{pi_item_3}}, \"quantity\": 1, \"rate\": 5 }\n  ]\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/items"
+          }
+        },
+        {
+          "name": "Stage 02 · Expect 422 — qty above pending",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lines\": [\n    { \"pi_item_id\": {{pi_item_1}}, \"quantity\": 99999, \"rate\": 700 }\n  ]\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/items"
+          }
+        },
+        {
+          "name": "Stage 02 · Manual lines (standalone PO — product_id, no pi_item_id)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lines\": [\n    { \"product_id\": {{product_id}}, \"quantity\": 5, \"rate\": 1500, \"description\": \"Annual maintenance\" }\n  ],\n  \"shipping_charges\": 0\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/items"
+          }
+        },
+        {
+          "name": "Stage 02 · Change a qty (writes qty history)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lines\": [\n    { \"pi_item_id\": {{pi_item_1}}, \"quantity\": 3, \"rate\": 700 },\n    { \"pi_item_id\": {{pi_item_2}}, \"quantity\": 4, \"rate\": 200 }\n  ],\n  \"shipping_charges\": 100\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/items"
+          }
+        },
+        {
+          "name": "Stage 03 · Save terms (no submit)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"terms\": \"1. Delivery within 30 days of PO.\\n2. Payment 30% advance, balance on GRN.\",\n  \"submit\": \"no\"\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/terms"
+          }
+        },
+        {
+          "name": "Stage 03 · Expect 422 — T&C over 20,000 chars",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"terms\": \"{{long_terms}}\",\n  \"submit\": \"no\"\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/terms"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.variables.set('long_terms', 'x'.repeat(20001));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Stage 03 · Submit PO",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"terms\": \"1. Delivery within 30 days of PO.\\n2. Payment 30% advance, balance on GRN.\",\n  \"submit\": \"yes\"\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/terms"
+          }
+        },
+        {
+          "name": "List POs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/orders?status=&link_type=&search=&shipment_order_id=&procurement_request_id=&vendor_id=&per_page=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "draft | submitted | cancelled"
+                },
+                {
+                  "key": "link_type",
+                  "value": "",
+                  "description": "with_shipment | standalone"
+                },
+                {
+                  "key": "search",
+                  "value": ""
+                },
+                {
+                  "key": "shipment_order_id",
+                  "value": ""
+                },
+                {
+                  "key": "procurement_request_id",
+                  "value": ""
+                },
+                {
+                  "key": "vendor_id",
+                  "value": ""
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "PO detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/orders/{{po_id}}"
+          }
+        },
+        {
+          "name": "Qty history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/qty-history"
+          }
+        },
+        {
+          "name": "Cancel PO (releases qty)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Supplier could not meet the delivery date.\"\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/cancel"
+          }
+        },
+        {
+          "name": "Delete draft PO",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/orders/{{po_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. GST approval",
+      "item": [
+        {
+          "name": "Request approval (buyer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Supplier confirmed GSTR-3B for last quarter is being filed this week.\"\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/gst-approval/request"
+          }
+        },
+        {
+          "name": "Decide (approver — different user)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{approver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"approved\",\n  \"note\": \"Approved — filing proof to follow.\"\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/gst-approval/decide"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Documents (Stage 04)",
+      "item": [
+        {
+          "name": "List documents",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.data && j.data.length) pm.collectionVariables.set('doc_id', j.data[0].id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/documents"
+          }
+        },
+        {
+          "name": "Generate Purchase Order PDF",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Re-renders the PO PDF onto the Purchase Order document (pending only). Also runs automatically on submit.",
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/documents/{{doc_id}}/generate"
+          }
+        },
+        {
+          "name": "Add document (multipart)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "name",
+                  "value": "Quality Agreement",
+                  "type": "text"
+                },
+                {
+                  "key": "doc_kind",
+                  "value": "agreement",
+                  "type": "text"
+                },
+                {
+                  "key": "is_required",
+                  "value": "no",
+                  "type": "text"
+                },
+                {
+                  "key": "valid_up_to",
+                  "value": "2027-09-30",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/documents"
+          }
+        },
+        {
+          "name": "Attach / replace file (multipart)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/documents/{{doc_id}}/file"
+          }
+        },
+        {
+          "name": "Mark sent / signed",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"sent\"\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/documents/{{doc_id}}/status"
+          }
+        },
+        {
+          "name": "Download document",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/documents/{{doc_id}}/download"
+          }
+        },
+        {
+          "name": "Delete document",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/documents/{{doc_id}}"
+          }
+        },
+        {
+          "name": "Send for e-signature (Zoho Sign)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Signer defaults to the supplier primary contact; override with signer_name / signer_email. Returns signature_request_id for the tracker.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"document_ids\": [{{doc_id}}],\n  \"notes\": \"Please review and sign.\",\n  \"expiry_days\": 30\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/documents/sign"
+          }
+        },
+        {
+          "name": "Email documents to supplier",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Sends the files to the supplier primary contact email; override with \"to\".",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"document_ids\": [{{doc_id}}]\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/documents/email"
+          }
+        },
+        {
+          "name": "Signing tracker (shared CLM endpoint)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/clm/signature-requests/{{sig_id}}",
+            "description": "Use signature_request_id from the document list. Also re-reads the status from Zoho."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Physical inspection",
+      "item": [
+        {
+          "name": "Inspection status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/inspection"
+          }
+        },
+        {
+          "name": "Mark a line (multipart)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "verdict",
+                  "value": "correct",
+                  "type": "text"
+                },
+                {
+                  "key": "remark",
+                  "value": "Seal intact, quantity matches.",
+                  "type": "text"
+                },
+                {
+                  "key": "files[]",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/inspection/lines/{{item_id}}"
+          }
+        },
+        {
+          "name": "Sign off (multipart)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "note",
+                  "value": "All lines inspected on receipt.",
+                  "type": "text"
+                },
+                {
+                  "key": "files[]",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/inspection/sign-off"
+          }
+        },
+        {
+          "name": "Withdraw sign-off",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/inspection/withdraw"
+          }
+        }
+      ]
+    }
+  ]
+}

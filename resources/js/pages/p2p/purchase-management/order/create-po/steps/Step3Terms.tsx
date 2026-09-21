@@ -3,14 +3,18 @@
 import { useState } from 'react';
 import StageSummary from './StageSummary';
 import type { PoDraft, SetDraft } from '../po-draft';
-import { IcoChevron, IcoDocSm } from '../../icons';
+import type { StepCtx } from '../CreatePoForm';
+import { IcoChevron, IcoDocSm } from '../../shared/icons';
 
-export default function Step3Terms({ draft, set }: { draft: PoDraft; set: SetDraft }) {
+// Same limit the server enforces.
+const TERMS_MAX = 20000;
+
+export default function Step3Terms({ draft, set, ctx }: { draft: PoDraft; set: SetDraft; ctx: StepCtx }) {
   const [open, setOpen] = useState(true);
 
   return (
     <>
-      <StageSummary draft={draft} upto={2} />
+      <StageSummary draft={draft} ctx={ctx} upto={2} />
 
       <div className={`spi-dt-sec cpf-fill ${open ? '' : 'is-collapsed'}`}>
         <div className="spi-dt-sec-head cpf-clickable" onClick={() => setOpen((o) => !o)}>
@@ -31,9 +35,11 @@ export default function Step3Terms({ draft, set }: { draft: PoDraft; set: SetDra
           <textarea
             className="spi-dt-textarea cpt-terms"
             placeholder="Enter purchase order terms & conditions…"
+            maxLength={TERMS_MAX}
             value={draft.terms}
             onChange={(e) => set({ terms: e.target.value })}
           />
+          <div className="cpt-count">{draft.terms.length.toLocaleString('en-IN')} / {TERMS_MAX.toLocaleString('en-IN')}</div>
         </div>
       </div>
     </>

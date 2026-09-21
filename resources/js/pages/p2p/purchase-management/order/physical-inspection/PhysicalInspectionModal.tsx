@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { useScrollLock } from '../../../../hooks/useScrollLock';
-import { useToast } from '../../../../contexts/ToastContext';
-import type { OrderRow } from './Order';
-import { initials, money, supplierCode } from './payment-shared';
+import { useScrollLock } from '../../../../../hooks/useScrollLock';
+import { useToast } from '../../../../../contexts/ToastContext';
+import type { OrderRow } from '../po-list/Order';
+import { initials, money, supplierCode } from '../manage-payment/payment-shared';
 import {
   INSPECTION_PRODUCTS, INSPECTOR, ProofChip, VERDICTS,
   downloadFile, openFile, seedDraft, seedRecord, toProofFiles,
@@ -11,7 +11,7 @@ import {
 } from './inspection-shared';
 import InspectionAttachmentsModal from './InspectionAttachmentsModal';
 import InspectionProductView from './InspectionProductView';
-import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './physical-inspection.css';
 
 export type PhysicalInspectionProps = {

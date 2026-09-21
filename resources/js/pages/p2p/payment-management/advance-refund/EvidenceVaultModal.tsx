@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { useToast } from '../../../../contexts/ToastContext';
 import { IcoDocSm, IcoDownload, IcoEye, IcoRefund, IcoShield, IcoX } from '../../icons';
-import { STAT_ICONS, fmtDate, money, statIco } from '../../purchase-management/order/payment-shared';
+import { STAT_ICONS, fmtDate, money, statIco } from '../../purchase-management/order/manage-payment/payment-shared';
 import { findPo, type RefundAdjustment } from './refund-data';
 import { useEscapeClose } from './useEscapeClose';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';

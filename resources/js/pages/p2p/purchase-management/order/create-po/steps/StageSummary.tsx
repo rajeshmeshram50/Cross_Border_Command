@@ -3,21 +3,24 @@
 // stage 01 only and Step 03 adds the products, charges and cost summary.
 import { useState } from 'react';
 import { formatDmy } from '../../../../../../utils/formatDmy';
-import { LEGAL_PARAMS, legalSections, legalTotals, supplierByOption } from '../sample-suppliers';
 import type { PoDraft } from '../po-draft';
+import type { StepCtx } from '../CreatePoForm';
+import { riskLabel } from '../supplier-checks';
 import ProductTable, { computeLine } from './ProductTable';
 import { chargesTotal } from './ChargesSummary';
-import { IcoCheck, IcoChevron, IcoHistory } from '../../icons';
+import { IcoCheck, IcoChevron, IcoHistory } from '../../shared/icons';
 
-const dash = (v: string) => (v && v.trim() !== '' ? v : '— Not provided');
+const dash = (x: string) => (x && x.trim() !== '' ? x : '— Not provided');
+const v = (x: string | null | undefined) => x ?? '';
 const money = (n: number) => '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export default function StageSummary({ draft, upto }: { draft: PoDraft; upto: 1 | 2 | 3 }) {
+export default function StageSummary({ draft, ctx, upto }: { draft: PoDraft; ctx: StepCtx; upto: 1 | 2 | 3 }) {
   const [open, setOpen] = useState(false);
-  const picked = supplierByOption(draft.supplier);
-  const stateCode = draft.stateCode || '27';
+  const sup = draft.supplier;
+  const legal = draft.legal;
+  const { products } = ctx.lookups;
 
-  const lines = draft.lines.map((l) => computeLine(l, stateCode));
+  const lines = draft.lines.map((l) => computeLine(l, products, ctx.taxMode));
   const base = lines.reduce((sum, l) => sum + l.base, 0);
   const gst = lines.reduce((sum, l) => sum + l.gstAmt, 0);
   const charges = chargesTotal(draft.charges);
@@ -54,7 +57,7 @@ export default function StageSummary({ draft, upto }: { draft: PoDraft; upto: 1 
               <RO label="PO Type" value={dash(draft.poType)} />
               <RO label="Document Type" value={dash(draft.docType)} />
               <RO label="Mode of Transport" value={dash(draft.transport)} />
-              <RO label="PO Date" value={formatDmy(new Date().toISOString().slice(0, 10))} />
+              <RO label="PO Date" value={formatDmy(ctx.detail?.po_date ?? new Date().toISOString().slice(0, 10))} />
               <RO label="Expected Delivery Date" value={draft.deliveryDate ? formatDmy(draft.deliveryDate) : dash('')} />
               <RO label="Delivery Location" value={dash(draft.deliveryLocation)} />
               <RO label="Payment Type" value={dash(draft.paymentType)} />
@@ -73,33 +76,33 @@ export default function StageSummary({ draft, upto }: { draft: PoDraft; upto: 1 
             </Group>
 
             <Group label="Supplier Details">
-              <RO label="Select Supplier" value={dash(draft.supplier)} />
-              <RO label="Company Legal Name" value={dash(draft.legalName)} />
-              <RO label="Supplier Type" value={dash(draft.supType)} />
-              <RO label="Risk Level" value={dash(draft.risk)} />
-              <RO label="Supplier Category" value={dash(draft.category)} />
+              <RO label="Select Supplier" value={dash(sup ? `${sup.code} — ${sup.name}` : '')} />
+              <RO label="Company Legal Name" value={dash(v(sup?.legalName))} />
+              <RO label="Supplier Type" value={dash(v(sup?.type))} />
+              <RO label="Risk Level" value={dash(riskLabel(sup?.risk))} />
+              <RO label="Supplier Category" value={dash(v(sup?.category))} />
             </Group>
 
             <Group label="Address & Contact Details">
-              <RO label="Registered Office Address" value={dash(draft.address)} full />
-              <RO label="Country" value={dash(draft.country)} />
-              <RO label="State" value={dash(draft.state)} />
-              <RO label="State Code" value={dash(draft.stateCode)} />
-              <RO label="City" value={dash(draft.city)} />
-              <RO label="Contact Person Name" value={dash(draft.contact)} />
-              <RO label="Designation" value={dash(draft.designation)} />
-              <RO label="Contact Number" value={dash(draft.phone)} />
-              <RO label="Email ID" value={dash(draft.email)} />
+              <RO label="Registered Office Address" value={dash(v(sup?.addr))} full />
+              <RO label="Country" value={dash(v(sup?.country))} />
+              <RO label="State" value={dash(v(sup?.state))} />
+              <RO label="State Code" value={dash(v(sup?.stateCode))} />
+              <RO label="City" value={dash(v(sup?.city))} />
+              <RO label="Contact Person Name" value={dash(v(sup?.contact))} />
+              <RO label="Designation" value={dash(v(sup?.desig))} />
+              <RO label="Contact Number" value={dash(v(sup?.phone))} />
+              <RO label="Email ID" value={dash(v(sup?.email))} />
             </Group>
 
             <Group label="Supplier Legal Status">
-              {picked ? (
+              {legal ? (
                 <>
-                  <RO label="Overall" value={`${legalTotals(picked).pct}% · ${legalTotals(picked).done} of ${legalTotals(picked).total} documents`} />
-                  {legalSections(picked).map((sec) => (
+                  <RO label="Overall" value={`${legal.pct}% · ${legal.done} of ${legal.total} documents`} />
+                  {legal.sections.map((sec) => (
                     <RO key={sec.name} label={sec.name} value={`${sec.done} / ${sec.total} · ${sec.pct}%`} />
                   ))}
-                  <RO label="Parameters" value={LEGAL_PARAMS.map((p) => p.name).join(', ')} full />
+                  <RO label="Parameters" value={legal.sections.flatMap((sec) => sec.parts).join(', ')} full />
                 </>
               ) : (
                 <RO label="" value={dash('')} full />
@@ -107,17 +110,17 @@ export default function StageSummary({ draft, upto }: { draft: PoDraft; upto: 1 
             </Group>
 
             <Group label="GST Scrutiny Details">
-              <RO label="Scrutiny Date" value={draft.scrutinyDate ? formatDmy(draft.scrutinyDate) : dash('')} />
-              <RO label="GST Number" value={dash(draft.gstNo)} />
-              <RO label="GST Status" value={dash(draft.gstStatus)} />
-              <RO label="Last Filing Date" value={draft.filingDate ? formatDmy(draft.filingDate) : dash('')} />
-              <RO label="Prev. Invoice / Remarks" value={dash(draft.remarks)} full />
+              <RO label="Scrutiny Date" value={sup?.scrutiny ? formatDmy(sup.scrutiny) : dash('')} />
+              <RO label="GST Number" value={dash(v(sup?.gstNo))} />
+              <RO label="GST Status" value={dash(v(sup?.gstStatus))} />
+              <RO label="Last Filing Date" value={sup?.filing ? formatDmy(sup.filing) : dash('')} />
+              <RO label="Prev. Invoice / Remarks" value={dash(v(sup?.remarks))} full />
             </Group>
 
             <Group label="Supplier Risk Alert">
-              <RO label="Risk Level" value={dash(draft.risk)} />
-              <RO label="Supplier Category" value={dash(draft.category)} />
-              <RO label="GST Registration" value={dash(draft.gstStatus)} />
+              <RO label="Risk Level" value={dash(riskLabel(sup?.risk))} />
+              <RO label="Supplier Category" value={dash(v(sup?.category))} />
+              <RO label="GST Registration" value={dash(v(sup?.gstStatus))} />
             </Group>
           </div>
         </div>
@@ -135,7 +138,7 @@ export default function StageSummary({ draft, upto }: { draft: PoDraft; upto: 1 
             <div className="spi-dt-sumstep-body">
               <div>
                 <div className="spi-dt-rogroup-hd">Product Details</div>
-                <ProductTable rows={draft.lines} stateCode={stateCode} onChange={() => {}} readOnly />
+                <ProductTable rows={draft.lines} products={products} taxMode={ctx.taxMode} onChange={() => {}} readOnly />
               </div>
 
               <div>

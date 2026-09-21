@@ -412,6 +412,47 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::get   ('/p2p/sourcing-targets/{target}/products/{product}/suppliers', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'mappedSuppliers'])->whereNumber('product');
     Route::post  ('/p2p/sourcing-targets/{target}/products/{product}/suppliers', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'mapSupplier'])->whereNumber('product');
     Route::put   ('/p2p/sourcing-targets/{target}/products/{product}/suppliers/{supplier}', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'updateSupplier'])->whereNumber('product')->whereNumber('supplier');
+
+    // P2P · Create Purchase Order (new backend — independent of /p2p/purchase-orders).
+    Route::prefix('p2p/orders')->group(function () {
+        $po  = \App\Http\Controllers\Api\P2p\PurchaseOrderController::class;
+        $doc = \App\Http\Controllers\Api\P2p\PurchaseOrderDocumentController::class;
+        $ins = \App\Http\Controllers\Api\P2p\PurchaseOrderInspectionController::class;
+
+        // Lookups (shipment and supplier dropdowns reuse /p2p/purchase-orders/shipments and /suppliers)
+        Route::get   ('/next-code',                      [$po, 'nextCode']);
+        Route::get   ('/shipments/{shipment}/pi-lines',  [$po, 'piLines'])->whereNumber('shipment');
+
+        // PO and its stages
+        Route::get   ('/',                               [$po, 'index']);
+        Route::post  ('/',                               [$po, 'store']);             // Stage 01 — create draft
+        Route::get   ('/{id}',                           [$po, 'show'])->whereNumber('id');
+        Route::put   ('/{id}/stage-1',                   [$po, 'updateStage1'])->whereNumber('id');
+        Route::put   ('/{id}/items',                     [$po, 'updateItems'])->whereNumber('id');  // Stage 02
+        Route::put   ('/{id}/terms',                     [$po, 'updateTerms'])->whereNumber('id');  // Stage 03 (+ submit)
+        Route::get   ('/{id}/qty-history',               [$po, 'qtyHistory'])->whereNumber('id');
+        Route::post  ('/{id}/gst-approval/request',      [$po, 'requestGstApproval'])->whereNumber('id');
+        Route::post  ('/{id}/gst-approval/decide',       [$po, 'decideGstApproval'])->whereNumber('id');
+        Route::post  ('/{id}/cancel',                    [$po, 'cancel'])->whereNumber('id');
+        Route::delete('/{id}',                           [$po, 'destroy'])->whereNumber('id');
+
+        // Stage 04 · documents
+        Route::get   ('/{po}/documents',                 [$doc, 'index'])->whereNumber('po');
+        Route::post  ('/{po}/documents',                 [$doc, 'store'])->whereNumber('po');
+        Route::post  ('/{po}/documents/{doc}/file',      [$doc, 'uploadFile'])->whereNumber('po')->whereNumber('doc');
+        Route::patch ('/{po}/documents/{doc}/status',    [$doc, 'updateStatus'])->whereNumber('po')->whereNumber('doc');
+        Route::get   ('/{po}/documents/{doc}/download',  [$doc, 'download'])->whereNumber('po')->whereNumber('doc');
+        Route::post  ('/{po}/documents/sign',                 [$doc, 'sign'])->whereNumber('po');
+        Route::post  ('/{po}/documents/email',                [$doc, 'email'])->whereNumber('po');
+        Route::post  ('/{po}/documents/{doc}/generate',       [$doc, 'generate'])->whereNumber('po')->whereNumber('doc');
+        Route::delete('/{po}/documents/{doc}',           [$doc, 'destroy'])->whereNumber('po')->whereNumber('doc');
+
+        // Physical inspection
+        Route::get   ('/{po}/inspection',                [$ins, 'show'])->whereNumber('po');
+        Route::post  ('/{po}/inspection/lines/{item}',   [$ins, 'updateLine'])->whereNumber('po')->whereNumber('item');
+        Route::post  ('/{po}/inspection/sign-off',       [$ins, 'signOff'])->whereNumber('po');
+        Route::post  ('/{po}/inspection/withdraw',       [$ins, 'withdraw'])->whereNumber('po');
+    });
     Route::get   ('/clm/leads/{leadId}/agreement-applicable',    [ClmAgreementController::class, 'applicableForLead'])->whereNumber('leadId');
     // Per-deal "is this document needed?" answers for the trade-doc / agreement popup.
     Route::post  ('/clm/leads/{leadId}/doc-needs',               [ClmAgreementController::class, 'setLeadDocNeed'])->whereNumber('leadId');

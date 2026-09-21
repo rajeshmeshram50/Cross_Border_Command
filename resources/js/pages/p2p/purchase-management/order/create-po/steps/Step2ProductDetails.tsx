@@ -2,34 +2,36 @@
 // Opens with the read-only recap of Step 01, then the PI vs PO product table,
 // the additional charges and whatever the PO does not cover.
 import { useState } from 'react';
-import ProductTable, { computeLine, type PoLineRow } from './ProductTable';
+import ProductTable, { computeLine } from './ProductTable';
 import ChargesSummary, { type Charges } from './ChargesSummary';
 import MissingProducts, { missingCount } from './MissingProducts';
 import StageSummary from './StageSummary';
-import { supplierByOption } from '../sample-suppliers';
-import type { PoDraft, SetDraft } from '../po-draft';
-import { IcoAlert, IcoBox, IcoChevron, IcoLines, IcoPin, IcoUser } from '../../icons';
+import { manualRow, type PoDraft, type PoLineRow, type SetDraft } from '../po-draft';
+import type { StepCtx } from '../CreatePoForm';
+import { IcoAlert, IcoBox, IcoChevron, IcoLines, IcoPin, IcoUser } from '../../shared/icons';
 
-export default function Step2ProductDetails({ draft, set }: { draft: PoDraft; set: SetDraft }) {
+export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraft; set: SetDraft; ctx: StepCtx }) {
   const [prodOpen, setProdOpen] = useState(true);
   const [missOpen, setMissOpen] = useState(true);
-  const picked = supplierByOption(draft.supplier);
-  const stateCode = draft.stateCode || '27';
+  const { products } = ctx.lookups;
+  const sup = draft.supplier;
 
   const lines = draft.lines;
   const patchLine = (index: number, patch: Partial<PoLineRow>) =>
     set({ lines: lines.map((l, i) => (i === index ? { ...l, ...patch } : l)) });
+  const addLine = () => set({ lines: [...lines, manualRow()] });
+  const removeLine = (index: number) => set({ lines: lines.filter((_, i) => i !== index) });
   const patchCharges = (patch: Partial<Charges>) => set({ charges: { ...draft.charges, ...patch } });
 
   // The totals box adds up the same lines the table shows.
-  const computed = lines.map((l) => computeLine(l, stateCode));
+  const computed = lines.map((l) => computeLine(l, products, ctx.taxMode));
   const base = computed.reduce((sum, l) => sum + l.base, 0);
   const gst = computed.reduce((sum, l) => sum + l.gstAmt, 0);
-  const missing = missingCount(lines, stateCode);
+  const missing = missingCount(lines, products, ctx.taxMode);
 
   return (
     <>
-    <StageSummary draft={draft} upto={1} />
+    <StageSummary draft={draft} ctx={ctx} upto={1} />
 
     <div className={`spi-dt-sec ${prodOpen ? '' : 'is-collapsed'}`}>
       <div className="spi-dt-sec-head cpf-clickable" onClick={() => setProdOpen((o) => !o)}>
@@ -43,24 +45,33 @@ export default function Step2ProductDetails({ draft, set }: { draft: PoDraft; se
           <div className="spi-dt-sec-sub">PI vs PO product mapping with live tax &amp; cost computation</div>
         </div>
         <div className="spi-dt-secpills" onClick={(e) => e.stopPropagation()}>
-          <RefPill icon={<IcoLines />} label="SUPPLIER CODE" value={picked?.code ?? 'S-001'} />
+          <RefPill icon={<IcoLines />} label="SUPPLIER CODE" value={sup?.code ?? '—'} />
           <span className="spi-dt-dots">⋮</span>
-          <RefPill icon={<IcoUser />} label="SUPPLIER NAME" value={picked?.key ?? 'AgroSource Materials Pvt Ltd'} />
+          <RefPill icon={<IcoUser />} label="SUPPLIER NAME" value={sup?.name ?? '—'} />
           <span className="spi-dt-dots">⋮</span>
-          <RefPill icon={<IcoPin />} label="STATE CODE" value={draft.stateCode || '27'} />
+          <RefPill icon={<IcoPin />} label="STATE CODE" value={sup?.stateCode ?? '—'} />
           <span className="spi-dt-dots">⋮</span>
-          <RefPill icon={<IcoLines />} label="PI NUMBER" value="PI/2025-26/001" />
+          <RefPill icon={<IcoLines />} label="PI NUMBER" value={ctx.piCode ?? '—'} />
         </div>
         <span className={`cpf-chev ${prodOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
       </div>
 
       <div className="spi-dt-sec-body cpd-body">
-        <div className="cpd-legend"><span className="cpd-legend__sw" />Tinted cells are editable — PO product, quantity and rate. Everything else is carried from the PI or calculated.</div>
-        <ProductTable rows={lines} stateCode={stateCode} onChange={patchLine} />
+        <div className="cpd-legend">
+          <span className="cpd-legend__sw" />
+          Tinted cells are editable — PO product, quantity and rate. Everything else is carried from the PI or calculated.
+          {' '}{ctx.taxMode === 'inter' ? 'Inter-state supplier: IGST applies.' : 'Intra-state supplier: CGST + SGST apply.'}
+        </div>
+        <ProductTable rows={lines} products={products} taxMode={ctx.taxMode} onChange={patchLine} onAdd={addLine} onRemove={removeLine} />
+        {lines.length === 0 && (
+          <button type="button" className="cpf-addbtn cpd-addfirst" onClick={addLine}>+ Add Product</button>
+        )}
         <ChargesSummary base={base} gst={gst} charges={draft.charges} onChange={patchCharges} />
       </div>
     </div>
 
+    {/* Only a PO against a PI can leave PI quantity uncovered. */}
+    {lines.some((l) => l.pi) && (
     <div className={`spi-dt-sec ${missOpen ? '' : 'is-collapsed'}`}>
       <div className="spi-dt-sec-head cpf-clickable" onClick={() => setMissOpen((o) => !o)}>
         <div className="spi-dt-sec-ico spi-dt-sec-ico-2"><IcoAlert /></div>
@@ -76,9 +87,10 @@ export default function Step2ProductDetails({ draft, set }: { draft: PoDraft; se
         <span className={`cpf-chev ${missOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
       </div>
       <div className="spi-dt-sec-body">
-        <MissingProducts rows={lines} stateCode={stateCode} onChange={patchLine} />
+        <MissingProducts rows={lines} products={products} taxMode={ctx.taxMode} />
       </div>
     </div>
+    )}
     </>
   );
 }
@@ -94,6 +106,3 @@ function RefPill({ icon, label, value }: { icon: React.ReactNode; label: string;
     </div>
   );
 }
-
-
-

@@ -3,13 +3,13 @@
 // Requests hero header (mpr-hero).
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Chip, ICON_X, fmtDate, money, shortDate } from '../../purchase-management/order/payment-shared';
+import { Chip, ICON_X, fmtDate, money, shortDate } from '../../purchase-management/order/manage-payment/payment-shared';
 import { IcoSave, IcoWallet, IcoWarn } from '../../icons';
 import { findPo, todayIso, type RefundAdjustment, type RefundRecovery } from './refund-data';
 import { useEscapeClose } from './useEscapeClose';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
-import '../../purchase-management/order/manage-payment-requests.css';
-import '../../purchase-management/order/add-payment.css';
+import '../../purchase-management/order/manage-payment/manage-payment-requests.css';
+import '../../purchase-management/order/manage-payment/add-payment.css';
 
 type Props = {
   refund: RefundAdjustment;

@@ -1,18 +1,16 @@
-// P2P → Order: purchase order list. Uses static SAMPLE_ROWS until the API is connected.
+// P2P → Order: purchase order list, loaded from /api/p2p/orders.
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import WorklistPager from '../../../../components/ui/WorklistPager';
-import Badge, { type BadgeVariant } from '../../../../components/ui/Badge';
-import CreatePoModal from './CreatePoModal';
+import WorklistPager from '../../../../../components/ui/WorklistPager';
+import Badge, { type BadgeVariant } from '../../../../../components/ui/Badge';
+import CreatePoModal from '../create-po/CreatePoModal';
+import { poApi, type PoListRow } from '../api/po-api';
+import { useToast } from '../../../../../contexts/ToastContext';
 // The PO form is a screen of its own: loaded only when one is being created,
 // so the list page doesn't carry it. The type import costs nothing at runtime.
-import type { PoLink } from './create-po/CreatePoForm';
-import type { InspectionDraft, InspectionRecord } from './inspection-shared';
-const CreatePoForm = lazy(() => import('./create-po/CreatePoForm'));
-import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import type { PoLink } from '../create-po/CreatePoForm';
+const CreatePoForm = lazy(() => import('../create-po/CreatePoForm'));
+import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './order.css';
-
-const ManagePaymentRequestsModal = lazy(() => import('./ManagePaymentRequestsModal'));
-const PhysicalInspectionModal = lazy(() => import('./PhysicalInspectionModal'));
 
 type GuideStep = { num: string; title: string; desc: string; icon: ReactNode };
 
@@ -200,13 +198,20 @@ export type AdvanceRefund = {
 };
 
 export type OrderRow = {
+  /** Database id — set on rows loaded from /p2p/orders. */
+  id?: number;
+  /** Saved but not yet submitted. */
+  draft?: boolean;
   po: string; poDate: string; physicalInspection: boolean;
   type: PoType; docType: DocType;
   shipment: string | null; shipmentDate: string;
+  // An empty id renders as a dash (standalone PO, no procurement linked yet).
   opportunity: string; opportunityDate: string;
   procurement: string; procurementDate: string;
   supplier: string; supplierCategory: SupplierCategory;
-  risk: RiskLevel;
+  /** The supplier master's own category text when it isn't one of the four known ones. */
+  supplierCategoryText?: string;
+  risk: RiskLevel | null;
   expectedDelivery: string;
   total: number; net: number; paid: number; balance: number;
   invoices: InvoiceLine[];
@@ -300,297 +305,6 @@ const RISK_LEVEL: Record<RiskLevel, { label: string; variant: BadgeVariant; icon
   low: { label: 'Low', variant: 'success', icon: ICON_CHECK },
 };
 
-export const SAMPLE_ROWS: OrderRow[] = [
-  {
-    po: 'PO/2025-26/049', poDate: '2026-03-03', physicalInspection: true,
-    type: 'materials', docType: 'International',
-    shipment: 'SHP-086', shipmentDate: '2026-02-19',
-    opportunity: 'OPP-060', opportunityDate: '2026-01-22',
-    procurement: 'PROC-077', procurementDate: '2026-02-06',
-    supplier: 'Adani Enterprises', supplierCategory: 'high',
-    risk: 'high',
-    expectedDelivery: '2026-04-20',
-    total: 259500, net: 259500, paid: 129800, balance: 129700,
-    invoices: [
-      {
-        spi: 'SPI/2025-26/051', spiDate: '2026-03-10',
-        amount: 259500, paid: 129800, due: 129700, status: 'partial',
-        grn: 'GRN-051', grnDate: '2026-03-14',
-        qa: 'QA-051', qaDate: '2026-03-16',
-      },
-    ],
-    zohoSynced: true, inspectionDone: false, paymentRequests: 1,
-    paymentNote: { kind: 'ready', amount: 71300 },
-    // Values from the prototype's own row. ₹20,800 of the ₹1,29,800 paid is
-    // held back, so ₹1,09,000 is recoverable; ₹49,100 of it is in (45%).
-    adr: { no: 'ADR/2025-26/026', date: '2026-04-02', count: 1, paid: 129800, credited: 109000 },
-    recoveries: [49100],
-  },
-  {
-    po: 'PO/2025-26/004', poDate: '2026-06-10', physicalInspection: true,
-    type: 'materials', docType: 'International',
-    shipment: 'SHP-014', shipmentDate: '2026-05-29',
-    opportunity: 'OPP-006', opportunityDate: '2026-05-01',
-    procurement: 'PROC-009', procurementDate: '2026-05-16',
-    supplier: 'Adani Enterprises', supplierCategory: 'high',
-    risk: 'high',
-    expectedDelivery: '2026-07-22',
-    total: 255500, net: 247800, paid: 0, balance: 247800,
-    // No supplier invoice raised yet, so SPI / GRN / QA all read "—".
-    invoices: [],
-    zohoSynced: false, inspectionDone: false, paymentRequests: 1,
-    paymentNote: { kind: 'ready', amount: 116500 },
-  },
-  {
-    po: 'PO/2025-26/007', poDate: '2026-05-28', physicalInspection: false,
-    type: 'services', docType: 'Domestics',
-    shipment: 'SHP-021', shipmentDate: '2026-05-16',
-    opportunity: 'OPP-011', opportunityDate: '2026-04-18',
-    procurement: 'PROC-015', procurementDate: '2026-05-03',
-    supplier: 'Mahindra Logistics', supplierCategory: 'regular',
-    risk: 'medium',
-    expectedDelivery: '2026-06-30',
-    total: 121500, net: 120300, paid: 60200, balance: 60100,
-    invoices: [
-      {
-        spi: 'SPI/2025-26/022', spiDate: '2026-06-04',
-        amount: 40100, paid: 40100, due: 0, status: 'full',
-        grn: 'GRN-022', grnDate: '2026-06-08',
-        qa: 'QA-022', qaDate: '2026-06-10',
-      },
-      {
-        spi: 'SPI/2025-26/023', spiDate: '2026-06-13',
-        amount: 40100, paid: 20100, due: 20000, status: 'partial',
-        grn: 'GRN-023', grnDate: '2026-06-17',
-        qa: 'QA-023', qaDate: '2026-06-19',
-      },
-      {
-        spi: 'SPI/2025-26/024', spiDate: '2026-06-22',
-        amount: 40100, paid: 0, due: 40100, status: 'pending',
-        grn: 'GRN-024', grnDate: '2026-06-26',
-        qa: 'QA-024', qaDate: '2026-06-28',
-      },
-    ],
-    zohoSynced: true, inspectionDone: false, paymentRequests: 2,
-  },
-  {
-    po: 'PO/2025-26/008', poDate: '2026-06-20', physicalInspection: true,
-    type: 'materials', docType: 'International',
-    shipment: null, shipmentDate: '',
-    opportunity: 'OPP-012', opportunityDate: '2026-05-11',
-    procurement: 'PROC-016', procurementDate: '2026-05-26',
-    supplier: 'Adani Enterprises', supplierCategory: 'high',
-    risk: 'high',
-    expectedDelivery: '2026-07-28',
-    total: 261000, net: 258400, paid: 0, balance: 258400,
-    invoices: [
-      {
-        spi: 'SPI/2025-26/025', spiDate: '2026-06-27',
-        amount: 129200, paid: 0, due: 129200, status: 'pending',
-        grn: 'GRN-025', grnDate: '2026-07-01',
-        qa: 'QA-025', qaDate: '2026-07-03',
-      },
-      {
-        spi: 'SPI/2025-26/026', spiDate: '2026-07-06',
-        amount: 129200, paid: 0, due: 129200, status: 'pending',
-        grn: 'GRN-026', grnDate: '2026-07-10',
-        qa: 'QA-026', qaDate: '2026-07-12',
-      },
-    ],
-    zohoSynced: false, inspectionDone: false, paymentRequests: 0,
-  },
-  {
-    po: 'PO/2025-26/054', poDate: '2026-04-16', physicalInspection: true,
-    type: 'ffd', docType: 'Domestics',
-    shipment: null, shipmentDate: '',
-    opportunity: 'OPP-065', opportunityDate: '2026-03-07',
-    procurement: 'PROC-082', procurementDate: '2026-03-22',
-    supplier: 'Adani Enterprises', supplierCategory: 'high',
-    risk: 'high',
-    expectedDelivery: '2026-05-22',
-    total: 104500, net: 102400, paid: 102400, balance: 0,
-    invoices: [
-      {
-        spi: 'SPI/2025-26/066', spiDate: '2026-04-23',
-        amount: 102400, paid: 102400, due: 0, status: 'full',
-        grn: 'GRN-066', grnDate: '2026-04-27',
-        qa: 'QA-066', qaDate: '2026-04-29',
-      },
-    ],
-    zohoSynced: true, inspectionDone: false, paymentRequests: 1,
-  },
-  {
-    po: 'PO/2025-26/014', poDate: '2026-05-30', physicalInspection: false,
-    type: 'materials', docType: 'Domestics',
-    shipment: 'SHP-034', shipmentDate: '2026-05-18',
-    opportunity: 'OPP-019', opportunityDate: '2026-04-20',
-    procurement: 'PROC-026', procurementDate: '2026-05-05',
-    supplier: 'Bharat Forge', supplierCategory: 'regular',
-    risk: 'low',
-    expectedDelivery: '2026-07-09',
-    total: 252500, net: 247400, paid: 247400, balance: 0,
-    invoices: [
-      {
-        spi: 'SPI/2025-26/043', spiDate: '2026-06-06',
-        amount: 247400, paid: 247400, due: 0, status: 'full',
-        grn: 'GRN-043', grnDate: '2026-06-10',
-        qa: 'QA-043', qaDate: '2026-06-12',
-      },
-    ],
-    zohoSynced: true, inspectionDone: false, paymentRequests: 2,
-  },
-  {
-    po: 'PO/2025-26/001', poDate: '2026-06-19', physicalInspection: true,
-    type: 'materials', docType: 'Domestics',
-    shipment: 'SHP-001', shipmentDate: '2026-06-07',
-    opportunity: 'OPP-001', opportunityDate: '2026-05-10',
-    procurement: 'PROC-001', procurementDate: '2026-05-25',
-    supplier: 'Reliance Industries', supplierCategory: 'star',
-    risk: 'low',
-    expectedDelivery: '2026-07-05',
-    total: 259500, net: 249100, paid: 62300, balance: 186800,
-    invoices: [
-      {
-        spi: 'SPI/2025-26/004', spiDate: '2026-06-26',
-        amount: 124600, paid: 62300, due: 62300, status: 'partial',
-        grn: 'GRN-004', grnDate: '2026-06-30',
-        qa: 'QA-004', qaDate: '2026-07-02',
-      },
-      {
-        spi: 'SPI/2025-26/005', spiDate: '2026-07-05',
-        amount: 124500, paid: 0, due: 124500, status: 'pending',
-        grn: 'GRN-005', grnDate: '2026-07-09',
-        qa: 'QA-005', qaDate: '2026-07-11',
-      },
-    ],
-    zohoSynced: true, inspectionDone: false, paymentRequests: 2,
-    paymentNote: { kind: 'waiting', amount: 143800 },
-  },
-  {
-    po: 'PO/2025-26/015', poDate: '2026-06-11', physicalInspection: false,
-    type: 'services', docType: 'Domestics',
-    shipment: null, shipmentDate: '',
-    opportunity: 'OPP-021', opportunityDate: '2026-05-02',
-    procurement: 'PROC-028', procurementDate: '2026-05-17',
-    supplier: 'Infosys Ltd', supplierCategory: 'regular',
-    risk: 'low',
-    expectedDelivery: '2026-07-19',
-    total: 132500, net: 128500, paid: 0, balance: 128500,
-    invoices: [
-      {
-        spi: 'SPI/2025-26/046', spiDate: '2026-06-18',
-        amount: 42800, paid: 0, due: 42800, status: 'pending',
-        grn: 'GRN-046', grnDate: '2026-06-22',
-        qa: 'QA-046', qaDate: '2026-06-24',
-      },
-      {
-        spi: 'SPI/2025-26/047', spiDate: '2026-06-27',
-        amount: 42800, paid: 0, due: 42800, status: 'pending',
-        grn: 'GRN-047', grnDate: '2026-07-01',
-        qa: 'QA-047', qaDate: '2026-07-03',
-      },
-      {
-        spi: 'SPI/2025-26/048', spiDate: '2026-07-06',
-        amount: 42900, paid: 0, due: 42900, status: 'pending',
-        grn: 'GRN-048', grnDate: '2026-07-10',
-        qa: 'QA-048', qaDate: '2026-07-12',
-      },
-    ],
-    zohoSynced: false, inspectionDone: false, paymentRequests: 1,
-    paymentNote: { kind: 'ready', amount: 69400 },
-  },
-  {
-    po: 'PO/2025-26/005', poDate: '2026-06-02', physicalInspection: false,
-    type: 'services', docType: 'Domestics',
-    shipment: null, shipmentDate: '',
-    opportunity: 'OPP-008', opportunityDate: '2026-04-23',
-    procurement: 'PROC-011', procurementDate: '2026-05-08',
-    supplier: 'Larsen & Toubro', supplierCategory: 'star',
-    risk: 'low',
-    expectedDelivery: '2026-07-01',
-    total: 135000, net: 132300, paid: 66200, balance: 66100,
-    invoices: [
-      {
-        spi: 'SPI/2025-26/016', spiDate: '2026-06-09',
-        amount: 132300, paid: 66200, due: 66100, status: 'partial',
-        grn: 'GRN-016', grnDate: '2026-06-13',
-        qa: 'QA-016', qaDate: '2026-06-15',
-      },
-    ],
-    zohoSynced: true, inspectionDone: false, paymentRequests: 1,
-    cancelled: true, cancelReason: 'Budget not approved for this quarter', cancelStage: 'initiated',
-    // Part of the ₹66,200 paid is held back against cancellation charges, so
-    // "Not Refunded" shows. Two notes raised; one recovery logged so far (45%).
-    adr: { no: 'ADR/2025-26/031', date: '2026-07-04', count: 2, paid: 66200, credited: 56000 },
-    recoveries: [25200],
-  },
-  {
-    po: 'PO/2025-26/009', poDate: '2026-06-21', physicalInspection: true,
-    type: 'materials', docType: 'Domestics',
-    shipment: 'SHP-025', shipmentDate: '2026-06-09',
-    opportunity: 'OPP-013', opportunityDate: '2026-05-12',
-    procurement: 'PROC-018', procurementDate: '2026-05-27',
-    supplier: 'JSW Steel', supplierCategory: 'regular',
-    risk: 'medium',
-    expectedDelivery: '2026-07-15',
-    total: 270500, net: 270500, paid: 0, balance: 270500,
-    invoices: [
-      {
-        spi: 'SPI/2025-26/028', spiDate: '2026-06-28',
-        amount: 135300, paid: 0, due: 135300, status: 'pending',
-        grn: 'GRN-028', grnDate: '2026-07-02',
-        qa: 'QA-028', qaDate: '2026-07-04',
-      },
-      {
-        spi: 'SPI/2025-26/029', spiDate: '2026-07-07',
-        amount: 135200, paid: 0, due: 135200, status: 'pending',
-        grn: 'GRN-029', grnDate: '2026-07-11',
-        qa: 'QA-029', qaDate: '2026-07-13',
-      },
-    ],
-    zohoSynced: false, inspectionDone: false, paymentRequests: 0,
-    cancelled: true, cancelReason: 'Supplier unable to meet delivery timeline', cancelStage: 'initiated',
-    // Cancelled before anything was paid: no note to raise, nothing to recover.
-  },
-  {
-    po: 'PO/2025-26/020', poDate: '2026-05-21', physicalInspection: false,
-    type: 'materials', docType: 'Domestics',
-    shipment: null, shipmentDate: '',
-    opportunity: 'OPP-026', opportunityDate: '2026-04-11',
-    procurement: 'PROC-036', procurementDate: '2026-04-26',
-    supplier: 'Godrej Industries', supplierCategory: 'regular',
-    risk: 'low',
-    expectedDelivery: '2026-06-27',
-    total: 277500, net: 263600, paid: 263600, balance: 0,
-    invoices: [
-      {
-        spi: 'SPI/2025-26/061', spiDate: '2026-05-28',
-        amount: 87900, paid: 87900, due: 0, status: 'full',
-        grn: 'GRN-061', grnDate: '2026-06-01',
-        qa: 'QA-061', qaDate: '2026-06-03',
-      },
-      {
-        spi: 'SPI/2025-26/062', spiDate: '2026-06-06',
-        amount: 87900, paid: 87900, due: 0, status: 'full',
-        grn: 'GRN-062', grnDate: '2026-06-10',
-        qa: 'QA-062', qaDate: '2026-06-12',
-      },
-      {
-        spi: 'SPI/2025-26/063', spiDate: '2026-06-15',
-        amount: 87800, paid: 87800, due: 0, status: 'full',
-        grn: 'GRN-063', grnDate: '2026-06-19',
-        qa: 'QA-063', qaDate: '2026-06-21',
-      },
-    ],
-    zohoSynced: true, inspectionDone: false, paymentRequests: 1,
-    cancelled: true, cancelReason: 'Supplier pricing revised beyond approved limit', cancelStage: 'closed',
-    // Everything paid comes back and has been recovered in two entries — which
-    // is exactly what put this PO in the Closed tab.
-    adr: { no: 'ADR/2025-26/019', date: '2026-06-10', count: 1, paid: 263600, credited: 263600 },
-    recoveries: [150000, 113600],
-  },
-];
-
 const PAYMENT_LABEL: Record<PaymentStatus, string> = {
   full: 'Fully Paid',
   partial: 'Partially Paid',
@@ -612,7 +326,62 @@ function formatDate(iso: string): string {
   return `${day}-${monthName}-${year}`;
 }
 
+/** Category badge: one of the four known categories, else the master's own text. */
+function categoryOf(row: OrderRow) {
+  if (row.supplierCategoryText) return { label: row.supplierCategoryText, variant: 'info' as BadgeVariant, icon: ICON_CHECK };
+  return SUPPLIER_CATEGORY[row.supplierCategory];
+}
+
+const API_PO_TYPE: Record<string, PoType> = { material_goods: 'materials', services: 'services', ffd_transporter: 'ffd' };
+
+function riskOf(name: string | null): RiskLevel | null {
+  const n = (name ?? '').toLowerCase();
+  if (n.includes('high')) return 'high';
+  if (n.includes('medium')) return 'medium';
+  if (n.includes('low')) return 'low';
+  return null;
+}
+
+function categoryKeyOf(text: string | null): SupplierCategory | null {
+  const t = (text ?? '').toLowerCase();
+  if (t.includes('blacklist')) return 'blacklisted';
+  if (t.includes('high')) return 'high';
+  if (t.includes('star')) return 'star';
+  if (t.includes('regular')) return 'regular';
+  return null;
+}
+
+// Payments, SPI / GRN / QA and Zoho are not built on the new PO yet, so they start empty.
+function toOrderRow(r: PoListRow): OrderRow {
+  const catKey = categoryKeyOf(r.supplier_category);
+  return {
+    id: r.id,
+    draft: r.status === 'draft',
+    po: r.code, poDate: r.po_date ?? '',
+    physicalInspection: r.physical_inspection === 'yes',
+    type: API_PO_TYPE[r.po_type ?? ''] ?? 'materials',
+    docType: r.document_type === 'international' ? 'International' : 'Domestics',
+    shipment: r.link_type === 'with_shipment' ? (r.shipment_code ?? '') : null,
+    shipmentDate: r.shipment_date ?? '',
+    opportunity: r.opportunity_code ?? '', opportunityDate: r.pi_date ?? '',
+    procurement: r.procurement_request_code ?? '', procurementDate: '',
+    supplier: r.supplier_name ?? '—',
+    supplierCategory: catKey ?? 'regular',
+    supplierCategoryText: catKey ? undefined : (r.supplier_category || undefined),
+    risk: riskOf(r.supplier_risk),
+    expectedDelivery: r.expected_delivery_date ?? '',
+    total: Number(r.grand_total) || 0, net: Number(r.grand_total) || 0, paid: 0, balance: Number(r.grand_total) || 0,
+    invoices: [],
+    zohoSynced: false,
+    inspectionDone: r.inspection_status === 'completed',
+    paymentRequests: 0,
+    cancelled: r.status === 'cancelled',
+    cancelReason: r.cancel_reason ?? undefined,
+  };
+}
+
 function IdCell({ id, date }: { id: string; date: string }) {
+  if (!id) return <span className="ord-dash">—</span>;
   return (
     <div className="ord-idcell">
       <span className="ord-idpill">{id}</span>
@@ -738,7 +507,7 @@ const ICON_VAULT = (
 );
 
 // Cancelled POs are read-only: their action buttons render disabled.
-function ZohoCell({ synced, cancelled = false }: { synced: boolean; cancelled?: boolean }) {
+function ZohoCell({ synced, cancelled = false, onSync }: { synced: boolean; cancelled?: boolean; onSync?: () => void }) {
   if (synced) {
     return (
       <div className="ord-statcell">
@@ -749,7 +518,7 @@ function ZohoCell({ synced, cancelled = false }: { synced: boolean; cancelled?: 
   return (
     <div className="ord-statcell">
       <span className="ord-status ord-status--bad"><span className="ord-status__dot" />Not Sync</span>
-      <button type="button" className="ord-btn ord-btn--zoho" disabled={cancelled}>{ICON_SYNC}<span>Zoho Sync</span></button>
+      <button type="button" className="ord-btn ord-btn--zoho" disabled={cancelled} onClick={onSync}>{ICON_SYNC}<span>Zoho Sync</span></button>
     </div>
   );
 }
@@ -1013,12 +782,21 @@ function CancelBadge({ reason }: { reason?: string }) {
   return <Badge appearance="outline" variant="danger" icon={ICON_X_SM} className="ord-cancelbadge" title={reason}>Cancelled</Badge>;
 }
 
+function DraftBadge() {
+  return <Badge appearance="outline" variant="warning" icon={ICON_CLOCK} className="ord-cancelbadge" title="Saved, not yet submitted">Draft</Badge>;
+}
+
+function RiskBadge({ risk }: { risk: RiskLevel | null }) {
+  if (!risk) return <span className="ord-dash">—</span>;
+  return <Badge appearance="outline" variant={RISK_LEVEL[risk].variant} icon={RISK_LEVEL[risk].icon} className="ord-risk">{RISK_LEVEL[risk].label}</Badge>;
+}
+
 // One PO as it appears on the list: a <tbody> spanning a row per mapped SPI.
 // Payment Request Management reuses it (without the Action column) for its status tabs.
-export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, showActions = true }: {
+export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, onZoho, showActions = true }: {
   row: OrderRow; sr: number; inspected: boolean;
   onInspect: (row: OrderRow) => void; onManage: (row: OrderRow) => void;
-  onEdit?: (row: OrderRow) => void; showActions?: boolean;
+  onEdit?: (row: OrderRow) => void; onZoho?: (row: OrderRow) => void; showActions?: boolean;
 }) {
   const lines = row.invoices.length > 0 ? row.invoices : [null];
   const span = lines.length;
@@ -1045,6 +823,7 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
                     <Badge appearance="outline" variant="danger" icon={ICON_WARN} className="ord-physinsp">Physical Inspection</Badge>
                   )}
                   {row.cancelled && <CancelBadge reason={row.cancelReason} />}
+        {row.draft && !row.cancelled && <DraftBadge />}
                 </PoCell>
 
                 <PoCell span={span}>
@@ -1073,22 +852,20 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
                     <span className="ord-supplier__name" title={row.supplier}>{row.supplier}</span>
                     <Badge
                       appearance="outline"
-                      variant={SUPPLIER_CATEGORY[row.supplierCategory].variant}
-                      icon={SUPPLIER_CATEGORY[row.supplierCategory].icon}
+                      variant={categoryOf(row).variant}
+                      icon={categoryOf(row).icon}
                       className="ord-supplier__cat"
                     >
-                      {SUPPLIER_CATEGORY[row.supplierCategory].label}
+                      {categoryOf(row).label}
                     </Badge>
                   </div>
                 </PoCell>
 
                 <PoCell span={span}>
-                  <Badge appearance="outline" variant={RISK_LEVEL[row.risk].variant} icon={RISK_LEVEL[row.risk].icon} className="ord-risk">
-                    {RISK_LEVEL[row.risk].label}
-                  </Badge>
+                  <RiskBadge risk={row.risk} />
                 </PoCell>
 
-                <PoCell span={span}><span className="ord-edd">{formatDate(row.expectedDelivery)}</span></PoCell>
+                <PoCell span={span}><span className="ord-edd">{row.expectedDelivery ? formatDate(row.expectedDelivery) : '—'}</span></PoCell>
 
                 <PoCell span={span}><span className="ord-amt">{formatMoney(row.total)}</span></PoCell>
                 <PoCell span={span}><span className="ord-amt ord-amt--net">{formatMoney(row.net)}</span></PoCell>
@@ -1111,7 +888,7 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
 
             {isFirst && (
               <>
-                <PoCell span={span}><ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} /></PoCell>
+                <PoCell span={span}><ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} onSync={onZoho && (() => onZoho(row))} /></PoCell>
                 <PoCell span={span}>
                   <InspectionCell required={row.physicalInspection} done={inspected} cancelled={row.cancelled} onOpen={() => onInspect(row)} />
                 </PoCell>
@@ -1143,8 +920,8 @@ function searchTextOf(row: OrderRow): string {
     row.po, row.poDate, formatDate(row.poDate), formatDate(row.expectedDelivery),
     PO_TYPE[row.type].label, row.docType,
     row.shipment ?? '', row.opportunity, row.procurement,
-    row.supplier, SUPPLIER_CATEGORY[row.supplierCategory].label,
-    RISK_LEVEL[row.risk].label, row.expectedDelivery,
+    row.supplier, categoryOf(row).label,
+    row.risk ? RISK_LEVEL[row.risk].label : '', row.expectedDelivery, row.draft ? 'Draft' : '',
     row.zohoSynced ? 'Synced' : 'Not Sync',
     ...row.invoices.flatMap((line) => [line.spi, line.grn, line.qa]),
   ].join(' ').toLowerCase();
@@ -1168,12 +945,11 @@ function useIsPhone() {
   return isPhone;
 }
 
-function OrderCard({ row, index, onManage, onInspect, onEdit, inspected }: {
+function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, inspected }: {
   row: OrderRow; index: number; onManage: (row: OrderRow) => void; onInspect: (row: OrderRow) => void;
-  onEdit: (row: OrderRow) => void; inspected: boolean;
+  onEdit: (row: OrderRow) => void; onZoho: (row: OrderRow) => void; inspected: boolean;
 }) {
-  const category = SUPPLIER_CATEGORY[row.supplierCategory];
-  const risk = RISK_LEVEL[row.risk];
+  const category = categoryOf(row);
   const count = row.invoices.length;
 
   return (
@@ -1197,6 +973,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, inspected }: {
           <Badge appearance="outline" variant="danger" icon={ICON_WARN} className="ord-physinsp">Physical Inspection</Badge>
         )}
         {row.cancelled && <CancelBadge reason={row.cancelReason} />}
+        {row.draft && !row.cancelled && <DraftBadge />}
       </div>
 
       <div className="ord-card__split">
@@ -1207,7 +984,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, inspected }: {
         </div>
         <div className="ord-card__block ord-card__block--end">
           <span className="ord-card__label">Risk Alert</span>
-          <Badge appearance="outline" variant={risk.variant} icon={risk.icon} className="ord-risk">{risk.label}</Badge>
+          <RiskBadge risk={row.risk} />
         </div>
       </div>
 
@@ -1218,7 +995,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, inspected }: {
         </div>
         <div><dt>Opportunity ID</dt><dd><IdCell id={row.opportunity} date={row.opportunityDate} /></dd></div>
         <div><dt>Procurement ID</dt><dd><IdCell id={row.procurement} date={row.procurementDate} /></dd></div>
-        <div><dt>Expected Delivery</dt><dd><span className="ord-edd">{formatDate(row.expectedDelivery)}</span></dd></div>
+        <div><dt>Expected Delivery</dt><dd><span className="ord-edd">{row.expectedDelivery ? formatDate(row.expectedDelivery) : '—'}</span></dd></div>
       </dl>
 
       <dl className="ord-card__grid">
@@ -1262,7 +1039,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, inspected }: {
       <div className="ord-card__status">
         <div className="ord-card__block">
           <span className="ord-card__label">Zohobook Status</span>
-          <ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} />
+          <ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} onSync={() => onZoho(row)} />
         </div>
         <div className="ord-card__block">
           <span className="ord-card__label">Physical Inspection</span>
@@ -1299,43 +1076,34 @@ export default function Order() {
 
   const toggleGuide = () => setGuideOpen((open) => !open);
 
-  // Rows are static sample data today, so this flag only covers the first
-  // paint. When the list API is connected it becomes that request's state.
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 600);
-    return () => clearTimeout(timer);
-  }, []);
+  const [allRows, setAllRows] = useState<OrderRow[]>([]);
+  // Tabs, search and paging work on the loaded rows; 100 is the API's page cap.
+  const loadRows = () => {
+    setLoading(true);
+    poApi.list({ per_page: 100 })
+      .then(({ rows }) => setAllRows(rows.map(toOrderRow)))
+      .catch((e) => toast.error('Could not load purchase orders', e.firstError ?? 'Please refresh the page.'))
+      .finally(() => setLoading(false));
+  };
+  useEffect(loadRows, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Not built on the new PO yet.
+  const comingSoon = (what: string) => () => toast.info('Feature coming soon', `${what} will be available shortly.`);
+  const onManage = comingSoon('Payment management');
+  const onInspect = comingSoon('Physical inspection');
+  const onZoho = comingSoon('Zoho Books sync');
 
   // Create PO runs in two screens: the link popup, then the full-page form.
   const [createOpen, setCreateOpen] = useState(false);
   const [poLink, setPoLink] = useState<PoLink | null>(null);
 
-  // Edit PO opens the same form, straight past the link popup, pre-filled from
-  // the row (the form matches the supplier and fills the rest itself).
-  const openEdit = (row: OrderRow) => setPoLink({
-    mode: row.shipment ? 'with' : 'without',
-    shipmentId: row.shipment ?? undefined,
-    edit: {
-      po: row.po,
-      opportunity: row.opportunity,
-      procurement: row.procurement,
-      supplier: row.supplier,
-      poType: PO_TYPE[row.type].label,
-      docType: row.docType,
-      deliveryDate: row.expectedDelivery,
-      physInsp: row.physicalInspection,
-    },
-  });
+  // Edit PO opens the same form straight past the link popup; it loads the saved PO itself.
+  const openEdit = (row: OrderRow) => {
+    if (row.id) setPoLink({ mode: row.shipment ? 'with' : 'without', editId: row.id });
+  };
 
-  const [payRow, setPayRow] = useState<OrderRow | null>(null);
-  const [payStartRaise, setPayStartRaise] = useState(false);
-
-  const [inspectRow, setInspectRow] = useState<OrderRow | null>(null);
-  const [inspections, setInspections] = useState<Record<string, InspectionRecord | null>>({});
-  const [inspDrafts, setInspDrafts] = useState<Record<string, InspectionDraft>>({});
-  const inspectedOf = (r: OrderRow) => (r.po in inspections ? !!inspections[r.po] : r.inspectionDone);
-  const inspectPo = inspectRow?.po ?? '';
 
   const [activeTab, setActiveTab] = useState<TabKey>('all');
 
@@ -1348,20 +1116,20 @@ export default function Order() {
 
   const rows = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return SAMPLE_ROWS
+    return allRows
       .filter((row) => inTab(row, activeTab))
       .filter((row) => term === '' || searchTextOf(row).includes(term));
-  }, [activeTab, search]);
+  }, [allRows, activeTab, search]);
 
   const tabCounts = useMemo(() => {
     const counts: Record<TabKey, number> = { all: 0, with: 0, without: 0, cancelinit: 0, cancelclosed: 0 };
-    for (const row of SAMPLE_ROWS) {
+    for (const row of allRows) {
       for (const tab of LIST_TABS) {
         if (inTab(row, tab.key)) counts[tab.key] += 1;
       }
     }
     return counts;
-  }, []);
+  }, [allRows]);
 
   const start = (page - 1) * pageSize;
   const pageRows = rows.slice(start, start + pageSize);
@@ -1432,51 +1200,10 @@ export default function Order() {
       {poLink && !createOpen && (
         <Suspense fallback={<CreatePoSkeleton />}>
           <CreatePoForm
-            key={poLink.edit?.po ?? 'new'}
+            key={poLink.editId ?? 'new'}
             link={poLink}
-            onClose={() => setPoLink(null)}
+            onClose={() => { setPoLink(null); loadRows(); }}
             onChangeLink={() => setCreateOpen(true)}
-          />
-        </Suspense>
-      )}
-
-      {inspectRow && (
-        <Suspense fallback={null}>
-          <PhysicalInspectionModal
-            row={inspectRow}
-            record={inspectPo in inspections ? inspections[inspectPo] : undefined}
-            draft={inspDrafts[inspectPo]}
-            onDraftChange={(d) => setInspDrafts((prev) => ({ ...prev, [inspectPo]: d }))}
-            onSignOff={(r) => {
-              setInspections((prev) => ({ ...prev, [inspectPo]: r }));
-              setInspectRow(null);
-            }}
-            onWithdraw={() => {
-              setInspections((prev) => ({ ...prev, [inspectPo]: null }));
-              setInspDrafts((prev) => {
-                const next = { ...prev };
-                delete next[inspectPo];
-                return next;
-              });
-              setInspectRow(null);
-            }}
-            onContinue={() => {
-              const r = inspectRow;
-              setInspectRow(null);
-              setPayStartRaise(true);
-              setPayRow(r);
-            }}
-            onClose={() => setInspectRow(null)}
-          />
-        </Suspense>
-      )}
-
-      {payRow && (
-        <Suspense fallback={null}>
-          <ManagePaymentRequestsModal
-            row={payRow}
-            startWithRaise={payStartRaise}
-            onClose={() => { setPayRow(null); setPayStartRaise(false); }}
           />
         </Suspense>
       )}
@@ -1619,10 +1346,11 @@ export default function Order() {
                 key={row.po}
                 row={row}
                 index={start + index}
-                onManage={setPayRow}
-                onInspect={setInspectRow}
+                onManage={onManage}
+                onInspect={onInspect}
                 onEdit={openEdit}
-                inspected={inspectedOf(row)}
+                onZoho={onZoho}
+                inspected={row.inspectionDone}
               />
             ))}
           </div>
@@ -1652,10 +1380,11 @@ export default function Order() {
                 key={row.po}
                 row={row}
                 sr={start + poIndex + 1}
-                inspected={inspectedOf(row)}
-                onInspect={setInspectRow}
-                onManage={setPayRow}
+                inspected={row.inspectionDone}
+                onInspect={onInspect}
+                onManage={onManage}
                 onEdit={openEdit}
+                onZoho={onZoho}
               />
             ))}
           </table>

@@ -5,12 +5,12 @@ import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../../../contexts/AuthContext';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
-import { Box, Chip, ICON_X, STAT_ICONS, Stat, fmtDate, money } from '../../purchase-management/order/payment-shared';
+import { Box, Chip, HeroRefChips, ICON_X, STAT_ICONS, Stat, fmtDate, money } from '../../purchase-management/order/manage-payment/payment-shared';
 import { decidePaymentRequest, type PaymentRequestRow } from './paymentRequestData';
 import type { PaymentRequestDetail } from './paymentRequestDetailData';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
-import '../../purchase-management/order/manage-payment-requests.css';
-import '../../purchase-management/order/raise-payment-request.css';
+import '../../purchase-management/order/manage-payment/manage-payment-requests.css';
+import '../../purchase-management/order/manage-payment/raise-payment-request.css';
 import './payment-request-decision.css';
 
 export type DecisionMode = 'approve' | 'decline';
@@ -55,7 +55,7 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
   useScrollLock(true, '.prd-dec');
   const { user } = useAuth();
   const approve = mode === 'approve';
-  const { doc, ledger, linked, supplier } = detail;
+  const { doc, ledger, linked, supplier, po } = detail;
   const D = doc.kind === 'spi' ? 'SPI' : 'PO';
 
   const cap = approvalCap(detail, request);
@@ -160,13 +160,14 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
             </div>
             <div className="mpr-hero__sub">Decision recorded as {by.name} · {by.role}</div>
           </div>
-          <div className="mpr-hero__chips">
+          {/* A PO request shows the PO's own strip (with its SPIs); a direct SPI has no PO row. */}
+          {po ? <HeroRefChips row={po} /> : <div className="mpr-hero__chips">
             <Chip label="Supplier" value={request.supplier} meta={supplier?.code} mod="mpr-hero__chip--sup" />
             <Chip label={`${D} Number`} value={doc.id} meta={fmtDate(doc.date)} />
             <Chip label="Shipment ID" value={request.shipment?.id ?? '—'} meta={request.shipment ? fmtDate(request.shipment.date) : undefined} />
             <Chip label="Opportunity ID" value={request.opportunity.id} meta={fmtDate(request.opportunity.date)} />
             <Chip label="Procurement ID" value={request.procurement.id} meta={fmtDate(request.procurement.date)} />
-          </div>
+          </div>}
           <button type="button" className="mpr-hero__close" onClick={onClose} aria-label="Close">{ICON_X}</button>
         </div>
 
@@ -207,7 +208,7 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
               {ro('Requested Payment Amount', money(request.requestedAmount), 'is-amt')}
               {approve ? (
                 <div className="prd-dec__field is-live">
-                  <label htmlFor="prd-dec-amt">Amount to be Approve</label>
+                  <label htmlFor="prd-dec-amt">Amount To Be Approved</label>
                   <div className="rpr-amtwrap prd-dec__amt">
                     <span className="rpr-amtwrap__cur">₹</span>
                     <input

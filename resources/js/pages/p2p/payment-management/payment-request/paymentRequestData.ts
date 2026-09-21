@@ -3,7 +3,7 @@
    for the real GET is the only change the page needs. */
 
 export type RequestStatus = 'awaiting' | 'approved' | 'declined';
-export type PaymentType = 'Advance Payment' | 'Partial Payment' | 'Balance Payment' | 'Full Payment';
+export type PaymentType = 'Advance Payment' | 'Partial Payment' | 'Balance Payment' | 'Final Payment';
 export type SupplierTag = 'star' | 'regular' | 'high' | 'blacklisted';
 export type RaisedAgainstKind = 'po' | 'spi' | 'po-spi';
 export type RequestFlag = 'physical-inspection' | 'direct-spi' | null;
@@ -165,7 +165,7 @@ const ROWS: PaymentRequestRow[] = [
     opportunity: { id: 'OPP-044', date: '2026-04-30' },
     procurement: { id: 'PROC-066', date: '2026-05-12' },
     supplier: 'Tata Chemicals', supplierTag: 'regular',
-    totalAmount: 189400, requestedAmount: 75000, approvedAmount: 50000, approvedNote: '₹25,000 held back',
+    totalAmount: 189400, requestedAmount: 75000, approvedAmount: 50000, approvedNote: 'released in full',
     paymentType: 'Partial Payment',
     requestedBy: { code: 'RH', name: 'Rajesh Healthcare' },
     requestedTo: { code: 'SR', name: 'Sunita Rao' },
@@ -180,7 +180,7 @@ const ROWS: PaymentRequestRow[] = [
     procurement: { id: 'PROC-118', date: '2026-06-01' },
     supplier: 'Sunrise Packaging and Industrial Materials Manufacturing Company (India) Private Limited — Unit II, Export Division, Bhiwandi Logistics Park, Maharashtra, registered supplier for corrugated and flexible packaging materials', supplierTag: 'high',
     totalAmount: 64300, requestedAmount: 64300, approvedAmount: null, approvedNote: 'declined',
-    paymentType: 'Full Payment',
+    paymentType: 'Final Payment',
     requestedBy: { code: 'RH', name: 'Rajesh Healthcare' },
     requestedTo: { code: 'RM', name: 'Rajiv Menon' },
     percentOfTotal: 100,
@@ -211,9 +211,7 @@ export async function decidePaymentRequest(requestId: string, d: Decision): Prom
   if (d.kind === 'approve') {
     row.status = 'approved';
     row.approvedAmount = d.amount;
-    row.approvedNote = d.amount < row.requestedAmount
-      ? `₹${(row.requestedAmount - d.amount).toLocaleString('en-IN')} held back`
-      : `₹${d.amount.toLocaleString('en-IN')} due`;
+    row.approvedNote = `₹${d.amount.toLocaleString('en-IN')} due`;
     row.decision = { on, by: d.by, note: d.note, files: d.files };
   } else {
     row.status = 'declined';

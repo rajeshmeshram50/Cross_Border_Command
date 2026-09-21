@@ -3,7 +3,7 @@
 // They draw in currentColor so the surrounding element decides the colour.
 import type { SVGProps } from 'react';
 
-type IconProps = { size?: number; stroke?: number } & Omit<SVGProps<SVGSVGElement>, 'stroke'>;
+export type IconProps = { size?: number; stroke?: number } & Omit<SVGProps<SVGSVGElement>, 'stroke'>;
 
 /** Shared frame: square viewBox, no fill, round joins. */
 function Svg({ size = 14, stroke = 2.2, children, ...rest }: IconProps & { children: React.ReactNode }) {
@@ -354,6 +354,68 @@ export const IcoTrash = (p: IconProps) => (
 export const IcoWallet = (p: IconProps) => (
   <Svg size={18} stroke={2} {...p}>
     <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" /><path d="M3 5v14a2 2 0 0 0 2 2h16v-5" /><path d="M18 12a2 2 0 0 0 0 4h4v-4z" />
+  </Svg>
+);
+
+export const IcoArrowL = (p: IconProps) => (
+  <Svg size={13} stroke={2.6} {...p}>
+    <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
+  </Svg>
+);
+
+export const IcoBuilding = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 21h18" /><path d="M5 21V7l8-4v18" /><path d="M19 21V11l-6-4" />
+  </Svg>
+);
+
+/** A capital T — a reference / identifier field. */
+export const IcoText = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 7V4h16v3" /><path d="M9 20h6" /><path d="M12 4v16" />
+  </Svg>
+);
+
+export const IcoPercent = (p: IconProps) => (
+  <Svg {...p}>
+    <line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" />
+  </Svg>
+);
+
+export const IcoRupee = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6 3h12" /><path d="M6 8h12" /><path d="m6 13 8.5 8" /><path d="M6 13h3" /><path d="M9 13c6.667 0 6.667-10 0-10" />
+  </Svg>
+);
+
+export const IcoReceipt = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 2h16v20l-3-1.8-3 1.8-3-1.8-3 1.8L4 22V2z" /><line x1="8" y1="8" x2="16" y2="8" /><line x1="8" y1="12" x2="16" y2="12" />
+  </Svg>
+);
+
+export const IcoBriefcase = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="2" y="7" width="20" height="14" rx="2.5" /><path d="M16 7V5a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v2" />
+  </Svg>
+);
+
+/** Rising line on axes — a running balance. */
+export const IcoTrend = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 3v18h18" /><polyline points="7 14 11 9 15 12 20 6" />
+  </Svg>
+);
+
+export const IcoUpload = (p: IconProps) => (
+  <Svg size={13} stroke={2.4} {...p}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+  </Svg>
+);
+
+export const IcoCamera = (p: IconProps) => (
+  <Svg size={13} stroke={2.3} {...p}>
+    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" />
   </Svg>
 );
 

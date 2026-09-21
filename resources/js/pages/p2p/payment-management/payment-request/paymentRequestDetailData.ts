@@ -2,9 +2,9 @@
    document's payment ledger, the releases made against it and the purchase
    orders it sits on. Shaped like the API response will be, so replacing
    `fetchPaymentRequestDetail` with the real GET is the only change needed. */
-import type { OrderRow } from '../../purchase-management/order/Order';
-import type { Supplier } from '../../purchase-management/order/create-po/sample-suppliers';
-import { INSPECTION_PRODUCTS, type InspectionProduct } from '../../purchase-management/order/inspection-shared';
+import type { OrderRow } from '../../purchase-management/order/po-list/Order';
+import type { Supplier } from './payment-request-suppliers';
+import { INSPECTION_PRODUCTS, type InspectionProduct } from '../../purchase-management/order/physical-inspection/inspection-shared';
 import { fetchPaymentRequests, type PaymentRequestRow } from './paymentRequestData';
 
 export type PaymentRelease = {
@@ -55,7 +55,7 @@ export type PaymentRequestDetail = {
 
 const SUPPLIERS: Record<string, Supplier> = {
   'Bosch India': {
-    key: 'Bosch India', code: 'S-015', legalName: 'Bosch India Limited', type: 'Manufacturer',
+    key: 'Bosch India', code: 'S-015', legalName: 'Bosch India Limited', type: 'Material / Goods',
     risk: 'Low Risk', category: 'Regular Supplier', segment: 'Capital Equipment',
     addr: 'Tower 7, Industrial Estate, Bengaluru', country: 'India', state: 'Karnataka', stateCode: '29', city: 'Bengaluru',
     contact: 'Ramesh Nair', desig: 'Key Account Manager', phone: '+91 98450 77001', email: 'ramesh.nair@boschindia.com',
@@ -64,7 +64,7 @@ const SUPPLIERS: Record<string, Supplier> = {
     legalDone: [4, 4, 2, 4, 3],
   },
   'Reliance Industries': {
-    key: 'Reliance Industries', code: 'S-001', legalName: 'Reliance Industries Limited', type: 'Manufacturer',
+    key: 'Reliance Industries', code: 'S-001', legalName: 'Reliance Industries Limited', type: 'Material / Goods',
     risk: 'Low Risk', category: 'Star Supplier', segment: 'Raw Material',
     addr: 'Maker Chambers IV, 222 Nariman Point, Mumbai 400021', country: 'India', state: 'Maharashtra', stateCode: '27', city: 'Mumbai',
     contact: 'Anil Mehta', desig: 'Procurement Head', phone: '+91 98200 11223', email: 'anil.mehta@ril.com',
@@ -73,7 +73,7 @@ const SUPPLIERS: Record<string, Supplier> = {
     legalDone: [4, 4, 3, 4, 3],
   },
   'QuickShip Couriers': {
-    key: 'QuickShip Couriers', code: 'S-021', legalName: 'QuickShip Couriers Private Limited', type: 'Transporter',
+    key: 'QuickShip Couriers', code: 'S-021', legalName: 'QuickShip Couriers Private Limited', type: 'FFD / Transporter',
     risk: 'Low Risk', category: 'Regular Supplier', segment: 'Transport',
     addr: 'Unit 12, Andheri Logistics Park, Mumbai 400093', country: 'India', state: 'Maharashtra', stateCode: '27', city: 'Mumbai',
     contact: 'Neha Iyer', desig: 'Business Manager', phone: '+91 98670 44120', email: 'neha.iyer@quickshipcouriers.com',
@@ -82,7 +82,7 @@ const SUPPLIERS: Record<string, Supplier> = {
     legalDone: [4, 4, 3, 4, 3],
   },
   'Godrej Industries': {
-    key: 'Godrej Industries', code: 'S-008', legalName: 'Godrej Industries Limited', type: 'Manufacturer',
+    key: 'Godrej Industries', code: 'S-032', legalName: 'Godrej Industries Limited', type: 'Material / Goods',
     risk: 'Low Risk', category: 'Star Supplier', segment: 'Raw Material',
     addr: 'Godrej One, Pirojshanagar, Vikhroli East, Mumbai 400079', country: 'India', state: 'Maharashtra', stateCode: '27', city: 'Mumbai',
     contact: 'Kavita Deshpande', desig: 'Sales Head', phone: '+91 98190 66231', email: 'kavita.deshpande@godrejinds.com',
@@ -91,7 +91,7 @@ const SUPPLIERS: Record<string, Supplier> = {
     legalDone: [4, 4, 3, 4, 3],
   },
   'Tata Chemicals': {
-    key: 'Tata Chemicals', code: 'S-011', legalName: 'Tata Chemicals Limited', type: 'Manufacturer',
+    key: 'Tata Chemicals', code: 'S-012', legalName: 'Tata Chemicals Limited', type: 'Material / Goods',
     risk: 'Medium Risk', category: 'Regular Supplier', segment: 'Raw Material',
     addr: 'Bombay House, 24 Homi Mody Street, Fort, Mumbai 400001', country: 'India', state: 'Maharashtra', stateCode: '27', city: 'Mumbai',
     contact: 'Sanjay Rao', desig: 'Regional Manager', phone: '+91 98330 27714', email: 'sanjay.rao@tatachemicals.com',
@@ -102,7 +102,7 @@ const SUPPLIERS: Record<string, Supplier> = {
   'Sunrise Packaging and Industrial Materials Manufacturing Company (India) Private Limited — Unit II, Export Division, Bhiwandi Logistics Park, Maharashtra, registered supplier for corrugated and flexible packaging materials': {
     key: 'Sunrise Packaging and Industrial Materials Manufacturing Company (India) Private Limited',
     code: 'S-034', legalName: 'Sunrise Packaging and Industrial Materials Manufacturing Company (India) Private Limited',
-    type: 'Manufacturer', risk: 'High Risk', category: 'High Risk Supplier', segment: 'Packaging',
+    type: 'Material / Goods', risk: 'High Risk', category: 'High Risk Supplier', segment: 'Packaging',
     addr: 'Unit II, Export Division, Bhiwandi Logistics Park, Bhiwandi 421302', country: 'India', state: 'Maharashtra', stateCode: '27', city: 'Bhiwandi',
     contact: 'Vikram Patel', desig: 'Business Manager', phone: '+91 97690 18842', email: 'vikram.patel@sunrisepack.com',
     scrutiny: '2026-01-14', gstNo: '27AAKCS8812P1ZD', gstStatus: 'Suspended', filing: '2026-04-30',

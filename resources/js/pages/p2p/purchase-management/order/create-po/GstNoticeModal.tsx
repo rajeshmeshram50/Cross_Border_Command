@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
-import { MasterSelect } from '../../../../../components/ui/MasterSelect';
+import { useToast } from '../../../../../contexts/ToastContext';
 import { formatDmy } from '../../../../../utils/formatDmy';
-import { IcoShieldAlert, IcoUser } from '../icons';
+import { IcoShieldAlert, IcoUser } from '../shared/icons';
 
 export type GstNotice = {
   tone: 'stop' | 'warn';
@@ -20,18 +20,18 @@ export type GstNotice = {
   months: number;
 };
 
-// Static until the approvals API exists.
-const APPROVERS = [
-  'Rajiv Menon · Head of Procurement',
-  'Sneha Kulkarni · Finance Controller',
-  'Amit Deshpande · Director',
-];
-const APPROVER_OPTIONS = APPROVERS.map((a) => ({ value: a, label: a }));
-
-export default function GstNoticeModal({ notice, onClose }: { notice: GstNotice; onClose: () => void }) {
+/** `onSend` sends the senior-approval request; without it the action says it is coming soon. */
+export default function GstNoticeModal({ notice, onClose, onSend }: {
+  notice: GstNotice; onClose: () => void; onSend?: (note: string) => void;
+}) {
   useScrollLock(true, '.cgst-card');
-  const [approver, setApprover] = useState(APPROVERS[0]);
+  const toast = useToast();
   const [note, setNote] = useState('');
+  const send = () => {
+    if (onSend) onSend(note);
+    else toast.info('Feature coming soon', 'Senior approval requests will be available shortly.');
+    onClose();
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -92,10 +92,6 @@ export default function GstNoticeModal({ notice, onClose }: { notice: GstNotice;
           ) : (
             <>
               <div className="cgst-field">
-                <label>Send to</label>
-                <MasterSelect value={approver} options={APPROVER_OPTIONS} onChange={setApprover} />
-              </div>
-              <div className="cgst-field">
                 <label htmlFor="cgst-note">Note for the approver <span className="cgst-opt">optional</span></label>
                 <textarea
                   id="cgst-note"
@@ -111,7 +107,7 @@ export default function GstNoticeModal({ notice, onClose }: { notice: GstNotice;
 
         <div className="cgst-ft">
           <button type="button" className="cgst-btn cgst-btn--ghost" onClick={onClose}>Cancel</button>
-          <button type="button" className={`cgst-btn cgst-btn--${notice.tone}`} onClick={onClose}>
+          <button type="button" className={`cgst-btn cgst-btn--${notice.tone}`} onClick={stop ? onClose : send}>
             {stop ? 'Open Supplier GST Scrutiny' : 'Send for Senior Approval'}
           </button>
         </div>

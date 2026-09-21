@@ -1,90 +1,65 @@
 // Payment Request Management → View Request. Opens full screen over the list,
 // so Back returns to the queue with its tab, search and page untouched.
-import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Badge, { type BadgeVariant } from '../../../../components/ui/Badge';
 import { useAuth } from '../../../../contexts/AuthContext';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { formatDmy } from '../../../../utils/formatDmy';
-import { ORDER_COLUMNS, OrderRowBody, type OrderRow } from '../../purchase-management/order/Order';
+import { ORDER_COLUMNS, OrderRowBody, type OrderRow } from '../../purchase-management/order/po-list/Order';
 import { Field } from '../../purchase-management/order/create-po/form-fields';
 import GstNoticeModal, { type GstNotice } from '../../purchase-management/order/create-po/GstNoticeModal';
 import {
   GST_STALE_MONTHS, SevIcon, cutoffDate, gstState, monthsAgo, riskItems, type Severity,
 } from '../../purchase-management/order/create-po/supplier-checks';
 import {
-  LEGAL_PARAMS, RISK_GUIDELINES, isRiskMandatory, legalSections, legalTotals, type Supplier,
-} from '../../purchase-management/order/create-po/sample-suppliers';
+  LEGAL_PARAMS, RISK_GUIDELINES, isRiskMandatory, legalSections, legalTotals, toRiskSubject, type Supplier,
+} from './payment-request-suppliers';
 import {
   ProofChip, VERDICTS, downloadFile, openFile, toProofFiles,
   type InspectionLine, type InspectionProduct, type ProofFile, type Verdict,
-} from '../../purchase-management/order/inspection-shared';
-import InspectionAttachmentsModal from '../../purchase-management/order/InspectionAttachmentsModal';
-import InspectionProductView from '../../purchase-management/order/InspectionProductView';
+} from '../../purchase-management/order/physical-inspection/inspection-shared';
+import InspectionAttachmentsModal from '../../purchase-management/order/physical-inspection/InspectionAttachmentsModal';
+import InspectionProductView from '../../purchase-management/order/physical-inspection/InspectionProductView';
 import {
-  IcoAlert, IcoCheck, IcoChevron, IcoCircleX, IcoDocSm, IcoDownload, IcoEye, IcoFile, IcoLock, IcoOk,
-  IcoPin, IcoShield, IcoStop, IcoUser, IcoWarn, IcoClock,
+  IcoAlert, IcoArrowL, IcoBriefcase, IcoBuilding, IcoCamera, IcoCard, IcoCart, IcoCheck, IcoChevron,
+  IcoCircleX, IcoClock, IcoDocSm, IcoDownload, IcoEye, IcoFile, IcoHistory, IcoLink, IcoLock, IcoOk,
+  IcoPercent, IcoPin, IcoReceipt, IcoRupee, IcoScales, IcoSend, IcoShield, IcoShip, IcoStop, IcoTarget,
+  IcoText, IcoTrend, IcoUpload, IcoUser, IcoWallet, IcoWarn, IcoX,
+  type IconProps,
 } from '../../icons';
 import { STATUS_LABEL, type RequestStatus } from './paymentRequestData';
 import {
   fetchPaymentRequestDetail, type LinkedRequest, type PaymentRequestDetail as Detail,
 } from './paymentRequestDetailData';
 import TxnVaultModal from './TxnVaultModal';
+import api from '../../../../api';
+import type { SupplierVaultTarget } from '../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
+// The supplier's own vault (KYC, DD, licences) — loaded only when opened.
+const SupplierEvidenceVaultModal = lazy(() => import('../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 import PaymentRequestDecisionModal, { type DecisionMode } from './PaymentRequestDecisionModal';
 import type { PaymentRequestRow } from './paymentRequestData';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
-import '../../purchase-management/order/order.css';
+import '../../purchase-management/order/po-list/order.css';
 import '../../purchase-management/order/create-po/create-po.css';
-import '../../purchase-management/order/physical-inspection.css';
+import '../../purchase-management/order/physical-inspection/physical-inspection.css';
 import './payment-request.css';
+import '../../purchase-management/order/manage-payment/manage-payment-requests.css';
 import './payment-request-detail.css';
+import './payment-request-decision.css';
 
 type TxTab = 'current' | 'history';
 type SubTab = 'supplier' | 'linked' | 'summary' | 'physical' | 'status';
 
-/** Glyphs the shared icon set doesn't carry, drawn the prototype's way. */
-function G({ d, size = 13, stroke = 2.2 }: { d: ReactNode; size?: number; stroke?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round">
-      {d}
-    </svg>
-  );
-}
-const P = {
-  send: <><path d="M22 2 11 13" /><path d="M22 2 15 22l-4-9-9-4z" /></>,
-  back: <><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></>,
-  doc: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></>,
-  building: <><path d="M3 21h18" /><path d="M5 21V7l8-4v18" /><path d="M19 21V11l-6-4" /></>,
-  truck: <><rect x="1" y="3" width="15" height="13" rx="2" /><path d="M16 8h4l3 5v3h-7V8z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></>,
-  target: <><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" /></>,
-  cart: <><circle cx="9" cy="21" r="1.6" /><circle cx="19" cy="21" r="1.6" /><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" /></>,
-  ref: <><path d="M4 7V4h16v3" /><path d="M9 20h6" /><path d="M12 4v16" /></>,
-  card: <><rect x="2" y="5" width="20" height="14" rx="2.5" /><line x1="2" y1="10" x2="22" y2="10" /></>,
-  pct: <><line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" /></>,
-  rupee: <><path d="M6 3h12" /><path d="M6 8h12" /><path d="m6 13 8.5 8" /><path d="M6 13h3" /><path d="M9 13c6.667 0 6.667-10 0-10" /></>,
-  user: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></>,
-  receipt: <><path d="M4 2h16v20l-3-1.8-3 1.8-3-1.8-3 1.8L4 22V2z" /><line x1="8" y1="8" x2="16" y2="8" /><line x1="8" y1="12" x2="16" y2="12" /></>,
-  scale: <><path d="M12 3v18" /><path d="M6 7h12" /><path d="M6 7l-3 6a3 3 0 0 0 6 0z" /><path d="M18 7l-3 6a3 3 0 0 0 6 0z" /></>,
-  badge: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></>,
-  wallet: <><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" /><path d="M3 5v14a2 2 0 0 0 2 2h16v-5" /><path d="M18 12a2 2 0 0 0 0 4h4v-4z" /></>,
-  history: <><path d="M3 3v5h5" /><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" /><path d="M12 7v5l4 2" /></>,
-  link: <><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></>,
-  eye: <><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></>,
-  clock: <><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15.5 14" /></>,
-  vault: <><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /><path d="M9 12l2 2 4-4" /></>,
-  bag: <><rect x="2" y="7" width="20" height="14" rx="2.5" /><path d="M16 7V5a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v2" /></>,
-  chart: <><path d="M3 3v18h18" /><polyline points="7 14 11 9 15 12 20 6" /></>,
-  up: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></>,
-  cam: <><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></>,
-};
+type Icon = (p: IconProps) => ReactNode;
 
-const SUBS: { k: SubTab; t: string; d: ReactNode }[] = [
-  { k: 'supplier', t: 'Supplier Details', d: P.building },
-  { k: 'linked', t: 'Linked Payment Requests', d: P.link },
-  { k: 'summary', t: 'Payment Summary', d: P.rupee },
-  { k: 'physical', t: 'Physical Inspection', d: P.eye },
-  { k: 'status', t: 'Current Transaction Status', d: P.clock },
+const SUBS: { k: SubTab; t: string; ico: Icon }[] = [
+  { k: 'supplier', t: 'Supplier Details', ico: IcoBuilding },
+  { k: 'linked', t: 'Linked Payment Requests', ico: IcoLink },
+  { k: 'summary', t: 'Payment Summary', ico: IcoRupee },
+  { k: 'physical', t: 'Physical Inspection', ico: IcoEye },
+  { k: 'status', t: 'Current Transaction Status', ico: IcoClock },
 ];
 
 const money = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
@@ -111,15 +86,13 @@ const statusText = (r: LinkedRequest | Detail['row']) =>
 const NO_APPROVE_TIP = 'You need Approve permission on Payment Request Management to decide requests';
 
 // A popup opened from this page owns Esc while it is up.
-const POPUP_LAYERS = '.spi-mdl-backdrop, .cgst-backdrop, .prd-detail-overlay, .prd-vault';
+const POPUP_LAYERS = '.spi-mdl-backdrop, .cgst-backdrop, .prd-detail-overlay, .prd-vault, .cev-overlay';
 
-export default function PaymentRequestDetail({ requestId, onBack, onOpenRequest, onChanged }: {
+export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
   requestId: string;
   onBack: () => void;
   /** A request was approved or declined here — the list behind should reload. */
   onChanged?: () => void;
-  /** Opens another request from the Linked Payment Requests tab. */
-  onOpenRequest: (requestId: string) => void;
 }) {
   useScrollLock(true, '.prd-root');
   const toast = useToast();
@@ -188,7 +161,7 @@ export default function PaymentRequestDetail({ requestId, onBack, onOpenRequest,
                 <h3 className="prd-title">Request not found</h3>
                 <p className="prd-sub">This payment request is no longer available.</p>
               </div>
-              <button type="button" className="prd-close" title="Back to Payment Request Management" onClick={onBack}><G d={P.back} stroke={2.6} /></button>
+              <button type="button" className="prd-close" title="Back to Payment Request Management" onClick={onBack}><IcoArrowL size={13} stroke={2.6} /></button>
             </div>
           </div>
         </div>
@@ -218,7 +191,7 @@ export default function PaymentRequestDetail({ requestId, onBack, onOpenRequest,
       <div className={`prd-refcard__val ${cls}`} title={val}>{val}</div>
     </div>
   );
-  const i9 = (d: ReactNode) => <G d={d} size={9} stroke={2.5} />;
+  const i9 = (I: Icon) => <I size={9} stroke={2.5} />;
 
   return createPortal(
     <div className="prd-root">
@@ -227,25 +200,25 @@ export default function PaymentRequestDetail({ requestId, onBack, onOpenRequest,
         <div className="prd-head">
           <div className="prd-hrow">
             <div className="prd-titlewrap">
-              <div className="prd-hicon"><G d={P.send} size={20} stroke={2.1} /></div>
+              <div className="prd-hicon"><IcoSend size={20} stroke={2.1} /></div>
               <div className="prd-titleblock">
                 <div className="prd-titleline">
                   <h3 className="prd-title">{row.requestId}</h3>
                   <span className={`prd-badge ${badgeCls}`}><span className="prd-badge__dot" />{statusText(row)}</span>
                 </div>
                 <p className="prd-sub">
-                  Request raised against <b className="prd-sub__doc">{doc.id}</b> Requested {shortDate(row.requestDate)}
+                  Request raised against <b className="prd-sub__doc">{doc.id}</b> · Requested {shortDate(row.requestDate)}
                 </p>
               </div>
             </div>
 
             <div className="prd-right">
               <div className="prd-chips">
-                {chip(i9(P.doc), `${D} Number`, doc.id, longDate(doc.date))}
-                {chip(i9(P.building), 'Supplier', supplier?.code ?? '—', row.supplier)}
-                {chip(i9(P.truck), 'Shipment ID', row.shipment?.id ?? '—', longDate(row.shipment?.date))}
-                {chip(i9(P.target), 'Opportunity ID', row.opportunity.id, longDate(row.opportunity.date))}
-                {chip(i9(P.cart), 'Procurement ID', row.procurement.id, longDate(row.procurement.date))}
+                {chip(i9(IcoFile), `${D} Number`, doc.id, longDate(doc.date))}
+                {chip(i9(IcoBuilding), 'Supplier', supplier?.code ?? '—', row.supplier)}
+                {chip(i9(IcoShip), 'Shipment ID', row.shipment?.id ?? '—', longDate(row.shipment?.date))}
+                {chip(i9(IcoTarget), 'Opportunity ID', row.opportunity.id, longDate(row.opportunity.date))}
+                {chip(i9(IcoCart), 'Procurement ID', row.procurement.id, longDate(row.procurement.date))}
               </div>
               <div className="prd-hactions">
                 <button
@@ -254,16 +227,16 @@ export default function PaymentRequestDetail({ requestId, onBack, onOpenRequest,
                   title="Every document behind this transaction — the purchase order, its trade documents and agreements, and the supplier invoices mapped to it"
                   onClick={() => setVaultOpen(true)}
                 >
-                  <G d={P.vault} stroke={2.4} />Evidence Vault
+                  <IcoShield size={13} stroke={2.4} />Evidence Vault
                 </button>
                 <button type="button" className="prd-act prd-act--ok" disabled={decided || !canApprove} title={decidedTip} onClick={() => openDecision('approve', row)}>
-                  <G d={<path d="M20 6 9 17l-5-5" />} stroke={2.8} />Approve Request
+                  <IcoCheck size={13} stroke={2.8} />Approve Request
                 </button>
                 <button type="button" className="prd-act prd-act--no" disabled={decided || !canApprove} title={decidedTip} onClick={() => openDecision('decline', row)}>
-                  <G d={<><circle cx="12" cy="12" r="9" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></>} stroke={2.6} />
+                  <IcoCircleX size={13} stroke={2.6} />
                   Reject / Decline Request
                 </button>
-                <button type="button" className="prd-close" title="Back to Payment Request Management" onClick={onBack}><G d={P.back} stroke={2.6} /></button>
+                <button type="button" className="prd-close" title="Back to Payment Request Management" onClick={onBack}><IcoArrowL size={13} stroke={2.6} /></button>
               </div>
             </div>
           </div>
@@ -271,29 +244,29 @@ export default function PaymentRequestDetail({ requestId, onBack, onOpenRequest,
           <div className="prd-cols">
             <div className="prd-col">
               <div className="prd-col__hd">
-                <div className="prd-col__ico"><G d={P.send} /></div>
+                <div className="prd-col__ico"><IcoSend size={13} stroke={2.2} /></div>
                 <span className="prd-col__t">Payment Request Details</span><span className="prd-col__rule" />
               </div>
               <div className="prd-col__grid">
-                {card(i9(P.ref), 'Request ID', row.requestId)}
-                {card(i9(P.card), 'Payment Type', row.paymentType)}
-                {card(i9(P.pct), 'Payment (%)', `${row.percentOfTotal}%`)}
-                {card(i9(P.rupee), 'Requested Payment Amount', money(row.requestedAmount), 'is-amt')}
-                {card(i9(P.user), 'Requested By', row.requestedBy.name)}
+                {card(i9(IcoText), 'Request ID', row.requestId)}
+                {card(i9(IcoCard), 'Payment Type', row.paymentType)}
+                {card(i9(IcoPercent), 'Payment (%)', `${row.percentOfTotal}%`)}
+                {card(i9(IcoRupee), 'Requested Payment Amount', money(row.requestedAmount), 'is-amt')}
+                {card(i9(IcoUser), 'Requested By', row.requestedBy.name)}
               </div>
             </div>
             <div className="prd-col">
               <div className="prd-col__hd">
-                <div className="prd-col__ico"><G d={P.wallet} /></div>
+                <div className="prd-col__ico"><IcoWallet size={13} stroke={2.2} /></div>
                 <span className="prd-col__t">Payment Details (Till Current Date)</span><span className="prd-col__rule" />
               </div>
               <div className="prd-col__grid">
-                {card(i9(P.receipt), `Total ${D} Amount`, money(ledger.total), 'is-amt')}
-                {card(i9(P.rupee), 'Total Paid Amount', money(ledger.paid), 'green is-amt')}
-                {card(i9(P.scale), 'Balance Amount', money(ledger.balance), 'amber is-amt')}
-                {card(i9(P.send), 'Previously Request Amount', money(ledger.prevRequested), 'is-amt')}
-                {card(i9(P.badge), 'Approved Amount', money(ledger.approvedTotal), 'green is-amt')}
-                {card(i9(P.wallet), 'Amount that Open to Request', money(ledger.available), 'amber is-amt')}
+                {card(i9(IcoReceipt), `Total ${D} Amount`, money(ledger.total), 'is-amt')}
+                {card(i9(IcoRupee), 'Total Paid Amount', money(ledger.paid), 'green is-amt')}
+                {card(i9(IcoScales), 'Balance Amount', money(ledger.balance), 'amber is-amt')}
+                {card(i9(IcoSend), 'Previously Requested Amount', money(ledger.prevRequested), 'is-amt')}
+                {card(i9(IcoOk), 'Approved Amount', money(ledger.approvedTotal), 'green is-amt')}
+                {card(i9(IcoWallet), 'Amount Open To Request', money(ledger.available), 'amber is-amt')}
               </div>
             </div>
           </div>
@@ -304,10 +277,10 @@ export default function PaymentRequestDetail({ requestId, onBack, onOpenRequest,
             <div className="prd-txtabs">
               <div className="prd-seg" role="tablist" aria-label="Transaction views">
                 <button type="button" role="tab" aria-selected={tx === 'current'} className={`prd-seg__tab${tx === 'current' ? ' is-active' : ''}`} onClick={() => setTx('current')}>
-                  <G d={P.card} size={15} stroke={2.1} /><span className="prd-seg__lbl">Current Transaction</span><span className="prd-seg__cnt">1</span>
+                  <IcoCard size={15} stroke={2.1} /><span className="prd-seg__lbl">Current Transaction</span><span className="prd-seg__cnt">1</span>
                 </button>
                 <button type="button" role="tab" aria-selected={tx === 'history'} className={`prd-seg__tab${tx === 'history' ? ' is-active' : ''}`} onClick={() => setTx('history')}>
-                  <G d={P.history} size={15} stroke={2.1} /><span className="prd-seg__lbl">All Previous Transaction History</span><span className="prd-seg__cnt">{detail.history.length}</span>
+                  <IcoHistory size={15} stroke={2.1} /><span className="prd-seg__lbl">All Previous Transaction History</span><span className="prd-seg__cnt">{detail.history.length}</span>
                 </button>
               </div>
             </div>
@@ -324,7 +297,7 @@ export default function PaymentRequestDetail({ requestId, onBack, onOpenRequest,
                       className={`prd-subtab${sub === s.k ? ' is-active' : ''}${req ? ' has-req' : ''}`}
                       onClick={() => setSub(s.k)}
                     >
-                      <span className="prd-subtab__ico"><G d={s.d} size={15} stroke={2.1} /></span>
+                      <span className="prd-subtab__ico"><s.ico size={15} stroke={2.1} /></span>
                       {s.t}
                       {s.k === 'physical' && (
                         <span className={`prd-subreq${req ? '' : ' is-not'}`}>{req ? 'Required' : 'Not Required'}</span>
@@ -339,9 +312,9 @@ export default function PaymentRequestDetail({ requestId, onBack, onOpenRequest,
           {tx === 'history' ? (
             <HistoryPanel detail={detail} onSoon={soon} />
           ) : sub === 'supplier' ? (
-            <SupplierPanel supplier={supplier} onSoon={soon} />
+            <SupplierPanel supplier={supplier} />
           ) : sub === 'linked' ? (
-            <LinkedPanel detail={detail} canApprove={canApprove} onOpenRequest={onOpenRequest} onDecide={openDecision} />
+            <LinkedPanel detail={detail} canApprove={canApprove} onDecide={openDecision} />
           ) : sub === 'summary' ? (
             <SummaryPanel detail={detail} onSoon={soon} />
           ) : sub === 'physical' ? (
@@ -353,7 +326,7 @@ export default function PaymentRequestDetail({ requestId, onBack, onOpenRequest,
 
         <div className="prd-foot">
           <div className="prd-foot__info">Payment request <b>{row.requestId}</b> raised against <b>{doc.id}</b></div>
-          <button type="button" className="prd-backbtn" onClick={onBack}><G d={P.back} stroke={2.6} />Back to Payment Request Management</button>
+          <button type="button" className="prd-backbtn" onClick={onBack}><IcoArrowL size={13} stroke={2.6} />Back to Payment Request Management</button>
         </div>
       </div>
 
@@ -373,10 +346,10 @@ export default function PaymentRequestDetail({ requestId, onBack, onOpenRequest,
 }
 
 /* ── Empty state, shared by every tab that has nothing to show ── */
-function Empty({ d, title, sub }: { d: ReactNode; title: string; sub: string }) {
+function Empty({ ico: I, title, sub }: { ico: Icon; title: string; sub: string }) {
   return (
     <div className="prd-empty">
-      <div className="prd-empty__ico"><G d={d} size={26} stroke={1.9} /></div>
+      <div className="prd-empty__ico"><I size={26} stroke={1.9} /></div>
       <div className="prd-empty__t">{title}</div>
       <div className="prd-empty__s">{sub}</div>
     </div>
@@ -411,15 +384,31 @@ function RO({ label, value, full }: { label: string; value: string; full?: boole
   );
 }
 
-function SupplierPanel({ supplier: s, onSoon }: { supplier: Supplier | undefined; onSoon: (what: string) => void }) {
+function SupplierPanel({ supplier: s }: { supplier: Supplier | undefined }) {
   const [open, setOpen] = useState<Record<BoxKey, boolean>>({ basic: true, address: true, legal: true, gst: true, risk: true });
   const [notice, setNotice] = useState<GstNotice | null>(null);
+  const [vault, setVault] = useState<SupplierVaultTarget | null>(null);
   const toggle = (k: BoxKey) => setOpen(o => ({ ...o, [k]: !o[k] }));
 
-  const risks = useMemo(() => (s ? riskItems(s, false) : []), [s]);
+  const risks = useMemo(() => (s ? riskItems(toRiskSubject(s), false) : []), [s]);
   if (!s) {
-    return <Empty d={P.building} title="Supplier Details" sub="The supplier record could not be loaded." />;
+    return <Empty ico={IcoBuilding} title="Supplier Details" sub="The supplier record could not be loaded." />;
   }
+
+  // The vault is keyed on the supplier's DB id; match on company name (codes differ between masters).
+  const openVault = async () => {
+    let dbId: number | undefined;
+    try {
+      const res = await api.get('/vendors', { params: { light: 1 } });
+      const rows = (res.data?.data ?? []) as { id: number; company_name?: string }[];
+      const norm = (v?: string) => (v ?? '').trim().toLowerCase();
+      dbId = rows.find(v => norm(v.company_name) === norm(s.legalName) || norm(v.company_name) === norm(s.key))?.id;
+    } catch { /* opens with the vault's empty state */ }
+    setVault({
+      id: s.code, db_id: dbId, company: s.legalName, risk: s.risk, type: s.type,
+      country: s.country, contact: s.contact, contactCity: s.city, email: s.email,
+    });
+  };
 
   const legal = legalTotals(s);
   const legalTone = legal.pct === 100 ? 'ok' : legal.pct >= 60 ? 'warn' : 'bad';
@@ -449,6 +438,11 @@ function SupplierPanel({ supplier: s, onSoon }: { supplier: Supplier | undefined
   return (
     <div className="prd-secwrap cpf-form prd-sup">
       {notice && <GstNoticeModal notice={notice} onClose={() => setNotice(null)} />}
+      {vault && (
+        <Suspense fallback={null}>
+          <SupplierEvidenceVaultModal open supplier={vault} viewOnly onClose={() => setVault(null)} />
+        </Suspense>
+      )}
 
       <SupBox open={open.basic} onToggle={() => toggle('basic')} icon={<IcoUser />} title="Supplier Basic Details"
         extras={<span className="spi-dt-fields-badge">5 Fields</span>}>
@@ -479,7 +473,7 @@ function SupplierPanel({ supplier: s, onSoon }: { supplier: Supplier | undefined
       <SupBox open={open.legal} onToggle={() => toggle('legal')} icon={<IcoShield />} title="Supplier Legal Status"
         extras={<>
           <span className={`spi-dt-legal-badge ${legal.pct === 100 ? 'ok' : 'warn'}`}>{legal.pct === 100 ? '100% Compliant' : `${legal.pct}% · Needs Review`}</span>
-          <button type="button" className="cpf-vault" title={`Visit ${s.key}’s Evidence Vault`} onClick={() => onSoon('Supplier Evidence Vault')}>
+          <button type="button" className="cpf-vault" title={`Visit ${s.key}’s Evidence Vault`} onClick={() => void openVault()}>
             <IcoShield /> <span>Visit Supplier Evidence Vault</span>
           </button>
           <span className="cpf-lgbar"><span className={`cpf-lgbar__fill cpf-fill-${legalTone}`} style={{ width: `${legal.pct}%` }} /></span>
@@ -521,7 +515,7 @@ function SupplierPanel({ supplier: s, onSoon }: { supplier: Supplier | undefined
                 {filingAge !== null && <span className="cpf-gst__age">{filingAge.toFixed(1)} mo ago</span>}
               </span>
             </span>
-            {gst.action && <button type="button" className="cpf-gst__btn" onClick={openNotice}>{gst.action}</button>}
+            {gst.action && <button type="button" className={`cpf-gst__btn cpf-gst__btn--${gst.tone}`} onClick={openNotice}>{gst.action}</button>}
           </div>
           <div className="spi-dt-grid4">
             <RO label="SCRUTINY DATE" value={formatDmy(s.scrutiny)} />
@@ -594,19 +588,19 @@ function StatCards({ detail }: { detail: Detail }) {
   const waiting = pending.reduce((s, r) => s + r.requestedAmount, 0);
   const pctPaid = ledger.net > 0 ? Math.round((ledger.paid / ledger.net) * 100) : 0;
   const n = linked.length;
-  const stats: { mod: string; d: ReactNode; lbl: string; val: string; sub: string }[] = [
-    { mod: '', d: P.bag, lbl: `Total ${D} Amount`, val: money(ledger.total), sub: `${money(ledger.net)} net payable` },
-    { mod: 'base', d: P.send, lbl: 'Total Requested Amount', val: money(requested), sub: `${n} request${n === 1 ? '' : 's'} raised to date` },
-    { mod: 'bal', d: P.clock, lbl: 'Awaiting For Approval', val: money(waiting), sub: `${pending.length} with the approver now` },
-    { mod: 'gst', d: <path d="M20 6 9 17l-5-5" />, lbl: 'Total Approved Amount', val: money(ledger.approvedTotal), sub: `${money(Math.max(0, ledger.approvedTotal - ledger.paid))} awaiting release` },
-    { mod: 'paid', d: P.rupee, lbl: 'Total Paid Amount', val: money(ledger.paid), sub: `${pctPaid}% of net payable released` },
-    { mod: 'tds', d: P.chart, lbl: 'Balance Amount', val: money(ledger.balance), sub: ledger.balance <= 0 ? `${D} settled in full` : `${money(ledger.available)} open to request` },
+  const stats: { mod: string; ico: Icon; lbl: string; val: string; sub: string }[] = [
+    { mod: '', ico: IcoBriefcase, lbl: `Total ${D} Amount`, val: money(ledger.total), sub: `${money(ledger.net)} net payable${ledger.total > ledger.net ? ` · ${money(ledger.total - ledger.net)} TDS` : ''}` },
+    { mod: 'base', ico: IcoSend, lbl: 'Total Requested Amount', val: money(requested), sub: `${n} request${n === 1 ? '' : 's'} raised to date` },
+    { mod: 'bal', ico: IcoClock, lbl: 'Awaiting For Approval', val: money(waiting), sub: `${pending.length} with the approver now` },
+    { mod: 'gst', ico: IcoCheck, lbl: 'Total Approved Amount', val: money(ledger.approvedTotal), sub: `${money(Math.max(0, ledger.approvedTotal - ledger.paid))} awaiting release` },
+    { mod: 'paid', ico: IcoRupee, lbl: 'Total Paid Amount', val: money(ledger.paid), sub: `${pctPaid}% of net payable released` },
+    { mod: 'tds', ico: IcoTrend, lbl: 'Balance Amount', val: money(ledger.balance), sub: ledger.balance <= 0 ? `${D} settled in full` : `${money(ledger.available)} open to request` },
   ];
   return (
     <div className="prd-stats">
       {stats.map(s => (
         <div key={s.lbl} className={`prd-stat${s.mod ? ` prd-stat--${s.mod}` : ''}`}>
-          <div className="prd-stat__ico"><G d={s.d} size={19} stroke={2} /></div>
+          <div className="prd-stat__ico"><s.ico size={19} stroke={2} /></div>
           <div>
             <div className="prd-stat__lbl">{s.lbl}</div>
             <div className="prd-stat__val">{s.val}</div>
@@ -650,14 +644,16 @@ const LINKED_COLS: [string, number][] = [
 ];
 const LINKED_WIDTH = LINKED_COLS.reduce((s, [, w]) => s + w, 0);
 
-function LinkedPanel({ detail, canApprove, onOpenRequest, onDecide }: {
-  detail: Detail; canApprove: boolean; onOpenRequest: (id: string) => void;
+function LinkedPanel({ detail, canApprove, onDecide }: {
+  detail: Detail; canApprove: boolean;
   onDecide: (mode: DecisionMode, request: PaymentRequestRow) => void;
 }) {
   const { linked, doc, row: current } = detail;
+  const [peek, setPeek] = useState<LinkedRequest | null>(null);
   return (
     <div className="prd-secwrap">
       <StatCards detail={detail} />
+      {peek && <LinkedRequestPopup request={peek} doc={doc} onClose={() => setPeek(null)} />}
       <Panel title="All Payment Requests" count={linked.length} sub="Currently open request first, then in the order they were raised">
         <div className="ord-table-scroll">
           <table className="ord-table prd-table" style={{ minWidth: LINKED_WIDTH }}>
@@ -666,8 +662,10 @@ function LinkedPanel({ detail, canApprove, onOpenRequest, onDecide }: {
             <tbody>
               {linked.map((r, i) => {
                 const isCurrent = r.requestId === current.requestId;
-                // Once money has gone out there is nothing left to decide.
-                const settled = r.paid > 0;
+                // Decisions are taken on the open request only; other rows show them greyed.
+                const canDecide = isCurrent && r.status === 'awaiting' && canApprove;
+                const lockTip = !isCurrent ? 'Open this request to decide it'
+                  : r.status !== 'awaiting' ? `Already ${r.status === 'approved' ? 'approved' : 'declined'}` : canApprove ? undefined : NO_APPROVE_TIP;
                 return (
                   <tr key={r.requestId} className={`is-first is-last${isCurrent ? ' is-current' : ''}${r.flag === 'physical-inspection' ? ' is-physreq' : ''}${r.status === 'declined' ? ' is-closed' : ''}`}>
                     <td><span className="prd-sr">{i + 1}</span></td>
@@ -683,13 +681,13 @@ function LinkedPanel({ detail, canApprove, onOpenRequest, onDecide }: {
                     <td><span className={`ord-amt${r.paid > 0 ? ' ord-amt--paid' : ''}`}>{r.paid > 0 ? money(r.paid) : '—'}</span></td>
                     <td>
                       <div className="prd-rowacts">
-                        <button type="button" className="ord-btn prm-viewbtn" title={`View ${r.requestId}`} onClick={() => onOpenRequest(r.requestId)}>
+                        <button type="button" className="ord-btn prm-viewbtn" title={`View ${r.requestId}`} onClick={() => setPeek(r)}>
                           <span className="prm-viewbtn__ico"><IcoEye size={9} /></span><span>View Request</span>
                         </button>
-                        <button type="button" className="prd-rowact prd-rowact--ok" disabled={settled || !canApprove} title={canApprove ? undefined : NO_APPROVE_TIP} onClick={() => onDecide('approve', r)}>
+                        <button type="button" className="prd-rowact prd-rowact--ok" disabled={!canDecide} title={lockTip} onClick={() => onDecide('approve', r)}>
                           <IcoCheck size={13} stroke={2.5} />Approve Request
                         </button>
-                        <button type="button" className="prd-rowact prd-rowact--no" disabled={settled || !canApprove} title={canApprove ? undefined : NO_APPROVE_TIP} onClick={() => onDecide('decline', r)}>
+                        <button type="button" className="prd-rowact prd-rowact--no" disabled={!canDecide} title={lockTip} onClick={() => onDecide('decline', r)}>
                           <IcoCircleX size={13} stroke={2.5} />Reject Request
                         </button>
                       </div>
@@ -705,6 +703,68 @@ function LinkedPanel({ detail, canApprove, onOpenRequest, onDecide }: {
   );
 }
 
+/* CS-436: one earlier request on this order, read-only, over the table. */
+function LinkedRequestPopup({ request: r, doc, onClose }: {
+  request: LinkedRequest; doc: Detail['doc']; onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  const ro = (label: string, value: string, mod = '', sub?: string) => (
+    <div className="prd-dec__field">
+      <label>{label}</label>
+      <div className={`prd-dec__ro${mod ? ' ' + mod : ''}`} title={value}>
+        {value}{sub && <span className="prd-dec__rosub">{sub}</span>}
+      </div>
+    </div>
+  );
+  const decidedOn = r.decision?.on ?? r.decline?.on;
+  return createPortal(
+    <div className="spi-mdl-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="spi-mdl mpr-card prd-dec prd-peek" role="dialog" aria-modal="true" aria-label={`Payment request ${r.requestId}`}>
+        <div className="mpr-hero">
+          <div className="mpr-hero__icon"><IcoEye size={18} stroke={2.2} /></div>
+          <div className="mpr-hero__titleblock">
+            <div className="mpr-hero__titlerow">
+              <span className="mpr-hero__title">Payment Request</span>
+              <span className="mpr-hero__idpill">{r.requestId}</span>
+              <span className="mpr-hero__badge"><span className="mpr-hero__bdot" />{statusText(r)}</span>
+            </div>
+            <div className="mpr-hero__sub">Raised against {doc.id} · read-only</div>
+          </div>
+          <button type="button" className="mpr-hero__close" onClick={onClose} aria-label="Close"><IcoX size={14} stroke={2.6} /></button>
+        </div>
+        <div className="mpr-bd prd-dec__bd">
+          <div className="prd-dec__grid7 prd-peek__grid">
+            {ro('Request ID', r.requestId, 'is-id')}
+            {ro('Requested Date', formatDmy(r.requestDate))}
+            {ro('Payment Type', r.paymentType)}
+            {ro('Payment Percentage', `${r.percentOfTotal}%`, 'is-num')}
+            {ro('Requested Payment Amount', money(r.requestedAmount), 'is-amt')}
+            {ro('Requested By', r.requestedBy.name)}
+            {ro('Requested To', r.requestedTo.name, '', r.requestedTo.role)}
+            {ro('Decision', statusText(r), '', decidedOn ? `on ${formatDmy(decidedOn)}` : undefined)}
+            {ro('Approved Amount', r.approvedAmount !== null ? money(r.approvedAmount) : '—', 'is-amt')}
+            {ro('Paid Amount', r.paid > 0 ? money(r.paid) : '—', 'is-amt')}
+          </div>
+          {r.decision?.note && (
+            <div className="prd-dec__field">
+              <label>{r.status === 'declined' ? 'Rejection Reason' : 'Approval Remark'}</label>
+              <div className="prd-dec__ro prd-peek__note">{r.decision.note}</div>
+            </div>
+          )}
+        </div>
+        <div className="spi-mdl-foot">
+          <div className="spi-mdl-foot-btns"><button type="button" className="spi-mdl-cancel" onClick={onClose}>Close</button></div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function Person({ name }: { name: string }) {
   const initials = name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
   return (
@@ -716,7 +776,7 @@ function Person({ name }: { name: string }) {
 }
 
 /* ══ Payment Summary ══ the running totals, then every release made against the document. */
-const PAY_COLS = ['Sr. No', 'Paid Against Request ID', 'Request Raised Against', 'Paid Amount', 'Bank Name',
+const PAY_COLS = ['Paid Against Request ID', 'Request Raised Against', 'Paid Amount', 'Bank Name',
   'UTR / Cheque Number', 'UTR / Cheque Date', 'Proof Of Payment'];
 
 function SummaryPanel({ detail, onSoon }: { detail: Detail; onSoon: (what: string) => void }) {
@@ -736,12 +796,11 @@ function SummaryPanel({ detail, onSoon }: { detail: Detail; onSoon: (what: strin
             <table className="ord-table prd-table prd-table--pay">
               <thead><tr>{PAY_COLS.map(c => <th key={c}>{c}</th>)}</tr></thead>
               <tbody>
-                {payments.map((p, i) => {
+                {payments.map(p => {
                   const cheque = /cheque|draft/i.test(p.mode);
                   const file = `POP_${p.ref}.pdf`;
                   return (
                     <tr key={`${p.requestId}-${p.ref}`} className="is-first is-last">
-                      <td><span className="prd-sr">{i + 1}</span></td>
                       <td><IdCell id={p.requestId} date={p.requestDate} /></td>
                       <td><IdCell id={p.doc} date={p.docDate} /></td>
                       <td><span className="ord-amt ord-amt--net">{money(p.amount)}</span></td>
@@ -787,11 +846,11 @@ function InspectionPanel({ detail }: { detail: Detail }) {
   const [viewFor, setViewFor] = useState<InspectionProduct | null>(null);
 
   if (!po) {
-    return <Empty d={P.eye} title="No inspection on this request"
+    return <Empty ico={IcoEye} title="No inspection on this request"
       sub="This supplier invoice was raised without a purchase order behind it, so there is no physical inspection to answer to." />;
   }
   if (!inspection.required) {
-    return <Empty d={P.eye} title="Inspection not required"
+    return <Empty ico={IcoEye} title="Inspection not required"
       sub={`Purchase order ${po.po} is not flagged for physical inspection, so payment does not wait on one.`} />;
   }
 
@@ -893,8 +952,8 @@ function InspectionPanel({ detail }: { detail: Detail }) {
                     ) : (
                       <div className="pins-attach">
                         <div className="pins-attach__row">
-                          <label className="pins-btn" htmlFor={`prd-up-${p.code}`} title="Upload photos or videos"><G d={P.up} stroke={2.4} /><span>Upload</span></label>
-                          <label className="pins-btn pins-btn--cam" htmlFor={`prd-cam-${p.code}`} title="Capture with camera"><G d={P.cam} stroke={2.3} /><span>Camera</span></label>
+                          <label className="pins-btn" htmlFor={`prd-up-${p.code}`} title="Upload photos or videos"><IcoUpload size={13} stroke={2.4} /><span>Upload</span></label>
+                          <label className="pins-btn pins-btn--cam" htmlFor={`prd-cam-${p.code}`} title="Capture with camera"><IcoCamera size={13} stroke={2.3} /><span>Camera</span></label>
                           <span className={`pins-files${n ? ' is-on' : ''}`}>{n} file{n === 1 ? '' : 's'}</span>
                         </div>
                         <input id={`prd-up-${p.code}`} className="pins-file-in" type="file" multiple accept="image/*,video/*,application/pdf" onChange={e => addFiles(p.code, e)} />
@@ -949,7 +1008,7 @@ function OrderTable({ rows, onInspect, onManage }: { rows: OrderRow[]; onInspect
 
 function StatusPanel({ po, onInspect, onManage }: { po: OrderRow | null; onInspect: () => void; onManage: () => void }) {
   if (!po) {
-    return <Empty d={P.clock} title="No purchase order behind this request"
+    return <Empty ico={IcoClock} title="No purchase order behind this request"
       sub="This supplier invoice was raised on its own, so there is no purchase order row to show here." />;
   }
   return (
@@ -967,7 +1026,7 @@ function StatusPanel({ po, onInspect, onManage }: { po: OrderRow | null; onInspe
 function HistoryPanel({ detail, onSoon }: { detail: Detail; onSoon: (what: string) => void }) {
   const rows = detail.history;
   if (!rows.length) {
-    return <Empty d={P.history} title={`No earlier transactions with ${detail.row.supplier}`}
+    return <Empty ico={IcoHistory} title={`No earlier transactions with ${detail.row.supplier}`}
       sub="This is the first purchase order raised on this supplier, so there is no prior history to compare against." />;
   }
   return (
