@@ -921,7 +921,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/p2p/supplier-purchase-invoice" element={<SupplierPurchaseInvoice />} />
               <Route path="/p2p/debit-note" element={<DebitNote />} />
               <Route path="/p2p/order" element={<Order />} />
-              <Route path="/p2p/order/gst-approval/:id" element={<PoGstApprovalReview />} />
+              <Route path="/inbox/po-approval/:id" element={<PoGstApprovalReview />} />
               <Route path="/p2p/payment-request" element={<PaymentRequestManagement />} />
               <Route path="/p2p/advance-refund-adjustment" element={<AdvanceRefundAdjustment />} />
               <Route path="/developers/shipment" element={<DeveloperShipments />} />

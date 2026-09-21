@@ -437,7 +437,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::get   ('/gst-approvals/approvers',        [$gap, 'approvers']);
         Route::get   ('/gst-approvals',                  [$gap, 'index']);
         Route::get   ('/gst-approvals/{approval}',       [$gap, 'show'])->whereNumber('approval');
-        Route::post  ('/gst-approvals/{approval}/decide', [$gap, 'decide'])->whereNumber('approval');
+        Route::put   ('/gst-approvals/{approval}',       [$gap, 'decide'])->whereNumber('approval');   // approve / reject
         Route::post  ('/{id}/cancel',                    [$po, 'cancel'])->whereNumber('id');
         Route::delete('/{id}',                           [$po, 'destroy'])->whereNumber('id');
 

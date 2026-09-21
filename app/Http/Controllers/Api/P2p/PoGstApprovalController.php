@@ -128,7 +128,7 @@ class PoGstApprovalController extends Controller
             'kind'       => 'submitted_to_approver',
             'subject'    => "{$po->code} needs your GST approval",
             'message'    => "{$user->name} asked you to approve {$po->code} — the supplier's GST return is overdue.",
-            'action_url' => "/p2p/order/gst-approval/{$row->id}",
+            'action_url' => "/inbox/po-approval/{$row->id}",
         ]);
 
         return $this->ok($this->shapeRow($row->fresh(), $this->names([$row->requested_by, $row->requested_to])), 201);
@@ -236,7 +236,7 @@ class PoGstApprovalController extends Controller
         ]);
     }
 
-    /** POST /p2p/orders/gst-approvals/{approval}/decide — only the chosen senior; a reason either way. */
+    /** PUT /p2p/orders/gst-approvals/{approval} — only the chosen senior; a reason either way. */
     public function decide(Request $request, int $approval): JsonResponse
     {
         $user = $this->tenantUser($request);

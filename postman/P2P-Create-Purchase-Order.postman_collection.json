@@ -803,7 +803,7 @@
                 }
               ]
             },
-            "method": "POST",
+            "method": "PUT",
             "header": [
               {
                 "key": "Accept",
@@ -818,7 +818,7 @@
               "mode": "raw",
               "raw": "{\n  \"decision\": \"approved\"\n}"
             },
-            "url": "{{base_url}}/p2p/orders/gst-approvals/{{approval_id}}/decide"
+            "url": "{{base_url}}/p2p/orders/gst-approvals/{{approval_id}}"
           }
         },
         {
@@ -834,7 +834,7 @@
                 }
               ]
             },
-            "method": "POST",
+            "method": "PUT",
             "header": [
               {
                 "key": "Accept",
@@ -849,7 +849,7 @@
               "mode": "raw",
               "raw": "{\n  \"decision\": \"approved\",\n  \"reason\": \"One-time approval — filing proof to follow this week.\"\n}"
             },
-            "url": "{{base_url}}/p2p/orders/gst-approvals/{{approval_id}}/decide",
+            "url": "{{base_url}}/p2p/orders/gst-approvals/{{approval_id}}",
             "description": "decision: approved | rejected. Reason is required either way."
           }
         },

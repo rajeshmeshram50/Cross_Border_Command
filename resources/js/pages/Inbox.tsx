@@ -15,7 +15,7 @@ import HeaderFooterPanel, {
 } from './hrms/doc-templates/HeaderFooterPanel';
 import { leaveRequestsApi, ApiLeaveRequest } from './hrms/leavePlansApi';
 import PoApprovalInboxSection from './p2p/purchase-management/order/gst-approval/PoApprovalInboxSection';
-import { poApprovalApi } from './p2p/purchase-management/order/api/po-api';
+import { SAMPLE_HISTORY } from './p2p/purchase-management/order/gst-approval/sample-data';
 import '../../css/recruitment.css';
 import './Inbox.css';
 
@@ -83,9 +83,8 @@ export default function Inbox() {
   const [poNewCount, setPoNewCount] = useState(0);
   const [poHistCount, setPoHistCount] = useState(0);
   // The history section mounts only on its tab; its count is needed for the tab badge now.
-  useEffect(() => {
-    poApprovalApi.inbox({ history: true, per_page: 1 }).then((r) => setPoHistCount(r.meta.total)).catch(() => {});
-  }, []);
+  // Sample for now — with the API: GET /p2p/orders/gst-approvals?history=1&per_page=1 → meta.total.
+  useEffect(() => { setPoHistCount(SAMPLE_HISTORY.length); }, []);
   const [leaveRows, setLeaveRows] = useState<ApiLeaveRequest[]>([]);
   const [leaveLoading, setLeaveLoading] = useState(true);
   const [leaveActing, setLeaveActing] = useState<{ id: number; verdict: 'approve' | 'reject' } | null>(null);

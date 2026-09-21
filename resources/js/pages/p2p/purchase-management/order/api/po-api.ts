@@ -433,19 +433,6 @@ export const poApprovalApi = {
   request: (poId: number, body: { requested_to: number; note?: string }) =>
     call('GST approval request', () => api.post(`/p2p/orders/${poId}/gst-approval/request`, body), dataOf<GstApprovalRequest>),
 
-  /** Requests sent to the caller; history = already decided. */
-  inbox: (params: { history?: boolean; page?: number; per_page?: number } = {}) =>
-    call('GST approval inbox', () => api.get('/p2p/orders/gst-approvals', {
-      params: { history: params.history ? 1 : 0, page: params.page ?? 1, per_page: params.per_page ?? 10 },
-    }), (b) => {
-      const body = b as { data?: GstApprovalInboxRow[]; meta?: GstApprovalInboxMeta } | null;
-      return { rows: body?.data ?? [], meta: body?.meta ?? { total: 0, per_page: 10, current_page: 1, last_page: 1 } };
-    }),
-
-  show: (id: number) =>
-    call('GST approval details', () => api.get(`/p2p/orders/gst-approvals/${id}`), dataOf<GstApprovalReview>),
-
-  /** Approve or reject; the reason is required either way. */
-  decide: (id: number, decision: 'approved' | 'rejected', reason: string) =>
-    call('GST approval decision', () => api.post(`/p2p/orders/gst-approvals/${id}/decide`, { decision, reason }), dataOf<GstApprovalRequest>),
+  // The approver side (GET /gst-approvals, GET /gst-approvals/{id}, PUT /gst-approvals/{id})
+  // is not wired yet — the Inbox section and review page render sample-data.ts.
 };

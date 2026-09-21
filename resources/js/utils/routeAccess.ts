@@ -162,6 +162,8 @@ export function canAccessPath(pathname: string, user: GuardUser | null | undefin
 
   // 1) Self / utility pages — every role.
   if (ALWAYS_ALLOW.has(path)) return true;
+  // Inbox review pages (e.g. a PO approval) — the API checks the request was sent to this user.
+  if (path.startsWith('/inbox/')) return true;
 
   // 2) Platform modules — super_admin only.
   if (path === '/clients' || path.startsWith('/clients/')) return isSuper;
