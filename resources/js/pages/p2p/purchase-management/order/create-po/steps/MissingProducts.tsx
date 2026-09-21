@@ -1,26 +1,22 @@
 // Step 02 · Missing Product Details — PI quantities the PO doesn't cover.
 // Nothing is entered here: every row falls out of the table above.
-import { EditSelect } from '../form-fields';
-import { PRODUCT_CATALOGUE } from '../sample-products';
-import { computeLine, type PoLineRow } from './ProductTable';
-import { IcoOk } from '../../icons';
+import { computeLine, productOf } from './ProductTable';
+import type { PoLineRow } from '../po-draft';
+import type { ProductOpt } from '../use-po-lookups';
+import type { TaxMode } from '../../api/po-api';
+import { IcoOk } from '../../shared/icons';
 
-type Props = {
-  rows: PoLineRow[];
-  stateCode: string;
-  onChange: (index: number, patch: Partial<PoLineRow>) => void;
-};
+type Props = { rows: PoLineRow[]; products: ProductOpt[]; taxMode: TaxMode };
 
-export default function MissingProducts({ rows, stateCode, onChange }: Props) {
-  const names = rows.map((r) => r.pi.name);
+export default function MissingProducts({ rows, products, taxMode }: Props) {
   const missing = rows
-    .map((row, index) => ({ row, index, line: computeLine(row, stateCode) }))
-    .filter((m) => m.line.missing > 0);
+    .map((row) => ({ row, line: computeLine(row, products, taxMode) }))
+    .filter((m) => m.row.pi && m.line.missing > 0);
 
   if (missing.length === 0) {
     return (
       <div className="cpd-miss-empty">
-        <IcoOk /> No missing quantities — every PO quantity meets the PI quantity.
+        <IcoOk /> No missing quantities — every pending PI quantity is on this PO.
       </div>
     );
   }
@@ -33,31 +29,23 @@ export default function MissingProducts({ rows, stateCode, onChange }: Props) {
             <th>Sr. No</th>
             <th>Product Code</th>
             <th className="cpd-th-left">Product Name (PI)</th>
-            <th>Quantity (PI)</th>
+            <th>Pending Qty (PI)</th>
             <th className="cpd-th-left">Product Name (PO)</th>
             <th>Missing Qty</th>
           </tr>
         </thead>
         <tbody>
-          {missing.map((m, i) => {
-            const po = PRODUCT_CATALOGUE.find((p) => p.code === m.row.poCode) ?? m.row.pi;
+          {missing.map(({ row, line }, i) => {
+            const pi = row.pi!;
+            const poName = productOf(row, products)?.name ?? (row.productId === pi.product_id ? pi.product_name : null);
             return (
-              <tr key={m.row.pi.code}>
+              <tr key={row.key}>
                 <td>{i + 1}</td>
-                <td><span className="cpd-code">{m.row.pi.code}</span></td>
-                <td className="cpd-td-left cpd-name">{m.row.pi.name}</td>
-                <td>{m.row.pi.qtyPi}</td>
-                <td className="cpd-td-left">
-                  <EditSelect
-                    value={po.name}
-                    options={names}
-                    onChange={(name) => {
-                      const match = rows.find((r) => r.pi.name === name);
-                      if (match) onChange(m.index, { poCode: match.pi.code });
-                    }}
-                  />
-                </td>
-                <td><span className="cpd-missqty">{m.line.missing}</span></td>
+                <td><span className="cpd-code">{pi.product_code || '—'}</span></td>
+                <td className="cpd-td-left cpd-name">{pi.product_name}</td>
+                <td>{pi.pending_qty}</td>
+                <td className="cpd-td-left">{row.qtyPo > 0 ? (poName || '—') : <span className="cpd-dash">Not ordered</span>}</td>
+                <td><span className="cpd-missqty">{line.missing}</span></td>
               </tr>
             );
           })}
@@ -67,6 +55,5 @@ export default function MissingProducts({ rows, stateCode, onChange }: Props) {
   );
 }
 
-export const missingCount = (rows: PoLineRow[], stateCode: string) =>
-  rows.filter((r) => computeLine(r, stateCode).missing > 0).length;
-
+export const missingCount = (rows: PoLineRow[], products: ProductOpt[], taxMode: TaxMode) =>
+  rows.filter((r) => r.pi && computeLine(r, products, taxMode).missing > 0).length;

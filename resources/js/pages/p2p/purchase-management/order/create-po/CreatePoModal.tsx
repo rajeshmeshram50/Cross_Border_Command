@@ -3,24 +3,16 @@
 // dropdown. Where the prototype differs, order.css overrides them under .ord-cpo only.
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useScrollLock } from '../../../../hooks/useScrollLock';
-import { MasterSelect } from '../../../../components/ui/MasterSelect';
-import type { PoLink } from './create-po/CreatePoForm';
-import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
-import { IcoCheck, IcoChevronR, IcoClock, IcoDoc, IcoLink, IcoWarn, IcoX } from './icons';
+import { useScrollLock } from '../../../../../hooks/useScrollLock';
+import { MasterSelect } from '../../../../../components/ui/MasterSelect';
+import type { PoLink } from './CreatePoForm';
+import { poLookupApi, type ShipmentOption } from '../api/po-api';
+import { useToast } from '../../../../../contexts/ToastContext';
+import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import { IcoCheck, IcoChevronR, IcoClock, IcoDoc, IcoLink, IcoWarn, IcoX } from '../shared/icons';
 
 type PoMode = 'with' | 'without';
 
-// Static sample data until the shipments API is connected.
-const SHIPMENTS = [
-  { id: 'SHP-001', customer: 'Reliance Retail Ltd' },
-  { id: 'SHP-002', customer: 'Adani Wilmar Ltd' },
-  { id: 'SHP-003', customer: 'ITC Foods Division' },
-  { id: 'SHP-004', customer: 'BigBasket Retail' },
-  { id: 'SHP-005', customer: 'Patanjali Foods Ltd' },
-];
-
-const SHIPMENT_OPTIONS = SHIPMENTS.map((s) => ({ value: s.id, label: `${s.id} — ${s.customer}` }));
 
 type Props = {
   onClose: () => void;
@@ -33,7 +25,21 @@ type Props = {
 export default function CreatePoModal({ onClose, onConfirm, initial }: Props) {
   useScrollLock();
   const [mode, setMode] = useState<PoMode | null>(initial?.mode ?? null);
-  const [shipment, setShipment] = useState(initial?.shipmentId ?? '');
+  const toast = useToast();
+  const [shipment, setShipment] = useState(initial?.shipment ? String(initial.shipment.id) : '');
+  // Only shipments that have a PI can take a PO — its lines are ordered against the PI.
+  const [shipments, setShipments] = useState<ShipmentOption[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    poLookupApi.shipments()
+      .then((rows) => { if (alive) setShipments(rows.filter((r) => r.proforma_invoice_id)); })
+      .catch((e) => { if (alive) { setShipments([]); toast.error('Could not load shipments', e.firstError); } });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const shipmentOptions = (shipments ?? []).map((s) => ({
+    value: String(s.id), label: `${s.code} — ${s.customer ?? 'No customer'}${s.pi_number ? ` · ${s.pi_number}` : ''}`,
+  }));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -47,8 +53,8 @@ export default function CreatePoModal({ onClose, onConfirm, initial }: Props) {
   const confirm = () => {
     if (!mode) return;
     if (mode === 'without') { onConfirm({ mode }); return; }
-    const picked = SHIPMENTS.find((s) => s.id === shipment);
-    onConfirm({ mode, shipmentId: shipment, customer: picked?.customer });
+    const picked = shipments?.find((s) => String(s.id) === shipment);
+    if (picked) onConfirm({ mode, shipment: picked });
   };
 
   // No close on backdrop click: a stray click must not lose the user's choices.
@@ -86,8 +92,8 @@ export default function CreatePoModal({ onClose, onConfirm, initial }: Props) {
               <label className="spi-mdl-fieldlabel"><IcoLink size={20} /> SELECT SHIPMENT ID <span className="spi-mdl-req">*</span></label>
               <MasterSelect
                 value={shipment}
-                placeholder="Select Shipment ID…"
-                options={SHIPMENT_OPTIONS}
+                placeholder={shipments === null ? 'Loading shipments…' : shipmentOptions.length ? 'Select Shipment ID…' : 'No shipment with a PI yet'}
+                options={shipmentOptions}
                 onChange={setShipment}
               />
             </div>

@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useScrollLock } from '../../../../hooks/useScrollLock';
+import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { ProofChip, type ProofFile } from './inspection-shared';
-import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './physical-inspection.css';
 
 const ICON_X = (

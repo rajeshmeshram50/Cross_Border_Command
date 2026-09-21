@@ -123,7 +123,7 @@ const PurchaseOrder = lazyPage(() => import('../pages/p2p/procurement-management
 const DevTools = lazyPage(() => import('../pages/dev-tools/DevTools'));
 const SupplierPurchaseInvoice = lazyPage(() => import('../pages/p2p/purchase-management/supplier-purchase-invoice/SupplierPurchaseInvoice'));
 const DebitNote = lazyPage(() => import('../pages/p2p/purchase-management/debit-note/DebitNote'));
-const Order = lazyPage(() => import('../pages/p2p/purchase-management/order/Order'));
+const Order = lazyPage(() => import('../pages/p2p/purchase-management/order/po-list/Order'));
 const PaymentRequestManagement = lazyPage(() => import('../pages/p2p/payment-management/payment-request/PaymentRequestManagement'));
 const AdvanceRefundAdjustment = lazyPage(() => import('../pages/p2p/payment-management/advance-refund/AdvanceRefundAdjustment'));
 const InventoryPutAway = lazyPage(() => import('../pages/inventory/InventoryPutAway'));

@@ -1,11 +1,11 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useScrollLock } from '../../../../hooks/useScrollLock';
-import type { OrderRow } from './Order';
+import { useScrollLock } from '../../../../../hooks/useScrollLock';
+import type { OrderRow } from '../po-list/Order';
 import {
   Box, HeroRefChips, ICON_X, PoSummaryCards, TdsStrip, initials, money, shortDate,
 } from './payment-shared';
-import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './manage-payment-requests.css';
 import './make-po-payment.css';
 

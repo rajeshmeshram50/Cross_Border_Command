@@ -9,6 +9,11 @@
   font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+/* Laptop widths (incl. 125% Windows scaling): the P2P popups' .8 zoom keeps
+   the header strip on one line; the box is scaled back up to fill the screen. */
+@media (min-width: 1025px) and (max-width: 1640px) {
+  .prd-root { zoom: .8; inset: 0 auto auto 0; width: calc(100vw / .8); height: calc(100vh / .8); }
+}
 .prd-shell {
   flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
   background: #fff; border-radius: 20px;
@@ -231,6 +236,16 @@
 .prd-sup .prd-supbox__x { display: flex; align-items: center; gap: 8px; margin-left: auto; cursor: default; }
 .prd-sup .spi-dt-card-head { justify-content: flex-start; }
 .prd-sup .spi-dt-card.is-collapsed .spi-dt-card-head { border-bottom-color: transparent; }
+/* GST banner action — styled here since Create PO moved its gate to Next. */
+.prd-sup .cpf-gst__btn {
+  flex-shrink: 0; align-self: center; padding: 8px 14px; border: none; border-radius: 9px; cursor: pointer;
+  font-family: inherit; font-size: 11px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4); box-shadow: 0 3px 10px rgba(8,145,178,.3);
+  transition: transform .15s, box-shadow .15s;
+}
+.prd-sup .cpf-gst__btn:hover { transform: translateY(-1px); }
+.prd-sup .cpf-gst__btn--warn { background: linear-gradient(135deg, #b45309, #d97706 55%, #f59e0b); box-shadow: 0 3px 10px rgba(217,119,6,.3); }
+.prd-sup .cpf-gst__btn--stop { background: linear-gradient(135deg, #b91c1c, #dc2626 55%, #ef4444); box-shadow: 0 3px 10px rgba(220,38,38,.3); }
 .prd-sup .spi-dt-inp[readonly],
 .prd-sup .spi-dt-textarea[readonly] { background: #f7fbfd; color: #0f172a; font-weight: 600; border-color: #e6eef3; resize: none; }
 .prd-sup .cpf-vault { height: 40px; padding: 0 17px; }
@@ -333,6 +348,16 @@
 .prd-rowact--no { background: linear-gradient(135deg, #f87171, #dc2626); box-shadow: 0 3px 11px -4px rgba(220,38,38,.85), 0 1px 0 rgba(255,255,255,.2) inset; }
 .prd-rowact:hover:not(:disabled) { filter: brightness(1.08); }
 .prd-rowact:disabled { cursor: default; filter: grayscale(.85); opacity: .45; box-shadow: none; }
+
+/* CS-436 read-only popup of one linked request. */
+.mpr-card.spi-mdl.prd-dec.prd-peek { width: min(1100px, 96vw); }
+@media (min-width: 1025px) and (max-width: 1640px) { .mpr-card.spi-mdl.prd-dec.prd-peek { width: min(1375px, calc(96vw / .8)); } }
+.prd-peek__grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 900px) { .prd-peek__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.prd-peek__note { white-space: pre-wrap; min-height: 46px; }
+.prd-peek .prd-dec__bd { padding: 14px 18px; }
+/* No chip strip here to push it over, so the close sits at the right edge itself. */
+.prd-peek .mpr-hero__close { margin-left: auto; }
 
 .prd-bank { font-size: 11px; font-weight: 700; color: #22414f; }
 .prd-ref { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; }

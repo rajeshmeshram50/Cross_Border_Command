@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { OrderRow } from './Order';
+import type { OrderRow } from '../po-list/Order';
 
 export type Verdict = 'correct' | 'damaged' | 'mismatched';
 

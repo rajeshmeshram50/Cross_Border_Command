@@ -5,9 +5,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
-import { money, fmtDate } from '../../purchase-management/order/payment-shared';
+import { money, fmtDate } from '../../purchase-management/order/manage-payment/payment-shared';
 import { IcoCheck, IcoChevron, IcoChevronR, IcoRefund, IcoSearch, IcoX } from '../../icons';
-import type { OrderRow } from '../../purchase-management/order/Order';
+import type { OrderRow } from '../../purchase-management/order/po-list/Order';
 import { useEscapeClose } from './useEscapeClose';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './advance-refund.css';

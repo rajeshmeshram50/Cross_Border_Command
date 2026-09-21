@@ -1,7 +1,9 @@
-// Static supplier records and the five compliance checklists they are scored
-// against — frontend-only sample data, replaced by the suppliers API later.
-import type { SupplierVaultTarget, VaultData, VaultDoc } from '../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
-import { formatDmy } from '../../../../../utils/formatDmy';
+// Static supplier records for the Payment Request page until it is wired to the
+// suppliers API. The Create PO form reads real suppliers.
+import type { SupplierVaultTarget, VaultData, VaultDoc } from '../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
+import { formatDmy } from '../../../../utils/formatDmy';
+import type { RiskSubject } from '../../purchase-management/order/create-po/supplier-checks';
+export { RISK_GUIDELINES, isRiskMandatory } from '../../purchase-management/order/create-po/supplier-checks';
 
 export const LEGAL_PARAMS: { name: string; docs: string[] }[] = [
   { name: 'Company Due Diligence', docs: ['Certificate of Incorporation', 'MOA & AOA', 'GST Registration Certificate', 'PAN Card'] },
@@ -173,16 +175,11 @@ export function supplierVaultData(s: Supplier): VaultData {
   };
 }
 
-/** A high-risk category together with a high/medium rating pins this PO:
- *  physical inspection becomes compulsory and the payment terms are fixed. */
-export const isRiskMandatory = (s: Supplier) =>
-  (s.category === 'Blacklisted Supplier' || s.category === 'High Risk Supplier')
-  && (s.risk === 'High Risk' || s.risk === 'Medium Risk');
-
-export const RISK_GUIDELINES = [
-  { title: 'Physical inspection is mandatory', note: 'Goods must be physically inspected and cleared by QA before the GRN is accepted into inventory.' },
-  { title: 'Payment against milestones only', note: 'Release payment strictly against installation, goods delivery and 100% GST scrutiny — no advance.' },
-];
+/** What the shared risk checks read from a sample supplier. */
+export const toRiskSubject = (s: Supplier): RiskSubject => ({
+  risk: s.risk, category: s.category, gstStatus: s.gstStatus, gstNo: s.gstNo,
+  filing: s.filing, scrutiny: s.scrutiny, legal: legalTotals(s),
+});
 
 export const SUPPLIER_TYPES = ['Manufacturer', 'Distributor', 'Trader', 'Service Provider', 'Importer', 'Transporter'];
 export const RISK_LEVELS = ['High Risk', 'Medium Risk', 'Low Risk'];

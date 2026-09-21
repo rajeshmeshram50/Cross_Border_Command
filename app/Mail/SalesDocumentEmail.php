@@ -43,6 +43,8 @@ class SalesDocumentEmail extends Mailable
     public ?string $logoPath;       // absolute filesystem path to branch logo (for CID embed)
     public ?string $pdfPath;        // absolute filesystem path to the attached PDF
     public string $pdfFilename;     // visible name in the recipient's inbox
+    /** @var array<int, array{path: string, name: string}> further files attached after the PDF */
+    public array $extraAttachments;
 
     public function __construct(array $payload)
     {
@@ -63,6 +65,7 @@ class SalesDocumentEmail extends Mailable
         $this->logoPath       = $payload['logoPath']                 ?? null;
         $this->pdfPath        = $payload['pdfPath']                  ?? null;
         $this->pdfFilename    = (string) ($payload['pdfFilename']    ?? 'document.pdf');
+        $this->extraAttachments = (array) ($payload['extraAttachments'] ?? []);
     }
 
     public function envelope(): Envelope
@@ -99,13 +102,17 @@ class SalesDocumentEmail extends Mailable
 
     public function attachments(): array
     {
+        $out = [];
         if ($this->pdfPath && file_exists($this->pdfPath)) {
-            return [
-                Attachment::fromPath($this->pdfPath)
-                    ->as($this->pdfFilename)
-                    ->withMime('application/pdf'),
-            ];
+            $out[] = Attachment::fromPath($this->pdfPath)
+                ->as($this->pdfFilename)
+                ->withMime('application/pdf');
         }
-        return [];
+        foreach ($this->extraAttachments as $file) {
+            if (!empty($file['path']) && file_exists($file['path'])) {
+                $out[] = Attachment::fromPath($file['path'])->as((string) ($file['name'] ?? basename($file['path'])));
+            }
+        }
+        return $out;
     }
 }

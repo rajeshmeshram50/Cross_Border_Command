@@ -12,7 +12,7 @@ import {
   type DocRef, type PartyRef, type PaymentRequestRow, type RequestStatus, type SupplierTag,
 } from './paymentRequestData';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
-import '../../purchase-management/order/order.css';
+import '../../purchase-management/order/po-list/order.css';
 import './payment-request.css';
 
 const GUIDE_STEPS: { num: string; title: string; desc: string; icon: ReactNode }[] = [
@@ -78,7 +78,8 @@ const COLUMNS: { label: string; width: number; groupEnd?: boolean }[] = [
 ];
 
 const TABLE_WIDTH = COLUMNS.reduce((sum, c) => sum + c.width, 0);
-const PAGE_SIZES = [10, 25, 50];
+// Eight rows a page, per CS-428.
+const PAGE_SIZES = [8, 16, 24];
 
 const STATUS_VARIANT: Record<RequestStatus, BadgeVariant> = {
   awaiting: 'gold', approved: 'success', declined: 'danger',
@@ -345,7 +346,7 @@ export default function PaymentRequestManagement() {
 
                     <td>
                       <div className="prm-acts">
-                        <button type="button" className="ord-btn prm-viewbtn" title={`View ${row.requestId}`} onClick={() => setViewId(row.requestId)}>
+                        <button type="button" className={`ord-btn prm-viewbtn${row.status === 'declined' ? ' is-muted' : ''}`} title={`View ${row.requestId}`} onClick={() => setViewId(row.requestId)}>
                           <span className="prm-viewbtn__ico"><IcoEye size={9} /></span>
                           <span>View Request</span>
                         </button>
@@ -379,7 +380,7 @@ export default function PaymentRequestManagement() {
       {reasonRow && <DeclineReasonModal row={reasonRow} onClose={() => setReasonRow(null)} />}
       {viewId && (
         <Suspense fallback={null}>
-          <PaymentRequestDetail requestId={viewId} onBack={closeView} onOpenRequest={setViewId} onChanged={refresh} />
+          <PaymentRequestDetail requestId={viewId} onBack={closeView} onChanged={refresh} />
         </Suspense>
       )}
     </div>

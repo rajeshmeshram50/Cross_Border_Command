@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import type { OrderRow } from './Order';
+import type { OrderRow } from '../po-list/Order';
 
 export const money = (v: number) => '₹' + Math.round(v || 0).toLocaleString('en-IN');
 
@@ -53,6 +53,9 @@ const SUPPLIER_CODES: Record<string, string> = {
   'Larsen & Toubro': 'S-007',
   'JSW Steel': 'S-016',
   'Godrej Industries': 'S-032',
+  'Bosch India': 'S-015',
+  'Tata Chemicals': 'S-012',
+  'QuickShip Couriers': 'S-021',
 };
 
 export function supplierCode(name: string): string {
@@ -102,7 +105,7 @@ export function Chip({ label, value, meta, mod, extra }: {
     <div className={`mpr-hero__chip${mod ? ' ' + mod : ''}`}>
       <span className="mpr-hero__chip-lbl">{label}</span>
       <span className="mpr-hero__chip-line">
-        <span className="mpr-hero__chip-val">{value}</span>
+        <span className="mpr-hero__chip-val" title={value}>{value}</span>
         {meta && <span className="mpr-hero__chip-meta">{meta}</span>}
         {extra}
       </span>

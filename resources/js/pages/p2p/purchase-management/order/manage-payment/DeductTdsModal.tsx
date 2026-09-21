@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useScrollLock } from '../../../../hooks/useScrollLock';
-import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import { useScrollLock } from '../../../../../hooks/useScrollLock';
+import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './deduct-tds.css';
 
 const money = (v: number) => '₹' + Math.round(v || 0).toLocaleString('en-IN');

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useScrollLock } from '../../../../hooks/useScrollLock';
-import type { OrderRow } from './Order';
+import { useScrollLock } from '../../../../../hooks/useScrollLock';
+import type { OrderRow } from '../po-list/Order';
 import type { NewRequest } from './RaisePaymentRequestModal';
 import type { ReleasePayment } from './MakePoPaymentModal';
 import {
@@ -9,7 +9,7 @@ import {
   initials, money, shiftIso, shortDate, valueBreakdown,
 } from './payment-shared';
 
-import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './manage-payment-requests.css';
 
 const DeductTdsModal = lazy(() => import('./DeductTdsModal'));

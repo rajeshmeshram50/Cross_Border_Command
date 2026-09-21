@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useScrollLock } from '../../../../hooks/useScrollLock';
-import { MasterSelect } from '../../../../components/ui/MasterSelect';
-import type { OrderRow } from './Order';
+import { useScrollLock } from '../../../../../hooks/useScrollLock';
+import { MasterSelect } from '../../../../../components/ui/MasterSelect';
+import type { OrderRow } from '../po-list/Order';
 import {
   APPROVERS, Box, HeroRefChips, PAYMENT_TYPES, PoSummaryCards, STAT_ICONS, Stat,
   ICON_PENCIL, ICON_X, money,
 } from './payment-shared';
-import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './manage-payment-requests.css';
 import './raise-payment-request.css';
 

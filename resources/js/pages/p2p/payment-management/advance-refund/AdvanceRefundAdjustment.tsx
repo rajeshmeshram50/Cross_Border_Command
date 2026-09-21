@@ -8,11 +8,11 @@ import Tooltip from '../../../../components/ui/Tooltip';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import SearchClear from '../../../../components/ui/SearchClear';
 import { useToast } from '../../../../contexts/ToastContext';
-import { money, fmtDate, shortDate } from '../../purchase-management/order/payment-shared';
+import { money, fmtDate, shortDate } from '../../purchase-management/order/manage-payment/payment-shared';
 import {
   IcoDoc, IcoRefund, IcoSearch, IcoChevron,
   IcoLink, IcoLines, IcoCard, IcoHistory, IcoAlert, IcoDocSm,
-} from '../../purchase-management/order/icons';
+} from '../../purchase-management/order/shared/icons';
 import RefundPoPickerModal from './RefundPoPickerModal';
 import RefundAdjustmentForm from './RefundAdjustmentForm';
 import RecoverPaymentModal from './RecoverPaymentModal';
@@ -22,7 +22,7 @@ import {
   type RefundAdjustment, type RefundRecovery,
 } from './refund-data';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
-import '../../purchase-management/order/order.css';
+import '../../purchase-management/order/po-list/order.css';
 import './advance-refund.css';
 
 /* Each credit-note type carries its own colour in the prototype, so the pill

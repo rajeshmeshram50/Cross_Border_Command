@@ -75,6 +75,16 @@
 .prm-page .ord-table tbody tr.prm-row.is-physreq td,
 .prm-page .ord-table tbody tr.prm-row.is-physreq:hover td { background: transparent; }
 .prm-row.is-closed td > * { opacity: .72; }
+/* CS-431: a declined request carries the red wash and red edge across the whole row. */
+.prm-row.is-closed {
+  background: linear-gradient(90deg, #fdeaea, #fdf1f1 55%, #fdeaea);
+  box-shadow: inset 3px 0 0 #ef4444;
+}
+.prm-page .ord-table tbody tr.prm-row.is-closed td,
+.prm-page .ord-table tbody tr.prm-row.is-closed:hover td { background: transparent; }
+.prm-viewbtn.is-muted { filter: grayscale(.55); opacity: .7; }
+.prm-viewbtn.is-muted:hover:not(:disabled) { filter: none; opacity: 1; }
+[data-bs-theme="dark"] .prm-row.is-closed { background: rgba(239,68,68,.1); }
 
 /* ── Cells ──────────────────────────────────────────────────────────────── */
 
@@ -192,7 +202,14 @@
 .prm-dc-box .srpt-hicon svg { stroke: #fff; }
 .prm-dc-box .srpt-id-pill { color: #fff; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.34); }
 .prm-dc-box .srpt-sub { letter-spacing: .3px; }
-.prm-dc-meta { flex-wrap: nowrap; flex-shrink: 0; }
+/* The title never gives way; a long supplier name shortens with an ellipsis instead. */
+.prm-dc-box .srpt-title-wrap { flex-shrink: 0; }
+.prm-dc-box .srpt-title { white-space: nowrap; }
+.prm-dc-meta { flex-wrap: nowrap; flex: 0 1 auto; min-width: 0; }
+.prm-dc-meta .mpr-hero__chip { flex: 0 1 auto; min-width: 0; max-width: 340px; }
+.prm-dc-meta .mpr-hero__chip-line { min-width: 0; }
+.prm-dc-meta .mpr-hero__chip-val { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.prm-dc-meta .srpt-close { flex-shrink: 0; }
 
 .prm-dc-body { padding: 10px 12px; }
 

@@ -35,6 +35,9 @@ class ClmSignatureRequest extends Model
     // signed source is the rendered PO PDF — so `documents()` short-circuits for
     // it too. `trade_doc_id` holds the purchase_order id.
     public const DOC_PURCHASE_ORDER    = 'purchase_order';
+    // Documents of the new P2P purchase order (p2p_purchase_order_documents);
+    // trade_doc_ids holds their ids, metadata.purchase_order_id the PO.
+    public const DOC_P2P_PO_DOCUMENT   = 'p2p_po_document';
 
     protected $fillable = [
         'client_id', 'branch_id',
@@ -101,7 +104,7 @@ class ClmSignatureRequest extends Model
         // signed source is a rendered PDF — so there's nothing to resolve
         // here. Return empty so the trade-doc/agreement lock-check helpers
         // never mis-query the wrong library table for these types.
-        if (in_array($this->document_type, [self::DOC_QUOTATION, self::DOC_PROFORMA_INVOICE, self::DOC_PURCHASE_ORDER], true)) {
+        if (in_array($this->document_type, [self::DOC_QUOTATION, self::DOC_PROFORMA_INVOICE, self::DOC_PURCHASE_ORDER, self::DOC_P2P_PO_DOCUMENT], true)) {
             return new Collection();
         }
         if ($this->document_type === self::DOC_AGREEMENT) {

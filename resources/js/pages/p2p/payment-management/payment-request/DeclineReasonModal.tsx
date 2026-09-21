@@ -4,11 +4,11 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalGuard } from '../../procurement-management/bulk-sourcing/useModalGuard';
 import { IcoBan, IcoChevron, IcoX } from '../../icons';
-import { Chip } from '../../purchase-management/order/payment-shared';
+import { Chip } from '../../purchase-management/order/manage-payment/payment-shared';
 import { STATUS_LABEL, type PaymentRequestRow } from './paymentRequestData';
 import '../../p2p-common.css';
 import '../../procurement-management/bulk-sourcing/bulk-sourcing.css';
-import '../../purchase-management/order/manage-payment-requests.css';
+import '../../purchase-management/order/manage-payment/manage-payment-requests.css';
 import './payment-request.css';
 
 const fmtDate = (iso: string) => {
