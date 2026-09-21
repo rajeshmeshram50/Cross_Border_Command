@@ -28,7 +28,9 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
   const computed = lines.map((l) => computeLine(l, products, ctx.taxMode));
   const base = computed.reduce((sum, l) => sum + l.base, 0);
   const gst = computed.reduce((sum, l) => sum + l.gstAmt, 0);
-  const missing = missingCount(lines, products, ctx.taxMode);
+  // Computed from the saved lines — typing a quantity doesn't change it until Save.
+  const saved = ctx.savedLines;
+  const missing = saved ? missingCount(saved, products, ctx.taxMode) : 0;
 
   return (
     <>
@@ -63,8 +65,9 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
           Tinted cells are editable — PO product, quantity and rate. Everything else is carried from the PI or calculated.
           {' '}{ctx.taxMode === 'inter' ? 'Inter-state supplier: IGST applies.' : 'Intra-state supplier: CGST + SGST apply.'}
         </div>
+        {ctx.linesGeneral && <div className="cpd-general-err" role="alert">{ctx.linesGeneral}</div>}
         <ProductTable rows={lines} products={products} taxMode={ctx.taxMode} onChange={patchLine} onRemove={removeLine}
-          onProductsChanged={ctx.lookups.reloadProducts} />
+          onProductsChanged={ctx.lookups.reloadProducts} errors={ctx.lineErrors} />
         {/* A product the PI doesn't carry goes on its own line. */}
         <button type="button" className="cpf-addbtn cpd-addfirst" onClick={addLine}>+ Add Product Line</button>
         {/* The wizard footer moves to the next step; this Save banks the lines
@@ -84,8 +87,8 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
       </div>
     </div>
 
-    {/* Only a PO against a PI can leave PI quantity uncovered. */}
-    {lines.some((l) => l.pi) && (
+    {/* Only a saved PO against a PI can leave PI quantity uncovered. */}
+    {saved && saved.some((l) => l.pi) && (
     <div className={`spi-dt-sec ${missOpen ? '' : 'is-collapsed'}`}>
       <div className="spi-dt-sec-head cpf-clickable" onClick={() => setMissOpen((o) => !o)}>
         <div className="spi-dt-sec-ico spi-dt-sec-ico-2"><IcoAlert /></div>
@@ -101,7 +104,7 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
         <span className={`cpf-chev ${missOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
       </div>
       <div className="spi-dt-sec-body">
-        <MissingProducts rows={lines} products={products} taxMode={ctx.taxMode} />
+        <MissingProducts rows={saved} products={products} taxMode={ctx.taxMode} />
       </div>
     </div>
     )}

@@ -10,11 +10,11 @@ const AddSupplierFlow = lazy(() => import('../AddSupplierFlow'));
 // hover before that, so the click itself never waits for the download.
 const SupplierEvidenceVaultModal = lazy(() => import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 const warmVault = () => { void import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'); };
-import type { VaultData } from '../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 import { RISK_GUIDELINES, SevIcon, isRiskMandatory, riskItems, riskLabel, vaultTargetOf, type Severity } from '../supplier-checks';
 import { DOC_TYPE_OPTIONS, PO_TYPE_OPTIONS, type PoDraft, type SetDraft } from '../po-draft';
 import type { StepCtx } from '../CreatePoForm';
 import { MasterDatePicker } from '../../../../../../components/ui/MasterDatePicker';
+import { MasterSelect } from '../../../../../../components/ui/MasterSelect';
 import { formatDmy } from '../../../../../../utils/formatDmy';
 import { useToast } from '../../../../../../contexts/ToastContext';
 import type { SupplierDetail } from '../../api/po-api';
@@ -23,7 +23,9 @@ import { IcoAlert, IcoCheck, IcoChevron, IcoClock, IcoDocSm, IcoFile, IcoLock, I
 // Fixed choices with no master behind them; saved as the chosen text.
 const PO_TYPES = PO_TYPE_OPTIONS.map((o) => o.label);
 const DOC_TYPES = DOC_TYPE_OPTIONS.map((o) => o.label);
-const TRANSPORT_MODES = ['Road', 'Rail', 'Air', 'Sea', 'Courier', 'Multimodal'];
+// The same lists the server accepts (PurchaseOrder::TRANSPORT_MODES / INCO_TERMS).
+const TRANSPORT_MODES = ['Sea', 'Road', 'Air'];
+const INCO_TERMS = ['CIF', 'C&F', 'EXW', 'FOB'];
 const PAYMENT_TYPES = ['Advance', 'Credit', 'Cash', 'Letter of Credit (LC)', 'Bank Transfer', 'On Delivery'];
 
 const v = (x: string | null | undefined) => x ?? '';
@@ -39,6 +41,8 @@ type Props = {
 export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, onPickSupplier }: Props) {
   const toast = useToast();
   const { lookups } = ctx;
+  const err = ctx.errors;
+  const inv = (key: keyof typeof err) => (err[key] ? ' is-invalid' : '');
   const [poOpen, setPoOpen] = useState(true);
   const [supOpen, setSupOpen] = useState(true);
   const [supCardOpen, setSupCardOpen] = useState(true);
@@ -56,6 +60,12 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
   // Dropdown shows "S-004 — Company"; the option text maps back to the vendor id.
   const supplierOptions = useMemo(() => lookups.suppliers.map((s) => ({ id: s.id, label: `${s.code} — ${s.name}`, doc: s.document_type })), [lookups.suppliers]);
   const pickedOption = supplierOptions.find((o) => o.id === draft.vendorId)?.label ?? (sup ? `${sup.code} — ${sup.name}` : '');
+
+  // Each option carries the supplier's origin, set when it was onboarded.
+  const supplierSelectOptions = useMemo(() => supplierOptions.map((o) => ({
+    value: String(o.id), label: o.label,
+    badge: o.doc === 'international' ? { text: 'International', tone: 'violet' as const } : { text: 'Domestic', tone: 'green' as const },
+  })), [supplierOptions]);
 
   const pickSupplier = async (label: string) => {
     const opt = supplierOptions.find((o) => o.label === label);
@@ -109,10 +119,10 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
         <AddSupplierFlow onClose={() => setAddingSupplier(false)} />
       </Suspense>
     )}
-    {/* View only: the PO shows the supplier's documents, the supplier master is where they change. */}
     {vaultOpen && vaultTarget && (
       <Suspense fallback={null}>
-        <SupplierEvidenceVaultModal open viewOnly supplier={vaultTarget} data={draft.vault as VaultData | null} onClose={() => setVaultOpen(false)} />
+        {/* Not view-only: missing documents can be uploaded here, and the legal status refreshes. */}
+        <SupplierEvidenceVaultModal open supplier={vaultTarget} onVaultChange={ctx.refreshVault} onClose={() => setVaultOpen(false)} />
       </Suspense>
     )}
 
@@ -132,14 +142,14 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
 
       <div className="spi-dt-sec-body">
         <div className="spi-dt-grid4">
-          <Field label="PO Type" req>
-            <EditSelect value={draft.poType} options={PO_TYPES} onChange={(x) => set({ poType: x })} />
+          <Field label="PO Type" req error={err.poType}>
+            <EditSelect value={draft.poType} options={PO_TYPES} onChange={(x) => set({ poType: x })} invalid={!!err.poType} />
           </Field>
-          <Field label="Document Type" req>
-            <EditSelect value={draft.docType} options={DOC_TYPES} onChange={(x) => set({ docType: x })} />
+          <Field label="Document Type" req error={err.docType}>
+            <EditSelect value={draft.docType} options={DOC_TYPES} onChange={(x) => set({ docType: x })} invalid={!!err.docType} />
           </Field>
-          <Field label="Mode of Transport">
-            <EditSelect value={draft.transport} options={TRANSPORT_MODES} onChange={(x) => set({ transport: x })} />
+          <Field label="Mode of Transport" req error={err.transport}>
+            <EditSelect value={draft.transport} options={TRANSPORT_MODES} onChange={(x) => set({ transport: x })} invalid={!!err.transport} />
           </Field>
           <Field label="PO Date">
             <div className="spi-dt-inp-auto">
@@ -147,14 +157,15 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
               <span className="spi-dt-auto"><IcoLock /> AUTO</span>
             </div>
           </Field>
-          <Field label="Expected Delivery Date">
-            <MasterDatePicker value={draft.deliveryDate} onChange={(x) => set({ deliveryDate: x })} />
+          <Field label="Expected Delivery Date" req error={err.deliveryDate}>
+            <MasterDatePicker value={draft.deliveryDate} onChange={(x) => set({ deliveryDate: x })} invalid={!!err.deliveryDate}
+              minDate={new Date().toISOString().slice(0, 10)} />
           </Field>
-          <Field label="Delivery Location">
-            <input className="spi-dt-inp" placeholder="Enter delivery location" maxLength={255} value={draft.deliveryLocation} onChange={(e) => set({ deliveryLocation: e.target.value })} />
+          <Field label="Delivery Location" req error={err.deliveryLocation}>
+            <input className={`spi-dt-inp${inv('deliveryLocation')}`} placeholder="Enter delivery location" maxLength={255} value={draft.deliveryLocation} onChange={(e) => set({ deliveryLocation: e.target.value })} />
           </Field>
-          <Field label="Payment Type">
-            <EditSelect value={draft.paymentType} options={PAYMENT_TYPES} onChange={(x) => set({ paymentType: x })} />
+          <Field label="Payment Type" req error={err.paymentType}>
+            <EditSelect value={draft.paymentType} options={PAYMENT_TYPES} onChange={(x) => set({ paymentType: x })} invalid={!!err.paymentType} />
           </Field>
           <Field label="Physical Inspection Required">
             {/* A high-risk supplier forces this on — locked, with the reason shown. */}
@@ -175,27 +186,27 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
 
           {isInternational && (
             <>
-              <Field label="Currency" req>
-                <EditSelect value={draft.currency} options={lookups.currencies} onChange={(x) => set({ currency: x })} />
+              <Field label="Currency" req error={err.currency}>
+                <EditSelect value={draft.currency} options={lookups.currencies} onChange={(x) => set({ currency: x })} invalid={!!err.currency} />
               </Field>
-              <Field label="Exchange Rate" req>
-                <input className="spi-dt-inp" inputMode="decimal" placeholder="e.g. 83.25" value={draft.exchangeRate}
+              <Field label="Exchange Rate" req error={err.exchangeRate}>
+                <input className={`spi-dt-inp${inv('exchangeRate')}`} inputMode="decimal" placeholder="e.g. 83.25" value={draft.exchangeRate}
                   onChange={(e) => set({ exchangeRate: e.target.value.replace(/[^\d.]/g, '').slice(0, 16) })} />
               </Field>
-              <Field label="INCO Term" req>
-                <EditSelect value={draft.incoTerm} options={lookups.incoterms} onChange={(x) => set({ incoTerm: x })} />
+              <Field label="INCO Term" req error={err.incoTerm}>
+                <EditSelect value={draft.incoTerm} options={INCO_TERMS} onChange={(x) => set({ incoTerm: x })} invalid={!!err.incoTerm} />
               </Field>
-              <Field label="Port of Loading">
-                <EditSelect value={draft.portLoading} options={lookups.portsLoading} onChange={(x) => set({ portLoading: x })} />
+              <Field label="Port of Loading" req error={err.portLoading}>
+                <input className={`spi-dt-inp${inv('portLoading')}`} placeholder="e.g. Nhava Sheva" maxLength={255} value={draft.portLoading} onChange={(e) => set({ portLoading: e.target.value })} />
               </Field>
-              <Field label="Port of Discharge">
-                <EditSelect value={draft.portDischarge} options={lookups.portsDischarge} onChange={(x) => set({ portDischarge: x })} />
+              <Field label="Port of Discharge" req error={err.portDischarge}>
+                <input className={`spi-dt-inp${inv('portDischarge')}`} placeholder="e.g. Jebel Ali" maxLength={255} value={draft.portDischarge} onChange={(e) => set({ portDischarge: e.target.value })} />
               </Field>
-              <Field label="Final Destination">
-                <input className="spi-dt-inp" placeholder="Enter final destination" maxLength={128} value={draft.finalDestination} onChange={(e) => set({ finalDestination: e.target.value })} />
+              <Field label="Final Destination" req error={err.finalDestination}>
+                <input className={`spi-dt-inp${inv('finalDestination')}`} placeholder="Enter final destination" maxLength={128} value={draft.finalDestination} onChange={(e) => set({ finalDestination: e.target.value })} />
               </Field>
-              <Field label="Country of Origin">
-                <EditSelect value={draft.countryOrigin} options={lookups.countries} onChange={(x) => set({ countryOrigin: x })} />
+              <Field label="Country of Origin" req error={err.countryOrigin}>
+                <EditSelect value={draft.countryOrigin} options={lookups.countries} onChange={(x) => set({ countryOrigin: x })} invalid={!!err.countryOrigin} />
               </Field>
             </>
           )}
@@ -230,11 +241,13 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
           </div>
           {supCardOpen && (
           <div className="spi-dt-grid4 cpf-grid5">
-            <Field label="SELECT SUPPLIER" req>
-              <EditSelect
-                value={pickedOption}
-                options={supplierOptions.map((o) => o.label)}
-                onChange={(x) => { void pickSupplier(x); }}
+            <Field label="SELECT SUPPLIER" req error={err.supplier}>
+              <MasterSelect
+                invalid={!!err.supplier}
+                value={draft.vendorId ? String(draft.vendorId) : ''}
+                currentValueLabel={pickedOption}
+                options={supplierSelectOptions}
+                onChange={(id) => { const o = supplierOptions.find((x) => String(x.id) === id); if (o) void pickSupplier(o.label); }}
                 placeholder={lookups.loading && !supplierOptions.length ? 'Loading suppliers…' : '— Select Supplier —'}
               />
             </Field>

@@ -1,15 +1,19 @@
 // P2P → Order: purchase order list, loaded from /api/p2p/orders.
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import WorklistPager from '../../../../../components/ui/WorklistPager';
 import Badge, { type BadgeVariant } from '../../../../../components/ui/Badge';
 import CreatePoModal from '../create-po/CreatePoModal';
 import { FitTip } from '../create-po/form-fields';
-import { poApi, type PoListRow } from '../api/po-api';
+import { PoApiError, poApi, type PoListRow } from '../api/po-api';
+import { useDebouncedValue } from '../../../../../hooks/useDebouncedValue';
+import { useServerList } from '../../../../../hooks/useServerList';
 import { useToast } from '../../../../../contexts/ToastContext';
 // The PO form is a screen of its own: loaded only when one is being created,
 // so the list page doesn't carry it. The type import costs nothing at runtime.
 import type { PoLink } from '../create-po/CreatePoForm';
 const CreatePoForm = lazy(() => import('../create-po/CreatePoForm'));
+const PhysicalInspectionModal = lazy(() => import('../physical-inspection/PhysicalInspectionModal'));
+const CancelPoModal = lazy(() => import('../cancel-po/CancelPoModal'));
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './order.css';
 
@@ -166,6 +170,7 @@ export const ORDER_COLUMNS: Column[] = [
   { label: 'Payment Progress Status',    width: 246 },
   { label: 'Advance Receipt Refund Adjustment', width: 238 },
   { label: 'Payment Recovery Status',    width: 246 },
+  { label: 'PO Status',                  width: 118 },
   { label: 'Action',                     width: 412 },
 ];
 
@@ -378,6 +383,8 @@ function toOrderRow(r: PoListRow): OrderRow {
     paymentRequests: 0,
     cancelled: r.status === 'cancelled',
     cancelReason: r.cancel_reason ?? undefined,
+    // Nothing is paid on the new PO yet, so a cancelled one has nothing to recover.
+    cancelStage: r.status === 'cancelled' ? 'closed' : undefined,
   };
 }
 
@@ -754,8 +761,8 @@ function RecoveryCell({ row }: { row: OrderRow }) {
   );
 }
 
-function ActionCell({ cancelled = false, cancelReason, onEdit }: {
-  cancelled?: boolean; cancelReason?: string; onEdit: () => void;
+function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel }: {
+  cancelled?: boolean; cancelReason?: string; onEdit: () => void; onCancel?: () => void;
 }) {
   return (
     <div className="ord-actions">
@@ -764,7 +771,7 @@ function ActionCell({ cancelled = false, cancelReason, onEdit }: {
           {ICON_CANCEL}<span>Cancelled</span>
         </button>
       ) : (
-        <button type="button" className="ord-btn ord-btn--cancel" title="Cancel this Purchase Order">{ICON_CANCEL}<span>Cancel PO</span></button>
+        <button type="button" className="ord-btn ord-btn--cancel" title="Cancel this Purchase Order" onClick={onCancel}>{ICON_CANCEL}<span>Cancel PO</span></button>
       )}
       <button type="button" className="ord-btn ord-btn--edit" disabled={cancelled} onClick={onEdit}>{ICON_EDIT}<span>Edit PO</span></button>
       <button type="button" className="ord-btn ord-btn--vault">{ICON_VAULT}<span>Evidence Vault</span></button>
@@ -783,8 +790,11 @@ function CancelBadge({ reason }: { reason?: string }) {
   return <Badge appearance="outline" variant="danger" icon={ICON_X_SM} className="ord-cancelbadge" title={reason}>Cancelled</Badge>;
 }
 
-function DraftBadge() {
-  return <Badge appearance="outline" variant="warning" icon={ICON_CLOCK} className="ord-cancelbadge" title="Saved, not yet submitted">Draft</Badge>;
+/** Draft → Submitted, or Cancelled (reason on hover). */
+function StatusBadge({ row }: { row: OrderRow }) {
+  if (row.cancelled) return <CancelBadge reason={row.cancelReason} />;
+  if (row.draft) return <Badge appearance="outline" variant="warning" icon={ICON_CLOCK} className="ord-status-badge" title="Saved, not yet submitted">Draft</Badge>;
+  return <Badge appearance="outline" variant="success" icon={ICON_CHECK} className="ord-status-badge" title="Submitted — the PO is issued">Submitted</Badge>;
 }
 
 function RiskBadge({ risk }: { risk: RiskLevel | null }) {
@@ -794,10 +804,10 @@ function RiskBadge({ risk }: { risk: RiskLevel | null }) {
 
 // One PO as it appears on the list: a <tbody> spanning a row per mapped SPI.
 // Payment Request Management reuses it (without the Action column) for its status tabs.
-export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, onZoho, showActions = true }: {
+export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, onZoho, onCancel, showActions = true }: {
   row: OrderRow; sr: number; inspected: boolean;
   onInspect: (row: OrderRow) => void; onManage: (row: OrderRow) => void;
-  onEdit?: (row: OrderRow) => void; onZoho?: (row: OrderRow) => void; showActions?: boolean;
+  onEdit?: (row: OrderRow) => void; onZoho?: (row: OrderRow) => void; onCancel?: (row: OrderRow) => void; showActions?: boolean;
 }) {
   const lines = row.invoices.length > 0 ? row.invoices : [null];
   const span = lines.length;
@@ -823,8 +833,6 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
                   {row.physicalInspection && (
                     <Badge appearance="outline" variant="danger" icon={ICON_WARN} className="ord-physinsp">Physical Inspection</Badge>
                   )}
-                  {row.cancelled && <CancelBadge reason={row.cancelReason} />}
-        {row.draft && !row.cancelled && <DraftBadge />}
                 </PoCell>
 
                 <PoCell span={span}>
@@ -896,7 +904,8 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
                 <PoCell span={span}><PaymentCell row={row} onManage={onManage} /></PoCell>
                 <PoCell span={span}><AdrCell adr={row.adr} /></PoCell>
                 <PoCell span={span}><RecoveryCell row={row} /></PoCell>
-                {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} onEdit={() => onEdit?.(row)} /></PoCell>}
+                <PoCell span={span}><StatusBadge row={row} /></PoCell>
+                {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} onEdit={() => onEdit?.(row)} onCancel={onCancel && (() => onCancel(row))} /></PoCell>}
               </>
             )}
           </tr>
@@ -904,28 +913,6 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
       })}
     </tbody>
   );
-}
-
-function inTab(row: OrderRow, tab: TabKey): boolean {
-  if (tab === 'with') return row.shipment !== null;
-  if (tab === 'without') return row.shipment === null;
-  // A cancelled PO with no recorded stage is still awaiting recovery.
-  if (tab === 'cancelinit') return !!row.cancelled && row.cancelStage !== 'closed';
-  if (tab === 'cancelclosed') return !!row.cancelled && row.cancelStage === 'closed';
-  return true;
-}
-
-function searchTextOf(row: OrderRow): string {
-  return [
-
-    row.po, row.poDate, formatDate(row.poDate), formatDate(row.expectedDelivery),
-    PO_TYPE[row.type].label, row.docType,
-    row.shipment ?? '', row.opportunity, row.procurement,
-    row.supplier, categoryOf(row).label,
-    row.risk ? RISK_LEVEL[row.risk].label : '', row.expectedDelivery, row.draft ? 'Draft' : '',
-    row.zohoSynced ? 'Synced' : 'Not Sync',
-    ...row.invoices.flatMap((line) => [line.spi, line.grn, line.qa]),
-  ].join(' ').toLowerCase();
 }
 
 const PAGE_SIZE_OPTIONS = [5, 10, 25, 50];
@@ -946,9 +933,9 @@ function useIsPhone() {
   return isPhone;
 }
 
-function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, inspected }: {
+function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, inspected }: {
   row: OrderRow; index: number; onManage: (row: OrderRow) => void; onInspect: (row: OrderRow) => void;
-  onEdit: (row: OrderRow) => void; onZoho: (row: OrderRow) => void; inspected: boolean;
+  onEdit: (row: OrderRow) => void; onZoho: (row: OrderRow) => void; onCancel: (row: OrderRow) => void; inspected: boolean;
 }) {
   const category = categoryOf(row);
   const count = row.invoices.length;
@@ -973,8 +960,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, inspected 
         {row.physicalInspection && (
           <Badge appearance="outline" variant="danger" icon={ICON_WARN} className="ord-physinsp">Physical Inspection</Badge>
         )}
-        {row.cancelled && <CancelBadge reason={row.cancelReason} />}
-        {row.draft && !row.cancelled && <DraftBadge />}
+        <StatusBadge row={row} />
       </div>
 
       <div className="ord-card__split">
@@ -1066,7 +1052,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, inspected 
         <RecoveryCell row={row} />
       </div>
 
-      <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} onEdit={() => onEdit(row)} />
+      <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} onEdit={() => onEdit(row)} onCancel={() => onCancel(row)} />
     </article>
   );
 }
@@ -1078,23 +1064,53 @@ export default function Order() {
   const toggleGuide = () => setGuideOpen((open) => !open);
 
   const toast = useToast();
-  const [loading, setLoading] = useState(true);
-  const [allRows, setAllRows] = useState<OrderRow[]>([]);
-  // Tabs, search and paging work on the loaded rows; 100 is the API's page cap.
-  const loadRows = () => {
-    setLoading(true);
-    poApi.list({ per_page: 100 })
-      .then(({ rows }) => setAllRows(rows.map(toOrderRow)))
-      .catch((e) => toast.error('Could not load purchase orders', e.firstError ?? 'Please refresh the page.'))
-      .finally(() => setLoading(false));
-  };
-  useEffect(loadRows, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [activeTab, setActiveTab] = useState<TabKey>('all');
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search.trim(), 400);
+  const isPhone = useIsPhone();
+  // Unset = the server's default page size (10).
+  const [pageSize, setPageSize] = useState<number | undefined>(undefined);
+
+  // Tabs, search and paging all run on the server; phone cards load the next page on scroll.
+  const list = useServerList(
+    (q) => poApi.list({ ...q, tab: q.tab as TabKey }).then(({ rows, meta }) => ({ rows: rows.map(toOrderRow), meta })),
+    { perPage: pageSize, search: debouncedSearch, tab: activeTab, append: isPhone },
+    (e) => toast.error('Could not load purchase orders', e instanceof PoApiError ? e.firstError : 'Please refresh the page.'),
+  );
+  const loadRows = list.reload;
 
   // Not built on the new PO yet.
   const comingSoon = (what: string) => () => toast.info('Feature coming soon', `${what} will be available shortly.`);
   const onManage = comingSoon('Payment management');
-  const onInspect = comingSoon('Physical inspection');
+  // Inspection runs on a submitted PO only; a draft has nothing to inspect yet.
+  const [inspectRow, setInspectRow] = useState<OrderRow | null>(null);
+  const onInspect = (row: OrderRow) => {
+    if (!row.id) return;
+    if (row.draft) { toast.info('Submit the PO first', `${row.po} is still a draft — submit it before inspecting.`); return; }
+    setInspectRow(row);
+  };
   const onZoho = comingSoon('Zoho Books sync');
+
+  // Cancel PO: nothing paid → confirm and cancel; money released → refund-adjustment gate.
+  const [cancelRow, setCancelRow] = useState<OrderRow | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const onCancel = (row: OrderRow) => { if (row.id) setCancelRow(row); };
+  const confirmCancel = async () => {
+    if (!cancelRow?.id || cancelling) return;
+    setCancelling(true);
+    try {
+      await poApi.cancel(cancelRow.id, 'Cancelled from the Purchase Order list');
+      toast.success(`${cancelRow.po} cancelled`, 'Nothing to recover — moved to PO Cancellation Closed.');
+      setCancelRow(null);
+      // Land where the order now lives; the tab change reloads the list.
+      if (activeTab === 'cancelclosed') loadRows(); else selectTab('cancelclosed');
+    } catch (e) {
+      toast.error('Could not cancel the PO', e instanceof PoApiError ? e.firstError : 'Please try again.');
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   // Create PO runs in two screens: the link popup, then the full-page form.
   const [createOpen, setCreateOpen] = useState(false);
@@ -1106,34 +1122,11 @@ export default function Order() {
   };
 
 
-  const [activeTab, setActiveTab] = useState<TabKey>('all');
-
-  const [search, setSearch] = useState('');
-
-  const isPhone = useIsPhone();
-
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
-
-  const rows = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return allRows
-      .filter((row) => inTab(row, activeTab))
-      .filter((row) => term === '' || searchTextOf(row).includes(term));
-  }, [allRows, activeTab, search]);
-
-  const tabCounts = useMemo(() => {
-    const counts: Record<TabKey, number> = { all: 0, with: 0, without: 0, cancelinit: 0, cancelclosed: 0 };
-    for (const row of allRows) {
-      for (const tab of LIST_TABS) {
-        if (inTab(row, tab.key)) counts[tab.key] += 1;
-      }
-    }
-    return counts;
-  }, [allRows]);
-
-  const start = (page - 1) * pageSize;
-  const pageRows = rows.slice(start, start + pageSize);
+  const rows = list.rows;
+  const total = list.meta?.total ?? 0;
+  const perPage = list.meta?.per_page ?? DEFAULT_PAGE_SIZE;
+  const tabCounts: Record<TabKey, number> = { all: 0, with: 0, without: 0, cancelinit: 0, cancelclosed: 0, ...(list.meta?.counts ?? {}) };
+  const start = isPhone ? 0 : (list.page - 1) * perPage;
 
   const cardsRef = useRef<HTMLDivElement>(null);
   const scrollListToTop = () => {
@@ -1142,26 +1135,33 @@ export default function Order() {
   };
 
   const goToPage = (next: number) => {
-    setPage(next);
+    list.goTo(next);
     scrollListToTop();
   };
 
-  // Anything that changes which rows are listed goes back to page 1.
+  // Changing the tab, search or page size re-queries from page 1 (the hook does that).
   const selectTab = (tab: TabKey) => {
     setActiveTab(tab);
-    setPage(1);
     scrollListToTop();
   };
   const changeSearch = (value: string) => {
     setSearch(value);
-    setPage(1);
     scrollListToTop();
   };
   const changePageSize = (size: number) => {
     setPageSize(size);
-    setPage(1);
     scrollListToTop();
   };
+
+  // Phone cards: the next page loads when the last card scrolls into view.
+  const moreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = moreRef.current;
+    if (!isPhone || !el) return;
+    const io = new IntersectionObserver((entries) => { if (entries[0]?.isIntersecting) list.loadMore(); }, { rootMargin: '200px' });
+    io.observe(el);
+    return () => io.disconnect();
+  });
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollTimer = useRef<number | undefined>(undefined);
@@ -1206,6 +1206,24 @@ export default function Order() {
             onClose={() => { setPoLink(null); loadRows(); }}
             onChangeLink={() => setCreateOpen(true)}
           />
+        </Suspense>
+      )}
+
+      {cancelRow && (
+        <Suspense fallback={null}>
+          <CancelPoModal
+            target={{ po: cancelRow.po, supplier: cancelRow.supplier, balance: cancelRow.balance, paid: cancelRow.paid }}
+            busy={cancelling}
+            onClose={() => { if (!cancelling) setCancelRow(null); }}
+            onConfirm={() => { void confirmCancel(); }}
+            onCreateRefund={() => { setCancelRow(null); toast.info('Feature coming soon', 'The refund adjustment will be connected next.'); }}
+          />
+        </Suspense>
+      )}
+
+      {inspectRow && (
+        <Suspense fallback={null}>
+          <PhysicalInspectionModal row={inspectRow} onClose={() => setInspectRow(null)} onChanged={loadRows} />
         </Suspense>
       )}
 
@@ -1331,7 +1349,7 @@ export default function Order() {
 
         </div>
 
-        {loading ? (
+        {list.loading ? (
           <OrderListSkeleton phone={isPhone} />
         ) : rows.length === 0 ? (
           <div className="ord-empty">
@@ -1342,7 +1360,7 @@ export default function Order() {
         ) : isPhone ? (
           <div className="ord-cards" ref={cardsRef}>
 
-            {pageRows.map((row, index) => (
+            {rows.map((row, index) => (
               <OrderCard
                 key={row.po}
                 row={row}
@@ -1351,13 +1369,16 @@ export default function Order() {
                 onInspect={onInspect}
                 onEdit={openEdit}
                 onZoho={onZoho}
+                onCancel={onCancel}
                 inspected={row.inspectionDone}
               />
             ))}
+            {/* Reaching this loads the next page; it disappears on the last one. */}
+            {list.hasMore && <div ref={moreRef} className="ord-more">{list.refreshing ? 'Loading more…' : ''}</div>}
           </div>
         ) : (
 
-        <div className="ord-table-scroll" ref={scrollRef} onScroll={onTableScroll}>
+        <div className={`ord-table-scroll${list.refreshing ? ' is-refreshing' : ''}`} ref={scrollRef} onScroll={onTableScroll}>
           <table className="ord-table" style={{ width: TABLE_WIDTH }}>
 
             <colgroup>
@@ -1376,7 +1397,7 @@ export default function Order() {
               </tr>
             </thead>
 
-            {pageRows.map((row, poIndex) => (
+            {rows.map((row, poIndex) => (
               <OrderRowBody
                 key={row.po}
                 row={row}
@@ -1386,18 +1407,20 @@ export default function Order() {
                 onManage={onManage}
                 onEdit={openEdit}
                 onZoho={onZoho}
+                onCancel={onCancel}
               />
             ))}
           </table>
         </div>
         )}
 
-        {rows.length > 0 && (
+        {/* Phone cards page by scrolling instead. */}
+        {rows.length > 0 && !isPhone && (
           <WorklistPager
             className="wl-teal"
-            total={rows.length}
-            page={page}
-            pageSize={pageSize}
+            total={total}
+            page={list.page}
+            pageSize={perPage}
             onPage={goToPage}
             onPageSize={changePageSize}
             pageSizeOptions={PAGE_SIZE_OPTIONS}

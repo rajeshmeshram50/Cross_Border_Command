@@ -133,6 +133,9 @@ export function OptBadge({ b, staticPill }: { b: OptBadgeSpec; staticPill?: bool
 }
 
 
+/** Local options rendered per scroll step. */
+const OPTION_PAGE = 10;
+
 export function MasterSelect({
   name,
   value,
@@ -316,6 +319,12 @@ export function MasterSelect({
     : (search.trim()
         ? options.filter(o => o.label.toLowerCase().includes(search.trim().toLowerCase()))
         : options);
+  // Long local lists render 10 options at a time and add 10 more on scroll,
+  // so a 250-country list never puts 250 rows in the DOM at once.
+  const clientPaged = !serverMode && !onScrollEnd;
+  const [shown, setShown] = useState(OPTION_PAGE);
+  useEffect(() => { setShown(OPTION_PAGE); }, [search, open]);
+  const visible = clientPaged ? filtered.slice(0, shown) : filtered;
   // Collect an option's badges in render order: extra tags first, then the
   // primary status badge at the far right.
   const badgesOf = (o: { badge?: OptBadgeSpec; badges?: OptBadgeSpec[] }): OptBadgeSpec[] =>
@@ -430,10 +439,12 @@ export function MasterSelect({
           )}
           <div
             className="master-select-list"
-            onScroll={onScrollEnd ? (e) => {
+            onScroll={(onScrollEnd || (clientPaged && shown < filtered.length)) ? (e) => {
               const el = e.currentTarget;
-              // Near the bottom → ask the parent for the next page.
-              if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) onScrollEnd();
+              // Near the bottom → the parent's next page, or the next 10 local options.
+              if (el.scrollHeight - el.scrollTop - el.clientHeight >= 48) return;
+              if (onScrollEnd) onScrollEnd();
+              else setShown((n) => n + OPTION_PAGE);
             } : undefined}
           >
             {filtered.length === 0 && !loadingMore ? (
@@ -442,7 +453,7 @@ export function MasterSelect({
               </div>
             ) : (
               <>
-                {filtered.map(opt => (
+                {visible.map(opt => (
                   <DropdownItem
                     key={opt.value}
                     active={opt.value === currentValue}

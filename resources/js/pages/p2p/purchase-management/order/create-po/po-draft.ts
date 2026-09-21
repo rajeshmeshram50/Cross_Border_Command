@@ -109,7 +109,8 @@ const s = (v: string | null | undefined) => v ?? '';
 /** Every PI line of the shipment, with this PO's quantities on the ones it orders; manual lines after. */
 function linesFromDetail(d: PoDetail, piLines: PiLine[]): PoLineRow[] {
   const byPi = new Map(d.items.filter((it) => it.pi_item_id).map((it) => [it.pi_item_id as number, it]));
-  const piRows = piLines.map((pi) => {
+  // Lines fully ordered on other POs stay out, unless this PO is the one ordering them.
+  const piRows = piLines.filter((pi) => byPi.has(pi.pi_item_id) || pi.pending_qty > 0).map((pi) => {
     const it = byPi.get(pi.pi_item_id);
     return it
       ? { key: `pi:${pi.pi_item_id}`, pi, productId: it.product_id, qtyPo: Number(it.quantity), rate: Number(it.rate) }

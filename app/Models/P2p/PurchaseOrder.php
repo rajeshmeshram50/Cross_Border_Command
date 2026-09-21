@@ -32,6 +32,8 @@ class PurchaseOrder extends Model
     public const DOC_TYPES  = ['domestic', 'international'];
     public const YES_NO     = ['yes', 'no'];
     public const LINK_TYPES = ['with_shipment', 'standalone'];
+    public const TRANSPORT_MODES = ['Sea', 'Road', 'Air'];
+    public const INCO_TERMS = ['CIF', 'C&F', 'EXW', 'FOB'];
 
     protected $fillable = [
         'client_id', 'branch_id', 'code', 'po_date', 'status', 'current_step',
