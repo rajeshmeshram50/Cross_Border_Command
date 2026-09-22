@@ -315,7 +315,7 @@ const mappingsPayload = (list: ProductMappingRow[]) => list.map(m => ({
 
 type StepKey = 1 | 2 | 3;
 type IdTab = 'identification' | 'address';
-type KycTab = 'company' | 'owner' | 'license' | 'bank' | 'gst';
+export type KycTab = 'company' | 'owner' | 'license' | 'bank' | 'gst';
 
 const KYC_TAB_ORDER: KycTab[] = ['company', 'owner', 'license', 'bank', 'gst'];
 
@@ -351,6 +351,8 @@ const KYC_TAB_SUB: Record<string, string> = {
 export default function AddVendorModal(props: {
   vendorId?: number | null;
   initialStep?: StepKey;
+  /** Open the KYC step on this tab, e.g. 'gst' from a PO whose supplier needs GST scrutiny. */
+  initialKycTab?: KycTab;
   scope?: 'domestic' | 'international';
   vendorCodeHint?: string | null;
   /**
@@ -366,7 +368,7 @@ export default function AddVendorModal(props: {
   onClose: () => void;
   onSubmit: (payload: VendorPayload) => void;
 }) {
-  const { onClose, onSubmit, vendorId: initialVendorId, initialStep, scope, vendorCodeHint } = props;
+  const { onClose, onSubmit, vendorId: initialVendorId, initialStep, initialKycTab, scope, vendorCodeHint } = props;
   const canMapProducts = props.canMapProducts !== false;
   const toast = useToast();
   const confirm = useConfirm();
@@ -374,7 +376,9 @@ export default function AddVendorModal(props: {
 
   const [step, setStep] = useState<StepKey>(isEdit && initialStep ? initialStep : 1);
   const [idTab,    setIdTab]    = useState<IdTab>('identification');
-  const [kycTab,   setKycTab]   = useState<KycTab>('company');
+  // The GST tab exists only once the supplier is known to be GST-applicable, so it is opened after load.
+  const [kycTab,   setKycTab]   = useState<KycTab>(initialKycTab && initialKycTab !== 'gst' ? initialKycTab : 'company');
+  const pendingGstTab = useRef(initialKycTab === 'gst');
   const [tradeTab, setTradeTab] = useState<TradeTab>('kyc');
   const [kycSub,   setKycSub]   = useState<KycSubTab>('owner');
   const [prevOpen, setPrevOpen] = useState(false);
@@ -753,6 +757,9 @@ export default function AddVendorModal(props: {
   useEffect(() => {
     if (gstApplicable !== 'Yes' && kycTab === 'gst') setKycTab('bank');
   }, [gstApplicable, kycTab]);
+  useEffect(() => {
+    if (pendingGstTab.current && gstApplicable === 'Yes') { pendingGstTab.current = false; setKycTab('gst'); }
+  }, [gstApplicable]);
   /* Previous scope, so the reset below can tell a real CHANGE from the first
      run. Without it the effect fired once on hydration and blanked whatever had
      just been loaded. */

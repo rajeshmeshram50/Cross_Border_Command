@@ -35,6 +35,9 @@ class PurchaseOrder extends Model
     public const LINK_TYPES = ['with_shipment', 'standalone'];
     public const TRANSPORT_MODES = ['Sea', 'Road', 'Air'];
     public const INCO_TERMS = ['CIF', 'C&F', 'EXW', 'FOB'];
+    /** PO types that can be raised today; the others are listed but not open yet. */
+    public const OPEN_PO_TYPES = ['material_goods'];
+    public const PAYMENT_TYPES = ['Advanced Payment', 'Full Payment', 'Letter of Credit'];
 
     protected $fillable = [
         'client_id', 'branch_id', 'code', 'po_date', 'status', 'current_step',
@@ -51,6 +54,7 @@ class PurchaseOrder extends Model
         'taxable_total', 'total_cgst', 'total_sgst', 'total_igst',
         'shipping_charges', 'packaging_charges', 'other_charges', 'grand_total',
         'terms', 'submitted_at', 'submitted_by',
+        'tds_percentage', 'tds_amount', 'tds_updated_by', 'tds_updated_at', 'paid_amount', 'balance_amount',
         'cancelled_at', 'cancelled_by', 'cancel_reason',
         'inspection_status', 'inspection_note', 'inspection_note_files', 'inspected_by', 'inspected_at',
         'created_by', 'updated_by',
@@ -76,6 +80,11 @@ class PurchaseOrder extends Model
         'packaging_charges'         => 'decimal:2',
         'other_charges'             => 'decimal:2',
         'grand_total'               => 'decimal:2',
+        'tds_percentage'            => 'decimal:2',
+        'tds_amount'                => 'decimal:2',
+        'tds_updated_at'            => 'datetime',
+        'paid_amount'               => 'decimal:2',
+        'balance_amount'            => 'decimal:2',
         'current_step'              => 'integer',
     ];
 
@@ -99,6 +108,16 @@ class PurchaseOrder extends Model
         return $this->hasMany(PoPhysicalInspection::class, 'purchase_order_id');
     }
 
+    public function paymentRequests(): HasMany
+    {
+        return $this->hasMany(PoPaymentRequest::class, 'purchase_order_id');
+    }
+
+    public function payments(): HasMany
+    {
+        return $this->hasMany(PoPayment::class, 'purchase_order_id');
+    }
+
     public function gstApprovals(): HasMany
     {
         return $this->hasMany(PoGstApproval::class, 'purchase_order_id');
@@ -118,6 +137,13 @@ class PurchaseOrder extends Model
     public function creator(): BelongsTo       { return $this->belongsTo(User::class, 'created_by'); }
 
     public function isCancelled(): bool { return $this->status === self::STATUS_CANCELLED; }
+
+    /** Payments have started: a pending / approved payment request, or money paid. The PO is then view-only. */
+    public function paymentsStarted(): bool
+    {
+        return (float) $this->paid_amount > 0
+            || $this->paymentRequests()->withoutGlobalScope('tenant')->whereIn('status', [PoPaymentRequest::STATUS_PENDING, PoPaymentRequest::STATUS_APPROVED])->exists();
+    }
 
     /** Content is frozen once cancelled or once any document on it is signed. */
     public function isLocked(): bool

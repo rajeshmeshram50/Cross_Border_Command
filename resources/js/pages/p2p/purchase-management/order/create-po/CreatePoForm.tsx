@@ -2,7 +2,7 @@
 // spi-dt-* classes; create-po.css holds only what differs for this form.
 // Each "Save & Next" saves its stage through po-api before moving on, so a PO
 // is a real draft from Step 01 onwards and Edit PO reopens exactly what was saved.
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import Step1LinkSupplier from './steps/Step1LinkSupplier';
@@ -20,11 +20,13 @@ import {
 } from './validation';
 import type { PoDraft, PoLineRow } from './po-draft';
 import GstNoticeModal, { type GstNotice } from './GstNoticeModal';
+// The supplier master's wizard, opened on its GST Scrutiny tab when scrutiny is missing or stale.
+const AddVendorModal = lazy(() => import('../../../p2p-master-management/supplier-management/AddVendorModal'));
 import { PoApiError, poApi, poLookupApi, type PoDetail, type ShipmentOption, type TaxMode } from '../api/po-api';
 import { useToast } from '../../../../../contexts/ToastContext';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './create-po.css';
-import { IcoCheck, IcoChevronL, IcoChevronR, IcoDoc, IcoLines, IcoShip, IcoTarget, IcoUser, IcoX } from '../shared/icons';
+import { IcoCheck, IcoChevronL, IcoLock, IcoChevronR, IcoDoc, IcoLines, IcoShip, IcoTarget, IcoUser, IcoX } from '../shared/icons';
 
 // What the Create PO popup passes in: how this PO is linked. `editId` is set
 // when Edit PO opens an existing order in this same form.
@@ -204,7 +206,16 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   // beside "Submit PO & Next" on Step 03 — only when the check calls for one.
   const gst = gstCheck(draft);
   const [gstNotice, setGstNotice] = useState<GstNotice | null>(null);
-  const showGstAction = stage === 2 && !!gst.notice;
+  const [scrutinyFor, setScrutinyFor] = useState<number | null>(null);
+  // After the supplier's scrutiny is updated, reload it so the GST check runs again.
+  const closeScrutiny = () => {
+    const id = scrutinyFor;
+    setScrutinyFor(null);
+    if (id) void loadSupplier(id);
+  };
+  // Payments have started on this PO: every step can be looked at, nothing can be saved.
+  const viewOnly = isEdit && !!detail?.payments_started;
+  const showGstAction = stage === 2 && !!gst.notice && !viewOnly;
   // Only an overdue return can be approved past; a stale scrutiny always blocks.
   const approval = gst.notice?.tone === 'warn' ? detail?.gst_approval ?? null : null;
   const gstCleared = !gst.notice || approval?.status === 'approved';
@@ -251,7 +262,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
 
   const saveStage2 = async (): Promise<boolean> => {
     setShown(([a]) => [a, true]);
-    const v = validateLines(draft.lines, lookups.products);
+    const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments);
     const bad = Object.keys(v.rows).length;
     if (bad || v.general) {
       if (!bad) { toast.warning('No products ordered', v.general); return false; }
@@ -280,6 +291,10 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
 
   const goNext = async () => {
     if (saving || booting) return;
+    if (viewOnly) {
+      if (isLast) onClose(); else setStage(stage + 1);
+      return;
+    }
     if (isLast) {
       toast.success(isEdit ? 'Purchase order updated' : 'Purchase order generated', detail?.code ?? '');
       onClose();
@@ -314,7 +329,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
 
   const goTo = (target: number) => {
     if (target === stage) return;
-    if (target > reached) { toast.info('Save this step first', 'Use the button below to save and continue.'); return; }
+    if (target > reached && !viewOnly) { toast.info('Save this step first', 'Use the button below to save and continue.'); return; }
     setStage(target);
   };
 
@@ -327,7 +342,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     else onChangeLink();
   };
   const backLabel = stage > 0 ? 'Back' : poId ? 'Back to List' : 'Change Link';
-  const nextLabel = saving ? 'Saving…' : isLast && isEdit ? 'Update Purchase Order' : NEXT_LABEL[stage];
+  const nextLabel = viewOnly ? (isLast ? 'Close' : 'Next') : saving ? 'Saving…' : isLast && isEdit ? 'Update Purchase Order' : NEXT_LABEL[stage];
 
   const code = detail?.code ?? nextCode;
   const refs = {
@@ -341,7 +356,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     errors: shown[0] ? { ...serverErrors, ...validateStage1(draft) } : serverErrors,
     ...(() => {
       if (!shown[1]) return { lineErrors: serverLineErrors };
-      const v = validateLines(draft.lines, lookups.products);
+      const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments);
       return { lineErrors: { ...serverLineErrors, ...v.rows }, linesGeneral: v.general };
     })(),
   };
@@ -356,7 +371,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
               <div>
                 <div className="spi-dt-head-title">Purchase Order</div>
                 <div className="spi-dt-head-sub">
-                  {isEdit ? `Editing ${code || '…'}`
+                  {viewOnly ? `Viewing ${code || '…'} · view only` : isEdit ? `Editing ${code || '…'}`
                     : detail?.status === 'submitted' ? 'Submitted'
                       : shipmentId ? 'Draft · not yet issued' : 'Draft · standalone, not yet issued'}
                 </div>
@@ -421,11 +436,19 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
             <div className="cpf-loading"><span className="spinner-border spinner-border-sm" role="status" /> Loading purchase order…</div>
           ) : (
             <>
-              {stage === 0 && (
-                <Step1LinkSupplier draft={draft} set={set} ctx={ctx} supplierLoading={supplierLoading} onPickSupplier={loadSupplier} />
+              {viewOnly && (
+                <div className="cpf-viewonly-banner">
+                  <IcoLock /> <b>View only.</b> Payments have started on this PO, so it can no longer be edited — you can still look through every step.
+                </div>
               )}
-              {stage === 1 && <Step2ProductDetails draft={draft} set={set} ctx={ctx} />}
-              {stage === 2 && <Step3Terms draft={draft} set={set} ctx={ctx} />}
+              {/* A disabled fieldset turns every field and button in Steps 01–03 off at once. */}
+              <fieldset className="cpf-viewonly" disabled={viewOnly && stage < 3}>
+                {stage === 0 && (
+                  <Step1LinkSupplier draft={draft} set={set} ctx={ctx} supplierLoading={supplierLoading} onPickSupplier={loadSupplier} />
+                )}
+                {stage === 1 && <Step2ProductDetails draft={draft} set={set} ctx={ctx} />}
+                {stage === 2 && <Step3Terms draft={draft} set={set} ctx={ctx} />}
+              </fieldset>
               {stage === 3 && <Step4Documents draft={draft} ctx={ctx} poId={poId} />}
             </>
           )}
@@ -469,8 +492,15 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
           </div>
         </div>
       </div>
+      {scrutinyFor && (
+        <Suspense fallback={null}>
+          <AddVendorModal vendorId={scrutinyFor} initialStep={2} initialKycTab="gst" scope="domestic"
+            onClose={closeScrutiny} onSubmit={closeScrutiny} />
+        </Suspense>
+      )}
       {gstNotice && (
-        <GstNoticeModal notice={gstNotice} onClose={() => setGstNotice(null)} poId={poId} approval={approval} onSent={reloadApproval} />
+        <GstNoticeModal notice={gstNotice} onClose={() => setGstNotice(null)} poId={poId} approval={approval} onSent={reloadApproval}
+          onOpenScrutiny={draft.vendorId ? () => setScrutinyFor(draft.vendorId) : undefined} />
       )}
     </div>,
     document.body,

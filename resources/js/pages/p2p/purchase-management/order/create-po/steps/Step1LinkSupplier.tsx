@@ -6,18 +6,20 @@ import { EditSelect, Field, FitTip } from '../form-fields';
 import { gstCheck } from '../gst-check';
 // Only fetched when "+ Add Supplier" is clicked.
 const AddSupplierFlow = lazy(() => import('../AddSupplierFlow'));
+// The Supplier master's wizard, opened from the pencil beside Select Supplier to edit that supplier.
+const AddVendorModal = lazy(() => import('../../../../p2p-master-management/supplier-management/AddVendorModal'));
 // The Supplier master's own Evidence Vault — fetched on first open, and on
 // hover before that, so the click itself never waits for the download.
 const SupplierEvidenceVaultModal = lazy(() => import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 const warmVault = () => { void import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'); };
 import { RISK_GUIDELINES, SevIcon, isRiskMandatory, riskItems, riskLabel, vaultTargetOf, type Severity } from '../supplier-checks';
-import { DOC_TYPE_OPTIONS, PO_TYPE_OPTIONS, type PoDraft, type SetDraft } from '../po-draft';
+import { DOC_TYPE_OPTIONS, PO_TYPE_OPTIONS, type PoDraft, type SetDraft, OPEN_PO_TYPE, PAYMENT_TYPE_OPTIONS } from '../po-draft';
 import type { StepCtx } from '../CreatePoForm';
 import { MasterDatePicker } from '../../../../../../components/ui/MasterDatePicker';
 import { MasterSelect } from '../../../../../../components/ui/MasterSelect';
-import Tooltip from '../../../../../../components/ui/Tooltip';
 import { formatDmy } from '../../../../../../utils/formatDmy';
 import { useToast } from '../../../../../../contexts/ToastContext';
+import { useAuth } from '../../../../../../contexts/AuthContext';
 import type { SupplierDetail } from '../../api/po-api';
 import { IcoAlert, IcoCheck, IcoChevron, IcoClock, IcoDocSm, IcoFile, IcoLock, IcoOk, IcoPencil, IcoPin, IcoPlus, IcoShield, IcoStop, IcoUser, IcoWarn } from '../../shared/icons';
 
@@ -27,7 +29,9 @@ const DOC_TYPES = DOC_TYPE_OPTIONS.map((o) => o.label);
 // The same lists the server accepts (PurchaseOrder::TRANSPORT_MODES / INCO_TERMS).
 const TRANSPORT_MODES = ['Sea', 'Road', 'Air'];
 const INCO_TERMS = ['CIF', 'C&F', 'EXW', 'FOB'];
-const PAYMENT_TYPES = ['Advance', 'Credit', 'Cash', 'Letter of Credit (LC)', 'Bank Transfer', 'On Delivery'];
+const PAYMENT_TYPES = PAYMENT_TYPE_OPTIONS;
+// Listed so the choice is visible, but only Material / Goods can be raised today.
+const LOCKED_PO_TYPES = Object.fromEntries(PO_TYPES.filter((t) => t !== OPEN_PO_TYPE).map((t) => [t, 'Not available yet — only Material / Goods POs can be raised']));
 
 const v = (x: string | null | undefined) => x ?? '';
 
@@ -53,18 +57,40 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
   const [riskOpen, setRiskOpen] = useState(true);
   // "+ Add Supplier": the Supplier master's own Domestic / International chooser, then its wizard.
   const [addingSupplier, setAddingSupplier] = useState(false);
-  // The pencil beside the dropdown opens the same wizard on the picked supplier.
-  const [editingSupplier, setEditingSupplier] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
+  // Editing the picked supplier's own record (not which supplier the PO uses) — supplier maintainers only.
+  const { user } = useAuth();
+  const canEditSupplier = user?.user_type === 'super_admin' || user?.user_type === 'client_admin'
+    || !!user?.permissions?.['p2p.supplier']?.can_edit;
+  const [editingSupplier, setEditingSupplier] = useState(false);
+  const closeSupplierEdit = () => {
+    setEditingSupplier(false);
+    // Reload so the updated details and the GST / risk checks show at once.
+    if (draft.vendorId) void onPickSupplier(draft.vendorId);
+  };
 
   const isInternational = draft.docType === 'International';
   const sup = draft.supplier;
+  // Supplier and document type go together: a picked supplier fixes the document type, and
+  // once product lines are saved (Stage 02) the supplier itself is fixed too.
+  const supplierLocked = (ctx.detail?.items?.length ?? 0) > 0;
+  const docTypeLocked = !!draft.vendorId;
+  const clearSupplier = () => set({ vendorId: null, supplier: null, vault: null, legal: null });
+
+  // Why a locked field can't be changed, shown when it is clicked.
+  const lockedPoType = () => toast.info('PO Type not available', 'Only Material / Goods purchase orders can be raised for now.');
+  const lockedDocType = () => toast.warning('Document Type is locked', supplierLocked
+    ? 'Product lines are saved on this PO — the supplier and document type can no longer change.'
+    : 'It follows the selected supplier. Clear the supplier first to change the document type.');
+  const lockedSupplier = () => toast.warning('Supplier is locked', 'Product lines are saved on this PO — the supplier can no longer change.');
+  const lockedInspection = () => toast.info('Physical inspection is required', "This supplier's risk rating makes inspection mandatory — it cannot be turned off.");
 
   // Dropdown shows "S-004 — Company"; the option text maps back to the vendor id.
   const supplierOptions = useMemo(() => lookups.suppliers.map((s) => ({ id: s.id, label: `${s.code} — ${s.name}`, doc: s.document_type })), [lookups.suppliers]);
   const pickedOption = supplierOptions.find((o) => o.id === draft.vendorId)?.label ?? (sup ? `${sup.code} — ${sup.name}` : '');
 
   // Each option carries the supplier's origin, set when it was onboarded.
+  // Every supplier is listed; picking one sets the document type to its origin (badge).
   const supplierSelectOptions = useMemo(() => supplierOptions.map((o) => ({
     value: String(o.id), label: o.label,
     badge: o.doc === 'international' ? { text: 'International', tone: 'violet' as const } : { text: 'Domestic', tone: 'green' as const },
@@ -117,20 +143,15 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
 
   return (
     <>
+    {editingSupplier && draft.vendorId && (
+      <Suspense fallback={null}>
+        <AddVendorModal vendorId={draft.vendorId} scope={isInternational ? 'international' : 'domestic'}
+          onClose={closeSupplierEdit} onSubmit={closeSupplierEdit} />
+      </Suspense>
+    )}
     {addingSupplier && (
       <Suspense fallback={null}>
         <AddSupplierFlow onClose={() => setAddingSupplier(false)} />
-      </Suspense>
-    )}
-    {editingSupplier && draft.vendorId && (
-      <Suspense fallback={null}>
-        {/* Saving re-reads the supplier, so the read-only fields, the GST
-            banner and the risk panel all follow the edit. */}
-        <AddSupplierFlow
-          vendorId={draft.vendorId}
-          onClose={() => setEditingSupplier(false)}
-          onSaved={() => { if (draft.vendorId) void onPickSupplier(draft.vendorId); }}
-        />
       </Suspense>
     )}
     {vaultOpen && vaultTarget && (
@@ -157,10 +178,13 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
       <div className="spi-dt-sec-body">
         <div className="spi-dt-grid4">
           <Field label="PO Type" req error={err.poType}>
-            <EditSelect value={draft.poType} options={PO_TYPES} onChange={(x) => set({ poType: x })} invalid={!!err.poType} />
+            <EditSelect value={draft.poType} options={PO_TYPES} locked={LOCKED_PO_TYPES} onLockedClick={lockedPoType} onChange={(x) => set({ poType: x })} invalid={!!err.poType} />
           </Field>
           <Field label="Document Type" req error={err.docType}>
-            <EditSelect value={draft.docType} options={DOC_TYPES} onChange={(x) => set({ docType: x })} invalid={!!err.docType} />
+            <EditSelect value={draft.docType} options={DOC_TYPES} readOnly={docTypeLocked} onLockedClick={lockedDocType} onChange={(x) => set({ docType: x })} invalid={!!err.docType} />
+            {docTypeLocked && (
+              <span className="cpf-lockhint"><IcoLock /> {supplierLocked ? 'Fixed — product lines are saved' : 'Set by the supplier — clear the supplier to change it'}</span>
+            )}
           </Field>
           <Field label="Mode of Transport" req error={err.transport}>
             <EditSelect value={draft.transport} options={TRANSPORT_MODES} onChange={(x) => set({ transport: x })} invalid={!!err.transport} />
@@ -184,7 +208,7 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
           <Field label="Physical Inspection Required">
             {/* A high-risk supplier forces this on — locked, with the reason shown. */}
             {mandatory ? (
-              <div className="spi-dt-toggle is-readonly cpf-toggle-req" aria-disabled="true">
+              <div className="spi-dt-toggle is-readonly cpf-toggle-req" aria-disabled="true" onClick={lockedInspection} style={{ cursor: 'not-allowed' }}>
                 <span className="spi-dt-toggle-sw on"><span className="spi-dt-toggle-knob" /></span>
                 <span className="spi-dt-toggle-txt">Yes</span>
                 <span className="cpf-req">Required</span>
@@ -256,25 +280,32 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
           {supCardOpen && (
           <div className="spi-dt-grid4 cpf-grid5">
             <Field label="SELECT SUPPLIER" req error={err.supplier}>
-              {/* The pencil shares the row with the dropdown, flush to its right. */}
-              <div className="cpf-ddrow">
+              <div className="cpf-supsel">
+              {supplierLocked ? (
+                <EditSelect readOnly value={pickedOption} options={[]} onChange={() => {}} onLockedClick={lockedSupplier} />
+              ) : (
                 <MasterSelect
                   invalid={!!err.supplier}
                   value={draft.vendorId ? String(draft.vendorId) : ''}
                   currentValueLabel={pickedOption}
                   options={supplierSelectOptions}
-                  onChange={(id) => { const o = supplierOptions.find((x) => String(x.id) === id); if (o) void pickSupplier(o.label); }}
+                  allowDeselect
+                  onChange={(id) => {
+                    if (!id) { clearSupplier(); return; }
+                    const o = supplierOptions.find((x) => String(x.id) === id);
+                    if (o) void pickSupplier(o.label);
+                  }}
                   placeholder={lookups.loading && !supplierOptions.length ? 'Loading suppliers…' : '— Select Supplier —'}
                 />
-                {draft.vendorId && (
-                  <Tooltip label="Edit this supplier's details" themed>
-                    <button type="button" className="cpf-editbtn" aria-label="Edit selected supplier"
-                      onClick={() => setEditingSupplier(true)}>
-                      <IcoPencil />
-                    </button>
-                  </Tooltip>
+              )}
+                {draft.vendorId && canEditSupplier && (
+                  <button type="button" className="cpf-supedit" title="Edit this supplier in the Supplier master"
+                    aria-label="Edit supplier" onClick={() => setEditingSupplier(true)}>
+                    <IcoPencil />
+                  </button>
                 )}
               </div>
+              {supplierLocked && <span className="cpf-lockhint"><IcoLock /> Fixed — product lines are saved on this PO</span>}
             </Field>
             {/* Everything below comes from the supplier master and is read-only here. */}
             <Field label="COMPANY LEGAL NAME">

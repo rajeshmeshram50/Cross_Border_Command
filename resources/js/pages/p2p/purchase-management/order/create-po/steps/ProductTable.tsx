@@ -2,12 +2,12 @@
 // Only three cells are editable (PO product, Qty PO, Rate); everything else is
 // carried from the PI or calculated, which is what the legend line says.
 // Tax is worked out exactly as the server does on save, so the totals match.
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { EditSelect, FitInput, FitText } from '../form-fields';
 import type { PoLineRow } from '../po-draft';
 import type { ProductOpt } from '../use-po-lookups';
 import type { TaxMode } from '../../api/po-api';
-import type { LineErrors } from '../validation';
+import { segmentMismatch, type LineErrors } from '../validation';
 import { IcoPencil, IcoPlus, IcoTrash } from '../../shared/icons';
 import { useToast } from '../../../../../../contexts/ToastContext';
 // The Product Management detail view, opened by "Read more" on a description.
@@ -105,12 +105,23 @@ type Props = {
   errors?: LineErrors;
   /** A PO without a shipment has no PI: its PI columns are left out. */
   standalone?: boolean;
+  /** The supplier's segments; products outside them are shown locked. Null = not loaded (no lock). */
+  supplierSegments?: string[] | null;
   /** The summary on later steps shows the same table with plain values. */
   readOnly?: boolean;
 };
 
-export default function ProductTable({ rows, products, taxMode, onChange, onRemove, onProductsChanged, errors = {}, standalone = false, readOnly }: Props) {
+export default function ProductTable({ rows, products, taxMode, onChange, onRemove, onProductsChanged, errors = {}, standalone = false, supplierSegments = null, readOnly }: Props) {
   const options = useMemo(() => products.map(productLabel), [products]);
+  // Products whose segment this supplier doesn't deal in: listed, but locked with the reason.
+  const lockedProducts = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const p of products) {
+      const why = segmentMismatch(p, supplierSegments);
+      if (why) out[productLabel(p)] = why;
+    }
+    return out;
+  }, [products, supplierSegments]);
   // The product whose detail view is open, from "Read more" on its description.
   const [detailId, setDetailId] = useState<number | null>(null);
   /* The product master's own Add / Edit wizard, opened from the two buttons in
@@ -128,7 +139,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
   const lines = shown.map((r) => computeLine(r, products, taxMode));
   const totals = lines.reduce(
     (sum, l, i) => ({
-      piQty: sum.piQty + (shown[i].pi?.pi_quantity ?? 0), poQty: sum.poQty + shown[i].qtyPo, miss: sum.miss + l.missing,
+      piQty: sum.piQty + (shown[i].pi?.pending_qty ?? 0), poQty: sum.poQty + shown[i].qtyPo, miss: sum.miss + l.missing,
       cgst: sum.cgst + l.cgstAmt, sgst: sum.sgst + l.sgstAmt, igst: sum.igst + l.igstAmt,
       base: sum.base + l.base, gst: sum.gst + l.gstAmt, withGst: sum.withGst + l.withGst,
     }),
@@ -210,7 +221,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                     <div className="cpd-prod">
                       {row.pi ? (
                         <>
-                          <div className="cpd-prod__nm">{row.pi.product_name}</div>
+                          <div className="cpd-prod__nm cpd-prod__nm--clamp" title={row.pi.product_name ?? undefined}>{row.pi.product_name}</div>
                           <div className="cpd-prod__meta">
                             {row.pi.product_code && <span className="cpd-code">{row.pi.product_code}</span>}
                             <span className="cpd-kv">HSN <b>{row.pi.hsn_code || '—'}</b></span>
@@ -232,6 +243,8 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                       <EditSelect
                         value={po ? productLabel(po) : poName}
                         options={options}
+                        locked={lockedProducts}
+                        onLockedClick={(label) => label && toast.warning('Segment mismatch', lockedProducts[label] ?? 'This product is not in a segment this supplier deals in.')}
                         placeholder="— Select product —"
                         onChange={(label) => {
                           const picked = products.find((p) => productLabel(p) === label);
@@ -262,15 +275,16 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                   </div>
                 </td>
 
-                <td className="cpd-td-left">
+                <td className="cpd-td-left cpd-td-desc">
                   {desc
                     ? <Description text={desc} onOpen={row.productId ? () => setDetailId(row.productId) : undefined} />
                     : <span className="cpd-dash">—</span>}
                 </td>
 
+                {/* What is still open on the PI after earlier POs, so Qty (PI) − Qty (PO) = Missing Qty. */}
                 {withPi && (
-                  <td title={row.pi && row.pi.ordered_qty > 0 ? `${plain(row.pi.ordered_qty)} already on other POs · ${plain(row.pi.pending_qty)} pending` : undefined}>
-                    {row.pi ? plain(row.pi.pi_quantity) : '—'}
+                  <td title={row.pi ? `PI quantity ${plain(row.pi.pi_quantity)}${row.pi.ordered_qty > 0 ? ` · ${plain(row.pi.ordered_qty)} already on other POs` : ''} · ${plain(row.pi.pending_qty)} pending` : undefined}>
+                    {row.pi ? plain(row.pi.pending_qty) : '—'}
                   </td>
                 )}
                 <td className={readOnly ? undefined : `cpd-ed${rowErr.qty ? ' cpd-cell-err' : ''}`}>
@@ -339,13 +353,25 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
 /** Long trade descriptions are clipped to three lines; "Read more" opens the
     product's own detail view rather than unfolding the cell. */
 function Description({ text, onOpen }: { text: string; onOpen?: () => void }) {
+  // Clamped only when the text really runs past 3 lines; then "Read more" ends the 3rd line.
+  const ref = useRef<HTMLSpanElement>(null);
+  const [clamped, setClamped] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const check = () => setClamped(el.scrollHeight > el.clientHeight + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [text]);
   return (
     <div className="cpd-desc">
-      <span className="cpd-desc__wrap">
+      <span ref={ref} className={`cpd-desc__wrap${clamped ? ' is-clamped' : ''}`}>
         {text}
         {onOpen && (
           <button type="button" className="cpd-more" onClick={onOpen} onPointerEnter={warmProductView} title="Open the product details">
-            … Read more
+            {clamped ? '… Read more' : 'Read more'}
           </button>
         )}
       </span>

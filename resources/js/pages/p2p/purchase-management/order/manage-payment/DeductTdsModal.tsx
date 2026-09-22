@@ -33,6 +33,10 @@ export type DeductTdsProps = {
   total: number;
   room: number;
   saved: number;
+  /** Never saved on this PO yet — saving 0 is then a real choice ("no TDS"). */
+  firstSave?: boolean;
+  /** A payment is recorded: the TDS is fixed and shown read-only. */
+  readOnly?: boolean;
   onSave: (amount: number) => void;
   onClose: () => void;
 };
@@ -47,7 +51,7 @@ function Readonly({ label, value }: { label: string; value: number }) {
 }
 
 export default function DeductTdsModal({
-  po, base, gst, extra, total, room, saved, onSave, onClose,
+  po, base, gst, extra, total, room, saved, firstSave = false, readOnly = false, onSave, onClose,
 }: DeductTdsProps) {
   useScrollLock(true, '.mtds-card');
 
@@ -69,7 +73,9 @@ export default function DeductTdsModal({
   const net = Math.max(0, total - amount);
   const pctOfBase = base > 0 ? round2((amount / base) * 100) : 0;
 
+  // TDS % is 0–100 with up to 2 decimals; anything else is refused as it is typed.
   const fromPct = (v: string) => {
+    if (v !== '' && (!/^\d{0,3}(\.\d{0,2})?$/.test(v) || parseFloat(v) > 100)) return;
     setPctText(v);
     const p = parseFloat(v);
     const a = Number.isNaN(p) || p < 0 ? 0 : Math.round((base * p) / 100);
@@ -78,6 +84,7 @@ export default function DeductTdsModal({
   };
 
   const fromAmt = (v: string) => {
+    if (v !== '' && !/^\d{0,13}(\.\d{0,2})?$/.test(v)) return;
     setAmtText(v);
     const a = parseFloat(v);
     const clean = Number.isNaN(a) || a < 0 ? 0 : Math.round(a);
@@ -94,7 +101,9 @@ export default function DeductTdsModal({
           <div className="mtds-hd__ttl" id="mtds-title">
             Deduct TDS Value from the total PO value
             <span className="mtds-hd__sub">
-              {po} · figures derived from the PO · enter the deduction to compute the net payable
+              {readOnly
+                ? `${po} · view only — the TDS is fixed once the first payment is recorded`
+                : `${po} · figures derived from the PO · enter the deduction to compute the net payable`}
             </span>
           </div>
           <button type="button" className="mtds-hd__x" onClick={onClose} aria-label="Close">{ICON_X}</button>
@@ -119,6 +128,8 @@ export default function DeductTdsModal({
                   inputMode="decimal"
                   placeholder="0"
                   value={pctText}
+                  readOnly={readOnly}
+                  disabled={readOnly}
                   onChange={(e) => fromPct(e.target.value)}
                 />
                 <span className="mtds-suffix">%</span>
@@ -138,6 +149,8 @@ export default function DeductTdsModal({
                   inputMode="decimal"
                   placeholder="0"
                   value={amtText}
+                  readOnly={readOnly}
+                  disabled={readOnly}
                   onChange={(e) => fromAmt(e.target.value)}
                 />
               </div>
@@ -146,7 +159,12 @@ export default function DeductTdsModal({
 
           <div className="mtds-foot">
             <span className="mtds-note">
-              {amount > 0 ? (
+              {readOnly ? (
+                <>
+                  <b>{money(saved)}</b> withheld ({pctOfBase}% of the {money(base)} base) · supplier receives <b>{money(net)}</b> ·
+                  locked because a payment is already recorded on this PO
+                </>
+              ) : amount > 0 ? (
                 <>
                   <b>{pctOfBase}%</b> of the {money(base)} base = <b>{money(amount)}</b> withheld ·
                   supplier receives <b>{money(net)}</b>
@@ -163,20 +181,22 @@ export default function DeductTdsModal({
         </div>
 
         <div className="mtds-ft">
-          {saved > 0 && (
+          {!readOnly && saved > 0 && (
             <button type="button" className="spi-mdl-cancel mtds-remove" onClick={() => onSave(0)}>
               Remove Deduction
             </button>
           )}
-          <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
-          <button
-            type="button"
-            className="spi-mdl-confirm"
-            disabled={amount === saved}
-            onClick={() => onSave(amount)}
-          >
-            Save TDS Deduction
-          </button>
+          <button type="button" className="spi-mdl-cancel" onClick={onClose}>{readOnly ? 'Close' : 'Cancel'}</button>
+          {!readOnly && (
+            <button
+              type="button"
+              className="spi-mdl-confirm"
+              disabled={amount === saved && !firstSave}
+              onClick={() => onSave(amount)}
+            >
+              {firstSave && amount === 0 ? 'Save With No TDS' : 'Save TDS Deduction'}
+            </button>
+          )}
         </div>
 
       </div>

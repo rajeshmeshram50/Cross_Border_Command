@@ -1,6 +1,9 @@
 // P2P → Payment Request Management: every payment request raised on a PO or an SPI.
-// Static data for now (see paymentRequestData.ts); the layout reuses the shared P2P styles.
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react';
+// Rows, tab counts and paging come from GET /p2p/orders/payment-requests; the layout reuses the shared P2P styles.
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useDebouncedValue } from '../../../../hooks/useDebouncedValue';
+import { useToast } from '../../../../contexts/ToastContext';
+import { PoApiError, type PayRequestListMeta } from '../../purchase-management/order/api/po-api';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import Badge, { type BadgeVariant } from '../../../../components/ui/Badge';
 import { IcoAlert, IcoArrowR, IcoCard, IcoStar, IcoChat, IcoCheck, IcoChevron, IcoCircleX, IcoClock, IcoEye, IcoFile, IcoList, IcoScales, IcoSearch, IcoSend } from '../../icons';
@@ -99,11 +102,12 @@ const fmtDate = (iso: string) => {
 };
 const fmtMoney = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 
-function IdCell({ doc }: { doc: DocRef }) {
+function IdCell({ doc }: { doc: DocRef | null }) {
+  if (!doc) return <span className="prm-dash">—</span>;
   return (
     <div className="ord-idcell">
       <span className="ord-idpill">{doc.id}</span>
-      <span className="ord-idcell__date">{fmtDate(doc.date)}</span>
+      {doc.date && <span className="ord-idcell__date">{fmtDate(doc.date)}</span>}
     </div>
   );
 }
@@ -138,7 +142,9 @@ function RaisedAgainst({ row }: { row: PaymentRequestRow }) {
 }
 
 export default function PaymentRequestManagement() {
+  const toast = useToast();
   const [rows, setRows] = useState<PaymentRequestRow[]>([]);
+  const [meta, setMeta] = useState<PayRequestListMeta | null>(null);
   const [loading, setLoading] = useState(true);
   const [guideOpen, setGuideOpen] = useState(true);
   const [tab, setTab] = useState<TabKey>('all');
@@ -146,40 +152,31 @@ export default function PaymentRequestManagement() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const [reasonRow, setReasonRow] = useState<PaymentRequestRow | null>(null);
-  const [viewId, setViewId] = useState<string | null>(null);
+  const [viewId, setViewId] = useState<number | null>(null);
   const closeView = useCallback(() => setViewId(null), []);
 
+  // Tabs, search and paging run on the server; a newer request wins over a slower older one.
+  const debouncedSearch = useDebouncedValue(search.trim(), 400);
   const [reload, setReload] = useState(0);
+  const latest = useRef(0);
   useEffect(() => {
-    let live = true;
-    void fetchPaymentRequests().then(list => { if (live) { setRows(list); setLoading(false); } });
-    return () => { live = false; };
-  }, [reload]);
+    const ticket = ++latest.current;
+    setLoading(true);
+    fetchPaymentRequests({ tab, search: debouncedSearch, page, per_page: pageSize })
+      .then(({ rows: list, meta: m }) => { if (ticket === latest.current) { setRows(list); setMeta(m); } })
+      .catch(e => { if (ticket === latest.current) toast.error('Could not load payment requests', e instanceof PoApiError ? e.firstError : 'Please refresh the page.'); })
+      .finally(() => { if (ticket === latest.current) setLoading(false); });
+  }, [tab, debouncedSearch, page, pageSize, reload, toast]);
   const refresh = useCallback(() => setReload(n => n + 1), []);
 
-  const counts = useMemo(() => ({
-    all: rows.length,
-    awaiting: rows.filter(r => r.status === 'awaiting').length,
-    approved: rows.filter(r => r.status === 'approved').length,
-    declined: rows.filter(r => r.status === 'declined').length,
-  }), [rows]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return rows.filter(r => {
-      if (tab !== 'all' && r.status !== tab) return false;
-      if (!q) return true;
-      return [r.requestId, r.po?.id, r.spi?.id, r.shipment?.id, r.opportunity.id, r.procurement.id,
-        r.supplier, r.paymentType, STATUS_LABEL[r.status]]
-        .some(v => (v ?? '').toLowerCase().includes(q));
-    });
-  }, [rows, tab, search]);
+  const counts = meta?.counts ?? { all: 0, awaiting: 0, approved: 0, declined: 0 };
+  const total = meta?.total ?? 0;
 
   // Page 1 whenever the result set changes underneath the pager.
-  useEffect(() => { setPage(1); }, [tab, search, pageSize]);
+  useEffect(() => { setPage(1); }, [tab, debouncedSearch, pageSize]);
 
   const start = (page - 1) * pageSize;
-  const pageRows = filtered.slice(start, start + pageSize);
+  const pageRows = rows;
 
   const toggleGuide = () => setGuideOpen(v => !v);
   const onGuideKey = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -270,14 +267,14 @@ export default function PaymentRequestManagement() {
           </div>
         </div>
 
-        {loading ? (
+        {loading && !rows.length ? (
           <div className="ord-empty">Loading payment requests…</div>
         ) : pageRows.length === 0 ? (
           <div className="ord-empty">
             {search.trim() ? 'No payment requests match your search.' : 'No payment requests in this category.'}
           </div>
         ) : (
-          <div className="ord-table-scroll">
+          <div className={`ord-table-scroll${loading ? ' is-refreshing' : ''}`}>
             {/* Columns keep their widths, but the table still fills a wide screen. */}
             <table className="ord-table" style={{ minWidth: TABLE_WIDTH, width: '100%' }}>
               <colgroup>
@@ -293,7 +290,7 @@ export default function PaymentRequestManagement() {
               <tbody>
                 {pageRows.map((row, i) => (
                   <tr
-                    key={row.requestId}
+                    key={row.id}
                     className={`is-first is-last prm-row${row.flag === 'physical-inspection' ? ' is-physreq' : ''}${row.status === 'declined' ? ' is-closed' : ''}`}
                   >
                     <td><span className="ord-srnum">{start + i + 1}</span></td>
@@ -346,7 +343,7 @@ export default function PaymentRequestManagement() {
 
                     <td>
                       <div className="prm-acts">
-                        <button type="button" className={`ord-btn prm-viewbtn${row.status === 'declined' ? ' is-muted' : ''}`} title={`View ${row.requestId}`} onClick={() => setViewId(row.requestId)}>
+                        <button type="button" className={`ord-btn prm-viewbtn${row.status === 'declined' ? ' is-muted' : ''}`} title={`View ${row.requestId}`} onClick={() => setViewId(row.id)}>
                           <span className="prm-viewbtn__ico"><IcoEye size={9} /></span>
                           <span>View Request</span>
                         </button>
@@ -364,10 +361,10 @@ export default function PaymentRequestManagement() {
           </div>
         )}
 
-        {filtered.length > 0 && (
+        {total > 0 && (
           <WorklistPager
             className="wl-teal"
-            total={filtered.length}
+            total={total}
             page={page}
             pageSize={pageSize}
             onPage={setPage}

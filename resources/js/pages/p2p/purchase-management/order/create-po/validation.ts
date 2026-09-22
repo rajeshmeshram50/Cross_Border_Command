@@ -1,6 +1,7 @@
 // Inline validation for the Create PO form. The same rules the server enforces
 // (CS-403), checked in the browser first so every problem shows on its field.
 import type { PoDraft, PoLineRow } from './po-draft';
+import { OPEN_PO_TYPE, PAYMENT_TYPE_OPTIONS } from './po-draft';
 import type { ProductOpt } from './use-po-lookups';
 import { gstOf } from './steps/ProductTable';
 
@@ -23,6 +24,8 @@ export function validateStage1(d: PoDraft): FieldErrors {
   need('deliveryDate', 'Expected Delivery Date');
   need('deliveryLocation', 'Delivery Location');
   need('paymentType', 'Payment Type');
+  if (!e.poType && d.poType !== OPEN_PO_TYPE) e.poType = 'Only Material / Goods purchase orders can be raised for now.';
+  if (!e.paymentType && !PAYMENT_TYPE_OPTIONS.includes(d.paymentType)) e.paymentType = 'Select Advanced Payment, Full Payment or Letter of Credit.';
   if (!e.deliveryDate && d.deliveryDate < todayIso()) e.deliveryDate = 'Expected delivery date cannot be earlier than today.';
 
   if (!d.vendorId) e.supplier = 'Select the supplier this PO is issued to.';
@@ -45,7 +48,16 @@ export function validateStage1(d: PoDraft): FieldErrors {
 }
 
 /** Per-row checks for Step 02, plus a message when nothing is ordered at all. */
-export function validateLines(lines: PoLineRow[], products: ProductOpt[]): { rows: LineErrors; general?: string } {
+/** Why a product can't go on this PO's supplier, or null when its segment is mapped. */
+export function segmentMismatch(product: ProductOpt | undefined, supplierSegments: string[] | null | undefined): string | null {
+  if (!product || !supplierSegments) return null;       // supplier not loaded yet — the server still checks
+  const seg = product.segment.trim();
+  if (!seg) return 'Segment mismatch — this product has no segment set in the product master.';
+  if (supplierSegments.some((x) => x.trim().toLowerCase() === seg.toLowerCase())) return null;
+  return `Segment mismatch — ${seg} is not mapped to this supplier. Add ${seg} to the supplier's segments.`;
+}
+
+export function validateLines(lines: PoLineRow[], products: ProductOpt[], supplierSegments?: string[] | null): { rows: LineErrors; general?: string } {
   const rows: LineErrors = {};
   const set = (key: string, cell: 'product' | 'qty' | 'rate', msg: string) => { rows[key] = { ...rows[key], [cell]: msg }; };
 
@@ -56,6 +68,8 @@ export function validateLines(lines: PoLineRow[], products: ProductOpt[]): { row
     // A PI line left at 0 is simply not ordered; any ordered line needs a price and GST.
     if (l.qtyPo > 0 && l.rate <= 0) set(l.key, 'rate', 'Enter a rate.');
     if (l.qtyPo > 0 && l.productId && gstOf(l, products) === null) set(l.key, 'product', 'No GST % on the product master — set it there first.');
+    const seg = l.qtyPo > 0 ? segmentMismatch(products.find((p) => p.id === l.productId), supplierSegments) : null;
+    if (seg) set(l.key, 'product', seg);
   }
   const ordered = lines.some((l) => l.qtyPo > 0);
   return { rows, general: ordered ? undefined : 'Enter a quantity on at least one line.' };

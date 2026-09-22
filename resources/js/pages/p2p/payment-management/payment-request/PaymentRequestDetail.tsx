@@ -38,6 +38,8 @@ import api from '../../../../api';
 import type { SupplierVaultTarget } from '../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 // The supplier's own vault (KYC, DD, licences) — loaded only when opened.
 const SupplierEvidenceVaultModal = lazy(() => import('../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
+// Supplier master wizard, opened on its GST Scrutiny tab (supplier-maintenance permission only).
+const AddVendorModal = lazy(() => import('../../p2p-master-management/supplier-management/AddVendorModal'));
 import PaymentRequestDecisionModal, { type DecisionMode } from './PaymentRequestDecisionModal';
 import type { PaymentRequestRow } from './paymentRequestData';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
@@ -89,7 +91,7 @@ const NO_APPROVE_TIP = 'You need Approve permission on Payment Request Managemen
 const POPUP_LAYERS = '.spi-mdl-backdrop, .cgst-backdrop, .prd-detail-overlay, .prd-vault, .cev-overlay';
 
 export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
-  requestId: string;
+  requestId: number;
   onBack: () => void;
   /** A request was approved or declined here — the list behind should reload. */
   onChanged?: () => void;
@@ -217,8 +219,8 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
                 {chip(i9(IcoFile), `${D} Number`, doc.id, longDate(doc.date))}
                 {chip(i9(IcoBuilding), 'Supplier', supplier?.code ?? '—', row.supplier)}
                 {chip(i9(IcoShip), 'Shipment ID', row.shipment?.id ?? '—', longDate(row.shipment?.date))}
-                {chip(i9(IcoTarget), 'Opportunity ID', row.opportunity.id, longDate(row.opportunity.date))}
-                {chip(i9(IcoCart), 'Procurement ID', row.procurement.id, longDate(row.procurement.date))}
+                {chip(i9(IcoTarget), 'Opportunity ID', row.opportunity?.id ?? '—', row.opportunity?.date ? longDate(row.opportunity.date) : '')}
+                {chip(i9(IcoCart), 'Procurement ID', row.procurement?.id ?? '—', row.procurement?.date ? longDate(row.procurement.date) : '')}
               </div>
               <div className="prd-hactions">
                 <button
@@ -312,7 +314,7 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
           {tx === 'history' ? (
             <HistoryPanel detail={detail} onSoon={soon} />
           ) : sub === 'supplier' ? (
-            <SupplierPanel supplier={supplier} />
+            <SupplierPanel supplier={supplier} vendorId={detail.row.vendorId} onSupplierChanged={() => setVersion(v => v + 1)} />
           ) : sub === 'linked' ? (
             <LinkedPanel detail={detail} canApprove={canApprove} onDecide={openDecision} />
           ) : sub === 'summary' ? (
@@ -384,7 +386,16 @@ function RO({ label, value, full }: { label: string; value: string; full?: boole
   );
 }
 
-function SupplierPanel({ supplier: s }: { supplier: Supplier | undefined }) {
+function SupplierPanel({ supplier: s, vendorId, onSupplierChanged }: {
+  supplier: Supplier | undefined; vendorId: number | null;
+  /** Re-load the request after the supplier's GST scrutiny is updated, so the check re-runs. */
+  onSupplierChanged: () => void;
+}) {
+  const { user } = useAuth();
+  // Only supplier maintainers get the shortcut into the supplier's GST Scrutiny.
+  const canEditSupplier = user?.user_type === 'super_admin' || user?.user_type === 'client_admin'
+    || !!user?.permissions?.['p2p.supplier']?.can_edit;
+  const [scrutinyOpen, setScrutinyOpen] = useState(false);
   const [open, setOpen] = useState<Record<BoxKey, boolean>>({ basic: true, address: true, legal: true, gst: true, risk: true });
   const [notice, setNotice] = useState<GstNotice | null>(null);
   const [vault, setVault] = useState<SupplierVaultTarget | null>(null);
@@ -437,7 +448,17 @@ function SupplierPanel({ supplier: s }: { supplier: Supplier | undefined }) {
 
   return (
     <div className="prd-secwrap cpf-form prd-sup">
-      {notice && <GstNoticeModal notice={notice} onClose={() => setNotice(null)} />}
+      {notice && (
+        <GstNoticeModal notice={notice} onClose={() => setNotice(null)}
+          onOpenScrutiny={canEditSupplier && vendorId ? () => setScrutinyOpen(true) : undefined} />
+      )}
+      {scrutinyOpen && vendorId && (
+        <Suspense fallback={null}>
+          <AddVendorModal vendorId={vendorId} initialStep={2} initialKycTab="gst" scope="domestic"
+            onClose={() => { setScrutinyOpen(false); onSupplierChanged(); }}
+            onSubmit={() => { setScrutinyOpen(false); onSupplierChanged(); }} />
+        </Suspense>
+      )}
       {vault && (
         <Suspense fallback={null}>
           <SupplierEvidenceVaultModal open supplier={vault} viewOnly onClose={() => setVault(null)} />

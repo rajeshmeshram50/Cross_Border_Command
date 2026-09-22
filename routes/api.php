@@ -317,6 +317,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::post  ('/clm/trade-doc-library/preview-live',      [ClmTradeDocumentController::class, 'previewLive']);
     Route::get   ('/clm/trade-doc-library/for-party/{party}', [ClmTradeDocumentController::class, 'libraryForParty']);
     
+    Route::get   ('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryShow'])->whereNumber('id');
     Route::get   ('/clm/trade-doc-library/{id}/download',     [ClmTradeDocumentController::class, 'downloadDocx'])->whereNumber('id');
     Route::get   ('/clm/trade-doc-library/{id}/download-pdf', [ClmTradeDocumentController::class, 'downloadPdf'])->whereNumber('id');
     Route::post  ('/clm/trade-doc-library/{id}/upload-docx',  [ClmTradeDocumentController::class, 'uploadDocx'])->whereNumber('id');
@@ -431,6 +432,21 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::put   ('/{id}/items',                     [$po, 'updateItems'])->whereNumber('id');  // Stage 02
         Route::put   ('/{id}/terms',                     [$po, 'updateTerms'])->whereNumber('id');  // Stage 03 (+ submit)
         Route::get   ('/{id}/qty-history',               [$po, 'qtyHistory'])->whereNumber('id');
+        // Payments: TDS, payment requests and payments against them (Manage Payment Requests),
+        // plus the all-PO list and decisions (Payment Request Management).
+        $pay = \App\Http\Controllers\Api\P2p\PoPaymentRequestController::class;
+        Route::get   ('/payment-requests',                              [$pay, 'index']);
+        Route::get   ('/payment-requests/{req}',                        [$pay, 'show'])->whereNumber('req');
+        Route::put   ('/payment-requests/{req}/decision',               [$pay, 'decide'])->whereNumber('req');
+        Route::get   ('/{po}/payment-requests',                         [$pay, 'forPo'])->whereNumber('po');
+        Route::post  ('/{po}/payment-requests',                         [$pay, 'store'])->whereNumber('po');
+        Route::put   ('/{po}/tds',                                      [$pay, 'saveTds'])->whereNumber('po');
+        Route::get   ('/{po}/payment-requests/{req}/payments',          [$pay, 'payments'])->whereNumber('po')->whereNumber('req');
+        Route::post  ('/{po}/payment-requests/{req}/payments',          [$pay, 'storePayment'])->whereNumber('po')->whereNumber('req');
+        // POST, not PUT: the edit may carry a new proof file (multipart).
+        Route::post  ('/{po}/payment-requests/{req}/payments/{payment}', [$pay, 'updatePayment'])->whereNumber('po')->whereNumber('req')->whereNumber('payment');
+        Route::delete('/{po}/payment-requests/{req}/payments/{payment}', [$pay, 'destroyPayment'])->whereNumber('po')->whereNumber('req')->whereNumber('payment');
+
         // Senior approval when the supplier's GST return is overdue (raised here, decided from the Inbox)
         $gap = \App\Http\Controllers\Api\P2p\PoGstApprovalController::class;
         Route::post  ('/{id}/gst-approval/request',      [$gap, 'store'])->whereNumber('id');

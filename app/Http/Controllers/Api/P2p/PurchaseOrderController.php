@@ -100,6 +100,8 @@ class PurchaseOrderController extends Controller
         'id', 'code', 'po_date', 'status', 'current_step', 'po_type', 'document_type', 'vendor_id', 'link_type',
         'shipment_order_id', 'proforma_invoice_id', 'procurement_request_id', 'procurement_request_code',
         'expected_delivery_date', 'grand_total', 'physical_inspection', 'inspection_status', 'cancel_reason', 'created_at',
+        'taxable_total', 'total_cgst', 'total_sgst', 'total_igst', 'shipping_charges', 'packaging_charges', 'other_charges',
+        'tds_amount', 'paid_amount', 'balance_amount',
     ];
 
     /**
@@ -138,6 +140,11 @@ class PurchaseOrderController extends Controller
         $page = $base->whereRaw(self::TABS[$tab])
             ->select(self::LIST_COLUMNS)
             ->with(['vendor:id,vendor_code,company_name,legal_name,risk_level_id,supplier_category', 'vendor.riskLevel:id,name'])
+            // Request count and the two notes under the payment bar, as subqueries — not one query per row.
+            ->withCount('paymentRequests')
+            ->withSum(['paymentRequests as pending_request_amount' => fn ($q) => $q->where('status', 'pending')], 'requested_amount')
+            ->selectSub(fn ($q) => $q->from('p2p_po_payment_requests as prr')->whereColumn('prr.purchase_order_id', 'p2p_purchase_orders.id')
+                ->where('prr.status', 'approved')->selectRaw('COALESCE(SUM(prr.approved_amount - prr.paid_amount), 0)'), 'ready_to_pay_amount')
             ->orderByDesc('id')
             ->paginate($request->integer('per_page') ?: 10);
         $refs = $this->linkRefs(collect($page->items()));
@@ -174,12 +181,12 @@ class PurchaseOrderController extends Controller
     {
         $intl = 'required_if:document_type,international|nullable';
         return [
-            'po_type'                => ['required', Rule::in(PurchaseOrder::PO_TYPES)],
+            'po_type'                => ['required', Rule::in(PurchaseOrder::OPEN_PO_TYPES)],
             'document_type'          => ['required', Rule::in(PurchaseOrder::DOC_TYPES)],
             'mode_of_transport'      => ['required', Rule::in(PurchaseOrder::TRANSPORT_MODES)],
             'expected_delivery_date' => 'required|date|after_or_equal:today',
             'delivery_location'      => 'required|string|max:255',
-            'payment_type'           => 'required|string|max:60',
+            'payment_type'           => ['required', Rule::in(PurchaseOrder::PAYMENT_TYPES)],
             'physical_inspection'    => ['required', Rule::in(PurchaseOrder::YES_NO)],
             'currency_code'          => "{$intl}|string|max:8",
             'exchange_rate'          => "{$intl}|numeric|gt:0",
@@ -201,6 +208,8 @@ class PurchaseOrderController extends Controller
     {
         return [
             'required_if'                           => 'This field is required on an international PO.',
+            'po_type.in'                            => 'Only Material / Goods purchase orders can be raised for now.',
+            'payment_type.in'                       => 'Select Advanced Payment, Full Payment or Letter of Credit.',
             'expected_delivery_date.after_or_equal' => 'Expected delivery date cannot be earlier than today.',
             'port_of_loading.max'                   => 'Port of loading may not exceed 255 characters.',
             'port_of_discharge.max'                 => 'Port of discharge may not exceed 255 characters.',
@@ -239,11 +248,16 @@ class PurchaseOrderController extends Controller
     {
         $user = $this->tenantUser($request);
         $po = $this->findPo($id);
-        if ($po->isLocked()) return $this->fail('This PO is cancelled or has a signed document and can no longer be edited.');
+        if ($blocked = $this->editBlock($po)) return $blocked;
 
         $data = $request->validate($this->stage1Rules(), $this->stage1Messages());
         if (($data['shipment_order_id'] ?? null) != $po->shipment_order_id && $po->items()->exists()) {
             return $this->fail('Remove the product lines before changing the shipment — they are matched to its PI.');
+        }
+        // Once product lines are saved, the supplier (and its document type) is fixed: lines are taxed on it.
+        if ($po->items()->exists() && ((int) $data['vendor_id'] !== (int) $po->vendor_id || $data['document_type'] !== $po->document_type)) {
+            return $this->fail('Product lines are already saved on this PO — the supplier and document type can no longer change.', 422,
+                ['errors' => ['vendor_id' => ['The supplier is fixed once product lines are saved.']]]);
         }
         $resolved = $this->resolveStage1($data, $user);
         if ($resolved instanceof JsonResponse) return $resolved;
@@ -282,6 +296,13 @@ class PurchaseOrderController extends Controller
         if (!$vendor) return $this->fail('Supplier not found', 422, ['errors' => ['vendor_id' => ['Supplier not found.']]]);
         if (str_contains(strtolower((string) $vendor->supplier_category), 'blacklist')) {
             return $this->fail('Blacklisted supplier', 422, ['errors' => ['vendor_id' => ['This supplier is blacklisted — a purchase order cannot be raised on it.']]]);
+        }
+        // Document type follows the supplier's origin: India → domestic, any other country → international.
+        $origin = $this->vendorOrigin($vendor);
+        if ($data['document_type'] !== $origin) {
+            return $this->fail('Document type does not match the supplier', 422, ['errors' => ['document_type' => [
+                "This is " . ($origin === 'international' ? 'an international' : 'a domestic') . " supplier — the document type must be " . ($origin === 'international' ? 'International.' : 'Domestic.'),
+            ]]]);
         }
 
         $home = $this->svc->homeStateCode($user->branch_id);
@@ -347,7 +368,9 @@ class PurchaseOrderController extends Controller
     {
         $user = $this->tenantUser($request);
         $po = $this->findPo($id);
-        if ($po->isLocked()) return $this->fail('This PO is cancelled or has a signed document and can no longer be edited.');
+        if ($blocked = $this->editBlock($po)) return $blocked;
+        // The stored balance and TDS rest on this value once money has been paid against it.
+        if ((float) $po->paid_amount > 0) return $this->fail('Payments are already recorded on this PO — its product lines and charges can no longer change.');
 
         $data = $request->validate([
             'lines'               => 'required|array|min:1',
@@ -405,6 +428,8 @@ class PurchaseOrderController extends Controller
             $effective[$i] = !empty($line['product_id']) ? (int) $line['product_id'] : (int) ($pi->product_id ?? 0);
         }
         $products = $this->loadProducts(array_values(array_filter($effective)));
+        // A PO orders only products in a segment its supplier deals in.
+        $supplierSegments = $this->vendorSegmentIds((int) $po->vendor_id);
         foreach ($data['lines'] as $i => $line) {
             if (isset($errors["lines.$i.pi_item_id"])) continue;
             $field = !empty($line['product_id']) ? "lines.$i.product_id" : "lines.$i.pi_item_id";
@@ -413,6 +438,9 @@ class PurchaseOrderController extends Controller
             } elseif ($products->get($effective[$i])->gst_pct === null) {
                 // Purchase GST comes only from the product master, never the sales PI.
                 $errors[$field] = ['This product has no GST % in the product master — set it there first.'];
+            } elseif (!in_array((int) $products->get($effective[$i])->segment_id, $supplierSegments, true)) {
+                $seg = $products->get($effective[$i])->segment_name ?: 'no segment';
+                $errors[$field] = ["Segment mismatch — this product is in {$seg}, which is not mapped to the supplier. Add the segment to the supplier first."];
             }
         }
         if ($errors) throw ValidationException::withMessages($errors);
@@ -521,7 +549,7 @@ class PurchaseOrderController extends Controller
     {
         $user = $this->tenantUser($request);
         $po = $this->findPo($id);
-        if ($po->isLocked()) return $this->fail('This PO is cancelled or has a signed document and can no longer be edited.');
+        if ($blocked = $this->editBlock($po)) return $blocked;
 
         $data = $request->validate([
             'terms'  => 'nullable|string|max:20000',
@@ -671,6 +699,8 @@ class PurchaseOrderController extends Controller
         $po = $this->findPo($id);
         $data = $request->validate(['reason' => 'required|string|max:1000']);
         if ($po->isCancelled()) return $this->fail('This PO is already cancelled.');
+        // Money released must be recovered through the advance refund adjustment, not dropped.
+        if ((float) $po->paid_amount > 0) return $this->fail('Payments are recorded on this PO — raise the advance refund adjustment to cancel it.');
 
         $this->inTransaction('cancel the PO', function () use ($po, $user, $data) {
             $this->releaseAll($po, 'cancelled', $user->id);
@@ -710,6 +740,14 @@ class PurchaseOrderController extends Controller
 
     /* ══════════════════════════ HELPERS ══════════════════════════ */
 
+    /** Stages 01–03 are editable only while the PO is not cancelled, signed, or in payment. */
+    private function editBlock(PurchaseOrder $po): ?JsonResponse
+    {
+        if ($po->isLocked()) return $this->fail('This PO is cancelled or has a signed document and can no longer be edited.');
+        if ($po->paymentsStarted()) return $this->fail('Payments have started on this PO — it is view-only and can no longer be edited.');
+        return null;
+    }
+
     /** A supplier of this tenant, with its primary address state code. */
     private function loadVendor(int $id): ?object
     {
@@ -719,7 +757,7 @@ class PurchaseOrderController extends Controller
             ->whereNull('v.deleted_at')
             ->where('v.id', $id)
             ->select('v.id', 'v.vendor_code', 'v.company_name', 'v.legal_name', 'v.gst_number',
-                'v.supplier_category', 'a.state_code', 'r.name as risk_level');
+                'v.supplier_category', 'a.state_code', 'a.country_id', 'r.name as risk_level');
         return $this->svc->scopeTenant($q, 'v')->first();
     }
 
@@ -733,6 +771,14 @@ class PurchaseOrderController extends Controller
         return $this->svc->scopeTenant($q, 'v')->first();
     }
 
+    /** Same rule as the supplier dropdown: no country or India → domestic; any other country → international. */
+    private function vendorOrigin(object $vendor): string
+    {
+        if (empty($vendor->country_id)) return 'domestic';
+        $india = DB::table('master_countries')->whereRaw('LOWER(name) = ?', ['india'])->value('id');
+        return (int) $vendor->country_id === (int) $india ? 'domestic' : 'international';
+    }
+
     /** High / medium risk together with a high-risk or blacklisted category forces inspection. */
     private function inspectionMandatory(object $vendor): bool
     {
@@ -740,6 +786,15 @@ class PurchaseOrderController extends Controller
         $cat  = strtolower((string) ($vendor->supplier_category ?? ''));
         return (str_contains($risk, 'high') || str_contains($risk, 'medium'))
             && (str_contains($cat, 'high') || str_contains($cat, 'blacklist'));
+    }
+
+    /** Segment ids a supplier deals in: the vendor_segments mapping, else its single legacy segment. */
+    private function vendorSegmentIds(int $vendorId): array
+    {
+        if (!$vendorId) return [];
+        $ids = DB::table('vendor_segments')->where('vendor_id', $vendorId)->pluck('segment_id')->map(fn ($v) => (int) $v)->all();
+        if (!$ids && ($legacy = DB::table('vendors')->where('id', $vendorId)->value('segment_id'))) $ids = [(int) $legacy];
+        return $ids;
     }
 
     /** Products of this tenant with their GST %, HSN and UOM resolved from the masters. */
@@ -752,7 +807,8 @@ class PurchaseOrderController extends Controller
             ->leftJoin('master_uom as u', 'u.id', '=', 'p.uom_id')
             ->whereNull('p.deleted_at')
             ->whereIn('p.id', array_map('intval', $ids))
-            ->select('p.id', 'p.product_code', 'p.name', 'p.description', 'g.percentage as gst_pct',
+            ->leftJoin('clm_segments as sg', 'sg.id', '=', 'p.segment_id')
+            ->select('p.id', 'p.product_code', 'p.name', 'p.description', 'g.percentage as gst_pct', 'p.segment_id', 'sg.name as segment_name',
                 'h.hsn_code', DB::raw('COALESCE(u.short_code, u.title) as uom'));
         return $this->svc->scopeTenant($q, 'p')->get()->keyBy('id');
     }
@@ -832,6 +888,17 @@ class PurchaseOrderController extends Controller
             'supplier_category'   => $po->vendor?->supplier_category,
             'expected_delivery_date' => $po->expected_delivery_date?->toDateString(),
             'grand_total'         => (float) $po->grand_total,
+            // The value split the payment screens show: base, GST and extra charges.
+            'taxable_total'       => (float) $po->taxable_total,
+            'gst_total'           => round((float) $po->total_cgst + (float) $po->total_sgst + (float) $po->total_igst, 2),
+            'charges_total'       => round((float) $po->shipping_charges + (float) $po->packaging_charges + (float) $po->other_charges, 2),
+            // Stored payment position (rebuilt on every payment) for the list's payment bar.
+            'tds_amount'          => (float) $po->tds_amount,
+            'paid_amount'         => (float) $po->paid_amount,
+            'balance_amount'      => (float) $po->balance_amount,
+            'payment_requests_count' => (int) ($po->payment_requests_count ?? 0),
+            'pending_request_amount' => round((float) ($po->pending_request_amount ?? 0), 2),
+            'ready_to_pay_amount'    => round((float) ($po->ready_to_pay_amount ?? 0), 2),
             'physical_inspection' => $po->physical_inspection,
             'inspection_status'   => $po->inspection_status,
             'cancel_reason'       => $po->cancel_reason,
@@ -850,6 +917,8 @@ class PurchaseOrderController extends Controller
         }
         $out = $po->toArray() + ($this->linkRefs(collect([$po]))[$po->id] ?? []);
         $out['created_by_name'] = $po->creator?->name;
+        // View-only once payments have started (the edit form opens read-only).
+        $out['payments_started'] = $po->paymentsStarted();
         // Step 03 shows where the senior-approval request stands.
         $ap = $po->latestGstApproval()->first();
         $out['gst_approval'] = $ap ? [

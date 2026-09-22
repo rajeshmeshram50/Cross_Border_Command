@@ -9,7 +9,7 @@ import type { PoLink } from './CreatePoForm';
 import { poLookupApi, type ShipmentOption } from '../api/po-api';
 import { useToast } from '../../../../../contexts/ToastContext';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
-import { IcoCheck, IcoChevronR, IcoClock, IcoDoc, IcoLink, IcoWarn, IcoX } from '../shared/icons';
+import { IcoCheck, IcoChevronR, IcoDoc, IcoLink, IcoWarn, IcoX } from '../shared/icons';
 
 type PoMode = 'with' | 'without';
 
@@ -117,7 +117,6 @@ export default function CreatePoModal({ onClose, onConfirm, initial }: Props) {
         </div>
 
         <div className="spi-mdl-foot">
-          <div className="spi-mdl-audit"><IcoClock /> All POs are audit-tracked</div>
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
             <button type="button" className="spi-mdl-confirm" disabled={!canConfirm} onClick={confirm}>

@@ -1041,20 +1041,20 @@
   display: block;
   position: relative;
   overflow: hidden;
-  height: 45px;
+  /* At most 3 lines; a shorter description keeps its own height. */
+  max-height: 45px;
   font-size: 10.5px;
   line-height: 15px;
   text-align: left;
 }
-.cpd-desc__wrap.is-open { height: auto; }
+.cpd-desc__wrap.is-open { max-height: none; }
+/* Short text: "Read more" follows the last word. */
 .cpd-more {
-  position: absolute;
-  right: 0;
-  bottom: 0;
+  position: static;
   height: 15px;
   line-height: 15px;
   margin: 0;
-  padding: 0 0 0 30px;
+  padding: 0 0 0 4px;
   border: none;
   cursor: pointer;
   font-family: inherit;
@@ -1063,10 +1063,18 @@
   letter-spacing: .01em;
   white-space: nowrap;
   color: #0e7490;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0), var(--cpd-rowbg, #fff) 30%, var(--cpd-rowbg, #fff));
+  background: none;
   transition: color .14s;
 }
 .cpd-more:hover { color: #06b6d4; text-decoration: underline; text-underline-offset: 2px; }
+/* Longer than 3 lines: the text is cut and "Read more" sits at the end of the 3rd line. */
+.cpd-desc__wrap.is-clamped .cpd-more {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  padding-left: 30px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), var(--cpd-rowbg, #fff) 30%, var(--cpd-rowbg, #fff));
+}
 .cpd-desc__wrap.is-open .cpd-more { position: static; padding-left: 4px; background: none; }
 
 /* The PO picker (a MasterSelect) fills its column like the prototype's
@@ -1299,6 +1307,16 @@
 .cpd-tbl--pd td.cpd-prodcell { min-width: 200px; padding: 7px 9px; vertical-align: middle; }
 .cpd-tbl--pd td.cpd-prodcell.cpd-ed { min-width: 240px; }
 .cpd-tbl--pd .cpd-desc { min-width: 170px; max-width: 250px; }
+/* A long product name must not stretch the table: the PO product column is capped and its
+   dropdown shows the name with an ellipsis (full name on hover). */
+.cpd-tbl--pd td.cpd-prodcell.cpd-ed { width: 300px; max-width: 300px; }
+.cpd-tbl--pd td.cpd-prodcell.cpd-ed .cpd-prod,
+.cpd-tbl--pd td.cpd-prodcell.cpd-ed .cpd-pick { max-width: 282px; }
+.cpd-tbl--pd .cpd-pick > :first-child { min-width: 0; overflow: hidden; }
+.cpd-tbl--pd .cpd-pick .master-select-toggle { max-width: 100%; overflow: hidden; }
+.cpd-tbl--pd .cpd-pick .master-select-value-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Short numeric headers (Qty (PI), IGST (%), Missing Qty…) stay on one line. */
+.cpd-tbl--pd thead tr:last-child th:not(.cpd-th-left):not(.cpd-th-amt) { min-width: 64px; white-space: nowrap; }
 .cpd-tbl--pd tfoot .cpd-stick--1 { width: 274px; min-width: 274px; }
 /* A PO without a PI: Sr No keeps its narrow width; Totals spans the entry columns. */
 .cpd-tbl--nopi .cpd-stick--1 { width: 42px; min-width: 42px; }
@@ -2284,3 +2302,53 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 [data-bs-theme="dark"] .cpf-err, [data-bs-theme="dark"] .cpd-cell-msg { color: #f87171; }
 [data-bs-theme="dark"] .cpd-cell-err { background: rgba(239, 68, 68, 0.1) !important; }
 [data-bs-theme="dark"] .cpd-general-err { background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.35); color: #fca5a5; }
+
+/* Stage 01: why a field is fixed (supplier picked / product lines saved). */
+.cpf-lockhint { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 10.5px; font-weight: 700; color: #7c98a6; }
+.cpf-lockhint svg { width: 11px; height: 11px; }
+[data-bs-theme="dark"] .cpf-lockhint { color: #94a3b8; }
+
+/* Step 02 table: a long PI product name stays at 2 lines (full name on hover), so the row keeps its height. */
+.cpd-prod__nm--clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+/* Description: long words wrap instead of running under "Read more", and the fade before it is wider. */
+.cpd-desc__wrap { overflow-wrap: anywhere; }
+.cpd-desc__wrap.is-clamped .cpd-more { padding-left: 42px; }
+/* Description fills its column, so the text and "Read more" reach the cell's right edge. */
+/* Fixed width: short or long descriptions never resize the column. */
+.cpd-tbl--pd td.cpd-td-desc { width: 260px; min-width: 260px; max-width: 260px; }
+.cpd-tbl--pd td.cpd-td-desc .cpd-desc { width: 100%; min-width: 0; max-width: none; }
+
+/* Edit form once payments have started: everything visible, nothing editable. */
+.cpf-viewonly { border: 0; margin: 0; padding: 0; min-width: 0; }
+.cpf-viewonly:disabled { cursor: not-allowed; }
+.cpf-viewonly:disabled .spi-dt-inp,
+.cpf-viewonly:disabled .master-select-toggle,
+.cpf-viewonly:disabled textarea { background: #f4f7f9; }
+.cpf-viewonly-banner {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 10px 14px; border-radius: 10px;
+  border: 1px solid #fde68a; background: #fffbeb; color: #92400e; font-size: 12.5px; font-weight: 600;
+}
+.cpf-viewonly-banner svg { width: 14px; height: 14px; flex-shrink: 0; }
+[data-bs-theme="dark"] .cpf-viewonly-banner { background: rgba(245, 158, 11, .1); border-color: rgba(245, 158, 11, .3); color: #fcd34d; }
+[data-bs-theme="dark"] .cpf-viewonly:disabled .spi-dt-inp,
+[data-bs-theme="dark"] .cpf-viewonly:disabled .master-select-toggle,
+[data-bs-theme="dark"] .cpf-viewonly:disabled textarea { background: #13242e; }
+
+/* Stage 01: Select Supplier with its edit button beside it. */
+.cpf-supsel { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cpf-supsel > :first-child { flex: 1 1 auto; min-width: 0; }
+.cpf-supedit {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border: 0; border-radius: 10px; cursor: pointer; color: #fff;
+  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
+  box-shadow: 0 3px 10px rgba(8, 145, 178, .28); transition: transform .12s, box-shadow .15s;
+}
+.cpf-supedit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(8, 145, 178, .36); }
+.cpf-supedit:disabled { opacity: .5; cursor: not-allowed; }
+.cpf-supedit svg { width: 15px; height: 15px; }

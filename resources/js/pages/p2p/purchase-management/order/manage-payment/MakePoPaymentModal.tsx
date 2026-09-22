@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import type { OrderRow } from '../po-list/Order';
 import {
-  Box, HeroRefChips, ICON_X, PoSummaryCards, TdsStrip, initials, money, shortDate,
+  Box, HeroRefChips, ICON_X, PoSummaryCards, TdsStrip, initials, money, rowBreakdown, shortDate,
 } from './payment-shared';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './manage-payment-requests.css';
@@ -12,11 +12,17 @@ import './make-po-payment.css';
 const AddPaymentModal = lazy(() => import('./AddPaymentModal'));
 
 export type ReleasePayment = {
+  /** Database id, once saved. */
+  id?: number;
   amount: number;
   bank: string;
   utr: string;
   date: string;
+  /** Proof file name, and its link once stored. */
   file?: string;
+  fileUrl?: string | null;
+  /** A newly chosen proof file, sent with the save. */
+  upload?: File | null;
 };
 
 export type MakePoPaymentProps = {
@@ -31,8 +37,9 @@ export type MakePoPaymentProps = {
   alreadyPaid: number;
   payments: ReleasePayment[];
   tds: number;
-  onRecord: (p: ReleasePayment) => void;
-  onUpdate: (index: number, p: ReleasePayment) => void;
+  /** Resolve true once saved, so the form closes; false keeps it open. */
+  onRecord: (p: ReleasePayment) => Promise<boolean> | void;
+  onUpdate: (index: number, p: ReleasePayment) => Promise<boolean> | void;
   onDelete: (index: number) => void;
   onOpenTds: () => void;
   onClose: () => void;
@@ -106,8 +113,9 @@ export default function MakePoPaymentModal({
   const room = Math.max(0, approved - paidOnRequest);
   const pct = row.net > 0 ? Math.round((requestedAmount / row.net) * 1000) / 10 : 0;
 
-  const poPaid = row.paid + released;
-  const poBalance = Math.max(0, row.net - poPaid);
+  // The row carries the PO's stored paid / balance, which already include these payments.
+  const poPaid = row.paid;
+  const poBalance = Math.max(0, row.balance);
 
   return createPortal(
     <div className="spi-mdl-backdrop">
@@ -124,10 +132,9 @@ export default function MakePoPaymentModal({
             paid={paidOnRequest}
             initial={editing !== null ? payments[editing] : undefined}
             onClose={closeForm}
-            onSave={(p) => {
-              if (editing !== null) onUpdate(editing, p);
-              else onRecord(p);
-              closeForm();
+            onSave={async (p) => {
+              const ok = editing !== null ? await onUpdate(editing, p) : await onRecord(p);
+              if (ok !== false) closeForm();
             }}
           />
         </Suspense>
@@ -185,7 +192,7 @@ export default function MakePoPaymentModal({
             title="PO Payment Details Summary"
             sub="How this PO’s value is made up and where it stands today · read-only"
             headerExtra={!row.cancelled && (
-              <TdsStrip tds={tds} total={row.total} supplier={row.supplier} onOpen={onOpenTds} />
+              <TdsStrip tds={tds} total={row.total} supplier={row.supplier} onOpen={onOpenTds} locked={row.paid > 0} />
             )}
           >
             <PoSummaryCards
@@ -194,6 +201,7 @@ export default function MakePoPaymentModal({
               balance={poBalance}
               net={row.net}
               complete={poBalance <= 0}
+              split={rowBreakdown(row)}
             />
           </Box>
 
@@ -260,8 +268,10 @@ export default function MakePoPaymentModal({
                         <span className="cpay-file__name" title={p.file}>{p.file}</span>
                         <span className="cpay-file__sep" />
                         <span className="cpay-fbtns">
-                          <button type="button" className="cpay-fbtn cpay-fbtn--view" title="View proof of payment">{ICON_EYE}</button>
-                          <button type="button" className="cpay-fbtn cpay-fbtn--dl" title="Download proof of payment">{ICON_DL}</button>
+                          <button type="button" className="cpay-fbtn cpay-fbtn--view" title="View proof of payment" disabled={!p.fileUrl}
+                            onClick={() => p.fileUrl && window.open(p.fileUrl, '_blank', 'noopener')}>{ICON_EYE}</button>
+                          <a className="cpay-fbtn cpay-fbtn--dl" title="Download proof of payment" href={p.fileUrl ?? undefined}
+                            download={p.file} target="_blank" rel="noopener noreferrer">{ICON_DL}</a>
                         </span>
                       </span>
                     ) : <span className="cpay-noproof">Not attached</span>}
@@ -279,7 +289,8 @@ export default function MakePoPaymentModal({
                         {ICON_MAIL}
                       </button>
                       <button type="button" className="cpay-act cpay-act--edit" title="Edit payment" onClick={() => setEditing(i)}>{ICON_EDIT}</button>
-                      <button type="button" className="cpay-act cpay-act--del" title="Delete payment" onClick={() => onDelete(i)}>
+                      <button type="button" className="cpay-act cpay-act--del" title="Delete payment"
+                        onClick={() => { if (window.confirm(`Delete the ${money(p.amount)} payment? It returns to the balance.`)) onDelete(i); }}>
                         {ICON_DEL}
                       </button>
                     </span>

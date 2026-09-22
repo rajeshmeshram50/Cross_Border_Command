@@ -74,6 +74,7 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
         </div>
         {ctx.linesGeneral && <div className="cpd-general-err" role="alert">{ctx.linesGeneral}</div>}
         <ProductTable rows={lines} products={products} taxMode={ctx.taxMode} onChange={patchLine} onRemove={removeLine}
+          supplierSegments={draft.supplier?.segments ?? null}
           onProductsChanged={ctx.lookups.reloadProducts} errors={ctx.lineErrors} standalone={standalone} />
         {/* A product the PI doesn't carry goes on its own line. */}
         {/* A shipment PO orders only its PI lines; extra products go on a standalone PO. */}

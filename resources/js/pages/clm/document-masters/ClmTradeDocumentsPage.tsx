@@ -247,6 +247,22 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
   const [editing, setEditing] = useState<TdLib | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<TdLib | null>(null);
+  // List rows leave out the document body and letterhead, so Edit loads the full row first —
+  // opening the editor from the list row would show a blank document.
+  const [openingId, setOpeningId] = useState<number | null>(null);
+  const openEdit = async (r: TdLib) => {
+    if (openingId) return;
+    setOpeningId(r.id);
+    try {
+      const { data } = await api.get<{ data: TdLib }>(`/clm/trade-doc-library/${r.id}`);
+      setEditing(data.data);
+      setModalOpen(true);
+    } catch {
+      toast.error('Could not open the document', 'Its content could not be loaded — please try again.');
+    } finally {
+      setOpeningId(null);
+    }
+  };
   // All-segments popover — opened from the +N badge in the SEGMENT column.
   /* flipUp/maxH keep the popover inside the viewport: a +N badge on one of the
    * last rows has almost no room below it, and the panel used to open downwards
@@ -535,7 +551,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                             <>
                               <Tooltip label={signed ? lockMsg('edited') : 'Edit'}>
                                 <button className="clm-act clm-act-edit" aria-label="Edit" disabled={signed} style={dim}
-                                  onClick={() => { if (signed) return; setEditing(r); setModalOpen(true); }}
+                                  onClick={() => { if (!signed) void openEdit(r); }}
                                 ><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
                               </Tooltip>
                               <Tooltip label={signed ? lockMsg('deleted') : 'Delete'}>

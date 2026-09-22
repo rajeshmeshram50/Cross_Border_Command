@@ -70,14 +70,18 @@ export function Field({ label, children, full, req, error }: { label: string; ch
    The options here are plain strings, so each is both value and label.
    Also used outside this form (Refund Adjustment, Payment Request), which
    pass `invalid` to flag a required field — keep that prop working. */
-export function EditSelect({ value, options, onChange, placeholder, invalid, readOnly }: {
+export function EditSelect({ value, options, onChange, placeholder, invalid, readOnly, locked, onLockedClick }: {
   value: string; options: string[]; onChange: (v: string) => void; placeholder?: string; invalid?: boolean;
   /** Show the value in the wizard's locked-select box instead of a dropdown. */
   readOnly?: boolean;
+  /** Options shown with a lock and not selectable: option → the reason shown on it. */
+  locked?: Record<string, string>;
+  /** Clicked while read-only, or on a locked option — the caller explains why. */
+  onLockedClick?: (option?: string) => void;
 }) {
   if (readOnly) {
     return (
-      <div className="spi-dt-select" aria-readonly="true">
+      <div className="spi-dt-select" aria-readonly="true" onClick={() => onLockedClick?.()} style={onLockedClick ? { cursor: 'not-allowed' } : undefined}>
         <FitTip label={value}><span>{value || placeholder || '—'}</span></FitTip>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
       </div>
@@ -86,10 +90,13 @@ export function EditSelect({ value, options, onChange, placeholder, invalid, rea
   return (
     <MasterSelect
       value={value}
-      options={options.map((o) => ({ value: o, label: o }))}
+      options={options.map((o) => (locked?.[o]
+        ? { value: o, label: o, disabled: true, disabledReason: locked[o], badge: { text: '🔒 Locked', tone: 'gray' as const } }
+        : { value: o, label: o }))}
       onChange={onChange}
       placeholder={placeholder ?? '— Select —'}
       invalid={invalid}
+      onDisabledClick={onLockedClick ? (opt) => onLockedClick(opt.value) : undefined}
     />
   );
 }

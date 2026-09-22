@@ -7,6 +7,7 @@ import { useAuth } from '../../../../contexts/AuthContext';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { Box, Chip, HeroRefChips, ICON_X, STAT_ICONS, Stat, fmtDate, money } from '../../purchase-management/order/manage-payment/payment-shared';
 import { decidePaymentRequest, type PaymentRequestRow } from './paymentRequestData';
+import { PoApiError } from '../../purchase-management/order/api/po-api';
 import type { PaymentRequestDetail } from './paymentRequestDetailData';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
 import '../../purchase-management/order/manage-payment/manage-payment-requests.css';
@@ -121,7 +122,7 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
     setSaving(true);
     try {
       const names = files.map(f => f.name);
-      const row = await decidePaymentRequest(request.requestId, approve
+      const row = await decidePaymentRequest(request.id, approve
         ? { kind: 'approve', amount, note: note.trim(), files: names, by }
         : { kind: 'decline', reason: note.trim(), files: names, by });
       onDecided(row);
@@ -165,8 +166,8 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
             <Chip label="Supplier" value={request.supplier} meta={supplier?.code} mod="mpr-hero__chip--sup" />
             <Chip label={`${D} Number`} value={doc.id} meta={fmtDate(doc.date)} />
             <Chip label="Shipment ID" value={request.shipment?.id ?? '—'} meta={request.shipment ? fmtDate(request.shipment.date) : undefined} />
-            <Chip label="Opportunity ID" value={request.opportunity.id} meta={fmtDate(request.opportunity.date)} />
-            <Chip label="Procurement ID" value={request.procurement.id} meta={fmtDate(request.procurement.date)} />
+            <Chip label="Opportunity ID" value={request.opportunity?.id ?? '—'} meta={request.opportunity?.date ? fmtDate(request.opportunity.date) : undefined} />
+            <Chip label="Procurement ID" value={request.procurement?.id ?? '—'} meta={request.procurement?.date ? fmtDate(request.procurement.date) : undefined} />
           </div>}
           <button type="button" className="mpr-hero__close" onClick={onClose} aria-label="Close">{ICON_X}</button>
         </div>

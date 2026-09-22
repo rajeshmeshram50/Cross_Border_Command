@@ -12,6 +12,8 @@ export type ProductOpt = {
   gst: number | null;
   description: string;
   price: number;
+  /** The product's segment (clm_segments); a PO orders only its supplier's segments. */
+  segment: string;
 };
 
 export type PoLookups = {
@@ -40,6 +42,7 @@ function toProduct(p: Row): ProductOpt {
     gst: gstRel?.percentage != null ? num(gstRel.percentage) : null,
     description: str(p.description),
     price: num(p.base_price),
+    segment: str((p.segment as { name?: unknown } | null | undefined)?.name),
   };
 }
 

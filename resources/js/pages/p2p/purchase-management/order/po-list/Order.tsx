@@ -15,6 +15,7 @@ const CreatePoForm = lazy(() => import('../create-po/CreatePoForm'));
 const PhysicalInspectionModal = lazy(() => import('../physical-inspection/PhysicalInspectionModal'));
 const CancelPoModal = lazy(() => import('../cancel-po/CancelPoModal'));
 const PoEvidenceVaultModal = lazy(() => import('../evidence-vault/PoEvidenceVaultModal'));
+const ManagePaymentRequestsModal = lazy(() => import('../manage-payment/ManagePaymentRequestsModal'));
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './order.css';
 
@@ -221,6 +222,10 @@ export type OrderRow = {
   risk: RiskLevel | null;
   expectedDelivery: string;
   total: number; net: number; paid: number; balance: number;
+  /** Real split of the PO value, on rows loaded from /p2p/orders. */
+  breakdown?: { base: number; gst: number; extra: number };
+  /** Supplier master code, on rows loaded from /p2p/orders. */
+  supplierCode?: string;
   invoices: InvoiceLine[];
   zohoSynced: boolean;
   inspectionDone: boolean;
@@ -349,7 +354,7 @@ function riskOf(name: string | null): RiskLevel | null {
   return null;
 }
 
-function categoryKeyOf(text: string | null): SupplierCategory | null {
+export function categoryKeyOf(text: string | null): SupplierCategory | null {
   const t = (text ?? '').toLowerCase();
   if (t.includes('blacklist')) return 'blacklisted';
   if (t.includes('high')) return 'high';
@@ -358,8 +363,8 @@ function categoryKeyOf(text: string | null): SupplierCategory | null {
   return null;
 }
 
-// Payments, SPI / GRN / QA and Zoho are not built on the new PO yet, so they start empty.
-function toOrderRow(r: PoListRow): OrderRow {
+// SPI / GRN / QA and Zoho are not built on the new PO yet, so they start empty.
+export function toOrderRow(r: PoListRow): OrderRow {
   const catKey = categoryKeyOf(r.supplier_category);
   return {
     id: r.id,
@@ -373,18 +378,25 @@ function toOrderRow(r: PoListRow): OrderRow {
     opportunity: r.opportunity_code ?? '', opportunityDate: r.pi_date ?? '',
     procurement: r.procurement_request_code ?? '', procurementDate: '',
     supplier: r.supplier_name ?? '—',
+    supplierCode: r.supplier_code ?? undefined,
     supplierCategory: catKey ?? 'regular',
     supplierCategoryText: catKey ? undefined : (r.supplier_category || undefined),
     risk: riskOf(r.supplier_risk),
     expectedDelivery: r.expected_delivery_date ?? '',
-    total: Number(r.grand_total) || 0, net: Number(r.grand_total) || 0, paid: 0, balance: Number(r.grand_total) || 0,
+    // Payment position as stored on the PO: net = grand total − TDS; balance = net − paid.
+    total: Number(r.grand_total) || 0,
+    net: Math.max(0, (Number(r.grand_total) || 0) - (Number(r.tds_amount) || 0)),
+    paid: Number(r.paid_amount) || 0,
+    balance: Number(r.balance_amount) || 0,
+    breakdown: { base: Number(r.taxable_total) || 0, gst: Number(r.gst_total) || 0, extra: Number(r.charges_total) || 0 },
     invoices: [],
     zohoSynced: false,
     inspectionDone: r.inspection_status === 'completed',
-    paymentRequests: 0,
+    paymentRequests: Number(r.payment_requests_count) || 0,
+    paymentNote: Number(r.ready_to_pay_amount) > 0 ? { kind: 'ready', amount: Number(r.ready_to_pay_amount) }
+      : Number(r.pending_request_amount) > 0 ? { kind: 'waiting', amount: Number(r.pending_request_amount) } : undefined,
     cancelled: r.status === 'cancelled',
     cancelReason: r.cancel_reason ?? undefined,
-    // Nothing is paid on the new PO yet, so a cancelled one has nothing to recover.
     cancelStage: r.status === 'cancelled' ? 'closed' : undefined,
   };
 }
@@ -762,8 +774,13 @@ function RecoveryCell({ row }: { row: OrderRow }) {
   );
 }
 
-function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onVault }: {
+/** Same rule as the server: a pending / approved request, or money paid. */
+const paymentsStarted = (row: OrderRow) => row.paid > 0 || !!row.paymentNote;
+
+function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onVault, viewOnly = false }: {
   cancelled?: boolean; cancelReason?: string; onEdit: () => void; onCancel?: () => void; onVault?: () => void;
+  /** Payments have started — the form opens read-only. */
+  viewOnly?: boolean;
 }) {
   return (
     <div className="ord-actions">
@@ -774,7 +791,8 @@ function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onVault
       ) : (
         <button type="button" className="ord-btn ord-btn--cancel" title="Cancel this Purchase Order" onClick={onCancel}>{ICON_CANCEL}<span>Cancel PO</span></button>
       )}
-      <button type="button" className="ord-btn ord-btn--edit" disabled={cancelled} onClick={onEdit}>{ICON_EDIT}<span>Edit PO</span></button>
+      <button type="button" className="ord-btn ord-btn--edit" disabled={cancelled} onClick={onEdit}
+        title={viewOnly ? 'Payments have started — the PO opens view-only' : undefined}>{ICON_EDIT}<span>{viewOnly ? 'View PO' : 'Edit PO'}</span></button>
       <button type="button" className="ord-btn ord-btn--vault" title="Evidence Vault — the order, its documents and payment proofs" onClick={onVault}>{ICON_VAULT}<span>Evidence Vault</span></button>
     </div>
   );
@@ -906,7 +924,7 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
                 <PoCell span={span}><AdrCell adr={row.adr} /></PoCell>
                 <PoCell span={span}><RecoveryCell row={row} /></PoCell>
                 <PoCell span={span}><StatusBadge row={row} /></PoCell>
-                {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} onEdit={() => onEdit?.(row)} onCancel={onCancel && (() => onCancel(row))} onVault={onVault && (() => onVault(row))} /></PoCell>}
+                {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={paymentsStarted(row)} onEdit={() => onEdit?.(row)} onCancel={onCancel && (() => onCancel(row))} onVault={onVault && (() => onVault(row))} /></PoCell>}
               </>
             )}
           </tr>
@@ -1053,7 +1071,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, 
         <RecoveryCell row={row} />
       </div>
 
-      <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} onEdit={() => onEdit(row)} onCancel={() => onCancel(row)} onVault={() => onVault(row)} />
+      <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={paymentsStarted(row)} onEdit={() => onEdit(row)} onCancel={() => onCancel(row)} onVault={() => onVault(row)} />
     </article>
   );
 }
@@ -1083,7 +1101,13 @@ export default function Order() {
 
   // Not built on the new PO yet.
   const comingSoon = (what: string) => () => toast.info('Feature coming soon', `${what} will be available shortly.`);
-  const onManage = comingSoon('Payment management');
+  // Payments run on a submitted PO; a draft has no final value to pay against yet.
+  const [manageRow, setManageRow] = useState<OrderRow | null>(null);
+  const onManage = (row: OrderRow) => {
+    if (!row.id) return;
+    if (row.draft) { toast.info('Submit the PO first', `${row.po} is still a draft — submit it before managing payments.`); return; }
+    setManageRow(row);
+  };
   // Inspection runs on a submitted PO only; a draft has nothing to inspect yet.
   const [inspectRow, setInspectRow] = useState<OrderRow | null>(null);
   const onInspect = (row: OrderRow) => {
@@ -1209,6 +1233,12 @@ export default function Order() {
             onClose={() => { setPoLink(null); loadRows(); }}
             onChangeLink={() => setCreateOpen(true)}
           />
+        </Suspense>
+      )}
+
+      {manageRow && (
+        <Suspense fallback={null}>
+          <ManagePaymentRequestsModal row={manageRow} onClose={() => { setManageRow(null); loadRows(); }} />
         </Suspense>
       )}
 

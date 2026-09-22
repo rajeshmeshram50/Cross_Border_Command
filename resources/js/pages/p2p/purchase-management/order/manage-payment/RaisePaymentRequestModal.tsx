@@ -4,12 +4,13 @@ import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import type { OrderRow } from '../po-list/Order';
 import {
-  APPROVERS, Box, HeroRefChips, PAYMENT_TYPES, PoSummaryCards, STAT_ICONS, Stat,
+  Box, HeroRefChips, PAYMENT_TYPES, PoSummaryCards, STAT_ICONS, Stat, rowBreakdown,
   ICON_PENCIL, ICON_X, money,
 } from './payment-shared';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './manage-payment-requests.css';
 import './raise-payment-request.css';
+import { poApprovalApi, type GstApprover } from '../api/po-api';
 
 export type NewRequest = {
   id: string;
@@ -18,6 +19,8 @@ export type NewRequest = {
   type: string;
   reason: string;
   approver: string;
+  /** User id of the approver the request is sent to. */
+  approverId: number;
   role: string;
 };
 
@@ -32,7 +35,9 @@ export type RaiseRequestProps = {
   requestCount: number;
   available: number;
   complete: boolean;
-  onSubmit: (req: NewRequest) => void;
+  /** A save is in flight: the submit button waits. */
+  busy?: boolean;
+  onSubmit: (req: NewRequest) => void | Promise<void>;
   onClose: () => void;
 };
 
@@ -49,13 +54,14 @@ const ICON_ALERT = (
 );
 
 const TYPE_OPTIONS = PAYMENT_TYPES.map((t) => ({ value: t, label: t }));
-const APPROVER_OPTIONS = APPROVERS.map((a) => ({ value: a.name, label: `${a.name} · ${a.role}` }));
+// Users of the company who can be asked, loaded once per session.
+let approversCache: GstApprover[] | null = null;
 
 const REASON_MAX = 300;
 
 export default function RaisePaymentRequestModal({
   row, nextId, requested, approvedTotal, pendingAmt, pendingCount, approvedUnpaid,
-  requestCount, available, complete, onSubmit, onClose,
+  requestCount, available, complete, busy = false, onSubmit, onClose,
 }: RaiseRequestProps) {
   useScrollLock(true, '.mpr-card--raise');
 
@@ -71,7 +77,25 @@ export default function RaisePaymentRequestModal({
   const [type, setType] = useState('');
   const [pctText, setPctText] = useState('');
   const [amtText, setAmtText] = useState('');
-  const [approver, setApprover] = useState(APPROVERS[0].name);
+  const [approver, setApprover] = useState('');
+  const [approvers, setApprovers] = useState<GstApprover[]>(approversCache ?? []);
+  const [loadingApprovers, setLoadingApprovers] = useState(!approversCache);
+  useEffect(() => {
+    if (approversCache) return;
+    poApprovalApi.approvers()
+      .then((rows) => { approversCache = rows; setApprovers(rows); })
+      .catch(() => setError('Could not load the approver list — please reopen this form.'))
+      .finally(() => setLoadingApprovers(false));
+  }, []);
+  const approverOptions = approvers.map((a) => ({
+    value: String(a.id),
+    label: a.emp_code ? `${a.name} (${a.emp_code})` : a.name,
+    fullLabel: [a.name, a.department, a.designation].filter(Boolean).join(' · '),
+    badges: [
+      ...(a.department ? [{ text: a.department, tone: 'gray' as const }] : []),
+      ...(a.designation ? [{ text: a.designation, tone: 'violet' as const }] : []),
+    ],
+  }));
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
 
@@ -80,14 +104,18 @@ export default function RaisePaymentRequestModal({
   const pctPaid = row.net > 0 ? Math.round((row.paid / row.net) * 100) : 0;
   const progPct = row.total > 0 ? Math.round((row.paid / row.total) * 100) : 0;
 
+  // A percentage is 0–100 with up to 2 decimals; anything else is refused as it is typed.
   const fromPct = (v: string) => {
+    if (v !== '' && (!/^\d{0,3}(\.\d{0,2})?$/.test(v) || parseFloat(v) > 100)) return;
     setPctText(v);
     const p = parseFloat(v);
     const a = Number.isNaN(p) || p < 0 ? 0 : Math.round((row.total * p) / 100);
     setAmtText(a ? String(a) : '');
   };
 
+  // Amounts: digits with up to 2 decimals, at most 13 digits before the point.
   const fromAmt = (v: string) => {
+    if (v !== '' && !/^\d{0,13}(\.\d{0,2})?$/.test(v)) return;
     setAmtText(v);
     const a = parseFloat(v);
     const clean = Number.isNaN(a) || a < 0 ? 0 : a;
@@ -111,7 +139,8 @@ export default function RaisePaymentRequestModal({
     if (!type) { setError('Select a payment type before submitting.'); return; }
     if (!reason.trim()) { setError('Enter a payment reason before submitting.'); return; }
 
-    const who = APPROVERS.find((a) => a.name === approver) ?? APPROVERS[0];
+    const who = approvers.find((a) => String(a.id) === approver);
+    if (!who) { setError('Select who this request goes to before submitting.'); return; }
     const pct = parseFloat(pctText);
     onSubmit({
       id: nextId,
@@ -120,7 +149,8 @@ export default function RaisePaymentRequestModal({
       type,
       reason: reason.trim(),
       approver: who.name,
-      role: who.role,
+      approverId: who.id,
+      role: [who.department, who.designation].filter(Boolean).join(' · '),
     });
   };
 
@@ -157,7 +187,7 @@ export default function RaisePaymentRequestModal({
             title="PO Payment Details Summary"
             sub="How this PO’s value is made up and where it stands today · read-only"
           >
-            <PoSummaryCards total={row.total} paid={row.paid} balance={row.balance} net={row.net} complete={complete} />
+            <PoSummaryCards total={row.total} paid={row.paid} balance={row.balance} net={row.net} complete={complete} split={rowBreakdown(row)} />
           </Box>
 
           <Box
@@ -185,7 +215,8 @@ export default function RaisePaymentRequestModal({
                 <div className="rpr-amtwrap">
                   <input
                     id="rpr-pct"
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     className="rpr-amtwrap__in"
                     min={0}
                     max={100}
@@ -203,7 +234,8 @@ export default function RaisePaymentRequestModal({
                   <span className="rpr-amtwrap__cur">₹</span>
                   <input
                     id="rpr-amt"
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     className="rpr-amtwrap__in"
                     min={0}
                     max={available}
@@ -223,8 +255,9 @@ export default function RaisePaymentRequestModal({
                 <label htmlFor="rpr-approver">Request To</label>
                 <MasterSelect
                   value={approver}
-                  placeholder="Select approver…"
-                  options={APPROVER_OPTIONS}
+                  placeholder={loadingApprovers ? "Loading…" : "Select approver…"}
+                  loading={loadingApprovers}
+                  options={approverOptions}
                   onChange={setApprover}
                 />
               </div>
@@ -269,8 +302,8 @@ export default function RaisePaymentRequestModal({
           </div>
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
-            <button type="button" className="spi-mdl-confirm mpr-raise" onClick={submit}>
-              Submit Payment Request
+            <button type="button" className="spi-mdl-confirm mpr-raise" onClick={submit} disabled={busy}>
+              {busy ? 'Submitting…' : 'Submit Payment Request'}
             </button>
           </div>
         </div>
