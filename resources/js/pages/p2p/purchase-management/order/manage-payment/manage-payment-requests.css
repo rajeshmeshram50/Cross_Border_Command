@@ -177,6 +177,13 @@
   color: #fff;
   white-space: nowrap;
   text-shadow: 0 1px 4px rgba(0, 0, 0, .24);
+  /* One line, cut with "…": the chip does not shrink, so a long supplier
+     name stretched it and pushed the other chips out of the header. The full
+     value is in the tooltip (Chip → FitTip). Codes and dates never reach this. */
+  max-width: 220px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mpr-hero__chip-meta {

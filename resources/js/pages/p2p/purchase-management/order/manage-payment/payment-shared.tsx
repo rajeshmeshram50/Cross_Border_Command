@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import type { OrderRow } from '../po-list/Order';
+import { FitTip } from '../create-po/form-fields';
 
 export const money = (v: number) => '₹' + Math.round(v || 0).toLocaleString('en-IN');
 
@@ -105,7 +106,8 @@ export function Chip({ label, value, meta, mod, extra }: {
     <div className={`mpr-hero__chip${mod ? ' ' + mod : ''}`}>
       <span className="mpr-hero__chip-lbl">{label}</span>
       <span className="mpr-hero__chip-line">
-        <span className="mpr-hero__chip-val" title={value}>{value}</span>
+        {/* Cut with "…" when it doesn't fit; the tooltip then shows it whole. */}
+        <FitTip label={value}><span className="mpr-hero__chip-val">{value}</span></FitTip>
         {meta && <span className="mpr-hero__chip-meta">{meta}</span>}
         {extra}
       </span>

@@ -354,6 +354,13 @@
 
 .cpay-utr {
   display: inline-block;
+  /* One line, cut with "…" at the cell's edge — a long cheque / UTR number ran
+     over the next columns. The full value is in the tooltip (FitTip). */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
   padding: 3px 7px;
   border-radius: 7px;
   font-family: 'Geist Mono', ui-monospace, Menlo, monospace;

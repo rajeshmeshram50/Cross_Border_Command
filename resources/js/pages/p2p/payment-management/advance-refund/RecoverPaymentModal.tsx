@@ -10,6 +10,7 @@ import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { Box, Chip, ICON_X, STAT_ICONS, Stat, money, shortDate } from '../../purchase-management/order/manage-payment/payment-shared';
 import { PoApiError, refundApi, type RecoveryBody, type ZohoOutcome } from '../../purchase-management/order/api/po-api';
 import { IcoCheck, IcoDocSm, IcoDownload, IcoEye, IcoPencil, IcoPlus, IcoRefund, IcoTrash } from '../../icons';
+import { FitTip } from '../../purchase-management/order/create-po/form-fields';
 import AddRecoveryModal from './AddRecoveryModal';
 import { refundFigures, toRefund, type RefundAdjustment } from './refund-data';
 import { useEscapeClose } from './useEscapeClose';
@@ -225,7 +226,10 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
                   <span className="mpr-sr" data-l="Sr. No">{i + 1}</span>
                   <span data-l="Recovered Amount"><b className="cpay-amt">{money(r.amount)}</b></span>
                   <span data-l="Refunded Date"><span className="cpay-date">{shortDate(r.date)}</span></span>
-                  <span data-l="Reference No. (Cheque / UTR)"><span className="cpay-utr">{r.reference || '—'}</span></span>
+                  <span data-l="Reference No. (Cheque / UTR)">
+                    {/* Cut with "…" when it doesn't fit; the tooltip then shows it whole. */}
+                    <FitTip label={r.reference || '—'}><span className="cpay-utr">{r.reference || '—'}</span></FitTip>
+                  </span>
                   <span data-l="Proof Of Payment">
                     {r.file ? (
                       <span className="cpay-file">

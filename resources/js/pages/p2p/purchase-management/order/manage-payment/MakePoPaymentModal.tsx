@@ -5,6 +5,7 @@ import type { OrderRow } from '../po-list/Order';
 import {
   Box, HeroRefChips, ICON_X, PoSummaryCards, TdsStrip, initials, money, rowBreakdown, shortDate,
 } from './payment-shared';
+import { FitTip } from '../create-po/form-fields';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './manage-payment-requests.css';
 import './make-po-payment.css';
@@ -259,7 +260,10 @@ export default function MakePoPaymentModal({
                   </span>
                   <span data-l="Paid Amount"><b className="cpay-amt">{money(p.amount)}</b></span>
                   <span data-l="Bank Name"><span className="cpay-bank">{p.bank || '—'}</span></span>
-                  <span data-l="UTR / Cheque Number"><span className="cpay-utr">{p.utr || '—'}</span></span>
+                  <span data-l="UTR / Cheque Number">
+                    {/* Cut with "…" when it doesn't fit; the tooltip then shows it whole. */}
+                    <FitTip label={p.utr || '—'}><span className="cpay-utr">{p.utr || '—'}</span></FitTip>
+                  </span>
                   <span data-l="UTR / Cheque Date"><span className="cpay-date">{p.date || '—'}</span></span>
                   <span data-l="Proof Of Payment">
                     {p.file ? (
