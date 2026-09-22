@@ -92,13 +92,21 @@
    tabs go compact instead and stay on one line — smaller text and padding,
    and the grey qualifier "(Without Shipment ID)" / "(Recovery Pending)" moves
    into the tab's hover title. The wrap above is only the last resort. */
-@media (min-width: 769px) and (max-width: 1500px) {
+@media (min-width: 769px) and (max-width: 1800px) {
   .ord-list > .spi-segrow { gap: 10px; padding: 10px 12px; }
   /* .spi-segrow in the chain: these sit above the base tab rules in the file. */
   .ord-list .spi-segrow .spi-seg { gap: 2px; padding: 4px; }
   .ord-list .spi-segrow .spi-seg-btn { height: 38px; gap: 6px; padding: 0 10px; font-size: 11.5px; }
   .ord-list .ord-seg-sub { display: none; }
   .ord-list .spi-segrow .spi-search { flex-basis: 200px; height: 46px; }
+}
+/* Small laptops: tabs and search still share one row (CS-401) — icons go, padding tightens. */
+@media (min-width: 769px) and (max-width: 1280px) {
+  .ord-list .spi-segrow .spi-seg-btn { padding: 0 8px; font-size: 11px; }
+  .ord-list .spi-segrow .spi-seg-ico { display: none; }
+  .ord-list .spi-segrow .spi-search { flex-basis: 170px; }
+  /* Still too narrow: the strip scrolls sideways rather than stacking. */
+  .ord-list .spi-segrow .spi-seg { flex-wrap: nowrap; overflow-x: auto; }
 }
 
 /* Tabs, to the prototype's PO list values. The shared SPI tabs are slate at

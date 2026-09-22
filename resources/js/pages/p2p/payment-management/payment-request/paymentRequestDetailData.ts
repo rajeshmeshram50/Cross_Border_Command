@@ -1,6 +1,7 @@
 /* Everything behind one payment request's view, assembled from the live APIs:
    the request and its PO ledger (GET /p2p/orders/payment-requests/{id}) plus the
    existing supplier, PO list, document and inspection endpoints — no duplicate APIs. */
+import { categoryLabel } from '../../purchase-management/order/create-po/supplier-checks';
 import type { OrderRow } from '../../purchase-management/order/po-list/Order';
 import { toOrderRow } from '../../purchase-management/order/po-list/Order';
 import type { Supplier } from './payment-request-suppliers';
@@ -75,7 +76,7 @@ function toSupplier(d: SupplierDetail | null, row: PaymentRequestRow, vault: Rec
     key: d?.name ?? row.supplier, code: d?.code ?? row.supplierCode ?? '—', legalName: d?.legalName ?? d?.name ?? row.supplier,
     type: d?.type ?? '—',
     risk: risk.includes('high') ? 'High Risk' : risk.includes('medium') ? 'Medium Risk' : 'Low Risk',
-    category: d?.category ?? '—', segment: d?.segments?.join(', ') || '—',
+    category: categoryLabel(d?.category) || '—', segment: d?.segments?.join(', ') || '—',
     addr: d?.addr ?? '—', country: d?.country ?? '—', state: d?.state ?? '—', stateCode: d?.stateCode ?? '—', city: d?.city ?? '—',
     contact: d?.contact ?? '—', desig: d?.desig ?? '—', phone: d?.phone ?? '—', email: d?.email ?? '—',
     scrutiny: d?.scrutiny ?? '', gstNo: d?.gstNo ?? '—', gstStatus: d?.gstStatus ?? '—', filing: d?.filing ?? '', remarks: d?.remarks ?? '',

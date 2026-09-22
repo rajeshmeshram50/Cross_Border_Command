@@ -29,6 +29,10 @@ class PurchaseOrder extends Model
     public const STATUS_SUBMITTED = 'submitted';
     public const STATUS_CANCELLED = 'cancelled';
 
+    /** Cancelled with money released: initiated until the refund is recovered, then closed. */
+    public const CANCEL_INITIATED = 'initiated';
+    public const CANCEL_CLOSED    = 'closed';
+
     public const PO_TYPES   = ['material_goods', 'services', 'ffd_transporter'];
     public const DOC_TYPES  = ['domestic', 'international'];
     public const YES_NO     = ['yes', 'no'];
@@ -38,6 +42,11 @@ class PurchaseOrder extends Model
     /** PO types that can be raised today; the others are listed but not open yet. */
     public const OPEN_PO_TYPES = ['material_goods'];
     public const PAYMENT_TYPES = ['Advanced Payment', 'Full Payment', 'Letter of Credit'];
+    /** The supplier type (master_vendor_types.name) each PO type needs. */
+    public const PO_TYPE_SUPPLIER_TYPE = [
+        'material_goods'  => 'Material / Goods',
+        'ffd_transporter' => 'FFD / Transporter',
+    ];
 
     protected $fillable = [
         'client_id', 'branch_id', 'code', 'po_date', 'status', 'current_step',
@@ -55,7 +64,8 @@ class PurchaseOrder extends Model
         'shipping_charges', 'packaging_charges', 'other_charges', 'grand_total',
         'terms', 'submitted_at', 'submitted_by',
         'tds_percentage', 'tds_amount', 'tds_updated_by', 'tds_updated_at', 'paid_amount', 'balance_amount',
-        'cancelled_at', 'cancelled_by', 'cancel_reason',
+        'cancelled_at', 'cancelled_by', 'cancel_reason', 'cancel_stage', 'cancel_closed_at',
+        'zoho_status', 'zoho_purchaseorder_id', 'zoho_bill_id', 'zoho_bill_number', 'zoho_synced_at', 'zoho_error',
         'inspection_status', 'inspection_note', 'inspection_note_files', 'inspected_by', 'inspected_at',
         'created_by', 'updated_by',
     ];
@@ -69,6 +79,8 @@ class PurchaseOrder extends Model
         'gst_approval_at'           => 'datetime',
         'submitted_at'              => 'datetime',
         'cancelled_at'              => 'datetime',
+        'cancel_closed_at'          => 'datetime',
+        'zoho_synced_at'            => 'datetime',
         'inspected_at'              => 'datetime',
         'inspection_note_files'     => 'array',
         'exchange_rate'             => 'decimal:6',
@@ -116,6 +128,11 @@ class PurchaseOrder extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(PoPayment::class, 'purchase_order_id');
+    }
+
+    public function refundAdjustment(): HasOne
+    {
+        return $this->hasOne(PoRefundAdjustment::class, 'purchase_order_id');
     }
 
     public function gstApprovals(): HasMany

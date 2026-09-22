@@ -1,4 +1,4 @@
-   import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+   import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import SegmentBadge from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
@@ -806,16 +806,6 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     // (the same pre-tax "Sub Total" convention the PO PDF and the PI already use).
     return { cgstP, sgstP, igstP, base, cgstA, sgstA, igstA, cost: base, miss: r.piQty === '' ? 0 : Math.max(0, num(r.piQty) - num(r.qty)) };
   };
-  const summary = useMemo(() => {
-    let prod = 0, cg = 0, sg = 0, ig = 0;
-    rows.forEach(r => { const c = compute(r); prod += c.cost; cg += c.cgstA; sg += c.sgstA; ig += c.igstA; });
-    const ship = num(charges.ship), pack = num(charges.pack), other = num(charges.other);
-    const addl = ship + pack + other;
-    // `prod` is now pre-tax, so the tax has to be added back here — Grand Total
-    // itself is unchanged (and still matches the saved PO's grand_total).
-    return { prod, cgst: cg, sgst: sg, igst: ig, addl, grand: prod + cg + sg + ig + addl };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, charges, sup.stateCode]);
   // Stage-1 shimmer while the dropdown masters (and, when editing, the PO
   // detail) are still loading — so the fields fill in rather than flash.
   const stage1Loading = mastersLoading || editLoading;
@@ -936,10 +926,25 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     });
     return ids;
   }, [rows, prodOpts, supplierSegs]);
+  const rowSegment = useCallback((r: { productId?: number | null; code?: string }) => {
+    const opt = prodOpts.find(o => (r.productId != null && o.id === r.productId) || (!!o.code && !!r.code && o.code === r.code));
+    return (opt?.segment ?? '').trim();
+  }, [prodOpts]);
   const mismatchNames = useMemo(
     () => rows.filter(r => segMismatchIds.has(r.id)).map(r => formatProductCode(r.code) || r.name || '—'),
     [rows, segMismatchIds],
   );
+  const summary = useMemo(() => {
+    let prod = 0, cg = 0, sg = 0, ig = 0;
+    // A product outside the supplier's segments cannot be ordered, so it is left out of the totals.
+    rows.forEach(r => { if (segMismatchIds.has(r.id)) return; const c = compute(r); prod += c.cost; cg += c.cgstA; sg += c.sgstA; ig += c.igstA; });
+    const ship = num(charges.ship), pack = num(charges.pack), other = num(charges.other);
+    const addl = ship + pack + other;
+    // `prod` is now pre-tax, so the tax has to be added back here — Grand Total
+    // itself is unchanged (and still matches the saved PO's grand_total).
+    return { prod, cgst: cg, sgst: sg, igst: ig, addl, grand: prod + cg + sg + ig + addl };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, charges, sup.stateCode, segMismatchIds]);
 
   // Supplier GST scrutiny is "old" when its last scrutiny date is more than 3
   // months ago — surfaced as a warning so the buyer re-runs scrutiny before
@@ -1140,7 +1145,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     if (segMismatchIds.size === 0) return true;
     toast.error(
       'Segment mismatch',
-      `${mismatchNames.join(', ')} ${mismatchNames.length > 1 ? 'do not' : 'does not'} match the supplier’s segment${(sup.segments ?? []).length ? ` (${(sup.segments ?? []).join(', ')})` : ''}. Remove the highlighted product${mismatchNames.length > 1 ? 's' : ''}, or map the supplier to that segment before continuing.`,
+      `${mismatchNames.join(', ')} ${mismatchNames.length > 1 ? 'do not' : 'does not'} match the supplier’s segments (reason shown under each product). Remove the highlighted product${mismatchNames.length > 1 ? 's' : ''}, or map the supplier to that segment before continuing.`,
     );
     return false;
   };
@@ -1522,15 +1527,6 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                     ))}
                     </div>
                   }>
-                  {mismatchNames.length > 0 && (
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 15px', margin: '0 0 12px', borderRadius: 12, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 12.5, lineHeight: 1.45 }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
-                      <span>
-                        <strong>Segment mismatch — {mismatchNames.join(', ')}</strong>{' '}
-                        {mismatchNames.length > 1 ? 'do not' : 'does not'} match this supplier’s segment{(sup.segments ?? []).length ? ` (${(sup.segments ?? []).join(', ')})` : ''}. Remove the highlighted product{mismatchNames.length > 1 ? 's' : ''}, or map the supplier to that segment.
-                      </span>
-                    </div>
-                  )}
                   <div className={`cpd-scroll ${poView ? 'cpd-scroll--ro' : ''}`}>
                     <table className={`cpd-tbl ${withShip ? '' : 'cpd-tbl--po'}`}>
                       {/* Fixed column widths keep the table STABLE while editing
@@ -1573,11 +1569,11 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                         ) : rows.map((r, i) => {
                           const c = compute(r);
                           const mismatch = segMismatchIds.has(r.id);
-                          const mismatchRowStyle = mismatch ? { background: 'rgba(239,68,68,.07)', boxShadow: 'inset 3px 0 0 #dc2626' } : undefined;
-                          return withShip ? (
+                          const mismatchRowStyle = mismatch ? { background: 'rgba(239,68,68,.07)', boxShadow: 'inset 3px 0 0 #dc2626', opacity: 0.6 } : undefined;
+                          const main = withShip ? (
                             <tr key={r.id} style={mismatchRowStyle} title={mismatch ? 'Product segment does not match the supplier segment' : undefined}>
                               <td className="cpd-c">{i + 1}</td>
-                              <td className="cpd-c"><span className="cpd-code" style={mismatch ? { color: '#dc2626' } : undefined}>{formatProductCode(r.code) || '—'}</span></td>
+                              <td className="cpd-c"><span className="cpd-code" style={mismatch ? { color: '#dc2626' } : undefined}>{formatProductCode(r.code) || '—'}</span>{mismatch && <span className="cpd-notmapped">Not mapped</span>}</td>
                               <td className="cpd-name">{(r.productId == null && !r.code && !r.piName)
                                 ? <div className="cpd-prodcell"><Dd value={PI_REPICK_PLACEHOLDER} optMeta={piMeta} options={[PI_REPICK_PLACEHOLDER, ...removedPi.map(piLabel)]} onChange={label => { if (label !== PI_REPICK_PLACEHOLDER) reAddPi(r.id, label); }} onDisabledSelect={(label) => { const p = piSet.find(x => piLabel(x) === label); const seg = p ? piSegOf(p) : ''; toast.error('Segment not mapped to the supplier', `“${label}”${seg ? ` (${seg})` : ''} isn't in this supplier's segment — map the supplier to this segment first.`); }} /></div>
                                 : <Tooltip label={r.piName} disabled={!r.piName} zIndex={2999999}><span className="cpd-name__txt">{r.piName || '—'}</span></Tooltip>}</td>
@@ -1593,7 +1589,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                           ) : (
                             <tr key={r.id} style={mismatchRowStyle} title={mismatch ? 'Product segment does not match the supplier segment' : undefined}>
                               <td className="cpd-c">{i + 1}</td>
-                              <td className="cpd-c"><span className="cpd-code" style={mismatch ? { color: '#dc2626' } : undefined}>{formatProductCode(r.code) || '—'}</span></td>
+                              <td className="cpd-c"><span className="cpd-code" style={mismatch ? { color: '#dc2626' } : undefined}>{formatProductCode(r.code) || '—'}</span>{mismatch && <span className="cpd-notmapped">Not mapped</span>}</td>
                               <td className="cpd-prodcell"><Dd tooltip value={r.name || PRODUCT_PLACEHOLDER} optMeta={prodMeta} options={[PRODUCT_PLACEHOLDER, ...prodOpts.filter(o => o.id === r.productId || !rows.some(x => x.id !== r.id && x.productId === o.id)).map(o => o.name)]} onChange={poView ? () => {} : name => pickProduct(r.id, name)} onDisabledSelect={(name) => { const o = prodOpts.find(x => x.name === name); toast.error('Segment not mapped to the supplier', `“${name}”${o?.segment ? ` (${o.segment})` : ''} isn't in this supplier's segment — map the supplier to this segment first.`); }} /></td>
                               <td><input className="cpd-in cpd-in--num" disabled={poView || mismatch} type="text" inputMode="decimal" value={r.qty} onChange={e => setLine(r.id, { qty: capDecimals(numOnly(e.target.value)) })} /></td>
                               <td><input className="cpd-in cpd-in--num" disabled={poView || mismatch} type="text" inputMode="decimal" value={r.rate} onChange={e => setLine(r.id, { rate: numOnly(e.target.value) })} /></td>
@@ -1601,6 +1597,26 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
                               <td className="cpd-c">{!poView && <Tooltip label="Remove product" themed zIndex={2999999}><button type="button" className="cpd-del" onClick={() => removeLine(r.id)}>✕</button></Tooltip>}</td>
                             </tr>
+                          );
+                          if (!mismatch) return main;
+                          const seg = rowSegment(r);
+                          return (
+                            <Fragment key={r.id}>
+                              {main}
+                              {/* The reason sits under the line it belongs to, wrapped so a long segment name can't overflow. */}
+                              <tr className="cpd-segrow">
+                                <td colSpan={colCount}>
+                                  <span className="cpd-segrow__msg">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                                    <span>
+                                      <b>Segment not mapped — {formatProductCode(r.code) || r.name || 'This product'} can't be ordered from this supplier.</b>
+                                      {seg ? <> It is in <b>{seg}</b>, which this supplier is not mapped to.</> : ' Its segment is not one this supplier is mapped to.'}
+                                      {' '}First map the supplier to {seg ? 'that segment' : 'its segment'} in the Supplier Master, or remove this product. It is left out of the totals.
+                                    </span>
+                                  </span>
+                                </td>
+                              </tr>
+                            </Fragment>
                           );
                         })}
                       </tbody>

@@ -72,7 +72,7 @@ export default function InspectionProductView({ product, productId, onClose }: {
     >
       <div className="prd-detail-overlay pins-layer pins-pv">
         <div className="prd-detail-modal">
-          <ProductView productId={productId ?? dto?.id} preview={dto} onClose={onClose} />
+          <ProductView productId={productId ?? dto?.id} preview={dto} onClose={onClose} readOnly />
         </div>
       </div>
     </Suspense>,

@@ -1,5 +1,6 @@
 // P2P → Order: purchase order list, loaded from /api/p2p/orders.
 import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import WorklistPager from '../../../../../components/ui/WorklistPager';
 import Badge, { type BadgeVariant } from '../../../../../components/ui/Badge';
 import CreatePoModal from '../create-po/CreatePoModal';
@@ -8,6 +9,7 @@ import { PoApiError, poApi, type PoListRow } from '../api/po-api';
 import { useDebouncedValue } from '../../../../../hooks/useDebouncedValue';
 import { useServerList } from '../../../../../hooks/useServerList';
 import { useToast } from '../../../../../contexts/ToastContext';
+const RecoverPaymentModal = lazy(() => import('../../../payment-management/advance-refund/RecoverPaymentModal'));
 // The PO form is a screen of its own: loaded only when one is being created,
 // so the list page doesn't carry it. The type import costs nothing at runtime.
 import type { PoLink } from '../create-po/CreatePoForm';
@@ -244,6 +246,13 @@ export type OrderRow = {
      PO to "Recovery Pending", and it moves itself to "Recovery Completed" once
      every rupee released against it has been recovered. */
   cancelStage?: 'initiated' | 'closed';
+  /** The refund adjustment behind adr — Manage Recovery opens it. */
+  refundId?: number;
+  /** Stored recovered total of the refund adjustment. */
+  recoveredAmt?: number;
+  /** Why the last Zoho Books sync failed, or payments still to post. */
+  zohoError?: string;
+  zohoUnposted?: number;
 };
 
 export const PO_TYPE: Record<PoType, { label: string; icon: ReactNode }> = {
@@ -392,7 +401,11 @@ export function toOrderRow(r: PoListRow): OrderRow {
     balance: Number(r.balance_amount) || 0,
     breakdown: { base: Number(r.taxable_total) || 0, gst: Number(r.gst_total) || 0, extra: Number(r.charges_total) || 0 },
     invoices: [],
-    zohoSynced: false,
+    // Synced once the PO + bill are in Zoho and every payment is posted to the bill.
+    zohoSynced: r.zoho_status === 'synced' && !r.zoho_unposted_payments,
+    zohoError: r.zoho_status === 'failed' ? (r.zoho_error ?? undefined)
+      : r.zoho_status === 'synced' && r.zoho_unposted_payments ? `${r.zoho_unposted_payments} payment(s) not posted to bill ${r.zoho_bill_number ?? ''}` : undefined,
+    zohoUnposted: Number(r.zoho_unposted_payments) || 0,
     inspectionDone: r.inspection_status === 'completed',
     paymentRequests: Number(r.payment_requests_count) || 0,
     paymentNote: Number(r.ready_to_pay_amount) > 0 ? { kind: 'ready', amount: Number(r.ready_to_pay_amount) }
@@ -400,12 +413,16 @@ export function toOrderRow(r: PoListRow): OrderRow {
     cancelled: r.status === 'cancelled',
     cancelReason: r.cancel_reason ?? undefined,
     signingStarted: !!r.signing_started,
-    cancelStage: r.status === 'cancelled' ? 'closed' : undefined,
+    cancelStage: r.status === 'cancelled' ? (r.cancel_stage ?? 'closed') : undefined,
+    adr: r.refund ? { no: r.refund.code, date: r.refund.date ?? '', count: 1, paid: r.refund.paid, credited: r.refund.refund } : undefined,
+    refundId: r.refund?.id,
+    recoveredAmt: r.refund?.recovered,
   };
 }
 
 function IdCell({ id, date }: { id: string; date: string }) {
-  if (!id) return <span className="ord-dash">—</span>;
+  // Not linked (e.g. a PO without a shipment): N/A rather than a dash.
+  if (!id) return <span className="ord-dash">N/A</span>;
   return (
     <div className="ord-idcell">
       <span className="ord-idpill">{id}</span>
@@ -531,7 +548,7 @@ const ICON_VAULT = (
 );
 
 // Cancelled POs are read-only: their action buttons render disabled.
-function ZohoCell({ synced, cancelled = false, onSync }: { synced: boolean; cancelled?: boolean; onSync?: () => void }) {
+function ZohoCell({ synced, cancelled = false, onSync, error }: { synced: boolean; cancelled?: boolean; onSync?: () => void; error?: string }) {
   if (synced) {
     return (
       <div className="ord-statcell">
@@ -541,7 +558,7 @@ function ZohoCell({ synced, cancelled = false, onSync }: { synced: boolean; canc
   }
   return (
     <div className="ord-statcell">
-      <span className="ord-status ord-status--bad"><span className="ord-status__dot" />Not Sync</span>
+      <span className="ord-status ord-status--bad" title={error}><span className="ord-status__dot" />Not Sync</span>
       <button type="button" className="ord-btn ord-btn--zoho" disabled={cancelled} onClick={onSync}>{ICON_SYNC}<span>Zoho Sync</span></button>
     </div>
   );
@@ -671,7 +688,7 @@ function AdrRow({ label, value, tone }: { label: string; value: string; tone?: '
 function recoveryOf(row: OrderRow) {
   const target = row.adr ? row.adr.credited : 0;
   const entries = row.recoveries?.length ?? 0;
-  const logged = (row.recoveries ?? []).reduce((sum, amount) => sum + amount, 0);
+  const logged = row.recoveredAmt ?? (row.recoveries ?? []).reduce((sum, amount) => sum + amount, 0);
   const recovered = Math.min(logged, target);
   return {
     paid: row.paid,
@@ -682,7 +699,7 @@ function recoveryOf(row: OrderRow) {
     pending: Math.max(0, target - recovered),
     pct: target > 0 ? Math.round((recovered / target) * 100) : 0,
     entries,
-    started: entries > 0,
+    started: entries > 0 || logged > 0,
     complete: target > 0 && recovered >= target,
   };
 }
@@ -690,7 +707,7 @@ function recoveryOf(row: OrderRow) {
 /* Payment Recovery Status — the mirror of Payment Progress for money coming
    back rather than going out. It reuses that cell's progress, pill and note
    styles; only the two states Payment Progress never has are new. */
-function RecoveryCell({ row }: { row: OrderRow }) {
+function RecoveryCell({ row, onRecover }: { row: OrderRow; onRecover?: (row: OrderRow) => void }) {
   const g = recoveryOf(row);
   const entryWord = (n: number) => `${n} entr${n === 1 ? 'y' : 'ies'}`;
 
@@ -719,6 +736,7 @@ function RecoveryCell({ row }: { row: OrderRow }) {
       className={`ord-btn ord-btn--hist${g.complete ? ' is-record' : ''}`}
       disabled={!g.noteRaised}
       title={tip}
+      onClick={() => onRecover?.(row)}
     >
       {ICON_RECOVER}
       <span>{g.complete ? 'Recovery Complete' : 'Manage Recovery'}</span>
@@ -833,10 +851,10 @@ function RiskBadge({ risk }: { risk: RiskLevel | null }) {
 
 // One PO as it appears on the list: a <tbody> spanning a row per mapped SPI.
 // Payment Request Management reuses it (without the Action column) for its status tabs.
-export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, onZoho, onCancel, onVault, showActions = true }: {
+export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, onZoho, onCancel, onVault, onRecover, showActions = true }: {
   row: OrderRow; sr: number; inspected: boolean;
   onInspect: (row: OrderRow) => void; onManage: (row: OrderRow) => void;
-  onEdit?: (row: OrderRow) => void; onZoho?: (row: OrderRow) => void; onCancel?: (row: OrderRow) => void; onVault?: (row: OrderRow) => void; showActions?: boolean;
+  onEdit?: (row: OrderRow) => void; onZoho?: (row: OrderRow) => void; onCancel?: (row: OrderRow) => void; onVault?: (row: OrderRow) => void; onRecover?: (row: OrderRow) => void; showActions?: boolean;
 }) {
   const lines = row.invoices.length > 0 ? row.invoices : [null];
   const span = lines.length;
@@ -878,9 +896,7 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
                 </PoCell>
 
                 <PoCell span={span}>
-                  {row.shipment
-                    ? <IdCell id={row.shipment} date={row.shipmentDate} />
-                    : <span className="ord-dash">—</span>}
+                  <IdCell id={row.shipment ?? ''} date={row.shipmentDate} />
                 </PoCell>
                 <PoCell span={span}><IdCell id={row.opportunity} date={row.opportunityDate} /></PoCell>
                 <PoCell span={span}><IdCell id={row.procurement} date={row.procurementDate} /></PoCell>
@@ -926,13 +942,13 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
 
             {isFirst && (
               <>
-                <PoCell span={span}><ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} onSync={onZoho && (() => onZoho(row))} /></PoCell>
+                <PoCell span={span}><ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} error={row.zohoError} onSync={onZoho && (() => onZoho(row))} /></PoCell>
                 <PoCell span={span}>
                   <InspectionCell required={row.physicalInspection} done={inspected} cancelled={row.cancelled} onOpen={() => onInspect(row)} />
                 </PoCell>
                 <PoCell span={span}><PaymentCell row={row} onManage={onManage} /></PoCell>
                 <PoCell span={span}><AdrCell adr={row.adr} /></PoCell>
-                <PoCell span={span}><RecoveryCell row={row} /></PoCell>
+                <PoCell span={span}><RecoveryCell row={row} onRecover={onRecover} /></PoCell>
                 <PoCell span={span}><StatusBadge row={row} /></PoCell>
                 {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={viewOnlyReason(row)} onEdit={() => onEdit?.(row)} onCancel={onCancel && (() => onCancel(row))} onVault={onVault && (() => onVault(row))} /></PoCell>}
               </>
@@ -962,9 +978,9 @@ function useIsPhone() {
   return isPhone;
 }
 
-function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, onVault, inspected }: {
+function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, onVault, onRecover, inspected }: {
   row: OrderRow; index: number; onManage: (row: OrderRow) => void; onInspect: (row: OrderRow) => void;
-  onEdit: (row: OrderRow) => void; onZoho: (row: OrderRow) => void; onCancel: (row: OrderRow) => void; onVault: (row: OrderRow) => void; inspected: boolean;
+  onEdit: (row: OrderRow) => void; onZoho: (row: OrderRow) => void; onCancel: (row: OrderRow) => void; onVault: (row: OrderRow) => void; onRecover: (row: OrderRow) => void; inspected: boolean;
 }) {
   const category = categoryOf(row);
   const count = row.invoices.length;
@@ -1007,7 +1023,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, 
       <dl className="ord-card__grid">
         <div>
           <dt>Shipment ID</dt>
-          <dd>{row.shipment ? <IdCell id={row.shipment} date={row.shipmentDate} /> : <span className="ord-dash">—</span>}</dd>
+          <dd><IdCell id={row.shipment ?? ''} date={row.shipmentDate} /></dd>
         </div>
         <div><dt>Opportunity ID</dt><dd><IdCell id={row.opportunity} date={row.opportunityDate} /></dd></div>
         <div><dt>Procurement ID</dt><dd><IdCell id={row.procurement} date={row.procurementDate} /></dd></div>
@@ -1055,7 +1071,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, 
       <div className="ord-card__status">
         <div className="ord-card__block">
           <span className="ord-card__label">Zohobook Status</span>
-          <ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} onSync={() => onZoho(row)} />
+          <ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} error={row.zohoError} onSync={() => onZoho(row)} />
         </div>
         <div className="ord-card__block">
           <span className="ord-card__label">Physical Inspection</span>
@@ -1078,7 +1094,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, 
 
       <div className="ord-card__section">
         <span className="ord-card__label">Payment Recovery</span>
-        <RecoveryCell row={row} />
+        <RecoveryCell row={row} onRecover={onRecover} />
       </div>
 
       <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={viewOnlyReason(row)} onEdit={() => onEdit(row)} onCancel={() => onCancel(row)} onVault={() => onVault(row)} />
@@ -1125,7 +1141,27 @@ export default function Order() {
     if (row.draft) { toast.info('Submit the PO first', `${row.po} is still a draft — submit it before inspecting.`); return; }
     setInspectRow(row);
   };
-  const onZoho = comingSoon('Zoho Books sync');
+  // Zoho Books: PO + bill once, then the payments not posted yet.
+  const [syncingId, setSyncingId] = useState<number | null>(null);
+  const onZoho = async (row: OrderRow) => {
+    if (!row.id || syncingId) return;
+    if (row.draft) { toast.info('Submit the PO first', `${row.po} is still a draft — submit it before syncing to Zoho Books.`); return; }
+    setSyncingId(row.id);
+    try {
+      const r = await poApi.zohoSync(row.id);
+      toast.success(`${row.po} synced`, r.message);
+      loadRows();
+    } catch (e) {
+      toast.error('Zoho Books sync failed', e instanceof PoApiError ? e.firstError : 'Please try again.');
+      loadRows();
+    } finally {
+      setSyncingId(null);
+    }
+  };
+  // Manage Recovery: the refund adjustment's recoveries, in the same popup as the refund list.
+  const [recoverId, setRecoverId] = useState<number | null>(null);
+  const onRecover = (row: OrderRow) => { if (row.refundId) setRecoverId(row.refundId); };
+  const navigate = useNavigate();
 
   // Cancel PO: nothing paid → confirm and cancel; money released → refund-adjustment gate.
   const [cancelRow, setCancelRow] = useState<OrderRow | null>(null);
@@ -1276,8 +1312,14 @@ export default function Order() {
             busy={cancelling}
             onClose={() => { if (!cancelling) setCancelRow(null); }}
             onConfirm={() => { void confirmCancel(); }}
-            onCreateRefund={() => { setCancelRow(null); toast.info('Feature coming soon', 'The refund adjustment will be connected next.'); }}
+            onCreateRefund={() => { const id = cancelRow.id; setCancelRow(null); navigate(`/p2p/advance-refund-adjustment?po=${id}`); }}
           />
+        </Suspense>
+      )}
+
+      {recoverId && (
+        <Suspense fallback={null}>
+          <RecoverPaymentModal refundId={recoverId} onChanged={loadRows} onClose={() => setRecoverId(null)} />
         </Suspense>
       )}
 
@@ -1434,6 +1476,7 @@ export default function Order() {
                 onInspect={onInspect}
                 onEdit={openEdit}
                 onZoho={onZoho}
+                onRecover={onRecover}
                 onCancel={onCancel}
                 onVault={onVault}
                 inspected={row.inspectionDone}
@@ -1473,6 +1516,7 @@ export default function Order() {
                 onManage={onManage}
                 onEdit={openEdit}
                 onZoho={onZoho}
+                onRecover={onRecover}
                 onCancel={onCancel}
                 onVault={onVault}
               />

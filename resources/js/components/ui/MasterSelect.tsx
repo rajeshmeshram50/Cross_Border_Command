@@ -12,7 +12,14 @@ import './MasterSelect.css';
    pill opens a mini popup listing the hidden tags. */
 // `reg` adds the segment Reg-High / Reg-Low badge after the pill (text '' = badge only).
 type OptBadgeItem = string | { text: string; reg?: string | null };
-type OptBadgeSpec = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string; items?: OptBadgeItem[]; reg?: string | null };
+// `lock` draws a padlock icon before the text (used for locked options).
+type OptBadgeSpec = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string; items?: OptBadgeItem[]; reg?: string | null; lock?: boolean };
+
+const LOCK_ICON = (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}>
+    <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
+  </svg>
+);
 
 // Follow the active app theme: light pastel pills in light mode, translucent
 // tints + lighter text in dark mode (QA #123 — the option badges were fixed
@@ -85,6 +92,7 @@ export function OptBadge({ b, staticPill }: { b: OptBadgeSpec; staticPill?: bool
   }
 
   if (!interactive) {
+    if (b.lock) return <span title={b.title ?? b.text} style={{ ...style, display: 'inline-flex', alignItems: 'center', gap: 4 }}>{LOCK_ICON}{b.text}</span>;
     return <span title={b.title ?? b.text} style={style}>{b.text}</span>;
   }
 

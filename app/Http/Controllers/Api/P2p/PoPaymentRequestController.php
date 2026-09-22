@@ -221,6 +221,7 @@ class PoPaymentRequestController extends Controller
         if ($blocked = $this->payable($order)) return $blocked;
         $row = $order->paymentRequests()->findOrFail($req);
         $existing = $paymentId ? $row->payments()->findOrFail($paymentId) : null;
+        if ($blocked = $this->zohoLocked($existing)) return $blocked;
 
         if ($row->status !== PoPaymentRequest::STATUS_APPROVED) {
             return $this->fail($row->status === PoPaymentRequest::STATUS_PENDING
@@ -296,6 +297,7 @@ class PoPaymentRequestController extends Controller
             $this->svc->refreshPaymentTotals($locked);
             return $payment;
         }, [$path]);
+        $this->postToZoho($order->fresh(), $saved);
 
         return $this->ok([
             'payment' => $this->shapePayment($saved->fresh()),
@@ -310,6 +312,7 @@ class PoPaymentRequestController extends Controller
         $order = $this->findPo($po);
         if ($order->isCancelled()) return $this->fail('This PO is cancelled — its payments can no longer be changed.');
         $row = $order->paymentRequests()->findOrFail($req)->payments()->findOrFail($payment);
+        if ($blocked = $this->zohoLocked($row)) return $blocked;
 
         $this->inTransaction('delete the payment', function () use ($order, $row, $user) {
             $locked = PurchaseOrder::whereKey($order->id)->lockForUpdate()->first();
@@ -586,7 +589,27 @@ class PoPaymentRequestController extends Controller
             'utr_cheque_number' => $p->utr_cheque_number, 'utr_cheque_date' => $p->utr_cheque_date?->toDateString(),
             'proof_name' => $p->proof_name, 'proof_url' => $p->proof_path ? file_url($p->proof_path) : null,
             'created_at' => $p->created_at?->toIso8601String(),
+            'zoho_synced' => (float) $p->zoho_applied_amount > 0, 'zoho_sync_status' => $p->zoho_sync_status, 'zoho_error' => $p->zoho_error,
         ];
+    }
+
+    /** Posted to the Zoho bill already: changing it here would leave the books wrong. */
+    private function zohoLocked(?PoPayment $p): ?JsonResponse
+    {
+        return $p && (float) $p->zoho_applied_amount > 0
+            ? $this->fail('This payment is already posted to Zoho Books — it can no longer be changed or deleted.')
+            : null;
+    }
+
+    /** A PO already in Zoho gets each new payment posted at once; a failure stays on the row for a retry. */
+    private function postToZoho(PurchaseOrder $po, PoPayment $p): void
+    {
+        if (empty($po->zoho_bill_id)) return;
+        try {
+            app(\App\Services\P2p\PoZohoService::class)->postPayments($po, $p->id);
+        } catch (\Throwable $e) {
+            Log::warning('P2P Zoho: posting a new payment failed', ['payment' => $p->id, 'err' => $e->getMessage()]);
+        }
     }
 
     /** @return array<int, array{name: ?string, role: ?string}> — name and role (department · designation). */

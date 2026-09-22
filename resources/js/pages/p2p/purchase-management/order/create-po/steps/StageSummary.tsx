@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { formatDmy } from '../../../../../../utils/formatDmy';
 import type { PoDraft } from '../po-draft';
 import type { StepCtx } from '../CreatePoForm';
-import { riskLabel } from '../supplier-checks';
+import { categoryLabel, riskLabel } from '../supplier-checks';
 import ProductTable, { computeLine } from './ProductTable';
 import { chargesTotal } from './ChargesSummary';
 import { IcoCheck, IcoChevron, IcoHistory } from '../../shared/icons';
@@ -80,7 +80,7 @@ export default function StageSummary({ draft, ctx, upto }: { draft: PoDraft; ctx
               <RO label="Company Legal Name" value={dash(v(sup?.legalName))} />
               <RO label="Supplier Type" value={dash(v(sup?.type))} />
               <RO label="Risk Level" value={dash(riskLabel(sup?.risk))} />
-              <RO label="Supplier Category" value={dash(v(sup?.category))} />
+              <RO label="Supplier Category" value={dash(categoryLabel(sup?.category))} />
             </Group>
 
             <Group label="Address & Contact Details">
@@ -110,16 +110,16 @@ export default function StageSummary({ draft, ctx, upto }: { draft: PoDraft; ctx
             </Group>
 
             <Group label="GST Scrutiny Details">
-              <RO label="Scrutiny Date" value={sup?.scrutiny ? formatDmy(sup.scrutiny) : dash('')} />
-              <RO label="GST Number" value={dash(v(sup?.gstNo))} />
-              <RO label="GST Status" value={dash(v(sup?.gstStatus))} />
-              <RO label="Last Filing Date" value={sup?.filing ? formatDmy(sup.filing) : dash('')} />
-              <RO label="Prev. Invoice / Remarks" value={dash(v(sup?.remarks))} full />
+              <RO label="Scrutiny Date" value={(draft.docType === 'International') ? 'N/A' : sup?.scrutiny ? formatDmy(sup.scrutiny) : dash('')} />
+              <RO label="GST Number" value={(draft.docType === 'International') ? 'N/A' : dash(v(sup?.gstNo))} />
+              <RO label="GST Status" value={(draft.docType === 'International') ? 'N/A' : dash(v(sup?.gstStatus))} />
+              <RO label="Last Filing Date" value={(draft.docType === 'International') ? 'N/A' : sup?.filing ? formatDmy(sup.filing) : dash('')} />
+              <RO label="Prev. Invoice / Remarks" value={(draft.docType === 'International') ? 'N/A' : dash(v(sup?.remarks))} full />
             </Group>
 
             <Group label="Supplier Risk Alert">
               <RO label="Risk Level" value={dash(riskLabel(sup?.risk))} />
-              <RO label="Supplier Category" value={dash(v(sup?.category))} />
+              <RO label="Supplier Category" value={dash(categoryLabel(sup?.category))} />
               <RO label="GST Registration" value={dash(v(sup?.gstStatus))} />
             </Group>
           </div>

@@ -19,9 +19,11 @@ type Props = {
   onChange: (patch: Partial<Charges>) => void;
   /** The step's Save, placed beside the Grand Total and level with it. */
   action?: ReactNode;
+  /** International PO: "Tax" instead of "GST". */
+  taxLabel?: string;
 };
 
-export default function ChargesSummary({ base, gst, charges, onChange, action }: Props) {
+export default function ChargesSummary({ base, gst, charges, onChange, action, taxLabel = 'GST' }: Props) {
   const total = chargesTotal(charges);
 
   return (
@@ -39,8 +41,8 @@ export default function ChargesSummary({ base, gst, charges, onChange, action }:
       </div>
 
       <div className="cpd-totbox">
-        <TotRow label="Product Cost (Without GST)" value={money(base)} />
-        <TotRow label="Total GST Amount" value={money(gst)} />
+        <TotRow label={`Product Cost (Without ${taxLabel})`} value={money(base)} />
+        <TotRow label={`Total ${taxLabel} Amount`} value={money(gst)} />
         <TotRow label="Total Charges" value={money(total)} />
         <TotRow label="Grand Total" value={money(base + gst + total)} grand />
       </div>

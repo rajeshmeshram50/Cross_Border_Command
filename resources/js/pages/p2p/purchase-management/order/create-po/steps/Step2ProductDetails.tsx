@@ -70,9 +70,30 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
           {standalone
             ? 'Tinted cells are editable — product, quantity and rate. Everything else is calculated.'
             : 'Tinted cells are editable — PO product, quantity and rate. Everything else is carried from the PI or calculated.'}
-          {' '}{ctx.taxMode === 'inter' ? 'Inter-state supplier: IGST applies.' : 'Intra-state supplier: CGST + SGST apply.'}
+          {' '}{ctx.taxMode === 'export' ? 'International supplier: no Indian GST — tax is 0 by default.' : ctx.taxMode === 'inter' ? 'Inter-state supplier: IGST applies.' : 'Intra-state supplier: CGST + SGST apply.'}
         </div>
         {ctx.linesGeneral && <div className="cpd-general-err" role="alert">{ctx.linesGeneral}</div>}
+        {/* Why the PI has little or nothing left: its quantity sits on other POs (some maybe still with the senior). */}
+        {!standalone && ctx.piHolders.length > 0 && (
+          <div className={`cpd-held${lines.length === 0 ? ' cpd-held--empty' : ''}`}>
+            <b>{lines.length === 0 ? 'Nothing left to order on this PI.' : 'Part of this PI is already on other POs.'}</b>{' '}
+            Its products are on:{' '}
+            {ctx.piHolders.map((h, i) => (
+              <span key={h.id}>
+                {i > 0 && ', '}
+                <span className="cpd-held__po">{h.code}</span>{' '}
+                <span className={`cpd-held__st cpd-held__st--${h.approval_status === 'pending' ? 'wait' : 'ok'}`}>
+                  {h.approval_status === 'pending' ? 'awaiting senior approval'
+                    : h.approval_status === 'approved' ? 'senior approved'
+                      : h.status === 'draft' ? 'draft' : 'submitted'}
+                </span>
+              </span>
+            ))}
+            {ctx.piHolders.some((h) => h.approval_status === 'pending')
+              ? '. That quantity is released back to this PI only if the senior rejects it or the PO is cancelled.'
+              : '. Raise a standalone PO for anything extra.'}
+          </div>
+        )}
         <ProductTable rows={lines} products={products} taxMode={ctx.taxMode} onChange={patchLine} onRemove={removeLine}
           supplierSegments={draft.supplier?.segments ?? null}
           onProductsChanged={ctx.lookups.reloadProducts} errors={ctx.lineErrors} standalone={standalone} />
@@ -85,6 +106,7 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
             and charges without leaving Step 02. It rides in the summary row so
             it sits beside the Grand Total. */}
         <ChargesSummary
+          taxLabel={ctx.taxMode === 'export' ? 'Tax' : 'GST'}
           base={base}
           gst={gst}
           charges={draft.charges}

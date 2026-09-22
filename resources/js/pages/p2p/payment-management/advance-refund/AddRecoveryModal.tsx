@@ -4,8 +4,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Chip, ICON_X, fmtDate, money, shortDate } from '../../purchase-management/order/manage-payment/payment-shared';
+import type { RecoveryBody } from '../../purchase-management/order/api/po-api';
 import { IcoSave, IcoWallet, IcoWarn } from '../../icons';
-import { findPo, todayIso, type RefundAdjustment, type RefundRecovery } from './refund-data';
+import { todayIso, type RefundAdjustment, type RefundRecovery } from './refund-data';
 import { useEscapeClose } from './useEscapeClose';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
 import '../../purchase-management/order/manage-payment/manage-payment-requests.css';
@@ -16,10 +17,12 @@ type Props = {
   /** Amount still owed, not counting the entry being edited. */
   outstanding: number;
   initial?: RefundRecovery;
-  onSave: (r: RefundRecovery) => void;
+  /** Resolves true when saved; the popup then closes from the parent. */
+  onSave: (body: RecoveryBody) => Promise<boolean>;
   onClose: () => void;
 };
 
+const MAX_FILE = 10 * 1024 * 1024;
 const UPLOAD = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
@@ -31,22 +34,35 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
   const amountRef = useRef<HTMLInputElement>(null);
   useEffect(() => { amountRef.current?.focus(); }, []);
 
-  const room = outstanding + (initial?.amount ?? 0);
-  const poDate = findPo(refund.po)?.poDate;
+  const room = Math.round((outstanding + (initial?.amount ?? 0)) * 100) / 100;
+  const poDate = refund.poInfo?.poDate;
   const [amount, setAmount] = useState(initial ? String(initial.amount) : '');
-  const [date, setDate] = useState(initial?.date ?? todayIso());
+  const [date, setDate] = useState(initial?.date || todayIso());
   const [reference, setReference] = useState(initial?.reference ?? '');
-  const [file, setFile] = useState(initial?.file ?? '');
+  const [fileName, setFileName] = useState(initial?.file ?? '');
+  const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const save = () => {
-    const amt = Math.round(parseFloat(amount.replace(/[,\s₹]/g, '')) || 0);
+  const pick = (f: File | null) => {
+    if (!f) return;
+    if (f.size > MAX_FILE) { setError('Proof of payment must be 10 MB or smaller.'); return; }
+    if (!/\.(pdf|jpe?g|png|webp)$/i.test(f.name)) { setError('Proof of payment must be a PDF or an image (JPG, PNG, WEBP).'); return; }
+    setFile(f); setFileName(f.name); setError('');
+  };
+
+  const save = async () => {
+    const amt = Math.round((parseFloat(amount.replace(/[,\s₹]/g, '')) || 0) * 100) / 100;
     if (amt <= 0) { setError('Enter the recovered amount.'); return; }
-    if (amt > room) { setError(`Only ${money(room)} is still outstanding on this refund.`); return; }
+    if (amt > room + 0.001) { setError(`Only ${money(room)} is still outstanding on this refund.`); return; }
     if (!date) { setError('Pick the refunded date.'); return; }
     if (date < refund.date) { setError(`The refunded date cannot be before the refund was raised (${fmtDate(refund.date)}).`); return; }
     if (date > todayIso()) { setError('The refunded date cannot be in the future.'); return; }
-    onSave({ amount: amt, date, reference: reference.trim() || undefined, file: file || undefined });
+    const ref = reference.trim();
+    if (ref.length > 64) { setError('Reference number can be at most 64 characters.'); return; }
+    setSaving(true);
+    await onSave({ amount: amt, recovered_date: date, reference_no: ref || undefined, proof: file });
+    setSaving(false);
   };
 
   return createPortal(
@@ -73,8 +89,8 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
               <label htmlFor="arf-add-amt">Recovered Amount</label>
               <div className="apay-inwrap">
                 <span className="apay-prefix">₹</span>
-                <input id="arf-add-amt" ref={amountRef} className="apay-in" inputMode="decimal" placeholder="0.00"
-                  value={amount} onChange={(e) => { setAmount(e.target.value); setError(''); }} />
+                <input id="arf-add-amt" ref={amountRef} className="apay-in" inputMode="decimal" placeholder="0.00" maxLength={16}
+                  value={amount} onChange={(e) => { setAmount(e.target.value.replace(/[^\d.,]/g, '')); setError(''); }} />
               </div>
             </div>
             <div className="apay-f">
@@ -84,7 +100,7 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
             </div>
             <div className="apay-f apay-f--full">
               <label htmlFor="arf-add-ref">Reference No. (Cheque / UTR)</label>
-              <input id="arf-add-ref" className="apay-in" placeholder="Enter cheque / UTR number"
+              <input id="arf-add-ref" className="apay-in" placeholder="Enter cheque / UTR number" maxLength={64}
                 value={reference} onChange={(e) => setReference(e.target.value)} />
             </div>
             <div className="apay-f apay-f--full">
@@ -92,11 +108,11 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
               <label className="apay-drop" htmlFor="arf-add-file">
                 <div className="apay-drop__ico">{UPLOAD}</div>
                 <div className="apay-drop__txt">
-                  <div className="apay-drop__t">{file ? 'Click to replace proof of payment' : 'Click to upload proof of payment'}</div>
-                  <div className="apay-drop__s">{file || 'PDF, JPG or PNG · No file chosen'}</div>
+                  <div className="apay-drop__t">{fileName ? 'Click to replace proof of payment' : 'Click to upload proof of payment'}</div>
+                  <div className="apay-drop__s">{fileName || 'PDF, JPG, PNG or WEBP · up to 10 MB'}</div>
                 </div>
-                <input id="arf-add-file" className="apay-file-in" type="file" accept=".pdf,.jpg,.jpeg,.png"
-                  onChange={(e) => setFile(e.target.files?.[0]?.name ?? file)} />
+                <input id="arf-add-file" className="apay-file-in" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp"
+                  onChange={(e) => { pick(e.target.files?.[0] ?? null); e.target.value = ''; }} />
               </label>
             </div>
           </div>
@@ -105,9 +121,9 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
         </div>
 
         <div className="apay-ft">
-          <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
-          <button type="button" className="spi-mdl-confirm" disabled={!amount.trim()} onClick={save}>
-            <IcoSave /> {initial ? 'Update Payment' : 'Submit Payment'}
+          <button type="button" className="spi-mdl-cancel" disabled={saving} onClick={onClose}>Cancel</button>
+          <button type="button" className="spi-mdl-confirm" disabled={!amount.trim() || saving} onClick={() => void save()}>
+            <IcoSave /> {saving ? 'Saving…' : initial ? 'Update Payment' : 'Submit Payment'}
           </button>
         </div>
       </div>

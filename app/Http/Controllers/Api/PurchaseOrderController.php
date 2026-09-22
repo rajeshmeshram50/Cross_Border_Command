@@ -1276,9 +1276,9 @@ class PurchaseOrderController extends Controller
         $indiaId = DB::table('master_countries')->whereRaw('LOWER(name) = ?', ['india'])->value('id');
         $rows = Vendor::query()
             ->forUser($user, $request->integer('branch_id') ?: null)
-            ->with('primaryAddress:id,vendor_id,country_id')
+            ->with(['primaryAddress:id,vendor_id,country_id', 'vendorType:id,name'])
             ->orderBy('company_name')
-            ->get(['id', 'vendor_code', 'company_name', 'legal_name'])
+            ->get(['id', 'vendor_code', 'company_name', 'legal_name', 'vendor_type_id', 'supplier_category'])
             ->map(function ($v) use ($indiaId) {
                 $cid = optional($v->primaryAddress)->country_id;
                 // No country yet → treat as domestic (the pre-onboarding default).
@@ -1288,6 +1288,9 @@ class PurchaseOrderController extends Controller
                     'code' => $v->vendor_code,
                     'name' => $v->company_name ?: $v->legal_name,
                     'document_type' => $docType,
+                    // Create PO lists only suppliers of the PO's type and locks blacklisted ones.
+                    'supplier_type' => $v->vendorType?->name,
+                    'supplier_category' => $v->supplier_category,
                 ];
             });
         return response()->json(['status' => true, 'data' => $rows]);

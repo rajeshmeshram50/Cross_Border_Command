@@ -897,3 +897,13 @@
   .arf-form .spi-dt-foot-r > button { justify-content:center; min-width:0; }
   .arf-form .spi-dt-foot-r > .spi-dt-btn-next { flex:1 1 auto; }
 }
+
+/* Zoho Books state of a vendor credit / refund, and the retry bar in Recover Payment. */
+.arf-zoho { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
+.arf-zoho svg { width: 11px; height: 11px; }
+.arf-zoho--ok { background: #e7f6ef; color: #0a6f47; border: 1px solid #b6e2ce; }
+.arf-zoho--bad { background: #fdecea; color: #b1401d; border: 1px solid #f5c0b5; cursor: help; }
+.arf-zbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 10px 14px; border-radius: 10px; font-size: 12.5px; background: #fef9e7; border: 1px solid #f6e3a1; color: #7a5a00; }
+[data-bs-theme="dark"] .arf-zoho--ok { background: rgba(10,135,84,0.16); border-color: rgba(10,179,156,0.34); color: #7ddfbf; }
+[data-bs-theme="dark"] .arf-zoho--bad { background: rgba(177,64,29,0.16); border-color: rgba(240,101,72,0.34); color: #fda192; }
+[data-bs-theme="dark"] .arf-zbar { background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.35); color: #fcd34d; }

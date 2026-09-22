@@ -15,7 +15,11 @@ export function gstCheck(draft: PoDraft) {
   const filing = sup?.filing ?? '';
   const scrutinyAge = monthsAgo(scrutiny);
   const filingAge = monthsAgo(filing);
-  const state = gstState(sup ? sup.code : '', scrutiny, filing);
+  // An international supplier has no GST: nothing to check, no popup, no senior approval.
+  const international = draft.docType === 'International';
+  const state = international && sup
+    ? { tone: 'idle' as const, title: 'GST checks not applicable', note: 'International supplier — GST scrutiny and return filing do not apply to this PO.' }
+    : gstState(sup ? sup.code : '', scrutiny, filing);
 
   // The popup behind the action — null when the PO needs no GST action.
   const notice: GstNotice | null = sup && (state.tone === 'stop' || state.tone === 'warn')
