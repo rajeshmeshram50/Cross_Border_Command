@@ -1795,19 +1795,6 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
   box-shadow: 0 10px 28px -14px rgba(0, 0, 0, .7);
 }
 
-/* Select Supplier + its pencil on one row; the dropdown takes the space. */
-.cpf-ddrow { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.cpf-ddrow > :first-child { flex: 1 1 auto; min-width: 0; }
-.cpf-editbtn {
-  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-  width: 34px; height: 34px; border: 0; border-radius: 9px; cursor: pointer; color: #fff;
-  background: linear-gradient(135deg, #22d3ee, #0e7490);
-  box-shadow: 0 3px 9px rgba(8, 145, 178, .3);
-  transition: filter .15s, transform .12s;
-}
-.cpf-editbtn:hover { transform: translateY(-1px); filter: brightness(1.06); }
-.cpf-editbtn svg { width: 15px; height: 15px; }
-
 /* Under the document name: which CLM library the row came from. */
 .cdoc-kind {
   display: inline-block; margin-right: 7px; padding: 2px 7px; border-radius: 6px;
