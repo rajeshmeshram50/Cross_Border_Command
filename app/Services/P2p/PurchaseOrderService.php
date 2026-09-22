@@ -2,6 +2,7 @@
 
 namespace App\Services\P2p;
 
+use App\Models\P2p\PoPaymentRequest;
 use App\Models\P2p\PurchaseOrder;
 use App\Models\P2p\PurchaseOrderDocument;
 use App\Models\P2p\PurchaseOrderItem;
@@ -53,6 +54,12 @@ class PurchaseOrderService
     public function previewPoCode(int $clientId): string
     {
         return $this->nextCode($clientId, 'PO', PurchaseOrder::withoutGlobalScope('tenant')->withTrashed(), false);
+    }
+
+    /** Next PRQ/<FY>/<SEQ> payment request code, one sequence per client. Call inside a transaction. */
+    public function nextPaymentRequestCode(int $clientId): string
+    {
+        return $this->nextCode($clientId, 'PRQ', PoPaymentRequest::withoutGlobalScope('tenant'));
     }
 
     /** Next DOC/<FY>/<SEQ>, one sequence per client. */
@@ -231,6 +238,33 @@ class PurchaseOrderService
             'total_sgst'    => $sgst,
             'total_igst'    => $igst,
             'grand_total'   => round($taxable + $cgst + $sgst + $igst + $charges, 2),
+        ])->save();
+        $this->refreshPaymentTotals($po);
+    }
+
+    /**
+     * Rebuild the stored paid / balance figures from the payment rows — never added to or
+     * subtracted from — so an edit, delete or failed save can't leave them wrong.
+     * Call inside the same transaction as the payment, TDS or value change.
+     */
+    public function refreshPaymentTotals(PurchaseOrder $po): void
+    {
+        $paidByRequest = DB::table('p2p_po_payments')
+            ->where('purchase_order_id', $po->id)->whereNull('deleted_at')
+            ->groupBy('payment_request_id')
+            ->selectRaw('payment_request_id, SUM(amount) as paid')
+            ->pluck('paid', 'payment_request_id');
+
+        // Each request's paid amount, including back to 0 once its last payment is deleted.
+        DB::table('p2p_po_payment_requests')->where('purchase_order_id', $po->id)->update(['paid_amount' => 0]);
+        foreach ($paidByRequest as $requestId => $paid) {
+            DB::table('p2p_po_payment_requests')->where('id', $requestId)->update(['paid_amount' => round((float) $paid, 2)]);
+        }
+
+        $paid = round((float) $paidByRequest->sum(), 2);
+        $po->forceFill([
+            'paid_amount'    => $paid,
+            'balance_amount' => round((float) $po->grand_total - (float) $po->tds_amount - $paid, 2),
         ])->save();
     }
 }

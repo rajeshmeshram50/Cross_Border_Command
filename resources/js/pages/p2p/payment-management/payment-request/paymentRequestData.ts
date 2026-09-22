@@ -1,9 +1,10 @@
-/* Static list data for Payment Request Management.
-   Shaped exactly like the API response will be, so swapping `fetchPaymentRequests`
-   for the real GET is the only change the page needs. */
+/* Payment Request Management list data: the API rows (GET /p2p/orders/payment-requests)
+   mapped into the shape the page renders. Requests are raised on POs; SPI requests come later. */
+import { poPaymentApi, type PayRequestListMeta, type PayRequestListRow, type PayRequestTab } from '../../purchase-management/order/api/po-api';
+import { categoryKeyOf } from '../../purchase-management/order/po-list/Order';
 
 export type RequestStatus = 'awaiting' | 'approved' | 'declined';
-export type PaymentType = 'Advance Payment' | 'Partial Payment' | 'Balance Payment' | 'Final Payment';
+export type PaymentType = string;
 export type SupplierTag = 'star' | 'regular' | 'high' | 'blacklisted';
 export type RaisedAgainstKind = 'po' | 'spi' | 'po-spi';
 export type RequestFlag = 'physical-inspection' | 'direct-spi' | null;
@@ -20,6 +21,10 @@ export type DocRef = {
 };
 
 export type PaymentRequestRow = {
+  /** Database ids: the request, its PO and the PO's supplier. */
+  id: number;
+  poId: number;
+  vendorId: number | null;
   requestId: string;
   requestDate: string;
   status: RequestStatus;
@@ -29,9 +34,10 @@ export type PaymentRequestRow = {
   spi: DocRef | null;
   flag: RequestFlag;
   shipment: DocRef | null;
-  opportunity: DocRef;
-  procurement: DocRef;
+  opportunity: DocRef | null;
+  procurement: DocRef | null;
   supplier: string;
+  supplierCode: string | null;
   supplierTag: SupplierTag;
   totalAmount: number;
   requestedAmount: number;
@@ -46,8 +52,10 @@ export type PaymentRequestRow = {
   percentOfTotal: number;
   /** Set only when status is 'declined'. */
   decline: DeclineRecord | null;
-  /** Remark and files recorded with an approve / decline decision. */
+  /** Remark recorded with an approve / decline decision. */
   decision?: { on: string; by: PartyRef; note: string; files: string[] };
+  /** Only the person the request was sent to may decide it, and only while it waits. */
+  canDecide: boolean;
 };
 
 export const STATUS_LABEL: Record<RequestStatus, string> = {
@@ -63,162 +71,60 @@ export const SUPPLIER_TAG_LABEL: Record<SupplierTag, string> = {
   blacklisted: 'Blacklisted',
 };
 
-const ROWS: PaymentRequestRow[] = [
-  {
-    requestId: 'PRQ-001', requestDate: '2026-07-20', status: 'awaiting',
-    raisedAgainst: 'po',
-    po: { id: 'PO/2025-26/023', date: '2026-06-16' }, spi: null, flag: 'physical-inspection',
-    shipment: { id: 'SHP-049', date: '2026-06-04' },
-    opportunity: { id: 'OPP-030', date: '2026-05-07' },
-    procurement: { id: 'PROC-040', date: '2026-05-22' },
-    supplier: 'Bosch India', supplierTag: 'regular',
-    totalAmount: 103000, requestedAmount: 27500, approvedAmount: null, approvedNote: null,
-    paymentType: 'Balance Payment',
-    requestedBy: { code: 'RH', name: 'Rajesh Healthcare' },
-    requestedTo: { code: 'RM', name: 'Rajiv Menon' },
-    percentOfTotal: 26.7, decline: null,
-  },
-  {
-    requestId: 'PRQ-002', requestDate: '2026-06-25', status: 'approved',
-    raisedAgainst: 'po',
-    po: { id: 'PO/2025-26/023', date: '2026-06-16' }, spi: null, flag: 'physical-inspection',
-    shipment: { id: 'SHP-049', date: '2026-06-04' },
-    opportunity: { id: 'OPP-030', date: '2026-05-07' },
-    procurement: { id: 'PROC-040', date: '2026-05-22' },
-    supplier: 'Bosch India', supplierTag: 'regular',
-    totalAmount: 103000, requestedAmount: 24700, approvedAmount: 24700, approvedNote: 'released in full',
-    paymentType: 'Partial Payment',
-    requestedBy: { code: 'RH', name: 'Rajesh Healthcare' },
-    requestedTo: { code: 'SR', name: 'Sunita Rao' },
-    percentOfTotal: 24, decline: null,
-  },
-  {
-    requestId: 'PRQ-003', requestDate: '2026-07-05', status: 'declined',
-    raisedAgainst: 'po-spi',
-    po: { id: 'PO/2025-26/029', date: '2026-06-13' },
-    spi: { id: 'SPI/2025-26/029', date: '2026-06-01' },
-    flag: 'physical-inspection',
-    shipment: null,
-    opportunity: { id: 'OPP-038', date: '2026-05-04' },
-    procurement: { id: 'PROC-050', date: '2026-05-19' },
-    supplier: 'Bosch India', supplierTag: 'regular',
-    totalAmount: 58750, requestedAmount: 20200, approvedAmount: null, approvedNote: 'declined',
-    paymentType: 'Balance Payment',
-    requestedBy: { code: 'RH', name: 'Rajesh Healthcare' },
-    requestedTo: { code: 'SR', name: 'Sunita Rao' },
-    percentOfTotal: 34.4,
-    decline: {
-      on: '2026-07-09',
-      by: { code: 'SR', name: 'Sunita Rao', role: 'Finance Controller' },
-      reason: 'Declined — raise again after inspection closure.',
-    },
-  },
-  {
-    requestId: 'PRQ-004', requestDate: '2026-07-02', status: 'awaiting',
-    raisedAgainst: 'po',
-    po: { id: 'PO/2025-26/013', date: '2026-05-29' }, spi: null, flag: null,
-    shipment: null,
-    opportunity: { id: 'OPP-018', date: '2026-04-19' },
-    procurement: { id: 'PROC-024', date: '2026-05-04' },
-    supplier: 'Reliance Industries', supplierTag: 'star',
-    totalAmount: 276000, requestedAmount: 31800, approvedAmount: null, approvedNote: null,
-    paymentType: 'Partial Payment',
-    requestedBy: { code: 'RH', name: 'Rajesh Healthcare' },
-    requestedTo: { code: 'SR', name: 'Sunita Rao' },
-    percentOfTotal: 11.5, decline: null,
-  },
-  {
-    requestId: 'PRQ-005', requestDate: '2026-06-15', status: 'approved',
-    raisedAgainst: 'spi',
-    po: null, spi: { id: 'SPI/2025-26/059', date: '2026-06-03' }, flag: 'direct-spi',
-    shipment: { id: 'SHP-109', date: '2026-05-25' },
-    opportunity: { id: 'OPP-109', date: '2026-04-25' },
-    procurement: { id: 'PROC-109', date: '2026-05-02' },
-    supplier: 'QuickShip Couriers', supplierTag: 'regular',
-    totalAmount: 37000, requestedAmount: 20700, approvedAmount: 20700, approvedNote: '₹20,700 due',
-    paymentType: 'Balance Payment',
-    requestedBy: { code: 'RH', name: 'Rajesh Healthcare' },
-    requestedTo: { code: 'SR', name: 'Sunita Rao' },
-    percentOfTotal: 55.9, decline: null,
-  },
-  {
-    requestId: 'PRQ-006', requestDate: '2026-07-11', status: 'awaiting',
-    raisedAgainst: 'po',
-    po: { id: 'PO/2025-26/071', date: '2026-06-21' }, spi: null, flag: null,
-    shipment: null,
-    opportunity: { id: 'OPP-082', date: '2026-05-16' },
-    procurement: { id: 'PROC-099', date: '2026-05-30' },
-    supplier: 'Godrej Industries', supplierTag: 'star',
-    totalAmount: 412000, requestedAmount: 96500, approvedAmount: null, approvedNote: null,
-    paymentType: 'Advance Payment',
-    requestedBy: { code: 'RH', name: 'Rajesh Healthcare' },
-    requestedTo: { code: 'RM', name: 'Rajiv Menon' },
-    percentOfTotal: 23.4, decline: null,
-  },
-  {
-    requestId: 'PRQ-007', requestDate: '2026-06-30', status: 'approved',
-    raisedAgainst: 'po-spi',
-    po: { id: 'PO/2025-26/044', date: '2026-06-02' },
-    spi: { id: 'SPI/2025-26/044', date: '2026-06-18' },
-    flag: null,
-    shipment: { id: 'SHP-061', date: '2026-06-09' },
-    opportunity: { id: 'OPP-044', date: '2026-04-30' },
-    procurement: { id: 'PROC-066', date: '2026-05-12' },
-    supplier: 'Tata Chemicals', supplierTag: 'regular',
-    totalAmount: 189400, requestedAmount: 75000, approvedAmount: 50000, approvedNote: 'released in full',
-    paymentType: 'Partial Payment',
-    requestedBy: { code: 'RH', name: 'Rajesh Healthcare' },
-    requestedTo: { code: 'SR', name: 'Sunita Rao' },
-    percentOfTotal: 39.6, decline: null,
-  },
-  {
-    requestId: 'PRQ-008', requestDate: '2026-07-14', status: 'declined',
-    raisedAgainst: 'spi',
-    po: null, spi: { id: 'SPI/2025-26/077', date: '2026-06-27' }, flag: 'direct-spi',
-    shipment: null,
-    opportunity: { id: 'OPP-091', date: '2026-05-21' },
-    procurement: { id: 'PROC-118', date: '2026-06-01' },
-    supplier: 'Sunrise Packaging and Industrial Materials Manufacturing Company (India) Private Limited — Unit II, Export Division, Bhiwandi Logistics Park, Maharashtra, registered supplier for corrugated and flexible packaging materials', supplierTag: 'high',
-    totalAmount: 64300, requestedAmount: 64300, approvedAmount: null, approvedNote: 'declined',
-    paymentType: 'Final Payment',
-    requestedBy: { code: 'RH', name: 'Rajesh Healthcare' },
-    requestedTo: { code: 'RM', name: 'Rajiv Menon' },
-    percentOfTotal: 100,
-    decline: {
-      on: '2026-07-18',
-      by: { code: 'RM', name: 'Rajiv Menon', role: 'Head of Procurement' },
-      reason: 'Declined — the supplier is under an open risk review after the last two consignments failed incoming quality checks, the revised bank mandate has not been verified by finance, and the purchase order still carries an unresolved physical inspection. Raise the request again once the risk case is closed and the inspection report is attached.',
-    },
-  },
-];
+const STATUS_OF = { pending: 'awaiting', approved: 'approved', rejected: 'declined' } as const;
 
-/** Stands in for `GET /p2p/payment-requests` until the API lands. */
-export async function fetchPaymentRequests(): Promise<PaymentRequestRow[]> {
-  return ROWS.map(r => ({ ...r }));
+const initials = (name: string | null) =>
+  (name ?? '').split(/\s+/).filter(Boolean).map((s) => s[0]).join('').slice(0, 2).toUpperCase() || '?';
+const party = (p: { name: string | null; role: string | null }): PartyRef =>
+  ({ code: initials(p.name), name: p.name ?? '—', role: p.role ?? undefined });
+const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+
+/** One API row → the row the page renders. */
+export function toRequestRow(r: PayRequestListRow): PaymentRequestRow {
+  const status = STATUS_OF[r.status];
+  const by = party(r.requested_to);
+  const note = status === 'awaiting' ? null
+    : status === 'declined' ? 'declined'
+      : (r.due ?? 0) > 0 ? `${inr(r.due ?? 0)} due` : 'released in full';
+  return {
+    id: r.id, poId: r.purchase_order_id, vendorId: r.vendor_id,
+    requestId: r.code, requestDate: r.requested_at ?? '', status,
+    raisedAgainst: 'po',
+    po: { id: r.po_code, date: r.po_date ?? '' }, spi: null,
+    flag: r.physical_inspection === 'yes' && r.inspection_status !== 'completed' ? 'physical-inspection' : null,
+    shipment: r.shipment_code ? { id: r.shipment_code, date: r.shipment_date ?? '' } : null,
+    opportunity: r.opportunity_code ? { id: r.opportunity_code, date: r.opportunity_date ?? '' } : null,
+    procurement: r.procurement_code ? { id: r.procurement_code, date: '' } : null,
+    supplier: r.supplier_name ?? '—', supplierCode: r.supplier_code,
+    supplierTag: categoryKeyOf(r.supplier_category) ?? 'regular',
+    totalAmount: r.po_total, requestedAmount: r.requested_amount,
+    approvedAmount: r.status === 'approved' ? r.approved_amount : null,
+    approvedNote: note,
+    paymentType: r.payment_type,
+    requestedBy: party(r.requested_by), requestedTo: by,
+    percentOfTotal: r.percentage ?? (r.po_total > 0 ? Math.round((r.requested_amount / r.po_total) * 1000) / 10 : 0),
+    decline: status === 'declined' ? { on: r.decided_at ?? '', by, reason: r.decision_note ?? '' } : null,
+    decision: status !== 'awaiting' && r.decided_at
+      ? { on: r.decided_at, by, note: r.decision_note ?? '', files: [] } : undefined,
+    canDecide: r.can_decide,
+  };
+}
+
+/** One page of requests for a tab, with every tab's count (server-paged, 10 by default). */
+export async function fetchPaymentRequests(q: { tab?: PayRequestTab; search?: string; page?: number; per_page?: number } = {}):
+  Promise<{ rows: PaymentRequestRow[]; meta: PayRequestListMeta }> {
+  const { rows, meta } = await poPaymentApi.list(q);
+  return { rows: rows.map(toRequestRow), meta };
 }
 
 export type Decision =
   | { kind: 'approve'; amount: number; note: string; files: string[]; by: PartyRef }
   | { kind: 'decline'; reason: string; files: string[]; by: PartyRef };
 
-/** Stands in for `POST /p2p/payment-requests/{id}/approve|decline`. Only a
-    request still awaiting approval can be decided. */
-export async function decidePaymentRequest(requestId: string, d: Decision): Promise<PaymentRequestRow> {
-  const row = ROWS.find(r => r.requestId === requestId);
-  if (!row) throw new Error('This request is no longer available.');
-  if (row.status !== 'awaiting') throw new Error(`${requestId} has already been ${row.status}.`);
-  const on = new Date().toISOString().slice(0, 10);
-  if (d.kind === 'approve') {
-    row.status = 'approved';
-    row.approvedAmount = d.amount;
-    row.approvedNote = `₹${d.amount.toLocaleString('en-IN')} due`;
-    row.decision = { on, by: d.by, note: d.note, files: d.files };
-  } else {
-    row.status = 'declined';
-    row.approvedAmount = null;
-    row.approvedNote = 'declined';
-    row.decline = { on, by: d.by, reason: d.reason };
-    row.decision = { on, by: d.by, note: d.reason, files: d.files };
-  }
-  return { ...row };
+/** Approve (full or part) or decline; only a request still awaiting approval can be decided. */
+export async function decidePaymentRequest(id: number, d: Decision): Promise<PaymentRequestRow> {
+  const res = await poPaymentApi.decide(id, d.kind === 'approve'
+    ? { decision: 'approved', approved_amount: d.amount, note: d.note || undefined }
+    : { decision: 'rejected', note: d.reason });
+  return toRequestRow(res.request);
 }

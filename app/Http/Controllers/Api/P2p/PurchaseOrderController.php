@@ -100,6 +100,8 @@ class PurchaseOrderController extends Controller
         'id', 'code', 'po_date', 'status', 'current_step', 'po_type', 'document_type', 'vendor_id', 'link_type',
         'shipment_order_id', 'proforma_invoice_id', 'procurement_request_id', 'procurement_request_code',
         'expected_delivery_date', 'grand_total', 'physical_inspection', 'inspection_status', 'cancel_reason', 'created_at',
+        'taxable_total', 'total_cgst', 'total_sgst', 'total_igst', 'shipping_charges', 'packaging_charges', 'other_charges',
+        'tds_amount', 'paid_amount', 'balance_amount',
     ];
 
     /**
@@ -138,6 +140,11 @@ class PurchaseOrderController extends Controller
         $page = $base->whereRaw(self::TABS[$tab])
             ->select(self::LIST_COLUMNS)
             ->with(['vendor:id,vendor_code,company_name,legal_name,risk_level_id,supplier_category', 'vendor.riskLevel:id,name'])
+            // Request count and the two notes under the payment bar, as subqueries — not one query per row.
+            ->withCount('paymentRequests')
+            ->withSum(['paymentRequests as pending_request_amount' => fn ($q) => $q->where('status', 'pending')], 'requested_amount')
+            ->selectSub(fn ($q) => $q->from('p2p_po_payment_requests as prr')->whereColumn('prr.purchase_order_id', 'p2p_purchase_orders.id')
+                ->where('prr.status', 'approved')->selectRaw('COALESCE(SUM(prr.approved_amount - prr.paid_amount), 0)'), 'ready_to_pay_amount')
             ->orderByDesc('id')
             ->paginate($request->integer('per_page') ?: 10);
         $refs = $this->linkRefs(collect($page->items()));
@@ -348,6 +355,8 @@ class PurchaseOrderController extends Controller
         $user = $this->tenantUser($request);
         $po = $this->findPo($id);
         if ($po->isLocked()) return $this->fail('This PO is cancelled or has a signed document and can no longer be edited.');
+        // The stored balance and TDS rest on this value once money has been paid against it.
+        if ((float) $po->paid_amount > 0) return $this->fail('Payments are already recorded on this PO — its product lines and charges can no longer change.');
 
         $data = $request->validate([
             'lines'               => 'required|array|min:1',
@@ -594,6 +603,8 @@ class PurchaseOrderController extends Controller
         $po = $this->findPo($id);
         $data = $request->validate(['reason' => 'required|string|max:1000']);
         if ($po->isCancelled()) return $this->fail('This PO is already cancelled.');
+        // Money released must be recovered through the advance refund adjustment, not dropped.
+        if ((float) $po->paid_amount > 0) return $this->fail('Payments are recorded on this PO — raise the advance refund adjustment to cancel it.');
 
         $this->inTransaction('cancel the PO', function () use ($po, $user, $data) {
             $this->releaseAll($po, 'cancelled', $user->id);
@@ -755,6 +766,17 @@ class PurchaseOrderController extends Controller
             'supplier_category'   => $po->vendor?->supplier_category,
             'expected_delivery_date' => $po->expected_delivery_date?->toDateString(),
             'grand_total'         => (float) $po->grand_total,
+            // The value split the payment screens show: base, GST and extra charges.
+            'taxable_total'       => (float) $po->taxable_total,
+            'gst_total'           => round((float) $po->total_cgst + (float) $po->total_sgst + (float) $po->total_igst, 2),
+            'charges_total'       => round((float) $po->shipping_charges + (float) $po->packaging_charges + (float) $po->other_charges, 2),
+            // Stored payment position (rebuilt on every payment) for the list's payment bar.
+            'tds_amount'          => (float) $po->tds_amount,
+            'paid_amount'         => (float) $po->paid_amount,
+            'balance_amount'      => (float) $po->balance_amount,
+            'payment_requests_count' => (int) ($po->payment_requests_count ?? 0),
+            'pending_request_amount' => round((float) ($po->pending_request_amount ?? 0), 2),
+            'ready_to_pay_amount'    => round((float) ($po->ready_to_pay_amount ?? 0), 2),
             'physical_inspection' => $po->physical_inspection,
             'inspection_status'   => $po->inspection_status,
             'cancel_reason'       => $po->cancel_reason,

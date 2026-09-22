@@ -1,17 +1,14 @@
 // Inbox section: PO senior-approval requests sent to the signed-in user.
-// "New" lists the pending ones; history lists those already decided.
-// UI ONLY for now — renders SAMPLE_INBOX / SAMPLE_HISTORY. To integrate, load
-// rows from GET /p2p/orders/gst-approvals?history=0|1&page=N (same row & meta shape).
-import { useEffect, useState } from 'react';
+// "New" lists the pending ones; history lists those already decided. Rows are
+// paged on the server, 10 at a time; the review itself is a full page.
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody } from 'reactstrap';
 import { Shimmer } from '../../../../../components/ui/Shimmer';
-import type { GstApprovalInboxMeta, GstApprovalInboxRow } from '../api/po-api';
+import { useToast } from '../../../../../contexts/ToastContext';
+import { PoApiError, poApprovalApi, type GstApprovalInboxMeta, type GstApprovalInboxRow } from '../api/po-api';
 import { fmtDate, fmtMoney, initialsOf } from './approval-format';
-import { SAMPLE_HISTORY, SAMPLE_INBOX } from './sample-data';
 import './gst-approval.css';
-
-const PER_PAGE = 10;
 
 export default function PoApprovalInboxSection({ history = false, onCount }: {
   history?: boolean;
@@ -19,15 +16,32 @@ export default function PoApprovalInboxSection({ history = false, onCount }: {
   onCount?: (n: number) => void;
 }) {
   const navigate = useNavigate();
+  const toast = useToast();
+  const [rows, setRows] = useState<GstApprovalInboxRow[]>([]);
+  const [meta, setMeta] = useState<GstApprovalInboxMeta | null>(null);
   const [page, setPage] = useState(1);
-  const loading = false;
+  const [loading, setLoading] = useState(true);
+  const latest = useRef(0);
+  const countRef = useRef(onCount);
+  countRef.current = onCount;
 
-  // Sample rows, paged here the way the API pages them (same meta shape).
-  const all = history ? SAMPLE_HISTORY : SAMPLE_INBOX;
-  const rows: GstApprovalInboxRow[] = all.slice((page - 1) * PER_PAGE, page * PER_PAGE);
-  const meta: GstApprovalInboxMeta = { total: all.length, per_page: PER_PAGE, current_page: page, last_page: Math.max(1, Math.ceil(all.length / PER_PAGE)) };
+  const load = useCallback(async (p: number) => {
+    const ticket = ++latest.current;
+    setLoading(true);
+    try {
+      const res = await poApprovalApi.inbox({ history, page: p });
+      if (ticket !== latest.current) return;   // a newer page was asked for
+      setRows(res.rows);
+      setMeta(res.meta);
+      countRef.current?.(res.meta.total);
+    } catch (e) {
+      if (ticket === latest.current) toast.error('Could not load PO approvals', e instanceof PoApiError ? e.firstError : 'Please try again.');
+    } finally {
+      if (ticket === latest.current) setLoading(false);
+    }
+  }, [history, toast]);
 
-  useEffect(() => { onCount?.(all.length); }, [all.length, onCount]);
+  useEffect(() => { load(page); }, [load, page]);
 
   const open = (r: GstApprovalInboxRow) => navigate(`/inbox/po-approval/${r.id}`);
   const total = meta?.total ?? 0;

@@ -74,6 +74,11 @@ export type PoListRow = PoLinkRefs & {
   link_type: LinkType | null; shipment_order_id: number | null;
   procurement_request_id: number | null; procurement_request_code: string | null;
   expected_delivery_date: string | null; grand_total: number;
+  /** Base (without GST), GST and extra charges — the split the payment screens show. */
+  taxable_total: number; gst_total: number; charges_total: number;
+  /** Stored payment position, rebuilt on every payment. */
+  tds_amount: number; paid_amount: number; balance_amount: number;
+  payment_requests_count: number; pending_request_amount: number; ready_to_pay_amount: number;
   physical_inspection: YesNo | null; inspection_status: 'not_required' | 'pending' | 'completed' | null;
   cancel_reason: string | null; items_count: number | null; created_at: string | null;
 };
@@ -433,6 +438,137 @@ export const poApprovalApi = {
   request: (poId: number, body: { requested_to: number; note?: string }) =>
     call('GST approval request', () => api.post(`/p2p/orders/${poId}/gst-approval/request`, body), dataOf<GstApprovalRequest>),
 
-  // The approver side (GET /gst-approvals, GET /gst-approvals/{id}, PUT /gst-approvals/{id})
-  // is not wired yet — the Inbox section and review page render sample-data.ts.
+  /** Requests sent to the caller; history = already decided. */
+  inbox: (params: { history?: boolean; page?: number; per_page?: number } = {}) =>
+    call('GST approval inbox', () => api.get('/p2p/orders/gst-approvals', {
+      params: { history: params.history ? 1 : 0, page: params.page ?? 1, per_page: params.per_page ?? 10 },
+    }), (b) => {
+      const body = b as { data?: GstApprovalInboxRow[]; meta?: GstApprovalInboxMeta } | null;
+      return { rows: body?.data ?? [], meta: body?.meta ?? { total: 0, per_page: 10, current_page: 1, last_page: 1 } };
+    }),
+
+  show: (id: number) =>
+    call('GST approval details', () => api.get(`/p2p/orders/gst-approvals/${id}`), dataOf<GstApprovalReview>),
+
+  /** Approve or reject; the reason is required either way. */
+  decide: (id: number, decision: 'approved' | 'rejected', reason: string) =>
+    call('GST approval decision', () => api.put(`/p2p/orders/gst-approvals/${id}`, { decision, reason }), dataOf<GstApprovalRequest>),
+};
+
+/* ══════════════════════════ Payments (TDS, requests, payments) ══════════════════════════ */
+
+export type PayRequestStatus = 'pending' | 'approved' | 'rejected';
+export type PayPerson = { id: number; name: string | null; role: string | null };
+
+/** The PO's value split and payment position — the "PO Payment Details Summary" cards. */
+export type PoPaymentPosition = {
+  id: number; code: string; status: PoStatus; document_type: DocTypeKey | null;
+  base_amount: number; gst_amount: number; gst_pct: number; extra_charges: number; grand_total: number;
+  tds_percentage: number; tds_amount: number; tds_saved: boolean; tds_locked: boolean; tds_applies: boolean;
+  net_payable: number; paid: number; balance: number; paid_pct: number; complete: boolean;
+};
+
+/** "All Request Details Summary" cards. */
+export type PoRequestsSummary = {
+  total_requests: number; approved_count: number; pending_count: number; rejected_count: number;
+  requested_amount: number; awaiting_amount: number; approved_amount: number;
+  approved_unpaid: number; ready_count: number; paid: number; open_to_request: number;
+};
+
+/** One row of the Payment Requests History. */
+export type PoPayRequest = {
+  id: number; code: string; payment_type: string; percentage: number | null; requested_amount: number; reason: string | null;
+  requested_by: PayPerson; requested_to: PayPerson; requested_at: string | null;
+  status: PayRequestStatus; approved_amount: number | null; decision_note: string | null; decided_at: string | null;
+  paid_amount: number; due: number | null;
+};
+
+export type PoPaymentsPayload = { po: PoPaymentPosition; requests_summary: PoRequestsSummary; requests: PoPayRequest[] };
+
+/** One row of the Payment History. */
+export type PoPaymentRow = {
+  id: number; amount: number; bank_name: string | null; utr_cheque_number: string | null; utr_cheque_date: string | null;
+  proof_name: string | null; proof_url: string | null; created_at: string | null;
+};
+
+export type PoPaymentBody = { amount: number; bank_name?: string; utr_cheque_number?: string; utr_cheque_date?: string; proof?: File | null };
+
+/** A row of Payment Request Management (all POs). */
+export type PayRequestListRow = {
+  id: number; code: string; purchase_order_id: number; payment_type: string; percentage: number | null;
+  requested_amount: number; status: PayRequestStatus; approved_amount: number | null; paid_amount: number; due: number | null;
+  requested_at: string | null; decided_at: string | null; decision_note: string | null;
+  vendor_id: number | null; physical_inspection: YesNo | null; inspection_status: 'not_required' | 'pending' | 'completed' | null;
+  shipment_code: string | null; shipment_date: string | null; opportunity_code: string | null; opportunity_date: string | null;
+  procurement_code: string | null;
+  po_code: string; po_date: string | null; po_status: PoStatus; link_type: LinkType | null;
+  po_total: number; po_net: number; po_paid: number; po_balance: number;
+  supplier_code: string | null; supplier_name: string | null; supplier_category: string | null;
+  requested_by: PayPerson; requested_to: PayPerson; can_decide: boolean;
+};
+export type PayRequestTab = 'all' | 'awaiting' | 'approved' | 'declined';
+export type PayRequestListMeta = { total: number; page: number; per_page: number; last_page: number; counts: Record<PayRequestTab, number> };
+export type PayRequestDetail = {
+  request: PayRequestListRow & { reason: string | null };
+  po: PoPaymentsPayload;
+  /** Every payment on the PO, with the request each was paid against. */
+  payments: (PoPaymentRow & { payment_request_id: number })[];
+};
+
+const paymentForm = (b: PoPaymentBody) => {
+  const f = new FormData();
+  f.append('amount', String(b.amount));
+  if (b.bank_name) f.append('bank_name', b.bank_name);
+  if (b.utr_cheque_number) f.append('utr_cheque_number', b.utr_cheque_number);
+  if (b.utr_cheque_date) f.append('utr_cheque_date', b.utr_cheque_date);
+  if (b.proof) f.append('proof', b.proof);
+  return f;
+};
+
+export const poPaymentApi = {
+  /** Manage Payment Requests: both summaries and the request table of one PO. */
+  forPo: (poId: number) =>
+    call('PO payment summary', () => api.get(`/p2p/orders/${poId}/payment-requests`), dataOf<PoPaymentsPayload>),
+
+  /** One TDS per PO; editable until the first payment. Send the % or the amount. */
+  saveTds: (poId: number, body: { tds_percentage?: number; tds_amount?: number }) =>
+    call('PO TDS', () => api.put(`/p2p/orders/${poId}/tds`, body), dataOf<PoPaymentsPayload>),
+
+  raise: (poId: number, body: { payment_type: string; percentage?: number; requested_amount: number; reason: string; requested_to: number }) =>
+    call('Raise payment request', () => api.post(`/p2p/orders/${poId}/payment-requests`, body), dataOf<PoPaymentsPayload>),
+
+  payments: (poId: number, requestId: number) =>
+    call('Payment history', () => api.get(`/p2p/orders/${poId}/payment-requests/${requestId}/payments`),
+      dataOf<{ request: PoPayRequest; payments: PoPaymentRow[] }>),
+
+  addPayment: (poId: number, requestId: number, body: PoPaymentBody) =>
+    call('Record payment', () => api.post(`/p2p/orders/${poId}/payment-requests/${requestId}/payments`, paymentForm(body), multipart),
+      dataOf<{ payment: PoPaymentRow; summary: PoPaymentsPayload }>),
+
+  updatePayment: (poId: number, requestId: number, paymentId: number, body: PoPaymentBody) =>
+    call('Update payment', () => api.post(`/p2p/orders/${poId}/payment-requests/${requestId}/payments/${paymentId}`, paymentForm(body), multipart),
+      dataOf<{ payment: PoPaymentRow; summary: PoPaymentsPayload }>),
+
+  deletePayment: (poId: number, requestId: number, paymentId: number) =>
+    call('Delete payment', () => api.delete(`/p2p/orders/${poId}/payment-requests/${requestId}/payments/${paymentId}`),
+      dataOf<{ summary: PoPaymentsPayload }>),
+
+  /** Payment Request Management: every request of the company, paged, with tab counts. */
+  list: (q: { tab?: PayRequestTab; search?: string; page?: number; per_page?: number; mine?: boolean } = {}) =>
+    call('Payment requests', () => api.get('/p2p/orders/payment-requests', {
+      params: { tab: q.tab ?? 'all', search: q.search || undefined, page: q.page ?? 1, per_page: q.per_page, mine: q.mine ? 1 : undefined },
+    }), (b) => {
+      const body = b as { data?: PayRequestListRow[]; meta?: PayRequestListMeta } | null;
+      return {
+        rows: body?.data ?? [],
+        meta: body?.meta ?? { total: 0, page: 1, per_page: 10, last_page: 1, counts: { all: 0, awaiting: 0, approved: 0, declined: 0 } },
+      };
+    }),
+
+  detail: (requestId: number) =>
+    call('Payment request details', () => api.get(`/p2p/orders/payment-requests/${requestId}`), dataOf<PayRequestDetail>),
+
+  /** Approve (full or part) or decline, by the person the request was sent to. */
+  decide: (requestId: number, body: { decision: 'approved' | 'rejected'; approved_amount?: number; note?: string }) =>
+    call('Payment request decision', () => api.put(`/p2p/orders/payment-requests/${requestId}/decision`, body), dataOf<PayRequestDetail>),
 };

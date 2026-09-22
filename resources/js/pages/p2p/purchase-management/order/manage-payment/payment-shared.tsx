@@ -30,15 +30,8 @@ export const initials = (name: string) => {
   return ((p[0] || '?').charAt(0) + (p[1] || '').charAt(0)).toUpperCase();
 };
 
-export const APPROVERS = [
-  { name: 'Rajiv Menon', role: 'Head of Procurement' },
-  { name: 'Sunita Rao', role: 'Finance Controller' },
-  { name: 'Amit Shetty', role: 'GM Commercial' },
-  { name: 'Priya Nair', role: 'Accounts Head' },
-];
-
+// Same four the server accepts (PoPaymentRequest::PAYMENT_TYPES).
 export const PAYMENT_TYPES = [
-  'TDS Payment',
   'Advance Payment',
   'Partial Payment',
   'Final Payment',
@@ -69,6 +62,13 @@ export function valueBreakdown(total: number) {
   const extra = 0;
   const base = Math.round((total - extra) / 1.18);
   return { extra, base, gst: total - extra - base, gstPct: 18 };
+}
+
+/** The PO's value split: its real figures when loaded from the API, else the estimate above. */
+export function rowBreakdown(row: OrderRow) {
+  if (!row.breakdown) return valueBreakdown(row.total);
+  const { base, gst, extra } = row.breakdown;
+  return { base, gst, extra, gstPct: base > 0 ? Math.round((gst / base) * 10000) / 100 : 0 };
 }
 
 const ic = {
@@ -117,7 +117,7 @@ export function HeroRefChips({ row }: { row: OrderRow }) {
   const spi = row.invoices[0];
   return (
     <div className="mpr-hero__chips">
-      <Chip label="Supplier" value={row.supplier} meta={supplierCode(row.supplier)} mod="mpr-hero__chip--sup" />
+      <Chip label="Supplier" value={row.supplier} meta={row.supplierCode ?? supplierCode(row.supplier)} mod="mpr-hero__chip--sup" />
       <Chip label="PO Number" value={row.po} meta={fmtDate(row.poDate)} />
       <Chip
         label={row.invoices.length > 1 ? 'SPI Numbers' : 'SPI Number'}
@@ -128,8 +128,8 @@ export function HeroRefChips({ row }: { row: OrderRow }) {
           : undefined}
       />
       <Chip label="Shipment ID" value={row.shipment || '—'} meta={row.shipment ? fmtDate(row.shipmentDate) : undefined} />
-      <Chip label="Opportunity ID" value={row.opportunity} meta={fmtDate(row.opportunityDate)} />
-      <Chip label="Procurement ID" value={row.procurement} meta={fmtDate(row.procurementDate)} />
+      <Chip label="Opportunity ID" value={row.opportunity || '—'} meta={row.opportunity ? fmtDate(row.opportunityDate) : undefined} />
+      <Chip label="Procurement ID" value={row.procurement || '—'} meta={row.procurement && row.procurementDate ? fmtDate(row.procurementDate) : undefined} />
     </div>
   );
 }
@@ -196,16 +196,18 @@ export const STAT_ICONS = {
   check: <path d="M20 6 9 17l-5-5" />,
 };
 
-export function PoSummaryCards({ total, paid, balance, net, complete }: {
+export function PoSummaryCards({ total, paid, balance, net, complete, split }: {
   total: number; paid: number; balance: number; net: number; complete: boolean;
+  /** The PO's real value split; without it the split is estimated from the total. */
+  split?: { base: number; gst: number; extra: number; gstPct: number };
 }) {
-  const { base, gst, extra, gstPct } = valueBreakdown(total);
+  const { base, gst, extra, gstPct } = split ?? valueBreakdown(total);
   const pctPaid = net > 0 ? Math.round((paid / net) * 100) : 0;
   return (
     <div className="mpr-stats">
       <Stat icon={STAT_ICONS.base} label="PO Base Amount (Without GST)" value={money(base)} sub="Pre-tax order value" />
       <Stat mod="mpr-stat--base" icon={STAT_ICONS.trend} label="GST Amount" value={money(gst)} sub={`${gstPct}% on the base amount`} />
-      <Stat mod="mpr-stat--bal" icon={STAT_ICONS.truck} label="Extra Charges" value={money(extra)} sub="None on this order" />
+      <Stat mod="mpr-stat--bal" icon={STAT_ICONS.truck} label="Extra Charges" value={money(extra)} sub={extra > 0 ? 'Shipping, packaging & other' : 'None on this order'} />
       <Stat mod="mpr-stat--gst" icon={STAT_ICONS.coin} label="Total PO Amount (Grand Total)" value={money(total)} sub={`${money(net)} net payable`} />
       <Stat mod="mpr-stat--paid" icon={STAT_ICONS.rupee} label="Total Paid Amount" value={money(paid)} sub={`${pctPaid}% of net payable released`} />
       <Stat mod="mpr-stat--tds" icon={STAT_ICONS.wallet} label="Balance Amount" value={money(balance)} sub={complete ? 'Fully settled' : 'Still to be released'} />
@@ -227,8 +229,10 @@ const ICON_WALLET = (
   </svg>
 );
 
-export function TdsStrip({ tds, total, supplier, onOpen }: {
+export function TdsStrip({ tds, total, supplier, onOpen, locked = false }: {
   tds: number; total: number; supplier: string; onOpen: () => void;
+  /** A payment is recorded: the button only views the TDS. */
+  locked?: boolean;
 }) {
   return (
     <div className="mpr-tds" onClick={(e) => e.stopPropagation()}>
@@ -253,11 +257,12 @@ export function TdsStrip({ tds, total, supplier, onOpen }: {
       <button
         type="button"
         className={`mpr-tdsbtn${tds > 0 ? ' mpr-tdsbtn--edit' : ''}`}
-        title={tds > 0 ? 'Revise the tax deducted at source on this PO' : 'Withhold tax at source against this PO'}
+        title={locked ? 'View the TDS — fixed once the first payment is recorded'
+          : tds > 0 ? 'Revise the tax deducted at source on this PO' : 'Withhold tax at source against this PO'}
         onClick={onOpen}
       >
         <span className="mpr-tdsbtn__ico">{ICON_TDS}</span>
-        <span>{tds > 0 ? 'Revise TDS' : 'Deduct TDS Here'}</span>
+        <span>{locked ? 'View TDS' : tds > 0 ? 'Revise TDS' : 'Deduct TDS Here'}</span>
       </button>
     </div>
   );

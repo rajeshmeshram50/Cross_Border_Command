@@ -16,7 +16,7 @@ export type AddPaymentProps = {
   approved: number;
   paid: number;
   initial?: ReleasePayment;
-  onSave: (p: ReleasePayment) => void;
+  onSave: (p: ReleasePayment) => void | Promise<void>;
   onClose: () => void;
 };
 
@@ -89,24 +89,37 @@ export default function AddPaymentModal({
   const [bank, setBank] = useState(blankIfDash(initial?.bank));
   const [utr, setUtr] = useState(blankIfDash(initial?.utr));
   const [file, setFile] = useState('');
+  const [upload, setUpload] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   const shownFile = file || initial?.file || '';
 
-  const save = () => {
+  const save = async () => {
+    if (saving) return;
     const amt = amountValue(amount);
     if (!(amt > 0)) { setError('Please enter a valid amount'); return; }
     if (amt > room + 0.5) {
       setError(`Only ${money(room)} is still approved and unreleased on this request`);
       return;
     }
-    onSave({
-      amount: Math.round(amt),
-      bank: bank.trim() || '—',
-      utr: utr.trim() || '—',
-      date: date.trim() || '—',
-      file: shownFile || undefined,
-    });
+    const ref = utr.trim();
+    if (ref && !/^[A-Za-z0-9]{6,22}$/.test(ref)) { setError('UTR / cheque number must be 6–22 letters or digits'); return; }
+    if (date && date > new Date().toISOString().slice(0, 10)) { setError('UTR / cheque date cannot be in the future'); return; }
+    if (upload && upload.size > 10 * 1024 * 1024) { setError('Proof of payment must be 10 MB or smaller'); return; }
+    setSaving(true);
+    try {
+      await onSave({
+        amount: Math.round(amt * 100) / 100,
+        bank: bank.trim(),
+        utr: ref,
+        date: date.trim(),
+        file: shownFile || undefined,
+        upload,
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return createPortal(
@@ -192,7 +205,7 @@ export default function AddPaymentModal({
                   className="apay-file-in"
                   type="file"
                   accept=".pdf,.jpg,.jpeg,.png"
-                  onChange={(e) => setFile(e.target.files?.[0]?.name ?? '')}
+                  onChange={(e) => { const picked = e.target.files?.[0] ?? null; setUpload(picked); setFile(picked?.name ?? ''); }}
                 />
               </label>
             </div>
@@ -208,7 +221,7 @@ export default function AddPaymentModal({
 
         <div className="apay-ft">
           <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
-          <button type="button" className="spi-mdl-confirm" onClick={save}>Save Payment</button>
+          <button type="button" className="spi-mdl-confirm" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Payment'}</button>
         </div>
 
       </div>

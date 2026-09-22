@@ -1,15 +1,12 @@
 // Full-page review of one PO senior-approval request, opened from the Inbox or
 // the bell. Shows the PO, supplier, GST position and lines; the chosen senior
 // approves or rejects here, with a reason either way.
-// UI ONLY for now — renders sampleReview(id) and saves nothing. To integrate:
-// load with GET /p2p/orders/gst-approvals/{id}, decide with PUT /p2p/orders/gst-approvals/{id}.
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../../contexts/ConfirmContext';
-import type { GstApprovalRequest, GstApprovalReview } from '../api/po-api';
+import { PoApiError, poApprovalApi, type GstApprovalRequest, type GstApprovalReview } from '../api/po-api';
 import { PO_TYPE_LABEL, fmtDate, fmtDateTime, fmtMoney, initialsOf, monthsSince } from './approval-format';
-import { sampleReview } from './sample-data';
 import './gst-approval.css';
 
 const REASON_MAX = 1000;
@@ -26,9 +23,14 @@ export default function PoGstApprovalReview() {
   const [acting, setActing] = useState<'approved' | 'rejected' | null>(null);
 
   const load = useCallback(async () => {
-    const sample = sampleReview(Number(id));
-    setData(sample);
-    setError(sample ? '' : 'This request no longer exists — the PO may have changed supplier or been deleted.');
+    try {
+      setData(await poApprovalApi.show(Number(id)));
+      setError('');
+    } catch (e) {
+      const status = e instanceof PoApiError ? e.status : null;
+      setError(status === 404 ? 'This request no longer exists — the PO may have changed supplier or been deleted.'
+        : e instanceof PoApiError ? e.firstError : 'Could not load this request.');
+    }
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
@@ -47,14 +49,20 @@ export default function PoGstApprovalReview() {
       confirmLabel: decision === 'approved' ? 'Approve' : 'Reject',
     });
     if (!ok) return;
-    // Sample: the decision is shown on the page only — nothing is saved.
     setActing(decision);
-    const now = new Date().toISOString();
-    setData({ ...data, can_decide: false, request: { ...data.request, status: decision, reason: reason.trim(), decided_at: now } });
-    toast.info(decision === 'approved' ? `${data.po.code} approved (sample)` : `${data.po.code} rejected (sample)`,
-      'Sample screen — not saved yet.');
-    setReason('');
-    setActing(null);
+    try {
+      await poApprovalApi.decide(data.request.id, decision, reason.trim());
+      toast.success(decision === 'approved' ? `${data.po.code} approved` : `${data.po.code} rejected`,
+        `${data.request.requested_by_name ?? 'The requester'} has been notified.`);
+      setReason('');
+      await load();
+    } catch (e) {
+      const msg = e instanceof PoApiError ? e.firstError : 'Please try again.';
+      setReasonErr(msg);
+      toast.error('Could not record your decision', msg);
+    } finally {
+      setActing(null);
+    }
   };
 
   if (error) {

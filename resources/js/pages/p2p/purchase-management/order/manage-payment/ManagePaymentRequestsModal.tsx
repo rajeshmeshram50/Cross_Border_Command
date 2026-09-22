@@ -1,12 +1,14 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import type { OrderRow } from '../po-list/Order';
 import type { NewRequest } from './RaisePaymentRequestModal';
 import type { ReleasePayment } from './MakePoPaymentModal';
+import { useToast } from '../../../../../contexts/ToastContext';
+import { PoApiError, poPaymentApi, type PoPaymentBody, type PoPaymentsPayload, type PoPayRequest } from '../api/po-api';
 import {
-  APPROVERS, Box, HeroRefChips, ICON_X, PoSummaryCards, STAT_ICONS, Stat, TdsStrip,
-  initials, money, shiftIso, shortDate, valueBreakdown,
+  Box, HeroRefChips, ICON_X, PoSummaryCards, STAT_ICONS, Stat, TdsStrip,
+  initials, money, rowBreakdown, shortDate,
 } from './payment-shared';
 
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
@@ -18,8 +20,11 @@ const MakePoPaymentModal = lazy(() => import('./MakePoPaymentModal'));
 
 type ReqStatus = 'approved' | 'pending' | 'rejected';
 
+/** A request row as the table shows it; `id` is the request code, `rid` the database id. */
 type PaymentRequest = {
+  rid: number;
   id: string;
+  pct: number | null;
   date: string;
   type: string;
   amount: number;
@@ -31,48 +36,12 @@ type PaymentRequest = {
 };
 
 
-function buildRequests(row: OrderRow): PaymentRequest[] {
-  const n = row.paymentRequests;
-  if (n <= 0) return [];
-
-  const ready = row.paymentNote?.kind === 'ready' ? row.paymentNote.amount : 0;
-  const awaiting = row.paymentNote?.kind === 'waiting' ? row.paymentNote.amount : 0;
-  const extras = (ready > 0 ? 1 : 0) + (awaiting > 0 ? 1 : 0);
-  const paidSlots = Math.max(row.paid > 0 ? 1 : 0, n - extras);
-
-  const out: PaymentRequest[] = [];
-  const push = (amount: number, status: ReqStatus, paid: number) => {
-    const i = out.length;
-    const who = APPROVERS[(i + 1) % APPROVERS.length];
-    out.push({
-      id: 'PRQ-' + String(i + 1).padStart(3, '0'),
-      date: shiftIso(row.poDate, 9 + i * 25),
-      type: '',
-      amount,
-      approver: who.name,
-      role: who.role,
-      status,
-      approved: status === 'approved' ? amount : 0,
-      paid,
-    });
+function toRow(q: PoPayRequest): PaymentRequest {
+  return {
+    rid: q.id, id: q.code, pct: q.percentage, date: q.requested_at ?? '', type: q.payment_type,
+    amount: q.requested_amount, approver: q.requested_to.name ?? '—', role: q.requested_to.role ?? '',
+    status: q.status, approved: q.approved_amount ?? 0, paid: q.paid_amount,
   };
-
-  if (paidSlots > 0 && row.paid > 0) {
-    const each = Math.floor(row.paid / paidSlots);
-    for (let i = 0; i < paidSlots; i += 1) {
-      const amt = i === paidSlots - 1 ? row.paid - each * (paidSlots - 1) : each;
-      push(amt, 'approved', amt);
-    }
-  }
-  if (ready > 0) push(ready, 'approved', 0);
-  if (awaiting > 0) push(awaiting, 'pending', 0);
-
-  if (out.length === 0) push(row.balance || row.net, 'pending', 0);
-
-  return out.map((q, i) => ({
-    ...q,
-    type: out.length === 1 ? 'Partial Payment' : i === out.length - 1 ? 'Balance Payment' : 'Partial Payment',
-  }));
 }
 
 const ic = {
@@ -109,7 +78,7 @@ function RequestRow({ q, index, net, onPay }: {
 }) {
   const due = Math.max(0, q.approved - q.paid);
   const st = STATUS[q.status];
-  const pct = net > 0 ? Math.round((q.amount / net) * 100) : 0;
+  const pct = q.pct ?? (net > 0 ? Math.round((q.amount / net) * 1000) / 10 : 0);
   const settled = q.status === 'approved' && q.approved > 0 && due <= 0;
 
   return (
@@ -219,43 +188,146 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const [tds, setTds] = useState(0);
+  const toast = useToast();
+  const [data, setData] = useState<PoPaymentsPayload | null>(null);
   const [tdsOpen, setTdsOpen] = useState(false);
-  const [raiseOpen, setRaiseOpen] = useState(startWithRaise);
-  const [added, setAdded] = useState<PaymentRequest[]>([]);
+  const [raiseOpen, setRaiseOpen] = useState(false);
   const [payReq, setPayReq] = useState<PaymentRequest | null>(null);
-  const [releases, setReleases] = useState<Record<string, ReleasePayment[]>>({});
+  const [releases, setReleases] = useState<ReleasePayment[]>([]);
+  const [busy, setBusy] = useState(false);
 
-  const list = useMemo(() => [...buildRequests(row), ...added], [row, added]);
+  const failToast = (what: string, e: unknown) => toast.error(what, e instanceof PoApiError ? e.firstError : 'Please try again.');
 
-  const f = useMemo(() => {
-    const requested = list.reduce((s, q) => s + q.amount, 0);
-    const approved = list.reduce((s, q) => s + q.approved, 0);
-    const paid = list.reduce((s, q) => s + q.paid, 0);
-    const pendingAmt = list.filter((q) => q.status === 'pending').reduce((s, q) => s + q.amount, 0);
-    const approvedUnpaid = list
-      .filter((q) => q.status === 'approved')
-      .reduce((s, q) => s + Math.max(0, q.approved - q.paid), 0);
-    return {
-      requested,
-      approved,
-      paid,
-      pendingAmt,
-      pendingCount: list.filter((q) => q.status === 'pending').length,
-      approvedCount: list.filter((q) => q.status === 'approved').length,
-      declinedCount: list.filter((q) => q.status === 'rejected').length,
-      approvedUnpaid,
-      readyCount: list.filter((q) => q.status === 'approved' && q.approved - q.paid > 0).length,
-      openToRequest: Math.max(0, row.net - requested),
-      complete: row.net > 0 && row.paid >= row.net,
-    };
-  }, [list, row]);
+  const load = useCallback(async () => {
+    if (!row.id) return;
+    try { setData(await poPaymentApi.forPo(row.id)); } catch (e) { failToast('Could not load the payment requests', e); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row.id]);
+  useEffect(() => { load(); }, [load]);
+  // Opened straight on "raise": wait for the PO figures, then apply the TDS-first rule.
+  const autoRaise = useRef(startWithRaise);
+  useEffect(() => {
+    if (!autoRaise.current || !data) return;
+    autoRaise.current = false;
+    if (data.po.tds_applies && !data.po.tds_saved) setTdsOpen(true); else setRaiseOpen(true);
+  }, [data]);
 
-  const { base, gst, extra } = valueBreakdown(row.total);
-  const pctPaid = row.net > 0 ? Math.round((row.paid / row.net) * 100) : 0;
+  const po = data?.po;
+  const sum = data?.requests_summary;
+  const list = useMemo(() => (data?.requests ?? []).map(toRow), [data]);
+  const tds = po?.tds_amount ?? 0;
+
+  // The PO's figures as stored on the server; the child popups read them from this row.
+  const live: OrderRow = po ? {
+    ...row, total: po.grand_total, net: po.net_payable, paid: po.paid, balance: po.balance,
+    breakdown: { base: po.base_amount, gst: po.gst_amount, extra: po.extra_charges },
+  } : row;
+
+  const f = {
+    requested: sum?.requested_amount ?? 0,
+    approved: sum?.approved_amount ?? 0,
+    paid: sum?.paid ?? 0,
+    pendingAmt: sum?.awaiting_amount ?? 0,
+    pendingCount: sum?.pending_count ?? 0,
+    approvedCount: sum?.approved_count ?? 0,
+    declinedCount: sum?.rejected_count ?? 0,
+    approvedUnpaid: sum?.approved_unpaid ?? 0,
+    readyCount: sum?.ready_count ?? 0,
+    openToRequest: sum?.open_to_request ?? 0,
+    complete: !!po?.complete,
+  };
+
+  const split = rowBreakdown(live);
+  const { base, gst, extra } = split;
+  const pctPaid = po?.paid_pct ?? 0;
 
   const canPay = f.approvedUnpaid > 0 && !row.cancelled;
-  const canRequest = f.openToRequest > 0 && !row.cancelled && !f.complete;
+  const canRequest = !!po && f.openToRequest > 0 && !row.cancelled && !f.complete;
+
+  // TDS: one per PO, fixed once the first payment is recorded.
+  const openTds = () => { if (po) setTdsOpen(true); };
+  // A domestic PO settles its TDS (even as 0) before any request is raised.
+  const needsTds = !!po && po.tds_applies && !po.tds_saved;
+  const openRaise = () => {
+    if (needsTds) {
+      toast.warning('Deduct TDS first', 'Save the TDS on this PO (even as 0) before raising a payment request.');
+      setTdsOpen(true);
+      return;
+    }
+    setRaiseOpen(true);
+  };
+  const saveTds = async (amount: number) => {
+    if (!row.id || busy) return;
+    setBusy(true);
+    try {
+      setData(await poPaymentApi.saveTds(row.id, { tds_amount: amount }));
+      setTdsOpen(false);
+      toast.success('TDS saved', `${money(amount)} withheld on ${row.po}.`);
+    } catch (e) { failToast('Could not save the TDS', e); } finally { setBusy(false); }
+  };
+
+  const raise = async (req: NewRequest) => {
+    if (!row.id || busy) return;
+    setBusy(true);
+    try {
+      setData(await poPaymentApi.raise(row.id, {
+        payment_type: req.type, percentage: req.pct || undefined, requested_amount: req.amount,
+        reason: req.reason, requested_to: req.approverId,
+      }));
+      setRaiseOpen(false);
+      toast.success('Payment request raised', `Sent to ${req.approver} for approval.`);
+    } catch (e) { failToast('Could not raise the request', e); } finally { setBusy(false); }
+  };
+
+  // Payment History of one request, fetched when its Make PO Payment popup opens.
+  const openPay = async (q: PaymentRequest) => {
+    if (!row.id) return;
+    try {
+      const res = await poPaymentApi.payments(row.id, q.rid);
+      setReleases(res.payments.map((p) => ({
+        id: p.id, amount: p.amount, bank: p.bank_name ?? '', utr: p.utr_cheque_number ?? '',
+        date: p.utr_cheque_date ?? '', file: p.proof_name ?? undefined, fileUrl: p.proof_url,
+      })));
+      setPayReq(q);
+    } catch (e) { failToast('Could not load the payment history', e); }
+  };
+  const payBody = (p: ReleasePayment): PoPaymentBody => ({
+    amount: p.amount, bank_name: p.bank || undefined, utr_cheque_number: p.utr || undefined,
+    utr_cheque_date: p.date || undefined, proof: p.upload ?? null,
+  });
+  const afterPayment = async (q: PaymentRequest, summary: PoPaymentsPayload) => {
+    setData(summary);
+    const fresh = summary.requests.find((r) => r.id === q.rid);
+    if (fresh) await openPay(toRow(fresh));
+  };
+  const recordPayment = async (p: ReleasePayment) => {
+    if (!row.id || !payReq) return false;
+    try {
+      const res = await poPaymentApi.addPayment(row.id, payReq.rid, payBody(p));
+      toast.success('Payment recorded', `${money(p.amount)} released against ${payReq.id}.`);
+      await afterPayment(payReq, res.summary);
+      return true;
+    } catch (e) { failToast('Could not record the payment', e); return false; }
+  };
+  const updatePayment = async (i: number, p: ReleasePayment) => {
+    const target = releases[i];
+    if (!row.id || !payReq || !target?.id) return false;
+    try {
+      const res = await poPaymentApi.updatePayment(row.id, payReq.rid, target.id, payBody(p));
+      toast.success('Payment updated', `${payReq.id} now shows ${money(p.amount)} for this entry.`);
+      await afterPayment(payReq, res.summary);
+      return true;
+    } catch (e) { failToast('Could not update the payment', e); return false; }
+  };
+  const deletePayment = async (i: number) => {
+    const target = releases[i];
+    if (!row.id || !payReq || !target?.id) return;
+    try {
+      const res = await poPaymentApi.deletePayment(row.id, payReq.rid, target.id);
+      toast.success('Payment removed', `${money(target.amount)} is back in the balance.`);
+      await afterPayment(payReq, res.summary);
+    } catch (e) { failToast('Could not delete the payment', e); }
+  };
 
   return createPortal(
 
@@ -263,7 +335,7 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
       {payReq && (
         <Suspense fallback={<TdsLoading />}>
           <MakePoPaymentModal
-            row={row}
+            row={live}
             requestId={payReq.id}
             requestDate={payReq.date}
             requestType={payReq.type}
@@ -271,32 +343,23 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
             approved={payReq.approved}
             approver={payReq.approver}
             approverRole={payReq.role}
-            alreadyPaid={payReq.paid}
-            payments={releases[payReq.id] ?? []}
+            alreadyPaid={0}
+            payments={releases}
             tds={tds}
-            onOpenTds={() => setTdsOpen(true)}
+            onOpenTds={openTds}
             onClose={() => setPayReq(null)}
-            onRecord={(p) => setReleases((prev) => ({
-              ...prev,
-              [payReq.id]: [...(prev[payReq.id] ?? []), p],
-            }))}
-            onUpdate={(i, p) => setReleases((prev) => ({
-              ...prev,
-              [payReq.id]: (prev[payReq.id] ?? []).map((x, ix) => (ix === i ? p : x)),
-            }))}
-            onDelete={(i) => setReleases((prev) => ({
-              ...prev,
-              [payReq.id]: (prev[payReq.id] ?? []).filter((_, ix) => ix !== i),
-            }))}
+            onRecord={recordPayment}
+            onUpdate={updatePayment}
+            onDelete={deletePayment}
           />
         </Suspense>
       )}
 
-      {raiseOpen && (
+      {raiseOpen && po && (
         <Suspense fallback={<TdsLoading />}>
           <RaisePaymentRequestModal
-            row={row}
-            nextId={'PRQ-' + String(list.length + 1).padStart(3, '0')}
+            row={live}
+            nextId="Assigned on submit"
             requested={f.requested}
             approvedTotal={f.approved}
             pendingAmt={f.pendingAmt}
@@ -305,36 +368,26 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
             requestCount={list.length}
             available={f.openToRequest}
             complete={f.complete}
+            busy={busy}
             onClose={() => setRaiseOpen(false)}
-            onSubmit={(req: NewRequest) => {
-              setAdded((prev) => [...prev, {
-                id: req.id,
-                date: new Date().toISOString().slice(0, 10),
-                type: req.type,
-                amount: req.amount,
-                approver: req.approver,
-                role: req.role,
-                status: 'pending',
-                approved: 0,
-                paid: 0,
-              }]);
-              setRaiseOpen(false);
-            }}
+            onSubmit={raise}
           />
         </Suspense>
       )}
 
-      {tdsOpen && (
+      {tdsOpen && po && (
         <Suspense fallback={<TdsLoading />}>
           <DeductTdsModal
             po={row.po}
             base={base}
             gst={gst}
             extra={extra}
-            total={row.total}
-            room={row.balance}
+            total={po.grand_total}
+            room={base}
             saved={tds}
-            onSave={(amount) => { setTds(amount); setTdsOpen(false); }}
+            firstSave={!po.tds_saved}
+            readOnly={po.tds_locked}
+            onSave={saveTds}
             onClose={() => setTdsOpen(false)}
           />
         </Suspense>
@@ -365,7 +418,7 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
             <div className="mpr-done">
               <span className="mpr-done__ico">{ICON_CHECK}</span>
               <span>
-                <b>Payment Completed</b> — the full net payable of {money(row.net)} has been released against this PO.
+                <b>Payment Completed</b> — the full net payable of {money(live.net)} has been released against this PO.
                 No further requests can be raised.
               </span>
             </div>
@@ -375,11 +428,11 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
             label="Summary"
             title="PO Payment Details Summary"
             sub="How this PO’s value is made up and where it stands today · read-only"
-            headerExtra={!row.cancelled && (
-              <TdsStrip tds={tds} total={row.total} supplier={row.supplier} onOpen={() => setTdsOpen(true)} />
+            headerExtra={!row.cancelled && po?.tds_applies && (
+              <TdsStrip tds={tds} total={live.total} supplier={row.supplier} onOpen={openTds} locked={po?.tds_locked} />
             )}
           >
-            <PoSummaryCards total={row.total} paid={row.paid} balance={row.balance} net={row.net} complete={f.complete} />
+            <PoSummaryCards total={live.total} paid={live.paid} balance={live.balance} net={live.net} complete={f.complete} split={split} />
           </Box>
 
           <Box
@@ -435,7 +488,11 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
               <span className="mpr-panel__s">In the order they were raised</span>
             </div>
 
-            {list.length === 0 ? (
+            {!data ? (
+              <div className="mpr-empty">
+                <div className="mpr-empty__t"><span className="spinner-border spinner-border-sm me-2" role="status" />Loading payment requests…</div>
+              </div>
+            ) : list.length === 0 ? (
               <div className="mpr-empty">
                 <div className="mpr-empty__ico">{ICON_HISTORY}</div>
                 <div className="mpr-empty__t">No payment requests yet</div>
@@ -458,7 +515,7 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
                   <span className="mpr-c">Paid Amount</span>
                   <span className="mpr-c">Action</span>
                 </div>
-                {list.map((q, i) => <RequestRow key={q.id} q={q} index={i} net={row.net} onPay={setPayReq} />)}
+                {list.map((q, i) => <RequestRow key={q.rid} q={q} index={i} net={live.net} onPay={openPay} />)}
               </div>
             )}
           </div>
@@ -476,7 +533,8 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose}>Close</button>
             {canRequest && (
-              <button type="button" className="spi-mdl-confirm mpr-raise" onClick={() => setRaiseOpen(true)}>
+              <button type="button" className="spi-mdl-confirm mpr-raise" onClick={openRaise}
+                title={needsTds ? 'Deduct the TDS on this PO first' : undefined}>
                 Raise New Request
               </button>
             )}

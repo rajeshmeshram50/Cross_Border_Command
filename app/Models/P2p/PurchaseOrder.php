@@ -51,6 +51,7 @@ class PurchaseOrder extends Model
         'taxable_total', 'total_cgst', 'total_sgst', 'total_igst',
         'shipping_charges', 'packaging_charges', 'other_charges', 'grand_total',
         'terms', 'submitted_at', 'submitted_by',
+        'tds_percentage', 'tds_amount', 'tds_updated_by', 'tds_updated_at', 'paid_amount', 'balance_amount',
         'cancelled_at', 'cancelled_by', 'cancel_reason',
         'inspection_status', 'inspection_note', 'inspection_note_files', 'inspected_by', 'inspected_at',
         'created_by', 'updated_by',
@@ -76,6 +77,11 @@ class PurchaseOrder extends Model
         'packaging_charges'         => 'decimal:2',
         'other_charges'             => 'decimal:2',
         'grand_total'               => 'decimal:2',
+        'tds_percentage'            => 'decimal:2',
+        'tds_amount'                => 'decimal:2',
+        'tds_updated_at'            => 'datetime',
+        'paid_amount'               => 'decimal:2',
+        'balance_amount'            => 'decimal:2',
         'current_step'              => 'integer',
     ];
 
@@ -97,6 +103,16 @@ class PurchaseOrder extends Model
     public function inspections(): HasMany
     {
         return $this->hasMany(PoPhysicalInspection::class, 'purchase_order_id');
+    }
+
+    public function paymentRequests(): HasMany
+    {
+        return $this->hasMany(PoPaymentRequest::class, 'purchase_order_id');
+    }
+
+    public function payments(): HasMany
+    {
+        return $this->hasMany(PoPayment::class, 'purchase_order_id');
     }
 
     public function gstApprovals(): HasMany

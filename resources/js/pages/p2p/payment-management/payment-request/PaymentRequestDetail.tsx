@@ -89,7 +89,7 @@ const NO_APPROVE_TIP = 'You need Approve permission on Payment Request Managemen
 const POPUP_LAYERS = '.spi-mdl-backdrop, .cgst-backdrop, .prd-detail-overlay, .prd-vault, .cev-overlay';
 
 export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
-  requestId: string;
+  requestId: number;
   onBack: () => void;
   /** A request was approved or declined here — the list behind should reload. */
   onChanged?: () => void;
@@ -217,8 +217,8 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
                 {chip(i9(IcoFile), `${D} Number`, doc.id, longDate(doc.date))}
                 {chip(i9(IcoBuilding), 'Supplier', supplier?.code ?? '—', row.supplier)}
                 {chip(i9(IcoShip), 'Shipment ID', row.shipment?.id ?? '—', longDate(row.shipment?.date))}
-                {chip(i9(IcoTarget), 'Opportunity ID', row.opportunity.id, longDate(row.opportunity.date))}
-                {chip(i9(IcoCart), 'Procurement ID', row.procurement.id, longDate(row.procurement.date))}
+                {chip(i9(IcoTarget), 'Opportunity ID', row.opportunity?.id ?? '—', row.opportunity?.date ? longDate(row.opportunity.date) : '')}
+                {chip(i9(IcoCart), 'Procurement ID', row.procurement?.id ?? '—', row.procurement?.date ? longDate(row.procurement.date) : '')}
               </div>
               <div className="prd-hactions">
                 <button

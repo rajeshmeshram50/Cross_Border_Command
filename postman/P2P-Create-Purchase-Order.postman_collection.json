@@ -89,6 +89,16 @@
       "key": "approval_id",
       "value": "",
       "description": "Set by Request approval"
+    },
+    {
+      "key": "pay_req_id",
+      "value": "",
+      "description": "Set by Raise payment request"
+    },
+    {
+      "key": "payment_id",
+      "value": "",
+      "description": "Set by Record payment"
     }
   ],
   "auth": {
@@ -1183,6 +1193,281 @@
               }
             ],
             "url": "{{base_url}}/p2p/orders/{{po_id}}/inspection/withdraw"
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Payments (TDS, requests, payments)",
+      "description": "Manage Payment Requests on one submitted PO, and Payment Request Management across POs. Paid / balance are stored on the PO and rebuilt on every payment.",
+      "item": [
+        {
+          "name": "Summary + requests (one PO)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/payment-requests"
+          }
+        },
+        {
+          "name": "Save TDS (% or amount)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tds_percentage\": 2\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/tds",
+            "description": "On the base amount (without GST / charges). Editable until the first payment; not on an international PO."
+          }
+        },
+        {
+          "name": "Raise payment request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "try { pm.collectionVariables.set('pay_req_id', j.data.requests[j.data.requests.length - 1].id); } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_type\": \"Advance Payment\",\n  \"percentage\": 25,\n  \"requested_amount\": 5000,\n  \"reason\": \"Advance before dispatch\",\n  \"requested_to\": 0\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/payment-requests",
+            "description": "requested_to = approver user id (GET /p2p/orders/gst-approvals/approvers)."
+          }
+        },
+        {
+          "name": "Payment Request Management list (approver)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{approver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/orders/payment-requests?tab=awaiting&page=1&per_page=10"
+          }
+        },
+        {
+          "name": "Request detail (approver)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{approver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/orders/payment-requests/{{pay_req_id}}"
+          }
+        },
+        {
+          "name": "Approve / decline (approver)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{approver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"approved\",\n  \"approved_amount\": 4000,\n  \"note\": \"Part now, rest after GRN\"\n}"
+            },
+            "url": "{{base_url}}/p2p/orders/payment-requests/{{pay_req_id}}/decision",
+            "description": "decision: approved (approved_amount ≤ requested) | rejected (note required)."
+          }
+        },
+        {
+          "name": "Record payment (multipart)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "try { pm.collectionVariables.set('payment_id', j.data.payment.id); } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "amount",
+                  "value": "2500",
+                  "type": "text"
+                },
+                {
+                  "key": "bank_name",
+                  "value": "HDFC Bank",
+                  "type": "text"
+                },
+                {
+                  "key": "utr_cheque_number",
+                  "value": "HDFC260921001",
+                  "type": "text"
+                },
+                {
+                  "key": "utr_cheque_date",
+                  "value": "2026-09-21",
+                  "type": "text"
+                },
+                {
+                  "key": "proof",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/payment-requests/{{pay_req_id}}/payments"
+          }
+        },
+        {
+          "name": "Payment history of the request",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/payment-requests/{{pay_req_id}}/payments"
+          }
+        },
+        {
+          "name": "Edit payment (multipart, POST)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "amount",
+                  "value": "2000",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/payment-requests/{{pay_req_id}}/payments/{{payment_id}}"
+          }
+        },
+        {
+          "name": "Delete payment",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/p2p/orders/{{po_id}}/payment-requests/{{pay_req_id}}/payments/{{payment_id}}"
           }
         }
       ]
