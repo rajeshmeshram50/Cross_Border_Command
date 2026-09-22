@@ -416,7 +416,7 @@ function SupplierPanel({ supplier: s }: { supplier: Supplier | undefined }) {
 
   const scrutinyAge = monthsAgo(s.scrutiny);
   const filingAge = monthsAgo(s.filing);
-  const gst = gstState(s.key, scrutinyAge, filingAge);
+  const gst = gstState(s.key, s.scrutiny, s.filing);
   const openNotice = () => {
     if (gst.tone !== 'stop' && gst.tone !== 'warn') return;
     setNotice({
