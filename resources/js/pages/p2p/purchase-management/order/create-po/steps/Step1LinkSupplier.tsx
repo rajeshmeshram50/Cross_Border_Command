@@ -1,7 +1,7 @@
 // Create PO — Step 01: PO Link Supplier Details.
 // Section 1: Purchase Order (basic details). Section 2: Supplier, read from the
 // supplier master — address, legal status, GST scrutiny and risk alerts.
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState, useRef } from 'react';
 import { EditSelect, Field, FitTip } from '../form-fields';
 import { gstCheck } from '../gst-check';
 // Only fetched when "+ Add Supplier" is clicked.
@@ -83,7 +83,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
     ? 'Product lines are saved on this PO — the supplier and document type can no longer change.'
     : 'It follows the selected supplier. Clear the supplier first to change the document type.');
   const lockedSupplier = () => toast.warning('Supplier is locked', 'Product lines are saved on this PO — the supplier can no longer change.');
-  const lockedInspection = () => toast.info('Physical inspection is required', "This supplier's risk rating makes inspection mandatory — it cannot be turned off.");
 
   // Dropdown shows "S-004 — Company"; the option text maps back to the vendor id.
   const supplierOptions = useMemo(() => lookups.suppliers.map((s) => ({ id: s.id, label: `${s.code} — ${s.name}`, doc: s.document_type })), [lookups.suppliers]);
@@ -110,13 +109,15 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
 
   const { state: gst, scrutinyAge, filingAge } = gstCheck(draft);
 
-  // A high-risk supplier pins this PO: inspection is forced and terms are fixed.
+  // A high-risk supplier switches inspection on when picked; the user can still turn it off.
   const mandatory = sup ? isRiskMandatory({ risk: v(sup.risk), category: v(sup.category) }) : false;
+  const pickedSupRef = useRef(sup?.id ?? null);
   useEffect(() => {
+    if (pickedSupRef.current === (sup?.id ?? null)) return;   // a reopened PO keeps its saved choice
+    pickedSupRef.current = sup?.id ?? null;
     if (mandatory && !draft.physInsp) set({ physInsp: true });
-    // Only when the supplier's rating changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mandatory]);
+  }, [sup?.id, mandatory]);
 
   const legal = draft.legal ?? { sections: [], done: 0, total: 0, pct: 0 };
   const legalTone = legal.pct === 100 ? 'ok' : legal.pct >= 60 ? 'warn' : 'bad';
@@ -206,19 +207,14 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
             <EditSelect value={draft.paymentType} options={PAYMENT_TYPES} onChange={(x) => set({ paymentType: x })} invalid={!!err.paymentType} />
           </Field>
           <Field label="Physical Inspection Required">
-            {/* A high-risk supplier forces this on — locked, with the reason shown. */}
-            {mandatory ? (
-              <div className="spi-dt-toggle is-readonly cpf-toggle-req" aria-disabled="true" onClick={lockedInspection} style={{ cursor: 'not-allowed' }}>
-                <span className="spi-dt-toggle-sw on"><span className="spi-dt-toggle-knob" /></span>
-                <span className="spi-dt-toggle-txt">Yes</span>
-                <span className="cpf-req">Required</span>
-              </div>
-            ) : (
-              <button type="button" className={`spi-dt-toggle ${draft.physInsp ? 'cpf-toggle-req' : ''}`} onClick={() => set({ physInsp: !draft.physInsp })}>
-                <span className={`spi-dt-toggle-sw ${draft.physInsp ? 'on' : ''}`}><span className="spi-dt-toggle-knob" /></span>
-                <span className="spi-dt-toggle-txt">{draft.physInsp ? 'Yes' : 'No'}</span>
-                <span className={`cpf-req ${draft.physInsp ? '' : 'cpf-req--off'}`}>{draft.physInsp ? 'Required' : 'Not required'}</span>
-              </button>
+            {/* On by default for a high-risk supplier, but the user may switch it off. */}
+            <button type="button" className={`spi-dt-toggle ${draft.physInsp ? 'cpf-toggle-req' : ''}`} onClick={() => set({ physInsp: !draft.physInsp })}>
+              <span className={`spi-dt-toggle-sw ${draft.physInsp ? 'on' : ''}`}><span className="spi-dt-toggle-knob" /></span>
+              <span className="spi-dt-toggle-txt">{draft.physInsp ? 'Yes' : 'No'}</span>
+              <span className={`cpf-req ${draft.physInsp ? '' : 'cpf-req--off'}`}>{draft.physInsp ? 'Required' : 'Not required'}</span>
+            </button>
+            {mandatory && !draft.physInsp && (
+              <div className="cpf-lockhint"><i className="ri-error-warning-line" /> High-risk supplier — inspection is recommended</div>
             )}
           </Field>
 
