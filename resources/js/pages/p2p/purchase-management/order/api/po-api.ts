@@ -296,7 +296,13 @@ export const poApi = {
   /** PI lines of a shipment with ordered / pending qty; excludePo = the PO being edited. */
   piLines: (shipmentId: number, excludePo?: number) =>
     call('PO PI lines', () => api.get(`/p2p/orders/shipments/${shipmentId}/pi-lines`, { params: excludePo ? { exclude_po: excludePo } : {} }),
-      dataOf<{ proforma_invoice_id: number | null; lines: PiLine[] }>),
+      dataOf<{ proforma_invoice_id: number | null; lines: PiLine[]; held_by?: PiHolder[] }>),
+};
+
+/** Another open PO holding quantity of the same PI, and where it stands. */
+export type PiHolder = {
+  id: number; code: string; status: PoStatus; lines: number; qty: number;
+  approval_status: 'pending' | 'approved' | 'rejected' | null;
 };
 
 /* ══════════════════════════ Documents (Stage 04) ══════════════════════════ */

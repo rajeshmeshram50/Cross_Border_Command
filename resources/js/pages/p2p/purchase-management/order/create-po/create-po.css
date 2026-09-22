@@ -2363,3 +2363,15 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 [data-bs-theme="dark"] .cpd-tbl tbody tr.cpd-seglock-note > td { background: rgba(245,158,11,0.10) !important; }
 [data-bs-theme="dark"] .cpd-tbl tbody tr.cpd-row--seglock input { background: rgba(245,158,11,0.16); color: #fcd34d; }
 [data-bs-theme="dark"] .cpd-seglock-note__msg { color: #fcd34d; }
+
+/* PI quantity held on other POs (e.g. awaiting senior approval) — explains an empty Stage 02 table. */
+.cpd-held { margin: 0 0 10px; padding: 10px 14px; border-radius: 10px; font-size: 12px; line-height: 1.5; background: #eff9fc; border: 1px solid #cdeef6; color: #155e75; }
+.cpd-held--empty { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.cpd-held__po { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; }
+.cpd-held__st { display: inline-block; padding: 0 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; }
+.cpd-held__st--wait { background: #fef3c7; color: #b45309; }
+.cpd-held__st--ok { background: #e0f2fe; color: #0369a1; }
+[data-bs-theme="dark"] .cpd-held { background: rgba(8,145,178,0.10); border-color: rgba(34,211,238,0.25); color: #a5f3fc; }
+[data-bs-theme="dark"] .cpd-held--empty { background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.3); color: #fcd34d; }
+[data-bs-theme="dark"] .cpd-held__st--wait { background: rgba(245,158,11,0.2); color: #fcd34d; }
+[data-bs-theme="dark"] .cpd-held__st--ok { background: rgba(14,165,233,0.2); color: #7dd3fc; }

@@ -71,12 +71,21 @@ class PoGstApprovalController extends Controller
             ->where('u.client_id', $user->client_id)
             ->where('u.status', 'active')
             ->whereNull('u.deleted_at')
-            ->where('u.id', '!=', $user->id)
+            // A branch head is the senior of the branch, so they may pick themselves; others cannot.
+            ->when($user->user_type !== 'branch_user', fn ($q) => $q->where('u.id', '!=', $user->id))
+            // Only this branch's people, plus client admins who sit over every branch.
+            ->when($this->approverBranch($request, $user), fn ($q, $b) => $q->where(fn ($w) => $w->where('u.branch_id', $b)->orWhere('u.user_type', 'client_admin')))
             ->orderByRaw("CASE WHEN u.user_type = 'client_admin' THEN 0 ELSE 1 END")
             ->orderBy('u.name')
             ->get(['u.id', 'u.name', 'u.email', 'u.user_type', 'e.id as employee_id', 'e.emp_code',
                 'd.name as department', DB::raw('COALESCE(g.name, u.designation) as designation')]);
         return $this->ok($rows->unique('id')->values());
+    }
+
+    /** The branch whose people can approve: the active branch switcher, else the user's own. */
+    private function approverBranch(Request $request, $user): ?int
+    {
+        return ($request->integer('branch_id') ?: null) ?? ($user->branch_id ? (int) $user->branch_id : null);
     }
 
     /** POST /p2p/orders/{id}/gst-approval/request */
@@ -116,9 +125,13 @@ class PoGstApprovalController extends Controller
         if ($open) return $this->fail('A request is already waiting on ' . (DB::table('users')->where('id', $open->requested_to)->value('name') ?? 'the approver') . '.');
 
         $approver = DB::table('users')->where('id', $targetId)->where('client_id', $user->client_id)
-            ->where('status', 'active')->whereNull('deleted_at')->first(['id', 'name']);
+            ->where('status', 'active')->whereNull('deleted_at')->first(['id', 'name', 'branch_id', 'user_type']);
         if (!$approver) return $this->fail('Select an active user of your company as the approver.');
-        if ((int) $approver->id === (int) $user->id) return $this->fail('You cannot approve your own request — choose a senior.');
+        $branch = $po->branch_id ?: $user->branch_id;
+        if ($branch && $approver->user_type !== 'client_admin' && (int) $approver->branch_id !== (int) $branch) {
+            return $this->fail("Choose a senior from this PO's branch.");
+        }
+        if ((int) $approver->id === (int) $user->id && $user->user_type !== 'branch_user') return $this->fail('You cannot approve your own request — choose a senior.');
 
         $row = $this->inTransaction('send the approval request', function () use ($po, $user, $data, $gst, $targetId) {
             $row = PoGstApproval::create([

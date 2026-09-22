@@ -77,10 +77,41 @@ class PurchaseOrderController extends Controller
         $piId = $this->svc->piIdForShipment($ship);
         if (!$piId) return $this->ok(['proforma_invoice_id' => null, 'lines' => []]);
 
+        $exclude = $request->integer('exclude_po') ?: null;
         return $this->ok([
             'proforma_invoice_id' => $piId,
-            'lines' => $this->piLinesWithPending($piId, (int) $user->client_id, $request->integer('exclude_po') ?: null),
+            'lines' => $this->piLinesWithPending($piId, (int) $user->client_id, $exclude),
+            'held_by' => $this->piHolders($piId, (int) $user->client_id, $exclude),
         ]);
+    }
+
+    /**
+     * Other open POs holding this PI's quantity, with where each stands — so an empty
+     * Stage 02 can say why (e.g. the lines are on a PO still waiting for senior approval).
+     */
+    private function piHolders(int $piId, int $clientId, ?int $excludePoId): array
+    {
+        $rows = DB::table('p2p_purchase_order_items as i')
+            ->join('p2p_purchase_orders as po', 'po.id', '=', 'i.purchase_order_id')
+            ->join('proforma_invoice_items as pi', 'pi.id', '=', 'i.pi_item_id')
+            ->where('pi.proforma_invoice_id', $piId)
+            ->where('po.client_id', $clientId)
+            ->whereNull('po.deleted_at')
+            ->where('po.status', '!=', PurchaseOrder::STATUS_CANCELLED)
+            ->when($excludePoId, fn ($q) => $q->where('po.id', '!=', $excludePoId))
+            ->groupBy('po.id', 'po.code', 'po.status')
+            ->selectRaw('po.id, po.code, po.status, COUNT(*) as lines, SUM(i.quantity) as qty')
+            ->orderBy('po.id')
+            ->get();
+        if ($rows->isEmpty()) return [];
+        // Latest senior-approval request per PO.
+        $approvals = DB::table('p2p_po_gst_approvals')->whereIn('purchase_order_id', $rows->pluck('id'))
+            ->orderBy('id')->get(['purchase_order_id', 'status'])->keyBy('purchase_order_id');
+        return $rows->map(fn ($r) => [
+            'id' => (int) $r->id, 'code' => $r->code, 'status' => $r->status,
+            'lines' => (int) $r->lines, 'qty' => (float) $r->qty,
+            'approval_status' => $approvals->get($r->id)->status ?? null,
+        ])->all();
     }
 
     /* ══════════════════════════ LIST / SHOW ══════════════════════════ */

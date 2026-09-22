@@ -110,11 +110,11 @@ export default function StageSummary({ draft, ctx, upto }: { draft: PoDraft; ctx
             </Group>
 
             <Group label="GST Scrutiny Details">
-              <RO label="Scrutiny Date" value={sup?.scrutiny ? formatDmy(sup.scrutiny) : dash('')} />
-              <RO label="GST Number" value={dash(v(sup?.gstNo))} />
-              <RO label="GST Status" value={dash(v(sup?.gstStatus))} />
-              <RO label="Last Filing Date" value={sup?.filing ? formatDmy(sup.filing) : dash('')} />
-              <RO label="Prev. Invoice / Remarks" value={dash(v(sup?.remarks))} full />
+              <RO label="Scrutiny Date" value={(draft.docType === 'International') ? 'N/A' : sup?.scrutiny ? formatDmy(sup.scrutiny) : dash('')} />
+              <RO label="GST Number" value={(draft.docType === 'International') ? 'N/A' : dash(v(sup?.gstNo))} />
+              <RO label="GST Status" value={(draft.docType === 'International') ? 'N/A' : dash(v(sup?.gstStatus))} />
+              <RO label="Last Filing Date" value={(draft.docType === 'International') ? 'N/A' : sup?.filing ? formatDmy(sup.filing) : dash('')} />
+              <RO label="Prev. Invoice / Remarks" value={(draft.docType === 'International') ? 'N/A' : dash(v(sup?.remarks))} full />
             </Group>
 
             <Group label="Supplier Risk Alert">

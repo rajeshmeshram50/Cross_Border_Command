@@ -35,6 +35,8 @@ const LOCKED_PO_TYPES = Object.fromEntries(PO_TYPES.filter((t) => t !== OPEN_PO_
 
 const v = (x: string | null | undefined) => x ?? '';
 // An international PO is never in INR — listed, but locked with the reason.
+// International supplier: GST fields read N/A instead of the stored GST record.
+const NA = 'N/A — Not applicable';
 const INR_LOCK = { INR: 'An international PO cannot be in INR' };
 
 type Props = {
@@ -438,7 +440,7 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
             <span className="cpf-gst__txt">
               <span className="cpf-gst__t">{gst.title}</span>
               <span className="cpf-gst__s">{gst.note}</span>
-              {sup && (
+              {sup && !isInternational && (
                 <span className="cpf-gst__meta">
                   Scrutiny <b>{sup.scrutiny ? formatDmy(sup.scrutiny) : '—'}</b>
                   {scrutinyAge !== null && <span className="cpf-gst__age">{scrutinyAge.toFixed(1)} mo ago</span>}
@@ -451,12 +453,12 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
           </div>
 
           <div className="spi-dt-grid4">
-            <Field label="SCRUTINY DATE"><input className="spi-dt-inp" readOnly value={sup?.scrutiny ? formatDmy(sup.scrutiny) : ''} placeholder="—" /></Field>
-            <Field label="GST NUMBER"><input className="spi-dt-inp" readOnly value={v(sup?.gstNo)} placeholder="—" /></Field>
-            <Field label="GST STATUS"><EditSelect readOnly value={v(sup?.gstStatus)} options={[]} onChange={() => {}} /></Field>
-            <Field label="LAST FILING DATE"><input className="spi-dt-inp" readOnly value={sup?.filing ? formatDmy(sup.filing) : ''} placeholder="—" /></Field>
+            <Field label="SCRUTINY DATE"><input className="spi-dt-inp" readOnly value={isInternational ? NA : sup?.scrutiny ? formatDmy(sup.scrutiny) : ''} placeholder="—" /></Field>
+            <Field label="GST NUMBER"><input className="spi-dt-inp" readOnly value={isInternational ? NA : v(sup?.gstNo)} placeholder="—" /></Field>
+            <Field label="GST STATUS"><EditSelect readOnly value={isInternational ? NA : v(sup?.gstStatus)} options={[]} onChange={() => {}} /></Field>
+            <Field label="LAST FILING DATE"><input className="spi-dt-inp" readOnly value={isInternational ? NA : sup?.filing ? formatDmy(sup.filing) : ''} placeholder="—" /></Field>
             <Field label="PREV. INVOICE / REMARKS" full>
-              <textarea className="spi-dt-textarea" readOnly value={v(sup?.remarks)} placeholder="—" />
+              <textarea className="spi-dt-textarea" readOnly value={isInternational ? NA : v(sup?.remarks)} placeholder="—" />
             </Field>
           </div>
           </>)}

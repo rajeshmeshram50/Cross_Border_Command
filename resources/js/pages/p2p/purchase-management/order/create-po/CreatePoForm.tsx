@@ -22,7 +22,7 @@ import type { PoDraft, PoLineRow } from './po-draft';
 import GstNoticeModal, { type GstNotice } from './GstNoticeModal';
 // The supplier master's wizard, opened on its GST Scrutiny tab when scrutiny is missing or stale.
 const AddVendorModal = lazy(() => import('../../../p2p-master-management/supplier-management/AddVendorModal'));
-import { PoApiError, poApi, poLookupApi, type PoDetail, type ShipmentOption, type TaxMode } from '../api/po-api';
+import { PoApiError, poApi, poLookupApi, type PiHolder, type PoDetail, type ShipmentOption, type TaxMode } from '../api/po-api';
 import { useToast } from '../../../../../contexts/ToastContext';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './create-po.css';
@@ -55,6 +55,8 @@ export type StepCtx = {
   lineErrors: LineErrors;
   /** Step 02 lines as last saved; null until they have been saved once. */
   savedLines: PoLineRow[] | null;
+  /** Other POs holding this PI's quantity — explains an empty Stage 02. */
+  piHolders: PiHolder[];
   linesGeneral?: string;
 };
 
@@ -108,6 +110,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   const [supplierLoading, setSupplierLoading] = useState(false);
   // The lines as last saved — what Missing Product Details reports on.
   const [savedLines, setSavedLines] = useState<PoLineRow[] | null>(null);
+  const [piHolders, setPiHolders] = useState<PiHolder[]>([]);
   const [stage, setStage] = useState(0);
   // The furthest stage the stepper may open — every stage before it is saved.
   const [reached, setReached] = useState(0);
@@ -151,7 +154,9 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
       try {
         if (link.editId != null) {
           const d = await poApi.show(link.editId);
-          const pi = d.shipment_order_id ? (await poApi.piLines(d.shipment_order_id, d.id)).lines : [];
+          const piRes = d.shipment_order_id ? await poApi.piLines(d.shipment_order_id, d.id) : null;
+          const pi = piRes?.lines ?? [];
+          if (alive) setPiHolders(piRes?.held_by ?? []);
           if (!alive) return;
           const loaded = draftFromDetail(d, pi);
           replace(loaded);
@@ -171,7 +176,13 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
             // Earlier POs on this shipment may have ordered some PI lines in full.
             const open = pi.lines.filter((l) => l.pending_qty > 0);
             set({ lines: open.map(rowFromPi) });
-            if (pi.lines.length && !open.length) toast.info('Nothing left to order on this PI', 'Every PI line is already on earlier POs — raise a standalone PO for anything extra.');
+            setPiHolders(pi.held_by ?? []);
+            if (pi.lines.length && !open.length) {
+              const waiting = (pi.held_by ?? []).filter((h) => h.approval_status === 'pending').map((h) => h.code);
+              toast.info('Nothing left to order on this PI', waiting.length
+                ? `Its products are on ${waiting.join(', ')}, still awaiting senior approval.`
+                : 'Every PI line is already on earlier POs — raise a standalone PO for anything extra.');
+            }
           }
         }
       } catch (e) {
@@ -367,7 +378,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     pi: link.shipment?.pi_number ?? detail?.pi_code ?? null,
     procurement: detail?.procurement_request_code ?? null,
   };
-  const ctx: StepCtx = { lookups, taxMode: draft.docType === 'International' ? 'export' : (detail?.tax_mode ?? 'intra'), piCode: refs.pi, detail, saveLines, saving, refreshVault, reloadDetail: () => { void reloadApproval(); }, savedLines,
+  const ctx: StepCtx = { lookups, taxMode: draft.docType === 'International' ? 'export' : (detail?.tax_mode ?? 'intra'), piCode: refs.pi, detail, saveLines, saving, refreshVault, reloadDetail: () => { void reloadApproval(); }, savedLines, piHolders,
     errors: shown[0] ? { ...serverErrors, ...validateStage1(draft) } : serverErrors,
     ...(() => {
       if (!shown[1]) return { lineErrors: serverLineErrors };
