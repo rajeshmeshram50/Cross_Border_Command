@@ -325,6 +325,15 @@ export const poDocumentApi = {
 /* ══════════════════════════ Signatures (shared CLM endpoints) ══════════════════════════ */
 
 export const poSignatureApi = {
+  /** A library trade document / agreement as an editable Word file — the
+      library's own DOCX download (the uploaded Word file, or one built from
+      the template). */
+  draft: (kind: 'trade' | 'agreement', libraryId: number) =>
+    call('PO draft document', () => api.get(
+      `/clm/${kind === 'trade' ? 'trade-doc-library' : 'agreement-library'}/${libraryId}/download`,
+      { responseType: 'blob' },
+    ), (b) => b as Blob),
+
   /** The signed copy of one document of a request. */
   signedFile: (sigId: number, index: number) =>
     call('PO signed document', () => api.get(`/clm/signature-requests/${sigId}/download-file/${index}`, { responseType: 'blob' }), (b) => b as Blob),

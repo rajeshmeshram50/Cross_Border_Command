@@ -100,6 +100,9 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   const [nextCode, setNextCode] = useState('');
   const [booting, setBooting] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Read by the Esc handler, which is bound once and would see a stale `saving`.
+  const savingRef = useRef(false);
+  savingRef.current = saving;
   const [supplierLoading, setSupplierLoading] = useState(false);
   // The lines as last saved — what Missing Product Details reports on.
   const [savedLines, setSavedLines] = useState<PoLineRow[] | null>(null);
@@ -193,6 +196,8 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     const OVER_FORM = '.cgst-backdrop, .supch-ov, .avm-backdrop, .apm-backdrop, .sev-overlay, .prd-detail-overlay';
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || document.querySelector(OVER_FORM)) return;
+      // Not mid-save: closing now would drop the response half-applied.
+      if (savingRef.current) return;
       onClose();
     };
     document.addEventListener('keydown', onKey);
@@ -328,7 +333,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   };
 
   const goTo = (target: number) => {
-    if (target === stage) return;
+    if (target === stage || saving) return;
     if (target > reached && !viewOnly) { toast.info('Save this step first', 'Use the button below to save and continue.'); return; }
     setStage(target);
   };
@@ -362,7 +367,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   };
 
   return createPortal(
-    <div className="spi-dt-overlay cpf-form">
+    <div className={`spi-dt-overlay cpf-form${saving ? ' is-saving' : ''}`} aria-busy={saving}>
       <div className="spi-dt">
         <div className="spi-dt-topcard">
           <div className="spi-dt-head">
@@ -402,11 +407,13 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
 
             <div className="spi-dt-head-r">
               <span className="spi-dt-divider" />
-              <button type="button" className="spi-dt-btn-close" onClick={onClose}><IcoX /> Close</button>
+              <button type="button" className="spi-dt-btn-close" onClick={onClose} disabled={saving}><IcoX /> Close</button>
             </div>
           </div>
 
-          <div className="spi-dt-steps cpf-steps4">
+          {/* inert while saving: no clicks, focus or typing reach the stepper or
+              the step's fields — nothing can change under the save in flight. */}
+          <div className="spi-dt-steps cpf-steps4" inert={saving}>
             {STAGES.map((s, i) => (
               <div
                 key={s.title}
@@ -431,9 +438,9 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
           </div>
         </div>
 
-        <div className="spi-dt-body" ref={bodyRef}>
+        <div className="spi-dt-body" ref={bodyRef} inert={saving}>
           {booting ? (
-            <div className="cpf-loading"><span className="spinner-border spinner-border-sm" role="status" /> Loading purchase order…</div>
+            <PoFormSkeleton />
           ) : (
             <>
               {viewOnly && (
@@ -475,6 +482,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
                 type="button"
                 className={`spi-dt-btn-next cpf-foot-gst--${approval?.status === 'approved' ? 'ok' : gst.notice!.tone}`}
                 onClick={() => setGstNotice(gst.notice)}
+                disabled={saving}
               >
                 {approval?.status === 'approved' && <IcoCheck />} {gstActionLabel}
               </button>
@@ -518,5 +526,35 @@ export function HeadPill({ icon, label, value, mono, alt }: { icon: React.ReactN
         </FitTip>
       </div>
     </div>
+  );
+}
+
+/* Shimmer shown while an existing PO is fetched — the shared wizard skeleton
+   (.spi-dt-sk, same as the SPI wizard), shaped like Step 01's sections. */
+function PoFormSkeleton() {
+  return (
+    <>
+      {[0, 1].map((s) => (
+        <div className="spi-dt-sec" key={s} aria-busy="true">
+          <div className="spi-dt-sec-head" style={{ cursor: 'default' }}>
+            <div className="spi-dt-sk spi-dt-sk-ico" />
+            <div className="spi-dt-sec-mid">
+              <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 200 }} />
+              <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 280, height: 8, marginTop: 7 }} />
+            </div>
+          </div>
+          <div className="spi-dt-sec-body">
+            <div className="spi-dt-grid4">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i}>
+                  <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 84, height: 8, marginBottom: 9 }} />
+                  <div className="spi-dt-sk spi-dt-sk-field" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ))}
+    </>
   );
 }

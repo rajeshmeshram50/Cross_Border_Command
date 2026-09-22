@@ -2313,12 +2313,33 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 
 /* Edit form once payments have started: everything visible, nothing editable. */
 .cpf-viewonly { border: 0; margin: 0; padding: 0; min-width: 0; }
+/* Steps 01–03 sit inside this fieldset, not straight in .spi-dt-body, so the
+   body's 8px gap and its fill rules never reached them and the sections
+   touched. The fieldset carries the same column layout itself. Empty on
+   Step 04 (that step renders outside it) — hidden so it adds no gap. */
+.cpf-viewonly { display: flex; flex-direction: column; gap: 8px; flex: 1 0 auto; }
+.cpf-viewonly:empty { display: none; }
+
+/* While Save & Next runs the stepper and step are inert (CreatePoForm); this
+   shows it — dimmed, with a busy cursor over the whole form. */
+.cpf-form.is-saving { cursor: progress; }
+.cpf-form .spi-dt-body,
+.cpf-form .spi-dt-steps { transition: opacity .15s; }
+.cpf-form.is-saving .spi-dt-body,
+.cpf-form.is-saving .spi-dt-steps { opacity: .6; }
+.cpf-viewonly > * { flex-shrink: 0; }
+.cpf-viewonly > .cpf-fill { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 320px; }
+.cpf-viewonly > .cpf-fill.is-collapsed { flex: 0 0 auto; min-height: 0; }
+@media (max-width: 760px) {
+  .cpf-viewonly { flex: 0 0 auto; }
+  .cpf-viewonly > .cpf-fill { flex: 0 0 auto; min-height: 0; }
+}
 .cpf-viewonly:disabled { cursor: not-allowed; }
 .cpf-viewonly:disabled .spi-dt-inp,
 .cpf-viewonly:disabled .master-select-toggle,
 .cpf-viewonly:disabled textarea { background: #f4f7f9; }
 .cpf-viewonly-banner {
-  display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 10px 14px; border-radius: 10px;
+  display: flex; align-items: center; gap: 8px; margin: 0; padding: 10px 14px; border-radius: 10px;
   border: 1px solid #fde68a; background: #fffbeb; color: #92400e; font-size: 12.5px; font-weight: 600;
 }
 .cpf-viewonly-banner svg { width: 14px; height: 14px; flex-shrink: 0; }
