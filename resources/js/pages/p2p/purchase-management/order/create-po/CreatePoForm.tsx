@@ -48,6 +48,8 @@ export type StepCtx = {
   saving: boolean;
   /** Re-read the supplier's vault after documents are uploaded from it. */
   refreshVault: () => void;
+  /** Re-read the PO — after documents go out for signature, so Steps 01–03 lock at once. */
+  reloadDetail: () => void;
   /** Inline errors — shown once the step has been saved (or failed on the server). */
   errors: FieldErrors;
   lineErrors: LineErrors;
@@ -219,8 +221,21 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     if (id) void loadSupplier(id);
   };
   // Payments have started on this PO: every step can be looked at, nothing can be saved.
-  const viewOnly = isEdit && !!detail?.payments_started;
-  const showGstAction = stage === 2 && !!gst.notice && !viewOnly;
+  const paidView = isEdit && !!detail?.payments_started;
+  /* A document has gone out for signature (or come back signed): the supplier
+     is signing what was sent, so Steps 01–03 freeze until the request is
+     declined / recalled. The PO is submitted by then, so every step can be
+     browsed, and Step 04 keeps working — the rest still has to be sent. */
+  const signView = !paidView && !!detail?.signing_started;
+  /* Sent for senior GST approval and not decided yet: frozen until rejected, so
+     the senior decides on the PO as it was sent. Unlike paidView the PO is not
+     submitted yet, so Step 04 stays out of reach. Same rule as the server. */
+  const approvalView = !paidView && !signView && !!detail?.awaiting_approval;
+  const viewOnly = paidView || signView || approvalView;
+  // Waiting on the senior, the status button stays so the request can still be looked at.
+  const showGstAction = stage === 2 && !!gst.notice && (!viewOnly || approvalView);
+  // Nothing past the last saved step while the request waits.
+  const approvalStop = approvalView && stage >= reached;
   // Only an overdue return can be approved past; a stale scrutiny always blocks.
   const approval = gst.notice?.tone === 'warn' ? detail?.gst_approval ?? null : null;
   const gstCleared = !gst.notice || approval?.status === 'approved';
@@ -295,7 +310,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   };
 
   const goNext = async () => {
-    if (saving || booting) return;
+    if (saving || booting || approvalStop) return;
     if (viewOnly) {
       if (isLast) onClose(); else setStage(stage + 1);
       return;
@@ -334,7 +349,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
 
   const goTo = (target: number) => {
     if (target === stage || saving) return;
-    if (target > reached && !viewOnly) { toast.info('Save this step first', 'Use the button below to save and continue.'); return; }
+    if (target > reached && !paidView && !signView) { toast.info('Save this step first', 'Use the button below to save and continue.'); return; }
     setStage(target);
   };
 
@@ -347,7 +362,9 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     else onChangeLink();
   };
   const backLabel = stage > 0 ? 'Back' : poId ? 'Back to List' : 'Change Link';
-  const nextLabel = viewOnly ? (isLast ? 'Close' : 'Next') : saving ? 'Saving…' : isLast && isEdit ? 'Update Purchase Order' : NEXT_LABEL[stage];
+  // Waiting on the senior, the submit button keeps its label and is disabled —
+  // the GST button beside it already says "Awaiting senior approval".
+  const nextLabel = approvalStop ? NEXT_LABEL[stage] : viewOnly ? (isLast ? 'Close' : 'Next') : saving ? 'Saving…' : isLast && isEdit ? 'Update Purchase Order' : NEXT_LABEL[stage];
 
   const code = detail?.code ?? nextCode;
   const refs = {
@@ -357,7 +374,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     customer: link.shipment?.customer ?? detail?.customer_name ?? null,
     procurement: detail?.procurement_request_code ?? null,
   };
-  const ctx: StepCtx = { lookups, taxMode: detail?.tax_mode ?? 'intra', piCode: refs.pi, detail, saveLines, saving, refreshVault, savedLines,
+  const ctx: StepCtx = { lookups, taxMode: detail?.tax_mode ?? 'intra', piCode: refs.pi, detail, saveLines, saving, refreshVault, reloadDetail: () => { void reloadApproval(); }, savedLines,
     errors: shown[0] ? { ...serverErrors, ...validateStage1(draft) } : serverErrors,
     ...(() => {
       if (!shown[1]) return { lineErrors: serverLineErrors };
@@ -445,7 +462,12 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
             <>
               {viewOnly && (
                 <div className="cpf-viewonly-banner">
-                  <IcoLock /> <b>View only.</b> Payments have started on this PO, so it can no longer be edited — you can still look through every step.
+                  <IcoLock /> <b>View only.</b>{' '}
+                  {approvalView
+                    ? `Sent to ${detail?.gst_approval?.requested_to_name ?? 'a senior'} for GST approval, so it cannot be edited — it opens for editing again only if the request is rejected.`
+                    : signView
+                      ? 'Documents on this PO have been sent for signature, so it cannot be edited — it opens for editing again only if the request is declined or recalled.'
+                      : 'Payments have started on this PO, so it can no longer be edited — you can still look through every step.'}
                 </div>
               )}
               {/* A disabled fieldset turns every field and button in Steps 01–03 off at once. */}
@@ -493,7 +515,8 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
               type="button"
               className={isSubmit ? 'spi-dt-btn-map' : 'spi-dt-btn-next'}
               onClick={goNext}
-              disabled={saving || booting}
+              disabled={saving || booting || approvalStop}
+              title={approvalStop ? 'Waiting for the senior to decide — the PO can be submitted once approved' : undefined}
             >
               {isSubmit && <IcoCheck />} {nextLabel} <IcoChevronR />
             </button>

@@ -283,6 +283,7 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
               setSigning(null);
               setSelected((all) => all.filter((id) => !sent.includes(id)));
               reload();
+              ctx.reloadDetail(); // out for signature: Steps 01–03 go view-only now
             }}
           />
         </Suspense>
@@ -323,6 +324,7 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
               setRawSigning(null);
               setSelected((all) => all.filter((id) => !sent.includes(id)));
               reload();
+              ctx.reloadDetail();
             }}
           />
         </Suspense>
