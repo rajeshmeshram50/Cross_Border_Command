@@ -59,6 +59,16 @@ export function riskLabel(risk: string | null | undefined): string {
   return tier ? `${tier[0].toUpperCase()}${tier.slice(1)} Risk` : '';
 }
 
+/** Supplier category as the supplier master shows it (stored as star / general / high_risk / blacklisted). */
+const CATEGORY_LABEL: Record<string, string> = {
+  star: 'Star Supplier', general: 'General', high_risk: 'High Risk', blacklisted: 'Blacklisted',
+};
+export function categoryLabel(category: string | null | undefined): string {
+  const key = (category ?? '').trim().toLowerCase();
+  if (!key) return '';
+  return CATEGORY_LABEL[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 /** High / medium risk with a high-risk or blacklisted category turns
  *  physical inspection on by default (it can still be switched off). */
 export function isRiskMandatory(s: { risk: string; category: string }): boolean {

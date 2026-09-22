@@ -455,6 +455,23 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::get   ('/gst-approvals/{approval}',       [$gap, 'show'])->whereNumber('approval');
         Route::put   ('/gst-approvals/{approval}',       [$gap, 'decide'])->whereNumber('approval');   // approve / reject
         Route::post  ('/{id}/cancel',                    [$po, 'cancel'])->whereNumber('id');
+        // Zoho Books: PO + bill, then payments not posted yet
+        Route::post  ('/{id}/zoho-sync',                 [$po, 'zohoSync'])->whereNumber('id');
+
+        // Advance Receipt Refund Adjustment (cancel with money released) and its recoveries
+        $adr = \App\Http\Controllers\Api\P2p\PoRefundAdjustmentController::class;
+        Route::get   ('/refund-adjustments',                               [$adr, 'index']);
+        Route::get   ('/refund-adjustments/eligible-pos',                  [$adr, 'eligiblePos']);
+        Route::get   ('/refund-adjustments/po/{po}',                       [$adr, 'forPo'])->whereNumber('po');
+        Route::post  ('/refund-adjustments',                               [$adr, 'store']);
+        Route::get   ('/refund-adjustments/{id}',                          [$adr, 'show'])->whereNumber('id');
+        // POST, not PUT: the edit may carry a new attachment (multipart).
+        Route::post  ('/refund-adjustments/{id}',                          [$adr, 'update'])->whereNumber('id');
+        Route::post  ('/refund-adjustments/{id}/zoho-sync',                [$adr, 'zohoSync'])->whereNumber('id');
+        Route::post  ('/refund-adjustments/{id}/recoveries',               [$adr, 'storeRecovery'])->whereNumber('id');
+        Route::post  ('/refund-adjustments/{id}/recoveries/{rec}',         [$adr, 'updateRecovery'])->whereNumber('id')->whereNumber('rec');
+        Route::delete('/refund-adjustments/{id}/recoveries/{rec}',         [$adr, 'destroyRecovery'])->whereNumber('id')->whereNumber('rec');
+        Route::post  ('/refund-adjustments/{id}/recoveries/{rec}/zoho-sync', [$adr, 'zohoSyncRecovery'])->whereNumber('id')->whereNumber('rec');
         Route::delete('/{id}',                           [$po, 'destroy'])->whereNumber('id');
 
         // Stage 04 · documents

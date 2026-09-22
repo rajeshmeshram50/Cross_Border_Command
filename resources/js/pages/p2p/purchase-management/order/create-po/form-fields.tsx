@@ -91,7 +91,7 @@ export function EditSelect({ value, options, onChange, placeholder, invalid, rea
     <MasterSelect
       value={value}
       options={options.map((o) => (locked?.[o]
-        ? { value: o, label: o, disabled: true, disabledReason: locked[o], badge: { text: '🔒 Locked', tone: 'gray' as const } }
+        ? { value: o, label: o, disabled: true, disabledReason: locked[o], badge: { text: 'Locked', tone: 'gray' as const, lock: true } }
         : { value: o, label: o }))}
       onChange={onChange}
       placeholder={placeholder ?? '— Select —'}

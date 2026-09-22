@@ -1241,6 +1241,12 @@ export default function AddVendorModal(props: {
         setGstNumber(v.gst_number ?? '');
         setVendorType(v.vendor_type_name ?? '');
         setRiskLevel(numStr(v.risk_level_id));
+        // Keep the saved category on edit; older rows hold the label ("Blacklisted Supplier"), so match on the word.
+        {
+          const raw = String((v as { supplier_category?: string | null }).supplier_category ?? '').trim().toLowerCase();
+          const hit = SUPPLIER_CATEGORY_OPTS.find(o => raw === o.value || raw.replace(/[\s-]+/g, '_').startsWith(o.value) || raw.startsWith(o.label.toLowerCase()));
+          setSupplierCategory(hit?.value ?? 'general');
+        }
         setVendorBehaviour(v.vendor_behaviour_name ?? '');
         const fromIds: string[] = Array.isArray((v as any).segment_ids)
           ? (v as any).segment_ids.map((x: any) => String(x)).filter(Boolean)

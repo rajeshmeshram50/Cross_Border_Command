@@ -57,7 +57,7 @@ export function segmentMismatch(product: ProductOpt | undefined, supplierSegment
   return `Segment mismatch — ${seg} is not mapped to this supplier. Add ${seg} to the supplier's segments.`;
 }
 
-export function validateLines(lines: PoLineRow[], products: ProductOpt[], supplierSegments?: string[] | null): { rows: LineErrors; general?: string } {
+export function validateLines(lines: PoLineRow[], products: ProductOpt[], supplierSegments?: string[] | null, international = false): { rows: LineErrors; general?: string } {
   const rows: LineErrors = {};
   const set = (key: string, cell: 'product' | 'qty' | 'rate', msg: string) => { rows[key] = { ...rows[key], [cell]: msg }; };
 
@@ -67,7 +67,7 @@ export function validateLines(lines: PoLineRow[], products: ProductOpt[], suppli
     if (l.pi && l.qtyPo > l.pi.pending_qty) set(l.key, 'qty', `Only ${l.pi.pending_qty} is still pending on the PI.`);
     // A PI line left at 0 is simply not ordered; any ordered line needs a price and GST.
     if (l.qtyPo > 0 && l.rate <= 0) set(l.key, 'rate', 'Enter a rate.');
-    if (l.qtyPo > 0 && l.productId && gstOf(l, products) === null) set(l.key, 'product', 'No GST % on the product master — set it there first.');
+    if (!international && l.qtyPo > 0 && l.productId && gstOf(l, products) === null) set(l.key, 'product', 'No GST % on the product master — set it there first.');
     const seg = l.qtyPo > 0 ? segmentMismatch(products.find((p) => p.id === l.productId), supplierSegments) : null;
     if (seg) set(l.key, 'product', seg);
   }

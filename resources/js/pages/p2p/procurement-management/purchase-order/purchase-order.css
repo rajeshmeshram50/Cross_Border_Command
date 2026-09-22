@@ -1122,3 +1122,14 @@ body.pom-dp .master-datepicker-footer .today-btn:hover{background:rgba(8,145,178
   /* Supplier legal cards stack one per row. */
   .pom .splegal-grid{grid-template-columns:1fr;}
 }
+
+/* Segment mismatch: the reason as its own row under the product (wraps, never overflows). */
+.pom .cpd-tbl tbody tr.cpd-segrow td{background:rgba(239,68,68,.07);box-shadow:inset 3px 0 0 #dc2626;padding:6px 14px 10px;border-top:0;white-space:normal;}
+.pom .cpd-segrow__msg{display:flex;align-items:flex-start;gap:8px;color:#b91c1c;font-size:12px;line-height:1.45;overflow-wrap:anywhere;word-break:break-word;}
+.pom .cpd-segrow__msg svg{flex-shrink:0;margin-top:2px;}
+[data-bs-theme="dark"] .pom .cpd-tbl tbody tr.cpd-segrow td{background:rgba(239,68,68,.12);}
+[data-bs-theme="dark"] .pom .cpd-segrow__msg{color:#fca5a5;}
+
+.pom .cpd-notmapped{display:block;margin:3px auto 0;width:max-content;padding:1px 7px;border-radius:999px;font-size:9.5px;font-weight:700;background:#fee2e2;color:#b91c1c;letter-spacing:.02em;}
+.pom .cpd-tbl tbody tr.cpd-segrow td{opacity:1;}
+[data-bs-theme="dark"] .pom .cpd-notmapped{background:rgba(239,68,68,.18);color:#fca5a5;}

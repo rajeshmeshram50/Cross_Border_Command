@@ -54,7 +54,8 @@ export type PoStatus = 'draft' | 'submitted' | 'cancelled';
 export type PoTypeKey = 'material_goods' | 'services' | 'ffd_transporter';
 export type DocTypeKey = 'domestic' | 'international';
 export type LinkType = 'with_shipment' | 'standalone';
-export type TaxMode = 'intra' | 'inter';
+/** 'export' is screen-only: an international PO shows one Tax (%) / Tax Amount pair, 0 by default. */
+export type TaxMode = 'intra' | 'inter' | 'export';
 export type GstGate = 'clear' | 'approval_required' | 'blocked';
 export type GstApprovalStatus = 'pending' | 'approved' | 'rejected';
 
@@ -85,6 +86,20 @@ export type PoListRow = PoLinkRefs & {
   gst_approval_status: GstApprovalStatus | null;
   /** A document is out for signature or signed — the PO is view-only. */
   signing_started: boolean;
+  /** Cancelled with money released: initiated until the refund is recovered, then closed. */
+  cancel_stage: PoCancelStage | null;
+  /** The advance refund adjustment raised to cancel it. */
+  refund: PoListRefund | null;
+  /** Zoho Books: synced once the PO + bill exist; unposted = payments not on the bill yet. */
+  zoho_status: 'synced' | 'failed' | null; zoho_bill_number: string | null; zoho_error: string | null;
+  zoho_unposted_payments: number;
+};
+
+export type PoCancelStage = 'initiated' | 'closed';
+export type RefundStatus = 'pending' | 'partial' | 'recovered';
+export type PoListRefund = {
+  id: number; code: string; date: string | null; paid: number; refund: number; retained: number;
+  recovered: number; balance: number; status: RefundStatus;
 };
 
 export type PoListTab = 'all' | 'with' | 'without' | 'cancelinit' | 'cancelclosed';
@@ -221,7 +236,13 @@ export type ShipmentOption = {
   opportunity_id: number | null; opportunity_code: string | null;
   proforma_invoice_id: number | null; pi_number: string | null;
 };
-export type SupplierOption = { id: number; code: string; name: string; document_type: DocTypeKey };
+export type SupplierOption = {
+  id: number; code: string; name: string; document_type: DocTypeKey;
+  /** master_vendor_types.name, e.g. "Material / Goods" — must fit the PO type. */
+  supplier_type?: string | null;
+  /** star | general | high_risk | blacklisted — blacklisted cannot be picked. */
+  supplier_category?: string | null;
+};
 export type SupplierDetail = {
   id: number; code: string; name: string; legalName: string | null; type: string | null;
   risk: string | null; category: string | null; segments: string[];
@@ -267,6 +288,10 @@ export const poApi = {
 
   cancel: (id: number, reason: string) =>
     call('PO cancel', () => api.post(`/p2p/orders/${id}/cancel`, { reason }), dataOf<PoDetail>),
+
+  /** Zoho Books: PO + bill once, then any payments not posted yet. */
+  zohoSync: (id: number) =>
+    call('PO Zoho sync', () => api.post(`/p2p/orders/${id}/zoho-sync`), (b) => ({ message: (b as { message?: string } | null)?.message ?? 'Synced to Zoho Books.' })),
 
   /** Drafts only. */
   remove: (id: number) =>
@@ -523,6 +548,8 @@ export type PoPaymentsPayload = { po: PoPaymentPosition; requests_summary: PoReq
 export type PoPaymentRow = {
   id: number; amount: number; bank_name: string | null; utr_cheque_number: string | null; utr_cheque_date: string | null;
   proof_name: string | null; proof_url: string | null; created_at: string | null;
+  /** Posted to the Zoho bill — it can no longer be edited or deleted. */
+  zoho_synced?: boolean; zoho_sync_status?: 'synced' | 'failed' | null; zoho_error?: string | null;
 };
 
 export type PoPaymentBody = { amount: number; bank_name?: string; utr_cheque_number?: string; utr_cheque_date?: string; proof?: File | null };
@@ -605,4 +632,124 @@ export const poPaymentApi = {
   /** Approve (full or part) or decline, by the person the request was sent to. */
   decide: (requestId: number, body: { decision: 'approved' | 'rejected'; approved_amount?: number; note?: string }) =>
     call('Payment request decision', () => api.put(`/p2p/orders/payment-requests/${requestId}/decision`, body), dataOf<PayRequestDetail>),
+};
+
+/* ══════════════════════════ Advance Receipt Refund Adjustment ══════════════════════════ */
+
+export type RefundPo = {
+  id: number; code: string; po_date: string | null; po_type: string | null; document_type: DocTypeKey | null;
+  expected_delivery_date: string | null; mode_of_transport: string | null; payment_type: string | null;
+  physical_inspection: boolean; grand_total: number; tds_amount: number; net_payable: number;
+  paid_amount: number; balance_amount: number; status: PoStatus; cancel_stage: PoCancelStage | null; cancel_reason: string | null;
+  procurement_code: string | null; vendor_id: number | null; supplier_code: string | null; supplier_name: string | null;
+  zoho_bill_number: string | null;
+  shipment_code: string | null; shipment_date: string | null; opportunity_code: string | null; opportunity_date: string | null;
+};
+export type RefundRecoveryRow = {
+  id: number; amount: number; recovered_date: string | null; reference_no: string | null;
+  proof_name: string | null; proof_url: string | null;
+  zoho_sync_status: 'synced' | 'failed' | null; zoho_error: string | null; zoho_synced_at: string | null;
+};
+export type RefundRow = {
+  id: number; code: string; refund_date: string | null; supplier_ref_no: string | null;
+  attachment_name: string | null; attachment_url: string | null;
+  refund_type: string; reason: string;
+  paid_amount: number; refund_amount: number; retained_amount: number; retained_type: string | null; retained_remark: string | null;
+  recovered_amount: number; balance_amount: number; status: RefundStatus; recoveries_count: number;
+  zoho_vendorcredit_number: string | null; zoho_sync_status: 'synced' | 'failed' | null; zoho_error: string | null; zoho_synced_at: string | null;
+  /** The vendor credit is in Zoho — the refund amount can no longer change. */
+  amounts_locked: boolean;
+  po: RefundPo | null;
+};
+export type RefundDetail = RefundRow & {
+  recoveries: RefundRecoveryRow[];
+  /** Evidence Vault: money released on the PO and its documents with a file. */
+  payments?: { id: number; amount: number; utr: string | null; date: string | null; proof_name: string | null; proof_url: string | null }[];
+  documents?: { id: number; name: string; status: string | null; date: string | null; url: string | null }[];
+};
+export type RefundTab = 'all' | 'pending' | 'recovered';
+export type RefundListMeta = { total: number; page: number; per_page: number; last_page: number; counts: Record<RefundTab, number> };
+export type RefundEligiblePo = { id: number; code: string; po_date: string | null; supplier_name: string | null; supplier_code: string | null; paid_amount: number };
+/** Zoho after a save: a failure never undoes the save, it is only reported. */
+export type ZohoOutcome = { status: 'synced' | 'failed' | 'skipped'; message: string | null } | null;
+
+export type RefundBody = {
+  purchase_order_id?: number; supplier_ref_no?: string; attachment?: File | null;
+  refund_type: string; reason: string; refund_amount: number; retained_type?: string; retained_remark?: string;
+};
+export type RecoveryBody = { amount: number; recovered_date: string; reference_no?: string; proof?: File | null };
+
+const refundForm = (b: RefundBody) => {
+  const f = new FormData();
+  if (b.purchase_order_id) f.append('purchase_order_id', String(b.purchase_order_id));
+  if (b.supplier_ref_no) f.append('supplier_ref_no', b.supplier_ref_no);
+  if (b.attachment) f.append('attachment', b.attachment);
+  f.append('refund_type', b.refund_type);
+  f.append('reason', b.reason);
+  f.append('refund_amount', String(b.refund_amount));
+  if (b.retained_type) f.append('retained_type', b.retained_type);
+  if (b.retained_remark) f.append('retained_remark', b.retained_remark);
+  return f;
+};
+const recoveryForm = (b: RecoveryBody) => {
+  const f = new FormData();
+  f.append('amount', String(b.amount));
+  f.append('recovered_date', b.recovered_date);
+  if (b.reference_no) f.append('reference_no', b.reference_no);
+  if (b.proof) f.append('proof', b.proof);
+  return f;
+};
+const withZoho = (b: unknown) => {
+  const body = b as { data?: RefundDetail; zoho?: ZohoOutcome; message?: string } | null;
+  return { refund: body?.data as RefundDetail, zoho: body?.zoho ?? null, message: body?.message ?? null };
+};
+const refundBase = '/p2p/orders/refund-adjustments';
+
+export const refundApi = {
+  /** Server-paged (10 by default) with every tab's count. */
+  list: (q: { tab?: RefundTab; search?: string; page?: number; per_page?: number } = {}) =>
+    call('Refund adjustments', () => api.get(refundBase, {
+      params: { tab: q.tab ?? 'all', search: q.search || undefined, page: q.page ?? 1, per_page: q.per_page },
+    }), (b) => {
+      const body = b as { data?: RefundRow[]; meta?: RefundListMeta } | null;
+      return {
+        rows: body?.data ?? [],
+        meta: body?.meta ?? { total: 0, page: 1, per_page: 10, last_page: 1, counts: { all: 0, pending: 0, recovered: 0 } },
+      };
+    }),
+
+  /** POs with money released and no adjustment yet — the "Select the purchase order" list. */
+  eligiblePos: (search?: string) =>
+    call('Refundable POs', () => api.get(`${refundBase}/eligible-pos`, { params: { search: search || undefined } }), dataOf<RefundEligiblePo[]>),
+
+  /** The PO a new adjustment is for, and the number it will get. */
+  forPo: (poId: number) =>
+    call('Refund PO details', () => api.get(`${refundBase}/po/${poId}`), dataOf<{ next_code: string; po: RefundPo }>),
+
+  show: (id: number) =>
+    call('Refund adjustment', () => api.get(`${refundBase}/${id}`), dataOf<RefundDetail>),
+
+  /** Raising it cancels the PO (Cancellation Initiated). */
+  create: (body: RefundBody) =>
+    call('Raise refund adjustment', () => api.post(refundBase, refundForm(body), multipart), withZoho),
+
+  update: (id: number, body: RefundBody) =>
+    call('Update refund adjustment', () => api.post(`${refundBase}/${id}`, refundForm(body), multipart), withZoho),
+
+  /** Retry the Zoho vendor credit. */
+  zohoSync: (id: number) =>
+    call('Refund Zoho sync', () => api.post(`${refundBase}/${id}/zoho-sync`), withZoho),
+
+  addRecovery: (id: number, body: RecoveryBody) =>
+    call('Record recovery', () => api.post(`${refundBase}/${id}/recoveries`, recoveryForm(body), multipart), withZoho),
+
+  updateRecovery: (id: number, recId: number, body: RecoveryBody) =>
+    call('Update recovery', () => api.post(`${refundBase}/${id}/recoveries/${recId}`, recoveryForm(body), multipart), withZoho),
+
+  deleteRecovery: (id: number, recId: number) =>
+    call('Delete recovery', () => api.delete(`${refundBase}/${id}/recoveries/${recId}`), withZoho),
+
+  /** Retry the Zoho refund of one recovery. */
+  syncRecovery: (id: number, recId: number) =>
+    call('Recovery Zoho sync', () => api.post(`${refundBase}/${id}/recoveries/${recId}/zoho-sync`), withZoho),
 };

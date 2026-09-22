@@ -20,12 +20,15 @@ class PoPayment extends Model
     protected $fillable = [
         'client_id', 'branch_id', 'purchase_order_id', 'payment_request_id',
         'amount', 'bank_name', 'utr_cheque_number', 'utr_cheque_date', 'proof_path', 'proof_name',
+        'zoho_payment_id', 'zoho_applied_amount', 'zoho_sync_status', 'zoho_synced_at', 'zoho_error',
         'created_by', 'updated_by',
     ];
 
     protected $casts = [
         'amount'          => 'decimal:2',
         'utr_cheque_date' => 'date',
+        'zoho_applied_amount' => 'decimal:2',
+        'zoho_synced_at'  => 'datetime',
     ];
 
     public function purchaseOrder(): BelongsTo  { return $this->belongsTo(PurchaseOrder::class, 'purchase_order_id'); }

@@ -70,7 +70,7 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
           {standalone
             ? 'Tinted cells are editable — product, quantity and rate. Everything else is calculated.'
             : 'Tinted cells are editable — PO product, quantity and rate. Everything else is carried from the PI or calculated.'}
-          {' '}{ctx.taxMode === 'inter' ? 'Inter-state supplier: IGST applies.' : 'Intra-state supplier: CGST + SGST apply.'}
+          {' '}{ctx.taxMode === 'export' ? 'International supplier: no Indian GST — tax is 0 by default.' : ctx.taxMode === 'inter' ? 'Inter-state supplier: IGST applies.' : 'Intra-state supplier: CGST + SGST apply.'}
         </div>
         {ctx.linesGeneral && <div className="cpd-general-err" role="alert">{ctx.linesGeneral}</div>}
         <ProductTable rows={lines} products={products} taxMode={ctx.taxMode} onChange={patchLine} onRemove={removeLine}
@@ -85,6 +85,7 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
             and charges without leaving Step 02. It rides in the summary row so
             it sits beside the Grand Total. */}
         <ChargesSummary
+          taxLabel={ctx.taxMode === 'export' ? 'Tax' : 'GST'}
           base={base}
           gst={gst}
           charges={draft.charges}

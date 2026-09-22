@@ -62,7 +62,8 @@ export type ProductDto = {
   updated_at?: string | null;
 };
 
-export default function ProductView(props: { productId?: number; onClose?: () => void; preview?: ProductDto } = {}) {
+/** `readOnly`: opened from another screen just to look — one Close button, no edit / supplier / buy actions. */
+export default function ProductView(props: { productId?: number; onClose?: () => void; preview?: ProductDto; readOnly?: boolean } = {}) {
   // Dual-mode: as a route it reads the :id param and "Back" navigates to the
   // list; as a popup (opened from a product card) it takes `productId` and
   // `onClose`, so it renders over the list instead of full-screen.
@@ -366,7 +367,7 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
             </Tooltip>
           </div>
           <div className="pv2pd-hero-btns">
-            {!props.preview && (
+            {!props.preview && !props.readOnly && (
             <button className="pv2pd-hbtn pv2pd-hbtn--edit" onClick={() => setEditOpen(true)}>
               {/* Exact prototype icon (Feather "edit" — pen-to-square). */}
               {/* The trailing words collapse on narrow screens (see the 480px
@@ -377,15 +378,21 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
             )}
             {/* Sales can't manage suppliers — the button is hidden entirely
                 (not just disabled) so there's no dead control / denial toast. */}
-            {!isSalesDept && !props.preview && (
+            {!isSalesDept && !props.preview && !props.readOnly && (
               <button className="pv2pd-hbtn pv2pd-hbtn--suppliers" onClick={() => { setSupplierOnly(true); setEditOpen(true); }}>
                 {/* Exact prototype icon (Feather "users" — two people). */}
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> <span><span className="pv2pd-hbtn-more">Mapped </span>Suppliers</span>
               </button>
             )}
-            <button className="pv2pd-hbtn pv2pd-hbtn--ghost" onClick={goBack}>
-              <i className="ri-arrow-left-s-line" /> <span>Back{!props.preview && <span className="pv2pd-hbtn-more"> to Product List</span>}</span>
-            </button>
+            {props.readOnly ? (
+              <button className="pv2pd-hbtn pv2pd-hbtn--ghost" onClick={goBack}>
+                <i className="ri-close-line" /> <span>Close</span>
+              </button>
+            ) : (
+              <button className="pv2pd-hbtn pv2pd-hbtn--ghost" onClick={goBack}>
+                <i className="ri-arrow-left-s-line" /> <span>Back{!props.preview && <span className="pv2pd-hbtn-more"> to Product List</span>}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -472,7 +479,8 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
             </div>
           )}
 
-          {/* Buy bar (presentation only) */}
+          {/* Buy bar (presentation only) — not in the read-only popup. */}
+          {!props.readOnly && (
           <div className="pv2pd-buybar">
             <div className="pv2pd-qty">
               <button onClick={() => setQty(q => Math.max(1, q - 1))} aria-label="Decrease">−</button>
@@ -489,6 +497,7 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
               <i className="ri-shopping-cart-2-line" /> <span><span className="pv2pd-act-verb">Add to </span>Cart</span>
             </button>
           </div>
+          )}
         </div>
 
         {/* RIGHT: Product Details highlights + tabs */}

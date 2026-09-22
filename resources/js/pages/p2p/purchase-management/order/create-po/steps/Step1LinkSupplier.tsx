@@ -12,7 +12,7 @@ const AddVendorModal = lazy(() => import('../../../../p2p-master-management/supp
 // hover before that, so the click itself never waits for the download.
 const SupplierEvidenceVaultModal = lazy(() => import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 const warmVault = () => { void import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'); };
-import { RISK_GUIDELINES, SevIcon, isRiskMandatory, riskItems, riskLabel, vaultTargetOf, type Severity } from '../supplier-checks';
+import { RISK_GUIDELINES, SevIcon, categoryLabel, isRiskMandatory, riskItems, riskLabel, vaultTargetOf, type Severity } from '../supplier-checks';
 import { DOC_TYPE_OPTIONS, PO_TYPE_OPTIONS, type PoDraft, type SetDraft, OPEN_PO_TYPE, PAYMENT_TYPE_OPTIONS } from '../po-draft';
 import type { StepCtx } from '../CreatePoForm';
 import { MasterDatePicker } from '../../../../../../components/ui/MasterDatePicker';
@@ -63,41 +63,64 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
   const canEditSupplier = user?.user_type === 'super_admin' || user?.user_type === 'client_admin'
     || !!user?.permissions?.['p2p.supplier']?.can_edit;
   const [editingSupplier, setEditingSupplier] = useState(false);
-  const closeSupplierEdit = () => {
+  const closeSupplierEdit = async () => {
     setEditingSupplier(false);
+    lookups.reloadSuppliers();
+    if (!draft.vendorId) return;
     // Reload so the updated details and the GST / risk checks show at once.
-    if (draft.vendorId) void onPickSupplier(draft.vendorId);
+    const fresh = await onPickSupplier(draft.vendorId);
+    // An edit can make the supplier unusable for this PO — then the field is cleared.
+    const why = fresh ? unusableReason(fresh.category, fresh.type) : null;
+    if (why) {
+      clearSupplier();
+      toast.warning('Supplier removed from this PO', why);
+    }
   };
 
   const isInternational = draft.docType === 'International';
   const sup = draft.supplier;
-  // Supplier and document type go together: a picked supplier fixes the document type, and
-  // once product lines are saved (Stage 02) the supplier itself is fixed too.
-  const supplierLocked = (ctx.detail?.items?.length ?? 0) > 0;
+  // Supplier and document type go together: a picked supplier fixes the document type.
+  // The supplier stays changeable until the PO is sent for senior approval (pending or approved).
+  const approval = ctx.detail?.gst_approval?.status;
+  const supplierLocked = approval === 'pending' || approval === 'approved';
+  // Only suppliers whose type fits the PO type; a blacklisted one is listed but cannot be picked.
+  const needType = draft.poType || OPEN_PO_TYPE;
+  const unusableReason = (category?: string | null, type?: string | null): string | null => {
+    if ((category ?? '').toLowerCase().includes('blacklist')) return 'This supplier is blacklisted — a purchase order cannot be raised on it.';
+    if ((type ?? '').trim().toLowerCase() !== needType.toLowerCase()) return `This supplier is ${type || 'not typed'} — a ${needType} PO needs a ${needType} supplier.`;
+    return null;
+  };
   const docTypeLocked = !!draft.vendorId;
   const clearSupplier = () => set({ vendorId: null, supplier: null, vault: null, legal: null });
 
   // Why a locked field can't be changed, shown when it is clicked.
   const lockedPoType = () => toast.info('PO Type not available', 'Only Material / Goods purchase orders can be raised for now.');
   const lockedDocType = () => toast.warning('Document Type is locked', supplierLocked
-    ? 'Product lines are saved on this PO — the supplier and document type can no longer change.'
+    ? 'This PO has gone for senior approval — the supplier and document type can no longer change.'
     : 'It follows the selected supplier. Clear the supplier first to change the document type.');
-  const lockedSupplier = () => toast.warning('Supplier is locked', 'Product lines are saved on this PO — the supplier can no longer change.');
+  const lockedSupplier = () => toast.warning('Supplier is locked', 'This PO has gone for senior approval — the supplier can no longer change.');
 
   // Dropdown shows "S-004 — Company"; the option text maps back to the vendor id.
-  const supplierOptions = useMemo(() => lookups.suppliers.map((s) => ({ id: s.id, label: `${s.code} — ${s.name}`, doc: s.document_type })), [lookups.suppliers]);
+  const supplierOptions = useMemo(() => lookups.suppliers
+    .filter((s) => (s.supplier_type ?? '').trim().toLowerCase() === needType.toLowerCase() || s.id === draft.vendorId)
+    .map((s) => ({ id: s.id, label: `${s.code} — ${s.name}`, doc: s.document_type, blacklisted: (s.supplier_category ?? '').toLowerCase().includes('blacklist') })),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [lookups.suppliers, needType]);
   const pickedOption = supplierOptions.find((o) => o.id === draft.vendorId)?.label ?? (sup ? `${sup.code} — ${sup.name}` : '');
 
   // Each option carries the supplier's origin, set when it was onboarded.
   // Every supplier is listed; picking one sets the document type to its origin (badge).
   const supplierSelectOptions = useMemo(() => supplierOptions.map((o) => ({
     value: String(o.id), label: o.label,
-    badge: o.doc === 'international' ? { text: 'International', tone: 'violet' as const } : { text: 'Domestic', tone: 'green' as const },
+    ...(o.blacklisted ? { disabled: true, disabledReason: 'Blacklisted — a purchase order cannot be raised on this supplier.' } : {}),
+    badge: o.blacklisted ? { text: 'Blacklisted', tone: 'red' as const, lock: true }
+      : o.doc === 'international' ? { text: 'International', tone: 'violet' as const } : { text: 'Domestic', tone: 'green' as const },
   })), [supplierOptions]);
 
   const pickSupplier = async (label: string) => {
     const opt = supplierOptions.find((o) => o.label === label);
     if (!opt) return;
+    if (opt.blacklisted) { toast.warning('Blacklisted supplier', 'A purchase order cannot be raised on a blacklisted supplier.'); return; }
     // The PO's document type follows the supplier: Indian = domestic, else international.
     const docType = opt.doc === 'international' ? 'International' : 'Domestics';
     if (docType !== draft.docType) {
@@ -184,7 +207,7 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
           <Field label="Document Type" req error={err.docType}>
             <EditSelect value={draft.docType} options={DOC_TYPES} readOnly={docTypeLocked} onLockedClick={lockedDocType} onChange={(x) => set({ docType: x })} invalid={!!err.docType} />
             {docTypeLocked && (
-              <span className="cpf-lockhint"><IcoLock /> {supplierLocked ? 'Fixed — product lines are saved' : 'Set by the supplier — clear the supplier to change it'}</span>
+              <span className="cpf-lockhint"><IcoLock /> {supplierLocked ? 'Fixed — the PO has gone for senior approval' : 'Set by the supplier — clear the supplier to change it'}</span>
             )}
           </Field>
           <Field label="Mode of Transport" req error={err.transport}>
@@ -301,7 +324,9 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
                   </button>
                 )}
               </div>
-              {supplierLocked && <span className="cpf-lockhint"><IcoLock /> Fixed — product lines are saved on this PO</span>}
+              {supplierLocked
+                ? <span className="cpf-lockhint"><IcoLock /> Fixed — the PO has gone for senior approval</span>
+                : <span className="cpf-lockhint">Only {needType} suppliers are listed</span>}
             </Field>
             {/* Everything below comes from the supplier master and is read-only here. */}
             <Field label="COMPANY LEGAL NAME">
@@ -314,7 +339,7 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
               <EditSelect readOnly value={riskLabel(sup?.risk)} options={[]} onChange={() => {}} />
             </Field>
             <Field label="SUPPLIER CATEGORY">
-              <EditSelect readOnly value={v(sup?.category)} options={[]} onChange={() => {}} />
+              <EditSelect readOnly value={categoryLabel(sup?.category)} options={[]} onChange={() => {}} />
             </Field>
           </div>
           )}

@@ -1,33 +1,58 @@
-// Advance Receipt Refund Adjustment — types, option lists and the figures every
-// screen derives from a refund. Rows are raised against the Order module's
-// purchase orders (static sample data until the API is connected).
+// Advance Receipt Refund Adjustment — the screen shape of an API row, option lists
+// and the figures every screen reads. All data comes from refundApi (po-api.ts).
 import type { BadgeVariant } from '../../../../components/ui/Badge';
-import type { OrderRow } from '../../purchase-management/order/po-list/Order';
-import { SAMPLE_ROWS } from './refund-sample-orders';
+import type { RefundDetail, RefundPo, RefundRow, RefundStatus } from '../../purchase-management/order/api/po-api';
 
 export type RefundRecovery = {
+  id: number;
   amount: number;
   date: string;
   /** Cheque / UTR number the refund came in on. */
   reference?: string;
-  /** File name of the proof of payment. */
   file?: string;
+  fileUrl?: string;
+  zohoStatus: 'synced' | 'failed' | null;
+  zohoError: string | null;
+};
+
+/** The purchase order a refund is raised against. */
+export type RefundPoInfo = {
+  id: number; po: string; poDate: string; poType: string | null; docType: string;
+  expectedDelivery: string; transport: string; paymentType: string; physicalInspection: boolean;
+  total: number; tds: number; net: number; paid: number; balance: number;
+  shipment: string | null; shipmentDate: string; opportunity: string | null; opportunityDate: string; procurement: string | null;
+  supplier: string; supplierCode: string; vendorId: number | null;
+  cancelled: boolean; cancelReason: string; cancelStage: 'initiated' | 'closed' | null; zohoBill: string | null;
 };
 
 export type RefundAdjustment = {
+  id: number;
   no: string;
   date: string;
   po: string;
+  poInfo: RefundPoInfo | null;
   supplierRef: string;
-  /** File name of the supplier's refund reference document, if attached. */
   attachment?: string;
+  attachmentUrl?: string;
   type: string;
   reason: string;
+  paid: number;
   /** Amount the supplier owes back. Whatever is paid above it stays with them. */
   amount: number;
   retainedType: string;
   retainedRemark: string;
+  recovered: number;
+  balance: number;
+  status: RefundStatus;
+  recoveriesCount: number;
   recoveries: RefundRecovery[];
+  zohoStatus: 'synced' | 'failed' | null;
+  zohoError: string | null;
+  zohoNumber: string | null;
+  /** The vendor credit is in Zoho — the refund amount can no longer change. */
+  amountsLocked: boolean;
+  payments: NonNullable<RefundDetail['payments']>;
+  documents: NonNullable<RefundDetail['documents']>;
 };
 
 /* The refund is either the whole amount paid or part of it; the reason it is
@@ -43,23 +68,42 @@ export const RETAIN_REASONS = [
 export const TYPE_VARIANT: Record<string, BadgeVariant> = {
   'Full Refund': 'success',
   'Partial Refund': 'warning',
-  'Purchase Order Cancellation': 'danger',
-  'Rate Difference': 'warning',
-  'Quantity Difference': 'info',
-  'Quality Rejection': 'dark',
-  'Short Supply': 'primary',
-  'GST Adjustment': 'success',
 };
 
-/** The one long label is shortened on screen; the full wording stays in the tooltip. */
-export const typeLabel = (t: string) => (t === 'Purchase Order Cancellation' ? 'PO Cancellation' : t);
+export const typeLabel = (t: string) => t;
 
-export const isCancellation = (r: RefundAdjustment) => r.type === 'Purchase Order Cancellation';
+const DOC_LABEL: Record<string, string> = { domestic: 'Domestic', international: 'International' };
 
-/** Only orders with money released against them can carry a refund. */
-export const REFUNDABLE_POS: OrderRow[] = SAMPLE_ROWS.filter((r) => r.paid > 0);
+export function toPoInfo(p: RefundPo): RefundPoInfo {
+  return {
+    id: p.id, po: p.code, poDate: p.po_date ?? '', poType: p.po_type, docType: DOC_LABEL[p.document_type ?? ''] ?? '—',
+    expectedDelivery: p.expected_delivery_date ?? '', transport: p.mode_of_transport ?? '', paymentType: p.payment_type ?? '',
+    physicalInspection: p.physical_inspection,
+    total: p.grand_total, tds: p.tds_amount, net: p.net_payable, paid: p.paid_amount, balance: p.balance_amount,
+    shipment: p.shipment_code, shipmentDate: p.shipment_date ?? '', opportunity: p.opportunity_code, opportunityDate: p.opportunity_date ?? '',
+    procurement: p.procurement_code,
+    supplier: p.supplier_name ?? '—', supplierCode: p.supplier_code ?? '—', vendorId: p.vendor_id,
+    cancelled: p.status === 'cancelled', cancelReason: p.cancel_reason ?? '', cancelStage: p.cancel_stage, zohoBill: p.zoho_bill_number,
+  };
+}
 
-export const findPo = (po: string) => SAMPLE_ROWS.find((r) => r.po === po);
+export function toRefund(r: RefundRow | RefundDetail): RefundAdjustment {
+  const d = r as RefundDetail;
+  return {
+    id: r.id, no: r.code, date: r.refund_date ?? '', po: r.po?.code ?? '—', poInfo: r.po ? toPoInfo(r.po) : null,
+    supplierRef: r.supplier_ref_no ?? '', attachment: r.attachment_name ?? undefined, attachmentUrl: r.attachment_url ?? undefined,
+    type: r.refund_type, reason: r.reason,
+    paid: r.paid_amount, amount: r.refund_amount, retainedType: r.retained_type ?? '', retainedRemark: r.retained_remark ?? '',
+    recovered: r.recovered_amount, balance: r.balance_amount, status: r.status, recoveriesCount: r.recoveries_count,
+    recoveries: (d.recoveries ?? []).map((x) => ({
+      id: x.id, amount: x.amount, date: x.recovered_date ?? '', reference: x.reference_no ?? undefined,
+      file: x.proof_name ?? undefined, fileUrl: x.proof_url ?? undefined, zohoStatus: x.zoho_sync_status, zohoError: x.zoho_error,
+    })),
+    zohoStatus: r.zoho_sync_status, zohoError: r.zoho_error, zohoNumber: r.zoho_vendorcredit_number,
+    amountsLocked: r.amounts_locked,
+    payments: d.payments ?? [], documents: d.documents ?? [],
+  };
+}
 
 export type RefundFigures = {
   paid: number; toRefund: number; notRefunded: number;
@@ -67,51 +111,22 @@ export type RefundFigures = {
   status: 'full' | 'partial' | 'pending';
 };
 
+/** The stored figures (rebuilt on the server on every recovery), in the shape the screens read. */
 export function refundFigures(r: RefundAdjustment): RefundFigures {
-  const paid = findPo(r.po)?.paid ?? 0;
-  const recovered = r.recoveries.reduce((s, x) => s + x.amount, 0);
-  const pending = Math.max(0, r.amount - recovered);
-  const pct = r.amount > 0 ? Math.min(100, Math.round((recovered / r.amount) * 100)) : 0;
+  const pct = r.amount > 0 ? Math.min(100, Math.round((r.recovered / r.amount) * 100)) : 0;
   return {
-    paid,
+    paid: r.paid,
     toRefund: r.amount,
-    notRefunded: Math.max(0, paid - r.amount),
-    recovered,
-    pending,
+    notRefunded: Math.max(0, r.paid - r.amount),
+    recovered: r.recovered,
+    pending: r.balance,
     pct,
-    status: pending === 0 ? 'full' : recovered > 0 ? 'partial' : 'pending',
+    status: r.status === 'recovered' ? 'full' : r.status,
   };
 }
-
-export const nextRefundNo = (list: RefundAdjustment[]) =>
-  `ADR/2025-26/${String(list.length + 1).padStart(3, '0')}`;
 
 /** Today in the user's local timezone (toISOString would give the UTC date). */
 export const todayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-
-export const SEED_REFUNDS: RefundAdjustment[] = [
-  {
-    no: 'ADR/2025-26/001', date: '2026-06-28', po: 'PO/2025-26/005', supplierRef: 'CN-7781',
-    type: 'Partial Refund', reason: 'PO cancelled — recovery of amount already paid',
-    amount: 60000, retainedType: 'Cancellation Charges', retainedRemark: 'Supplier cancellation fee as per contract',
-    recoveries: [{ amount: 30000, date: '2026-07-06', reference: 'UTR884120', file: 'Refund_Advice_ADR_001.pdf' }],
-  },
-  {
-    no: 'ADR/2025-26/002', date: '2026-06-15', po: 'PO/2025-26/020', supplierRef: '',
-    type: 'Full Refund', reason: 'Supplier pricing revised beyond approved limit',
-    amount: 263600, retainedType: '', retainedRemark: '',
-    recoveries: [
-      { amount: 150000, date: '2026-06-22', reference: 'UTR771034', file: 'Bank_Advice_771034.pdf' },
-      { amount: 113600, date: '2026-07-01', reference: 'CHQ004512' },
-    ],
-  },
-  {
-    no: 'ADR/2025-26/003', date: '2026-05-02', po: 'PO/2025-26/054', supplierRef: 'SUP-RF-19',
-    type: 'Partial Refund', reason: 'Rate billed above the agreed purchase order rate',
-    amount: 8400, retainedType: 'Work Already Completed', retainedRemark: 'Goods delivered — only the rate excess comes back',
-    recoveries: [],
-  },
-];

@@ -2,7 +2,9 @@
 
 namespace App\Services\P2p;
 
+use App\Models\P2p\PoItemQtyHistory;
 use App\Models\P2p\PoPaymentRequest;
+use App\Models\P2p\PoRefundAdjustment;
 use App\Models\P2p\PurchaseOrder;
 use App\Models\P2p\PurchaseOrderDocument;
 use App\Models\P2p\PurchaseOrderItem;
@@ -60,6 +62,12 @@ class PurchaseOrderService
     public function nextPaymentRequestCode(int $clientId): string
     {
         return $this->nextCode($clientId, 'PRQ', PoPaymentRequest::withoutGlobalScope('tenant'));
+    }
+
+    /** Next ADR/<FY>/<SEQ> (advance refund adjustment), one sequence per client. */
+    public function nextRefundCode(int $clientId, bool $allocate = true): string
+    {
+        return $this->nextCode($clientId, 'ADR', PoRefundAdjustment::withoutGlobalScope('tenant')->withTrashed(), $allocate);
     }
 
     /** Next DOC/<FY>/<SEQ>, one sequence per client. */
@@ -373,5 +381,41 @@ class PurchaseOrderService
             'paid_amount'    => $paid,
             'balance_amount' => round((float) $po->grand_total - (float) $po->tds_amount - $paid, 2),
         ])->save();
+    }
+
+    public function logQty(PurchaseOrder $po, ?PurchaseOrderItem $item, ?object $pi, string $event,
+                            float $previous, float $current, array $orderedElsewhere, int $userId, ?PurchaseOrderItem $removed = null): void
+    {
+        $piQty = $pi ? (float) $pi->quantity : null;
+        $pending = $pi ? max(0, $piQty - ($orderedElsewhere[(int) $pi->id] ?? 0) - $current) : null;
+        PoItemQtyHistory::create([
+            'client_id'              => $po->client_id,
+            'branch_id'              => $po->branch_id,
+            'purchase_order_id'      => $po->id,
+            'purchase_order_item_id' => $item?->id,
+            'pi_item_id'             => $pi->id ?? ($removed?->pi_item_id),
+            'shipment_order_id'      => $po->shipment_order_id,
+            'product_id'             => $item?->product_id ?? $removed?->product_id,
+            'event'                  => $event,
+            'pi_quantity'            => $piQty,
+            'previous_qty'           => $previous,
+            'current_qty'            => $current,
+            'change_qty'             => round($current - $previous, 3),
+            'pending_after'          => $pending,
+            'changed_by'             => $userId,
+        ]);
+    }
+
+    /** History rows returning each line's quantity to its PI line. */
+    public function releaseAll(PurchaseOrder $po, string $event, int $userId): void
+    {
+        $items = $po->items()->get();
+        $piIds = $items->pluck('pi_item_id')->filter()->map(fn ($v) => (int) $v)->all();
+        $orderedElsewhere = $this->orderedByPiItem((int) $po->client_id, $piIds, $po->id);
+        $piItems = $piIds ? DB::table('proforma_invoice_items')->whereIn('id', $piIds)->get()->keyBy('id') : collect();
+        foreach ($items as $item) {
+            $pi = $item->pi_item_id ? $piItems->get((int) $item->pi_item_id) : null;
+            $this->logQty($po, $item, $pi, $event, (float) $item->quantity, 0.0, $orderedElsewhere, $userId);
+        }
     }
 }

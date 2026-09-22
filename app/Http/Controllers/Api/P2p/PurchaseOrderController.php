@@ -85,14 +85,14 @@ class PurchaseOrderController extends Controller
 
     /* ══════════════════════════ LIST / SHOW ══════════════════════════ */
 
-    // The list's tabs, as SQL conditions. No payments exist on the new PO yet, so a
-    // cancelled PO has nothing to recover: it is closed at once, never "recovery pending".
+    // The list's tabs, as SQL conditions. A PO cancelled with money released stays
+    // "initiated" until its refund adjustment is fully recovered; otherwise it closes at once.
     private const TABS = [
         'all'          => 'TRUE',
         'with'         => "link_type = 'with_shipment'",
         'without'      => "COALESCE(link_type, 'standalone') <> 'with_shipment'",
-        'cancelinit'   => 'FALSE',
-        'cancelclosed' => "status = 'cancelled'",
+        'cancelinit'   => "status = 'cancelled' AND cancel_stage = 'initiated'",
+        'cancelclosed' => "status = 'cancelled' AND COALESCE(cancel_stage, 'closed') = 'closed'",
     ];
 
     // Only what a list row shows (plus the ids its references are read through).
@@ -102,6 +102,7 @@ class PurchaseOrderController extends Controller
         'expected_delivery_date', 'grand_total', 'physical_inspection', 'inspection_status', 'cancel_reason', 'created_at',
         'taxable_total', 'total_cgst', 'total_sgst', 'total_igst', 'shipping_charges', 'packaging_charges', 'other_charges',
         'tds_amount', 'paid_amount', 'balance_amount', 'gst_approval_status',
+        'cancel_stage', 'zoho_status', 'zoho_bill_id', 'zoho_bill_number', 'zoho_error',
     ];
 
     /**
@@ -142,6 +143,9 @@ class PurchaseOrderController extends Controller
             ->with(['vendor:id,vendor_code,company_name,legal_name,risk_level_id,supplier_category', 'vendor.riskLevel:id,name'])
             // Request count and the two notes under the payment bar, as subqueries — not one query per row.
             ->withCount('paymentRequests')
+            ->with('refundAdjustment')
+            // Payments not yet posted to the Zoho bill.
+            ->withCount(['payments as zoho_unposted_payments' => fn ($q) => $q->whereColumn('zoho_applied_amount', '<', 'amount')])
             // A document out for signature or signed — Edit PO becomes View PO.
             ->withExists(['documents as signing_started' => fn ($q) => $q->whereIn('status', [PurchaseOrderDocument::STATUS_SENT, PurchaseOrderDocument::STATUS_SIGNED])])
             ->withSum(['paymentRequests as pending_request_amount' => fn ($q) => $q->where('status', 'pending')], 'requested_amount')
@@ -259,10 +263,11 @@ class PurchaseOrderController extends Controller
         if (($data['shipment_order_id'] ?? null) != $po->shipment_order_id && $po->items()->exists()) {
             return $this->fail('Remove the product lines before changing the shipment — they are matched to its PI.');
         }
-        // Once product lines are saved, the supplier (and its document type) is fixed: lines are taxed on it.
-        if ($po->items()->exists() && ((int) $data['vendor_id'] !== (int) $po->vendor_id || $data['document_type'] !== $po->document_type)) {
-            return $this->fail('Product lines are already saved on this PO — the supplier and document type can no longer change.', 422,
-                ['errors' => ['vendor_id' => ['The supplier is fixed once product lines are saved.']]]);
+        // The supplier stays open until the PO goes to the senior; an approval (or a pending request) fixes it.
+        $sentToSenior = $po->gstApprovals()->whereIn('status', [PoGstApproval::STATUS_PENDING, PoGstApproval::STATUS_APPROVED])->exists();
+        if ($sentToSenior && ((int) $data['vendor_id'] !== (int) $po->vendor_id || $data['document_type'] !== $po->document_type)) {
+            return $this->fail('This PO has gone to the senior for approval — the supplier and document type can no longer change.', 422,
+                ['errors' => ['vendor_id' => ['The supplier is fixed once the PO is sent for senior approval.']]]);
         }
         $resolved = $this->resolveStage1($data, $user);
         if ($resolved instanceof JsonResponse) return $resolved;
@@ -278,7 +283,7 @@ class PurchaseOrderController extends Controller
                 $po->gstApprovals()->whereIn('status', [PoGstApproval::STATUS_PENDING, PoGstApproval::STATUS_APPROVED])->delete();
             }
             if ($attrs['physical_inspection'] === $po->physical_inspection) unset($attrs['inspection_status']);
-            $taxChanged = $po->tax_mode !== $attrs['tax_mode'];
+            $taxChanged = $po->tax_mode !== $attrs['tax_mode'] || $po->document_type !== $attrs['document_type'];
             $po->update($attrs);
             if ($taxChanged) $this->retaxItems($po);
         });
@@ -301,6 +306,13 @@ class PurchaseOrderController extends Controller
         if (!$vendor) return $this->fail('Supplier not found', 422, ['errors' => ['vendor_id' => ['Supplier not found.']]]);
         if (str_contains(strtolower((string) $vendor->supplier_category), 'blacklist')) {
             return $this->fail('Blacklisted supplier', 422, ['errors' => ['vendor_id' => ['This supplier is blacklisted — a purchase order cannot be raised on it.']]]);
+        }
+        // The supplier's type has to fit the PO type (a Material / Goods PO needs a Material / Goods supplier).
+        $needType = PurchaseOrder::PO_TYPE_SUPPLIER_TYPE[$data['po_type']] ?? null;
+        if ($needType && strcasecmp(trim((string) $vendor->vendor_type), $needType) !== 0) {
+            return $this->fail('Supplier type does not match the PO type', 422, ['errors' => ['vendor_id' => [
+                'This supplier is ' . ($vendor->vendor_type ?: 'not typed') . " — a {$needType} PO needs a {$needType} supplier.",
+            ]]]);
         }
         // Document type follows the supplier's origin: India → domestic, any other country → international.
         $origin = $this->vendorOrigin($vendor);
@@ -440,7 +452,7 @@ class PurchaseOrderController extends Controller
             $field = !empty($line['product_id']) ? "lines.$i.product_id" : "lines.$i.pi_item_id";
             if (!$effective[$i] || !$products->has($effective[$i])) {
                 $errors[$field] = ['Product not found.'];
-            } elseif ($products->get($effective[$i])->gst_pct === null) {
+            } elseif ($po->document_type !== 'international' && $products->get($effective[$i])->gst_pct === null) {
                 // Purchase GST comes only from the product master, never the sales PI.
                 $errors[$field] = ['This product has no GST % in the product master — set it there first.'];
             } elseif (!in_array((int) $products->get($effective[$i])->segment_id, $supplierSegments, true)) {
@@ -479,7 +491,7 @@ class PurchaseOrderController extends Controller
                     $item = PurchaseOrderItem::create($attrs + ['created_by' => $user->id]);
                 }
                 if (!$old || abs($previous - (float) $item->quantity) > 0.0005) {
-                    $this->logQty($po, $item, $pi, $old ? 'updated' : 'added', $previous, (float) $item->quantity, $orderedElsewhere, $user->id);
+                    $this->svc->logQty($po, $item, $pi, $old ? 'updated' : 'added', $previous, (float) $item->quantity, $orderedElsewhere, $user->id);
                 }
             }
 
@@ -487,7 +499,7 @@ class PurchaseOrderController extends Controller
             foreach ($existing as $k => $old) {
                 if (isset($kept[$k])) continue;
                 $pi = $old->pi_item_id ? DB::table('proforma_invoice_items')->find($old->pi_item_id) : null;
-                $this->logQty($po, null, $pi, 'removed', (float) $old->quantity, 0.0, $orderedElsewhere, $user->id, $old);
+                $this->svc->logQty($po, null, $pi, 'removed', (float) $old->quantity, 0.0, $orderedElsewhere, $user->id, $old);
                 $old->delete();
             }
 
@@ -499,7 +511,8 @@ class PurchaseOrderController extends Controller
 
     private function lineAttributes(PurchaseOrder $po, array $line, ?object $pi, ?object $product, int $lineNo): array
     {
-        $gst = (float) $product->gst_pct;   // validated non-null in updateItems
+        // An import carries no Indian GST on the PO: tax is 0 until the customs duty is known.
+        $gst = $po->document_type === 'international' ? 0.0 : (float) $product->gst_pct;
         $amounts = $this->svc->lineAmounts((float) $line['quantity'], (float) $line['rate'], $gst, $po->tax_mode ?: 'intra');
         return [
             'purchase_order_id' => $po->id,
@@ -517,36 +530,21 @@ class PurchaseOrderController extends Controller
     /** Re-applies tax to every line after the tax mode changed (supplier or branch state). */
     private function retaxItems(PurchaseOrder $po): void
     {
-        foreach ($po->items()->get() as $item) {
-            $item->update($this->svc->lineAmounts((float) $item->quantity, (float) $item->rate, (float) $item->gst_pct, $po->tax_mode ?: 'intra'));
+        $items = $po->items()->get();
+        $intl = $po->document_type === 'international';
+        // Back to domestic: GST comes from the product master again (an import stored 0).
+        $master = $intl ? collect() : $this->loadProducts($items->pluck('product_id')->filter()->all());
+        foreach ($items as $item) {
+            $gst = $intl ? 0.0 : (float) ($master->get($item->product_id)->gst_pct ?? $item->gst_pct);
+            $item->update(array_merge(
+                $this->svc->lineAmounts((float) $item->quantity, (float) $item->rate, $gst, $po->tax_mode ?: 'intra'),
+                ['gst_pct' => $gst],
+            ));
         }
         $this->svc->recomputeTotals($po);
     }
 
     /** One append-only history row. pending_after = PI qty − (ordered on other POs + this line now). */
-    private function logQty(PurchaseOrder $po, ?PurchaseOrderItem $item, ?object $pi, string $event,
-                            float $previous, float $current, array $orderedElsewhere, int $userId, ?PurchaseOrderItem $removed = null): void
-    {
-        $piQty = $pi ? (float) $pi->quantity : null;
-        $pending = $pi ? max(0, $piQty - ($orderedElsewhere[(int) $pi->id] ?? 0) - $current) : null;
-        PoItemQtyHistory::create([
-            'client_id'              => $po->client_id,
-            'branch_id'              => $po->branch_id,
-            'purchase_order_id'      => $po->id,
-            'purchase_order_item_id' => $item?->id,
-            'pi_item_id'             => $pi->id ?? ($removed?->pi_item_id),
-            'shipment_order_id'      => $po->shipment_order_id,
-            'product_id'             => $item?->product_id ?? $removed?->product_id,
-            'event'                  => $event,
-            'pi_quantity'            => $piQty,
-            'previous_qty'           => $previous,
-            'current_qty'            => $current,
-            'change_qty'             => round($current - $previous, 3),
-            'pending_after'          => $pending,
-            'changed_by'             => $userId,
-        ]);
-    }
-
     /* ══════════════════════════ STAGE 03 ══════════════════════════ */
 
     /** PUT /p2p/orders/{id}/terms — Stage 03: terms, and optionally submit the PO. */
@@ -565,6 +563,14 @@ class PurchaseOrderController extends Controller
         if ($submit) {
             if (!$po->vendor_id) return $this->fail('Select a supplier before submitting.');
             if (!$po->items()->exists()) return $this->fail('Add at least one product line before submitting.');
+            // The supplier may have changed after the lines were saved — every line must still be in its segments.
+            $segs = $this->vendorSegmentIds((int) $po->vendor_id);
+            $outside = DB::table('p2p_purchase_order_items as i')->join('products as p', 'p.id', '=', 'i.product_id')
+                ->where('i.purchase_order_id', $po->id)->where(fn ($w) => $w->whereNull('p.segment_id')->orWhereNotIn('p.segment_id', $segs ?: [0]))
+                ->pluck('p.product_code');
+            if ($outside->isNotEmpty()) {
+                return $this->fail($outside->implode(', ') . ' — not in a segment this supplier is mapped to. Map the segment to the supplier, or change the lines in Stage 02, before submitting.');
+            }
             // Re-read the supplier's GST position at the moment of submission.
             $gst = $this->svc->gstGate($po->vendor_id);
             $po->forceFill(['gst_gate' => $gst['gate'], 'gst_scrutiny_date' => $gst['scrutiny_date'], 'gst_last_filing_date' => $gst['filing_date']]);
@@ -661,11 +667,26 @@ class PurchaseOrderController extends Controller
         if ((float) $po->paid_amount > 0) return $this->fail('Payments are recorded on this PO — raise the advance refund adjustment to cancel it.');
 
         $this->inTransaction('cancel the PO', function () use ($po, $user, $data) {
-            $this->releaseAll($po, 'cancelled', $user->id);
+            $this->svc->releaseAll($po, 'cancelled', $user->id);
             $po->update(['status' => PurchaseOrder::STATUS_CANCELLED, 'cancelled_at' => now(),
-                'cancelled_by' => $user->id, 'cancel_reason' => $data['reason'], 'updated_by' => $user->id]);
+                'cancelled_by' => $user->id, 'cancel_reason' => $data['reason'], 'updated_by' => $user->id,
+                'cancel_stage' => PurchaseOrder::CANCEL_CLOSED, 'cancel_closed_at' => now()]);
         });
         return $this->ok($this->shapeDetail($po->fresh()));
+    }
+
+    /** POST /p2p/orders/{id}/zoho-sync — Zoho PO + bill (once), then any payments not posted yet. */
+    public function zohoSync(Request $request, int $id): JsonResponse
+    {
+        $user = $this->tenantUser($request);
+        $po = $this->findPo($id);
+        try {
+            $r = app(\App\Services\P2p\PoZohoService::class)->syncPo($po, $user->id);
+        } catch (\RuntimeException $e) {
+            return $this->fail($e->getMessage());
+        }
+        $paid = $r['pushed'] > 0 ? ', posted ' . $r['pushed'] . ' payment(s) of ₹' . number_format($r['applied'], 2) : '';
+        return response()->json(['status' => true, 'message' => ($r['already'] ? 'Already in Zoho Books — bill ' : 'Synced to Zoho Books — bill ') . $r['bill_number'] . $paid . '.']);
     }
 
     /** DELETE /p2p/orders/{id} — drafts only; a submitted PO is cancelled instead. */
@@ -676,24 +697,11 @@ class PurchaseOrderController extends Controller
         if ($po->status !== PurchaseOrder::STATUS_DRAFT) return $this->fail('Only a draft PO can be deleted — cancel a submitted PO instead.');
 
         $this->inTransaction('delete the PO', function () use ($po, $user) {
-            $this->releaseAll($po, 'deleted', $user->id);
+            $this->svc->releaseAll($po, 'deleted', $user->id);
             $po->update(['updated_by' => $user->id]);
             $po->delete();
         });
         return $this->ok(['id' => $id, 'deleted' => true]);
-    }
-
-    /** History rows returning each line's quantity to its PI line. */
-    private function releaseAll(PurchaseOrder $po, string $event, int $userId): void
-    {
-        $items = $po->items()->get();
-        $piIds = $items->pluck('pi_item_id')->filter()->map(fn ($v) => (int) $v)->all();
-        $orderedElsewhere = $this->svc->orderedByPiItem((int) $po->client_id, $piIds, $po->id);
-        $piItems = $piIds ? DB::table('proforma_invoice_items')->whereIn('id', $piIds)->get()->keyBy('id') : collect();
-        foreach ($items as $item) {
-            $pi = $item->pi_item_id ? $piItems->get((int) $item->pi_item_id) : null;
-            $this->logQty($po, $item, $pi, $event, (float) $item->quantity, 0.0, $orderedElsewhere, $userId);
-        }
     }
 
     /* ══════════════════════════ HELPERS ══════════════════════════ */
@@ -733,10 +741,11 @@ class PurchaseOrderController extends Controller
         $q = DB::table('vendors as v')
             ->leftJoin('vendor_addresses as a', fn ($j) => $j->on('a.vendor_id', '=', 'v.id')->where('a.is_primary', true))
             ->leftJoin('master_risk_levels as r', 'r.id', '=', 'v.risk_level_id')
+            ->leftJoin('master_vendor_types as vt', 'vt.id', '=', 'v.vendor_type_id')
             ->whereNull('v.deleted_at')
             ->where('v.id', $id)
             ->select('v.id', 'v.vendor_code', 'v.company_name', 'v.legal_name', 'v.gst_number',
-                'v.supplier_category', 'a.state_code', 'a.country_id', 'r.name as risk_level');
+                'v.supplier_category', 'a.state_code', 'a.country_id', 'r.name as risk_level', 'vt.name as vendor_type');
         return $this->svc->scopeTenant($q, 'v')->first();
     }
 
@@ -881,6 +890,17 @@ class PurchaseOrderController extends Controller
             'physical_inspection' => $po->physical_inspection,
             'inspection_status'   => $po->inspection_status,
             'cancel_reason'       => $po->cancel_reason,
+            'cancel_stage'        => $po->cancel_stage,
+            // The advance refund adjustment raised to cancel it, when money was released.
+            'refund'              => ($a = $po->relationLoaded('refundAdjustment') ? $po->refundAdjustment : null) ? [
+                'id' => $a->id, 'code' => $a->code, 'date' => $a->refund_date?->toDateString(),
+                'paid' => (float) $a->paid_amount, 'refund' => (float) $a->refund_amount, 'retained' => (float) $a->retained_amount,
+                'recovered' => (float) $a->recovered_amount, 'balance' => (float) $a->balance_amount, 'status' => $a->status,
+            ] : null,
+            'zoho_status'         => $po->zoho_status,
+            'zoho_bill_number'    => $po->zoho_bill_number,
+            'zoho_error'          => $po->zoho_error,
+            'zoho_unposted_payments' => (int) ($po->zoho_unposted_payments ?? 0),
             // 'pending' while a senior-approval request waits — Edit PO opens view-only.
             'gst_approval_status' => $po->gst_approval_status,
             // Documents out for signature / signed — Edit PO opens view-only.

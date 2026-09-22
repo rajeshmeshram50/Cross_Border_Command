@@ -2,7 +2,7 @@
 // Only three cells are editable (PO product, Qty PO, Rate); everything else is
 // carried from the PI or calculated, which is what the legend line says.
 // Tax is worked out exactly as the server does on save, so the totals match.
-import { lazy, Suspense, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, lazy, Suspense, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { EditSelect, FitInput, FitText } from '../form-fields';
 import type { PoLineRow } from '../po-draft';
 import type { ProductOpt } from '../use-po-lookups';
@@ -50,11 +50,12 @@ export function gstOf(row: PoLineRow, products: ProductOpt[]): number | null {
 }
 
 export function computeLine(row: PoLineRow, products: ProductOpt[], taxMode: TaxMode): LineTotals {
-  const gstPct = gstOf(row, products);
+  // An import carries no Indian GST on the PO — tax is 0 until the duty is known.
+  const gstPct = taxMode === 'export' ? 0 : gstOf(row, products);
   const pct = gstPct ?? 0;
   const base = round2(row.qtyPo * row.rate);
   const gstAmt = round2((base * pct) / 100);
-  const inter = taxMode === 'inter';
+  const inter = taxMode === 'inter' || taxMode === 'export';
   const cgstAmt = inter ? 0 : round2(gstAmt / 2);
   const sgstAmt = inter ? 0 : round2(gstAmt - cgstAmt);
   return {
@@ -129,7 +130,9 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
   const [editing, setEditing] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   const toast = useToast();
-  const inter = taxMode === 'inter';
+  // Inter-state is one IGST pair; intra-state splits into CGST + SGST; an import is one Tax pair at 0%.
+  const exportPo = taxMode === 'export';
+  const inter = taxMode === 'inter' || exportPo;
   const withPi = !standalone;
   // Inter-state is one IGST pair; intra-state splits into CGST + SGST.
   const taxCols = inter ? 1 : 2;
@@ -188,13 +191,13 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             <th className={`cpd-th-num ${readOnly ? '' : 'cpd-edh'}`}>{withPi ? 'Qty (PO)' : 'Qty'}</th>
             {withPi && <th>Missing Qty</th>}
             <th className={`cpd-th-num ${readOnly ? '' : 'cpd-edh'}`}>Product Rate</th>
-            {inter ? <th>IGST (%)</th> : <><th>CGST (%)</th><th>SGST (%)</th></>}
+            {inter ? <th>{exportPo ? 'Tax (%)' : 'IGST (%)'}</th> : <><th>CGST (%)</th><th>SGST (%)</th></>}
             {inter
-              ? <th className="cpd-th-amt cpd-th-amt--tax">IGST Amount</th>
+              ? <th className="cpd-th-amt cpd-th-amt--tax">{exportPo ? 'Tax Amount' : 'IGST Amount'}</th>
               : <><th className="cpd-th-amt cpd-th-amt--tax">CGST Amount</th><th className="cpd-th-amt cpd-th-amt--tax">SGST Amount</th></>}
-            <th className="cpd-th-amt">Product Cost<span className="cpd-th-sub cpd-th-sub--wo">Without GST</span></th>
-            <th className="cpd-th-amt">Total GST Amount</th>
-            <th className="cpd-th-amt cpd-th-final">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">With GST</span></th>
+            <th className="cpd-th-amt">Product Cost<span className="cpd-th-sub cpd-th-sub--wo">{exportPo ? 'Without Tax' : 'Without GST'}</span></th>
+            <th className="cpd-th-amt">{exportPo ? 'Total Tax Amount' : 'Total GST Amount'}</th>
+            <th className="cpd-th-amt cpd-th-final">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">{exportPo ? 'With Tax' : 'With GST'}</span></th>
           </tr>
         </thead>
 
@@ -210,11 +213,18 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             const hsn = po?.hsn || row.pi?.hsn_code || '—';
             const desc = po?.description || row.pi?.description || '';
             const rowErr = readOnly ? {} : (errors[row.key] ?? {});
+            // Product outside the supplier's segments: the whole line is locked until the segment is mapped.
+            const segLock = !readOnly && po ? segmentMismatch(po, supplierSegments) : null;
+            const seg = po?.segment.trim() ?? '';
+            const locked = () => toast.warning('Segment not mapped', seg
+              ? `${seg} is not mapped to this supplier — map it in the Supplier Master first.`
+              : 'This product has no segment in the product master — set it first.');
             const gstCell = line.gstPct === null
               ? <span className="cpd-miss" title="Set the GST % on the product master">GST not set</span>
               : <>GST <b>{line.gstPct}%</b></>;
             return (
-              <tr key={row.key}>
+              <Fragment key={row.key}>
+              <tr className={segLock ? 'cpd-row--seglock' : undefined} title={segLock ?? undefined}>
                 <td className="cpd-stick cpd-stick--1">{i + 1}</td>
                 {withPi && (
                   <td className="cpd-stick cpd-stick--2 cpd-td-left cpd-prodcell">
@@ -243,8 +253,9 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                       <EditSelect
                         value={po ? productLabel(po) : poName}
                         options={options}
+                        readOnly={!!segLock}
                         locked={lockedProducts}
-                        onLockedClick={(label) => label && toast.warning('Segment mismatch', lockedProducts[label] ?? 'This product is not in a segment this supplier deals in.')}
+                        onLockedClick={(label) => (label ? toast.warning('Segment mismatch', lockedProducts[label] ?? 'This product is not in a segment this supplier deals in.') : locked())}
                         placeholder="— Select product —"
                         onChange={(label) => {
                           const picked = products.find((p) => productLabel(p) === label);
@@ -294,6 +305,8 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                       inputMode="decimal"
                       maxLength={QTY_DIGITS + 4}
                       tooltip={plain(row.qtyPo)}
+                      readOnly={!!segLock}
+                      onClick={segLock ? locked : undefined}
                       value={row.qtyPo}
                       onChange={(e) => onChange(index, { qtyPo: cleanQty(e.target.value) })}
                     />
@@ -309,6 +322,8 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                       inputMode="decimal"
                       maxLength={RATE_DIGITS + 3}
                       tooltip={money(row.rate)}
+                      readOnly={!!segLock}
+                      onClick={segLock ? locked : undefined}
                       value={row.rate}
                       onChange={(e) => onChange(index, { rate: cleanRate(e.target.value) })}
                     />
@@ -324,6 +339,21 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                 <td className="cpd-gst"><FitText text={money(line.gstAmt)} /></td>
                 <td className="cpd-final"><FitText text={money(line.withGst)} /></td>
               </tr>
+              {segLock && (
+                <tr className="cpd-seglock-note">
+                  <td colSpan={colCount}>
+                    <span className="cpd-seglock-note__msg">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                      <span>
+                        <b>Segment not mapped — {po?.code || poName || 'this product'} can't be ordered from this supplier.</b>{' '}
+                        {seg ? <>It is in <b>{seg}</b>, which this supplier is not mapped to. First map the supplier to {seg} in the Supplier Master</> : <>It has no segment in the product master. Set it first</>}
+                        {row.pi ? ', then come back to this line.' : ', or remove this line.'}
+                      </span>
+                    </span>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             );
           })}
         </tbody>

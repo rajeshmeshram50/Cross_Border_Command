@@ -1133,6 +1133,28 @@ class ZohoBooksService
         return $this->post('vendorcredits/' . rawurlencode($vendorCreditId) . '/bills', ['bills' => $bills]);
     }
 
+    /**
+     * Record money the supplier paid back against an open vendor credit.
+     * Payload: date, amount, account_id (bank received into), refund_mode, reference_number, description.
+     */
+    public function refundVendorCredit(string $vendorCreditId, array $payload): array
+    {
+        $resp = $this->post('vendorcredits/' . rawurlencode($vendorCreditId) . '/refunds', $payload);
+        $node = $resp['vendor_credit_refund'] ?? $resp['vendorcredit_refund'] ?? null;
+        $id = $node['vendor_credit_refund_id'] ?? $node['vendorcredit_refund_id'] ?? null;
+        if (!$node || empty($id)) {
+            throw new RuntimeException('Zoho Books did not return a vendor-credit refund id.');
+        }
+        $node['vendor_credit_refund_id'] = (string) $id;
+        return $node;
+    }
+
+    /** Remove a vendor-credit refund (the recovery was edited or deleted). */
+    public function deleteVendorCreditRefund(string $vendorCreditId, string $refundId): void
+    {
+        $this->delete('vendorcredits/' . rawurlencode($vendorCreditId) . '/refunds/' . rawurlencode($refundId));
+    }
+
     /** Fetch a vendor-credit node (used to read its remaining balance before a
      *  retry-apply on re-sync). Accepts either response key. */
     public function getVendorCredit(string $id): array

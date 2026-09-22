@@ -26,7 +26,7 @@ import { PoApiError, poApi, poLookupApi, type PoDetail, type ShipmentOption, typ
 import { useToast } from '../../../../../contexts/ToastContext';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './create-po.css';
-import { IcoCheck, IcoChevronL, IcoLock, IcoChevronR, IcoDoc, IcoLines, IcoShip, IcoTarget, IcoUser, IcoX } from '../shared/icons';
+import { IcoCheck, IcoChevronL, IcoLock, IcoChevronR, IcoDoc, IcoLines, IcoShip, IcoTarget, IcoX } from '../shared/icons';
 
 // What the Create PO popup passes in: how this PO is linked. `editId` is set
 // when Edit PO opens an existing order in this same form.
@@ -282,7 +282,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
 
   const saveStage2 = async (): Promise<boolean> => {
     setShown(([a]) => [a, true]);
-    const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments);
+    const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International');
     const bad = Object.keys(v.rows).length;
     if (bad || v.general) {
       if (!bad) { toast.warning('No products ordered', v.general); return false; }
@@ -371,14 +371,13 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     shipment: link.shipment?.code ?? detail?.shipment_code ?? null,
     opportunity: link.shipment?.opportunity_code ?? detail?.opportunity_code ?? null,
     pi: link.shipment?.pi_number ?? detail?.pi_code ?? null,
-    customer: link.shipment?.customer ?? detail?.customer_name ?? null,
     procurement: detail?.procurement_request_code ?? null,
   };
-  const ctx: StepCtx = { lookups, taxMode: detail?.tax_mode ?? 'intra', piCode: refs.pi, detail, saveLines, saving, refreshVault, reloadDetail: () => { void reloadApproval(); }, savedLines,
+  const ctx: StepCtx = { lookups, taxMode: draft.docType === 'International' ? 'export' : (detail?.tax_mode ?? 'intra'), piCode: refs.pi, detail, saveLines, saving, refreshVault, reloadDetail: () => { void reloadApproval(); }, savedLines,
     errors: shown[0] ? { ...serverErrors, ...validateStage1(draft) } : serverErrors,
     ...(() => {
       if (!shown[1]) return { lineErrors: serverLineErrors };
-      const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments);
+      const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International');
       return { lineErrors: { ...serverLineErrors, ...v.rows }, linesGeneral: v.general };
     })(),
   };
@@ -416,8 +415,6 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
                       <HeadPill icon={<IcoLines />} label="PROCUREMENT ID" value={refs.procurement} mono />
                     </>
                   )}
-                  <span className="spi-dt-dots">⋮</span>
-                  <HeadPill icon={<IcoUser />} label="CUSTOMER NAME" value={refs.customer ?? '—'} />
                 </>
               )}
             </div>

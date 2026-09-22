@@ -37,9 +37,11 @@ export default function CreatePoModal({ onClose, onConfirm, initial }: Props) {
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const shipmentOptions = (shipments ?? []).map((s) => ({
-    value: String(s.id), label: `${s.code} — ${s.customer ?? 'No customer'}${s.pi_number ? ` · ${s.pi_number}` : ''}`,
-  }));
+  const shipmentLabel = (s: ShipmentOption) => `${s.code} — ${s.customer ?? 'No customer'}${s.pi_number ? ` · ${s.pi_number}` : ''}`;
+  const shipmentOptions = (shipments ?? []).map((s) => ({ value: String(s.id), label: shipmentLabel(s) }));
+  // Change Link reopens with a shipment already picked: show its code, never the raw id, while the list loads.
+  const known = initial?.shipment && String(initial.shipment.id) === shipment ? initial.shipment : undefined;
+  const shipmentText = shipmentOptions.find((o) => o.value === shipment)?.label ?? (known ? shipmentLabel(known) : undefined);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -53,7 +55,7 @@ export default function CreatePoModal({ onClose, onConfirm, initial }: Props) {
   const confirm = () => {
     if (!mode) return;
     if (mode === 'without') { onConfirm({ mode }); return; }
-    const picked = shipments?.find((s) => String(s.id) === shipment);
+    const picked = shipments?.find((s) => String(s.id) === shipment) ?? known;
     if (picked) onConfirm({ mode, shipment: picked });
   };
 
@@ -92,6 +94,7 @@ export default function CreatePoModal({ onClose, onConfirm, initial }: Props) {
               <label className="spi-mdl-fieldlabel"><IcoLink size={20} /> SELECT SHIPMENT ID <span className="spi-mdl-req">*</span></label>
               <MasterSelect
                 value={shipment}
+                currentValueLabel={shipmentText}
                 placeholder={shipments === null ? 'Loading shipments…' : shipmentOptions.length ? 'Select Shipment ID…' : 'No shipment with a PI yet'}
                 options={shipmentOptions}
                 onChange={setShipment}

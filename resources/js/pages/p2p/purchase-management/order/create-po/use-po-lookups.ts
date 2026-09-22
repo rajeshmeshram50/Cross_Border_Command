@@ -24,6 +24,7 @@ export type PoLookups = {
   countries: string[];
   /** Re-fetch the product master (after a product is added or edited). */
   reloadProducts: () => void;
+  reloadSuppliers: () => void;
 };
 
 type Row = Record<string, unknown>;
@@ -49,6 +50,7 @@ function toProduct(p: Row): ProductOpt {
 export const EMPTY_LOOKUPS: PoLookups = {
   loading: true, suppliers: [], products: [], currencies: [], countries: [],
   reloadProducts: () => {},
+  reloadSuppliers: () => {},
 };
 
 /* Masters rarely change, so they are cached for the session (10 min), keyed by
@@ -104,5 +106,11 @@ export function usePoLookups(onError: (what: string, message: string) => void): 
       .catch((e) => onError('Products', e?.firstError ?? 'Could not load.'));
   };
 
-  return { ...lookups, reloadProducts };
+  const reloadSuppliers = () => {
+    poLookupApi.suppliers()
+      .then((suppliers) => setLookups((l) => ({ ...l, suppliers })))
+      .catch((e) => onError('Suppliers', e?.firstError ?? 'Could not load.'));
+  };
+
+  return { ...lookups, reloadProducts, reloadSuppliers };
 }
