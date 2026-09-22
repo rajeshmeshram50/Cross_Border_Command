@@ -2311,13 +2311,14 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 .cpf-viewonly { display: flex; flex-direction: column; gap: 8px; flex: 1 0 auto; }
 .cpf-viewonly:empty { display: none; }
 
-/* While Save & Next runs the stepper and step are inert (CreatePoForm); this
-   shows it — dimmed, with a busy cursor over the whole form. */
+/* While a save runs the stepper and step are inert (CreatePoForm) and the
+   cursor is busy. Save & Next swaps the step for the form shimmer; nothing is
+   dimmed — a 60% fade read as a washed-out, broken form. */
 .cpf-form.is-saving { cursor: progress; }
-.cpf-form .spi-dt-body,
-.cpf-form .spi-dt-steps { transition: opacity .15s; }
-.cpf-form.is-saving .spi-dt-body,
-.cpf-form.is-saving .spi-dt-steps { opacity: .6; }
+/* Holds the step while the shimmer shows: no box of its own, so the body's
+   flex layout is exactly as before; hidden = the step stays mounted, unseen. */
+.cpf-stepwrap { display: contents; }
+.cpf-stepwrap[hidden] { display: none; }
 .cpf-viewonly > * { flex-shrink: 0; }
 .cpf-viewonly > .cpf-fill { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 320px; }
 .cpf-viewonly > .cpf-fill.is-collapsed { flex: 0 0 auto; min-height: 0; }

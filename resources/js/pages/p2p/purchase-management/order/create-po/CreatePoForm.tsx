@@ -102,6 +102,8 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   const [nextCode, setNextCode] = useState('');
   const [booting, setBooting] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Save & Next in flight — the step shows the form shimmer until the next one opens.
+  const [advancing, setAdvancing] = useState(false);
   // Read by the Esc handler, which is bound once and would see a stale `saving`.
   const savingRef = useRef(false);
   savingRef.current = saving;
@@ -317,6 +319,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
       return;
     }
     setSaving(true);
+    setAdvancing(true);
     try {
       const saved = await [saveStage1, saveStage2, saveStage3][stage]();
       if (saved) {
@@ -327,6 +330,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
       fail(e);
     } finally {
       setSaving(false);
+      setAdvancing(false);
     }
   };
 
@@ -454,6 +458,11 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
             <PoFormSkeleton />
           ) : (
             <>
+              {/* Save & Next shows the shimmer instead of a dimmed form. The step
+                  stays mounted underneath (hidden, not removed), so a save that
+                  fails brings it back exactly as it was left. */}
+              {advancing && <PoFormSkeleton />}
+              <div className="cpf-stepwrap" hidden={advancing}>
               {viewOnly && (
                 <div className="cpf-viewonly-banner">
                   <IcoLock /> <b>View only.</b>{' '}
@@ -471,6 +480,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
                 {stage === 2 && <Step3Terms draft={draft} set={set} ctx={ctx} />}
               </fieldset>
               {stage === 3 && <Step4Documents draft={draft} ctx={ctx} poId={poId} />}
+              </div>
             </>
           )}
         </div>
