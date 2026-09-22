@@ -41,6 +41,8 @@ export type RiskSubject = {
   scrutiny: string;
   /** Evidence Vault documents completed / required. */
   legal: { done: number; total: number };
+  /** International supplier: GST registration, filing and scrutiny do not apply. */
+  international?: boolean;
 };
 
 const has = (value: string, word: string) => value.toLowerCase().includes(word);
@@ -105,6 +107,12 @@ export function riskItems(s: RiskSubject, physInsp: boolean): RiskItem[] {
   else if (s.category) items.push({ sev: 'ok', title: `${s.category} in good standing`, note: `Classified as ${s.category} with no category restriction on trade.`, tag: 'Category' });
   else items.push({ sev: 'med', title: 'Supplier category not set', note: 'The supplier master has no category — set one on the supplier record.', tag: 'Category' });
 
+  if (s.international) {
+    items.push({ sev: 'ok', title: 'GST checks not applicable', note: 'International supplier — GST registration, return filing and scrutiny do not apply to this PO.', tag: 'GST' });
+    pushDocs(items, s.legal);
+    return items;
+  }
+
   if (!s.gstStatus) items.push({ sev: 'med', title: 'GST status not recorded', note: 'No GST scrutiny record gives this supplier\'s registration status.', tag: 'GST' });
   else if (s.gstStatus.toLowerCase() !== 'active') items.push({ sev: 'high', title: `GST registration ${s.gstStatus.toLowerCase()}`, note: `GSTIN ${s.gstNo || '—'} is not active — input credit may be blocked.`, tag: 'GST' });
   else items.push({ sev: 'ok', title: 'GST registration active', note: `GSTIN ${s.gstNo || '—'} is active. Input tax credit can be claimed on this PO.`, tag: 'GST' });
@@ -119,12 +127,15 @@ export function riskItems(s: RiskSubject, physInsp: boolean): RiskItem[] {
   else if (sd > SCRUTINY_DUE_DAYS) items.push({ sev: 'med', title: 'GST scrutiny not refreshed', note: `Last scrutiny was ${sd} days ago (${formatDmy(s.scrutiny)}). Due every ${SCRUTINY_DUE_DAYS} days.`, tag: 'Scrutiny' });
   else items.push({ sev: 'ok', title: 'GST scrutiny current', note: `Last reviewed ${sd} day${sd === 1 ? '' : 's'} ago (${formatDmy(s.scrutiny)}). Next review due in ${Math.max(0, SCRUTINY_DUE_DAYS - sd)} days.`, tag: 'Scrutiny' });
 
-  const { done, total } = s.legal;
+  pushDocs(items, s.legal);
+  return items;
+}
+
+function pushDocs(items: RiskItem[], legal: RiskSubject['legal']) {
+  const { done, total } = legal;
   if (total === 0) items.push({ sev: 'med', title: 'No compliance documents on file', note: 'The Evidence Vault has no required documents for this supplier yet.', tag: 'Documents' });
   else if (done < total) items.push({ sev: 'med', title: 'Compliance documents incomplete', note: `${total - done} of ${total} documents still outstanding in the Evidence Vault.`, tag: 'Documents' });
   else items.push({ sev: 'ok', title: 'Compliance documents complete', note: `All ${total} KYC, licence and agreement documents are on file in the Evidence Vault.`, tag: 'Documents' });
-
-  return items;
 }
 
 /** Past the window: no date, or a date before the cut-off. Compares calendar

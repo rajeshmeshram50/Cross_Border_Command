@@ -34,6 +34,8 @@ const PAYMENT_TYPES = PAYMENT_TYPE_OPTIONS;
 const LOCKED_PO_TYPES = Object.fromEntries(PO_TYPES.filter((t) => t !== OPEN_PO_TYPE).map((t) => [t, 'Not available yet — only Material / Goods POs can be raised']));
 
 const v = (x: string | null | undefined) => x ?? '';
+// An international PO is never in INR — listed, but locked with the reason.
+const INR_LOCK = { INR: 'An international PO cannot be in INR' };
 
 type Props = {
   draft: PoDraft;
@@ -148,8 +150,8 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
   // Risk alerts are re-derived from the supplier record, never stored.
   const risks = useMemo(() => (sup ? riskItems({
     risk: v(sup.risk), category: v(sup.category), gstStatus: v(sup.gstStatus), gstNo: v(sup.gstNo),
-    filing: v(sup.filing), scrutiny: v(sup.scrutiny), legal,
-  }, draft.physInsp) : []), [sup, legal, draft.physInsp]);
+    filing: v(sup.filing), scrutiny: v(sup.scrutiny), legal, international: isInternational,
+  }, draft.physInsp) : []), [sup, legal, draft.physInsp, isInternational]);
   const nHigh = risks.filter((r) => r.sev === 'high').length;
   const nMed = risks.filter((r) => r.sev === 'med').length;
   const nOk = risks.filter((r) => r.sev === 'ok').length;
@@ -244,7 +246,8 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
           {isInternational && (
             <>
               <Field label="Currency" req error={err.currency}>
-                <EditSelect value={draft.currency} options={lookups.currencies} onChange={(x) => set({ currency: x })} invalid={!!err.currency} />
+                <EditSelect value={draft.currency} options={lookups.currencies} onChange={(x) => set({ currency: x })} invalid={!!err.currency}
+                  locked={INR_LOCK} onLockedClick={() => toast.warning('INR not allowed', 'An international PO is raised in the supplier currency, not INR.')} />
               </Field>
               <Field label="Exchange Rate" req error={err.exchangeRate}>
                 <input className={`spi-dt-inp${inv('exchangeRate')}`} inputMode="decimal" placeholder="e.g. 83.25" value={draft.exchangeRate}
@@ -424,7 +427,7 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
               <span className="spi-dt-card-ico spi-dt-card-ico-4"><IcoDocSm /></span> GST Scrutiny Details
               {gst.tone === 'stop' && <span className="spi-dt-scrutiny-badge"><IcoWarn /> Scrutiny Overdue</span>}
             </div>
-            <span className="spi-dt-fields-badge cpf-push">5 FIELDS</span>
+            <span className="spi-dt-fields-badge cpf-push">{isInternational ? 'NOT APPLICABLE' : '5 FIELDS'}</span>
             <span className={`cpf-chev ${gstOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
           </div>
 
@@ -479,7 +482,7 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
                     <span className="cpf-risk__sum-ico"><SevIcon sev={riskSev} /></span>
                     <div className="cpf-risk__sum-txt">
                       <div className="cpf-risk__sum-t">{verdict}</div>
-                      <div className="cpf-risk__sum-x">{nOk} of {risks.length} checks passed · risk rating, category, GST registration, filing, scrutiny and documents</div>
+                      <div className="cpf-risk__sum-x">{nOk} of {risks.length} checks passed · {isInternational ? 'risk rating, category and documents (GST not applicable)' : 'risk rating, category, GST registration, filing, scrutiny and documents'}</div>
                     </div>
                   </div>
                   {mandatory && (

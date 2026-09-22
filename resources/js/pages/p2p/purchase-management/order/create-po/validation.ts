@@ -34,6 +34,7 @@ export function validateStage1(d: PoDraft): FieldErrors {
 
   if (d.docType === 'International') {
     need('currency', 'Currency');
+    if (!e.currency && d.currency.trim().toUpperCase() === 'INR') e.currency = 'An international PO cannot be in INR — choose the supplier currency.';
     need('exchangeRate', 'Exchange Rate');
     if (!e.exchangeRate && !(Number(d.exchangeRate) > 0)) e.exchangeRate = 'Exchange rate must be greater than 0.';
     need('incoTerm', 'INCO Term');

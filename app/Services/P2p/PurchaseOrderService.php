@@ -276,8 +276,10 @@ class PurchaseOrderService
      * GST gate on the supplier's latest scrutiny record: blocked when the
      * scrutiny is stale, approval_required when only the return filing is.
      */
-    public function gstGate(?int $vendorId): array
+    public function gstGate(?int $vendorId, bool $international = false): array
     {
+        // An import has no Indian GST — scrutiny and filing are not checked.
+        if ($international) return ['gate' => 'clear', 'scrutiny_date' => null, 'filing_date' => null, 'gstin' => null];
         $row = $vendorId
             ? DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendorId)->whereNull('deleted_at')->orderByDesc('created_at')->first()
             : null;

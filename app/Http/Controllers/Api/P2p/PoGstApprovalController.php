@@ -105,7 +105,7 @@ class PoGstApprovalController extends Controller
         if (!$po->vendor_id) return $this->fail('Select a supplier on Step 01 first.');
 
         // The gate is re-read live: only an overdue return can be approved past.
-        $gst = $this->svc->gstGate($po->vendor_id);
+        $gst = $this->svc->gstGate($po->vendor_id, $po->document_type === 'international');
         if ($gst['gate'] === 'blocked') {
             return $this->fail('GST scrutiny is older than ' . PurchaseOrderService::GST_STALE_MONTHS . ' months — a senior cannot approve this. Update the supplier\'s GST scrutiny first.');
         }
@@ -239,7 +239,7 @@ class PoGstApprovalController extends Controller
                 'risk' => $vendor->risk_level, 'category' => $vendor->supplier_category,
             ] : null,
             // Read live, so the senior sees today's position, not the one at request time.
-            'gst' => $po->vendor_id ? $this->svc->gstGate($po->vendor_id) + ['stale_months' => PurchaseOrderService::GST_STALE_MONTHS] : null,
+            'gst' => $po->vendor_id ? $this->svc->gstGate($po->vendor_id, $po->document_type === 'international') + ['stale_months' => PurchaseOrderService::GST_STALE_MONTHS] : null,
             'lines' => $po->items->map(fn ($it) => [
                 'line_no' => $it->line_no,
                 'product_code' => $live[$it->id]['product_code'] ?? null,

@@ -197,7 +197,8 @@ class PurchaseOrderController extends Controller
             'delivery_location'      => 'required|string|max:255',
             'payment_type'           => ['required', Rule::in(PurchaseOrder::PAYMENT_TYPES)],
             'physical_inspection'    => ['required', Rule::in(PurchaseOrder::YES_NO)],
-            'currency_code'          => "{$intl}|string|max:8",
+            // An import is priced in the supplier's currency, never INR.
+            'currency_code'          => [...explode('|', $intl), 'string', 'max:8', 'not_in:INR,inr'],
             'exchange_rate'          => "{$intl}|numeric|gt:0",
             'inco_term'              => [...explode('|', $intl), Rule::in(PurchaseOrder::INCO_TERMS)],
             'port_of_loading'        => "{$intl}|string|max:255",
@@ -217,6 +218,7 @@ class PurchaseOrderController extends Controller
     {
         return [
             'required_if'                           => 'This field is required on an international PO.',
+            'currency_code.not_in'                  => "An international PO cannot be in INR — choose the supplier's currency.",
             'po_type.in'                            => 'Only Material / Goods purchase orders can be raised for now.',
             'payment_type.in'                       => 'Select Advanced Payment, Full Payment or Letter of Credit.',
             'expected_delivery_date.after_or_equal' => 'Expected delivery date cannot be earlier than today.',
@@ -327,7 +329,7 @@ class PurchaseOrderController extends Controller
             'ship'      => $ship,
             'pi_id'     => $ship ? $this->svc->piIdForShipment($ship) : null,
             'vendor'    => $vendor,
-            'gst'       => $this->svc->gstGate($vendor->id),
+            'gst'       => $this->svc->gstGate($vendor->id, $data['document_type'] === 'international'),
             'home'      => $home,
             'tax_mode'  => $this->svc->taxMode($vendor->state_code, $home),
             'mandatory' => $this->inspectionMandatory($vendor),
@@ -572,7 +574,7 @@ class PurchaseOrderController extends Controller
                 return $this->fail($outside->implode(', ') . ' — not in a segment this supplier is mapped to. Map the segment to the supplier, or change the lines in Stage 02, before submitting.');
             }
             // Re-read the supplier's GST position at the moment of submission.
-            $gst = $this->svc->gstGate($po->vendor_id);
+            $gst = $this->svc->gstGate($po->vendor_id, $po->document_type === 'international');
             $po->forceFill(['gst_gate' => $gst['gate'], 'gst_scrutiny_date' => $gst['scrutiny_date'], 'gst_last_filing_date' => $gst['filing_date']]);
             if ($gst['gate'] === 'blocked') {
                 return $this->fail('GST scrutiny is older than ' . PurchaseOrderService::GST_STALE_MONTHS . ' months — refresh it on the supplier record before submitting.', 422, ['gst' => $gst]);
