@@ -581,11 +581,6 @@ class PurchaseOrderController extends Controller
                 };
                 return $this->fail($msg, 422, ['gst' => $gst, 'gst_approval_status' => $approval?->status]);
             }
-            // Paperwork gate: the supplier's earlier orders must be clean first.
-            $pending = $this->unsignedMandatoryDocuments($po);
-            if ($pending) {
-                return $this->fail($this->unsignedDocumentsMessage($pending), 422, ['pending_documents' => $pending]);
-            }
         }
 
         $this->inTransaction($submit ? 'submit the PO' : 'save the terms', function () use ($po, $user, $data, $submit) {
@@ -651,48 +646,6 @@ class PurchaseOrderController extends Controller
                 'updated_by'        => $userId,
             ]);
         }
-    }
-
-    /**
-     * Documents still unsigned on this supplier's EARLIER purchase orders —
-     * the ones that order marked Necessary. Only documents that came from the
-     * CLM libraries count; the Purchase Order PDF of an older order does not
-     * hold up the next one. Cancelled orders are ignored: nothing is expected
-     * of them any more.
-     *
-     * @return array<int,array{po_id:int,po_code:string,document:string}>
-     */
-    private function unsignedMandatoryDocuments(PurchaseOrder $po): array
-    {
-        if (!$po->vendor_id) return [];
-
-        return DB::table('p2p_purchase_order_documents as d')
-            ->join('p2p_purchase_orders as o', 'o.id', '=', 'd.purchase_order_id')
-            ->where('o.client_id', $po->client_id)
-            ->where('o.vendor_id', $po->vendor_id)
-            ->where('o.id', '!=', $po->id)
-            ->where('o.status', '!=', PurchaseOrder::STATUS_CANCELLED)
-            ->whereNull('o.deleted_at')
-            ->whereNull('d.deleted_at')
-            ->where('d.needed', 'yes')
-            ->whereNotNull('d.source_type')
-            ->where('d.status', '!=', PurchaseOrderDocument::STATUS_SIGNED)
-            ->orderBy('o.id')
-            ->get(['o.id as po_id', 'o.code as po_code', 'd.name as document'])
-            ->map(fn ($r) => ['po_id' => (int) $r->po_id, 'po_code' => (string) $r->po_code, 'document' => (string) $r->document])
-            ->all();
-    }
-
-    /** "PO/2026-27/007: ADSD, Cert of Origin" — what has to be signed, and where. */
-    private function unsignedDocumentsMessage(array $pending): string
-    {
-        $byPo = [];
-        foreach ($pending as $row) $byPo[$row['po_code']][] = $row['document'];
-        $parts = [];
-        foreach ($byPo as $code => $names) $parts[] = $code . ': ' . implode(', ', $names);
-
-        return 'This supplier has necessary documents still unsigned on an earlier purchase order — '
-            . implode(' · ', $parts) . '. Get them signed before issuing this PO.';
     }
 
     /* ══════════════════════════ CANCEL / DELETE ══════════════════════════ */
