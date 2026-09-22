@@ -46,7 +46,12 @@ class PurchaseOrderDocumentController extends Controller
     private function shape(PurchaseOrderDocument $d, ?ClmSignatureRequest $sig = null): array
     {
         $ids = $sig && is_array($sig->trade_doc_ids) ? array_map('intval', $sig->trade_doc_ids) : [];
-        $pos = array_search((int) $d->id, $ids, true);
+        // A request raised through the CLM flow lists LIBRARY ids; one raised
+        // for our own files (the Purchase Order PDF) lists our row ids.
+        $mine = $sig?->document_type === ClmSignatureRequest::DOC_P2P_PO_DOCUMENT || $d->source_id === null
+            ? (int) $d->id
+            : (int) $d->source_id;
+        $pos = array_search($mine, $ids, true);
         return $d->toArray() + [
             'file_url'         => $d->file_path ? file_url($d->file_path) : null,
             // For the signing tracker: /clm/signature-requests/{id}, signed file at {index}
@@ -58,6 +63,10 @@ class PurchaseOrderDocumentController extends Controller
     /** Documents of the PO with their signature requests, statuses synced first. */
     private function listShaped(PurchaseOrder $order): array
     {
+        // Trade documents / agreements are signed through the CLM flow, which
+        // raises its request against the library id — claim those first, then
+        // bring every linked request's status up to date.
+        $this->docs->adoptClmSignatures($order);
         $this->docs->syncSignatures($order->documents()->get());
         $docs = $order->documents()->orderBy('id')->get();
         $sigs = ClmSignatureRequest::whereIn('id', $docs->pluck('signature_request_id')->filter()->unique())->get()->keyBy('id');
@@ -79,6 +88,50 @@ class PurchaseOrderDocumentController extends Controller
     {
         [$order] = $this->find($po);
         return $this->ok($this->listShaped($order));
+    }
+
+    /**
+     * POST /p2p/orders/{po}/documents/needs — mark documents Necessary or not
+     * on THIS purchase order. The Purchase Order itself is the one row that
+     * cannot be waved away; every library document is decided here.
+     *
+     * Body: { items: [{ id, needed }] } — one call for the whole selection.
+     */
+    public function setNeeds(Request $request, int $po): JsonResponse
+    {
+        $user = $request->user();
+        [$order] = $this->find($po);
+        if ($order->isCancelled()) return $this->fail('This PO is cancelled.');
+
+        $data = $request->validate([
+            'items'          => 'required|array|min:1',
+            'items.*.id'     => 'required|integer',
+            'items.*.needed' => 'required|boolean',
+        ]);
+
+        $wanted = collect($data['items'])->keyBy('id');
+        $docs = $order->documents()->whereIn('id', $wanted->keys())->get();
+        if ($docs->count() !== $wanted->count()) return $this->fail('Some documents were not found on this PO.');
+
+        // The Purchase Order itself, and nothing else — its kind is what says
+        // so, which also covers rows seeded before the marking existed.
+        $mandatory = $docs->filter(fn ($d) => $d->doc_kind === 'purchase_order' && !$wanted[$d->id]['needed']);
+        if ($mandatory->isNotEmpty()) {
+            return $this->fail($mandatory->pluck('name')->implode(', ') . ' always goes with the order and cannot be marked not necessary.');
+        }
+
+        $this->inTransaction('save the document decisions', function () use ($docs, $wanted, $user) {
+            foreach ($docs as $doc) {
+                $doc->update([
+                    'needed'     => $wanted[$doc->id]['needed'] ? 'yes' : 'no',
+                    'needed_by'  => $user?->id,
+                    'needed_at'  => now(),
+                    'updated_by' => $user?->id,
+                ]);
+            }
+        });
+
+        return $this->ok($this->listShaped($order->fresh()));
     }
 
     /** POST /p2p/orders/{po}/documents (multipart) — add a document, or its file. */
@@ -187,14 +240,24 @@ class PurchaseOrderDocumentController extends Controller
             'signer_email'   => 'nullable|email|max:255',
             'notes'          => 'nullable|string|max:1000',
             'expiry_days'    => 'nullable|integer|min:1|max:90',
+            // Several people can sign the same request; each keeps a role so
+            // the box dragged for them is the box they get.
+            'signers'            => 'nullable|array|max:6',
+            'signers.*.name'     => 'nullable|string|max:255',
+            'signers.*.email'    => 'required_with:signers|email|max:255',
+            'signers.*.role'     => 'nullable|string|max:40',
+            // { documentId: {x,y,page,width,height} | {role: {...}} | {boxes:[…]} }
+            'document_settings'  => 'nullable|array',
         ]);
         $docs = $this->selected($order, $data['document_ids']);
         $busy = $docs->filter(fn ($d) => $d->status !== PurchaseOrderDocument::STATUS_PENDING)->pluck('name');
         if ($busy->isNotEmpty()) return $this->fail('Already sent or signed: ' . $busy->implode(', ') . '.');
 
+        // The supplier's own contact is the default signer; a screen that
+        // collected its own signer list carries them instead.
         $contact = $this->docs->supplierContact($order);
-        $signer = ['name' => $data['signer_name'] ?? $contact['name'], 'email' => strtolower($data['signer_email'] ?? $contact['email'])];
-        if (!$signer['email'] || !filter_var($signer['email'], FILTER_VALIDATE_EMAIL)) {
+        $signer = ['name' => $data['signer_name'] ?? $contact['name'], 'email' => strtolower((string) ($data['signer_email'] ?? $contact['email']))];
+        if (empty($data['signers']) && (!$signer['email'] || !filter_var($signer['email'], FILTER_VALIDATE_EMAIL))) {
             return $this->fail('No valid email for this supplier. Set a primary contact email on the supplier first.');
         }
         try {

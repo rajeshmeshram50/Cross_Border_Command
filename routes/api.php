@@ -443,6 +443,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
 
         // Stage 04 · documents
         Route::get   ('/{po}/documents',                 [$doc, 'index'])->whereNumber('po');
+        Route::post  ('/{po}/documents/needs',           [$doc, 'setNeeds'])->whereNumber('po');
         Route::post  ('/{po}/documents',                 [$doc, 'store'])->whereNumber('po');
         Route::post  ('/{po}/documents/{doc}/file',      [$doc, 'uploadFile'])->whereNumber('po')->whereNumber('doc');
         Route::patch ('/{po}/documents/{doc}/status',    [$doc, 'updateStatus'])->whereNumber('po')->whereNumber('doc');

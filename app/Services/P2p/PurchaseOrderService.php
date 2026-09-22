@@ -61,6 +61,113 @@ class PurchaseOrderService
         return $this->nextCode($clientId, 'DOC', PurchaseOrderDocument::withoutGlobalScope('tenant')->withTrashed());
     }
 
+    /* ══════════════════ Stage 04 · documents from the CLM libraries ══════════════════ */
+
+    /**
+     * The trade documents and agreements this PO has to carry.
+     *
+     * Segments come from the PO's own products — what is being bought decides
+     * the paperwork, not everything the supplier could supply. Only if the PO
+     * has no product segments does it fall back to the supplier's segments.
+     * A library row applies when it sits in one of those segments, carries the
+     * segment's regulatory status, is active, and names the Supplier as a party.
+     * "Highly regulated" is what makes a document mandatory.
+     *
+     * @return array<int,array{source_type:string,source_id:int,name:string,sub:string,required:bool}>
+     */
+    public function segmentDocuments(PurchaseOrder $po): array
+    {
+        $clientId = (int) $po->client_id;
+        if (!$clientId) return [];
+
+        $segmentIds = DB::table('p2p_purchase_order_items as i')
+            ->join('products as p', 'p.id', '=', 'i.product_id')
+            ->where('i.purchase_order_id', $po->id)
+            ->whereNotNull('p.segment_id')
+            ->pluck('p.segment_id')->map(fn ($v) => (int) $v)->unique()->values()->all();
+
+        if (!$segmentIds && $po->vendor_id) {
+            $segmentIds = DB::table('vendor_segments')->where('vendor_id', $po->vendor_id)
+                ->pluck('segment_id')->map(fn ($v) => (int) $v)->unique()->values()->all();
+            if (!$segmentIds) {
+                $own = DB::table('vendors')->where('id', $po->vendor_id)->value('segment_id');
+                if ($own) $segmentIds = [(int) $own];
+            }
+        }
+        if (!$segmentIds) return [];
+
+        $segments = DB::table('clm_segments')->whereIn('id', $segmentIds)->get(['name', 'code', 'regulatory_status']);
+        $trade = collect();
+        $agreements = collect();
+        foreach ($segments as $segment) {
+            $trade = $trade->merge($this->clmLibraryRows('clm_trade_doc_library', 'status', 'active', $clientId, $segment));
+            $agreements = $agreements->merge($this->clmLibraryRows('clm_agreement_library', 'agr_status', 'Active', $clientId, $segment));
+        }
+
+        $out = [];
+        foreach ($trade->unique('id') as $row) {
+            if (!$this->appliesToSupplier($row->party ?? null)) continue;
+            $out[] = [
+                'source_type' => 'trade',
+                'source_id'   => (int) $row->id,
+                'name'        => (string) ($row->title ?: $row->name ?: 'Trade Document'),
+                'sub'         => (string) ($row->doc_type ?? ''),
+                'required'    => ($row->regulatory ?? 'less') === 'highly',
+            ];
+        }
+        foreach ($agreements->unique('id') as $row) {
+            if (!$this->appliesToSupplier($row->party ?? null)) continue;
+            $out[] = [
+                'source_type' => 'agreement',
+                'source_id'   => (int) $row->id,
+                'name'        => (string) ($row->title ?: $row->agreement_type ?: 'Agreement'),
+                'sub'         => (string) ($row->agreement_type ?? 'Agreement'),
+                'required'    => ($row->regulatory ?? 'less') === 'highly',
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Library rows of one segment. `segment` holds a comma-separated list, so
+     * the name (or code) is matched on its own or inside that list.
+     */
+    private function clmLibraryRows(string $table, string $statusColumn, string $statusValue, int $clientId, object $segment)
+    {
+        $needles = array_values(array_filter([$segment->name, $segment->code]));
+        if (!$needles) return collect();
+
+        return DB::table($table)
+            ->where('client_id', $clientId)
+            ->where('regulatory', $segment->regulatory_status)
+            ->where($statusColumn, $statusValue)
+            ->where(function ($q) use ($needles) {
+                foreach ($needles as $needle) {
+                    $q->orWhere('segment', $needle)
+                        ->orWhere('segment', 'LIKE', $needle . ',%')->orWhere('segment', 'LIKE', $needle . ', %')
+                        ->orWhere('segment', 'LIKE', '%,' . $needle)->orWhere('segment', 'LIKE', '%, ' . $needle)
+                        ->orWhere('segment', 'LIKE', '%,' . $needle . ',%')->orWhere('segment', 'LIKE', '%, ' . $needle . ',%');
+                }
+            })
+            ->get();
+    }
+
+    /**
+     * A document is for this PO only when the Supplier is one of its parties.
+     * The master writes them as "Supplier-Material / Goods", "Supplier — Tech",
+     * and similar, so the token only has to start with "supplier". An empty
+     * party means the document is not restricted to anyone.
+     */
+    private function appliesToSupplier(?string $party): bool
+    {
+        $party = trim((string) $party);
+        if ($party === '') return true;
+        foreach (preg_split('/[,;]/', $party) as $token) {
+            if (str_starts_with(strtolower(trim($token)), 'supplier')) return true;
+        }
+        return false;
+    }
+
     private function nextCode(int $clientId, string $prefix, Builder $query, bool $allocate = true): string
     {
         $fy = $this->financialYear();

@@ -173,6 +173,13 @@ interface Props {
     code: string;
     previewUrl: string;  // GET → blob (the PO PDF)
     sendUrl: string;     // POST → the send-for-signature endpoint
+    /** More than one document in the same request (a PO's Stage 04 sends the
+     *  purchase order together with its trade documents). Each is previewed
+     *  and positioned on its own; the first one doubles as the single-document
+     *  context above, so callers that send one file pass nothing here. */
+    docs?: Array<{ docId: number; title: string; code: string; previewUrl: string }>;
+    /** Merged into the POST body — ids, or anything else the endpoint needs. */
+    extraPayload?: Record<string, unknown>;
   } | null;
   /** Caller-supplied metadata for the preselected docs. Used only in
    *  `sendAsAgreement` mode, where the modal's own library fetch (trade-doc
@@ -510,11 +517,13 @@ export default function SalesCustomerSendForSignatureModal({
     if (isRaw && rawPdfContext) {
       // Raw-PDF mode: ONE synthetic doc (e.g. the PO), ONE signer resolved
       // from `customer`. Skip the picker; seed a single flat signature box.
-      const rid = rawPdfContext.docId;
+      const list = rawPdfContext.docs?.length
+        ? rawPdfContext.docs
+        : [{ docId: rawPdfContext.docId, code: rawPdfContext.code, title: rawPdfContext.title, previewUrl: rawPdfContext.previewUrl }];
       setStep(2);
-      setDocs([{ id: rid, code: rawPdfContext.code, name: rawPdfContext.title, title: rawPdfContext.title }]);
+      setDocs(list.map((d) => ({ id: d.docId, code: d.code, name: d.title, title: d.title })));
       setDocsLoading(false);
-      setSelectedIds([rid]);
+      setSelectedIds(list.map((d) => d.docId));
       setSigners(customer
         ? [{ name: (customer.contact || customer.company || '').trim() || 'Signer 1', email: (customer.email || '').trim(), order: 1 }]
         : [{ name: '', email: '', order: 1 }]);
@@ -525,7 +534,7 @@ export default function SalesCustomerSendForSignatureModal({
       setRoleExtraBoxes({}); setActiveRoleBoxIdx(0);
       setSignerSettings({});
       setActiveSignerRole(null);
-      setActiveDocId(rid);
+      setActiveDocId(list[0].docId);
       setPreviewUrl(null);
       userOverrodeRef.current.clear();
       setHeaderOverrides({});
@@ -780,7 +789,10 @@ export default function SalesCustomerSendForSignatureModal({
     const previewRequest = (activeDocId === PO_BUNDLE_ID && bundlePo)
       ? api.get(bundlePo.previewUrl, { responseType: 'blob' })
       : isRaw
-      ? api.get(rawPdfContext!.previewUrl, { responseType: 'blob' })
+      ? api.get(
+          (rawPdfContext!.docs ?? []).find((d) => d.docId === docId)?.previewUrl ?? rawPdfContext!.previewUrl,
+          { responseType: 'blob' },
+        )
       : isAgreement
       ? api.post('/clm/signature-requests/agreement-preview',
           {
@@ -955,25 +967,37 @@ export default function SalesCustomerSendForSignatureModal({
   /* ── Send. */
   const send = async () => {
     if (isRaw && rawPdfContext) {
-      // Raw-PDF (e.g. PO) send: one signer, one flat signature box → POST to
-      // the caller-supplied endpoint. Never touches the CLM library payload.
-      const signer = signers[0];
-      if (!signer || !signer.name.trim() || !/\S+@\S+\.\S+/.test(signer.email.trim())) {
+      // Raw-PDF send (a PO and its documents): every signer, and every box each
+      // document carries → POST to the caller-supplied endpoint. Never touches
+      // the CLM library payload.
+      const cleaned = signers
+        .map((x) => ({ ...x, name: x.name.trim(), email: x.email.trim() }))
+        .filter((x) => x.name && /\S+@\S+\.\S+/.test(x.email));
+      if (!cleaned.length) {
         toast.error('Signer required', 'Enter a name and a valid email for the signer.');
         return;
       }
+      const ids = selectedIds.length ? selectedIds : [rawPdfContext.docId];
       setSending(true);
       try {
-        const box = settings[rawPdfContext.docId] ?? { ...SEED_ONE };
+        // One box per document, or the whole list when the same signer has to
+        // sign a document in several places.
+        const docSettings: Record<number, DocSettings & { boxes?: DocSettings[] }> = {};
+        ids.forEach((id) => {
+          const boxes = multiBoxes[id] ?? [];
+          const primary = settings[id] ?? boxes[0] ?? { ...SEED_ONE };
+          docSettings[id] = boxes.length > 1 ? { ...primary, boxes } : primary;
+        });
         const r = await api.post(rawPdfContext.sendUrl, {
-          signers: [{ name: signer.name.trim(), email: signer.email.trim(), order: 1 }],
+          ...(rawPdfContext.extraPayload ?? {}),
+          signers: cleaned.map((x, i) => ({ name: x.name, email: x.email, role: `signer${i + 1}`, order: x.order ?? i + 1 })),
           is_sequential: isSequential,
           expiry_days: expiryDays,
           notes: notes.trim(),
-          document_settings: { [rawPdfContext.docId]: box },
+          document_settings: docSettings,
         });
         toast.success('Sent for signature', r.data?.message ?? 'Sent for signature via Zoho Sign.');
-        onSent?.([rawPdfContext.docId]);
+        onSent?.(ids);
         onClose();
       } catch (e: any) {
         const msg = e?.response?.data?.message

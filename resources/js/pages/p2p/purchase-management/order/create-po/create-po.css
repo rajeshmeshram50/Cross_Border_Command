@@ -1665,6 +1665,9 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
    code pill (its .cptd-docname / .cptd-code). Scoped to this table so the
    product table keeps its own. */
 .cdoc-tbl .cpd-prod__nm { font-size: 12px; font-weight: 700; letter-spacing: normal; color: #0f2a38; }
+/* Its own dark tone: the shared one is a class lighter, so the ink above won
+   and the document names all but vanished on the dark table. */
+[data-bs-theme="dark"] .cdoc-tbl .cpd-prod__nm { color: #e2e8f0; }
 .cdoc-tbl .cpd-code {
   padding: 3px 7px;
   border-radius: 6px;
@@ -1675,17 +1678,127 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
   letter-spacing: -.3px;
   color: #0e7490;
 }
+/* The Necessary column speaks the lead popup's language (.lasm-need-*): a soft
+   tag that simply STATES the answer, and only the ticked row turns into two
+   pills. Borders are dropped — an outlined chip on every row read as a grid of
+   controls and pulled the eye off the document names. */
 .cdoc-req {
   display: inline-flex;
   padding: 3px 10px;
-  border: 1px solid #fde68a;
+  border: 0;
   border-radius: 999px;
-  background: #fef3c7;
-  font-size: 9px;
+  background: #d9f5f0;
+  font-size: 10px;
   font-weight: 800;
-  letter-spacing: .05em;
-  color: #b45309;
+  letter-spacing: .03em;
+  white-space: nowrap;
+  color: #0a8a78;
 }
+/* Answered No. Reads as the resting state, not as a warning — the send gate is
+   what enforces it, this only reports. */
+.cdoc-req--opt { background: #eef1f5; color: #94a3b8; }
+/* Nobody has answered yet — an open question, so it carries a little warmth
+   rather than sitting silently among the settled rows. */
+.cdoc-req--todo { background: #fef3c7; color: #b45309; }
+/* This PO said yes to an optional document — the same tag as Mandatory, since
+   both mean "it has to be signed for this PO". */
+.cdoc-req--need { background: #d9f5f0; color: #0a8a78; }
+
+/* Yes / No, shown on a ticked row: two separate pills, not a joined switch. */
+.cdoc-need { display: inline-flex; align-items: center; gap: 5px; }
+.cdoc-need__b {
+  min-width: 42px; padding: 4px 12px;
+  border: 1px solid #e2e8f0; border-radius: 999px; background: transparent;
+  font-family: inherit; font-size: 10.5px; font-weight: 800; letter-spacing: .03em; line-height: 1.5;
+  white-space: nowrap; color: #64748b; cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+/* Hover only on the pill that is NOT the current answer — otherwise it repaints
+   the chosen one and the answer looks unset while the pointer rests on it. */
+.cdoc-need__b:not(.is-yes):not(.is-no):hover:not(:disabled) { border-color: #cbd5e1; background: #f8fafc; }
+.cdoc-need__b.is-yes { background: #0ab39c; border-color: #0ab39c; color: #fff; }
+.cdoc-need__b.is-no { background: #94a3b8; border-color: #94a3b8; color: #fff; }
+.cdoc-need__b:disabled { opacity: .6; cursor: wait; }
+
+/* The selection bar that replaces the hint once rows are ticked — the lead
+   popup's shape (.lasm-bulk-bar): a solid pill that rises into the footer and
+   carries the marking actions on it, in this module's teal instead of purple.
+   Outlined buttons on the pale footer read as part of the table chrome; a
+   filled bar says "these rows are yours to act on now". */
+.cdoc-selbar {
+  /* Centred across the footer, like the lead's bar, while the send actions
+     keep the right edge — so it is lifted out of the flex row rather than
+     fighting it for space. */
+  position: absolute; left: 50%; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 12px;
+  padding: 9px 16px; border-radius: 16px; white-space: nowrap;
+  background: linear-gradient(135deg, #0b3d52, #0e7490 60%, #0891b2);
+  box-shadow: 0 12px 34px -12px rgba(8, 145, 178, .6), 0 3px 10px rgba(0, 0, 0, .16);
+  font-size: 12.5px; font-weight: 700; color: rgba(255, 255, 255, .82);
+  animation: cdocSelbarIn .22s cubic-bezier(.22, 1, .36, 1);
+}
+@keyframes cdocSelbarIn { from { opacity: 0; transform: translate(-50%, 10px); } }
+/* Too narrow for a centred bar and the send buttons on one line — back into
+   the flow, where the footer's own wrapping takes over. */
+@media (max-width: 1180px) {
+  .cdoc-selbar { position: static; transform: none; margin-right: auto; animation: none; }
+}
+.cdoc-selbar b { font-size: 13px; color: #fff; }
+.cdoc-selbar__x {
+  display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0;
+  border: 1.5px solid rgba(255, 255, 255, .25); border-radius: 8px;
+  background: rgba(255, 255, 255, .14); color: #fff; font-size: 14px; line-height: 1; cursor: pointer;
+  transition: background .15s;
+}
+.cdoc-selbar__x:hover { background: rgba(255, 255, 255, .24); color: #fff; }
+/* Marking a document Necessary is what people open this bar for, so it takes
+   the solid white; "Not necessary" is the quieter answer beside it. */
+.cdoc-markbtn {
+  height: 32px; padding: 0 14px; border: 1.5px solid #fff; border-radius: 10px; background: #fff;
+  font-family: inherit; font-size: 11.5px; font-weight: 800; color: #0e7490; cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .14);
+  transition: background .15s, border-color .15s;
+}
+.cdoc-markbtn:hover:not(:disabled) { background: #eafcff; }
+.cdoc-markbtn + .cdoc-markbtn {
+  border-color: rgba(255, 255, 255, .25); background: rgba(255, 255, 255, .14); color: #fff; box-shadow: none;
+}
+.cdoc-markbtn + .cdoc-markbtn:hover:not(:disabled) { background: rgba(255, 255, 255, .24); }
+.cdoc-markbtn:disabled { opacity: .55; cursor: default; }
+/* .cdoc-req--need needs no dark rule — it is the same tag as Mandatory.
+   Both dark rules exclude the answered pills, which keep their filled tone. */
+[data-bs-theme="dark"] .cdoc-need__b:not(.is-yes):not(.is-no) { background: rgba(255, 255, 255, .04); border-color: rgba(148, 163, 184, .25); color: #94a3b8; }
+[data-bs-theme="dark"] .cdoc-need__b:not(.is-yes):not(.is-no):hover:not(:disabled) { border-color: rgba(148, 163, 184, .45); background: rgba(255, 255, 255, .08); }
+[data-bs-theme="dark"] .cdoc-need__b.is-no { background: rgba(148, 163, 184, .55); border-color: rgba(148, 163, 184, .55); color: #f1f5f9; }
+/* The bar carries its own colour, so only its ramp softens in dark — its
+   buttons stay white / translucent white against it. */
+[data-bs-theme="dark"] .cdoc-selbar {
+  background: linear-gradient(135deg, rgba(14, 116, 144, .42), rgba(6, 182, 212, .24));
+  box-shadow: 0 10px 28px -14px rgba(0, 0, 0, .7);
+}
+
+/* Select Supplier + its pencil on one row; the dropdown takes the space. */
+.cpf-ddrow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cpf-ddrow > :first-child { flex: 1 1 auto; min-width: 0; }
+.cpf-editbtn {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 34px; height: 34px; border: 0; border-radius: 9px; cursor: pointer; color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #0e7490);
+  box-shadow: 0 3px 9px rgba(8, 145, 178, .3);
+  transition: filter .15s, transform .12s;
+}
+.cpf-editbtn:hover { transform: translateY(-1px); filter: brightness(1.06); }
+.cpf-editbtn svg { width: 15px; height: 15px; }
+
+/* Under the document name: which CLM library the row came from. */
+.cdoc-kind {
+  display: inline-block; margin-right: 7px; padding: 2px 7px; border-radius: 6px;
+  border: 1px solid #c8eef6; background: #eafcff;
+  font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #0e7490;
+}
+.cdoc-kind--agr { border-color: #ddd6fe; background: #f5f3ff; color: #6d28d9; }
+[data-bs-theme="dark"] .cdoc-kind { background: rgba(34, 211, 238, .12); border-color: rgba(34, 211, 238, .3); color: #67e8f9; }
+[data-bs-theme="dark"] .cdoc-kind--agr { background: rgba(139, 92, 246, .14); border-color: rgba(139, 92, 246, .35); color: #c4b5fd; }
 .cdoc-file {
   display: inline-flex;
   align-items: center;
@@ -1774,12 +1887,16 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 }
 
 .cdoc-foot {
+  /* The anchor the centred selection bar positions against. */
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 14px;
+  /* Room for the bar, which sits out of the flow and is taller than the buttons. */
+  min-height: 50px;
 }
 .cdoc-foot__hint { margin-right: auto; font-size: 11.5px; font-weight: 600; color: #5b7585; }
 .cdoc-send--sign {
@@ -1790,7 +1907,11 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 .cdoc-send:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
 
 [data-bs-theme="dark"] .cdoc-ref { color: #94a3b8; }
-[data-bs-theme="dark"] .cdoc-req { background: rgba(245, 158, 11, .16); border-color: rgba(245, 158, 11, .34); color: #fbbf24; }
+/* Kept together, and after the plain .cdoc-req rule — the modifiers carry the
+   same specificity, so a modifier declared earlier would lose to it. */
+[data-bs-theme="dark"] .cdoc-req { background: rgba(10, 179, 156, .16); color: #5eead4; }
+[data-bs-theme="dark"] .cdoc-req--opt { background: rgba(255, 255, 255, .06); color: #94a3b8; }
+[data-bs-theme="dark"] .cdoc-req--todo { background: rgba(245, 158, 11, .16); color: #fbbf24; }
 [data-bs-theme="dark"] .cdoc-file { background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .26); color: #67e8f9; }
 [data-bs-theme="dark"] .cdoc-status--signed { background: rgba(22, 163, 74, .16); border-color: rgba(34, 197, 94, .34); color: #4ade80; }
 [data-bs-theme="dark"] .cdoc-status--pending { background: rgba(245, 158, 11, .16); border-color: rgba(245, 158, 11, .34); color: #fbbf24; }
@@ -1849,8 +1970,9 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 .cdoc-tbl td:nth-child(8) { min-width: 180px; }
 .cdoc-tbl th:last-child,
 .cdoc-tbl td:last-child { width: 500px; }
-/* The hint belongs beside the buttons, not at the far edge. */
-.cdoc-foot__hint { margin-right: 0; }
+/* The hint takes the left corner and the send actions the right, so the footer
+   reads the same whether the hint or the selection bar is showing. */
+.cdoc-foot__hint { margin-right: auto; }
 .cdoc-foot { justify-content: flex-end; }
 
 /* ── Table that fills the screen ─────────────────────────────────────────

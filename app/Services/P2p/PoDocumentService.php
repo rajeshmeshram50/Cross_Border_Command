@@ -147,18 +147,22 @@ class PoDocumentService
         try {
             $expiryDays  = min(90, max(1, (int) ($opts['expiry_days'] ?? 30)));
             $requestName = 'Purchase Order ' . $po->code;
+            // One action per signer. `role` rides along so the coordinates the
+            // screen dragged for that signer can be found again after Zoho
+            // hands back its own action ids (ZohoSignService reads cbc_role).
+            $signers = $this->signerList($signer, $opts['signers'] ?? []);
             $body = ['requests' => [
                 'request_name'    => $requestName,
                 'is_sequential'   => false,
                 'expiration_days' => $expiryDays,
                 'notes'           => (string) ($opts['notes'] ?? 'Please review and sign the attached purchase order documents.'),
-                'actions'         => [[
-                    'recipient_email'  => $signer['email'],
-                    'recipient_name'   => $signer['name'],
+                'actions'         => array_map(fn ($i, $r) => [
+                    'recipient_email'  => $r['email'],
+                    'recipient_name'   => $r['name'],
                     'action_type'      => 'SIGN',
-                    'signing_order'    => 1,
+                    'signing_order'    => $i + 1,
                     'verify_recipient' => false,
-                ]],
+                ], array_keys($signers), $signers),
             ]];
             $names = array_map(fn ($f) => pathinfo($f['name'], PATHINFO_FILENAME) ?: 'document', $files);
 
@@ -169,8 +173,14 @@ class PoDocumentService
             $details   = $this->zoho->getRequest($requestId);
             $actions   = data_get($details, 'requests.actions', []);
             $zohoDocs  = data_get($details, 'requests.document_ids', []);
-            // No coordinates: Zoho places the signature box at the service default.
-            $this->zoho->submitWithFields($requestId, $actions, $zohoDocs, []);
+            // Stamp each Zoho action with its signer's role, then hand over the
+            // boxes the screen positioned. With no coordinates Zoho falls back
+            // to its own default placement, as before.
+            foreach ($actions as $i => $action) {
+                $actions[$i]['cbc_role'] = $signers[$i]['role'] ?? ('signer' . ($i + 1));
+            }
+            $coords = $this->coordsByZohoDoc($opts['document_settings'] ?? [], $docs, $zohoDocs);
+            $this->zoho->submitWithFields($requestId, $actions, $zohoDocs, $coords);
             $status = 'inprogress';
             try {
                 $status = strtolower((string) data_get($this->zoho->getRequest($requestId), 'requests.request_status', 'inprogress'));
@@ -189,7 +199,7 @@ class PoDocumentService
             $sig->zoho_request_id   = $requestId;
             $sig->request_name      = $requestName;
             $sig->status            = $status;
-            $sig->signers           = [['name' => $signer['name'], 'email' => $signer['email'], 'role' => 'supplier', 'order' => 1]];
+            $sig->signers           = array_map(fn ($i, $r) => $r + ['order' => $i + 1], array_keys($signers), $signers);
             $sig->expiry_date       = now()->addDays($expiryDays);
             $sig->metadata          = ['purchase_order_id' => $po->id, 'po_code' => $po->code, 'sent_at' => now()->toIso8601String()];
             $sig->created_by        = $userId;
@@ -205,6 +215,130 @@ class PoDocumentService
         } finally {
             foreach ($files as $f) @unlink($f['path']);
         }
+    }
+
+    /**
+     * Who signs, in order. The supplier's own contact is the default; a screen
+     * that collected several signers sends them instead. Each one keeps a role,
+     * which is what ties a signer to the box dragged for them.
+     *
+     * @return array<int,array{name:string,email:string,role:string}>
+     */
+    private function signerList(array $fallback, array $given): array
+    {
+        $out = [];
+        foreach ($given as $i => $row) {
+            $email = strtolower(trim((string) ($row['email'] ?? '')));
+            $name  = trim((string) ($row['name'] ?? ''));
+            if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) continue;
+            $out[] = [
+                'name'  => $name ?: $email,
+                'email' => $email,
+                'role'  => (string) ($row['role'] ?? ('signer' . ($i + 1))),
+            ];
+        }
+        if (!$out) $out[] = ['name' => $fallback['name'], 'email' => $fallback['email'], 'role' => 'supplier'];
+
+        // Zoho refuses the same recipient twice in one request.
+        $seen = [];
+        return array_values(array_filter($out, function ($r) use (&$seen) {
+            if (isset($seen[$r['email']])) return false;
+            $seen[$r['email']] = true;
+            return true;
+        }));
+    }
+
+    /**
+     * The screen positions boxes against OUR document ids; Zoho answers with its
+     * own, in the order the files were uploaded. This re-keys one to the other.
+     *
+     * Each entry is either a single box (x, y, page, width, height), a box per
+     * signer role, or a `boxes` array when one signer signs a document several
+     * times — ZohoSignService understands all three.
+     */
+    private function coordsByZohoDoc(array $settings, Collection $docs, array $zohoDocs): array
+    {
+        if (!$settings) return [];
+        $out = [];
+        foreach ($docs->values() as $i => $doc) {
+            $zohoId = $zohoDocs[$i]['document_id'] ?? null;
+            if (!$zohoId) continue;
+            $box = $settings[$doc->id] ?? $settings[(string) $doc->id] ?? null;
+            if (is_array($box) && $box) $out[$zohoId] = $box;
+        }
+        return $out;
+    }
+
+    /**
+     * Trade documents and agreements leave this screen through the CLM
+     * signature flow — the same POST /clm/signature-requests the Customer
+     * vault, the lead's popup and the older PO screen use. That request is
+     * raised against the CLM LIBRARY id, so it knows nothing about our rows.
+     *
+     * This claims those requests for the PO's own documents, matching on the
+     * library the row came from plus its library id. Without it the row would
+     * sit on "Pending" for ever and the unsigned-paperwork gate would let the
+     * next PO through.
+     *
+     * A later request wins over an earlier one, so a document that was recalled
+     * and sent again tracks the resend. A signed document is left alone.
+     */
+    public function adoptClmSignatures(PurchaseOrder $po): void
+    {
+        if (!$po->vendor_id) return;
+        $docs = $po->documents()->whereNotNull('source_type')->whereNotNull('source_id')->get();
+        if ($docs->isEmpty()) return;
+
+        $requests = ClmSignatureRequest::where('client_id', $po->client_id)
+            ->where('model_name', 'Vendor')
+            ->where('party_id', $po->vendor_id)
+            ->whereIn('document_type', [ClmSignatureRequest::DOC_TRADE, ClmSignatureRequest::DOC_AGREEMENT])
+            ->orderBy('id')                       // oldest first — the newest overwrites it
+            ->get(['id', 'document_type', 'trade_doc_id', 'trade_doc_ids', 'metadata', 'status', 'created_at']);
+
+        foreach ($requests as $sig) {
+            foreach ($this->libraryIdsOf($sig) as $kind => $libIds) {
+                foreach ($docs as $doc) {
+                    if ($doc->source_type !== $kind || !in_array((int) $doc->source_id, $libIds, true)) continue;
+                    if ((int) $doc->signature_request_id === (int) $sig->id) continue;
+                    // Already signed under another request — nothing to re-claim.
+                    if ($doc->status === PurchaseOrderDocument::STATUS_SIGNED) continue;
+                    $doc->forceFill([
+                        'signature_request_id' => $sig->id,
+                        'status'               => PurchaseOrderDocument::STATUS_SENT,
+                        'sent_at'              => $sig->created_at,
+                    ])->save();
+                }
+            }
+        }
+    }
+
+    /**
+     * Which library each id in a signature request came from, as
+     * ['trade' => [...ids], 'agreement' => [...ids]].
+     *
+     * One envelope can carry both libraries, and a trade document and an
+     * agreement can share a numeric id — so `metadata.doc_kind_ids` holds the
+     * real split. Requests written before that shipped fall back to
+     * `document_type`, which is the same rule the Evidence Vault follows.
+     *
+     * @return array<string,int[]>
+     */
+    private function libraryIdsOf(ClmSignatureRequest $sig): array
+    {
+        $ours = [ClmSignatureRequest::DOC_TRADE => 'trade', ClmSignatureRequest::DOC_AGREEMENT => 'agreement'];
+        $split = (array) data_get($sig->metadata, 'doc_kind_ids', []);
+        $out = [];
+        foreach ($ours as $clmKind => $kind) {
+            if (!empty($split[$clmKind])) $out[$kind] = array_map('intval', (array) $split[$clmKind]);
+        }
+        if ($out) return $out;
+
+        $ids = is_array($sig->trade_doc_ids) && $sig->trade_doc_ids
+            ? $sig->trade_doc_ids
+            : ($sig->trade_doc_id !== null ? [$sig->trade_doc_id] : []);
+        if (!$ids) return [];
+        return [$ours[$sig->document_type] ?? 'trade' => array_map('intval', $ids)];
     }
 
     /**

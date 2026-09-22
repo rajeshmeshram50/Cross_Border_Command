@@ -12,26 +12,41 @@ import type { SupplierScope } from '../../../p2p-master-management/supplier-mana
 const SupplierScopeGate = lazyPage(() => import('../../../p2p-master-management/supplier-management/SupplierScopeGate'));
 const AddVendorModal = lazyPage(() => import('../../../p2p-master-management/supplier-management/AddVendorModal'));
 
-export default function AddSupplierFlow({ onClose }: { onClose: () => void }) {
+export default function AddSupplierFlow({ vendorId, onClose, onSaved }: {
+  /** Set to edit that supplier instead of onboarding a new one. */
+  vendorId?: number | null;
+  onClose: () => void;
+  /** After a successful save — the PO re-reads the supplier with this. */
+  onSaved?: () => void;
+}) {
   const toast = useToast();
   // null = still choosing the origin; set = the wizard is open for that scope.
+  // Editing skips the choice: the supplier already has an origin.
   const [scope, setScope] = useState<SupplierScope | null>(null);
+  const editing = !!vendorId;
 
   // Portalled to <body> so these compete with the PO form as page-level layers
   // (create-po.css drops the form beneath them while they are open).
   return createPortal(
     <Suspense fallback={null}>
-      {scope === null ? (
+      {!editing && scope === null ? (
         <SupplierScopeGate onClose={onClose} onChoose={setScope} />
       ) : (
         <AddVendorModal
-          scope={scope}
-          // The PO form isn't the place to map products to a new supplier.
+          vendorId={vendorId ?? undefined}
+          scope={scope ?? undefined}
+          // The PO form isn't the place to map products to a supplier.
           canMapProducts={false}
           onClose={onClose}
           onSubmit={(payload) => {
             onClose();
-            toast.success('Supplier added', `${payload.companyName} was added to the supplier master.`);
+            onSaved?.();
+            toast.success(
+              editing ? 'Supplier updated' : 'Supplier added',
+              editing
+                ? `${payload.companyName}'s details were saved.`
+                : `${payload.companyName} was added to the supplier master.`,
+            );
           }}
         />
       )}

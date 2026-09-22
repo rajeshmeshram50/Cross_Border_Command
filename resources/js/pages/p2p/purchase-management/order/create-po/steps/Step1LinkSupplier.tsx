@@ -15,10 +15,11 @@ import { DOC_TYPE_OPTIONS, PO_TYPE_OPTIONS, type PoDraft, type SetDraft } from '
 import type { StepCtx } from '../CreatePoForm';
 import { MasterDatePicker } from '../../../../../../components/ui/MasterDatePicker';
 import { MasterSelect } from '../../../../../../components/ui/MasterSelect';
+import Tooltip from '../../../../../../components/ui/Tooltip';
 import { formatDmy } from '../../../../../../utils/formatDmy';
 import { useToast } from '../../../../../../contexts/ToastContext';
 import type { SupplierDetail } from '../../api/po-api';
-import { IcoAlert, IcoCheck, IcoChevron, IcoClock, IcoDocSm, IcoFile, IcoLock, IcoOk, IcoPin, IcoPlus, IcoShield, IcoStop, IcoUser, IcoWarn } from '../../shared/icons';
+import { IcoAlert, IcoCheck, IcoChevron, IcoClock, IcoDocSm, IcoFile, IcoLock, IcoOk, IcoPencil, IcoPin, IcoPlus, IcoShield, IcoStop, IcoUser, IcoWarn } from '../../shared/icons';
 
 // Fixed choices with no master behind them; saved as the chosen text.
 const PO_TYPES = PO_TYPE_OPTIONS.map((o) => o.label);
@@ -52,6 +53,8 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
   const [riskOpen, setRiskOpen] = useState(true);
   // "+ Add Supplier": the Supplier master's own Domestic / International chooser, then its wizard.
   const [addingSupplier, setAddingSupplier] = useState(false);
+  // The pencil beside the dropdown opens the same wizard on the picked supplier.
+  const [editingSupplier, setEditingSupplier] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
 
   const isInternational = draft.docType === 'International';
@@ -117,6 +120,17 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
     {addingSupplier && (
       <Suspense fallback={null}>
         <AddSupplierFlow onClose={() => setAddingSupplier(false)} />
+      </Suspense>
+    )}
+    {editingSupplier && draft.vendorId && (
+      <Suspense fallback={null}>
+        {/* Saving re-reads the supplier, so the read-only fields, the GST
+            banner and the risk panel all follow the edit. */}
+        <AddSupplierFlow
+          vendorId={draft.vendorId}
+          onClose={() => setEditingSupplier(false)}
+          onSaved={() => { if (draft.vendorId) void onPickSupplier(draft.vendorId); }}
+        />
       </Suspense>
     )}
     {vaultOpen && vaultTarget && (
@@ -242,14 +256,25 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
           {supCardOpen && (
           <div className="spi-dt-grid4 cpf-grid5">
             <Field label="SELECT SUPPLIER" req error={err.supplier}>
-              <MasterSelect
-                invalid={!!err.supplier}
-                value={draft.vendorId ? String(draft.vendorId) : ''}
-                currentValueLabel={pickedOption}
-                options={supplierSelectOptions}
-                onChange={(id) => { const o = supplierOptions.find((x) => String(x.id) === id); if (o) void pickSupplier(o.label); }}
-                placeholder={lookups.loading && !supplierOptions.length ? 'Loading suppliers…' : '— Select Supplier —'}
-              />
+              {/* The pencil shares the row with the dropdown, flush to its right. */}
+              <div className="cpf-ddrow">
+                <MasterSelect
+                  invalid={!!err.supplier}
+                  value={draft.vendorId ? String(draft.vendorId) : ''}
+                  currentValueLabel={pickedOption}
+                  options={supplierSelectOptions}
+                  onChange={(id) => { const o = supplierOptions.find((x) => String(x.id) === id); if (o) void pickSupplier(o.label); }}
+                  placeholder={lookups.loading && !supplierOptions.length ? 'Loading suppliers…' : '— Select Supplier —'}
+                />
+                {draft.vendorId && (
+                  <Tooltip label="Edit this supplier's details" themed>
+                    <button type="button" className="cpf-editbtn" aria-label="Edit selected supplier"
+                      onClick={() => setEditingSupplier(true)}>
+                      <IcoPencil />
+                    </button>
+                  </Tooltip>
+                )}
+              </div>
             </Field>
             {/* Everything below comes from the supplier master and is read-only here. */}
             <Field label="COMPANY LEGAL NAME">

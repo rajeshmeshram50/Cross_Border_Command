@@ -98,7 +98,13 @@ export type PoItem = {
 
 export type PoDocument = {
   id: number; code: string; name: string; doc_kind: 'purchase_order' | 'agreement' | 'other';
+  /** The CLM library the row came from — null for the Purchase Order itself. */
+  source_type: 'trade' | 'agreement' | null; source_id: number | null;
+  /** The library's own sub-title: document type / agreement type. */
+  doc_sub: string | null;
   is_required: YesNo; generated_on: string | null; valid_up_to: string | null;
+  /** This PO's own answer. null = nobody decided yet, which is not the same as 'no'. */
+  needed: YesNo | null;
   file_path: string | null; original_name: string | null; file_url: string | null;
   status: 'pending' | 'sent' | 'signed'; sent_at: string | null; signed_at: string | null;
   /** Zoho Sign request (shared /clm/signature-requests) and this file's place in it. */
@@ -262,6 +268,10 @@ export const poApi = {
 const multipart = { headers: { 'Content-Type': 'multipart/form-data' } };
 
 export const poDocumentApi = {
+  /** Mark documents Necessary / Not necessary on this PO — one call for the set. */
+  setNeeds: (poId: number, items: { id: number; needed: boolean }[]) =>
+    call('PO document decisions', () => api.post(`/p2p/orders/${poId}/documents/needs`, { items }), dataOf<PoDocument[]>),
+
   list: (poId: number) =>
     call('PO documents', () => api.get(`/p2p/orders/${poId}/documents`), dataOf<PoDocument[]>),
 

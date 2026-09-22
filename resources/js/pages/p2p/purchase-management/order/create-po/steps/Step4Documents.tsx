@@ -1,4 +1,8 @@
 // Create PO — Step 04: Post PO Trade Document Management.
+// The rows come from the CLM Trade Document / Agreement libraries that apply to
+// the PO's product segments (seeded on submit), plus the Purchase Order itself.
+// One list: each row says under its name whether it is a trade document or an
+// agreement, and "mandatory" mirrors the library's highly-regulated flag.
 // The recap of stages 01–03, then the documents raised against this PO (created
 // on submit; the Purchase Order PDF is generated then). Selected documents can
 // be emailed or sent to the supplier for e-signature via Zoho Sign; the signing
@@ -11,6 +15,7 @@ import { vaultTargetOf } from '../supplier-checks';
 import { PoApiError, poDocumentApi, poSignatureApi, type PoDocument } from '../../api/po-api';
 import { formatDmy } from '../../../../../../utils/formatDmy';
 import { FitTip } from '../form-fields';
+import Tooltip from '../../../../../../components/ui/Tooltip';
 import { useToast } from '../../../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../../../contexts/ConfirmContext';
 import { IcoCertificate, IcoChevron, IcoDownload, IcoFolder, IcoHistory, IcoMail, IcoPaperclip, IcoSend, IcoShield, IcoUpload } from '../../shared/icons';
@@ -18,8 +23,26 @@ import { IcoCertificate, IcoChevron, IcoDownload, IcoFolder, IcoHistory, IcoMail
 const SupplierEvidenceVaultModal = lazy(() => import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 const warmVault = () => { void import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'); };
 const SigningTrackerModal = lazy(() => import('../../../../../sales/opportunity-pipeline/SigningTrackerModal').then((m) => ({ default: m.SigningTrackerModal })));
+/* The Zoho Sign sender the Customer vault, the lead's popup and the older PO
+   screen all use — preview, draggable signature box, signers, expiry. */
+const SendForSignatureModal = lazy(() => import('../../../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal'));
 
 const isSigned = (doc: PoDocument) => doc.status === 'signed';
+/* Which library a row came from. Rows created before the libraries were wired
+   in carry no source, so the old doc_kind still decides for them. */
+const isAgreement = (doc: PoDocument) =>
+  doc.source_type === 'agreement' || (doc.source_type == null && doc.doc_kind === 'agreement');
+/* Only the Purchase Order itself is necessary outright — its own kind says so,
+   which also settles the rows seeded before the marking existed. Everything
+   else is this PO's own call, and nobody has decided until somebody answers
+   here, which is not the same as "not necessary". */
+const isMandatory = (doc: PoDocument) => doc.doc_kind === 'purchase_order';
+/* A row that came from a CLM library is signed through the CLM flow: the
+   request is raised against the library id and the document is rendered
+   server-side, so it needs no file of its own. The Purchase Order PDF and any
+   uploaded file are ours, and go through this module's own send. */
+const libraryOf = (doc: PoDocument): 'trade' | 'agreement' | null =>
+  doc.source_id != null && (doc.source_type === 'trade' || doc.source_type === 'agreement') ? doc.source_type : null;
 /* Why the signed-only actions are greyed out, shown on hover. */
 const NOT_SIGNED_YET = 'Available once the document is signed';
 
@@ -54,6 +77,16 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   // Key of the action in flight ("sign", "email", "dl:12", …) — its button shows busy.
   const [busy, setBusy] = useState<string | null>(null);
   const [tracking, setTracking] = useState<PoDocument | null>(null);
+  /* The CLM library documents handed to the signature modal — trade documents
+     by library id, agreements alongside them in the same envelope. */
+  const [signing, setSigning] = useState<{
+    rows: PoDocument[];
+    trade: number[];
+    agreements: Array<{ id: number; name: string; code?: string; sub?: string }>;
+  } | null>(null);
+  /* Our own files (the Purchase Order PDF, anything uploaded here) — they have
+     no library row, so they go through this module's own send. */
+  const [rawSigning, setRawSigning] = useState<PoDocument[] | null>(null);
   const uploadFor = useRef<PoDocument | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -86,6 +119,24 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   };
 
   const patchDoc = (doc: PoDocument) => setDocs((all) => all.map((d) => (d.id === doc.id ? doc : d)));
+
+  /* One request for the whole set — marking six documents is one round trip,
+     the way the lead's popup does it. The Purchase Order is left out: it goes
+     with the order whatever anyone says. */
+  const setNeeds = (ids: number[], needed: boolean) => {
+    const targets = docs.filter((d) => ids.includes(d.id) && !isMandatory(d));
+    if (!targets.length) {
+      toast.info('Nothing to change', 'The Purchase Order is always necessary.');
+      return;
+    }
+    void run('needs', async () => {
+      setDocs(await poDocumentApi.setNeeds(poId as number, targets.map((d) => ({ id: d.id, needed }))));
+      toast.success(
+        `${targets.length} document${targets.length === 1 ? '' : 's'} marked ${needed ? 'Necessary' : 'Not necessary'}`,
+        needed ? 'They have to be signed for this PO.' : 'They will not be chased for this PO.',
+      );
+    });
+  };
 
   const downloadDraft = (doc: PoDocument) => run(`dl:${doc.id}`, async () => {
     saveBlob(await poDocumentApi.download(poId as number, doc.id), doc.original_name || `${doc.code.replace(/\//g, '_')}.pdf`);
@@ -128,22 +179,32 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   const supplierEmail = draft.supplier?.email ?? '';
 
   const sendForSignature = () => {
-    if (noFile.length) { toast.warning('File missing', `Attach a file first: ${noFile.map((d) => d.name).join(', ')}.`); return; }
     if (notPending.length) { toast.warning('Already sent', `${notPending.map((d) => d.name).join(', ')} is already sent or signed.`); return; }
-    void (async () => {
-      const ok = await confirm({
-        title: 'Send for e-signature?',
-        message: `${chosen.length} document${chosen.length === 1 ? '' : 's'} will be sent to ${supplierName}${supplierEmail ? ` (${supplierEmail})` : ''} for signature via Zoho Sign.`,
-        tone: 'info', confirmLabel: 'Send for Signature', icon: 'quill-pen-line',
+
+    const lib = chosen.filter((d) => libraryOf(d));
+    const own = chosen.filter((d) => !libraryOf(d));
+
+    if (lib.length) {
+      if (!vaultTarget?.db_id) { toast.error('Supplier required', 'Select a supplier before sending documents for signature.'); return; }
+      // Our own files cannot ride in a CLM envelope — that request is built
+      // from the library, not from an upload. Say so rather than dropping them.
+      if (own.length) {
+        toast.info('Sent separately', `${own.map((d) => d.name).join(', ')} is not a library document — send it on its own after this.`);
+      }
+      setSigning({
+        rows: lib,
+        trade: lib.filter((d) => libraryOf(d) === 'trade').map((d) => d.source_id as number),
+        // Agreements ride in the SAME envelope as the trade documents, so the
+        // supplier gets one email for the whole set (the Case-to-Case pattern).
+        agreements: lib.filter((d) => libraryOf(d) === 'agreement')
+          .map((d) => ({ id: d.source_id as number, name: d.name, code: d.code, sub: d.doc_sub ?? undefined })),
       });
-      if (!ok) return;
-      await run('sign', async () => {
-        const res = await poDocumentApi.sign(poId as number, selected);
-        setDocs(res.documents);
-        setSelected([]);
-        toast.success('Sent for signature', `Zoho Sign emailed ${res.signer.email}.`);
-      });
-    })();
+      return;
+    }
+
+    const missing = own.filter((d) => !d.file_path);
+    if (missing.length) { toast.warning('File missing', `Attach a file first: ${missing.map((d) => d.name).join(', ')}.`); return; }
+    setRawSigning(own);
   };
 
   const sendEmail = () => {
@@ -180,6 +241,75 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
         <Suspense fallback={null}>
           {/* Not view-only: missing documents can be uploaded here, and the legal status refreshes. */}
         <SupplierEvidenceVaultModal open supplier={vaultTarget} onVaultChange={ctx.refreshVault} onClose={() => setVaultOpen(false)} />
+        </Suspense>
+      )}
+      {/* Library documents → the CLM signature flow. The request is raised
+          against the library id and the document is rendered server-side, so
+          the row needs no upload; the PO picks the request back up on reload
+          (PoDocumentService::adoptClmSignatures) for the tracker, the signed
+          copy, the certificate and the unsigned-paperwork gate. */}
+      {signing && vaultTarget && (
+        <Suspense fallback={null}>
+          <SendForSignatureModal
+            open
+            /* A supplier's company signature is wider than the 150pt default
+               and Zoho does not shrink it to fit. */
+            boxSize={{ width: 240, height: 55 }}
+            modelName="Vendor"
+            /* One person may have to sign the same document in more than one
+               place (Legal Team #9). */
+            multiBox
+            customer={vaultTarget}
+            preselectedDocIds={signing.trade}
+            mixedAgreements={signing.agreements}
+            onClose={() => setSigning(null)}
+            onSent={() => {
+              const sent = signing.rows.map((d) => d.id);
+              setSigning(null);
+              setSelected((all) => all.filter((id) => !sent.includes(id)));
+              reload();
+            }}
+          />
+        </Suspense>
+      )}
+      {/* The Purchase Order PDF and anything uploaded here — no library row, so
+          they go out through this module's own send. */}
+      {rawSigning && poId && (
+        <Suspense fallback={null}>
+          <SendForSignatureModal
+            open
+            boxSize={{ width: 240, height: 55 }}
+            modelName="Vendor"
+            multiBox
+            customer={{
+              id: draft.supplier?.code ?? 'supplier',
+              db_id: draft.vendorId ?? undefined,
+              company: supplierName,
+              contact: draft.supplier?.contact ?? undefined,
+              email: supplierEmail || undefined,
+            }}
+            rawPdfContext={{
+              docId: rawSigning[0].id,
+              code: rawSigning[0].code,
+              title: rawSigning[0].name,
+              previewUrl: `/p2p/orders/${poId}/documents/${rawSigning[0].id}/download`,
+              docs: rawSigning.map((d) => ({
+                docId: d.id,
+                code: d.code,
+                title: d.name,
+                previewUrl: `/p2p/orders/${poId}/documents/${d.id}/download`,
+              })),
+              sendUrl: `/p2p/orders/${poId}/documents/sign`,
+              extraPayload: { document_ids: rawSigning.map((d) => d.id) },
+            }}
+            onClose={() => setRawSigning(null)}
+            onSent={() => {
+              const sent = rawSigning.map((d) => d.id);
+              setRawSigning(null);
+              setSelected((all) => all.filter((id) => !sent.includes(id)));
+              reload();
+            }}
+          />
         </Suspense>
       )}
       {tracking?.signature_request_id != null && (
@@ -224,7 +354,7 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                   <th>Sr. No</th>
                   <th>Document Code</th>
                   <th className="cpd-th-left">Document Name</th>
-                  <th>Required Status</th>
+                  <th>Necessary</th>
                   <th>Generated On</th>
                   <th>Valid Up To</th>
                   <th>Document Attachment</th>
@@ -248,9 +378,43 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                       <td><span className="cpd-code">{doc.code}</span></td>
                       <td className="cpd-td-left">
                         <div className="cpd-prod__nm">{doc.name}</div>
-                        <div className="cdoc-ref">{doc.doc_kind === 'purchase_order' ? (ctx.detail?.code ?? '') : doc.doc_kind === 'agreement' ? 'Agreement' : 'Other'}</div>
+                        {/* Under the name: which library the row belongs to, then
+                            that library's own type. */}
+                        <div className="cdoc-ref">
+                          <span className={`cdoc-kind${isAgreement(doc) ? ' cdoc-kind--agr' : ''}`}>
+                            {isAgreement(doc) ? 'Agreement' : 'Trade Document'}
+                          </span>
+                          {doc.doc_kind === 'purchase_order' ? (ctx.detail?.code ?? '') : doc.doc_sub}
+                        </div>
                       </td>
-                      <td>{doc.is_required === 'yes' && <span className="cdoc-req">REQ</span>}</td>
+                      <td>
+                        {isMandatory(doc) ? (
+                          <Tooltip label="The Purchase Order always goes with the order — it cannot be marked not necessary" themed>
+                            <span className="cdoc-req">NECESSARY</span>
+                          </Tooltip>
+                        ) : selected.includes(doc.id) ? (
+                          /* Ticking a row is already the "I am dealing with this
+                             one" gesture, so the Yes / No ride on it. */
+                          <span className="cdoc-need">
+                            <button type="button" disabled={busy === 'needs'}
+                              className={`cdoc-need__b${doc.needed === 'yes' ? ' is-yes' : ''}`}
+                              onClick={() => setNeeds([doc.id], true)}>Yes</button>
+                            <button type="button" disabled={busy === 'needs'}
+                              className={`cdoc-need__b${doc.needed === 'no' ? ' is-no' : ''}`}
+                              onClick={() => setNeeds([doc.id], false)}>No</button>
+                          </span>
+                        ) : doc.needed == null ? (
+                          /* Undecided. It must not read as "not necessary" —
+                             nobody has answered for this PO yet. */
+                          <Tooltip label="Not decided yet — tick the row to mark it Necessary or Not necessary" themed>
+                            <span className="cdoc-req cdoc-req--todo">NOT DECIDED</span>
+                          </Tooltip>
+                        ) : (
+                          <span className={`cdoc-req${doc.needed === 'yes' ? ' cdoc-req--need' : ' cdoc-req--opt'}`}>
+                            {doc.needed === 'yes' ? 'NECESSARY' : 'NOT NECESSARY'}
+                          </span>
+                        )}
+                      </td>
                       <td>{doc.generated_on ? formatDmy(doc.generated_on) : '—'}</td>
                       <td>{doc.valid_up_to ? formatDmy(doc.valid_up_to) : '—'}</td>
                       <td>
@@ -308,7 +472,20 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
           </div>
 
           <div className="cdoc-foot">
-            <span className="cdoc-foot__hint">Select documents to send for signature or email them together</span>
+            {selected.length > 0 ? (
+              <span className="cdoc-selbar">
+                <b>{selected.length}</b> selected
+                <button type="button" className="cdoc-selbar__x" aria-label="Clear selection" onClick={() => setSelected([])}>×</button>
+                <button type="button" className="cdoc-markbtn" disabled={busy === 'needs'} onClick={() => setNeeds(selected, true)}>
+                  Mark Necessary
+                </button>
+                <button type="button" className="cdoc-markbtn" disabled={busy === 'needs'} onClick={() => setNeeds(selected, false)}>
+                  Mark Not necessary
+                </button>
+              </span>
+            ) : (
+              <span className="cdoc-foot__hint">Select documents to mark them necessary, or to send / email them together</span>
+            )}
             <button type="button" className="cdoc-send" disabled={selected.length === 0 || busy === 'email'} onClick={sendEmail}>
               <IcoMail size={13} /> {busy === 'email' ? 'Sending…' : 'Send Selected Via Email'}
             </button>

@@ -548,6 +548,11 @@ class PurchaseOrderController extends Controller
                 };
                 return $this->fail($msg, 422, ['gst' => $gst, 'gst_approval_status' => $approval?->status]);
             }
+            // Paperwork gate: the supplier's earlier orders must be clean first.
+            $pending = $this->unsignedMandatoryDocuments($po);
+            if ($pending) {
+                return $this->fail($this->unsignedDocumentsMessage($pending), 422, ['pending_documents' => $pending]);
+            }
         }
 
         $this->inTransaction($submit ? 'submit the PO' : 'save the terms', function () use ($po, $user, $data, $submit) {
@@ -564,25 +569,97 @@ class PurchaseOrderController extends Controller
         return $this->ok($this->shapeDetail($po->fresh()));
     }
 
-    /** The two documents Stage 04 always carries, created once on submission. */
+    /**
+     * Stage 04's documents, created once on submission: the Purchase Order
+     * itself, then every trade document and agreement the CLM libraries hold
+     * for the PO's product segments (see PurchaseOrderService::segmentDocuments).
+     * Re-submitting adds only what is missing — a row already there, with its
+     * file or signature, is never touched.
+     */
     private function ensureDefaultDocuments(PurchaseOrder $po, int $userId): void
     {
-        foreach ([['purchase_order', 'Purchase Order'], ['agreement', 'Purchase Agreement']] as [$kind, $name]) {
-            if ($po->documents()->where('doc_kind', $kind)->exists()) continue;
+        $rows = array_merge(
+            [['source_type' => null, 'source_id' => null, 'name' => 'Purchase Order', 'sub' => null,
+                'kind' => 'purchase_order', 'required' => true]],
+            array_map(fn ($d) => [
+                'source_type' => $d['source_type'],
+                'source_id'   => $d['source_id'],
+                'name'        => $d['name'],
+                'sub'         => $d['sub'] ?: null,
+                'kind'        => $d['source_type'] === 'agreement' ? 'agreement' : 'other',
+                /* Only the Purchase Order is required outright. Whether a trade
+                   document or an agreement has to be signed for THIS order is
+                   decided on Stage 04 (Necessary / Not necessary) — the
+                   library's regulated flag no longer settles it in advance. */
+                'required'    => false,
+            ], $this->svc->segmentDocuments($po)),
+        );
+
+        foreach ($rows as $row) {
+            $exists = $row['source_type'] === null
+                ? $po->documents()->where('doc_kind', 'purchase_order')->exists()
+                : $po->documents()->where('source_type', $row['source_type'])->where('source_id', $row['source_id'])->exists();
+            if ($exists) continue;
+
             PurchaseOrderDocument::create([
                 'client_id'         => $po->client_id,
                 'branch_id'         => $po->branch_id,
                 'purchase_order_id' => $po->id,
                 'code'              => $this->svc->nextDocCode((int) $po->client_id),
-                'name'              => $name,
-                'doc_kind'          => $kind,
-                'is_required'       => 'yes',
+                'name'              => $row['name'],
+                'doc_sub'           => $row['sub'],
+                'doc_kind'          => $row['kind'],
+                'source_type'       => $row['source_type'],
+                'source_id'         => $row['source_id'],
+                'is_required'       => $row['required'] ? 'yes' : 'no',
                 'generated_on'      => now()->toDateString(),
                 'status'            => PurchaseOrderDocument::STATUS_PENDING,
                 'created_by'        => $userId,
                 'updated_by'        => $userId,
             ]);
         }
+    }
+
+    /**
+     * Documents still unsigned on this supplier's EARLIER purchase orders —
+     * the ones that order marked Necessary. Only documents that came from the
+     * CLM libraries count; the Purchase Order PDF of an older order does not
+     * hold up the next one. Cancelled orders are ignored: nothing is expected
+     * of them any more.
+     *
+     * @return array<int,array{po_id:int,po_code:string,document:string}>
+     */
+    private function unsignedMandatoryDocuments(PurchaseOrder $po): array
+    {
+        if (!$po->vendor_id) return [];
+
+        return DB::table('p2p_purchase_order_documents as d')
+            ->join('p2p_purchase_orders as o', 'o.id', '=', 'd.purchase_order_id')
+            ->where('o.client_id', $po->client_id)
+            ->where('o.vendor_id', $po->vendor_id)
+            ->where('o.id', '!=', $po->id)
+            ->where('o.status', '!=', PurchaseOrder::STATUS_CANCELLED)
+            ->whereNull('o.deleted_at')
+            ->whereNull('d.deleted_at')
+            ->where('d.needed', 'yes')
+            ->whereNotNull('d.source_type')
+            ->where('d.status', '!=', PurchaseOrderDocument::STATUS_SIGNED)
+            ->orderBy('o.id')
+            ->get(['o.id as po_id', 'o.code as po_code', 'd.name as document'])
+            ->map(fn ($r) => ['po_id' => (int) $r->po_id, 'po_code' => (string) $r->po_code, 'document' => (string) $r->document])
+            ->all();
+    }
+
+    /** "PO/2026-27/007: ADSD, Cert of Origin" — what has to be signed, and where. */
+    private function unsignedDocumentsMessage(array $pending): string
+    {
+        $byPo = [];
+        foreach ($pending as $row) $byPo[$row['po_code']][] = $row['document'];
+        $parts = [];
+        foreach ($byPo as $code => $names) $parts[] = $code . ': ' . implode(', ', $names);
+
+        return 'This supplier has necessary documents still unsigned on an earlier purchase order — '
+            . implode(' · ', $parts) . '. Get them signed before issuing this PO.';
     }
 
     /* ══════════════════════════ CANCEL / DELETE ══════════════════════════ */
