@@ -273,6 +273,23 @@ class ClmTradeDocumentController extends Controller
         ]);
     }
 
+    /**
+     * GET /clm/trade-doc-library/{id} — one document in full (content + letterhead).
+     * The list (?view=list) leaves these out, so the editor loads the row from here.
+     */
+    public function libraryShow(Request $request, $id)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $query = ClmTradeDocLibrary::query();
+        MasterVisibility::applyReadScope($query, $user, $request->integer('branch_id') ?: null);
+        $row = $query->findOrFail((int) $id);
+
+        $signedIds = ClmSignatureRequest::signedDraftIds($user->client_id, ClmSignatureRequest::DOC_TRADE);
+        $row->setAttribute('is_signed', in_array((int) $row->id, $signedIds, true));
+
+        return response()->json(['status' => true, 'data' => $row]);
+    }
+
     public function libraryStore(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -359,6 +376,18 @@ class ClmTradeDocumentController extends Controller
         // Measured against what is already stored, so an over-limit document
         // can still be saved while it is being cut back down.
         if ($over = $this->contentOverLimit($data, mb_strlen((string) $row->content))) return $over;
+
+        // Never let a save replace a document that has text with an empty one — that is how a
+        // blank editor silently wiped drafts. Clearing on purpose needs `clear_content: true`.
+        $isBlank = fn ($html) => trim(html_entity_decode(strip_tags((string) $html)), " \t\n\r\0\x0B\xC2\xA0") === '';
+        if (array_key_exists('content', $data) && $isBlank($data['content']) && !$isBlank($row->content)
+            && !$request->boolean('clear_content')) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This save would erase the whole document content, so it was not saved. Reopen the document and try again.',
+                'errors'  => ['content' => ['The document content cannot be emptied.']],
+            ], 422);
+        }
 
         $data['updated_by'] = $user->id;
         // If the editor content was edited and saved, the previously-uploaded

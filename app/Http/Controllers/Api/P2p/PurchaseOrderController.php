@@ -428,6 +428,8 @@ class PurchaseOrderController extends Controller
             $effective[$i] = !empty($line['product_id']) ? (int) $line['product_id'] : (int) ($pi->product_id ?? 0);
         }
         $products = $this->loadProducts(array_values(array_filter($effective)));
+        // A PO orders only products in a segment its supplier deals in.
+        $supplierSegments = $this->vendorSegmentIds((int) $po->vendor_id);
         foreach ($data['lines'] as $i => $line) {
             if (isset($errors["lines.$i.pi_item_id"])) continue;
             $field = !empty($line['product_id']) ? "lines.$i.product_id" : "lines.$i.pi_item_id";
@@ -436,6 +438,9 @@ class PurchaseOrderController extends Controller
             } elseif ($products->get($effective[$i])->gst_pct === null) {
                 // Purchase GST comes only from the product master, never the sales PI.
                 $errors[$field] = ['This product has no GST % in the product master — set it there first.'];
+            } elseif (!in_array((int) $products->get($effective[$i])->segment_id, $supplierSegments, true)) {
+                $seg = $products->get($effective[$i])->segment_name ?: 'no segment';
+                $errors[$field] = ["Segment mismatch — this product is in {$seg}, which is not mapped to the supplier. Add the segment to the supplier first."];
             }
         }
         if ($errors) throw ValidationException::withMessages($errors);
@@ -706,6 +711,15 @@ class PurchaseOrderController extends Controller
             && (str_contains($cat, 'high') || str_contains($cat, 'blacklist'));
     }
 
+    /** Segment ids a supplier deals in: the vendor_segments mapping, else its single legacy segment. */
+    private function vendorSegmentIds(int $vendorId): array
+    {
+        if (!$vendorId) return [];
+        $ids = DB::table('vendor_segments')->where('vendor_id', $vendorId)->pluck('segment_id')->map(fn ($v) => (int) $v)->all();
+        if (!$ids && ($legacy = DB::table('vendors')->where('id', $vendorId)->value('segment_id'))) $ids = [(int) $legacy];
+        return $ids;
+    }
+
     /** Products of this tenant with their GST %, HSN and UOM resolved from the masters. */
     private function loadProducts(array $ids)
     {
@@ -716,7 +730,8 @@ class PurchaseOrderController extends Controller
             ->leftJoin('master_uom as u', 'u.id', '=', 'p.uom_id')
             ->whereNull('p.deleted_at')
             ->whereIn('p.id', array_map('intval', $ids))
-            ->select('p.id', 'p.product_code', 'p.name', 'p.description', 'g.percentage as gst_pct',
+            ->leftJoin('clm_segments as sg', 'sg.id', '=', 'p.segment_id')
+            ->select('p.id', 'p.product_code', 'p.name', 'p.description', 'g.percentage as gst_pct', 'p.segment_id', 'sg.name as segment_name',
                 'h.hsn_code', DB::raw('COALESCE(u.short_code, u.title) as uom'));
         return $this->svc->scopeTenant($q, 'p')->get()->keyBy('id');
     }

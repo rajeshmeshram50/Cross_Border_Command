@@ -7,7 +7,7 @@ import { EditSelect, FitInput, FitText } from '../form-fields';
 import type { PoLineRow } from '../po-draft';
 import type { ProductOpt } from '../use-po-lookups';
 import type { TaxMode } from '../../api/po-api';
-import type { LineErrors } from '../validation';
+import { segmentMismatch, type LineErrors } from '../validation';
 import { IcoPencil, IcoPlus, IcoTrash } from '../../shared/icons';
 import { useToast } from '../../../../../../contexts/ToastContext';
 // The Product Management detail view, opened by "Read more" on a description.
@@ -105,12 +105,23 @@ type Props = {
   errors?: LineErrors;
   /** A PO without a shipment has no PI: its PI columns are left out. */
   standalone?: boolean;
+  /** The supplier's segments; products outside them are shown locked. Null = not loaded (no lock). */
+  supplierSegments?: string[] | null;
   /** The summary on later steps shows the same table with plain values. */
   readOnly?: boolean;
 };
 
-export default function ProductTable({ rows, products, taxMode, onChange, onRemove, onProductsChanged, errors = {}, standalone = false, readOnly }: Props) {
+export default function ProductTable({ rows, products, taxMode, onChange, onRemove, onProductsChanged, errors = {}, standalone = false, supplierSegments = null, readOnly }: Props) {
   const options = useMemo(() => products.map(productLabel), [products]);
+  // Products whose segment this supplier doesn't deal in: listed, but locked with the reason.
+  const lockedProducts = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const p of products) {
+      const why = segmentMismatch(p, supplierSegments);
+      if (why) out[productLabel(p)] = why;
+    }
+    return out;
+  }, [products, supplierSegments]);
   // The product whose detail view is open, from "Read more" on its description.
   const [detailId, setDetailId] = useState<number | null>(null);
   /* The product master's own Add / Edit wizard, opened from the two buttons in
@@ -232,6 +243,8 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                       <EditSelect
                         value={po ? productLabel(po) : poName}
                         options={options}
+                        locked={lockedProducts}
+                        onLockedClick={(label) => label && toast.warning('Segment mismatch', lockedProducts[label] ?? 'This product is not in a segment this supplier deals in.')}
                         placeholder="— Select product —"
                         onChange={(label) => {
                           const picked = products.find((p) => productLabel(p) === label);

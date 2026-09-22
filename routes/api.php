@@ -317,6 +317,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::post  ('/clm/trade-doc-library/preview-live',      [ClmTradeDocumentController::class, 'previewLive']);
     Route::get   ('/clm/trade-doc-library/for-party/{party}', [ClmTradeDocumentController::class, 'libraryForParty']);
     
+    Route::get   ('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryShow'])->whereNumber('id');
     Route::get   ('/clm/trade-doc-library/{id}/download',     [ClmTradeDocumentController::class, 'downloadDocx'])->whereNumber('id');
     Route::get   ('/clm/trade-doc-library/{id}/download-pdf', [ClmTradeDocumentController::class, 'downloadPdf'])->whereNumber('id');
     Route::post  ('/clm/trade-doc-library/{id}/upload-docx',  [ClmTradeDocumentController::class, 'uploadDocx'])->whereNumber('id');

@@ -77,11 +77,11 @@ export function EditSelect({ value, options, onChange, placeholder, invalid, rea
   /** Options shown with a lock and not selectable: option → the reason shown on it. */
   locked?: Record<string, string>;
   /** Clicked while read-only, or on a locked option — the caller explains why. */
-  onLockedClick?: () => void;
+  onLockedClick?: (option?: string) => void;
 }) {
   if (readOnly) {
     return (
-      <div className="spi-dt-select" aria-readonly="true" onClick={onLockedClick} style={onLockedClick ? { cursor: 'not-allowed' } : undefined}>
+      <div className="spi-dt-select" aria-readonly="true" onClick={() => onLockedClick?.()} style={onLockedClick ? { cursor: 'not-allowed' } : undefined}>
         <FitTip label={value}><span>{value || placeholder || '—'}</span></FitTip>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
       </div>
@@ -96,7 +96,7 @@ export function EditSelect({ value, options, onChange, placeholder, invalid, rea
       onChange={onChange}
       placeholder={placeholder ?? '— Select —'}
       invalid={invalid}
-      onDisabledClick={onLockedClick ? () => onLockedClick() : undefined}
+      onDisabledClick={onLockedClick ? (opt) => onLockedClick(opt.value) : undefined}
     />
   );
 }

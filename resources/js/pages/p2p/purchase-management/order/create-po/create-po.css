@@ -2217,3 +2217,16 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 [data-bs-theme="dark"] .cpf-viewonly:disabled .spi-dt-inp,
 [data-bs-theme="dark"] .cpf-viewonly:disabled .master-select-toggle,
 [data-bs-theme="dark"] .cpf-viewonly:disabled textarea { background: #13242e; }
+
+/* Stage 01: Select Supplier with its edit button beside it. */
+.cpf-supsel { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cpf-supsel > :first-child { flex: 1 1 auto; min-width: 0; }
+.cpf-supedit {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border: 0; border-radius: 10px; cursor: pointer; color: #fff;
+  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
+  box-shadow: 0 3px 10px rgba(8, 145, 178, .28); transition: transform .12s, box-shadow .15s;
+}
+.cpf-supedit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(8, 145, 178, .36); }
+.cpf-supedit:disabled { opacity: .5; cursor: not-allowed; }
+.cpf-supedit svg { width: 15px; height: 15px; }

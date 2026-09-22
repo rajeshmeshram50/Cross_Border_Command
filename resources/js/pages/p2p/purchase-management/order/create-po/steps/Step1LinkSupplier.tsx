@@ -6,6 +6,8 @@ import { EditSelect, Field, FitTip } from '../form-fields';
 import { gstCheck } from '../gst-check';
 // Only fetched when "+ Add Supplier" is clicked.
 const AddSupplierFlow = lazy(() => import('../AddSupplierFlow'));
+// The Supplier master's wizard, opened from the pencil beside Select Supplier to edit that supplier.
+const AddVendorModal = lazy(() => import('../../../../p2p-master-management/supplier-management/AddVendorModal'));
 // The Supplier master's own Evidence Vault — fetched on first open, and on
 // hover before that, so the click itself never waits for the download.
 const SupplierEvidenceVaultModal = lazy(() => import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
@@ -17,8 +19,9 @@ import { MasterDatePicker } from '../../../../../../components/ui/MasterDatePick
 import { MasterSelect } from '../../../../../../components/ui/MasterSelect';
 import { formatDmy } from '../../../../../../utils/formatDmy';
 import { useToast } from '../../../../../../contexts/ToastContext';
+import { useAuth } from '../../../../../../contexts/AuthContext';
 import type { SupplierDetail } from '../../api/po-api';
-import { IcoAlert, IcoCheck, IcoChevron, IcoClock, IcoDocSm, IcoFile, IcoLock, IcoOk, IcoPin, IcoPlus, IcoShield, IcoStop, IcoUser, IcoWarn } from '../../shared/icons';
+import { IcoAlert, IcoCheck, IcoChevron, IcoClock, IcoDocSm, IcoFile, IcoLock, IcoOk, IcoPencil, IcoPin, IcoPlus, IcoShield, IcoStop, IcoUser, IcoWarn } from '../../shared/icons';
 
 // Fixed choices with no master behind them; saved as the chosen text.
 const PO_TYPES = PO_TYPE_OPTIONS.map((o) => o.label);
@@ -55,6 +58,16 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
   // "+ Add Supplier": the Supplier master's own Domestic / International chooser, then its wizard.
   const [addingSupplier, setAddingSupplier] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
+  // Editing the picked supplier's own record (not which supplier the PO uses) — supplier maintainers only.
+  const { user } = useAuth();
+  const canEditSupplier = user?.user_type === 'super_admin' || user?.user_type === 'client_admin'
+    || !!user?.permissions?.['p2p.supplier']?.can_edit;
+  const [editingSupplier, setEditingSupplier] = useState(false);
+  const closeSupplierEdit = () => {
+    setEditingSupplier(false);
+    // Reload so the updated details and the GST / risk checks show at once.
+    if (draft.vendorId) void onPickSupplier(draft.vendorId);
+  };
 
   const isInternational = draft.docType === 'International';
   const sup = draft.supplier;
@@ -130,6 +143,12 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
 
   return (
     <>
+    {editingSupplier && draft.vendorId && (
+      <Suspense fallback={null}>
+        <AddVendorModal vendorId={draft.vendorId} scope={isInternational ? 'international' : 'domestic'}
+          onClose={closeSupplierEdit} onSubmit={closeSupplierEdit} />
+      </Suspense>
+    )}
     {addingSupplier && (
       <Suspense fallback={null}>
         <AddSupplierFlow onClose={() => setAddingSupplier(false)} />
@@ -261,11 +280,9 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
           {supCardOpen && (
           <div className="spi-dt-grid4 cpf-grid5">
             <Field label="SELECT SUPPLIER" req error={err.supplier}>
+              <div className="cpf-supsel">
               {supplierLocked ? (
-                <>
-                  <EditSelect readOnly value={pickedOption} options={[]} onChange={() => {}} onLockedClick={lockedSupplier} />
-                  <span className="cpf-lockhint"><IcoLock /> Fixed — product lines are saved on this PO</span>
-                </>
+                <EditSelect readOnly value={pickedOption} options={[]} onChange={() => {}} onLockedClick={lockedSupplier} />
               ) : (
                 <MasterSelect
                   invalid={!!err.supplier}
@@ -281,6 +298,14 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
                   placeholder={lookups.loading && !supplierOptions.length ? 'Loading suppliers…' : '— Select Supplier —'}
                 />
               )}
+                {draft.vendorId && canEditSupplier && (
+                  <button type="button" className="cpf-supedit" title="Edit this supplier in the Supplier master"
+                    aria-label="Edit supplier" onClick={() => setEditingSupplier(true)}>
+                    <IcoPencil />
+                  </button>
+                )}
+              </div>
+              {supplierLocked && <span className="cpf-lockhint"><IcoLock /> Fixed — product lines are saved on this PO</span>}
             </Field>
             {/* Everything below comes from the supplier master and is read-only here. */}
             <Field label="COMPANY LEGAL NAME">
