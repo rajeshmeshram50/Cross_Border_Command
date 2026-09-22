@@ -15,6 +15,7 @@ import {
   type ProofFile, type Verdict,
 } from './inspection-shared';
 import InspectionAttachmentsModal from './InspectionAttachmentsModal';
+import CameraCaptureModal from './CameraCaptureModal';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './physical-inspection.css';
 
@@ -29,6 +30,9 @@ export type PhysicalInspectionProps = {
 };
 
 const NOTE = -1;
+// Most proof files one line — or the sign-off note — can hold. The server
+// enforces the same total (PurchaseOrderInspectionController::MAX_PROOF).
+const MAX_PROOF = 10;
 
 const ic = {
   viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
@@ -104,6 +108,8 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
   const [noteFiles, setNoteFiles] = useState<{ file: File; proof: ProofFile }[]>([]);
   const [attFor, setAttFor] = useState<number | null>(null);
   const [viewId, setViewId] = useState<number | null>(null);
+  // Line (or NOTE) the in-app camera is taking photos for.
+  const [camFor, setCamFor] = useState<number | null>(null);
 
   const fail = (e: unknown) => {
     if (e instanceof PoApiError) toast.error(`${e.action} failed`, e.firstError);
@@ -122,12 +128,12 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || attFor !== null || viewId !== null) return;
+      if (e.key !== 'Escape' || attFor !== null || viewId !== null || camFor !== null) return;
       onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, attFor, viewId]);
+  }, [onClose, attFor, viewId, camFor]);
 
   const run = async (key: string, task: () => Promise<InspectionSummary>) => {
     if (busy) return;
@@ -145,10 +151,26 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
   const setVerdict = (id: number, verdict: Verdict) =>
     run(`v:${id}`, () => poInspectionApi.markLine(poId, id, { verdict }));
 
-  const addFiles = async (id: number, e: ChangeEvent<HTMLInputElement>) => {
+  const addFiles = (id: number, e: ChangeEvent<HTMLInputElement>) => {
     const picked = e.target.files ? Array.from(e.target.files) : [];
     e.target.value = '';
+    void attach(id, picked);
+  };
+
+  // Picked files and camera photos take the same path: a line saves them at
+  // once, the sign-off note keeps them until the sign-off.
+  const attach = async (id: number, picked: File[]) => {
     if (!picked.length) return;
+    const room = MAX_PROOF - filesOf(id).length;
+    if (picked.length > room) {
+      toast.warning(
+        room > 0 ? `Only ${room} more file${room === 1 ? '' : 's'} can be added` : 'Proof limit reached',
+        room > 0
+          ? `Up to ${MAX_PROOF} proof files are allowed here — pick ${room} or fewer.`
+          : `${MAX_PROOF} files are already attached here — remove one to add another.`,
+      );
+      return;
+    }
     if (id === NOTE) {
       const proofs = await toProofFiles(picked);
       setNoteFiles((cur) => [...cur, ...picked.map((file, i) => ({ file, proof: proofs[i] }))]);
@@ -172,6 +194,7 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
   const viewFile = (f: ProofFile) => { if (!openFile(f)) toast.info('Preview unavailable', f.name); };
   const dlFile = (f: ProofFile) => { if (!downloadFile(f)) toast.info('Download unavailable', f.name); };
 
+  const noteFull = noteFiles.length >= MAX_PROOF;
   const marked = lines.filter((l) => l.verdict).length;
   const withProof = lines.filter((l) => l.proof_files.length).length;
   const allMarked = lines.length > 0 && marked === lines.length;
@@ -224,6 +247,14 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
           onDownload={(i) => dlFile(filesOf(attFor)[i])}
           onRemove={(i) => { if (!signed) removeFile(attFor, i); }}
           onClose={() => setAttFor(null)}
+        />
+      )}
+      {camFor !== null && (
+        <CameraCaptureModal
+          subject={camFor === NOTE ? 'Inspection note' : lineById(camFor)?.product_name ?? 'Product'}
+          max={MAX_PROOF - filesOf(camFor).length}
+          onAttach={(files) => void attach(camFor, files)}
+          onClose={() => setCamFor(null)}
         />
       )}
       {viewId !== null && (
@@ -295,6 +326,7 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
                   const tag = VERDICTS.find((v) => v.k === l.verdict);
                   const files = filesOf(id);
                   const n = files.length;
+                  const full = n >= MAX_PROOF;
                   return (
                     <tr key={id} className={`pins-tr${l.verdict ? ' is-' + l.verdict : ''}`}>
                       <td className="pins-td-sr">{i + 1}</td>
@@ -343,16 +375,16 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
                         ) : (
                           <div className="pins-attach">
                             <div className="pins-attach__row">
-                              <label className="pins-btn" htmlFor={`pins-up-${id}`} title="Upload photos or videos">{ICON_UP}<span>Upload</span></label>
-                              <label className="pins-btn pins-btn--cam" htmlFor={`pins-cam-${id}`} title="Capture with camera">{ICON_CAM}<span>Camera</span></label>
-                              <span className={`pins-files${n ? ' is-on' : ''}`}>
-                                {busy === `f:${id}` ? 'Saving…' : `${n} file${n === 1 ? '' : 's'}`}
+                              <label className={`pins-btn${full ? ' is-disabled' : ''}`} htmlFor={`pins-up-${id}`}
+                                title={full ? `Up to ${MAX_PROOF} files — remove one to add another` : 'Upload photos or videos'}>{ICON_UP}<span>Upload</span></label>
+                              <button type="button" className="pins-btn pins-btn--cam" disabled={busy === `f:${id}` || full}
+                                onClick={() => setCamFor(id)} title={full ? `Up to ${MAX_PROOF} files — remove one to add another` : 'Take photos with the camera'}>{ICON_CAM}<span>Camera</span></button>
+                              <span className={`pins-files${n ? ' is-on' : ''}${full ? ' is-full' : ''}`}>
+                                {busy === `f:${id}` ? 'Saving…' : `${n}/${MAX_PROOF} files`}
                               </span>
                             </div>
-                            <input id={`pins-up-${id}`} className="pins-file-in" type="file" multiple disabled={busy === `f:${id}`}
+                            <input id={`pins-up-${id}`} className="pins-file-in" type="file" multiple disabled={busy === `f:${id}` || full}
                               accept="image/*,video/*,application/pdf" onChange={(e) => addFiles(id, e)} />
-                            <input id={`pins-cam-${id}`} className="pins-file-in" type="file" disabled={busy === `f:${id}`}
-                              accept="image/*,video/*" capture="environment" onChange={(e) => addFiles(id, e)} />
                             <ProofList
                               files={files}
                               onView={(ix) => viewFile(files[ix])}
@@ -420,16 +452,16 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
                       </div>
                     )}
                     <div className="pins-notebox__bar">
-                      <label className="pins-btn pins-btn--solid" htmlFor="pins-up-note" title="Attach photos, videos or documents">{ICON_UP}<span>Upload</span></label>
-                      <label className="pins-btn pins-btn--solid" htmlFor="pins-cam-note" title="Capture with camera">{ICON_CAM}<span>Camera</span></label>
-                      <span className={`pins-files${noteFiles.length ? ' is-on' : ''}`}>
-                        {noteFiles.length} file{noteFiles.length === 1 ? '' : 's'}
+                      <label className={`pins-btn pins-btn--solid${noteFull ? ' is-disabled' : ''}`} htmlFor="pins-up-note"
+                        title={noteFull ? `Up to ${MAX_PROOF} files — remove one to add another` : 'Attach photos, videos or documents'}>{ICON_UP}<span>Upload</span></label>
+                      <button type="button" className="pins-btn pins-btn--solid" disabled={noteFull} onClick={() => setCamFor(NOTE)}
+                        title={noteFull ? `Up to ${MAX_PROOF} files — remove one to add another` : 'Take photos with the camera'}>{ICON_CAM}<span>Camera</span></button>
+                      <span className={`pins-files${noteFiles.length ? ' is-on' : ''}${noteFull ? ' is-full' : ''}`}>
+                        {noteFiles.length}/{MAX_PROOF} files
                       </span>
                     </div>
-                    <input id="pins-up-note" className="pins-file-in" type="file" multiple
+                    <input id="pins-up-note" className="pins-file-in" type="file" multiple disabled={noteFull}
                       accept="image/*,video/*,application/pdf" onChange={(e) => addFiles(NOTE, e)} />
-                    <input id="pins-cam-note" className="pins-file-in" type="file"
-                      accept="image/*,video/*" capture="environment" onChange={(e) => addFiles(NOTE, e)} />
                   </div>
                 </div>
               </div>

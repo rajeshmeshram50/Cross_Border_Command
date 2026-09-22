@@ -1,12 +1,15 @@
 // Full-page review of one PO senior-approval request, opened from the Inbox or
-// the bell. Shows the PO, supplier, GST position and lines; the chosen senior
-// approves or rejects here, with a reason either way.
-import { useCallback, useEffect, useState } from 'react';
+// the bell. Built around the one decision the senior makes: the left column
+// says why the PO is here and what it is (only the facts that bear on the
+// decision), the right column keeps the request and the Approve / Reject
+// panel in view while the left scrolls.
+// Loads GET /p2p/orders/gst-approvals/{id}; decides with PUT on the same URL.
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../../contexts/ConfirmContext';
 import { PoApiError, poApprovalApi, type GstApprovalRequest, type GstApprovalReview } from '../api/po-api';
-import { PO_TYPE_LABEL, fmtDate, fmtDateTime, fmtMoney, initialsOf, monthsSince } from './approval-format';
+import { PO_TYPE_LABEL, fmtDate, fmtDateTime, fmtMoney, initialsOf, monthsAgoText } from './approval-format';
 import './gst-approval.css';
 
 const REASON_MAX = 1000;
@@ -22,14 +25,22 @@ export default function PoGstApprovalReview() {
   const [reasonErr, setReasonErr] = useState('');
   const [acting, setActing] = useState<'approved' | 'rejected' | null>(null);
 
+  // Also used after a decision, so the page shows what the server saved.
+  // Keeps the current data on screen while it reloads (no flicker).
   const load = useCallback(async () => {
+    const rid = Number(id);
+    if (!rid) { setError('This link is not valid.'); return; }
     try {
-      setData(await poApprovalApi.show(Number(id)));
+      setData(await poApprovalApi.show(rid));
       setError('');
     } catch (e) {
-      const status = e instanceof PoApiError ? e.status : null;
-      setError(status === 404 ? 'This request no longer exists — the PO may have changed supplier or been deleted.'
-        : e instanceof PoApiError ? e.firstError : 'Could not load this request.');
+      setData(null);
+      if (e instanceof PoApiError && e.status === 404) {
+        setError('This request no longer exists — the PO may have changed supplier or been deleted.');
+      } else {
+        // e.g. 403 "This request was not sent to you."
+        setError(e instanceof PoApiError ? e.firstError : 'Could not load this request.');
+      }
     }
   }, [id]);
 
@@ -51,15 +62,23 @@ export default function PoGstApprovalReview() {
     if (!ok) return;
     setActing(decision);
     try {
-      await poApprovalApi.decide(data.request.id, decision, reason.trim());
-      toast.success(decision === 'approved' ? `${data.po.code} approved` : `${data.po.code} rejected`,
-        `${data.request.requested_by_name ?? 'The requester'} has been notified.`);
+      await poApprovalApi.decide(data.request.id, { decision, reason: reason.trim() });
+      const who = data.request.requested_by_name ?? 'The requester';
+      toast.success(
+        decision === 'approved' ? `${data.po.code} approved` : `${data.po.code} rejected`,
+        decision === 'approved' ? `${who} can now submit it.` : `${who} has been told why.`,
+      );
       setReason('');
       await load();
     } catch (e) {
-      const msg = e instanceof PoApiError ? e.firstError : 'Please try again.';
-      setReasonErr(msg);
-      toast.error('Could not record your decision', msg);
+      const err = e instanceof PoApiError ? e : null;
+      if (err?.fieldErrors.reason) {
+        setReasonErr(err.fieldErrors.reason[0]);
+      } else {
+        toast.error('Decision not saved', err?.firstError ?? 'Please try again.');
+        // e.g. "already approved" / "PO was cancelled" — show the page as it is now.
+        if (err?.status === 422) await load();
+      }
     } finally {
       setActing(null);
     }
@@ -71,7 +90,7 @@ export default function PoGstApprovalReview() {
         <div className="pga-empty">
           <i className="ri-error-warning-line" />
           <div className="pga-empty__t">{error}</div>
-          <button type="button" className="pga-btn pga-btn--ghost" onClick={back}><i className="ri-arrow-left-line" /> Back</button>
+          <button type="button" className="pga-btn pga-btn--ghost" onClick={back}><i className="ri-arrow-left-line" /> Back to Inbox</button>
         </div>
       </div>
     );
@@ -82,207 +101,181 @@ export default function PoGstApprovalReview() {
 
   const { request: req, po, supplier, gst, lines } = data;
   const cur = po.currency_code;
-  const inter = po.tax_mode === 'inter';
-  const charges = po.shipping_charges + po.packaging_charges + po.other_charges;
-  const scrutinyAge = monthsSince(gst?.scrutiny_date);
-  const filingAge = monthsSince(gst?.filing_date);
   const months = gst?.stale_months ?? 3;
-  const gstUpToDate = gst?.gate === 'clear';
+  // The server's own verdict, read live — never re-derived here, so the tags can't disagree with it.
+  const scrutinyOk = !!gst && gst.gate !== 'blocked';
+  const filingOk = gst?.gate === 'clear';
+  const gstTotal = po.total_cgst + po.total_sgst + po.total_igst;
+  const charges = po.shipping_charges + po.packaging_charges + po.other_charges;
+  const closed = po.status === 'cancelled' || po.status === 'deleted';
 
   return (
     <div className="pga-page">
-      {/* Header */}
-      <div className="pga-head">
-        <span className="pga-head__accent" />
-        <div className="pga-head__l">
-          <span className="pga-head__ico"><i className="ri-file-shield-2-line" /></span>
-          <div className="min-w-0">
-            <div className="pga-head__t">Senior Approval · {po.code}</div>
-            <div className="pga-head__s">
-              {req.requested_by_name ?? '—'} asked {req.requested_to_name ?? '—'} on {fmtDateTime(req.requested_at)} — the supplier’s GST return is overdue.
+      <header className="pga-hero">
+        <div className="pga-hero__l">
+          <span className="pga-hero__ico"><i className="ri-file-shield-2-line" /></span>
+          <div className="pga-hero__txt">
+            <div className="pga-hero__row">
+              <h1 className="pga-hero__t">PO Approval Request</h1>
+              <span className="pga-hero__code">{po.code}</span>
+              <StatusBadge status={req.status} />
+            </div>
+            <div className="pga-hero__s">
+              <b>{req.requested_by_name ?? '—'}</b> asked <b>{req.requested_to_name ?? '—'}</b> on {fmtDateTime(req.requested_at)}
             </div>
           </div>
         </div>
-        <div className="pga-head__r">
-          <StatusBadge status={req.status} />
-          <button type="button" className="pga-btn pga-btn--ghost" onClick={back}><i className="ri-arrow-left-line" /> Back</button>
-        </div>
-      </div>
+        <button type="button" className="pga-hero__back" onClick={back}><i className="ri-arrow-left-line" /> Back to Inbox</button>
+      </header>
 
-      {(po.status === 'cancelled' || po.status === 'deleted') && (
+      {closed && (
         <div className="pga-alert pga-alert--bad"><i className="ri-close-circle-line" /> This PO has been {po.status} — there is nothing left to decide.</div>
       )}
-      {req.status === 'pending' && gstUpToDate && (
+      {req.status === 'pending' && filingOk && (
         <div className="pga-alert pga-alert--ok"><i className="ri-checkbox-circle-line" /> The supplier’s GST has since been updated — this PO would now pass without approval.</div>
       )}
 
-      {/* Summary strip */}
-      <div className="pga-kpis">
-        <Kpi label="Grand total" value={fmtMoney(po.grand_total, cur)} strong />
-        <Kpi label="Supplier" value={supplier?.name ?? '—'} sub={supplier?.code ?? undefined} />
-        <Kpi label="Last GST filing" value={fmtDate(gst?.filing_date)} sub={filingAge !== null ? `${filingAge} months ago` : 'Never filed'} tone="warn" />
-        <Kpi label="Expected delivery" value={fmtDate(po.expected_delivery_date)} sub={po.mode_of_transport ?? undefined} />
-      </div>
-
-      <div className="pga-grid">
-        {/* Request */}
-        <section className="pga-card">
-          <h3 className="pga-card__t"><i className="ri-mail-send-line" /> Request</h3>
-          <div className="pga-person">
-            <span className="pga-person__av">{initialsOf(req.requested_by_name)}</span>
-            <div>
-              <div className="pga-person__n">{req.requested_by_name ?? '—'}</div>
-              <div className="pga-person__s">Raised {fmtDateTime(req.requested_at)}</div>
+      <div className="pga-layout">
+        <div className="pga-main">
+          {/* 1 — why it is here */}
+          <section className="pga-why">
+            <div className="pga-why__head">
+              <i className="ri-error-warning-line pga-why__ico" />
+              <h2 className="pga-why__t">{req.status === 'pending' ? 'Why this needs your approval' : 'Why this needed approval'}</h2>
+              <span className={`pga-status pga-status--${filingOk ? 'ok' : 'warn'}`}>{filingOk ? 'GST return current' : 'GST return overdue'}</span>
             </div>
-          </div>
-          <Kv k="Sent to" v={req.requested_to_name} />
-          <Kv k="Status" v={<StatusBadge status={req.status} />} />
-          {req.decided_at && <Kv k="Decided on" v={fmtDateTime(req.decided_at)} />}
-          <div className="pga-quote">
-            <span className="pga-quote__k">Note from requester</span>
-            {req.request_note || <span className="pga-muted">No note added.</span>}
-          </div>
-          {req.reason && (
-            <div className={`pga-quote pga-quote--${req.status === 'approved' ? 'ok' : 'bad'}`}>
-              <span className="pga-quote__k">Reason given by {req.requested_to_name ?? 'the senior'}</span>
-              {req.reason}
+            <div className="pga-why__body">
+              <p className="pga-why__p">
+                The supplier’s last GST return was filed <b>{monthsAgoText(gst?.filing_date)}</b>. A return older than {months} months
+                blocks the PO from being submitted unless a senior approves it.
+              </p>
+              <div className="pga-facts pga-facts--split">
+                <Fact k="Last GST filing" v={fmtDate(gst?.filing_date)} tag={<Tag tone={filingOk ? 'ok' : 'warn'}>{filingOk ? 'Current' : 'Overdue'}</Tag>} />
+                <Fact k="GST scrutiny" v={fmtDate(gst?.scrutiny_date)} tag={<Tag tone={scrutinyOk ? 'ok' : 'bad'}>{scrutinyOk ? 'Current' : 'Expired'}</Tag>} />
+                <Fact k="Supplier GSTIN" v={gst?.gstin ?? supplier?.gstin} mono />
+              </div>
+              {data.can_decide && (
+                <div className="pga-why__foot">
+                  <span><i className="ri-checkbox-circle-line pga-ok-ico" /> <b>Approve</b> — the PO can be submitted</span>
+                  <span><i className="ri-close-circle-line pga-bad-ico" /> <b>Reject</b> — it stays blocked</span>
+                </div>
+              )}
             </div>
-          )}
-        </section>
+          </section>
 
-        {/* GST */}
-        <section className="pga-card">
-          <h3 className="pga-card__t"><i className="ri-shield-check-line" /> GST compliance</h3>
-          <Kv k="GSTIN" v={gst?.gstin ?? supplier?.gstin} mono />
-          <Kv k="Scrutiny date" v={<>{fmtDate(gst?.scrutiny_date)} <Tag tone={scrutinyAge !== null && scrutinyAge < months ? 'ok' : 'bad'}>{scrutinyAge !== null && scrutinyAge < months ? 'Current' : 'Expired'}</Tag></>} />
-          <Kv k="Last GST filing" v={<>{fmtDate(gst?.filing_date)} <Tag tone={filingAge !== null && filingAge < months ? 'ok' : 'warn'}>{filingAge !== null ? `${filingAge} months ago` : 'None'}</Tag></>} />
-          <Kv k="Allowed window" v={`${months} months`} />
-          <div className="pga-note">
-            Scrutiny is current, but the supplier has not filed a GST return inside the {months}-month window.
-            Approving lets this PO be submitted anyway; rejecting keeps it blocked.
-          </div>
-        </section>
+          {/* 2 — what is being approved */}
+          <section className="pga-card">
+            <h3 className="pga-card__t"><i className="ri-file-list-3-line" /> Purchase order</h3>
+            <div className="pga-facts pga-facts--3">
+              <Fact k="Supplier" v={supplier?.name} sub={[supplier?.code, supplier?.risk && `${supplier.risk} risk`].filter(Boolean).join(' · ')} />
+              <Fact k="PO date" v={fmtDate(po.po_date)} sub={po.po_type ? PO_TYPE_LABEL[po.po_type] ?? po.po_type : undefined} />
+              <Fact k="Expected delivery" v={fmtDate(po.expected_delivery_date)} sub={[po.mode_of_transport, po.delivery_location].filter(Boolean).join(' · ')} />
+              <Fact k="Payment" v={po.payment_type} />
+              {po.link_type === 'with_shipment'
+                ? <Fact k="Linked shipment" v={po.shipment_code} mono sub={[po.pi_code, po.customer_name].filter(Boolean).join(' · ')} />
+                : <Fact k="Linked to" v="Standalone PO" sub="No shipment" />}
+              <Fact k="Raised by" v={po.created_by_name} />
+            </div>
+          </section>
 
-        {/* PO */}
-        <section className="pga-card">
-          <h3 className="pga-card__t"><i className="ri-file-list-3-line" /> Purchase order</h3>
-          <Kv k="PO number" v={po.code} mono />
-          <Kv k="PO date" v={fmtDate(po.po_date)} />
-          <Kv k="Raised by" v={po.created_by_name} />
-          <Kv k="PO type" v={po.po_type ? PO_TYPE_LABEL[po.po_type] ?? po.po_type : null} />
-          <Kv k="Document type" v={po.document_type === 'international' ? 'International' : po.document_type === 'domestic' ? 'Domestic' : null} />
-          <Kv k="Linked to" v={po.link_type === 'with_shipment' ? 'Shipment' : 'Standalone (no shipment)'} />
-          {po.link_type === 'with_shipment' && (
-            <>
-              <Kv k="Shipment" v={po.shipment_code} mono />
-              <Kv k="PI number" v={po.pi_code} mono />
-              <Kv k="Opportunity" v={po.opportunity_code} mono />
-              <Kv k="Customer" v={po.customer_name} />
-            </>
-          )}
-          <Kv k="Payment type" v={po.payment_type} />
-          <Kv k="Delivery location" v={po.delivery_location} />
-          {po.document_type === 'international' && (
-            <>
-              <Kv k="Currency" v={cur ? `${cur}${po.exchange_rate ? ` @ ${po.exchange_rate}` : ''}` : null} />
-              <Kv k="Inco term" v={po.inco_term} />
-              <Kv k="Port of loading" v={po.port_of_loading} />
-              <Kv k="Port of discharge" v={po.port_of_discharge} />
-            </>
-          )}
-          <Kv k="Physical inspection" v={po.physical_inspection === 'yes' ? 'Required' : 'Not required'} />
-        </section>
+          {/* 3 — products */}
+          <section className="pga-card">
+            <h3 className="pga-card__t"><i className="ri-shopping-cart-2-line" /> Products <span className="pga-card__n">{lines.length}</span></h3>
+            <div className="pga-tbl-wrap">
+              <table className="pga-tbl">
+                <thead>
+                  <tr>
+                    <th>#</th><th className="pga-l">Product</th><th>Qty</th><th>Rate</th><th>{data.tax_label === 'IGST' ? 'IGST' : 'GST'} %</th><th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lines.length === 0 && <tr><td colSpan={6} className="pga-l pga-muted">No product lines on this PO.</td></tr>}
+                  {lines.map((l) => (
+                    <tr key={l.line_no}>
+                      <td>{l.line_no}</td>
+                      <td className="pga-l">
+                        <div className="pga-prod">{l.product_name ?? '—'}</div>
+                        <div className="pga-prod-code">{[l.product_code, l.hsn_code && `HSN ${l.hsn_code}`].filter(Boolean).join(' · ')}</div>
+                      </td>
+                      <td>{l.quantity.toLocaleString('en-IN')}{l.uom ? ` ${l.uom}` : ''}</td>
+                      <td>{fmtMoney(l.rate, cur)}</td>
+                      <td>{l.gst_pct}%</td>
+                      <td className="pga-strong">{fmtMoney(l.line_total, cur)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="pga-sum">
+              <span>Products <b>{fmtMoney(po.taxable_total, cur)}</b></span>
+              <span>{data.tax_label} <b>{fmtMoney(gstTotal, cur)}</b></span>
+              {charges > 0 && <span>Charges <b>{fmtMoney(charges, cur)}</b></span>}
+              <span className="pga-sum__grand">Grand total <b>{fmtMoney(po.grand_total, cur)}</b></span>
+            </div>
+          </section>
+        </div>
 
-        {/* Supplier */}
-        <section className="pga-card">
-          <h3 className="pga-card__t"><i className="ri-store-2-line" /> Supplier</h3>
-          <Kv k="Supplier code" v={supplier?.code} mono />
-          <Kv k="Legal name" v={supplier?.name} />
-          <Kv k="GSTIN" v={supplier?.gstin} mono />
-          <Kv k="State code" v={supplier?.state_code} />
-          <Kv k="Tax" v={inter ? 'Inter-state · IGST' : 'Intra-state · CGST + SGST'} />
-          <Kv k="Risk level" v={supplier?.risk} />
-          <Kv k="Category" v={supplier?.category} />
-        </section>
+        <aside className="pga-side">
+          <section className="pga-card">
+            <h3 className="pga-card__t"><i className="ri-chat-quote-line" /> Request</h3>
+            <div className="pga-person">
+              <span className="pga-person__av">{initialsOf(req.requested_by_name)}</span>
+              <div className="pga-person__txt">
+                <div className="pga-person__n">{req.requested_by_name ?? '—'}</div>
+                <div className="pga-person__s">Sent {fmtDateTime(req.requested_at)}</div>
+              </div>
+            </div>
+            <div className="pga-quote">{req.request_note || <span className="pga-muted">No note added.</span>}</div>
+          </section>
+
+          {data.can_decide ? (
+            <section className="pga-card pga-decide">
+              <h3 className="pga-card__t"><i className="ri-scales-3-line" /> Your decision</h3>
+              <label className="pga-label" htmlFor="pga-reason">Reason <span className="pga-req">*</span></label>
+              <textarea
+                id="pga-reason"
+                className={`pga-ta${reasonErr ? ' is-invalid' : ''}`}
+                maxLength={REASON_MAX}
+                placeholder="e.g. Supplier confirmed the return will be filed this week — one-time approval."
+                value={reason}
+                onChange={(e) => { setReason(e.target.value); setReasonErr(''); }}
+              />
+              <div className="pga-ta-foot">
+                <span className="pga-err">{reasonErr}</span>
+                <span className="pga-counter">{reason.length} / {REASON_MAX}</span>
+              </div>
+              <div className="pga-actions">
+                <button type="button" className="pga-btn pga-btn--reject" disabled={!!acting} onClick={() => decide('rejected')}>
+                  {acting === 'rejected' ? <><i className="ri-loader-4-line ri-spin" /> Rejecting…</> : <><i className="ri-close-line" /> Reject</>}
+                </button>
+                <button type="button" className="pga-btn pga-btn--approve" disabled={!!acting} onClick={() => decide('approved')}>
+                  {acting === 'approved' ? <><i className="ri-loader-4-line ri-spin" /> Approving…</> : <><i className="ri-check-line" /> Approve</>}
+                </button>
+              </div>
+            </section>
+          ) : req.status === 'pending' ? (
+            <section className="pga-card pga-wait">
+              <i className="ri-time-line" />
+              <div>{closed ? 'No decision is needed any more.' : <>Waiting for <b>{req.requested_to_name ?? 'the approver'}</b> to decide.</>}</div>
+            </section>
+          ) : (
+            <section className={`pga-card pga-outcome pga-outcome--${req.status === 'approved' ? 'ok' : 'bad'}`}>
+              <div className="pga-outcome__head">
+                <StatusBadge status={req.status} />
+                <span className="pga-muted">by {req.requested_to_name ?? '—'} · {fmtDateTime(req.decided_at)}</span>
+              </div>
+              {req.reason && <div className="pga-outcome__reason">“{req.reason}”</div>}
+            </section>
+          )}
+
+          {data.history.length > 1 && (
+            <section className="pga-card">
+              <h3 className="pga-card__t"><i className="ri-history-line" /> Earlier requests on this PO</h3>
+              {data.history.filter((h) => h.id !== req.id).map((h) => <HistoryRow key={h.id} h={h} />)}
+            </section>
+          )}
+        </aside>
       </div>
-
-      {/* Lines */}
-      <section className="pga-card pga-card--wide">
-        <h3 className="pga-card__t"><i className="ri-shopping-cart-2-line" /> Products <span className="pga-card__n">{lines.length}</span></h3>
-        <div className="pga-tbl-wrap">
-          <table className="pga-tbl">
-            <thead>
-              <tr>
-                <th>#</th><th className="pga-l">Product</th><th>HSN</th><th>Qty</th><th>Rate</th>
-                <th>{inter ? 'IGST' : 'GST'} %</th><th>Product cost</th><th>GST amount</th><th>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lines.length === 0 && <tr><td colSpan={9} className="pga-muted">No product lines on this PO.</td></tr>}
-              {lines.map((l) => (
-                <tr key={l.line_no}>
-                  <td>{l.line_no}</td>
-                  <td className="pga-l">
-                    <div className="pga-prod">{l.product_name ?? '—'}</div>
-                    {l.product_code && <div className="pga-prod-code">{l.product_code}</div>}
-                  </td>
-                  <td>{l.hsn_code ?? '—'}</td>
-                  <td>{l.quantity.toLocaleString('en-IN')}{l.uom ? ` ${l.uom}` : ''}</td>
-                  <td>{fmtMoney(l.rate, cur)}</td>
-                  <td>{l.gst_pct}%</td>
-                  <td>{fmtMoney(l.taxable_amount, cur)}</td>
-                  <td>{fmtMoney(l.gst_amount, cur)}</td>
-                  <td className="pga-strong">{fmtMoney(l.line_total, cur)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="pga-totals">
-          <Kv k="Product cost (without GST)" v={fmtMoney(po.taxable_total, cur)} />
-          {inter
-            ? <Kv k="IGST" v={fmtMoney(po.total_igst, cur)} />
-            : <><Kv k="CGST" v={fmtMoney(po.total_cgst, cur)} /><Kv k="SGST" v={fmtMoney(po.total_sgst, cur)} /></>}
-          <Kv k="Charges (shipping, packaging, other)" v={fmtMoney(charges, cur)} />
-          <div className="pga-grand"><span>Grand total</span><span>{fmtMoney(po.grand_total, cur)}</span></div>
-        </div>
-      </section>
-
-      {/* Earlier requests on the same PO */}
-      {data.history.length > 1 && (
-        <section className="pga-card pga-card--wide">
-          <h3 className="pga-card__t"><i className="ri-history-line" /> All requests on this PO</h3>
-          {data.history.map((h) => <HistoryRow key={h.id} h={h} current={h.id === req.id} />)}
-        </section>
-      )}
-
-      {/* Decision */}
-      {data.can_decide && (
-        <section className="pga-card pga-card--wide pga-decide">
-          <h3 className="pga-card__t"><i className="ri-scales-3-line" /> Your decision</h3>
-          <label className="pga-label" htmlFor="pga-reason">Reason <span className="pga-req">*</span> <span className="pga-hint">required to approve or reject</span></label>
-          <textarea
-            id="pga-reason"
-            className={`pga-ta${reasonErr ? ' is-invalid' : ''}`}
-            maxLength={REASON_MAX}
-            placeholder="e.g. Supplier confirmed the return will be filed this week — one-time approval."
-            value={reason}
-            onChange={(e) => { setReason(e.target.value); setReasonErr(''); }}
-          />
-          <div className="pga-ta-foot">
-            <span className="pga-err">{reasonErr}</span>
-            <span className="pga-counter">{reason.length} / {REASON_MAX}</span>
-          </div>
-          <div className="pga-actions">
-            <button type="button" className="pga-btn pga-btn--reject" disabled={!!acting} onClick={() => decide('rejected')}>
-              {acting === 'rejected' ? <><i className="ri-loader-4-line ri-spin" /> Rejecting…</> : <><i className="ri-close-line" /> Reject</>}
-            </button>
-            <button type="button" className="pga-btn pga-btn--approve" disabled={!!acting} onClick={() => decide('approved')}>
-              {acting === 'approved' ? <><i className="ri-loader-4-line ri-spin" /> Approving…</> : <><i className="ri-check-line" /> Approve</>}
-            </button>
-          </div>
-        </section>
-      )}
     </div>
   );
 }
@@ -293,36 +286,29 @@ function StatusBadge({ status }: { status: GstApprovalRequest['status'] }) {
   return <span className={`pga-status pga-status--${tone}`}><i className={icon} /> {label}</span>;
 }
 
-function Tag({ tone, children }: { tone: 'ok' | 'warn' | 'bad'; children: React.ReactNode }) {
+function Tag({ tone, children }: { tone: 'ok' | 'warn' | 'bad'; children: ReactNode }) {
   return <span className={`pga-tag pga-tag--${tone}`}>{children}</span>;
 }
 
-function Kv({ k, v, mono }: { k: string; v: React.ReactNode; mono?: boolean }) {
+/** One labelled fact: value, an optional status tag beside it, an optional line under it. */
+function Fact({ k, v, sub, tag, mono }: { k: string; v: ReactNode; sub?: string; tag?: ReactNode; mono?: boolean }) {
+  const empty = v === null || v === undefined || v === '';
   return (
-    <div className="pga-kv">
-      <span className="pga-kv__k">{k}</span>
-      <span className={`pga-kv__v${mono ? ' pga-mono' : ''}`}>{v === null || v === undefined || v === '' ? '—' : v}</span>
+    <div className="pga-fact">
+      <span className="pga-fact__k">{k}</span>
+      <span className={`pga-fact__v${mono ? ' pga-mono' : ''}`}>{empty ? '—' : v}{tag}</span>
+      {sub && <span className="pga-fact__s">{sub}</span>}
     </div>
   );
 }
 
-function Kpi({ label, value, sub, strong, tone }: { label: string; value: string; sub?: string; strong?: boolean; tone?: 'warn' }) {
+function HistoryRow({ h }: { h: GstApprovalRequest }) {
   return (
-    <div className={`pga-kpi${strong ? ' pga-kpi--strong' : ''}${tone ? ` pga-kpi--${tone}` : ''}`}>
-      <span className="pga-kpi__k">{label}</span>
-      <span className="pga-kpi__v" title={value}>{value}</span>
-      {sub && <span className="pga-kpi__s">{sub}</span>}
-    </div>
-  );
-}
-
-function HistoryRow({ h, current }: { h: GstApprovalRequest; current: boolean }) {
-  return (
-    <div className={`pga-hist${current ? ' is-current' : ''}`}>
+    <div className="pga-hist">
       <StatusBadge status={h.status} />
       <div className="pga-hist__b">
-        <div><b>{h.requested_by_name ?? '—'}</b> → <b>{h.requested_to_name ?? '—'}</b> · {fmtDateTime(h.requested_at)}{current ? ' · this request' : ''}</div>
-        {h.reason && <div className="pga-muted">“{h.reason}” — {fmtDateTime(h.decided_at)}</div>}
+        <div><b>{h.requested_by_name ?? '—'}</b> → <b>{h.requested_to_name ?? '—'}</b> · {fmtDateTime(h.requested_at)}</div>
+        {h.reason && <div className="pga-muted">“{h.reason}”</div>}
       </div>
     </div>
   );

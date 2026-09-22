@@ -37,6 +37,14 @@ export function monthsSince(d: string | null | undefined): number | null {
   return Math.round(((Date.now() - dt.getTime()) / (1000 * 60 * 60 * 24 * 30.44)) * 10) / 10;
 }
 
+/** "4 months ago" — how long since a date, in whole months, for GST filing ages. */
+export function monthsAgoText(d: string | null | undefined): string {
+  const m = monthsSince(d);
+  if (m === null) return 'no filing on record';
+  const whole = Math.floor(m);
+  return whole < 1 ? 'less than a month ago' : `${whole} month${whole === 1 ? '' : 's'} ago`;
+}
+
 export const PO_TYPE_LABEL: Record<string, string> = {
   material_goods: 'Material / Goods', services: 'Services', ffd_transporter: 'FFD / Transporter',
 };

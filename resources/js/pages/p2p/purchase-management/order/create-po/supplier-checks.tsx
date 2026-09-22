@@ -7,12 +7,14 @@ import { formatDmy } from '../../../../../utils/formatDmy';
 export const GST_STALE_MONTHS = 3;
 
 /** Months between a date and today, to one decimal (7.2), as the banner shows
- *  it. An average month of 30.44 days keeps it in step with the prototype. */
+ *  it. An average month of 30.44 days keeps it in step with the prototype.
+ *  Display only — isStale() decides. Rounded down, so a date still inside the
+ *  window never reads "3.0" (2.96 used to round up to it). */
 export function monthsAgo(iso: string): number | null {
   if (!iso) return null;
   const then = new Date(iso);
   if (Number.isNaN(then.getTime())) return null;
-  return Math.max(0, Math.round(((Date.now() - then.getTime()) / (86400000 * 30.44)) * 10) / 10);
+  return Math.max(0, Math.floor(((Date.now() - then.getTime()) / (86400000 * 30.44)) * 10) / 10);
 }
 
 /** Whole days between a date and today; null when there is no date. */
@@ -115,15 +117,23 @@ export function riskItems(s: RiskSubject, physInsp: boolean): RiskItem[] {
   return items;
 }
 
+/** Past the window: no date, or a date before the cut-off. Compares calendar
+ *  dates exactly as the server's gate does (PurchaseOrderService::gstGate) —
+ *  the rounded "3.0 months" shown on screen is for reading only; deciding on
+ *  it blocked suppliers a day or two early (2.96 months rounds to 3.0). */
+export function isStale(iso: string | null | undefined): boolean {
+  return !iso || iso.slice(0, 10) < cutoffDate();
+}
+
 /** Stale scrutiny blocks the PO; a stale return only needs senior approval. */
-export function gstState(supplier: string, scrutinyAge: number | null, filingAge: number | null): GstState {
+export function gstState(supplier: string, scrutiny: string, filing: string): GstState {
   if (!supplier) {
     return { tone: 'idle', title: 'Select a supplier to run the GST compliance check', note: `Scrutiny and filing dates are checked against a ${GST_STALE_MONTHS}-month window.` };
   }
-  if (scrutinyAge === null || scrutinyAge >= GST_STALE_MONTHS) {
+  if (isStale(scrutiny)) {
     return { tone: 'stop', title: 'GST scrutiny required', note: `Scrutiny is older than ${GST_STALE_MONTHS} months. Refresh it on the supplier record before this PO can move forward.`, action: 'Review requirement' };
   }
-  if (filingAge === null || filingAge >= GST_STALE_MONTHS) {
+  if (isStale(filing)) {
     return { tone: 'warn', title: 'Senior approval required', note: `Scrutiny is current, but the last GST return is older than ${GST_STALE_MONTHS} months. A senior must approve this PO.`, action: 'Send for senior approval' };
   }
   return { tone: 'ok', title: 'GST compliance cleared', note: `Scrutiny and filing are both inside the ${GST_STALE_MONTHS}-month window. This PO can proceed.` };

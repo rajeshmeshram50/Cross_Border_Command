@@ -656,6 +656,7 @@
   border: 1.5px solid transparent;
   border-radius: 9px;
   cursor: pointer;
+  font-family: inherit;
   font-size: 10.5px;
   font-weight: 800;
   letter-spacing: .01em;
@@ -672,7 +673,11 @@
   flex-shrink: 0;
 }
 
-.pins-btn:hover {
+.pins-btn:disabled,
+.pins-btn.is-disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.pins-btn.is-disabled { pointer-events: none; }
+
+.pins-btn:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 7px 17px rgba(8, 145, 178, .44);
 }
@@ -721,6 +726,13 @@
   color: #0e7490;
   background: #e0f7fb;
   border-color: #c2ecf3;
+}
+
+/* At the proof limit. */
+.pins-files.is-full {
+  color: #b45309;
+  background: #fffbeb;
+  border-color: #fde68a;
 }
 
 .pins-file-in {

@@ -436,25 +436,30 @@ export const poApprovalApi = {
   approvers: () =>
     call('GST approvers', () => api.get('/p2p/orders/gst-approvals/approvers'), dataOf<GstApprover[]>),
 
-  /** Raised from Step 03 when the supplier's GST return is overdue. */
-  request: (poId: number, body: { requested_to: number; note?: string }) =>
+  /** Raised from Step 03 when the supplier's GST return is overdue.
+   *  On a re-send after a rejection the server keeps the same approver, so
+   *  `requested_to` is left out then. */
+  request: (poId: number, body: { requested_to?: number; note?: string }) =>
     call('GST approval request', () => api.post(`/p2p/orders/${poId}/gst-approval/request`, body), dataOf<GstApprovalRequest>),
 
-  /** Requests sent to the caller; history = already decided. */
-  inbox: (params: { history?: boolean; page?: number; per_page?: number } = {}) =>
-    call('GST approval inbox', () => api.get('/p2p/orders/gst-approvals', {
+  /* ── Approver side (the Inbox) ── */
+
+  /** Requests sent to the signed-in user — pending, or already decided when `history`. Server-paged. */
+  inbox: (params: { history: boolean; page?: number; per_page?: number }) =>
+    call('PO approvals', () => api.get('/p2p/orders/gst-approvals', {
       params: { history: params.history ? 1 : 0, page: params.page ?? 1, per_page: params.per_page ?? 10 },
     }), (b) => {
       const body = b as { data?: GstApprovalInboxRow[]; meta?: GstApprovalInboxMeta } | null;
-      return { rows: body?.data ?? [], meta: body?.meta ?? { total: 0, per_page: 10, current_page: 1, last_page: 1 } };
+      return { rows: body?.data ?? [], meta: body?.meta ?? null };
     }),
 
+  /** Everything the review page shows for one request. */
   show: (id: number) =>
-    call('GST approval details', () => api.get(`/p2p/orders/gst-approvals/${id}`), dataOf<GstApprovalReview>),
+    call('PO approval', () => api.get(`/p2p/orders/gst-approvals/${id}`), dataOf<GstApprovalReview>),
 
-  /** Approve or reject; the reason is required either way. */
-  decide: (id: number, decision: 'approved' | 'rejected', reason: string) =>
-    call('GST approval decision', () => api.put(`/p2p/orders/gst-approvals/${id}`, { decision, reason }), dataOf<GstApprovalRequest>),
+  /** Approve or reject — only the senior it was sent to; a reason is required either way. */
+  decide: (id: number, body: { decision: 'approved' | 'rejected'; reason: string }) =>
+    call('PO approval decision', () => api.put(`/p2p/orders/gst-approvals/${id}`, body), dataOf<GstApprovalRequest>),
 };
 
 /* ══════════════════════════ Payments (TDS, requests, payments) ══════════════════════════ */

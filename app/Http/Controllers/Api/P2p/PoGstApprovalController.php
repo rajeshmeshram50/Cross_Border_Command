@@ -84,10 +84,22 @@ class PoGstApprovalController extends Controller
     {
         $user = $this->tenantUser($request);
         $po = PurchaseOrder::findOrFail($id);
+
+        // A PO that was rejected goes back to the senior who rejected it — the
+        // requester does not get to shop around for a softer approver. Any
+        // requested_to sent with it is ignored. Only if that senior is no longer
+        // active does the pick open up again.
+        $last = $po->gstApprovals()->latest('id')->first();
+        $sameApprover = $last && $last->status === PoGstApproval::STATUS_REJECTED
+            ? DB::table('users')->where('id', $last->requested_to)->where('client_id', $user->client_id)
+                ->where('status', 'active')->whereNull('deleted_at')->first(['id', 'name'])
+            : null;
+
         $data = $request->validate([
-            'requested_to' => 'required|integer',
+            'requested_to' => [$sameApprover ? 'nullable' : 'required', 'integer'],
             'note'         => 'nullable|string|max:1000',
         ], ['requested_to.required' => 'Select the senior to send this request to.']);
+        $targetId = $sameApprover->id ?? $data['requested_to'];
 
         if ($po->isCancelled()) return $this->fail('This PO is cancelled.');
         if (!$po->vendor_id) return $this->fail('Select a supplier on Step 01 first.');
@@ -103,16 +115,16 @@ class PoGstApprovalController extends Controller
         if ($open?->status === PoGstApproval::STATUS_APPROVED) return $this->fail('This PO is already approved — you can submit it.');
         if ($open) return $this->fail('A request is already waiting on ' . (DB::table('users')->where('id', $open->requested_to)->value('name') ?? 'the approver') . '.');
 
-        $approver = DB::table('users')->where('id', $data['requested_to'])->where('client_id', $user->client_id)
+        $approver = DB::table('users')->where('id', $targetId)->where('client_id', $user->client_id)
             ->where('status', 'active')->whereNull('deleted_at')->first(['id', 'name']);
         if (!$approver) return $this->fail('Select an active user of your company as the approver.');
         if ((int) $approver->id === (int) $user->id) return $this->fail('You cannot approve your own request — choose a senior.');
 
-        $row = $this->inTransaction('send the approval request', function () use ($po, $user, $data, $gst) {
+        $row = $this->inTransaction('send the approval request', function () use ($po, $user, $data, $gst, $targetId) {
             $row = PoGstApproval::create([
                 'purchase_order_id' => $po->id,
                 'requested_by'      => $user->id,
-                'requested_to'      => $data['requested_to'],
+                'requested_to'      => $targetId,
                 'request_note'      => $data['note'] ?? null,
                 'requested_at'      => now(),
                 'status'            => PoGstApproval::STATUS_PENDING,
@@ -169,7 +181,15 @@ class PoGstApprovalController extends Controller
             'rd.name as requested_by_department',
         )->paginate($perPage);
 
-        return $this->ok(collect($page->items())->map(fn ($r) => (array) $r + ['grand_total' => (float) $r->grand_total])->all(), 200, [
+        // Raw query rows carry DB timestamps with no zone ("2026-09-21 14:47:36"), which a
+        // browser reads as its own local time. Send them as ISO 8601 with the offset, the
+        // same as show() does via shapeRow(), so both screens show the same time.
+        $iso = fn ($v) => $v ? \Illuminate\Support\Carbon::parse($v)->toIso8601String() : null;
+        return $this->ok(collect($page->items())->map(fn ($r) => [
+            'grand_total'  => (float) $r->grand_total,
+            'requested_at' => $iso($r->requested_at),
+            'decided_at'   => $iso($r->decided_at),
+        ] + (array) $r)->all(), 200, [
             'meta' => ['total' => $page->total(), 'per_page' => $page->perPage(), 'current_page' => $page->currentPage(), 'last_page' => $page->lastPage()],
         ]);
     }

@@ -46,22 +46,28 @@ export default function GstNoticeModal({ notice, onClose, poId, approval, onSent
   const pending = approval?.status === 'pending';
   const approved = approval?.status === 'approved';
   const canSend = !stop && !pending && !approved;
+  /* A rejected PO goes back to the same senior — no picking a different one.
+     The server enforces it too; here it just replaces the dropdown. */
+  const sendBackTo = approval?.status === 'rejected' ? approval.requested_to_name : null;
 
   useEffect(() => {
-    if (!canSend || approversCache) return;
+    if (!canSend || sendBackTo || approversCache) return;
     poApprovalApi.approvers()
       .then((rows) => { approversCache = rows; setApprovers(rows); })
       .catch((e) => toast.error('Could not load approvers', e instanceof PoApiError ? e.firstError : 'Please try again.'))
       .finally(() => setLoadingApprovers(false));
-  }, [canSend, toast]);
+  }, [canSend, sendBackTo, toast]);
 
   const send = async () => {
     if (!poId) { toast.warning('Save the PO first', 'The request is raised on a saved purchase order.'); return; }
-    if (!approverId) { setError('Select the senior to send this request to.'); return; }
+    if (!sendBackTo && !approverId) { setError('Select the senior to send this request to.'); return; }
     setSending(true);
     try {
-      await poApprovalApi.request(poId, { requested_to: Number(approverId), note: note.trim() || undefined });
-      const who = approvers.find((a) => String(a.id) === approverId)?.name ?? 'the senior';
+      await poApprovalApi.request(poId, {
+        ...(sendBackTo ? {} : { requested_to: Number(approverId) }),
+        note: note.trim() || undefined,
+      });
+      const who = sendBackTo ?? approvers.find((a) => String(a.id) === approverId)?.name ?? 'the senior';
       toast.success('Sent for senior approval', `${who} will see it in their Inbox.`);
       onSent?.();
       onClose();
@@ -147,6 +153,18 @@ export default function GstNoticeModal({ notice, onClose, poId, approval, onSent
             <div className="cgst-note">Once scrutiny is updated, reopen this PO and the check will re-run automatically.</div>
           ) : canSend && (
             <>
+              {sendBackTo ? (
+                /* Re-send: the same senior, stated, not chosen again. */
+                <div className="cgst-field">
+                  <label>Goes back to</label>
+                  <div className="cgst-same">
+                    <span className="cgst-same__av">{sendBackTo.split(/\s+/).filter(Boolean).map((w) => w[0]).join('').slice(0, 2).toUpperCase()}</span>
+                    <span className="cgst-same__n">{sendBackTo}</span>
+                    <span className="cgst-same__s">the senior who rejected it</span>
+                  </div>
+                  {error && <span className="cgst-err">{error}</span>}
+                </div>
+              ) : (
               <div className="cgst-field">
                 <label>Send to <span className="cgst-req">*</span></label>
                 <MasterSelect
@@ -160,6 +178,7 @@ export default function GstNoticeModal({ notice, onClose, poId, approval, onSent
                 />
                 {error && <span className="cgst-err">{error}</span>}
               </div>
+              )}
               <div className="cgst-field">
                 <label htmlFor="cgst-note">Note for the approver <span className="cgst-opt">optional</span></label>
                 <textarea

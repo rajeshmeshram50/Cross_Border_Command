@@ -83,8 +83,12 @@ export default function Inbox() {
   const [poNewCount, setPoNewCount] = useState(0);
   const [poHistCount, setPoHistCount] = useState(0);
   // The history section mounts only on its tab; its count is needed for the tab badge now.
+  // One row is enough — meta.total is the count. A failure just leaves the badge at 0;
+  // the section itself shows the error when opened.
   useEffect(() => {
-    poApprovalApi.inbox({ history: true, per_page: 1 }).then((r) => setPoHistCount(r.meta.total)).catch(() => {});
+    poApprovalApi.inbox({ history: true, per_page: 1 })
+      .then((res) => setPoHistCount(res.meta?.total ?? res.rows.length))
+      .catch(() => {});
   }, []);
   const [leaveRows, setLeaveRows] = useState<ApiLeaveRequest[]>([]);
   const [leaveLoading, setLeaveLoading] = useState(true);

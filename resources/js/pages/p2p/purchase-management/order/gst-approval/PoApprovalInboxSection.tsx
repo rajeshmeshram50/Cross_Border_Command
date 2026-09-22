@@ -1,14 +1,19 @@
-// Inbox section: PO senior-approval requests sent to the signed-in user.
-// "New" lists the pending ones; history lists those already decided. Rows are
-// paged on the server, 10 at a time; the review itself is a full page.
-import { useCallback, useEffect, useRef, useState } from 'react';
+// Inbox section: PO senior-approval requests sent to the signed-in user, as a
+// table — one row per request, one column per question the approver has
+// (which PO, which supplier, why it is here, who asked, when). The amount is
+// on the review page, where the decision is made.
+// "New" lists the pending ones; history lists those already decided.
+// Rows come from GET /p2p/orders/gst-approvals?history=0|1, 10 a page.
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody } from 'reactstrap';
-import { Shimmer } from '../../../../../components/ui/Shimmer';
-import { useToast } from '../../../../../contexts/ToastContext';
+import { ShimmerTableRows } from '../../../../../components/ui/Shimmer';
+import { FitTip } from '../create-po/form-fields';
 import { PoApiError, poApprovalApi, type GstApprovalInboxMeta, type GstApprovalInboxRow } from '../api/po-api';
-import { fmtDate, fmtMoney, initialsOf } from './approval-format';
+import { fmtDate, fmtDateTime, initialsOf, monthsAgoText } from './approval-format';
 import './gst-approval.css';
+
+const PER_PAGE = 10;
 
 export default function PoApprovalInboxSection({ history = false, onCount }: {
   history?: boolean;
@@ -16,35 +21,37 @@ export default function PoApprovalInboxSection({ history = false, onCount }: {
   onCount?: (n: number) => void;
 }) {
   const navigate = useNavigate();
-  const toast = useToast();
+  const [page, setPage] = useState(1);
   const [rows, setRows] = useState<GstApprovalInboxRow[]>([]);
   const [meta, setMeta] = useState<GstApprovalInboxMeta | null>(null);
-  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const latest = useRef(0);
-  const countRef = useRef(onCount);
-  countRef.current = onCount;
+  const [error, setError] = useState('');
+  // Bumped by "Try again" to run the load once more.
+  const [attempt, setAttempt] = useState(0);
 
-  const load = useCallback(async (p: number) => {
-    const ticket = ++latest.current;
+  // Load the page whenever the tab, the page number or a retry changes.
+  useEffect(() => {
+    // A reply that lands after the user switched tab / page (or left) is dropped.
+    let alive = true;
     setLoading(true);
-    try {
-      const res = await poApprovalApi.inbox({ history, page: p });
-      if (ticket !== latest.current) return;   // a newer page was asked for
-      setRows(res.rows);
-      setMeta(res.meta);
-      countRef.current?.(res.meta.total);
-    } catch (e) {
-      if (ticket === latest.current) toast.error('Could not load PO approvals', e instanceof PoApiError ? e.firstError : 'Please try again.');
-    } finally {
-      if (ticket === latest.current) setLoading(false);
-    }
-  }, [history, toast]);
-
-  useEffect(() => { load(page); }, [load, page]);
+    poApprovalApi.inbox({ history, page, per_page: PER_PAGE })
+      .then((res) => {
+        if (!alive) return;
+        // A decision can empty the last page — step back instead of showing nothing.
+        if (!res.rows.length && page > 1) { setPage(page - 1); return; }
+        setRows(res.rows);
+        setMeta(res.meta);
+        setError('');
+        onCount?.(res.meta?.total ?? res.rows.length);
+      })
+      .catch((e) => { if (alive) setError(e instanceof PoApiError ? e.firstError : 'Could not load PO approvals.'); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [history, page, attempt, onCount]);
 
   const open = (r: GstApprovalInboxRow) => navigate(`/inbox/po-approval/${r.id}`);
   const total = meta?.total ?? 0;
+  const cols = 7;
 
   return (
     <Card className="mb-3 ep-section-card-flat">
@@ -64,65 +71,100 @@ export default function PoApprovalInboxSection({ history = false, onCount }: {
           <span className="pga-count">{loading && !meta ? '…' : total}</span>
         </div>
 
-        {loading && !rows.length ? (
-          <div className="ib-shim-wrap">{Array.from({ length: 2 }).map((_, i) => <Shimmer key={i} height={52} radius={8} />)}</div>
-        ) : rows.length === 0 ? (
-          history ? <div className="ib-hist-empty">No decided PO approvals yet.</div> : (
-            <div className="ib-empty">
-              <i className="ri-file-shield-2-line ib-empty-icon" />
-              <div className="ib-empty-title">No pending PO approvals</div>
-              <div className="ib-empty-sub">Requests from your team will appear here.</div>
-            </div>
-          )
-        ) : (
-          <div className={loading ? 'pga-refreshing' : undefined}>
-            {rows.map((r) => (
-              <div key={r.id} className={history ? 'ib-row-hist' : 'ib-row'}>
-                <div className="d-flex align-items-start gap-3 flex-wrap">
-                  <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0 ib-avatar pga-avatar">
-                    {initialsOf(r.requested_by_name)}
-                  </span>
-                  <div className="ib-body-col">
-                    <div className="d-flex align-items-center gap-2 flex-wrap">
-                      <strong className="ib-name">{r.requested_by_name ?? '—'}</strong>
-                      <span className="ib-sub-meta">
-                        {[r.requested_by_department, r.requested_by_designation].filter(Boolean).map((t) => `${t} · `).join('')}requested {fmtDate(r.requested_at)}
-                      </span>
+        <div className="table-responsive">
+          <table className={`pga-itbl${loading && rows.length ? ' is-loading' : ''}`}>
+            <thead>
+              <tr>
+                <th className="pga-itbl__sr">Sr No</th>
+                <th>Purchase Order</th>
+                <th>Supplier</th>
+                {history ? <th>Decision</th> : <th>Why Approval</th>}
+                <th>Requested By</th>
+                <th>{history ? 'Decided On' : 'Received'}</th>
+                <th className="pga-itbl__act">Take Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && !rows.length ? (
+                <ShimmerTableRows rows={3} cols={cols} />
+              ) : error ? (
+                <tr>
+                  <td colSpan={cols} className="pga-itbl__empty">
+                    <i className="ri-error-warning-line pga-itbl__err-ico" />
+                    <div className="pga-itbl__empty-t">{error}</div>
+                    <button type="button" className="pga-act pga-act--view pga-itbl__retry" onClick={() => setAttempt((a) => a + 1)}>
+                      <i className="ri-refresh-line" />Try again
+                    </button>
+                  </td>
+                </tr>
+              ) : rows.length === 0 ? (
+                <tr>
+                  <td colSpan={cols} className="pga-itbl__empty">
+                    <i className="ri-file-shield-2-line" />
+                    <div className="pga-itbl__empty-t">{history ? 'No decided PO approvals yet' : 'No pending PO approvals'}</div>
+                    <div className="pga-itbl__empty-s">
+                      {history ? 'Purchase orders you approve or reject will be listed here.' : 'Requests from your team will appear here.'}
                     </div>
-                    <div className="mt-1 d-flex align-items-center flex-wrap gap-2 ib-line">
-                      <span className="pga-pill pga-pill--po">Purchase Order</span>
-                      <code className="ib-code-grey">{r.po_code}</code>
-                      <span className="pga-supplier" title={r.supplier_name ?? ''}>{r.supplier_name ?? '—'}</span>
-                      <span className="fw-bold ib-amt">· {fmtMoney(r.grand_total, r.currency_code)}</span>
-                      {!history && <span className="pga-pill pga-pill--warn">GST return overdue</span>}
-                      {history && <span className={`pga-pill pga-pill--${r.status === 'approved' ? 'ok' : 'bad'}`}>{r.status === 'approved' ? 'Approved' : 'Rejected'}</span>}
-                    </div>
-                    {!history && r.request_note && (
-                      <div className="mt-1 text-muted ib-quote"><i className="ri-double-quotes-l me-1" />{r.request_note}</div>
-                    )}
-                    {history && r.reason && (
-                      <div className="mt-1 text-muted ib-quote">
-                        <i className="ri-double-quotes-l me-1" />{r.reason}
-                        <span className="pga-when"> · {fmtDate(r.decided_at)}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="d-flex flex-column gap-2 ib-actions-col">
+                  </td>
+                </tr>
+              ) : rows.map((r, i) => {
+                const approved = r.status === 'approved';
+                return (
+                  <tr key={r.id}>
+                    <td className="pga-itbl__sr">{(page - 1) * PER_PAGE + i + 1}</td>
+                    <td>
+                      <span className="pga-code">{r.po_code}</span>
+                      <div className="pga-sub">{fmtDate(r.po_date)}</div>
+                    </td>
+                    <td className="pga-itbl__sup">
+                      <FitTip label={r.supplier_name ?? '—'}><div className="pga-strong-txt pga-ellipsis">{r.supplier_name ?? '—'}</div></FitTip>
+                      <div className="pga-sub">{r.supplier_code ?? '—'}</div>
+                    </td>
                     {history ? (
-                      <button type="button" className="ib-pager-btn" onClick={() => open(r)}>
-                        <i className="ri-eye-line me-1" />View
-                      </button>
+                      <td className="pga-itbl__why">
+                        <span className={`pga-pill pga-pill--${approved ? 'ok' : 'bad'}`}>
+                          <i className={approved ? 'ri-checkbox-circle-line' : 'ri-close-circle-line'} />{approved ? 'Approved' : 'Rejected'}
+                        </span>
+                        {r.reason && (
+                          <FitTip label={r.reason}><div className="pga-sub pga-ellipsis">“{r.reason}”</div></FitTip>
+                        )}
+                      </td>
                     ) : (
-                      <button type="button" className="ib-btn-approve" onClick={() => open(r)}>
-                        <i className="ri-checkbox-circle-line me-1" />Review &amp; Approve
-                      </button>
+                      <td className="pga-itbl__why">
+                        <span className="pga-pill pga-pill--warn"><i className="ri-error-warning-line" />GST return overdue</span>
+                        <div className="pga-sub">Last filed {fmtDate(r.gst_last_filing_date)} · {monthsAgoText(r.gst_last_filing_date)}</div>
+                      </td>
                     )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+                    <td className="pga-itbl__who">
+                      <div className="pga-who">
+                        <span className="pga-who__av">{initialsOf(r.requested_by_name)}</span>
+                        <div className="pga-who__txt">
+                          <div className="pga-strong-txt">{r.requested_by_name ?? '—'}</div>
+                          <div className="pga-sub">{[r.requested_by_department, r.requested_by_designation].filter(Boolean).join(' · ') || '—'}</div>
+                          {!history && r.request_note && (
+                            <FitTip label={r.request_note}><div className="pga-note-line pga-ellipsis"><i className="ri-chat-quote-line" />{r.request_note}</div></FitTip>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="pga-sub pga-itbl__when">{fmtDateTime(history ? r.decided_at : r.requested_at)}</td>
+                    <td className="pga-itbl__act">
+                      {history ? (
+                        <button type="button" className="pga-act pga-act--view" onClick={() => open(r)}>
+                          <i className="ri-eye-line" />View
+                        </button>
+                      ) : (
+                        <button type="button" className="pga-act pga-act--go" onClick={() => open(r)}>
+                          <i className="ri-checkbox-circle-line" />Review &amp; Approve
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
 
         {meta && meta.last_page > 1 && (
           <div className="d-flex align-items-center justify-content-between gap-2 ib-pager">

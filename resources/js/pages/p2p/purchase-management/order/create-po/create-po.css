@@ -778,6 +778,21 @@
   color: #5b7585;
 }
 .cgst-opt { font-size: 9px; font-weight: 700; letter-spacing: .03em; text-transform: none; color: #a8bcc7; }
+/* Re-send after a rejection: the approver is fixed, so it is stated here
+   instead of being picked again. */
+.cgst-same {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 11px; border: 1.5px solid #cfe9f2; border-radius: 9px; background: #f5fcfe;
+}
+.cgst-same__av {
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 30px; height: 30px;
+  border-radius: 50%; background: linear-gradient(135deg, #22d3ee, #0e7490); color: #fff; font-size: 11px; font-weight: 800;
+}
+.cgst-same__n { font-size: 12.5px; font-weight: 800; color: #0f172a; }
+.cgst-same__s { font-size: 11px; font-weight: 600; color: #7c98a6; }
+[data-bs-theme="dark"] .cgst-same { background: rgba(34, 211, 238, .07); border-color: rgba(34, 211, 238, .28); }
+[data-bs-theme="dark"] .cgst-same__n { color: #e2e8f0; }
+[data-bs-theme="dark"] .cgst-same__s { color: #94a3b8; }
 .cgst-ta {
   width: 100%;
   padding: 10px 12px;
