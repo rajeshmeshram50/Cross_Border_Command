@@ -399,10 +399,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     name: empDetail.display_name || `${empDetail.first_name ?? ''} ${empDetail.last_name ?? ''}`.trim() || (employee?.name || ''),
     emp_code: empDetail.emp_code,
     pf_eligible: !!empDetail.pf_eligible,
+    // Without these the modal fell back to Statutory / no ESI and wrote that back over the Employee form.
+    pf_type: empDetail.pf_type ?? null,
+    esi_applicable: empDetail.esi_applicable === true || String(empDetail.esi_applicable ?? '').toLowerCase() === 'yes',
+    date_of_joining: empDetail.date_of_joining ? String(empDetail.date_of_joining).slice(0, 10) : null,
     annual_salary: empDetail.annual_salary != null ? Number(empDetail.annual_salary) : null,
     has_structure: !!salaryStruct,
     structure_id: salaryStruct?.id ?? null,
     monthly_gross: realMonthlyGross,
+    version: salaryStruct?.version ?? null,
+    effective_from: salaryStruct?.effective_from ?? null,
   } : null;
 
   // ── Real payslip history + salary versions (Payroll tab) ──────────────
@@ -4704,7 +4710,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         open={salaryModalOpen}
         employee={salaryEmpLite}
         onClose={() => setSalaryModalOpen(false)}
-        onSaved={reloadSalaryStruct}
+        onSaved={() => {
+          reloadSalaryStruct();
+          // A revision also writes CTC / PF / ESI to the employee, so re-read it too.
+          if (empDetail?.id) api.get(`/employees/${empDetail.id}`)
+            .then(r => setEmpDetail(r.data?.employee || r.data || null)).catch(() => {});
+        }}
       />
       {isOwnProfile && (isManager || ['branch_user', 'client_admin', 'super_admin'].includes(String(authUser?.user_type || ''))) && (
         <>

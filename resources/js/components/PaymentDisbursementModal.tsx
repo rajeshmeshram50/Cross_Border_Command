@@ -160,6 +160,10 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
         [data-bs-theme="dark"] .pdm-modal .pdm-badge-neutral { background: rgba(255,255,255,0.10) !important; color: #cbd5e1 !important; }
         [data-bs-theme="dark"] .pdm-modal .pdm-badge-red { background: rgba(177,64,29,0.22) !important; color: #fda192 !important; }
         [data-bs-theme="dark"] .pdm-modal .btn-light { background: var(--vz-secondary-bg) !important; color: var(--vz-body-color) !important; border-color: var(--vz-border-color) !important; }
+        /* Sticky header cells need an opaque fill, or rows scroll through them.
+           The dark tint is layered over the modal colour so it stays solid. */
+        .pdm-modal .pdm-sticky-head th { position: sticky; top: 0; z-index: 2; box-shadow: inset 0 -1px 0 var(--vz-border-color); }
+        [data-bs-theme="dark"] .pdm-modal .pdm-sticky-head th { background: linear-gradient(var(--vz-secondary-bg), var(--vz-secondary-bg)), var(--shim-card-bg, #212529) !important; }
         .pdm-export-item { display: flex; align-items: center; width: 100%; padding: 8px 10px; border: none; background: transparent; border-radius: 8px; font-size: 13px; color: var(--vz-body-color); cursor: pointer; text-align: left; }
         .pdm-export-item:hover { background: var(--vz-secondary-bg); }
         /* Sheet tabs. The active one is marked by an underline flush with the
@@ -238,7 +242,7 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
 
       <div style={{ overflowY: 'auto', flex: 1 }}>
         <table className="table align-middle table-nowrap mb-0" style={{ fontSize: 13 }}>
-          <thead className="table-light" style={{ position: 'sticky', top: 0 }}>
+          <thead className="table-light pdm-sticky-head">
             <tr><th className="ps-3">Employee</th><th>Bank</th><th>Account</th><th>IFSC</th><th className="text-end">Amount</th><th className="text-center pe-3">Status</th></tr>
           </thead>
           <tbody>

@@ -30,6 +30,7 @@ import { resolveProbation } from '../../utils/probation';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import EvidenceVaultModal from '../../components/EvidenceVaultModal';
 import './HrEmployeeOnboarding.css';
+import { SalaryVersionBadge } from '../../components/SalaryVersionBadge';
 
 import '../../../css/recruitment.css';
 
@@ -2617,6 +2618,7 @@ function InitiateOnboardingModal({
   const [obEsi, setObEsi]               = useState(false);
   const [obPt, setObPt]                 = useState(false);
   const [obBreakupLoading, setObBreakupLoading] = useState(false);
+  const [obSalaryVersion, setObSalaryVersion] = useState<{ version: number; from: string | null } | null>(null);
   const obLoadedForRef  = useRef<number | null>(null);
   const obSeededForRef  = useRef<string | null>(null);
   const obBaselineRef   = useRef<string | null>(null);   // signature last saved
@@ -2652,6 +2654,7 @@ function InitiateOnboardingModal({
     };
 
     setObBreakupLoading(true);
+    setObSalaryVersion(null);
     api.get('/salary-structures', { params: { employee_id: emp.dbId, active_only: 1 } })
       .then(res => {
         if (cancelled) return;
@@ -2666,6 +2669,7 @@ function InitiateOnboardingModal({
           }));
           setObEarnings(earn);
           setObDeductions(ded);
+          setObSalaryVersion(active.version ? { version: Number(active.version), from: active.effective_from ?? null } : null);
           setObEsi(!!active.esi_applicable || ded.some((d: SalBreakComp) => d.code === 'esi'));
           setObPt(!!active.pt_applicable  || ded.some((d: SalBreakComp) => d.code === 'pt'));
           // What was on the server — a save that matches this is skipped.
@@ -5383,6 +5387,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                       <i className="ri-grid-line" style={{ color: '#7c3aed' }} />
                       Salary Breakup
+                      {obSalaryVersion && <SalaryVersionBadge version={obSalaryVersion.version} from={obSalaryVersion.from} />}
                     </span>
                     {/* Detailed Breakup toggle — when on, the monthly component
                         split (Basic / HRA / Special + PF) replaces the simple
@@ -5578,21 +5583,19 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
                           {/* CTC verdict strip — same as the Employee form and payroll. */}
                           {obSalaryAnnual > 0 && !obMatches && (
-                            <div className="d-flex align-items-center gap-2 mt-2 p-2 px-3"
-                              style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, fontSize: 12, fontWeight: 600, color: '#b1401d' }}>
+                            <div className="ctc-verdict ctc-verdict--err d-flex align-items-center gap-2 mt-2 p-2 px-3">
                               <i className="ri-error-warning-line" style={{ fontSize: 15 }} />
                               <span>
                                 <b>{fmt(Math.abs(obDiff))} {obOverSalary ? 'over' : 'short of'}</b> the Annual CTC
                                 {' '}({fmt(obSalaryAnnual)}) — balance the breakup before saving.
                               </span>
-                              <button type="button" className="btn btn-sm ms-auto" style={{ fontSize: 11, fontWeight: 700, padding: '3px 12px', background: '#fff', border: '1px solid #fecaca', color: '#b1401d', whiteSpace: 'nowrap' }} onClick={obBalanceToBasic}>
+                              <button type="button" className="btn btn-sm ms-auto ctc-verdict-fix" onClick={obBalanceToBasic}>
                                 <i className="ri-scales-3-line me-1" />Balance to Basic
                               </button>
                             </div>
                           )}
                           {obSalaryAnnual > 0 && obMatches && (
-                            <div className="d-flex align-items-center gap-2 mt-2 p-2 px-3"
-                              style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 10, fontSize: 12, fontWeight: 600, color: '#0a8754' }}>
+                            <div className="ctc-verdict ctc-verdict--ok d-flex align-items-center gap-2 mt-2 p-2 px-3">
                               <i className="ri-checkbox-circle-line" style={{ fontSize: 15 }} />
                               <span>Breakup matches the Annual CTC.</span>
                             </div>

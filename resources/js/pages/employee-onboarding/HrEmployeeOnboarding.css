@@ -1899,3 +1899,18 @@
      form fields already use responsive reactstrap Cols, so they reflow. */
   .onb-init-breakup-grid { grid-template-columns: 1fr; }
 }
+/* Annual CTC breakup check (Employee form + Onboarding setup), light and dark. */
+.ctc-verdict { border: 1px solid; border-radius: 10px; font-size: 12px; font-weight: 600; }
+.ctc-verdict i { font-size: 15px; }
+.ctc-verdict--ok  { background: #ecfdf5; border-color: #a7f3d0; color: #0a8754; }
+.ctc-verdict--err { background: #fef2f2; border-color: #fecaca; color: #b1401d; }
+.btn.ctc-verdict-fix { font-size: 11px; font-weight: 700; padding: 3px 12px; white-space: nowrap; background: #fff; border: 1px solid #fecaca; color: #b1401d; }
+[data-bs-theme="dark"] .ctc-verdict--ok  { background: rgba(10,135,84,0.16); border-color: rgba(10,179,156,0.34); color: #7ddfbf; }
+[data-bs-theme="dark"] .ctc-verdict--err { background: rgba(177,64,29,0.16); border-color: rgba(240,101,72,0.34); color: #fda192; }
+[data-bs-theme="dark"] .btn.ctc-verdict-fix { background: transparent; border-color: rgba(240,101,72,0.45); color: #fda192; }
+
+/* Salary structure version beside "Salary Breakup" (Employee form + Onboarding). */
+.salary-version-badge { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: none; background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; white-space: nowrap; }
+.salary-version-badge i { font-size: 12px; }
+.salary-version-badge-date { font-weight: 500; opacity: .8; }
+[data-bs-theme="dark"] .salary-version-badge { background: rgba(124,92,252,0.18); color: #c4b5fd; border-color: rgba(124,92,252,0.38); }
