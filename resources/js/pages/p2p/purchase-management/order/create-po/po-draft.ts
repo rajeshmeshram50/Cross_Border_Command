@@ -12,6 +12,10 @@ export const PO_TYPE_OPTIONS: { key: PoTypeKey; label: string }[] = [
   { key: 'services', label: 'Services' },
   { key: 'ffd_transporter', label: 'FFD / Transporter' },
 ];
+/** Same list the server accepts (PurchaseOrder::PAYMENT_TYPES). */
+export const PAYMENT_TYPE_OPTIONS = ['Advanced Payment', 'Full Payment', 'Letter of Credit'];
+/** Only Material / Goods POs can be raised for now; the rest are listed but locked. */
+export const OPEN_PO_TYPE = 'Material / Goods';
 export const DOC_TYPE_OPTIONS: { key: DocTypeKey; label: string }[] = [
   { key: 'domestic', label: 'Domestics' },
   { key: 'international', label: 'International' },

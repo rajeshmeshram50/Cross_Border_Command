@@ -389,7 +389,8 @@ class PoPaymentRequestController extends Controller
         $data = $request->validate([
             'decision'        => ['required', Rule::in([PoPaymentRequest::STATUS_APPROVED, PoPaymentRequest::STATUS_REJECTED])],
             'approved_amount' => 'required_if:decision,approved|nullable|numeric|min:0.01',
-            'note'            => 'required_if:decision,rejected|nullable|string|max:1000',
+            // A decline reason is capped at 300 characters, an approval remark at 400 (as on the popup).
+            'note'            => ['required_if:decision,rejected', 'nullable', 'string', $request->input('decision') === PoPaymentRequest::STATUS_REJECTED ? 'max:300' : 'max:400'],
         ], [
             'approved_amount.required_if' => 'Enter the amount to approve.',
             'approved_amount.min'         => 'Enter the amount to approve.',
@@ -406,6 +407,17 @@ class PoPaymentRequestController extends Controller
         if ($approve && $approved > (float) $row->requested_amount + 0.001) {
             return $this->fail('You can approve at most the requested ' . number_format((float) $row->requested_amount, 2) . '.', 422,
                 ['approved_amount' => ['Cannot be more than the requested amount.']]);
+        }
+        // Headroom: net payable less what other approved requests on the PO already hold (or have paid).
+        if ($approve) {
+            $held = (float) PoPaymentRequest::withoutGlobalScope('tenant')->where('purchase_order_id', $po->id)
+                ->where('id', '!=', $row->id)->where('status', PoPaymentRequest::STATUS_APPROVED)
+                ->selectRaw('COALESCE(SUM(GREATEST(approved_amount, paid_amount)), 0) AS s')->value('s');
+            $open = round((float) $po->grand_total - (float) $po->tds_amount - $held, 2);
+            if ($approved > $open + 0.001) {
+                return $this->fail('Only ' . number_format(max(0, $open), 2) . ' is still open to approve on this PO.', 422,
+                    ['approved_amount' => ['Cannot be more than the amount open to request.']]);
+            }
         }
 
         $this->inTransaction('record the decision', fn () => $row->update([

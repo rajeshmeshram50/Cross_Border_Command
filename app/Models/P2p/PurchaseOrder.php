@@ -35,6 +35,9 @@ class PurchaseOrder extends Model
     public const LINK_TYPES = ['with_shipment', 'standalone'];
     public const TRANSPORT_MODES = ['Sea', 'Road', 'Air'];
     public const INCO_TERMS = ['CIF', 'C&F', 'EXW', 'FOB'];
+    /** PO types that can be raised today; the others are listed but not open yet. */
+    public const OPEN_PO_TYPES = ['material_goods'];
+    public const PAYMENT_TYPES = ['Advanced Payment', 'Full Payment', 'Letter of Credit'];
 
     protected $fillable = [
         'client_id', 'branch_id', 'code', 'po_date', 'status', 'current_step',
@@ -134,6 +137,13 @@ class PurchaseOrder extends Model
     public function creator(): BelongsTo       { return $this->belongsTo(User::class, 'created_by'); }
 
     public function isCancelled(): bool { return $this->status === self::STATUS_CANCELLED; }
+
+    /** Payments have started: a pending / approved payment request, or money paid. The PO is then view-only. */
+    public function paymentsStarted(): bool
+    {
+        return (float) $this->paid_amount > 0
+            || $this->paymentRequests()->withoutGlobalScope('tenant')->whereIn('status', [PoPaymentRequest::STATUS_PENDING, PoPaymentRequest::STATUS_APPROVED])->exists();
+    }
 
     /** Content is frozen once cancelled or once any document on it is signed. */
     public function isLocked(): bool

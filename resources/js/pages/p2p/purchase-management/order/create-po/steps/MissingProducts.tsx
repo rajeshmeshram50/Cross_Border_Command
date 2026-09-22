@@ -1,6 +1,6 @@
 // Step 02 · Missing Product Details — PI quantities the PO doesn't cover.
 // Nothing is entered here: every row falls out of the table above.
-import { computeLine, productOf } from './ProductTable';
+import { computeLine } from './ProductTable';
 import type { PoLineRow } from '../po-draft';
 import type { ProductOpt } from '../use-po-lookups';
 import type { TaxMode } from '../../api/po-api';
@@ -30,22 +30,20 @@ export default function MissingProducts({ rows, products, taxMode }: Props) {
             <th>Product Code</th>
             <th className="cpd-th-left">Product Name (PI)</th>
             <th>Pending Qty (PI)</th>
-            <th className="cpd-th-left">Product Name (PO)</th>
-            <th>Missing Qty</th>
           </tr>
         </thead>
         <tbody>
           {missing.map(({ row, line }, i) => {
             const pi = row.pi!;
-            const poName = productOf(row, products)?.name ?? (row.productId === pi.product_id ? pi.product_name : null);
             return (
               <tr key={row.key}>
                 <td>{i + 1}</td>
                 <td><span className="cpd-code">{pi.product_code || '—'}</span></td>
                 <td className="cpd-td-left cpd-name">{pi.product_name}</td>
-                <td>{pi.pending_qty}</td>
-                <td className="cpd-td-left">{row.qtyPo > 0 ? (poName || '—') : <span className="cpd-dash">Not ordered</span>}</td>
-                <td><span className="cpd-missqty">{line.missing}</span></td>
+                {/* Still not ordered on the PI after this PO and earlier POs. */}
+                <td title={`PI quantity ${pi.pi_quantity} · pending before this PO ${pi.pending_qty} · on this PO ${row.qtyPo}`}>
+                  <span className="cpd-missqty">{line.missing}</span>
+                </td>
               </tr>
             );
           })}

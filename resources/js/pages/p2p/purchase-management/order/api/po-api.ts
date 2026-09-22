@@ -133,6 +133,8 @@ export type PoDetail = PoLinkRefs & {
   terms: string | null; submitted_at: string | null; cancel_reason: string | null;
   inspection_status: 'not_required' | 'pending' | 'completed' | null;
   created_by: number | null; created_by_name: string | null;
+  /** A pending / approved payment request or money paid: the PO is view-only. */
+  payments_started: boolean;
   supplier: { vendor_id: number; supplier_code: string; supplier_name: string; supplier_gstin: string | null; supplier_state_code: string | null } | null;
   items: PoItem[];
   documents: PoDocument[];

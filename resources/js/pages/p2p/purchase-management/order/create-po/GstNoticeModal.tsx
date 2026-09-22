@@ -28,8 +28,10 @@ type Approval = NonNullable<PoDetail['gst_approval']>;
 let approversCache: GstApprover[] | null = null;
 
 /** `poId` + `onSent` send the senior-approval request; `approval` is the one already raised. */
-export default function GstNoticeModal({ notice, onClose, poId, approval, onSent }: {
+export default function GstNoticeModal({ notice, onClose, poId, approval, onSent, onOpenScrutiny }: {
   notice: GstNotice; onClose: () => void; poId?: number | null; approval?: Approval | null; onSent?: () => void;
+  /** Opens the supplier master on its GST Scrutiny tab; without it the button just closes. */
+  onOpenScrutiny?: () => void;
 }) {
   useScrollLock(true, '.cgst-card');
   const toast = useToast();
@@ -175,8 +177,8 @@ export default function GstNoticeModal({ notice, onClose, poId, approval, onSent
 
         <div className="cgst-ft">
           <button type="button" className="cgst-btn cgst-btn--ghost" onClick={onClose}>{canSend ? 'Cancel' : 'Close'}</button>
-          {stop && (
-            <button type="button" className="cgst-btn cgst-btn--stop" onClick={onClose}>Open Supplier GST Scrutiny</button>
+          {stop && onOpenScrutiny && (
+            <button type="button" className="cgst-btn cgst-btn--stop" onClick={() => { onClose(); onOpenScrutiny(); }}>Open Supplier GST Scrutiny</button>
           )}
           {canSend && (
             <button type="button" className="cgst-btn cgst-btn--warn" onClick={send} disabled={sending}>

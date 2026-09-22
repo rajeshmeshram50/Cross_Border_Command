@@ -181,12 +181,12 @@ class PurchaseOrderController extends Controller
     {
         $intl = 'required_if:document_type,international|nullable';
         return [
-            'po_type'                => ['required', Rule::in(PurchaseOrder::PO_TYPES)],
+            'po_type'                => ['required', Rule::in(PurchaseOrder::OPEN_PO_TYPES)],
             'document_type'          => ['required', Rule::in(PurchaseOrder::DOC_TYPES)],
             'mode_of_transport'      => ['required', Rule::in(PurchaseOrder::TRANSPORT_MODES)],
             'expected_delivery_date' => 'required|date|after_or_equal:today',
             'delivery_location'      => 'required|string|max:255',
-            'payment_type'           => 'required|string|max:60',
+            'payment_type'           => ['required', Rule::in(PurchaseOrder::PAYMENT_TYPES)],
             'physical_inspection'    => ['required', Rule::in(PurchaseOrder::YES_NO)],
             'currency_code'          => "{$intl}|string|max:8",
             'exchange_rate'          => "{$intl}|numeric|gt:0",
@@ -208,6 +208,8 @@ class PurchaseOrderController extends Controller
     {
         return [
             'required_if'                           => 'This field is required on an international PO.',
+            'po_type.in'                            => 'Only Material / Goods purchase orders can be raised for now.',
+            'payment_type.in'                       => 'Select Advanced Payment, Full Payment or Letter of Credit.',
             'expected_delivery_date.after_or_equal' => 'Expected delivery date cannot be earlier than today.',
             'port_of_loading.max'                   => 'Port of loading may not exceed 255 characters.',
             'port_of_discharge.max'                 => 'Port of discharge may not exceed 255 characters.',
@@ -246,11 +248,16 @@ class PurchaseOrderController extends Controller
     {
         $user = $this->tenantUser($request);
         $po = $this->findPo($id);
-        if ($po->isLocked()) return $this->fail('This PO is cancelled or has a signed document and can no longer be edited.');
+        if ($blocked = $this->editBlock($po)) return $blocked;
 
         $data = $request->validate($this->stage1Rules(), $this->stage1Messages());
         if (($data['shipment_order_id'] ?? null) != $po->shipment_order_id && $po->items()->exists()) {
             return $this->fail('Remove the product lines before changing the shipment — they are matched to its PI.');
+        }
+        // Once product lines are saved, the supplier (and its document type) is fixed: lines are taxed on it.
+        if ($po->items()->exists() && ((int) $data['vendor_id'] !== (int) $po->vendor_id || $data['document_type'] !== $po->document_type)) {
+            return $this->fail('Product lines are already saved on this PO — the supplier and document type can no longer change.', 422,
+                ['errors' => ['vendor_id' => ['The supplier is fixed once product lines are saved.']]]);
         }
         $resolved = $this->resolveStage1($data, $user);
         if ($resolved instanceof JsonResponse) return $resolved;
@@ -289,6 +296,13 @@ class PurchaseOrderController extends Controller
         if (!$vendor) return $this->fail('Supplier not found', 422, ['errors' => ['vendor_id' => ['Supplier not found.']]]);
         if (str_contains(strtolower((string) $vendor->supplier_category), 'blacklist')) {
             return $this->fail('Blacklisted supplier', 422, ['errors' => ['vendor_id' => ['This supplier is blacklisted — a purchase order cannot be raised on it.']]]);
+        }
+        // Document type follows the supplier's origin: India → domestic, any other country → international.
+        $origin = $this->vendorOrigin($vendor);
+        if ($data['document_type'] !== $origin) {
+            return $this->fail('Document type does not match the supplier', 422, ['errors' => ['document_type' => [
+                "This is " . ($origin === 'international' ? 'an international' : 'a domestic') . " supplier — the document type must be " . ($origin === 'international' ? 'International.' : 'Domestic.'),
+            ]]]);
         }
 
         $home = $this->svc->homeStateCode($user->branch_id);
@@ -354,7 +368,7 @@ class PurchaseOrderController extends Controller
     {
         $user = $this->tenantUser($request);
         $po = $this->findPo($id);
-        if ($po->isLocked()) return $this->fail('This PO is cancelled or has a signed document and can no longer be edited.');
+        if ($blocked = $this->editBlock($po)) return $blocked;
         // The stored balance and TDS rest on this value once money has been paid against it.
         if ((float) $po->paid_amount > 0) return $this->fail('Payments are already recorded on this PO — its product lines and charges can no longer change.');
 
@@ -530,7 +544,7 @@ class PurchaseOrderController extends Controller
     {
         $user = $this->tenantUser($request);
         $po = $this->findPo($id);
-        if ($po->isLocked()) return $this->fail('This PO is cancelled or has a signed document and can no longer be edited.');
+        if ($blocked = $this->editBlock($po)) return $blocked;
 
         $data = $request->validate([
             'terms'  => 'nullable|string|max:20000',
@@ -644,6 +658,14 @@ class PurchaseOrderController extends Controller
 
     /* ══════════════════════════ HELPERS ══════════════════════════ */
 
+    /** Stages 01–03 are editable only while the PO is not cancelled, signed, or in payment. */
+    private function editBlock(PurchaseOrder $po): ?JsonResponse
+    {
+        if ($po->isLocked()) return $this->fail('This PO is cancelled or has a signed document and can no longer be edited.');
+        if ($po->paymentsStarted()) return $this->fail('Payments have started on this PO — it is view-only and can no longer be edited.');
+        return null;
+    }
+
     /** A supplier of this tenant, with its primary address state code. */
     private function loadVendor(int $id): ?object
     {
@@ -653,7 +675,7 @@ class PurchaseOrderController extends Controller
             ->whereNull('v.deleted_at')
             ->where('v.id', $id)
             ->select('v.id', 'v.vendor_code', 'v.company_name', 'v.legal_name', 'v.gst_number',
-                'v.supplier_category', 'a.state_code', 'r.name as risk_level');
+                'v.supplier_category', 'a.state_code', 'a.country_id', 'r.name as risk_level');
         return $this->svc->scopeTenant($q, 'v')->first();
     }
 
@@ -665,6 +687,14 @@ class PurchaseOrderController extends Controller
             ->where('v.id', $id)
             ->select('v.id', 'v.vendor_code', 'v.company_name', 'v.legal_name', 'v.gst_number', 'a.state_code');
         return $this->svc->scopeTenant($q, 'v')->first();
+    }
+
+    /** Same rule as the supplier dropdown: no country or India → domestic; any other country → international. */
+    private function vendorOrigin(object $vendor): string
+    {
+        if (empty($vendor->country_id)) return 'domestic';
+        $india = DB::table('master_countries')->whereRaw('LOWER(name) = ?', ['india'])->value('id');
+        return (int) $vendor->country_id === (int) $india ? 'domestic' : 'international';
     }
 
     /** High / medium risk together with a high-risk or blacklisted category forces inspection. */
@@ -795,6 +825,8 @@ class PurchaseOrderController extends Controller
         }
         $out = $po->toArray() + ($this->linkRefs(collect([$po]))[$po->id] ?? []);
         $out['created_by_name'] = $po->creator?->name;
+        // View-only once payments have started (the edit form opens read-only).
+        $out['payments_started'] = $po->paymentsStarted();
         // Step 03 shows where the senior-approval request stands.
         $ap = $po->latestGstApproval()->first();
         $out['gst_approval'] = $ap ? [

@@ -1,6 +1,7 @@
 // Inline validation for the Create PO form. The same rules the server enforces
 // (CS-403), checked in the browser first so every problem shows on its field.
 import type { PoDraft, PoLineRow } from './po-draft';
+import { OPEN_PO_TYPE, PAYMENT_TYPE_OPTIONS } from './po-draft';
 import type { ProductOpt } from './use-po-lookups';
 import { gstOf } from './steps/ProductTable';
 
@@ -23,6 +24,8 @@ export function validateStage1(d: PoDraft): FieldErrors {
   need('deliveryDate', 'Expected Delivery Date');
   need('deliveryLocation', 'Delivery Location');
   need('paymentType', 'Payment Type');
+  if (!e.poType && d.poType !== OPEN_PO_TYPE) e.poType = 'Only Material / Goods purchase orders can be raised for now.';
+  if (!e.paymentType && !PAYMENT_TYPE_OPTIONS.includes(d.paymentType)) e.paymentType = 'Select Advanced Payment, Full Payment or Letter of Credit.';
   if (!e.deliveryDate && d.deliveryDate < todayIso()) e.deliveryDate = 'Expected delivery date cannot be earlier than today.';
 
   if (!d.vendorId) e.supplier = 'Select the supplier this PO is issued to.';

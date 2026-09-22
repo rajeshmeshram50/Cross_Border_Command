@@ -774,8 +774,13 @@ function RecoveryCell({ row }: { row: OrderRow }) {
   );
 }
 
-function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onVault }: {
+/** Same rule as the server: a pending / approved request, or money paid. */
+const paymentsStarted = (row: OrderRow) => row.paid > 0 || !!row.paymentNote;
+
+function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onVault, viewOnly = false }: {
   cancelled?: boolean; cancelReason?: string; onEdit: () => void; onCancel?: () => void; onVault?: () => void;
+  /** Payments have started — the form opens read-only. */
+  viewOnly?: boolean;
 }) {
   return (
     <div className="ord-actions">
@@ -786,7 +791,8 @@ function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onVault
       ) : (
         <button type="button" className="ord-btn ord-btn--cancel" title="Cancel this Purchase Order" onClick={onCancel}>{ICON_CANCEL}<span>Cancel PO</span></button>
       )}
-      <button type="button" className="ord-btn ord-btn--edit" disabled={cancelled} onClick={onEdit}>{ICON_EDIT}<span>Edit PO</span></button>
+      <button type="button" className="ord-btn ord-btn--edit" disabled={cancelled} onClick={onEdit}
+        title={viewOnly ? 'Payments have started — the PO opens view-only' : undefined}>{ICON_EDIT}<span>{viewOnly ? 'View PO' : 'Edit PO'}</span></button>
       <button type="button" className="ord-btn ord-btn--vault" title="Evidence Vault — the order, its documents and payment proofs" onClick={onVault}>{ICON_VAULT}<span>Evidence Vault</span></button>
     </div>
   );
@@ -918,7 +924,7 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
                 <PoCell span={span}><AdrCell adr={row.adr} /></PoCell>
                 <PoCell span={span}><RecoveryCell row={row} /></PoCell>
                 <PoCell span={span}><StatusBadge row={row} /></PoCell>
-                {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} onEdit={() => onEdit?.(row)} onCancel={onCancel && (() => onCancel(row))} onVault={onVault && (() => onVault(row))} /></PoCell>}
+                {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={paymentsStarted(row)} onEdit={() => onEdit?.(row)} onCancel={onCancel && (() => onCancel(row))} onVault={onVault && (() => onVault(row))} /></PoCell>}
               </>
             )}
           </tr>
@@ -1065,7 +1071,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, 
         <RecoveryCell row={row} />
       </div>
 
-      <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} onEdit={() => onEdit(row)} onCancel={() => onCancel(row)} onVault={() => onVault(row)} />
+      <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={paymentsStarted(row)} onEdit={() => onEdit(row)} onCancel={() => onCancel(row)} onVault={() => onVault(row)} />
     </article>
   );
 }
