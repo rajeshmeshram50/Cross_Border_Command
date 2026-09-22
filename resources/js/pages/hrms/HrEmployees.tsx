@@ -21,6 +21,7 @@ import * as XLSX from 'xlsx';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 import EvidenceVaultModal from '../../components/EvidenceVaultModal';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
+import { SalaryVersionBadge } from '../../components/SalaryVersionBadge';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { leavePlansApi } from './leavePlansApi';
@@ -1422,6 +1423,8 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
      universal (it is state-levied, and several states do not charge it). */
   const [ePtApplicable, setEPtApplicable] = useState(false);
   const [eBreakupLoading, setEBreakupLoading] = useState(false);
+  // Active salary structure version, shown as a badge; Revise Salary bumps it.
+  const [eSalaryVersion, setESalaryVersion] = useState<{ version: number; from: string | null } | null>(null);
   const breakupLoadedForRef = useRef<number | 'new' | null>(null);
   const breakupBaselineRef = useRef<string | null>(null);
   // false while the breakup is still the auto-split (Basic/HRA/Special) — lets
@@ -1469,6 +1472,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     setEBonusInAnnual(false); setEPfEligible(false); setEDetailedBreakup(true);
     setEEarnings([]); setEDeductions([]); setEEsiApplicable(false); setEPtApplicable(false);
     setEBreakupLoading(false);
+    setESalaryVersion(null);
     breakupLoadedForRef.current = null;
     breakupBaselineRef.current = null;
     seededForSalaryRef.current = null;
@@ -1560,6 +1564,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                zero-amount PT row failing validation on a form the user had not
                yet touched. */
             const pf = !!active.pf_applicable, esi = !!active.esi_applicable, pt = !!active.pt_applicable;
+            setESalaryVersion(active.version ? { version: Number(active.version), from: active.effective_from ?? null } : null);
             setEEarnings(earn);
             setEDeductions(ded);
             setEPfEligible(pf);
@@ -5530,6 +5535,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                     <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
                       <div className="emp-section-title mb-0">
                         <i className="ri-calculator-line" /> Salary Breakup
+                        {eSalaryVersion && <SalaryVersionBadge version={eSalaryVersion.version} from={eSalaryVersion.from} />}
                       </div>
                       <span className="d-inline-flex align-items-center gap-2 mb-0" style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>
                         <button
@@ -5679,21 +5685,19 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                         {/* CTC verdict strip — same shape as the payroll Salary Structure popup:
                             the gap is stated once, with the one-click correction beside it. */}
                         {salaryAnnual > 0 && !breakupMatches && (
-                          <div className="d-flex align-items-center gap-2 mt-2 p-2 px-3"
-                            style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, fontSize: 12, fontWeight: 600, color: '#b1401d' }}>
+                          <div className="ctc-verdict ctc-verdict--err d-flex align-items-center gap-2 mt-2 p-2 px-3">
                             <i className="ri-error-warning-line" style={{ fontSize: 15 }} />
                             <span>
                               <b>₹{Math.abs(breakupDiff).toLocaleString('en-IN')} {breakupOverSalary ? 'over' : 'short of'}</b> the Annual CTC
                               {' '}(₹{salaryAnnual.toLocaleString('en-IN')}) — balance the breakup before saving.
                             </span>
-                            <button type="button" className="btn btn-sm ms-auto" style={{ fontSize: 11, fontWeight: 700, padding: '3px 12px', background: '#fff', border: '1px solid #fecaca', color: '#b1401d', whiteSpace: 'nowrap' }} onClick={balanceBreakupToBasic}>
+                            <button type="button" className="btn btn-sm ms-auto ctc-verdict-fix" onClick={balanceBreakupToBasic}>
                               <i className="ri-scales-3-line me-1" />Balance to Basic
                             </button>
                           </div>
                         )}
                         {salaryAnnual > 0 && breakupMatches && (
-                          <div className="d-flex align-items-center gap-2 mt-2 p-2 px-3"
-                            style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 10, fontSize: 12, fontWeight: 600, color: '#0a8754' }}>
+                          <div className="ctc-verdict ctc-verdict--ok d-flex align-items-center gap-2 mt-2 p-2 px-3">
                             <i className="ri-checkbox-circle-line" style={{ fontSize: 15 }} />
                             <span>Breakup matches the Annual CTC.</span>
                           </div>
