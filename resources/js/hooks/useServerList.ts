@@ -16,8 +16,10 @@ type Options = {
 
 /**
  * A server-paged list: page, search and tab are sent to the API. Only the
- * latest request may update the screen, and the current rows stay visible
- * while a refresh is in flight so nothing flickers to "No records".
+ * latest request may update the screen. A load that will replace the rows
+ * (reload, tab, page, search) raises `replacing`, so the screen can show its
+ * skeleton instead of dimming stale rows; appending the next page on phones
+ * keeps the rows on screen and only raises `refreshing`.
  */
 export function useServerList<T, M extends ServerPageMeta>(
   fetcher: (q: ServerListQuery) => Promise<{ rows: T[]; meta: M | null }>,
@@ -28,7 +30,8 @@ export function useServerList<T, M extends ServerPageMeta>(
   const [meta, setMeta] = useState<M | null>(null);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);       // first load only — shows the skeleton
-  const [refreshing, setRefreshing] = useState(false); // later loads keep the rows on screen
+  const [refreshing, setRefreshing] = useState(false); // any load in flight
+  const [replacing, setReplacing] = useState(false);   // a load that will replace the rows
   const seq = useRef(0);
   const fetchRef = useRef(fetcher);
   fetchRef.current = fetcher;
@@ -38,6 +41,7 @@ export function useServerList<T, M extends ServerPageMeta>(
   const load = useCallback((p: number, mode: 'replace' | 'append') => {
     const id = ++seq.current;
     setRefreshing(true);
+    setReplacing(mode === 'replace');
     fetchRef.current({ page: p, per_page: perPage, search: search || undefined, tab })
       .then((res) => {
         if (id !== seq.current) return; // a newer request has been sent since
@@ -49,6 +53,7 @@ export function useServerList<T, M extends ServerPageMeta>(
         if (id !== seq.current) return;
         setLoading(false);
         setRefreshing(false);
+        setReplacing(false);
       });
   }, [perPage, search, tab]);
 
@@ -76,5 +81,5 @@ export function useServerList<T, M extends ServerPageMeta>(
     if (append) { setPage(1); load(1, 'replace'); } else load(page, 'replace');
   };
 
-  return { rows, meta, page, loading, refreshing, goTo, loadMore, hasMore, reload };
+  return { rows, meta, page, loading, refreshing, replacing, goTo, loadMore, hasMore, reload };
 }

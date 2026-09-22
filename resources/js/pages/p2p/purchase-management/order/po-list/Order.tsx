@@ -1202,12 +1202,20 @@ export default function Order() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollTimer = useRef<number | undefined>(undefined);
+  /* The table is swapped for the shimmer while it reloads, which would drop
+     the reader back to the first column — and Edit PO lives in the last ones.
+     Remember how far across they were and put them back there. */
+  const scrollLeft = useRef(0);
+  useEffect(() => {
+    if (!list.loading && !list.replacing && scrollRef.current) scrollRef.current.scrollLeft = scrollLeft.current;
+  }, [list.loading, list.replacing]);
 
   // Ignore the mouse while scrolling so hover animations don't repaint mid-scroll.
   // Refs, not state: scroll fires many times a second and must not re-render.
   const onTableScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
+    scrollLeft.current = el.scrollLeft;
     el.classList.add('is-scrolling');
 
     window.clearTimeout(scrollTimer.current);
@@ -1403,7 +1411,10 @@ export default function Order() {
 
         </div>
 
-        {list.loading ? (
+        {/* Any load that replaces the rows — the first one, a reload after a
+            save, a tab, page or search change — shows the shimmer. Dimming the
+            old rows instead left the list looking washed out. */}
+        {list.loading || list.replacing ? (
           <OrderListSkeleton phone={isPhone} />
         ) : rows.length === 0 ? (
           <div className="ord-empty">
@@ -1433,7 +1444,7 @@ export default function Order() {
           </div>
         ) : (
 
-        <div className={`ord-table-scroll${list.refreshing ? ' is-refreshing' : ''}`} ref={scrollRef} onScroll={onTableScroll}>
+        <div className="ord-table-scroll" ref={scrollRef} onScroll={onTableScroll}>
           <table className="ord-table" style={{ width: TABLE_WIDTH }}>
 
             <colgroup>

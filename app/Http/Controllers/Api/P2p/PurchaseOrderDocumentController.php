@@ -119,6 +119,12 @@ class PurchaseOrderDocumentController extends Controller
         if ($mandatory->isNotEmpty()) {
             return $this->fail($mandatory->pluck('name')->implode(', ') . ' always goes with the order and cannot be marked not necessary.');
         }
+        // Out for signature or signed: the answer is settled. A declined /
+        // recalled request puts the row back to pending, which frees it again.
+        $settled = $docs->filter(fn ($d) => in_array($d->status, [PurchaseOrderDocument::STATUS_SENT, PurchaseOrderDocument::STATUS_SIGNED], true));
+        if ($settled->isNotEmpty()) {
+            return $this->fail($settled->pluck('name')->implode(', ') . ' has already been sent for signature — it stays Necessary.');
+        }
 
         $this->inTransaction('save the document decisions', function () use ($docs, $wanted, $user) {
             foreach ($docs as $doc) {

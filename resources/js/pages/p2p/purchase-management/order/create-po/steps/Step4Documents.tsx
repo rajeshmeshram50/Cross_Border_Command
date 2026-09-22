@@ -37,6 +37,14 @@ const isAgreement = (doc: PoDocument) =>
    else is this PO's own call, and nobody has decided until somebody answers
    here, which is not the same as "not necessary". */
 const isMandatory = (doc: PoDocument) => doc.doc_kind === 'purchase_order';
+/* Only a Necessary document goes out for signature: the Purchase Order always,
+   a library document once this PO has marked it Necessary. Not necessary — or
+   not decided yet — stays here (the lead's popup gates its Send the same way). */
+const isNeeded = (doc: PoDocument) => isMandatory(doc) || doc.needed === 'yes';
+/* Out for signature, or signed: the answer is settled. It reads Necessary, it
+   cannot be re-marked, and the row cannot be ticked. A declined / recalled
+   request puts the row back to pending, which frees it again. */
+const isSettled = (doc: PoDocument) => doc.status === 'sent' || doc.status === 'signed';
 /* A row that came from a CLM library is signed through the CLM flow: the
    request is raised against the library id and the document is rendered
    server-side, so it needs no file of its own. The Purchase Order PDF and any
@@ -113,7 +121,7 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
      the way the lead's popup does it. The Purchase Order is left out: it goes
      with the order whatever anyone says. */
   const setNeeds = (ids: number[], needed: boolean) => {
-    const targets = docs.filter((d) => ids.includes(d.id) && !isMandatory(d));
+    const targets = docs.filter((d) => ids.includes(d.id) && !isMandatory(d) && !isSettled(d));
     if (!targets.length) {
       toast.info('Nothing to change', 'The Purchase Order is always necessary.');
       return;
@@ -192,6 +200,12 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
 
   const sendForSignature = () => {
     if (notPending.length) { toast.warning('Already sent', `${notPending.map((d) => d.name).join(', ')} is already sent or signed.`); return; }
+    const unneeded = chosen.filter((d) => !isNeeded(d));
+    if (unneeded.length) {
+      toast.warning('Mark it Necessary first',
+        `${unneeded.map((d) => d.name).join(', ')} ${unneeded.length === 1 ? 'is' : 'are'} not marked Necessary — only necessary documents are sent for signature.`);
+      return;
+    }
 
     const lib = chosen.filter((d) => libraryOf(d));
     const own = chosen.filter((d) => !libraryOf(d));
@@ -244,8 +258,10 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
     })();
   };
 
-  const allSelected = docs.length > 0 && selected.length === docs.length;
-  const toggleAll = () => setSelected(allSelected ? [] : docs.map((d) => d.id));
+  // Rows already out for signature / signed cannot be ticked, so "all" means the rest.
+  const selectable = docs.filter((d) => !isSettled(d));
+  const allSelected = selectable.length > 0 && selectable.every((d) => selected.includes(d.id));
+  const toggleAll = () => setSelected(allSelected ? [] : selectable.map((d) => d.id));
   const toggleOne = (id: number) =>
     setSelected((all) => (all.includes(id) ? all.filter((c) => c !== id) : [...all, id]));
 
@@ -370,7 +386,7 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
               <thead>
                 <tr>
                   <th className="cdoc-check">
-                    <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={!docs.length} aria-label="Select all documents" />
+                    <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={!selectable.length} aria-label="Select all documents" />
                   </th>
                   <th>Sr. No</th>
                   <th>Document Code</th>
@@ -393,7 +409,9 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                   return (
                     <tr key={doc.id}>
                       <td className="cdoc-check">
-                        <input type="checkbox" checked={selected.includes(doc.id)} onChange={() => toggleOne(doc.id)} aria-label={`Select ${doc.name}`} />
+                        <input type="checkbox" checked={selected.includes(doc.id)} onChange={() => toggleOne(doc.id)} aria-label={`Select ${doc.name}`}
+                          disabled={isSettled(doc)}
+                          title={isSettled(doc) ? 'Already sent for signature — nothing more to do on this row' : undefined} />
                       </td>
                       <td>{i + 1}</td>
                       <td><span className="cpd-code">{doc.code}</span></td>
@@ -409,8 +427,10 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                         </div>
                       </td>
                       <td>
-                        {isMandatory(doc) ? (
-                          <Tooltip label="The Purchase Order always goes with the order — it cannot be marked not necessary" themed>
+                        {isMandatory(doc) || isSettled(doc) ? (
+                          <Tooltip label={isMandatory(doc)
+                            ? 'The Purchase Order always goes with the order — it cannot be marked not necessary'
+                            : 'Already sent for signature — it stays Necessary'} themed>
                             <span className="cdoc-req">NECESSARY</span>
                           </Tooltip>
                         ) : selected.includes(doc.id) ? (
@@ -502,7 +522,11 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
             <button type="button" className="cdoc-send" disabled={selected.length === 0 || busy === 'email'} onClick={sendEmail}>
               <IcoMail size={13} /> {busy === 'email' ? 'Sending…' : 'Send Selected Via Email'}
             </button>
-            <button type="button" className="cdoc-send cdoc-send--sign" disabled={selected.length === 0 || busy === 'sign'} onClick={sendForSignature}>
+            {/* Nothing ticked is Necessary → nothing to send; say why on hover. */}
+            <button type="button" className="cdoc-send cdoc-send--sign"
+              disabled={!chosen.some(isNeeded) || busy === 'sign'}
+              title={chosen.length && !chosen.some(isNeeded) ? 'Only necessary documents can be sent for signature — mark them Necessary first' : undefined}
+              onClick={sendForSignature}>
               <IcoSend size={13} /> {busy === 'sign' ? 'Preparing PO…' : 'Send Selected for Signature'}
             </button>
           </div>

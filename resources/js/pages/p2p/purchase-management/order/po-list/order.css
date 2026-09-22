@@ -1447,8 +1447,8 @@ body:has(.ord-page) .master-select-item.active { background: rgba(8, 145, 178, .
 [data-bs-theme="dark"] body:has(.ord-page) .master-select-item:focus { background: rgba(34, 211, 238, .18) !important; }
 [data-bs-theme="dark"] body:has(.ord-page) .master-select-item.active { background: rgba(34, 211, 238, .16) !important; color: #67e8f9 !important; }
 
-/* Server paging: a refresh keeps the rows and dims them instead of emptying the table. */
-.ord-table-scroll.is-refreshing { opacity: 0.6; transition: opacity 0.15s; pointer-events: none; }
+/* Phones: the "Loading more…" line under the cards while the next page is appended.
+   (A reload that replaces the rows shows the list shimmer instead of dimming them.) */
 .ord-more { min-height: 32px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #64748b; }
 
 /* PO Status column: Draft / Submitted / Cancelled, same pill as the cancel badge. */
