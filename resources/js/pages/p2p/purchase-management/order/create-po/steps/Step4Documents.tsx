@@ -138,8 +138,23 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
     });
   };
 
-  const downloadDraft = (doc: PoDocument) => run(`dl:${doc.id}`, async () => {
+  // The file attached to the row (the Purchase Order PDF, or an upload).
+  const downloadFile = (doc: PoDocument) => run(`file:${doc.id}`, async () => {
     saveBlob(await poDocumentApi.download(poId as number, doc.id), doc.original_name || `${doc.code.replace(/\//g, '_')}.pdf`);
+  });
+
+  /* The draft of a library row is the trade document / agreement itself, as a
+     Word file — not whatever was uploaded against it. Our own rows (the
+     Purchase Order PDF) have no template, so their file is the draft. */
+  const canDownloadDraft = (doc: PoDocument) => (libraryOf(doc) ? true : !!doc.file_path);
+  const downloadDraft = (doc: PoDocument) => run(`dl:${doc.id}`, async () => {
+    const kind = libraryOf(doc);
+    if (!kind) {
+      saveBlob(await poDocumentApi.download(poId as number, doc.id), doc.original_name || `${doc.code.replace(/\//g, '_')}.pdf`);
+      return;
+    }
+    const blob = await poSignatureApi.draft(kind, doc.source_id as number);
+    saveBlob(blob, `Draft_${(doc.code || doc.name).replace(/[\\/:*?"<>|]/g, '_')}.docx`);
   });
 
   const downloadSigned = (doc: PoDocument) => run(`sdl:${doc.id}`, async () => {
@@ -420,7 +435,7 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                       <td>
                         {/* The name needs its own span — text-overflow does nothing on a flex container. */}
                         {doc.file_path ? (
-                          <button type="button" className="cdoc-file" onClick={() => downloadDraft(doc)}>
+                          <button type="button" className="cdoc-file" onClick={() => downloadFile(doc)}>
                             <IcoPaperclip size={12} /><FitTip label={doc.original_name ?? 'Attachment'}><span>{doc.original_name ?? 'Attachment'}</span></FitTip>
                           </button>
                         ) : doc.doc_kind === 'purchase_order' && awaitingPdf && polls.current < 30 ? (
@@ -443,9 +458,10 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                       <td>
                         {/* Every row carries the same four actions, disabled when they don't apply yet. */}
                         <div className="cdoc-actions">
-                          <button type="button" className="cdoc-btn" disabled={!doc.file_path || busy === `dl:${doc.id}`}
-                            title={doc.file_path ? undefined : 'No file attached yet'} onClick={() => downloadDraft(doc)}>
-                            <IcoDownload size={13} /> Download Draft Document
+                          <button type="button" className="cdoc-btn" disabled={!canDownloadDraft(doc) || busy === `dl:${doc.id}`}
+                            title={canDownloadDraft(doc) ? undefined : 'No file attached yet'}
+                            onClick={() => downloadDraft(doc)}>
+                            <IcoDownload size={13} /> {busy === `dl:${doc.id}` ? 'Preparing…' : 'Download Draft Document'}
                           </button>
                           <button type="button" className="cdoc-btn cdoc-btn--signed" disabled={!isSigned(doc) || busy === `sdl:${doc.id}`}
                             title={isSigned(doc) ? undefined : NOT_SIGNED_YET} onClick={() => downloadSigned(doc)}>
