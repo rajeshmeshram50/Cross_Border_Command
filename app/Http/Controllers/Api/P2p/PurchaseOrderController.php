@@ -101,7 +101,7 @@ class PurchaseOrderController extends Controller
         'shipment_order_id', 'proforma_invoice_id', 'procurement_request_id', 'procurement_request_code',
         'expected_delivery_date', 'grand_total', 'physical_inspection', 'inspection_status', 'cancel_reason', 'created_at',
         'taxable_total', 'total_cgst', 'total_sgst', 'total_igst', 'shipping_charges', 'packaging_charges', 'other_charges',
-        'tds_amount', 'paid_amount', 'balance_amount',
+        'tds_amount', 'paid_amount', 'balance_amount', 'gst_approval_status',
     ];
 
     /**
@@ -142,6 +142,8 @@ class PurchaseOrderController extends Controller
             ->with(['vendor:id,vendor_code,company_name,legal_name,risk_level_id,supplier_category', 'vendor.riskLevel:id,name'])
             // Request count and the two notes under the payment bar, as subqueries — not one query per row.
             ->withCount('paymentRequests')
+            // A document out for signature or signed — Edit PO becomes View PO.
+            ->withExists(['documents as signing_started' => fn ($q) => $q->whereIn('status', [PurchaseOrderDocument::STATUS_SENT, PurchaseOrderDocument::STATUS_SIGNED])])
             ->withSum(['paymentRequests as pending_request_amount' => fn ($q) => $q->where('status', 'pending')], 'requested_amount')
             ->selectSub(fn ($q) => $q->from('p2p_po_payment_requests as prr')->whereColumn('prr.purchase_order_id', 'p2p_purchase_orders.id')
                 ->where('prr.status', 'approved')->selectRaw('COALESCE(SUM(prr.approved_amount - prr.paid_amount), 0)'), 'ready_to_pay_amount')
@@ -162,7 +164,10 @@ class PurchaseOrderController extends Controller
     /** GET /p2p/orders/{id} */
     public function show(int $id): JsonResponse
     {
-        return $this->ok($this->shapeDetail($this->findPo($id)));
+        $po = $this->findPo($id);
+        // So signing_started reflects documents sent from Step 04 and any request Zoho has since declined.
+        $this->refreshSigning($po);
+        return $this->ok($this->shapeDetail($po));
     }
 
     /** GET /p2p/orders/{id}/qty-history */
@@ -576,11 +581,6 @@ class PurchaseOrderController extends Controller
                 };
                 return $this->fail($msg, 422, ['gst' => $gst, 'gst_approval_status' => $approval?->status]);
             }
-            // Paperwork gate: the supplier's earlier orders must be clean first.
-            $pending = $this->unsignedMandatoryDocuments($po);
-            if ($pending) {
-                return $this->fail($this->unsignedDocumentsMessage($pending), 422, ['pending_documents' => $pending]);
-            }
         }
 
         $this->inTransaction($submit ? 'submit the PO' : 'save the terms', function () use ($po, $user, $data, $submit) {
@@ -648,48 +648,6 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /**
-     * Documents still unsigned on this supplier's EARLIER purchase orders —
-     * the ones that order marked Necessary. Only documents that came from the
-     * CLM libraries count; the Purchase Order PDF of an older order does not
-     * hold up the next one. Cancelled orders are ignored: nothing is expected
-     * of them any more.
-     *
-     * @return array<int,array{po_id:int,po_code:string,document:string}>
-     */
-    private function unsignedMandatoryDocuments(PurchaseOrder $po): array
-    {
-        if (!$po->vendor_id) return [];
-
-        return DB::table('p2p_purchase_order_documents as d')
-            ->join('p2p_purchase_orders as o', 'o.id', '=', 'd.purchase_order_id')
-            ->where('o.client_id', $po->client_id)
-            ->where('o.vendor_id', $po->vendor_id)
-            ->where('o.id', '!=', $po->id)
-            ->where('o.status', '!=', PurchaseOrder::STATUS_CANCELLED)
-            ->whereNull('o.deleted_at')
-            ->whereNull('d.deleted_at')
-            ->where('d.needed', 'yes')
-            ->whereNotNull('d.source_type')
-            ->where('d.status', '!=', PurchaseOrderDocument::STATUS_SIGNED)
-            ->orderBy('o.id')
-            ->get(['o.id as po_id', 'o.code as po_code', 'd.name as document'])
-            ->map(fn ($r) => ['po_id' => (int) $r->po_id, 'po_code' => (string) $r->po_code, 'document' => (string) $r->document])
-            ->all();
-    }
-
-    /** "PO/2026-27/007: ADSD, Cert of Origin" — what has to be signed, and where. */
-    private function unsignedDocumentsMessage(array $pending): string
-    {
-        $byPo = [];
-        foreach ($pending as $row) $byPo[$row['po_code']][] = $row['document'];
-        $parts = [];
-        foreach ($byPo as $code => $names) $parts[] = $code . ': ' . implode(', ', $names);
-
-        return 'This supplier has necessary documents still unsigned on an earlier purchase order — '
-            . implode(' · ', $parts) . '. Get them signed before issuing this PO.';
-    }
-
     /* ══════════════════════════ CANCEL / DELETE ══════════════════════════ */
 
     /** POST /p2p/orders/{id}/cancel — releases every line's quantity back to the PI. */
@@ -740,11 +698,32 @@ class PurchaseOrderController extends Controller
 
     /* ══════════════════════════ HELPERS ══════════════════════════ */
 
-    /** Stages 01–03 are editable only while the PO is not cancelled, signed, or in payment. */
+    /**
+     * Brings the PO's documents in step with their signature requests before
+     * the edit lock is read: claims CLM requests raised against the library
+     * (so a trade document / agreement sent from Step 04 counts as sent) and
+     * reads Zoho's latest state (a declined / recalled request frees the PO).
+     * Best effort — a Zoho outage must not stop the PO from opening.
+     */
+    private function refreshSigning(PurchaseOrder $po): void
+    {
+        try {
+            $docs = app(\App\Services\P2p\PoDocumentService::class);
+            $docs->adoptClmSignatures($po);
+            $docs->syncSignatures($po->documents()->get());
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('PO signing refresh failed', ['po' => $po->id, 'err' => $e->getMessage()]);
+        }
+    }
+
+    /** Stages 01–03 are editable only while the PO is not cancelled, out for signature / signed, in payment, or awaiting approval. */
     private function editBlock(PurchaseOrder $po): ?JsonResponse
     {
-        if ($po->isLocked()) return $this->fail('This PO is cancelled or has a signed document and can no longer be edited.');
+        if ($po->isCancelled()) return $this->fail('This PO is cancelled and can no longer be edited.');
+        $this->refreshSigning($po);
+        if ($po->signingStarted()) return $this->fail('Documents on this PO have been sent for signature — it is view-only now. It opens for editing again only if the request is declined or recalled.');
         if ($po->paymentsStarted()) return $this->fail('Payments have started on this PO — it is view-only and can no longer be edited.');
+        if ($po->awaitingApproval()) return $this->fail('This PO is waiting for senior approval — it can be edited again only if the request is rejected.');
         return null;
     }
 
@@ -902,6 +881,10 @@ class PurchaseOrderController extends Controller
             'physical_inspection' => $po->physical_inspection,
             'inspection_status'   => $po->inspection_status,
             'cancel_reason'       => $po->cancel_reason,
+            // 'pending' while a senior-approval request waits — Edit PO opens view-only.
+            'gst_approval_status' => $po->gst_approval_status,
+            // Documents out for signature / signed — Edit PO opens view-only.
+            'signing_started'     => (bool) ($po->signing_started ?? false),
             'created_at'          => $po->created_at?->toIso8601String(),
         ];
     }
@@ -919,6 +902,10 @@ class PurchaseOrderController extends Controller
         $out['created_by_name'] = $po->creator?->name;
         // View-only once payments have started (the edit form opens read-only).
         $out['payments_started'] = $po->paymentsStarted();
+        // Also view-only while a senior-approval request is waiting (until rejected).
+        $out['awaiting_approval'] = $po->awaitingApproval();
+        // And once any document has gone out for signature (until declined / recalled).
+        $out['signing_started'] = $po->signingStarted();
         // Step 03 shows where the senior-approval request stands.
         $ap = $po->latestGstApproval()->first();
         $out['gst_approval'] = $ap ? [

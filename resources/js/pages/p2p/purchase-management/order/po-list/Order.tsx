@@ -233,6 +233,10 @@ export type OrderRow = {
   paymentNote?: PaymentNote;
   cancelled?: boolean;
   cancelReason?: string;
+  /** Sent for senior GST approval and not decided yet — view-only until rejected. */
+  awaitingApproval?: boolean;
+  /** A document is out for signature or signed — view-only until declined / recalled. */
+  signingStarted?: boolean;
   /* The advance-receipt refund adjustment raised when the PO is cancelled.
      Absent until one exists — a PO that never took an advance owes nothing. */
   adr?: AdvanceRefund;
@@ -397,6 +401,8 @@ export function toOrderRow(r: PoListRow): OrderRow {
       : Number(r.pending_request_amount) > 0 ? { kind: 'waiting', amount: Number(r.pending_request_amount) } : undefined,
     cancelled: r.status === 'cancelled',
     cancelReason: r.cancel_reason ?? undefined,
+    awaitingApproval: r.gst_approval_status === 'pending',
+    signingStarted: !!r.signing_started,
     cancelStage: r.status === 'cancelled' ? 'closed' : undefined,
   };
 }
@@ -777,10 +783,18 @@ function RecoveryCell({ row }: { row: OrderRow }) {
 /** Same rule as the server: a pending / approved request, or money paid. */
 const paymentsStarted = (row: OrderRow) => row.paid > 0 || !!row.paymentNote;
 
-function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onVault, viewOnly = false }: {
+/** Why the PO opens view-only, or undefined when it can be edited. Same rules
+    as the server's edit gate. */
+const viewOnlyReason = (row: OrderRow) =>
+  paymentsStarted(row) ? 'Payments have started — the PO opens view-only'
+    : row.signingStarted ? 'Documents sent for signature — view-only unless the request is declined or recalled'
+    : row.awaitingApproval ? 'Sent for senior approval — view-only until the request is rejected'
+      : undefined;
+
+function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onVault, viewOnly }: {
   cancelled?: boolean; cancelReason?: string; onEdit: () => void; onCancel?: () => void; onVault?: () => void;
-  /** Payments have started — the form opens read-only. */
-  viewOnly?: boolean;
+  /** Set when the form opens read-only — the reason, shown on hover. */
+  viewOnly?: string;
 }) {
   return (
     <div className="ord-actions">
@@ -792,7 +806,7 @@ function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onVault
         <button type="button" className="ord-btn ord-btn--cancel" title="Cancel this Purchase Order" onClick={onCancel}>{ICON_CANCEL}<span>Cancel PO</span></button>
       )}
       <button type="button" className="ord-btn ord-btn--edit" disabled={cancelled} onClick={onEdit}
-        title={viewOnly ? 'Payments have started — the PO opens view-only' : undefined}>{ICON_EDIT}<span>{viewOnly ? 'View PO' : 'Edit PO'}</span></button>
+        title={viewOnly}>{ICON_EDIT}<span>{viewOnly ? 'View PO' : 'Edit PO'}</span></button>
       <button type="button" className="ord-btn ord-btn--vault" title="Evidence Vault — the order, its documents and payment proofs" onClick={onVault}>{ICON_VAULT}<span>Evidence Vault</span></button>
     </div>
   );
@@ -924,7 +938,7 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
                 <PoCell span={span}><AdrCell adr={row.adr} /></PoCell>
                 <PoCell span={span}><RecoveryCell row={row} /></PoCell>
                 <PoCell span={span}><StatusBadge row={row} /></PoCell>
-                {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={paymentsStarted(row)} onEdit={() => onEdit?.(row)} onCancel={onCancel && (() => onCancel(row))} onVault={onVault && (() => onVault(row))} /></PoCell>}
+                {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={viewOnlyReason(row)} onEdit={() => onEdit?.(row)} onCancel={onCancel && (() => onCancel(row))} onVault={onVault && (() => onVault(row))} /></PoCell>}
               </>
             )}
           </tr>
@@ -1071,7 +1085,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, 
         <RecoveryCell row={row} />
       </div>
 
-      <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={paymentsStarted(row)} onEdit={() => onEdit(row)} onCancel={() => onCancel(row)} onVault={() => onVault(row)} />
+      <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={viewOnlyReason(row)} onEdit={() => onEdit(row)} onCancel={() => onCancel(row)} onVault={() => onVault(row)} />
     </article>
   );
 }
@@ -1361,6 +1375,8 @@ export default function Order() {
                   role="tab"
                   aria-selected={isActive}
                   className={classes}
+                  // The qualifier is hidden on a narrow row (order.css) — the hover keeps it.
+                  title={tab.sub ? `${tab.label} ${tab.sub}` : undefined}
                   onClick={() => selectTab(tab.key)}
                 >
                   <span className="spi-seg-ico">{tab.icon}</span>

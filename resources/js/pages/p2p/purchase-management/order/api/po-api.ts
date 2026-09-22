@@ -81,6 +81,10 @@ export type PoListRow = PoLinkRefs & {
   payment_requests_count: number; pending_request_amount: number; ready_to_pay_amount: number;
   physical_inspection: YesNo | null; inspection_status: 'not_required' | 'pending' | 'completed' | null;
   cancel_reason: string | null; items_count: number | null; created_at: string | null;
+  /** 'pending' while a senior-approval request waits — the PO is view-only. */
+  gst_approval_status: GstApprovalStatus | null;
+  /** A document is out for signature or signed — the PO is view-only. */
+  signing_started: boolean;
 };
 
 export type PoListTab = 'all' | 'with' | 'without' | 'cancelinit' | 'cancelclosed';
@@ -141,6 +145,10 @@ export type PoDetail = PoLinkRefs & {
   created_by: number | null; created_by_name: string | null;
   /** A pending / approved payment request or money paid: the PO is view-only. */
   payments_started: boolean;
+  /** A senior-approval request is waiting: view-only until it is rejected. */
+  awaiting_approval: boolean;
+  /** A document is out for signature or signed: view-only until declined / recalled. */
+  signing_started: boolean;
   supplier: { vendor_id: number; supplier_code: string; supplier_name: string; supplier_gstin: string | null; supplier_state_code: string | null } | null;
   items: PoItem[];
   documents: PoDocument[];

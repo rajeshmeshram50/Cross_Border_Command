@@ -73,6 +73,34 @@
   background: linear-gradient(180deg, #f4fdff, #eafafd);
 }
 
+/* Desktop / zoomed-in desktop: tabs and search share one row. When the five
+   tabs don't fit (zoom 125–150%, a narrow window) the strip wraps them onto a
+   second line — every tab stays in view, no sideways scrollbar — and the
+   search keeps its place at the right instead of dropping to a line of its
+   own under a big empty gap. At full width nothing wraps and nothing changes. */
+@media (min-width: 769px) {
+  .ord-list > .spi-segrow { flex-wrap: nowrap; align-items: center; }
+  .ord-list .spi-segrow .spi-seg {
+    flex: 0 1 auto;
+    min-width: 0;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+  .ord-list .spi-segrow .spi-search { flex: 0 0 240px; min-width: 0; }
+}
+/* Narrower desktop (zoom 125–150%): a two-line strip looked lopsided, so the
+   tabs go compact instead and stay on one line — smaller text and padding,
+   and the grey qualifier "(Without Shipment ID)" / "(Recovery Pending)" moves
+   into the tab's hover title. The wrap above is only the last resort. */
+@media (min-width: 769px) and (max-width: 1500px) {
+  .ord-list > .spi-segrow { gap: 10px; padding: 10px 12px; }
+  /* .spi-segrow in the chain: these sit above the base tab rules in the file. */
+  .ord-list .spi-segrow .spi-seg { gap: 2px; padding: 4px; }
+  .ord-list .spi-segrow .spi-seg-btn { height: 38px; gap: 6px; padding: 0 10px; font-size: 11.5px; }
+  .ord-list .ord-seg-sub { display: none; }
+  .ord-list .spi-segrow .spi-search { flex-basis: 200px; height: 46px; }
+}
+
 /* Tabs, to the prototype's PO list values. The shared SPI tabs are slate at
    rest; on this page every tab reads teal, so the strip looks like one control
    rather than one lit tab among grey ones. */
@@ -1132,6 +1160,28 @@
 [data-bs-theme="dark"] .ord-card__invoice {
   background: rgba(56, 189, 248, .04);
   border-color: rgba(6, 182, 212, .25);
+}
+
+/* ── Short screen (browser zoom 125–150%, small laptops) ──
+   Fitting the page to the screen left the table a one-row sliver once the
+   strip, guide, tabs, search and pager had taken their share of a short
+   window. Here the page scrolls instead, and the table keeps a real height of
+   its own — rows scroll inside it and its sideways scrollbar stays in view. */
+@media (min-width: 769px) and (max-height: 820px) {
+  .page-content:has(> .container-fluid > .ord-page) {
+    height: auto;
+    min-height: 100%;
+  }
+  .page-content:has(> .container-fluid > .ord-page) > .container-fluid,
+  .ord-page,
+  .ord-list {
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+  .ord-table-scroll {
+    flex: 0 0 auto;
+    max-height: 460px; /* a few rows fit in full; fewer rows, a shorter table */
+  }
 }
 
 /* ── Phone ──
