@@ -320,8 +320,8 @@ class PurchaseOrderController extends Controller
     private function stage1Attributes(array $d, array $r): array
     {
         $intl = $d['document_type'] === 'international';
-        // A high-risk supplier forces physical inspection on.
-        $inspection = $r['mandatory'] ? 'yes' : ($d['physical_inspection'] ?? 'no');
+        // High-risk suppliers default to inspection on the form; the user's choice is kept.
+        $inspection = $d['physical_inspection'] ?? ($r['mandatory'] ? 'yes' : 'no');
         $v = $r['vendor'];
         $procYes = $d['link_type'] === 'with_shipment' && ($d['link_procurement'] ?? null) === 'yes';
         return [

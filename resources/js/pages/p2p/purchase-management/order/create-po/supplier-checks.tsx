@@ -59,15 +59,15 @@ export function riskLabel(risk: string | null | undefined): string {
   return tier ? `${tier[0].toUpperCase()}${tier.slice(1)} Risk` : '';
 }
 
-/** High / medium risk with a high-risk or blacklisted category forces
- *  physical inspection — the same rule the server applies on save. */
+/** High / medium risk with a high-risk or blacklisted category turns
+ *  physical inspection on by default (it can still be switched off). */
 export function isRiskMandatory(s: { risk: string; category: string }): boolean {
   const tier = riskTier(s.risk);
   return (tier === 'high' || tier === 'medium') && (has(s.category, 'high') || has(s.category, 'blacklist'));
 }
 
 export const RISK_GUIDELINES = [
-  { title: 'Physical inspection is mandatory', note: 'Goods must be physically inspected and cleared by QA before the GRN is accepted into inventory.' },
+  { title: 'Physical inspection is recommended', note: 'Switched on by default — goods should be physically inspected and cleared by QA before the GRN is accepted into inventory.' },
   { title: 'Payment against milestones only', note: 'Release payment strictly against installation, goods delivery and 100% GST scrutiny — no advance.' },
 ];
 
