@@ -34,9 +34,9 @@ const PAYMENT_TYPES = PAYMENT_TYPE_OPTIONS;
 const LOCKED_PO_TYPES = Object.fromEntries(PO_TYPES.filter((t) => t !== OPEN_PO_TYPE).map((t) => [t, 'Not available yet — only Material / Goods POs can be raised']));
 
 const v = (x: string | null | undefined) => x ?? '';
-// An international PO is never in INR — listed, but locked with the reason.
 // International supplier: GST fields read N/A instead of the stored GST record.
 const NA = 'N/A — Not applicable';
+// An international PO is never in INR — listed, but locked with the reason.
 const INR_LOCK = { INR: 'An international PO cannot be in INR' };
 
 type Props = {
@@ -71,13 +71,14 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
     setEditingSupplier(false);
     lookups.reloadSuppliers();
     if (!draft.vendorId) return;
-    // Reload so the updated details and the GST / risk checks show at once.
+    // Reload so the updated details (category, risk, GST) show at once and the supplier stays selected.
     const fresh = await onPickSupplier(draft.vendorId);
-    // An edit can make the supplier unusable for this PO — then the field is cleared.
-    const why = fresh ? unusableReason(fresh.category, fresh.type) : null;
-    if (why) {
+    // Only a blacklist removes it — any other edit (e.g. General → High Risk) keeps it on the PO.
+    if (fresh && (fresh.category ?? '').toLowerCase().includes('blacklist')) {
       clearSupplier();
-      toast.warning('Supplier removed from this PO', why);
+      toast.warning('Supplier removed from this PO', 'This supplier is now blacklisted — a purchase order cannot be raised on it.');
+    } else if (fresh) {
+      toast.success('Supplier updated', `${fresh.code} — ${fresh.name} details refreshed on this PO.`);
     }
   };
 
@@ -89,11 +90,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
   const supplierLocked = approval === 'pending' || approval === 'approved';
   // Only suppliers whose type fits the PO type; a blacklisted one is listed but cannot be picked.
   const needType = draft.poType || OPEN_PO_TYPE;
-  const unusableReason = (category?: string | null, type?: string | null): string | null => {
-    if ((category ?? '').toLowerCase().includes('blacklist')) return 'This supplier is blacklisted — a purchase order cannot be raised on it.';
-    if ((type ?? '').trim().toLowerCase() !== needType.toLowerCase()) return `This supplier is ${type || 'not typed'} — a ${needType} PO needs a ${needType} supplier.`;
-    return null;
-  };
   const docTypeLocked = !!draft.vendorId;
   const clearSupplier = () => set({ vendorId: null, supplier: null, vault: null, legal: null });
 
@@ -109,7 +105,7 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
     .filter((s) => (s.supplier_type ?? '').trim().toLowerCase() === needType.toLowerCase() || s.id === draft.vendorId)
     .map((s) => ({ id: s.id, label: `${s.code} — ${s.name}`, doc: s.document_type, blacklisted: (s.supplier_category ?? '').toLowerCase().includes('blacklist') })),
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  [lookups.suppliers, needType]);
+  [lookups.suppliers, needType, draft.vendorId]);
   const pickedOption = supplierOptions.find((o) => o.id === draft.vendorId)?.label ?? (sup ? `${sup.code} — ${sup.name}` : '');
 
   // Each option carries the supplier's origin, set when it was onboarded.
