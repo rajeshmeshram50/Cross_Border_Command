@@ -1696,6 +1696,13 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
   letter-spacing: -.3px;
   color: #0e7490;
 }
+/* Its own dark tones: the shared dark .cpd-code has the same weight and comes
+   earlier, so the light chip above won and showed white on the dark table. */
+[data-bs-theme="dark"] .cdoc-tbl .cpd-code {
+  border-color: rgba(34, 211, 238, .3);
+  background: rgba(34, 211, 238, .12);
+  color: #7dd3fc;
+}
 /* The Necessary column speaks the lead popup's language (.lasm-need-*): a soft
    tag that simply STATES the answer, and only the ticked row turns into two
    pills. Borders are dropped — an outlined chip on every row read as a grid of
@@ -1804,24 +1811,6 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 .cdoc-kind--agr { border-color: #ddd6fe; background: #f5f3ff; color: #6d28d9; }
 [data-bs-theme="dark"] .cdoc-kind { background: rgba(34, 211, 238, .12); border-color: rgba(34, 211, 238, .3); color: #67e8f9; }
 [data-bs-theme="dark"] .cdoc-kind--agr { background: rgba(139, 92, 246, .14); border-color: rgba(139, 92, 246, .35); color: #c4b5fd; }
-.cdoc-file {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 170px;
-  padding: 5px 10px;
-  border: 1.5px solid #c8eef6;
-  border-radius: 8px;
-  background: #eafcff;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 700;
-  color: #0e7490;
-  cursor: pointer;
-}
-.cdoc-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cdoc-file svg { flex-shrink: 0; }
-.cdoc-file:hover { border-color: #22d3ee; background: #e0f7fb; }
 
 .cdoc-status {
   display: inline-flex;
@@ -1917,7 +1906,6 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 [data-bs-theme="dark"] .cdoc-req { background: rgba(10, 179, 156, .16); color: #5eead4; }
 [data-bs-theme="dark"] .cdoc-req--opt { background: rgba(255, 255, 255, .06); color: #94a3b8; }
 [data-bs-theme="dark"] .cdoc-req--todo { background: rgba(245, 158, 11, .16); color: #fbbf24; }
-[data-bs-theme="dark"] .cdoc-file { background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .26); color: #67e8f9; }
 [data-bs-theme="dark"] .cdoc-status--signed { background: rgba(22, 163, 74, .16); border-color: rgba(34, 197, 94, .34); color: #4ade80; }
 [data-bs-theme="dark"] .cdoc-status--pending { background: rgba(245, 158, 11, .16); border-color: rgba(245, 158, 11, .34); color: #fbbf24; }
 [data-bs-theme="dark"] .cdoc-foot__hint { color: #94a3b8; }
@@ -1998,8 +1986,11 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
   min-height: 0;
 }
 .cpf-fill .cpd-scroll { flex: 1; min-height: 0; overflow-y: auto; }
-/* Keep the header row visible while the rows scroll. */
-.cpf-fill .cdoc-tbl thead th { position: sticky; top: 0; z-index: 7; }
+/* Keep the header row visible while the rows scroll. The whole thead sticks,
+   not its cells: the teal gradient is painted on the thead, so sticky cells
+   kept their text in place while the background scrolled away and the rows
+   showed through behind the column names. */
+.cpf-fill .cdoc-tbl thead { position: sticky; top: 0; z-index: 7; }
 .cpf-fill .cdoc-foot { margin-top: auto; padding-top: 14px; }
 /* Phones scroll the whole form, so there is no spare height to fill. A table
    told to take "whatever is left" got none and collapsed to its header row

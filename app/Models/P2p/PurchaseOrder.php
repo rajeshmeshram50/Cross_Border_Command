@@ -162,13 +162,6 @@ class PurchaseOrder extends Model
             || $this->paymentRequests()->withoutGlobalScope('tenant')->whereIn('status', [PoPaymentRequest::STATUS_PENDING, PoPaymentRequest::STATUS_APPROVED])->exists();
     }
 
-    /** Sent to a senior for GST approval and not decided yet. Frozen until then —
-        the senior must decide on the PO as it was sent; a rejection reopens it. */
-    public function awaitingApproval(): bool
-    {
-        return $this->latestGstApproval()->where('status', PoGstApproval::STATUS_PENDING)->exists();
-    }
-
     /** A document on it has gone out for signature, or come back signed. The
         supplier is signing what was sent, so the PO must not change under it.
         A declined / recalled / expired request puts its documents back to

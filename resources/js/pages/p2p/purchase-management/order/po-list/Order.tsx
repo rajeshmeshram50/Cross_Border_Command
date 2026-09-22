@@ -235,8 +235,6 @@ export type OrderRow = {
   paymentNote?: PaymentNote;
   cancelled?: boolean;
   cancelReason?: string;
-  /** Sent for senior GST approval and not decided yet — view-only until rejected. */
-  awaitingApproval?: boolean;
   /** A document is out for signature or signed — view-only until declined / recalled. */
   signingStarted?: boolean;
   /* The advance-receipt refund adjustment raised when the PO is cancelled.
@@ -414,7 +412,6 @@ export function toOrderRow(r: PoListRow): OrderRow {
       : Number(r.pending_request_amount) > 0 ? { kind: 'waiting', amount: Number(r.pending_request_amount) } : undefined,
     cancelled: r.status === 'cancelled',
     cancelReason: r.cancel_reason ?? undefined,
-    awaitingApproval: r.gst_approval_status === 'pending',
     signingStarted: !!r.signing_started,
     cancelStage: r.status === 'cancelled' ? (r.cancel_stage ?? 'closed') : undefined,
     adr: r.refund ? { no: r.refund.code, date: r.refund.date ?? '', count: 1, paid: r.refund.paid, credited: r.refund.refund } : undefined,
@@ -806,7 +803,6 @@ const paymentsStarted = (row: OrderRow) => row.paid > 0 || !!row.paymentNote;
 const viewOnlyReason = (row: OrderRow) =>
   paymentsStarted(row) ? 'Payments have started — the PO opens view-only'
     : row.signingStarted ? 'Documents sent for signature — view-only unless the request is declined or recalled'
-    : row.awaitingApproval ? 'Sent for senior approval — view-only until the request is rejected'
       : undefined;
 
 function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onVault, viewOnly }: {
@@ -1127,10 +1123,7 @@ export default function Order() {
     { perPage: pageSize, search: debouncedSearch, tab: activeTab, append: isPhone },
     (e) => toast.error('Could not load purchase orders', e instanceof PoApiError ? e.firstError : 'Please refresh the page.'),
   );
-  // A reload after an update shows the shimmer until the new rows arrive (CS-399).
-  const [reloading, setReloading] = useState(false);
-  const loadRows = () => { setReloading(true); list.reload(); };
-  useEffect(() => { if (!list.refreshing) setReloading(false); }, [list.refreshing]);
+  const loadRows = list.reload;
 
   // Not built on the new PO yet.
   const comingSoon = (what: string) => () => toast.info('Feature coming soon', `${what} will be available shortly.`);
@@ -1245,12 +1238,20 @@ export default function Order() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollTimer = useRef<number | undefined>(undefined);
+  /* The table is swapped for the shimmer while it reloads, which would drop
+     the reader back to the first column — and Edit PO lives in the last ones.
+     Remember how far across they were and put them back there. */
+  const scrollLeft = useRef(0);
+  useEffect(() => {
+    if (!list.loading && !list.replacing && scrollRef.current) scrollRef.current.scrollLeft = scrollLeft.current;
+  }, [list.loading, list.replacing]);
 
   // Ignore the mouse while scrolling so hover animations don't repaint mid-scroll.
   // Refs, not state: scroll fires many times a second and must not re-render.
   const onTableScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
+    scrollLeft.current = el.scrollLeft;
     el.classList.add('is-scrolling');
 
     window.clearTimeout(scrollTimer.current);
@@ -1452,7 +1453,10 @@ export default function Order() {
 
         </div>
 
-        {list.loading || (reloading && list.refreshing) ? (
+        {/* Any load that replaces the rows — the first one, a reload after a
+            save, a tab, page or search change — shows the shimmer. Dimming the
+            old rows instead left the list looking washed out. */}
+        {list.loading || list.replacing ? (
           <OrderListSkeleton phone={isPhone} />
         ) : rows.length === 0 ? (
           <div className="ord-empty">
@@ -1483,7 +1487,7 @@ export default function Order() {
           </div>
         ) : (
 
-        <div className={`ord-table-scroll${list.refreshing ? ' is-refreshing' : ''}`} ref={scrollRef} onScroll={onTableScroll}>
+        <div className="ord-table-scroll" ref={scrollRef} onScroll={onTableScroll}>
           <table className="ord-table" style={{ width: TABLE_WIDTH }}>
 
             <colgroup>

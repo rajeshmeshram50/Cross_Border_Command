@@ -7,7 +7,7 @@
 // on submit; the Purchase Order PDF is generated then). Selected documents can
 // be emailed or sent to the supplier for e-signature via Zoho Sign; the signing
 // tracker, signed copy and certificate come from the shared signature endpoints.
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import StageSummary from './StageSummary';
 import type { PoDraft } from '../po-draft';
 import type { StepCtx } from '../CreatePoForm';
@@ -18,7 +18,7 @@ import { FitTip } from '../form-fields';
 import Tooltip from '../../../../../../components/ui/Tooltip';
 import { useToast } from '../../../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../../../contexts/ConfirmContext';
-import { IcoCertificate, IcoChevron, IcoDownload, IcoFolder, IcoHistory, IcoMail, IcoPaperclip, IcoSend, IcoShield, IcoUpload } from '../../shared/icons';
+import { IcoCertificate, IcoChevron, IcoDownload, IcoEye, IcoFolder, IcoHistory, IcoMail, IcoSend, IcoShield } from '../../shared/icons';
 
 const SupplierEvidenceVaultModal = lazy(() => import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 const warmVault = () => { void import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'); };
@@ -37,6 +37,14 @@ const isAgreement = (doc: PoDocument) =>
    else is this PO's own call, and nobody has decided until somebody answers
    here, which is not the same as "not necessary". */
 const isMandatory = (doc: PoDocument) => doc.doc_kind === 'purchase_order';
+/* Only a Necessary document goes out for signature: the Purchase Order always,
+   a library document once this PO has marked it Necessary. Not necessary — or
+   not decided yet — stays here (the lead's popup gates its Send the same way). */
+const isNeeded = (doc: PoDocument) => isMandatory(doc) || doc.needed === 'yes';
+/* Out for signature, or signed: the answer is settled. It reads Necessary, it
+   cannot be re-marked, and the row cannot be ticked. A declined / recalled
+   request puts the row back to pending, which frees it again. */
+const isSettled = (doc: PoDocument) => doc.status === 'sent' || doc.status === 'signed';
 /* A row that came from a CLM library is signed through the CLM flow: the
    request is raised against the library id and the document is rendered
    server-side, so it needs no file of its own. The Purchase Order PDF and any
@@ -87,8 +95,6 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   /* Our own files (the Purchase Order PDF, anything uploaded here) — they have
      no library row, so they go through this module's own send. */
   const [rawSigning, setRawSigning] = useState<PoDocument[] | null>(null);
-  const uploadFor = useRef<PoDocument | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
 
   const fail = (e: unknown) => {
     if (e instanceof PoApiError) toast.error(`${e.action} failed`, e.firstError);
@@ -103,15 +109,6 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(reload, [poId]);
 
-  // The PO PDF is rendered by a background job after submit — check back until it lands.
-  const awaitingPdf = docs.some((d) => d.doc_kind === 'purchase_order' && !d.file_path && d.status === 'pending');
-  const polls = useRef(0);
-  useEffect(() => {
-    if (!awaitingPdf || !poId || polls.current >= 30) return;
-    const t = window.setTimeout(() => { polls.current += 1; poDocumentApi.list(poId).then(setDocs).catch(() => {}); }, 4000);
-    return () => window.clearTimeout(t);
-  }, [awaitingPdf, poId, docs]);
-
   const run = async (key: string, task: () => Promise<void>) => {
     if (busy) return;
     setBusy(key);
@@ -124,7 +121,7 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
      the way the lead's popup does it. The Purchase Order is left out: it goes
      with the order whatever anyone says. */
   const setNeeds = (ids: number[], needed: boolean) => {
-    const targets = docs.filter((d) => ids.includes(d.id) && !isMandatory(d));
+    const targets = docs.filter((d) => ids.includes(d.id) && !isMandatory(d) && !isSettled(d));
     if (!targets.length) {
       toast.info('Nothing to change', 'The Purchase Order is always necessary.');
       return;
@@ -138,24 +135,50 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
     });
   };
 
-  // The file attached to the row (the Purchase Order PDF, or an upload).
-  const downloadFile = (doc: PoDocument) => run(`file:${doc.id}`, async () => {
-    saveBlob(await poDocumentApi.download(poId as number, doc.id), doc.original_name || `${doc.code.replace(/\//g, '_')}.pdf`);
+  /* The Purchase Order PDF is built from the PO itself. It is normally rendered
+     in the background after submit; if that has not landed yet (or the queue is
+     not running), render it now — nobody should have to attach or generate it. */
+  const ensureFile = async (doc: PoDocument): Promise<PoDocument> => {
+    if (doc.file_path || doc.doc_kind !== 'purchase_order') return doc;
+    const made = await poDocumentApi.generate(poId as number, doc.id);
+    patchDoc(made);
+    return made;
+  };
+
+  /* The draft of a row as a PDF. A library row is the trade document /
+     agreement itself, rendered for this supplier — the same PDF the signature
+     sender previews. Our own rows (the Purchase Order) are their own file. */
+  const canDraft = (doc: PoDocument) =>
+    libraryOf(doc) ? !!draft.vendorId : doc.doc_kind === 'purchase_order' || !!doc.file_path;
+  const draftBlob = async (doc: PoDocument): Promise<Blob> => {
+    const kind = libraryOf(doc);
+    if (kind && draft.vendorId) return poSignatureApi.draft(kind, doc.source_id as number, draft.vendorId);
+    const d = await ensureFile(doc);
+    return poDocumentApi.download(poId as number, d.id);
+  };
+
+  const downloadDraft = (doc: PoDocument) => run(`dl:${doc.id}`, async () => {
+    const name = libraryOf(doc) ? `Draft_${(doc.code || doc.name).replace(/[\\/:*?"<>|]/g, '_')}.pdf`
+      : doc.original_name || `${doc.code.replace(/\//g, '_')}.pdf`;
+    saveBlob(await draftBlob(doc), name);
   });
 
-  /* The draft of a library row is the trade document / agreement itself, as a
-     Word file — not whatever was uploaded against it. Our own rows (the
-     Purchase Order PDF) have no template, so their file is the draft. */
-  const canDownloadDraft = (doc: PoDocument) => (libraryOf(doc) ? true : !!doc.file_path);
-  const downloadDraft = (doc: PoDocument) => run(`dl:${doc.id}`, async () => {
-    const kind = libraryOf(doc);
-    if (!kind) {
-      saveBlob(await poDocumentApi.download(poId as number, doc.id), doc.original_name || `${doc.code.replace(/\//g, '_')}.pdf`);
-      return;
-    }
-    const blob = await poSignatureApi.draft(kind, doc.source_id as number);
-    saveBlob(blob, `Draft_${(doc.code || doc.name).replace(/[\\/:*?"<>|]/g, '_')}.docx`);
-  });
+  /* View opens the draft in a new tab. The tab is opened inside the click —
+     the browser allows that — and pointed at the PDF once it has arrived. */
+  const viewDoc = (doc: PoDocument) => {
+    if (busy) return;
+    const w = window.open('', '_blank');
+    void run(`view:${doc.id}`, async () => {
+      try {
+        const url = URL.createObjectURL(await draftBlob(doc));
+        if (w) w.location.href = url; else window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      } catch (e) {
+        w?.close();
+        throw e;
+      }
+    });
+  };
 
   const downloadSigned = (doc: PoDocument) => run(`sdl:${doc.id}`, async () => {
     if (doc.signature_request_id == null) return;
@@ -168,33 +191,21 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
     saveBlob(await poSignatureApi.certificate(doc.signature_request_id), `Certificate_${doc.code.replace(/\//g, '_')}.pdf`);
   });
 
-  const generate = (doc: PoDocument) => run(`gen:${doc.id}`, async () => {
-    patchDoc(await poDocumentApi.generate(poId as number, doc.id));
-    toast.success('Purchase Order PDF generated', doc.code);
-  });
-
-  const pickUpload = (doc: PoDocument) => {
-    uploadFor.current = doc;
-    fileInput.current?.click();
-  };
-  const onFile = (file: File | undefined) => {
-    const doc = uploadFor.current;
-    if (fileInput.current) fileInput.current.value = '';
-    if (!doc || !file) return;
-    void run(`up:${doc.id}`, async () => {
-      patchDoc(await poDocumentApi.uploadFile(poId as number, doc.id, file));
-      toast.success('File attached', `${file.name} → ${doc.name}`);
-    });
-  };
-
   const chosen = docs.filter((d) => selected.includes(d.id));
-  const noFile = chosen.filter((d) => !d.file_path);
+  // Email sends stored files; the Purchase Order's is rendered on demand.
+  const noFile = chosen.filter((d) => !d.file_path && d.doc_kind !== 'purchase_order');
   const notPending = chosen.filter((d) => d.status !== 'pending');
   const supplierName = draft.supplier?.name ?? 'the supplier';
   const supplierEmail = draft.supplier?.email ?? '';
 
   const sendForSignature = () => {
     if (notPending.length) { toast.warning('Already sent', `${notPending.map((d) => d.name).join(', ')} is already sent or signed.`); return; }
+    const unneeded = chosen.filter((d) => !isNeeded(d));
+    if (unneeded.length) {
+      toast.warning('Mark it Necessary first',
+        `${unneeded.map((d) => d.name).join(', ')} ${unneeded.length === 1 ? 'is' : 'are'} not marked Necessary — only necessary documents are sent for signature.`);
+      return;
+    }
 
     const lib = chosen.filter((d) => libraryOf(d));
     const own = chosen.filter((d) => !libraryOf(d));
@@ -217,13 +228,20 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
       return;
     }
 
-    const missing = own.filter((d) => !d.file_path);
-    if (missing.length) { toast.warning('File missing', `Attach a file first: ${missing.map((d) => d.name).join(', ')}.`); return; }
-    setRawSigning(own);
+    // The Purchase Order is rendered on the spot if it has no PDF yet
+    // (ensureFile); any other row of ours without a file has nothing to send.
+    const missing = own.filter((d) => !d.file_path && d.doc_kind !== 'purchase_order');
+    if (missing.length) { toast.warning('No file to send', `${missing.map((d) => d.name).join(', ')} has no file.`); return; }
+    void run('sign', async () => {
+      setRawSigning(await Promise.all(own.map(ensureFile)));
+    });
   };
 
   const sendEmail = () => {
-    if (noFile.length) { toast.warning('File missing', `Attach a file first: ${noFile.map((d) => d.name).join(', ')}.`); return; }
+    if (noFile.length) {
+      toast.warning('Not available by email', `${noFile.map((d) => d.name).join(', ')} — trade documents and agreements go to the supplier through Send for Signature.`);
+      return;
+    }
     void (async () => {
       const ok = await confirm({
         title: 'Email documents?',
@@ -232,6 +250,7 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
       });
       if (!ok) return;
       await run('email', async () => {
+        await Promise.all(chosen.map(ensureFile));
         const res = await poDocumentApi.email(poId as number, selected);
         setSelected([]);
         toast.success('Email sent', `${res.count} document${res.count === 1 ? '' : 's'} emailed to ${res.to}.`);
@@ -239,8 +258,10 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
     })();
   };
 
-  const allSelected = docs.length > 0 && selected.length === docs.length;
-  const toggleAll = () => setSelected(allSelected ? [] : docs.map((d) => d.id));
+  // Rows already out for signature / signed cannot be ticked, so "all" means the rest.
+  const selectable = docs.filter((d) => !isSettled(d));
+  const allSelected = selectable.length > 0 && selectable.every((d) => selected.includes(d.id));
+  const toggleAll = () => setSelected(allSelected ? [] : selectable.map((d) => d.id));
   const toggleOne = (id: number) =>
     setSelected((all) => (all.includes(id) ? all.filter((c) => c !== id) : [...all, id]));
 
@@ -250,7 +271,6 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
     <>
       <StageSummary draft={draft} ctx={ctx} upto={3} />
 
-      <input ref={fileInput} type="file" hidden accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(e) => onFile(e.target.files?.[0])} />
 
       {vaultOpen && vaultTarget && (
         <Suspense fallback={null}>
@@ -366,7 +386,7 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
               <thead>
                 <tr>
                   <th className="cdoc-check">
-                    <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={!docs.length} aria-label="Select all documents" />
+                    <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={!selectable.length} aria-label="Select all documents" />
                   </th>
                   <th>Sr. No</th>
                   <th>Document Code</th>
@@ -389,7 +409,9 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                   return (
                     <tr key={doc.id}>
                       <td className="cdoc-check">
-                        <input type="checkbox" checked={selected.includes(doc.id)} onChange={() => toggleOne(doc.id)} aria-label={`Select ${doc.name}`} />
+                        <input type="checkbox" checked={selected.includes(doc.id)} onChange={() => toggleOne(doc.id)} aria-label={`Select ${doc.name}`}
+                          disabled={isSettled(doc)}
+                          title={isSettled(doc) ? 'Already sent for signature — nothing more to do on this row' : undefined} />
                       </td>
                       <td>{i + 1}</td>
                       <td><span className="cpd-code">{doc.code}</span></td>
@@ -405,8 +427,10 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                         </div>
                       </td>
                       <td>
-                        {isMandatory(doc) ? (
-                          <Tooltip label="The Purchase Order always goes with the order — it cannot be marked not necessary" themed>
+                        {isMandatory(doc) || isSettled(doc) ? (
+                          <Tooltip label={isMandatory(doc)
+                            ? 'The Purchase Order always goes with the order — it cannot be marked not necessary'
+                            : 'Already sent for signature — it stays Necessary'} themed>
                             <span className="cdoc-req">NECESSARY</span>
                           </Tooltip>
                         ) : selected.includes(doc.id) ? (
@@ -435,22 +459,13 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                       <td>{doc.generated_on ? formatDmy(doc.generated_on) : '—'}</td>
                       <td>{doc.valid_up_to ? formatDmy(doc.valid_up_to) : '—'}</td>
                       <td>
-                        {/* The name needs its own span — text-overflow does nothing on a flex container. */}
-                        {doc.file_path ? (
-                          <button type="button" className="cdoc-file" onClick={() => downloadFile(doc)}>
-                            <IcoPaperclip size={12} /><FitTip label={doc.original_name ?? 'Attachment'}><span>{doc.original_name ?? 'Attachment'}</span></FitTip>
-                          </button>
-                        ) : doc.doc_kind === 'purchase_order' && awaitingPdf && polls.current < 30 ? (
-                          <span className="cpd-dash">Generating PDF…</span>
-                        ) : doc.doc_kind === 'purchase_order' ? (
-                          <button type="button" className="cdoc-btn" disabled={busy === `gen:${doc.id}`} onClick={() => generate(doc)}>
-                            <IcoFolder size={13} /> {busy === `gen:${doc.id}` ? 'Generating…' : 'Generate PDF'}
-                          </button>
-                        ) : (
-                          <button type="button" className="cdoc-btn" disabled={busy === `up:${doc.id}`} onClick={() => pickUpload(doc)}>
-                            <IcoUpload size={13} /> {busy === `up:${doc.id}` ? 'Uploading…' : 'Upload File'}
-                          </button>
-                        )}
+                        {/* One action: look at the document. The Purchase Order
+                            is its own PDF (rendered here if the background job
+                            has not made it yet); a library row is its draft. */}
+                        <button type="button" className="cdoc-btn" disabled={!canDraft(doc) || busy === `view:${doc.id}`}
+                          title={canDraft(doc) ? `View ${doc.name}` : 'Nothing to view yet'} onClick={() => viewDoc(doc)}>
+                          <IcoEye size={13} /> {busy === `view:${doc.id}` ? 'Opening…' : 'View'}
+                        </button>
                       </td>
                       <td>
                         <span className={`cdoc-status cdoc-status--${st.tone}`}>
@@ -460,8 +475,8 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                       <td>
                         {/* Every row carries the same four actions, disabled when they don't apply yet. */}
                         <div className="cdoc-actions">
-                          <button type="button" className="cdoc-btn" disabled={!canDownloadDraft(doc) || busy === `dl:${doc.id}`}
-                            title={canDownloadDraft(doc) ? undefined : 'No file attached yet'}
+                          <button type="button" className="cdoc-btn" disabled={!canDraft(doc) || busy === `dl:${doc.id}`}
+                            title={canDraft(doc) ? undefined : 'Nothing to download yet'}
                             onClick={() => downloadDraft(doc)}>
                             <IcoDownload size={13} /> {busy === `dl:${doc.id}` ? 'Preparing…' : 'Download Draft Document'}
                           </button>
@@ -507,8 +522,12 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
             <button type="button" className="cdoc-send" disabled={selected.length === 0 || busy === 'email'} onClick={sendEmail}>
               <IcoMail size={13} /> {busy === 'email' ? 'Sending…' : 'Send Selected Via Email'}
             </button>
-            <button type="button" className="cdoc-send cdoc-send--sign" disabled={selected.length === 0 || busy === 'sign'} onClick={sendForSignature}>
-              <IcoSend size={13} /> {busy === 'sign' ? 'Sending…' : 'Send Selected for Signature'}
+            {/* Nothing ticked is Necessary → nothing to send; say why on hover. */}
+            <button type="button" className="cdoc-send cdoc-send--sign"
+              disabled={!chosen.some(isNeeded) || busy === 'sign'}
+              title={chosen.length && !chosen.some(isNeeded) ? 'Only necessary documents can be sent for signature — mark them Necessary first' : undefined}
+              onClick={sendForSignature}>
+              <IcoSend size={13} /> {busy === 'sign' ? 'Preparing PO…' : 'Send Selected for Signature'}
             </button>
           </div>
         </div>
