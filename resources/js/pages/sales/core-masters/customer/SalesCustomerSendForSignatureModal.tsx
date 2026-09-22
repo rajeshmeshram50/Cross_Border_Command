@@ -983,9 +983,13 @@ export default function SalesCustomerSendForSignatureModal({
         // One box per document, or the whole list when the same signer has to
         // sign a document in several places.
         const docSettings: Record<number, DocSettings & { boxes?: DocSettings[] }> = {};
+        /* Read the box from where the screen draws it (activeSettings): with
+           multiBox on, a drag lands in multiBoxes and `settings` keeps the
+           seed, so reading `settings` first sent the untouched starting box —
+           a PO signed bottom-right on screen reached Zoho at x 60, 240 wide. */
         ids.forEach((id) => {
-          const boxes = multiBoxes[id] ?? [];
-          const primary = settings[id] ?? boxes[0] ?? { ...SEED_ONE };
+          const boxes = multiBox ? (multiBoxes[id] ?? seedBoxes(id)) : [];
+          const primary = multiBox ? (boxes[0] ?? { ...SEED_ONE }) : (settings[id] ?? { ...SEED_ONE });
           docSettings[id] = boxes.length > 1 ? { ...primary, boxes } : primary;
         });
         const r = await api.post(rawPdfContext.sendUrl, {

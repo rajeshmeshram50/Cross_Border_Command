@@ -101,7 +101,7 @@ class PurchaseOrderController extends Controller
         'shipment_order_id', 'proforma_invoice_id', 'procurement_request_id', 'procurement_request_code',
         'expected_delivery_date', 'grand_total', 'physical_inspection', 'inspection_status', 'cancel_reason', 'created_at',
         'taxable_total', 'total_cgst', 'total_sgst', 'total_igst', 'shipping_charges', 'packaging_charges', 'other_charges',
-        'tds_amount', 'paid_amount', 'balance_amount', 'gst_approval_status',
+        'tds_amount', 'paid_amount', 'balance_amount',
     ];
 
     /**
@@ -716,14 +716,13 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /** Stages 01–03 are editable only while the PO is not cancelled, out for signature / signed, in payment, or awaiting approval. */
+    /** Stages 01–03 are editable only while the PO is not cancelled, out for signature / signed, or in payment. */
     private function editBlock(PurchaseOrder $po): ?JsonResponse
     {
         if ($po->isCancelled()) return $this->fail('This PO is cancelled and can no longer be edited.');
         $this->refreshSigning($po);
         if ($po->signingStarted()) return $this->fail('Documents on this PO have been sent for signature — it is view-only now. It opens for editing again only if the request is declined or recalled.');
         if ($po->paymentsStarted()) return $this->fail('Payments have started on this PO — it is view-only and can no longer be edited.');
-        if ($po->awaitingApproval()) return $this->fail('This PO is waiting for senior approval — it can be edited again only if the request is rejected.');
         return null;
     }
 
@@ -881,8 +880,6 @@ class PurchaseOrderController extends Controller
             'physical_inspection' => $po->physical_inspection,
             'inspection_status'   => $po->inspection_status,
             'cancel_reason'       => $po->cancel_reason,
-            // 'pending' while a senior-approval request waits — Edit PO opens view-only.
-            'gst_approval_status' => $po->gst_approval_status,
             // Documents out for signature / signed — Edit PO opens view-only.
             'signing_started'     => (bool) ($po->signing_started ?? false),
             'created_at'          => $po->created_at?->toIso8601String(),
@@ -902,8 +899,6 @@ class PurchaseOrderController extends Controller
         $out['created_by_name'] = $po->creator?->name;
         // View-only once payments have started (the edit form opens read-only).
         $out['payments_started'] = $po->paymentsStarted();
-        // Also view-only while a senior-approval request is waiting (until rejected).
-        $out['awaiting_approval'] = $po->awaitingApproval();
         // And once any document has gone out for signature (until declined / recalled).
         $out['signing_started'] = $po->signingStarted();
         // Step 03 shows where the senior-approval request stands.

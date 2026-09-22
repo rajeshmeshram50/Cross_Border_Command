@@ -81,8 +81,6 @@ export type PoListRow = PoLinkRefs & {
   payment_requests_count: number; pending_request_amount: number; ready_to_pay_amount: number;
   physical_inspection: YesNo | null; inspection_status: 'not_required' | 'pending' | 'completed' | null;
   cancel_reason: string | null; items_count: number | null; created_at: string | null;
-  /** 'pending' while a senior-approval request waits — the PO is view-only. */
-  gst_approval_status: GstApprovalStatus | null;
   /** A document is out for signature or signed — the PO is view-only. */
   signing_started: boolean;
 };
@@ -145,8 +143,6 @@ export type PoDetail = PoLinkRefs & {
   created_by: number | null; created_by_name: string | null;
   /** A pending / approved payment request or money paid: the PO is view-only. */
   payments_started: boolean;
-  /** A senior-approval request is waiting: view-only until it is rejected. */
-  awaiting_approval: boolean;
   /** A document is out for signature or signed: view-only until declined / recalled. */
   signing_started: boolean;
   supplier: { vendor_id: number; supplier_code: string; supplier_name: string; supplier_gstin: string | null; supplier_state_code: string | null } | null;
@@ -333,12 +329,13 @@ export const poDocumentApi = {
 /* ══════════════════════════ Signatures (shared CLM endpoints) ══════════════════════════ */
 
 export const poSignatureApi = {
-  /** A library trade document / agreement as an editable Word file — the
-      library's own DOCX download (the uploaded Word file, or one built from
-      the template). */
-  draft: (kind: 'trade' | 'agreement', libraryId: number) =>
-    call('PO draft document', () => api.get(
-      `/clm/${kind === 'trade' ? 'trade-doc-library' : 'agreement-library'}/${libraryId}/download`,
+  /** A library trade document / agreement as a PDF — rendered for this
+      supplier by the same preview the signature sender shows, so the draft is
+      exactly what the supplier would be asked to sign. */
+  draft: (kind: 'trade' | 'agreement', libraryId: number, supplierId: number) =>
+    call('PO draft document', () => api.post(
+      '/clm/signature-requests/preview',
+      { ...(kind === 'trade' ? { trade_doc_id: libraryId } : { agreement_id: libraryId }), party_id: supplierId, model_name: 'Vendor' },
       { responseType: 'blob' },
     ), (b) => b as Blob),
 

@@ -233,8 +233,6 @@ export type OrderRow = {
   paymentNote?: PaymentNote;
   cancelled?: boolean;
   cancelReason?: string;
-  /** Sent for senior GST approval and not decided yet — view-only until rejected. */
-  awaitingApproval?: boolean;
   /** A document is out for signature or signed — view-only until declined / recalled. */
   signingStarted?: boolean;
   /* The advance-receipt refund adjustment raised when the PO is cancelled.
@@ -401,7 +399,6 @@ export function toOrderRow(r: PoListRow): OrderRow {
       : Number(r.pending_request_amount) > 0 ? { kind: 'waiting', amount: Number(r.pending_request_amount) } : undefined,
     cancelled: r.status === 'cancelled',
     cancelReason: r.cancel_reason ?? undefined,
-    awaitingApproval: r.gst_approval_status === 'pending',
     signingStarted: !!r.signing_started,
     cancelStage: r.status === 'cancelled' ? 'closed' : undefined,
   };
@@ -788,7 +785,6 @@ const paymentsStarted = (row: OrderRow) => row.paid > 0 || !!row.paymentNote;
 const viewOnlyReason = (row: OrderRow) =>
   paymentsStarted(row) ? 'Payments have started — the PO opens view-only'
     : row.signingStarted ? 'Documents sent for signature — view-only unless the request is declined or recalled'
-    : row.awaitingApproval ? 'Sent for senior approval — view-only until the request is rejected'
       : undefined;
 
 function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onVault, viewOnly }: {
