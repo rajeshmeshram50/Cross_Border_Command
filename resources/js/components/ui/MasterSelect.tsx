@@ -422,7 +422,10 @@ export function MasterSelect({
             { name: 'flip', options: { boundary: 'viewport', fallbackPlacements: ['top', 'bottom'] } },
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
           ] as any}
-          style={menuWidth ? { width: menuWidth, minWidth: menuWidth } : undefined}
+          /* The trigger's width is the MINIMUM, not the width: in a narrow field a
+             long option plus its badge used to be cut off at the menu's edge. The
+             menu grows to fit its widest row and stops before the viewport edge. */
+          style={menuWidth ? { minWidth: menuWidth, width: 'max-content', maxWidth: `min(${Math.round(menuWidth) + 260}px, calc(100vw - 24px))` } : undefined}
         >
           {showSearch && (
             <div
