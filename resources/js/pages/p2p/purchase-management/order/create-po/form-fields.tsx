@@ -70,7 +70,7 @@ export function Field({ label, children, full, req, error }: { label: string; ch
    The options here are plain strings, so each is both value and label.
    Also used outside this form (Refund Adjustment, Payment Request), which
    pass `invalid` to flag a required field — keep that prop working. */
-export function EditSelect({ value, options, onChange, placeholder, invalid, readOnly, locked, onLockedClick, badges }: {
+export function EditSelect({ value, options, onChange, placeholder, invalid, readOnly, locked, onLockedClick, badges, listBadgesOnly }: {
   value: string; options: string[]; onChange: (v: string) => void; placeholder?: string; invalid?: boolean;
   /** Show the value in the wizard's locked-select box instead of a dropdown. */
   readOnly?: boolean;
@@ -80,6 +80,8 @@ export function EditSelect({ value, options, onChange, placeholder, invalid, rea
   onLockedClick?: (option?: string) => void;
   /** A tag beside an option (e.g. the product's segment); locked options also get the lock. */
   badges?: Record<string, { text: string; tone: 'green' | 'gray' | 'red' | 'violet' }>;
+  /** Keep the badges in the open list and off the closed field. */
+  listBadgesOnly?: boolean;
 }) {
   if (readOnly) {
     return (
@@ -97,6 +99,7 @@ export function EditSelect({ value, options, onChange, placeholder, invalid, rea
           ...(badges?.[o] ? { badges: [badges[o]] } : {}) }
         : { value: o, label: o, ...(badges?.[o] ? { badge: badges[o] } : {}) }))}
       onChange={onChange}
+      listBadgesOnly={listBadgesOnly}
       placeholder={placeholder ?? '— Select —'}
       invalid={invalid}
       onDisabledClick={onLockedClick ? (opt) => onLockedClick(opt.value) : undefined}
