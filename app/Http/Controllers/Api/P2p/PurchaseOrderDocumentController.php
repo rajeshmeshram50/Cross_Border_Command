@@ -204,6 +204,8 @@ class PurchaseOrderDocumentController extends Controller
                 'name'              => $data['name'],
                 'doc_kind'          => $data['doc_kind'] ?? 'other',
                 'is_required'       => $data['is_required'] ?? 'no',
+                // Same start as the seeded rows: answered Not necessary (CS-414).
+                'needed'            => ($data['is_required'] ?? 'no') === 'yes' ? 'yes' : 'no',
                 'generated_on'      => now()->toDateString(),
                 'valid_up_to'       => $data['valid_up_to'] ?? null,
                 'file_path'         => $path,

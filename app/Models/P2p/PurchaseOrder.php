@@ -42,6 +42,11 @@ class PurchaseOrder extends Model
     /** PO types that can be raised today; the others are listed but not open yet. */
     public const OPEN_PO_TYPES = ['material_goods'];
     public const PAYMENT_TYPES = ['Advanced Payment', 'Full Payment', 'Letter of Credit'];
+    /** What the list prints for each value — also what the search matches on. */
+    public const PO_TYPE_LABELS = [
+        'material_goods' => 'Material / Goods', 'services' => 'Services', 'ffd_transporter' => 'FFD / Transporter',
+    ];
+    public const DOC_TYPE_LABELS = ['domestic' => 'Domestics', 'international' => 'International'];
     /** The supplier type (master_vendor_types.name) each PO type needs. */
     public const PO_TYPE_SUPPLIER_TYPE = [
         'material_goods'  => 'Material / Goods',

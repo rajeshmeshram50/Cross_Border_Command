@@ -452,13 +452,10 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                               className={`cdoc-need__b${doc.needed === 'no' ? ' is-no' : ''}`}
                               onClick={() => setNeeds([doc.id], false)}>No</button>
                           </span>
-                        ) : doc.needed == null ? (
-                          /* Undecided. It must not read as "not necessary" —
-                             nobody has answered for this PO yet. */
-                          <Tooltip label="Not decided yet — tick the row to mark it Necessary or Not necessary" themed>
-                            <span className="cdoc-req cdoc-req--todo">NOT DECIDED</span>
-                          </Tooltip>
                         ) : (
+                          /* CS-414: a document starts Not necessary and is
+                             promoted after someone has read it — no third
+                             "not decided yet" state to work through. */
                           <span className={`cdoc-req${doc.needed === 'yes' ? ' cdoc-req--need' : ' cdoc-req--opt'}`}>
                             {doc.needed === 'yes' ? 'NECESSARY' : 'NOT NECESSARY'}
                           </span>

@@ -1479,7 +1479,7 @@ export default function Order() {
             <input
               type="text"
               aria-label="Search purchase orders"
-              placeholder="Search PO, supplier, ID or status..."
+              placeholder="Search PO, supplier, ID, type or status..."
               value={search}
               onChange={(e) => changeSearch(e.target.value)}
             />

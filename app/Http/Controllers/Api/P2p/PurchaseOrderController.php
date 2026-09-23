@@ -162,16 +162,36 @@ class PurchaseOrderController extends Controller
         // through their own id (the PO is already tenant-scoped).
         if ($s = trim((string) $request->query('search'))) {
             $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $s) . '%';
-            $base->where(fn ($w) => $w->where('code', 'ilike', $like)
-                ->orWhere('procurement_request_code', 'ilike', $like)
-                ->orWhereHas('vendor', fn ($v) => $v->where('vendor_code', 'ilike', $like)
-                    ->orWhere('company_name', 'ilike', $like)
-                    ->orWhere('legal_name', 'ilike', $like))
-                ->orWhereIn('shipment_order_id', fn ($q) => $q->from('shipment_orders')
-                    ->where('shipment_code', 'ilike', $like)->select('id'))
-                ->orWhereIn('proforma_invoice_id', fn ($q) => $q->from('proforma_invoices')
-                    ->where(fn ($p) => $p->where('code', 'ilike', $like)->orWhere('opp_code', 'ilike', $like))
-                    ->select('id')));
+            /* The list prints labels, not the values stored behind them, so the
+               words on screen are searchable too: "Domestics", "International",
+               "Material / Goods". Two letters would pull in half the list, so a
+               label only joins the search from three characters. */
+            $needle = mb_strtolower($s);
+            $byLabel = fn (array $labels) => mb_strlen($needle) < 3 ? []
+                : array_keys(array_filter($labels, fn ($label) => str_contains(mb_strtolower($label), $needle)));
+            $docTypes = $byLabel(PurchaseOrder::DOC_TYPE_LABELS);
+            $poTypes  = $byLabel(PurchaseOrder::PO_TYPE_LABELS);
+            // The search box has always offered status; it reads the same way.
+            $statuses = $byLabel(array_combine(
+                [PurchaseOrder::STATUS_DRAFT, PurchaseOrder::STATUS_SUBMITTED, PurchaseOrder::STATUS_CANCELLED],
+                ['Draft', 'Submitted', 'Cancelled'],
+            ));
+
+            $base->where(function ($w) use ($like, $docTypes, $poTypes, $statuses) {
+                $w->where('code', 'ilike', $like)
+                    ->orWhere('procurement_request_code', 'ilike', $like)
+                    ->orWhereHas('vendor', fn ($v) => $v->where('vendor_code', 'ilike', $like)
+                        ->orWhere('company_name', 'ilike', $like)
+                        ->orWhere('legal_name', 'ilike', $like))
+                    ->orWhereIn('shipment_order_id', fn ($q) => $q->from('shipment_orders')
+                        ->where('shipment_code', 'ilike', $like)->select('id'))
+                    ->orWhereIn('proforma_invoice_id', fn ($q) => $q->from('proforma_invoices')
+                        ->where(fn ($p) => $p->where('code', 'ilike', $like)->orWhere('opp_code', 'ilike', $like))
+                        ->select('id'));
+                if ($docTypes) $w->orWhereIn('document_type', $docTypes);
+                if ($poTypes) $w->orWhereIn('po_type', $poTypes);
+                if ($statuses) $w->orWhereIn('status', $statuses);
+            });
         }
 
         $counts = (clone $base)->toBase()->selectRaw(implode(', ', array_map(
@@ -701,6 +721,10 @@ class PurchaseOrderController extends Controller
                 'source_type'       => $row['source_type'],
                 'source_id'         => $row['source_id'],
                 'is_required'       => $row['required'] ? 'yes' : 'no',
+                /* CS-414: a document starts Not necessary and is promoted once
+                   someone has read it — the list opens answered, not with a
+                   column of questions. Only the PO itself starts necessary. */
+                'needed'            => $row['required'] ? 'yes' : 'no',
                 'generated_on'      => now()->toDateString(),
                 'status'            => PurchaseOrderDocument::STATUS_PENDING,
                 'created_by'        => $userId,
