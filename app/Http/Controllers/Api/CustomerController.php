@@ -1047,26 +1047,40 @@ class CustomerController extends Controller
 
         $data = $request->validate([
             'company_name'   => 'required|string|max:255',
-            /* Legal (registered entity) name must be unique per tenant — two
-             * customers can't share the same legal name. Case-insensitive,
-             * client-scoped, ignores the row being edited, and skips the check
-             * when blank (legal_name stays optional). */
+            /* Legal (registered entity) name must be unique within the SAME
+             * BRANCH — not the whole client. Branches of one client keep
+             * independent address books (the same reasoning the GST number,
+             * primary phone and primary email rules below already follow), so
+             * the same registered entity may legitimately be on file once under
+             * each branch that trades with it.
+             *
+             * This was client-scoped, so opening a NEW branch and entering its
+             * first customers meant being turned away by names belonging to a
+             * branch the user cannot even see — an error with nothing they
+             * could do about it, since the row it pointed at was invisible to
+             * them.
+             *
+             * Case-insensitive, ignores the row being edited, and skips the
+             * check when blank (legal_name stays optional). */
             'legal_name'     => [
                 'nullable',
                 'string',
                 'max:255',
-                function ($attribute, $value, $fail) use ($clientId, $customerId) {
+                function ($attribute, $value, $fail) use ($clientId, $customerId, $branchId) {
                     if (!trim((string) $value)) return;
                     $exists = \App\Models\Customer::query()
                         ->whereNull('deleted_at')
                         ->where(function ($q) use ($clientId) {
                             $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
                         })
+                        ->where(function ($q) use ($branchId) {
+                            $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
+                        })
                         ->whereRaw('LOWER(legal_name) = ?', [mb_strtolower(trim((string) $value))])
                         ->when($customerId, fn($q) => $q->where('id', '!=', $customerId))
                         ->exists();
                     if ($exists) {
-                        $fail('This legal name is already used by another customer.');
+                        $fail('This legal name is already used by another customer in this branch.');
                     }
                 },
             ],

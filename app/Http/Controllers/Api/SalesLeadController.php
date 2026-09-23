@@ -573,12 +573,23 @@ class SalesLeadController extends Controller
             return Lead::create(array_merge($data, [
                 'client_id'       => $user->client_id,
                 'branch_id'       => $user->branch_id,
-                // Auto-assign the lead to the creating EMPLOYEE so it shows in
-                // THEIR Lead Worksheet by default (QA #71). The worksheet scopes
-                // an employee's leads to salesperson_id = self, so an unassigned
-                // lead would only surface at the branch level. Admin / branch
-                // creators are left unassigned so they can still distribute.
-                'salesperson_id'  => (($user->user_type ?? null) === 'employee') ? $user->id : null,
+                /* Auto-assign the lead to WHOEVER CREATED IT so it shows in
+                 * their own Lead Worksheet by default (QA #71).
+                 *
+                 * This used to fire only for user_type = employee; a branch
+                 * admin (or client admin / client user) who captured a lead by
+                 * hand got an ownerless row, so the worksheet showed
+                 * "Unassigned" next to a lead the creator had just typed in and
+                 * the distribution page counted it as work nobody had picked up.
+                 * Capturing a lead IS taking it, so the creator now owns it and
+                 * hands it on through Assign like any other owner.
+                 *
+                 * Super Admin is the one exception: it is a cross-tenant
+                 * operator account, not a salesperson, and it is deliberately
+                 * absent from the distribution roster (salespersonSummary) —
+                 * leads parked on it would count as assigned with no row to
+                 * redistribute them from. Those stay unassigned. */
+                'salesperson_id'  => (($user->user_type ?? null) === 'super_admin') ? null : $user->id,
                 'opp_code'        => $this->nextOppCode($user->client_id, $user->branch_id),
                 'unique_query_id' => (string) mt_rand(100000000, 999999999),
                 'platform'        => 'Offline',
@@ -603,7 +614,14 @@ class SalesLeadController extends Controller
             \App\Support\LeadActivity::ACTION_GENERATED,
             'Lead generated (' . ($lead->query_type ?: 'Manual') . ' · ' . ($lead->platform ?: 'Offline') . ')',
             null,
-            ['opp_code' => $lead->opp_code],
+            /* The lead is born with an owner (the creator, above), so the
+             * timeline's first card names them instead of opening on a
+             * blank owner that a later 'assigned' row had to explain. */
+            [
+                'opp_code'         => $lead->opp_code,
+                'salesperson_id'   => $lead->salesperson_id ? (int) $lead->salesperson_id : null,
+                'salesperson_name' => $lead->salesperson?->name,
+            ],
         );
 
         return response()->json(['status' => true, 'data' => $lead], 201);
@@ -1283,15 +1301,37 @@ class SalesLeadController extends Controller
         $this->applyScope($leadQ, $user);
         $lead = $leadQ->findOrFail($leadId);
 
+        /* Purchase-decision-maker details are a CONTACT, so they are held to
+         * the same shape the customer / consignee / candidate forms use.
+         *
+         *  name  – `string` alone took "Rahul 123" and worse. Letters, spaces,
+         *          dots, hyphens and apostrophes only, starting on a letter –
+         *          the same person-name rule CandidateController applies.
+         *  email – `email` alone is RFC validation, and `#&^%^%&@mailinator.com`
+         *          is a legal RFC address (those characters are all permitted in
+         *          a local part), so it saved without a murmur. The regex holds
+         *          both sides of the @ to the label shape a working contact
+         *          address actually has, and is kept identical to EMAIL_RE in
+         *          TaskManagerPanel.tsx so the form and the API refuse the same
+         *          strings. */
         $data = $request->validate([
-            'name'        => 'required|string|max:255',
+            'name'        => ['required', 'string', 'max:150', "regex:/^[A-Za-z][A-Za-z .'\-]*$/"],
             'mobile_no'   => ['required', 'string', 'regex:/^\d{6,15}$/'],
-            'email'       => 'required|email|max:255',
+            'email'       => [
+                'required',
+                'email:rfc',
+                'max:191',
+                'regex:/^[A-Za-z0-9_%+-]+(?:\.[A-Za-z0-9_%+-]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/',
+                'not_regex:/\.\./',
+            ],
             'order_value' => 'nullable|numeric|min:0',
             'buying_plan' => 'nullable|date_format:Y-m-d',
             'attachment'  => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:5120',
         ], [
             'mobile_no.regex' => 'Mobile number must be 6–15 digits',
+            'name.regex'      => 'Name can contain only letters, spaces, dots, hyphens and apostrophes',
+            'email.regex'     => 'Please enter a valid email address',
+            'email.not_regex' => 'Please enter a valid email address',
         ]);
 
         $existing = LeadTaskManager::where('client_id', $user->client_id)
@@ -2363,8 +2403,10 @@ class SalesLeadController extends Controller
 
         if ($user->user_type !== 'super_admin') {
             $usersQ->where('client_id', $user->client_id);
-            if ($user->user_type === 'branch_user') {
-                // Every branch is an isolated peer — lock to own branch.
+            if (\App\Support\SalesVisibility::pinnedToOwnBranch($user)) {
+                // Every branch is an isolated peer — lock branch-pinned
+                // accounts (branch admin + employee) to their own branch, so
+                // the roster can't name another branch's people.
                 $usersQ->where(function ($w) use ($user) {
                     $w->whereNull('branch_id')->orWhere('branch_id', $user->branch_id);
                 });
@@ -2580,8 +2622,13 @@ class SalesLeadController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
+        /* Pass the BranchSwitcher's branch through. Without it the modal
+         * offered platforms / query types / countries drawn from EVERY branch,
+         * so a client admin viewing one branch got filter values that match no
+         * row in front of them — and that list is itself a readout of what the
+         * other branches are working on. */
         $base = Lead::query();
-        $this->applyScope($base, $user);
+        $this->applyScope($base, $user, $request->integer('branch_id') ?: null);
 
         $platforms = (clone $base)
             ->select('platform')->whereNotNull('platform')
@@ -2689,10 +2736,15 @@ class SalesLeadController extends Controller
                 : \App\Support\SalesVisibility::applyToLeads($qq, $user);
         };
 
-        if ($user->user_type === 'branch_user') {
-            // Branch users are locked to their own branch — every branch is an
-            // isolated peer; they can't use the BranchSwitcher, so
-            // $branchFilter is ignored here.
+        if (\App\Support\SalesVisibility::pinnedToOwnBranch($user)) {
+            // Branch admins AND employees are locked to their own branch —
+            // every branch is an isolated peer and neither gets the
+            // BranchSwitcher, so $branchFilter is ignored here.
+            //
+            // Employees used to fall through to the client-level path below,
+            // where the only narrowing left was the designation tier — and an
+            // employee on the 'all' tier (Director/CEO, HOD) has no narrowing
+            // at all, so they read every branch's leads in the tenant.
             $q->where(function ($w) use ($user) {
                 $w->whereNull('branch_id')->orWhere('branch_id', $user->branch_id);
             });

@@ -787,22 +787,28 @@ class ConsigneeController extends Controller
          * customer's legal name + contact details onto the consignee; the
          * "one mirror per customer" rule already blocks duplicate mirrors. */
         if (!$sameAsCustomer) {
+            /* Branch-scoped, like the phone + email rules beneath it: two
+             * branches of one client keep independent address books, so the
+             * same registered entity may be on file once under each. */
             $rules['legal_name'] = [
                 'nullable',
                 'string',
                 'max:255',
-                function ($attribute, $value, $fail) use ($clientId, $consigneeId) {
+                function ($attribute, $value, $fail) use ($clientId, $consigneeId, $branchId) {
                     if (!trim((string) $value)) return;
                     $exists = Consignee::query()
                         ->whereNull('deleted_at')
                         ->where(function ($q) use ($clientId) {
                             $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
                         })
+                        ->where(function ($q) use ($branchId) {
+                            $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
+                        })
                         ->whereRaw('LOWER(legal_name) = ?', [mb_strtolower(trim((string) $value))])
                         ->when($consigneeId, fn($q) => $q->where('id', '!=', $consigneeId))
                         ->exists();
                     if ($exists) {
-                        $fail('This legal name is already used by another consignee.');
+                        $fail('This legal name is already used by another consignee in this branch.');
                     }
                 },
             ];

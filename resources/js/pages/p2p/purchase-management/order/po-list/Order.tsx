@@ -552,8 +552,16 @@ const ICON_VAULT = (
 
 // Cancelled POs are read-only: their action buttons render disabled.
 function ZohoCell({ synced, cancelled = false, unpaid = false, onSync, error }: {
-  synced: boolean; cancelled?: boolean; unpaid?: boolean; onSync?: () => void; error?: string;
+  synced: boolean; cancelled?: boolean; unpaid?: boolean; onSync?: () => void | Promise<void>; error?: string;
 }) {
+  /* The sync talks to Zoho — several calls, a few seconds — so the button spins
+     until it comes back rather than looking like nothing happened. */
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    if (!onSync || busy) return;
+    setBusy(true);
+    try { await onSync(); } finally { setBusy(false); }
+  };
   if (synced) {
     return (
       <div className="ord-statcell">
@@ -567,13 +575,13 @@ function ZohoCell({ synced, cancelled = false, unpaid = false, onSync, error }: 
       {/* The bill carries the payments, so the first payment has to exist before anything goes across.
           A cancelled PO still syncs: the same press also sends its vendor credit and refunds. */}
       {/* Clickable even with no payment: the press says why it can't go across yet. */}
-      <button type="button" className="ord-btn ord-btn--zoho" onClick={onSync}
-        title={unpaid
+      <button type="button" className={`ord-btn ord-btn--zoho${busy ? ' is-syncing' : ''}`} disabled={busy} onClick={() => void go()}
+        title={busy ? 'Sending to Zoho Books…' : unpaid
           ? 'Record the first payment on this PO before syncing it to Zoho Books'
           : error || (cancelled
             ? 'Send this PO, its bill, payments, vendor credit and refunds to Zoho Books'
             : 'Send this PO, its bill and payments to Zoho Books')}>
-        {ICON_SYNC}<span>Zoho Sync</span>
+        {ICON_SYNC}<span>{busy ? 'Syncing…' : 'Zoho Sync'}</span>
       </button>
     </div>
   );
