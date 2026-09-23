@@ -1362,6 +1362,12 @@
    it becomes the containing block for the position:fixed footer, which then
    floats into the middle of the page instead of sitting at the bottom. */
 .cpf-form .spi-dt-pill { backdrop-filter: none; -webkit-backdrop-filter: none; }
+/* Pencil on a reference pill (Stage 02 supplier): edit the supplier from here. */
+.spi-dt-pill-edit { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-left: 8px; flex-shrink: 0; border: 1px solid #b9e4ef; border-radius: 7px; background: #fff; color: #0e7490; cursor: pointer; transition: background .15s, color .15s, transform .15s; }
+.spi-dt-pill-edit:hover { background: #0e7490; border-color: #0e7490; color: #fff; transform: translateY(-1px); }
+.spi-dt-pill-edit svg { width: 13px; height: 13px; }
+[data-bs-theme="dark"] .spi-dt-pill-edit { background: transparent; border-color: rgba(34, 211, 238, .3); color: #67e8f9; }
+[data-bs-theme="dark"] .spi-dt-pill-edit:hover { background: rgba(34, 211, 238, .18); color: #cffafe; }
 
 /* "+ Add Supplier" opens the Supplier master's chooser (.supch-ov) and wizard
    (.avm-backdrop) at z-index 1090, with their own popups at 1100–1180 — all

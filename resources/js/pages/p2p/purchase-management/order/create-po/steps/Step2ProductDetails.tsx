@@ -1,7 +1,7 @@
 // Create PO — Step 02: PO Product Details.
 // Opens with the read-only recap of Step 01, then the PI vs PO product table,
 // the additional charges and whatever the PO does not cover.
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import ProductTable, { computeLine } from './ProductTable';
 import ChargesSummary, { type Charges } from './ChargesSummary';
 import MissingProducts, { missingCount } from './MissingProducts';
@@ -9,10 +9,31 @@ import StageSummary from './StageSummary';
 import { FitTip } from '../form-fields';
 import { manualRow, type PoDraft, type PoLineRow, type SetDraft } from '../po-draft';
 import type { StepCtx } from '../CreatePoForm';
-import { IcoAlert, IcoBox, IcoChevron, IcoLines, IcoPin, IcoUser } from '../../shared/icons';
+import { IcoAlert, IcoBox, IcoChevron, IcoLines, IcoPencil, IcoPin, IcoUser } from '../../shared/icons';
+import { useAuth } from '../../../../../../contexts/AuthContext';
+import { useToast } from '../../../../../../contexts/ToastContext';
+// The supplier master's own wizard — mapping a product to the supplier from here
+// is what clears a "Not mapped" line without leaving Step 02.
+const AddVendorModal = lazy(() => import('../../../../p2p-master-management/supplier-management/AddVendorModal'));
 
 export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraft; set: SetDraft; ctx: StepCtx }) {
   const [prodOpen, setProdOpen] = useState(true);
+  const { user } = useAuth();
+  const toast = useToast();
+  // Editing the supplier's own record — supplier maintainers only, same rule as Stage 01.
+  const canEditSupplier = user?.user_type === 'super_admin' || user?.user_type === 'client_admin'
+    || !!user?.permissions?.['p2p.supplier']?.can_edit;
+  const [editingSupplier, setEditingSupplier] = useState(false);
+  // Reload the supplier and the product list so a product mapped in the wizard
+  // clears its "Not mapped" line here straight away.
+  const closeSupplierEdit = async () => {
+    setEditingSupplier(false);
+    ctx.reloadSupplierList();
+    ctx.lookups.reloadProducts();
+    if (!draft.vendorId) return;
+    const fresh = await ctx.reloadSupplier(draft.vendorId);
+    if (fresh) toast.success('Supplier updated', fresh.code + ' — ' + fresh.name + ' details refreshed on this PO.');
+  };
   const [missOpen, setMissOpen] = useState(true);
   const { products } = ctx.lookups;
   const sup = draft.supplier;
@@ -35,6 +56,12 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
 
   return (
     <>
+    {editingSupplier && draft.vendorId && (
+      <Suspense fallback={null}>
+        <AddVendorModal vendorId={draft.vendorId} scope={draft.docType === 'International' ? 'international' : 'domestic'}
+          onClose={closeSupplierEdit} onSubmit={closeSupplierEdit} />
+      </Suspense>
+    )}
     <StageSummary draft={draft} ctx={ctx} upto={1} />
 
     <div className={`spi-dt-sec ${prodOpen ? '' : 'is-collapsed'}`}>
@@ -51,7 +78,11 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
         <div className="spi-dt-secpills" onClick={(e) => e.stopPropagation()}>
           <RefPill icon={<IcoLines />} label="SUPPLIER CODE" value={sup?.code ?? '—'} />
           <span className="spi-dt-dots">⋮</span>
-          <RefPill icon={<IcoUser />} label="SUPPLIER NAME" value={sup?.name ?? '—'} />
+          <RefPill icon={<IcoUser />} label="SUPPLIER NAME" value={sup?.name ?? '—'}
+            action={draft.vendorId && canEditSupplier ? {
+              title: 'Edit this supplier — map a product to it without leaving this step',
+              onClick: () => setEditingSupplier(true),
+            } : undefined} />
           <span className="spi-dt-dots">⋮</span>
           <RefPill icon={<IcoPin />} label="STATE CODE" value={sup?.stateCode ?? '—'} />
           {!standalone && (
@@ -146,7 +177,11 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
   );
 }
 
-function RefPill({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function RefPill({ icon, label, value, action }: {
+  icon: React.ReactNode; label: string; value: string;
+  /** A pencil at the end of the pill, e.g. to edit the supplier it names. */
+  action?: { title: string; onClick: () => void };
+}) {
   return (
     <div className="spi-dt-pill">
       <span className="spi-dt-pill-ico">{icon}</span>
@@ -154,6 +189,11 @@ function RefPill({ icon, label, value }: { icon: React.ReactNode; label: string;
         <div className="spi-dt-pill-lbl">{label}</div>
         <FitTip label={value}><div className="spi-dt-pill-val">{value}</div></FitTip>
       </div>
+      {action && (
+        <button type="button" className="spi-dt-pill-edit" title={action.title} aria-label={action.title} onClick={action.onClick}>
+          <IcoPencil />
+        </button>
+      )}
     </div>
   );
 }
