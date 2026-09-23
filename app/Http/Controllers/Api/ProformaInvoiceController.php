@@ -1292,15 +1292,20 @@ class ProformaInvoiceController extends Controller
         $q->where('client_id', $user->client_id);
 
         // Client-level admins / users see every branch under their client,
-        // but honour the BranchSwitcher's narrowing.
-        if ($user->user_type !== 'branch_user' || !$user->branch_id) {
+        // but honour the BranchSwitcher's narrowing. Branch admins and
+        // employees never reach this path — they are pinned below.
+        /* Branch admins AND employees are pinned to their own branch; only
+         * the client-level roles cross branches (they hold the switcher).
+         * Employees used to take this client-wide path, and for one on the
+         * 'all' designation tier that leaves no narrowing at all. */
+        if (!\App\Support\SalesVisibility::pinnedToOwnBranch($user)) {
             $this->applySwitcherBranchFilter($q, $user, $branchFilter);
             \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
             return;
         }
 
-        // Branch user: own branch only — every branch is an isolated peer;
-        // can't switch.
+        // Pinned account (branch admin / employee): own branch only — every
+        // branch is an isolated peer and neither can switch.
         $q->where('branch_id', $user->branch_id);
         \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
     }
@@ -1323,7 +1328,7 @@ class ProformaInvoiceController extends Controller
         if ($user->user_type === 'super_admin') return;
         if (!$user->client_id || (int) $row->client_id !== (int) $user->client_id) abort(404);
 
-        if ($user->user_type !== 'branch_user' || !$user->branch_id) return;
+        if (!\App\Support\SalesVisibility::pinnedToOwnBranch($user)) return;
         if ((int) $row->branch_id === (int) $user->branch_id) return;
 
         // Foreign branch — invisible to this user (every branch is an
@@ -1337,7 +1342,7 @@ class ProformaInvoiceController extends Controller
         if ($user->user_type === 'super_admin') return;
         if (!$user->client_id || (int) $row->client_id !== (int) $user->client_id) abort(404);
 
-        if ($user->user_type !== 'branch_user' || !$user->branch_id) return;
+        if (!\App\Support\SalesVisibility::pinnedToOwnBranch($user)) return;
         if ((int) $row->branch_id === (int) $user->branch_id) return;
 
         abort(404);
@@ -1348,7 +1353,7 @@ class ProformaInvoiceController extends Controller
     {
         if ($user->user_type === 'super_admin') return true;
         if (!$user->client_id || (int) $row->client_id !== (int) $user->client_id) return false;
-        if ($user->user_type !== 'branch_user' || !$user->branch_id) return true;
+        if (!\App\Support\SalesVisibility::pinnedToOwnBranch($user)) return true;
         return (int) $row->branch_id === (int) $user->branch_id;
     }
 

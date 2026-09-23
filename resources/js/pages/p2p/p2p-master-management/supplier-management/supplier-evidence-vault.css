@@ -4251,7 +4251,13 @@
  * Customer vault gained the same popup: two copies of one stylesheet drift, and
  * the point of the port is that both vaults show the SAME control. Portalled to
  * document.body, so nothing here may depend on a vault-root class. */
-.cev-reup-ov { position:fixed; inset:0; z-index:100000; background:rgba(15,23,42,.5); display:flex; align-items:center; justify-content:center; padding:16px; }
+/* The scrim blurs what is behind it, like every other overlay in the app
+ * (.acm-root blurs 4px, .acm-sub-modal 8px). This one only dimmed, so the
+ * form underneath stayed perfectly legible and the popup read as one more
+ * panel on a busy screen rather than the single thing now asking for input.
+ * Safe to blur unconditionally here: the popup is portalled to document.body,
+ * so no ancestor backdrop-filter is in play to scope it. */
+.cev-reup-ov { position:fixed; inset:0; z-index:100000; background:rgba(15,23,42,.5); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); display:flex; align-items:center; justify-content:center; padding:16px; }
 .cev-reup-card { width:100%; max-width:640px; background:#fff; border-radius:16px; overflow:hidden; box-shadow:0 24px 60px rgba(8,40,60,.32); font-family:'DM Sans',system-ui,sans-serif; }
 .cev-reup-hd { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:16px 18px; background:linear-gradient(120deg,#6d28d9,#7c3aed 55%,#8b5cf6); color:#fff; }
 .cev-reup-hd-l { display:flex; align-items:center; gap:12px; min-width:0; }

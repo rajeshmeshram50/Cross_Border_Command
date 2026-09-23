@@ -802,7 +802,7 @@ class QuotationController extends Controller
      *
      * Visibility matrix (per tenant — client_id always enforced first):
      *   super_admin / client_admin / client_user → all branches' rows
-     *   branch_user                              → OWN branch rows only
+     *   branch_user / employee                   → OWN branch rows only
      *
      * Branch-level isolation prevents one branch from seeing another
      * branch's quotations — every branch is an isolated peer.
@@ -986,7 +986,11 @@ class QuotationController extends Controller
 
         // Client-level admins / users see every branch under their client —
         // but honour the BranchSwitcher when they've picked a specific branch.
-        if ($user->user_type !== 'branch_user' || !$user->branch_id) {
+        /* Branch admins AND employees are pinned to their own branch; only
+         * the client-level roles cross branches (they hold the switcher).
+         * Employees used to take this client-wide path, and for one on the
+         * 'all' designation tier that leaves no narrowing at all. */
+        if (!\App\Support\SalesVisibility::pinnedToOwnBranch($user)) {
             $this->applySwitcherBranchFilter($q, $user, $branchFilter);
             \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
             return;
@@ -1028,10 +1032,10 @@ class QuotationController extends Controller
             abort(404);
         }
 
-        // Client-level admins see + edit everything in the client.
-        if ($user->user_type !== 'branch_user' || !$user->branch_id) return;
+        // Not pinned to a branch (client-level admin / user) → whole client.
+        if (!\App\Support\SalesVisibility::pinnedToOwnBranch($user)) return;
 
-        // Branch user: row is OWN branch's → full access.
+        // Pinned account (branch admin / employee): own branch only.
         if ((int) $row->branch_id === (int) $user->branch_id) return;
 
         // Foreign branch — invisible to this user.
@@ -1047,7 +1051,7 @@ class QuotationController extends Controller
     {
         if ($user->user_type === 'super_admin') return true;
         if (!$user->client_id || (int) $row->client_id !== (int) $user->client_id) return false;
-        if ($user->user_type !== 'branch_user' || !$user->branch_id) return true;
+        if (!\App\Support\SalesVisibility::pinnedToOwnBranch($user)) return true;
         return (int) $row->branch_id === (int) $user->branch_id;
     }
 
