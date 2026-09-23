@@ -23,7 +23,7 @@
 
 /* Fixed layout with shares of the width: spare space is split between the
    columns instead of piling up in one of them. */
-.pga-itbl { width: 100%; min-width: 940px; table-layout: fixed; border-collapse: collapse; font-size: 12.5px; }
+.pga-itbl { width: 100%; min-width: 1040px; table-layout: fixed; border-collapse: collapse; font-size: 12.5px; }
 .pga-itbl th {
   padding: 9px 12px; background: #f2fcfe; border-top: 1px solid #d8eff5; border-bottom: 1px solid #d8eff5;
   font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #0e7490;
@@ -34,15 +34,26 @@
 .pga-itbl tbody tr:nth-child(even) td { background: #fafdff; }
 .pga-itbl tbody tr:hover td { background: #f2fbfe; }
 .pga-itbl tbody tr:last-child td { border-bottom: 0; }
-/* Column widths, so the row reads as one line of facts instead of drifting
-   apart: only the decision / reason column takes the leftover space. */
+/* Column widths. The table is `table-layout: fixed`, so ONLY the header row
+   sets them — every width class below has to sit on the `th` as well as the
+   `td`, or the column quietly falls back to an equal share. */
 .pga-itbl .pga-itbl__sr { width: 5%; text-align: center; font-weight: 700; color: #64748b; }
-.pga-itbl th:nth-child(2), .pga-itbl td:nth-child(2) { width: 16%; }
-.pga-itbl__sup { width: 17%; }
-.pga-itbl__why { width: 24%; }
-.pga-itbl__who { width: 20%; }
-.pga-itbl__when { width: 12%; }
+.pga-itbl th:nth-child(2), .pga-itbl td:nth-child(2) { width: 14%; }
+.pga-itbl .pga-itbl__sup { width: 16%; }
+/* The money column reads left, like every other column in this table — a lone
+   right-aligned figure sat away from its label and pulled the row apart. The
+   digits are tabular, so the amounts still line up under one another. */
+.pga-itbl .pga-itbl__amt { width: 10%; text-align: left; white-space: nowrap; }
+.pga-amt-cell { font-weight: 800; color: var(--pga-teal); font-variant-numeric: tabular-nums; }
+/* The decision / reason carries the most text, the date the least. */
+.pga-itbl .pga-itbl__why { width: 20%; }
+.pga-itbl .pga-itbl__who { width: 16%; }
+.pga-itbl .pga-itbl__when { width: 13%; }
 .pga-itbl .pga-itbl__act { width: 6%; text-align: right; }
+/* Hairline gutters. A short value next to a right-aligned amount leaves a
+   300px canyon in one place and 24px in the next, and the row reads as
+   scattered words; ruled columns make that space deliberate. */
+.pga-itbl th + th, .pga-itbl td + td { border-left: 1px solid #eef4f7; }
 /* Fixed layout clips instead of stretching, so long values end in an ellipsis. */
 .pga-itbl td { overflow: hidden; text-overflow: ellipsis; }
 .pga-itbl .pga-sub, .pga-itbl .pga-strong-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -94,6 +105,7 @@
 [data-bs-theme="dark"] .pga-itbl th { background: rgba(34, 211, 238, .07); border-color: rgba(34, 211, 238, .16); color: #67e8f9; }
 [data-bs-theme="dark"] .pga-itbl tbody tr:nth-child(even) td { background: rgba(255, 255, 255, .02); }
 [data-bs-theme="dark"] .pga-itbl td { border-bottom-color: rgba(148, 163, 184, .14); color: #e2e8f0; }
+[data-bs-theme="dark"] .pga-itbl td + td { border-left-color: rgba(148, 163, 184, .14); }
 [data-bs-theme="dark"] .pga-itbl tbody tr:hover td { background: rgba(34, 211, 238, .05); }
 [data-bs-theme="dark"] .pga-code { background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .3); color: #67e8f9; }
 [data-bs-theme="dark"] .pga-strong-txt { color: #f1f5f9; }
@@ -208,10 +220,39 @@
 .pga-fact__k { font-size: 9.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--pga-k); }
 .pga-fact__v { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; font-weight: 700; color: var(--pga-v); overflow-wrap: anywhere; }
 .pga-fact__s { font-size: 11.5px; font-weight: 500; color: var(--pga-k); }
+/* A record, not loose text: every cell the same height, ruled off from its
+   neighbours, so the eye reads rows and columns instead of drifting. */
+.pga-facts--grid { gap: 0; border-radius: 10px; border: 1px solid var(--pga-line); background: var(--pga-soft); overflow: hidden; }
+.pga-facts--grid .pga-fact { padding: 12px 16px; border-left: 1px solid var(--pga-line); border-top: 1px solid var(--pga-line); }
+.pga-facts--grid .pga-fact:nth-child(3n + 1) { border-left: 0; }
+.pga-facts--grid .pga-fact:nth-child(-n + 3) { border-top: 0; }
+
 .pga-facts--split { gap: 0; padding: 12px 4px; border-radius: 10px; background: var(--pga-soft); border: 1px solid var(--pga-line); }
 .pga-facts--split .pga-fact { padding: 0 16px; border-left: 1px solid var(--pga-line); }
 .pga-facts--split .pga-fact:first-child { padding-left: 0; border-left: 0; }
 .pga-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px; }
+
+/* The amount panel. The figure the decision is about sits beside the decision,
+   at size and on its own — as one cell among dates it read like another date.
+   Underneath, the parts it is made of, so the approver never has to add up. */
+.pga-amt {
+  display: flex; flex-direction: column; padding: 16px 18px; border-radius: 14px; color: #fff;
+  background: linear-gradient(135deg, #0b3d52, #0e7490 58%, #0891b2);
+  box-shadow: 0 12px 28px -16px rgba(8, 145, 178, .85);
+}
+.pga-amt__k { font-size: 9.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: rgba(255, 255, 255, .7); }
+.pga-amt__v {
+  margin-top: 4px; font-size: 30px; font-weight: 800; line-height: 1.08;
+  letter-spacing: -.6px; font-variant-numeric: tabular-nums;
+}
+.pga-amt__s { margin-top: 5px; font-size: 11.5px; font-weight: 600; color: rgba(255, 255, 255, .76); }
+.pga-amt__rows {
+  display: flex; flex-direction: column; gap: 7px;
+  margin-top: 13px; padding-top: 11px; border-top: 1px solid rgba(255, 255, 255, .2);
+}
+.pga-amt__rows > span { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 11.5px; }
+.pga-amt__rows i { font-style: normal; font-weight: 600; color: rgba(255, 255, 255, .72); }
+.pga-amt__rows b { font-weight: 800; font-variant-numeric: tabular-nums; }
 
 .pga-tag { padding: 2px 8px; border-radius: 999px; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; }
 .pga-tag--ok { background: #dcfce7; color: #15803d; }
@@ -234,10 +275,15 @@
 .pga-prod { font-weight: 800; }
 .pga-prod-code { margin-top: 2px; font-size: 11px; font-weight: 500; color: var(--pga-k); }
 .pga-strong { font-weight: 800 !important; color: var(--pga-teal) !important; }
-.pga-sum { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px 20px; padding-top: 4px; font-size: 12px; color: var(--pga-k); }
-.pga-sum b { color: var(--pga-v); }
-.pga-sum__grand { padding: 7px 14px; border-radius: 9px; background: #e8fbfd; border: 1px solid #c3eef6; color: #0e7490; font-weight: 700; }
-.pga-sum__grand b { color: #0e7490; font-size: 14px; }
+/* Totals, inside the table so each figure sits under the Total column it sums. */
+.pga-tot td { background: #fafdff; font-weight: 700; color: var(--pga-k); }
+.pga-tot .pga-l { text-align: right; min-width: 0; }
+.pga-tot td:last-child { color: var(--pga-v); }
+.pga-tot--grand td {
+  background: #e8fbfd; border-top: 1.5px solid #c3eef6;
+  font-size: 13.5px; font-weight: 800; color: #0e7490;
+}
+.pga-tot--grand td:last-child { color: #0e7490; }
 
 /* Right column */
 .pga-person { display: flex; align-items: center; gap: 10px; }
@@ -300,13 +346,17 @@
   /* Once the facts wrap, row gaps replace the vertical dividers. */
   .pga-facts--split { gap: 14px 16px; }
   .pga-facts--split .pga-fact { padding: 0; border-left: 0; }
+  /* One column: the every-third-cell rules no longer line up with the layout,
+     so each cell is simply ruled off from the one above it. */
+  .pga-facts--grid { grid-template-columns: minmax(0, 1fr); }
+  .pga-facts--grid .pga-fact { border-left: 0; border-top: 1px solid var(--pga-line); }
+  .pga-facts--grid .pga-fact:first-child { border-top: 0; }
 }
 @media (max-width: 575.98px) {
   .pga-hero { padding: 16px; }
   .pga-hero__back { width: 100%; justify-content: center; }
   .pga-why { flex-direction: column; }
   .pga-facts, .pga-facts--3 { grid-template-columns: minmax(0, 1fr); }
-  .pga-sum { justify-content: flex-start; }
 }
 
 [data-bs-theme="dark"] .pga-page {
@@ -318,7 +368,8 @@
 [data-bs-theme="dark"] .pga-tbl tbody tr:nth-child(even) td { background: rgba(255, 255, 255, .02); }
 [data-bs-theme="dark"] .pga-tbl tbody tr:hover td { background: rgba(34, 211, 238, .06); }
 [data-bs-theme="dark"] .pga-quote { border-left-color: rgba(34, 211, 238, .45); }
-[data-bs-theme="dark"] .pga-sum__grand { border-color: rgba(34, 211, 238, .3); }
+/* The panel carries its own colour; only the glow softens on a dark page. */
+[data-bs-theme="dark"] .pga-amt { box-shadow: 0 12px 28px -18px rgba(0, 0, 0, .9); }
 [data-bs-theme="dark"] .pga-status--warn, [data-bs-theme="dark"] .pga-tag--warn { background: rgba(245, 158, 11, .16); color: #fbbf24; }
 [data-bs-theme="dark"] .pga-status--ok, [data-bs-theme="dark"] .pga-tag--ok { background: rgba(22, 163, 74, .16); color: #4ade80; }
 [data-bs-theme="dark"] .pga-status--bad, [data-bs-theme="dark"] .pga-tag--bad { background: rgba(220, 38, 38, .18); color: #fca5a5; }
@@ -329,7 +380,8 @@
 [data-bs-theme="dark"] .pga-why__p, [data-bs-theme="dark"] .pga-why__foot b { color: #cbd5e1; }
 [data-bs-theme="dark"] .pga-decide { border-color: rgba(34, 211, 238, .35); }
 [data-bs-theme="dark"] .pga-tbl th { background: rgba(34, 211, 238, .08); border-bottom-color: rgba(34, 211, 238, .18); color: #67e8f9; }
-[data-bs-theme="dark"] .pga-sum__grand { background: rgba(34, 211, 238, .1); color: #67e8f9; }
-[data-bs-theme="dark"] .pga-sum__grand b { color: #67e8f9; }
+[data-bs-theme="dark"] .pga-tot td { background: rgba(255, 255, 255, .03); }
+[data-bs-theme="dark"] .pga-tot--grand td { background: rgba(34, 211, 238, .1); border-top-color: rgba(34, 211, 238, .3); color: #67e8f9; }
+[data-bs-theme="dark"] .pga-tot--grand td:last-child { color: #67e8f9; }
 [data-bs-theme="dark"] .pga-ta { background: #0c1c24; border-color: rgba(34, 211, 238, .22); }
 [data-bs-theme="dark"] .pga-btn--ghost { background: #1e293b; color: #cbd5e1; border-color: rgba(148, 163, 184, .25); }

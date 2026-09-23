@@ -11,7 +11,7 @@ import type { OrderRow } from '../po-list/Order';
 import { initials, money } from '../manage-payment/payment-shared';
 import { PoApiError, poInspectionApi, type InspectionFile, type InspectionSummary } from '../api/po-api';
 import {
-  ProofChip, VERDICTS, downloadFile, openFile, toProofFiles,
+  ProofChip, VERDICTS, downloadFile, openFile, saveBlob, toProofFiles,
   type ProofFile, type Verdict,
 } from './inspection-shared';
 import InspectionAttachmentsModal from './InspectionAttachmentsModal';
@@ -192,7 +192,22 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
   };
 
   const viewFile = (f: ProofFile) => { if (!openFile(f)) toast.info('Preview unavailable', f.name); };
-  const dlFile = (f: ProofFile) => { if (!downloadFile(f)) toast.info('Download unavailable', f.name); };
+  /* A file already on the server is fetched through our API and saved from
+     there. Linking straight at storage only opens it once the disk is remote
+     (Azure), because the browser drops `download` across origins. A file just
+     picked here is still in the browser, so it saves directly. */
+  const dlFile = (f: ProofFile, lineId: number) => {
+    if (f.index === undefined) {
+      if (!downloadFile(f)) toast.info('Download unavailable', f.name);
+      return;
+    }
+    if (busy) return;
+    setBusy(`dl:${lineId}:${f.index}`);
+    poInspectionApi.proofFile(poId, lineId === NOTE ? null : lineId, f.index)
+      .then((blob) => saveBlob(blob, f.name))
+      .catch(fail)
+      .finally(() => setBusy(null));
+  };
 
   const noteFull = noteFiles.length >= MAX_PROOF;
   const marked = lines.filter((l) => l.verdict).length;
@@ -244,7 +259,7 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
           productCode={attFor === NOTE ? 'Sign-off' : attLine?.product_code ?? ''}
           files={filesOf(attFor)}
           onView={(i) => viewFile(filesOf(attFor)[i])}
-          onDownload={(i) => dlFile(filesOf(attFor)[i])}
+          onDownload={(i) => dlFile(filesOf(attFor)[i], attFor)}
           onRemove={(i) => { if (!signed) removeFile(attFor, i); }}
           onClose={() => setAttFor(null)}
         />
@@ -388,7 +403,7 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
                             <ProofList
                               files={files}
                               onView={(ix) => viewFile(files[ix])}
-                              onDownload={(ix) => dlFile(files[ix])}
+                              onDownload={(ix) => dlFile(files[ix], id)}
                               onRemove={(ix) => removeFile(id, ix)}
                               onMore={() => setAttFor(id)}
                               emptyText="No evidence attached for this product yet."
@@ -408,7 +423,7 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
               <div className="pins-note">
                 {sum?.inspection_note && <><b>Inspection Note:</b> {sum.inspection_note}</>}
                 {filesOf(NOTE).length > 0 && (
-                  <ProofList files={filesOf(NOTE)} onView={(ix) => viewFile(filesOf(NOTE)[ix])} onDownload={(ix) => dlFile(filesOf(NOTE)[ix])} onMore={() => setAttFor(NOTE)} />
+                  <ProofList files={filesOf(NOTE)} onView={(ix) => viewFile(filesOf(NOTE)[ix])} onDownload={(ix) => dlFile(filesOf(NOTE)[ix], NOTE)} onMore={() => setAttFor(NOTE)} />
                 )}
               </div>
             )
@@ -445,7 +460,7 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
                         <ProofList
                           files={filesOf(NOTE)}
                           onView={(ix) => viewFile(filesOf(NOTE)[ix])}
-                          onDownload={(ix) => dlFile(filesOf(NOTE)[ix])}
+                          onDownload={(ix) => dlFile(filesOf(NOTE)[ix], NOTE)}
                           onRemove={(ix) => removeFile(NOTE, ix)}
                           onMore={() => setAttFor(NOTE)}
                         />

@@ -166,7 +166,9 @@ export default function PoGstApprovalReview() {
           {/* 2 — what is being approved */}
           <section className="pga-card">
             <h3 className="pga-card__t"><i className="ri-file-list-3-line" /> Purchase order</h3>
-            <div className="pga-facts pga-facts--3">
+            {/* Ruled cells: six facts of uneven length floated in white space and
+                read as loose text rather than one record. */}
+            <div className="pga-facts pga-facts--grid">
               <Fact k="Supplier" v={supplier?.name} sub={[supplier?.code, supplier?.risk && `${supplier.risk} risk`].filter(Boolean).join(' · ')} />
               <Fact k="PO date" v={fmtDate(po.po_date)} sub={po.po_type ? PO_TYPE_LABEL[po.po_type] ?? po.po_type : undefined} />
               <Fact k="Expected delivery" v={fmtDate(po.expected_delivery_date)} sub={[po.mode_of_transport, po.delivery_location].filter(Boolean).join(' · ')} />
@@ -204,18 +206,52 @@ export default function PoGstApprovalReview() {
                     </tr>
                   ))}
                 </tbody>
+                {/* Totals belong in the table, under the Total column they add up. */}
+                {lines.length > 0 && (
+                  <tfoot>
+                    <tr className="pga-tot">
+                      <td colSpan={5} className="pga-l">Products</td>
+                      <td>{fmtMoney(po.taxable_total, cur)}</td>
+                    </tr>
+                    <tr className="pga-tot">
+                      <td colSpan={5} className="pga-l">{data.tax_label}</td>
+                      <td>{fmtMoney(gstTotal, cur)}</td>
+                    </tr>
+                    {charges > 0 && (
+                      <tr className="pga-tot">
+                        <td colSpan={5} className="pga-l">Charges</td>
+                        <td>{fmtMoney(charges, cur)}</td>
+                      </tr>
+                    )}
+                    <tr className="pga-tot pga-tot--grand">
+                      <td colSpan={5} className="pga-l">Grand total</td>
+                      <td>{fmtMoney(po.grand_total, cur)}</td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
-            </div>
-            <div className="pga-sum">
-              <span>Products <b>{fmtMoney(po.taxable_total, cur)}</b></span>
-              <span>{data.tax_label} <b>{fmtMoney(gstTotal, cur)}</b></span>
-              {charges > 0 && <span>Charges <b>{fmtMoney(charges, cur)}</b></span>}
-              <span className="pga-sum__grand">Grand total <b>{fmtMoney(po.grand_total, cur)}</b></span>
             </div>
           </section>
         </div>
 
         <aside className="pga-side">
+          {/* The figure the decision is about, next to the decision itself: one
+              number, then the parts it is made of. */}
+          <section className="pga-amt">
+            <span className="pga-amt__k">Amount to approve</span>
+            <span className="pga-amt__v">{fmtMoney(po.grand_total, cur)}</span>
+            <span className="pga-amt__s">{lines.length} product{lines.length === 1 ? '' : 's'} · {po.payment_type ?? 'Payment terms not set'}</span>
+            {/* Only what the total is actually made of — a row of ₹0.00 is noise
+                on the one panel that has to be read at a glance. */}
+            {(gstTotal > 0 || charges > 0) && (
+              <span className="pga-amt__rows">
+                <span><i>Products</i><b>{fmtMoney(po.taxable_total, cur)}</b></span>
+                {gstTotal > 0 && <span><i>{data.tax_label}</i><b>{fmtMoney(gstTotal, cur)}</b></span>}
+                {charges > 0 && <span><i>Charges</i><b>{fmtMoney(charges, cur)}</b></span>}
+              </span>
+            )}
+          </section>
+
           <section className="pga-card">
             <h3 className="pga-card__t"><i className="ri-chat-quote-line" /> Request</h3>
             <div className="pga-person">

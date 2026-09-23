@@ -1,7 +1,6 @@
 // Inbox section: PO senior-approval requests sent to the signed-in user, as a
 // table — one row per request, one column per question the approver has
-// (which PO, which supplier, why it is here, who asked, when). The amount is
-// on the review page, where the decision is made.
+// (which PO, which supplier, how much, why it is here, who asked, when).
 // "New" lists the pending ones; history lists those already decided.
 // Rows come from GET /p2p/orders/gst-approvals?history=0|1, 10 a page.
 import { useEffect, useState } from 'react';
@@ -10,7 +9,7 @@ import { Card, CardBody } from 'reactstrap';
 import { ShimmerTableRows } from '../../../../../components/ui/Shimmer';
 import { FitTip } from '../create-po/form-fields';
 import { PoApiError, poApprovalApi, type GstApprovalInboxMeta, type GstApprovalInboxRow } from '../api/po-api';
-import { fmtDate, fmtDateTime, initialsOf, monthsAgoText } from './approval-format';
+import { fmtDate, fmtDateTime, fmtMoney, initialsOf, monthsAgoText } from './approval-format';
 import './gst-approval.css';
 
 const PER_PAGE = 10;
@@ -51,7 +50,7 @@ export default function PoApprovalInboxSection({ history = false, onCount }: {
 
   const open = (r: GstApprovalInboxRow) => navigate(`/inbox/po-approval/${r.id}`);
   const total = meta?.total ?? 0;
-  const cols = 7;
+  const cols = 8;
 
   return (
     <Card className="mb-3 ep-section-card-flat">
@@ -77,10 +76,13 @@ export default function PoApprovalInboxSection({ history = false, onCount }: {
               <tr>
                 <th className="pga-itbl__sr">Sr No</th>
                 <th>Purchase Order</th>
-                <th>Supplier</th>
-                {history ? <th>Decision</th> : <th>Why Approval</th>}
-                <th>Requested By</th>
-                <th>{history ? 'Decided On' : 'Received'}</th>
+                {/* The width classes belong on the header too: the table is
+                    table-layout: fixed, so only this row sets the columns. */}
+                <th className="pga-itbl__sup">Supplier</th>
+                <th className="pga-itbl__amt">PO Amount</th>
+                <th className="pga-itbl__why">{history ? 'Decision' : 'Why Approval'}</th>
+                <th className="pga-itbl__who">Requested By</th>
+                <th className="pga-itbl__when">{history ? 'Decided On' : 'Received'}</th>
                 <th className="pga-itbl__act">Take Action</th>
               </tr>
             </thead>
@@ -120,6 +122,8 @@ export default function PoApprovalInboxSection({ history = false, onCount }: {
                       <FitTip label={r.supplier_name ?? '—'}><div className="pga-strong-txt pga-ellipsis">{r.supplier_name ?? '—'}</div></FitTip>
                       <div className="pga-sub">{r.supplier_code ?? '—'}</div>
                     </td>
+                    {/* What the decision is about — the same total the review page leads with. */}
+                    <td className="pga-itbl__amt"><span className="pga-amt-cell">{fmtMoney(r.grand_total, r.currency_code)}</span></td>
                     {history ? (
                       <td className="pga-itbl__why">
                         <span className={`pga-pill pga-pill--${approved ? 'ok' : 'bad'}`}>

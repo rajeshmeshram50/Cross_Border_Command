@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * P2P · Physical inspection of a submitted PO — a verdict and proof per line,
@@ -63,6 +64,37 @@ class PurchaseOrderInspectionController extends Controller
     private function withUrls(?array $files): array
     {
         return collect($files ?? [])->values()->map(fn ($f, $i) => $f + ['index' => $i, 'url' => file_url($f['path'])])->all();
+    }
+
+    /**
+     * Proof files stream from here as an attachment. A link straight at the
+     * stored file cannot be downloaded once the disk is remote (Azure): the
+     * browser drops the `download` hint across origins and only opens the
+     * image. Route parameters arrive in URL order, so each route has its own
+     * method rather than one with an optional argument.
+     */
+    /** GET …/inspection/files/{index} — a sign-off note file. */
+    public function downloadNoteFile(int $po, int $index): StreamedResponse|JsonResponse
+    {
+        return $this->streamProof(array_values(PurchaseOrder::findOrFail($po)->inspection_note_files ?? []), $index);
+    }
+
+    /** GET …/inspection/lines/{item}/files/{index} — one line's proof file. */
+    public function downloadLineFile(int $po, int $item, int $index): StreamedResponse|JsonResponse
+    {
+        $order = PurchaseOrder::findOrFail($po);
+        $row = PoPhysicalInspection::where('purchase_order_item_id', $order->items()->findOrFail($item)->id)->first();
+        return $this->streamProof(array_values($row?->proof_files ?? []), $index);
+    }
+
+    private function streamProof(array $files, int $index): StreamedResponse|JsonResponse
+    {
+        if (!isset($files[$index])) return $this->fail('That file is no longer on this inspection.', 404);
+        $file = $files[$index];
+        $disk = Storage::disk('public');
+        if (!$disk->exists($file['path'])) return $this->fail('The file is missing from storage.', 404);
+
+        return $disk->download($file['path'], $file['name'] ?? basename($file['path']));
     }
 
     /** Header references, every line with its product details, and the sign-off. */

@@ -7,11 +7,15 @@ import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { formatDmy } from '../../../../../utils/formatDmy';
+import Tooltip from '../../../../../components/ui/Tooltip';
 import { PoApiError, poDocumentApi, poSignatureApi, type PoDocument } from '../api/po-api';
 import '../cancel-po/cancel-po.css';
 import './evidence-vault.css';
 
 export type VaultPo = { id: number; po: string; supplier: string; poDate: string };
+
+/** Characters of the supplier name the header keeps; the rest is a tooltip. */
+const SUPPLIER_MAX = 30;
 
 type VaultFile = {
   key: string;
@@ -136,7 +140,10 @@ export default function PoEvidenceVaultModal({ po, onClose }: { po: VaultPo; onC
     </div>
   );
 
-  const sub = [po.po, po.supplier, po.poDate ? formatDmy(po.poDate) : ''].filter(Boolean).join('  ·  ');
+  /* A long supplier name wrapped over three lines and pushed the header out of
+     shape, so it is cut here and the whole name shows on hover. */
+  const supplier = (po.supplier ?? '').trim();
+  const supplierShort = supplier.length > SUPPLIER_MAX ? `${supplier.slice(0, SUPPLIER_MAX).trimEnd()}…` : supplier;
 
   return createPortal(
     <div className="porec-modal scnv-modal is-open" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -144,7 +151,21 @@ export default function PoEvidenceVaultModal({ po, onClose }: { po: VaultPo; onC
         <div className="porec-hd scnpick-hd">
           <span className="scnpick-hd__sheen" />
           <div className="porec-hd__ico"><IcVault /></div>
-          <div><div className="porec-hd__t">Evidence Vault</div><div className="porec-hd__s">{sub}</div></div>
+          <div>
+            <div className="porec-hd__t">Evidence Vault</div>
+            <div className="porec-hd__s">
+              {po.po}
+              {supplier && (
+                <>
+                  {'  ·  '}
+                  <Tooltip label={supplier} disabled={supplier.length <= SUPPLIER_MAX} themed>
+                    <span>{supplierShort}</span>
+                  </Tooltip>
+                </>
+              )}
+              {po.poDate && `  ·  ${formatDmy(po.poDate)}`}
+            </div>
+          </div>
           <button type="button" className="porec-hd__x" onClick={onClose} aria-label="Close"><IcX /></button>
         </div>
         <div className="porec-bd scnv-bd">

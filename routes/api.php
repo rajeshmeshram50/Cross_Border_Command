@@ -490,6 +490,9 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::get   ('/{po}/inspection',                [$ins, 'show'])->whereNumber('po');
         Route::post  ('/{po}/inspection/lines/{item}',   [$ins, 'updateLine'])->whereNumber('po')->whereNumber('item');
         Route::delete('/{po}/inspection/lines/{item}/files/{index}', [$ins, 'removeFile'])->whereNumber('po')->whereNumber('item')->whereNumber('index');
+        // Proof files stream from here: a remote disk (Azure) cannot be downloaded straight from the browser.
+        Route::get   ('/{po}/inspection/files/{index}',  [$ins, 'downloadNoteFile'])->whereNumber('po')->whereNumber('index');
+        Route::get   ('/{po}/inspection/lines/{item}/files/{index}', [$ins, 'downloadLineFile'])->whereNumber('po')->whereNumber('item')->whereNumber('index');
         Route::post  ('/{po}/inspection/sign-off',       [$ins, 'signOff'])->whereNumber('po');
         Route::post  ('/{po}/inspection/withdraw',       [$ins, 'withdraw'])->whereNumber('po');
     });

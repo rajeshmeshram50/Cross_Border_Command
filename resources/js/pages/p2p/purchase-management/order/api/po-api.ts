@@ -397,6 +397,18 @@ export const poInspectionApi = {
   removeFile: (poId: number, itemId: number, index: number) =>
     call('PO inspection file remove', () => api.delete(`/p2p/orders/${poId}/inspection/lines/${itemId}/files/${index}`), dataOf<InspectionSummary>),
 
+  /** One stored proof file, streamed by our server. `itemId` null = a sign-off
+   *  note file. Read through the API, not from the storage URL: once the disk
+   *  is remote (Azure) the browser ignores a cross-origin download and only
+   *  opens the image. */
+  proofFile: (poId: number, itemId: number | null, index: number) =>
+    call('Proof file', () => api.get(
+      itemId === null
+        ? `/p2p/orders/${poId}/inspection/files/${index}`
+        : `/p2p/orders/${poId}/inspection/lines/${itemId}/files/${index}`,
+      { responseType: 'blob' },
+    ), (b) => b as Blob),
+
   signOff: (poId: number, note?: string, files: File[] = []) => {
     const fd = new FormData();
     if (note) fd.append('note', note);

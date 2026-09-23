@@ -122,6 +122,9 @@ export function openFile(file: ProofFile): boolean {
   try { window.open(file.url, '_blank'); return true; } catch { return false; }
 }
 
+/** Saves what the browser already holds — a file picked here, not yet uploaded.
+ *  A stored file goes through saveBlob instead: `download` is ignored on a
+ *  cross-origin link, which is every file once the disk is remote (Azure). */
 export function downloadFile(file: ProofFile): boolean {
   if (!file.url) return false;
   try {
@@ -133,4 +136,16 @@ export function downloadFile(file: ProofFile): boolean {
     a.remove();
     return true;
   } catch { return false; }
+}
+
+/** Hands the viewer bytes we already have, under the name we choose. */
+export function saveBlob(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name || 'attachment';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
