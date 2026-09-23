@@ -73,9 +73,12 @@ class PoGstApprovalController extends Controller
             ->whereNull('u.deleted_at')
             // A branch head is the senior of the branch, so they may pick themselves; others cannot.
             ->when($user->user_type !== 'branch_user', fn ($q) => $q->where('u.id', '!=', $user->id))
-            // Only this branch's people, plus client admins who sit over every branch.
-            ->when($this->approverBranch($request, $user), fn ($q, $b) => $q->where(fn ($w) => $w->where('u.branch_id', $b)->orWhere('u.user_type', 'client_admin')))
-            ->orderByRaw("CASE WHEN u.user_type = 'client_admin' THEN 0 ELSE 1 END")
+            // This branch's people only — the branch head is the last approver, so the
+            // client admin is never sent a PO approval.
+            ->where('u.user_type', '!=', 'client_admin')
+            ->when($this->approverBranch($request, $user), fn ($q, $b) => $q->where('u.branch_id', $b))
+            // The branch head sits at the top of the list.
+            ->orderByRaw("CASE WHEN u.user_type = 'branch_user' THEN 0 ELSE 1 END")
             ->orderBy('u.name')
             ->get(['u.id', 'u.name', 'u.email', 'u.user_type', 'e.id as employee_id', 'e.emp_code',
                 'd.name as department', DB::raw('COALESCE(g.name, u.designation) as designation')]);
@@ -128,7 +131,10 @@ class PoGstApprovalController extends Controller
             ->where('status', 'active')->whereNull('deleted_at')->first(['id', 'name', 'branch_id', 'user_type']);
         if (!$approver) return $this->fail('Select an active user of your company as the approver.');
         $branch = $po->branch_id ?: $user->branch_id;
-        if ($branch && $approver->user_type !== 'client_admin' && (int) $approver->branch_id !== (int) $branch) {
+        if ($approver->user_type === 'client_admin') {
+            return $this->fail('A PO approval stops at the branch head — choose a senior from this branch.');
+        }
+        if ($branch && (int) $approver->branch_id !== (int) $branch) {
             return $this->fail("Choose a senior from this PO's branch.");
         }
         if ((int) $approver->id === (int) $user->id && $user->user_type !== 'branch_user') return $this->fail('You cannot approve your own request — choose a senior.');

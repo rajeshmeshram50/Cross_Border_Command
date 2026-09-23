@@ -447,9 +447,10 @@ class ProductController extends Controller
                 $max = max($max, (int) $m[1]);
             }
         }
-        // 2-digit padding: P-01, P-02, …, P-99. Codes beyond 99 fall back
-        // to natural width (P-100, P-101) — str_pad won't truncate.
-        return 'P-' . str_pad((string) ($max + 1), 2, '0', STR_PAD_LEFT);
+        // 3-digit padding: P-001, P-002, …, P-999. Codes beyond 999 fall back
+        // to natural width (P-1000) — str_pad won't truncate. The screens print
+        // every code through formatProductCode(), so older P-81 rows read P-081.
+        return 'P-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 
     /* ──────────────────────────────────────────────────────────────────

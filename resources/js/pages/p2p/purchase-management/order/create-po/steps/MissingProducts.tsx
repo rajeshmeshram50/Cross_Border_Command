@@ -4,6 +4,7 @@ import { computeLine } from './ProductTable';
 import type { PoLineRow } from '../po-draft';
 import type { ProductOpt } from '../use-po-lookups';
 import type { TaxMode } from '../../api/po-api';
+import { formatProductCode } from '../../../../../../utils/formatProductCode';
 import { IcoOk } from '../../shared/icons';
 import { formatProductCode } from '../../../../../../utils/formatProductCode';
 

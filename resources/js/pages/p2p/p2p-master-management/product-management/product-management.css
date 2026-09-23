@@ -4872,7 +4872,9 @@
 
 .apm-modal {
   width: 100%;
-  max-width: 1300px;
+  /* Trimmed from 1300: the figma is fit-content and 1300 read stretched, but the
+     wizard's four-column rows still need the room. */
+  max-width: 1180px;
   max-height: calc(100vh - 48px);
   margin: auto;
   background:

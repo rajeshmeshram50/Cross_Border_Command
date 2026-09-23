@@ -97,8 +97,11 @@ export function usePoDraft(): { draft: PoDraft; set: SetDraft; replace: (d: PoDr
 let manualSeq = 0;
 
 /** A PI line as a table row: its own product, the still-pending qty and the PI rate. */
+/* Nothing is pre-filled: a PO covers only the PI lines it is actually for, and
+   whatever is left over goes on the next PO. The buyer picks the product and the
+   quantity for each line they want on this one. */
 export const rowFromPi = (pi: PiLine): PoLineRow => ({
-  key: `pi:${pi.pi_item_id}`, pi, productId: pi.product_id, qtyPo: pi.pending_qty, rate: pi.rate,
+  key: `pi:${pi.pi_item_id}`, pi, productId: null, qtyPo: 0, rate: pi.rate,
 });
 
 /** A blank line for a product the PI doesn't carry. */

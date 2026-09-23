@@ -157,11 +157,21 @@ class PurchaseOrderController extends Controller
         if ($id = $request->integer('vendor_id')) $base->where('vendor_id', $id);
         if ($t = $request->query('link_type')) $base->where('link_type', $t);
         if ($id = $request->integer('procurement_request_id')) $base->where('procurement_request_id', $id);
+        // Every id the list shows is searchable, not just the PO number: the linked
+        // shipment / opportunity / PI codes live on other tables, so they match
+        // through their own id (the PO is already tenant-scoped).
         if ($s = trim((string) $request->query('search'))) {
-            $base->where(fn ($w) => $w->where('code', 'ilike', "%{$s}%")
-                ->orWhereHas('vendor', fn ($v) => $v->where('vendor_code', 'ilike', "%{$s}%")
-                    ->orWhere('company_name', 'ilike', "%{$s}%")
-                    ->orWhere('legal_name', 'ilike', "%{$s}%")));
+            $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $s) . '%';
+            $base->where(fn ($w) => $w->where('code', 'ilike', $like)
+                ->orWhere('procurement_request_code', 'ilike', $like)
+                ->orWhereHas('vendor', fn ($v) => $v->where('vendor_code', 'ilike', $like)
+                    ->orWhere('company_name', 'ilike', $like)
+                    ->orWhere('legal_name', 'ilike', $like))
+                ->orWhereIn('shipment_order_id', fn ($q) => $q->from('shipment_orders')
+                    ->where('shipment_code', 'ilike', $like)->select('id'))
+                ->orWhereIn('proforma_invoice_id', fn ($q) => $q->from('proforma_invoices')
+                    ->where(fn ($p) => $p->where('code', 'ilike', $like)->orWhere('opp_code', 'ilike', $like))
+                    ->select('id')));
         }
 
         $counts = (clone $base)->toBase()->selectRaw(implode(', ', array_map(
@@ -479,14 +489,22 @@ class PurchaseOrderController extends Controller
             $effective[$i] = !empty($line['product_id']) ? (int) $line['product_id'] : (int) ($pi->product_id ?? 0);
         }
         $products = $this->loadProducts(array_values(array_filter($effective)));
+        // The PI line's own product decides the segment a replacement has to stay in.
+        $piProducts = $this->loadProducts($piItems->pluck('product_id')->filter()->map(fn ($v) => (int) $v)->all());
         // A PO orders only products in a segment its supplier deals in.
         $supplierSegments = $this->vendorSegmentIds((int) $po->vendor_id);
         $supplierProducts = $this->svc->vendorProductIds((int) $po->vendor_id);
         foreach ($data['lines'] as $i => $line) {
             if (isset($errors["lines.$i.pi_item_id"])) continue;
             $field = !empty($line['product_id']) ? "lines.$i.product_id" : "lines.$i.pi_item_id";
+            $piProduct = !empty($line['pi_item_id']) ? $piProducts->get((int) ($piItems->get((int) $line['pi_item_id'])->product_id ?? 0)) : null;
             if (!$effective[$i] || !$products->has($effective[$i])) {
                 $errors[$field] = ['Product not found.'];
+            } elseif (($products->get($effective[$i])->status ?? 'active') !== 'active') {
+                $errors[$field] = ['This product is ' . $products->get($effective[$i])->status . ' in the product master — activate it there to order it.'];
+            } elseif ($piProduct && $piProduct->segment_id && (int) $piProduct->segment_id !== (int) $products->get($effective[$i])->segment_id) {
+                // The replacement must sit in the same segment as the PI line it covers.
+                $errors[$field] = ['The PI line is in ' . ($piProduct->segment_name ?: 'no segment') . ' — pick a product from the same segment.'];
             } elseif ($po->document_type !== 'international' && $products->get($effective[$i])->gst_pct === null) {
                 // Purchase GST comes only from the product master, never the sales PI.
                 $errors[$field] = ['This product has no GST % in the product master — set it there first.'];
@@ -830,19 +848,25 @@ class PurchaseOrderController extends Controller
             ->whereIn('p.id', array_map('intval', $ids))
             ->leftJoin('clm_segments as sg', 'sg.id', '=', 'p.segment_id')
             ->select('p.id', 'p.product_code', 'p.name', 'p.description', 'g.percentage as gst_pct', 'p.segment_id', 'sg.name as segment_name',
-                'h.hsn_code', DB::raw('COALESCE(u.short_code, u.title) as uom'));
+                'p.status', 'h.hsn_code', DB::raw('COALESCE(u.short_code, u.title) as uom'));
         return $this->svc->scopeTenant($q, 'p')->get()->keyBy('id');
     }
 
     /** PI lines with ordered and pending quantity (all branches of the client count). */
     private function piLinesWithPending(int $piId, int $clientId, ?int $excludePoId): array
     {
+        // The PI line rarely carries its own HSN / unit — fall back to the product
+        // master's, through the same hsn_id / uom_id the PO column reads.
         $lines = DB::table('proforma_invoice_items as i')
             ->leftJoin('products as p', 'p.id', '=', 'i.product_id')
             ->leftJoin('master_gst_percentage as g', 'g.id', '=', 'p.gst_id')
+            ->leftJoin('master_hsn_codes as h', 'h.id', '=', 'p.hsn_id')
+            ->leftJoin('master_uom as u', 'u.id', '=', 'p.uom_id')
             ->where('i.proforma_invoice_id', $piId)
             ->orderBy('i.line_no')->orderBy('i.id')
-            ->get(['i.id', 'i.product_id', 'p.product_code', 'i.product_name', 'i.hsn_code', 'i.unit',
+            ->get(['i.id', 'i.product_id', 'p.product_code', 'i.product_name',
+                DB::raw('COALESCE(NULLIF(i.hsn_code, \'\'), h.hsn_code) as hsn_code'),
+                DB::raw('COALESCE(NULLIF(i.unit, \'\'), u.short_code, u.title) as unit'),
                 'i.quantity', 'i.rate', 'i.line_no', 'g.percentage as gst_pct', 'p.description']);
         $ordered = $this->svc->orderedByPiItem($clientId, $lines->pluck('id')->all(), $excludePoId);
         return $lines->map(function ($l) use ($ordered) {

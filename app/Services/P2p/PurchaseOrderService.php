@@ -243,6 +243,23 @@ class PurchaseOrderService
         return $a->merge($b)->filter()->map(fn ($v) => (int) $v)->unique()->values()->all();
     }
 
+    /**
+     * What this supplier charges for each product it is mapped to, product_id => rate.
+     * The newer vendor_product_mappings wins over the legacy product_vendor_maps.
+     */
+    public function vendorProductRates(int $vendorId): array
+    {
+        if (!$vendorId) return [];
+        $out = [];
+        foreach (DB::table('product_vendor_maps')->where('vendor_id', $vendorId)->get(['product_id', 'purchase_price']) as $r) {
+            if ($r->product_id && $r->purchase_price !== null) $out[(int) $r->product_id] = (float) $r->purchase_price;
+        }
+        foreach (DB::table('vendor_product_mappings')->where('vendor_id', $vendorId)->whereNull('deleted_at')->get(['product_id', 'purchase_price']) as $r) {
+            if ($r->product_id && $r->purchase_price !== null) $out[(int) $r->product_id] = (float) $r->purchase_price;
+        }
+        return $out;
+    }
+
     /** The tenant's own GST state code: the branch's, or the first two digits of its GSTIN. */
     public function homeStateCode(?int $branchId): ?string
     {

@@ -7,6 +7,7 @@ import CreatePoModal from '../create-po/CreatePoModal';
 import { FitTip } from '../create-po/form-fields';
 import { PoApiError, poApi, type PoListRow } from '../api/po-api';
 import { useDebouncedValue } from '../../../../../hooks/useDebouncedValue';
+import Tooltip from '../../../../../components/ui/Tooltip';
 import { useServerList } from '../../../../../hooks/useServerList';
 import { useFitPageSize } from '../../../../../hooks/useFitPageSize';
 import { useToast } from '../../../../../contexts/ToastContext';
@@ -826,15 +827,24 @@ function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onVault
   return (
     <div className="ord-actions">
       {cancelled ? (
-        <button type="button" className="ord-btn ord-btn--cancel is-cancelled" disabled title={cancelReason || 'This PO has been cancelled'}>
-          {ICON_CANCEL}<span>Cancelled</span>
-        </button>
+        <Tooltip label={cancelReason || 'This PO has been cancelled'}>
+          <button type="button" className="ord-btn ord-btn--cancel is-cancelled" disabled>
+            {ICON_CANCEL}<span>Cancelled</span>
+          </button>
+        </Tooltip>
       ) : (
-        <button type="button" className="ord-btn ord-btn--cancel" title="Cancel this Purchase Order" onClick={onCancel}>{ICON_CANCEL}<span>Cancel PO</span></button>
+        <Tooltip label="Cancel this Purchase Order">
+          <button type="button" className="ord-btn ord-btn--cancel" onClick={onCancel}>{ICON_CANCEL}<span>Cancel PO</span></button>
+        </Tooltip>
       )}
-      <button type="button" className="ord-btn ord-btn--edit" disabled={cancelled} onClick={onEdit}
-        title={viewOnly}>{ICON_EDIT}<span>{viewOnly ? 'View PO' : 'Edit PO'}</span></button>
-      <button type="button" className="ord-btn ord-btn--vault" title="Evidence Vault — the order, its documents and payment proofs" onClick={onVault}>{ICON_VAULT}<span>Evidence Vault</span></button>
+      <Tooltip label={viewOnly || (cancelled ? 'This PO has been cancelled' : 'Open this Purchase Order')}>
+        <button type="button" className="ord-btn ord-btn--edit" disabled={cancelled} onClick={onEdit}>
+          {ICON_EDIT}<span>{viewOnly ? 'View PO' : 'Edit PO'}</span>
+        </button>
+      </Tooltip>
+      <Tooltip label="Evidence Vault — the order, its documents and payment proofs">
+        <button type="button" className="ord-btn ord-btn--vault" onClick={onVault}>{ICON_VAULT}<span>Evidence Vault</span></button>
+      </Tooltip>
     </div>
   );
 }
@@ -1363,6 +1373,7 @@ export default function Order() {
             </div>
           </div>
         </div>
+        <Tooltip label="Raise a new Purchase Order — with a Shipment ID or standalone" position="bottom">
         <button type="button" className="spi-head-btn" onClick={() => setCreateOpen(true)}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="5" x2="12" y2="19" />
@@ -1370,6 +1381,7 @@ export default function Order() {
           </svg>
           Create PO
         </button>
+        </Tooltip>
       </div>
 
       <div className={`spi-bref${guideOpen ? '' : ' is-collapsed'}`}>
