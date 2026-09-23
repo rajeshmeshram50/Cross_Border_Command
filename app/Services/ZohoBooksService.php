@@ -432,7 +432,14 @@ class ZohoBooksService
             foreach (($this->get('settings/taxes')['taxes'] ?? []) as $t) {
                 $pct  = (string) round((float) ($t['tax_percentage'] ?? 0), 2);
                 $id   = (string) ($t['tax_id'] ?? '');
-                $isIgst = str_starts_with(strtoupper((string) ($t['tax_name'] ?? '')), 'IGST');
+                /* Zoho's own tax_specification decides the side, not the name: a tax
+                   NAMED "GST3" can still be an inter-state (IGST) tax, and sending it
+                   on an intra-state bill is refused with "Specified tax is not allowed".
+                   The name is only a fallback for an org that doesn't return the field. */
+                $spec = strtolower((string) ($t['tax_specification'] ?? ''));
+                $isIgst = $spec !== ''
+                    ? $spec === 'inter'
+                    : str_starts_with(strtoupper((string) ($t['tax_name'] ?? '')), 'IGST');
                 if ($isIgst) {
                     $inter[$pct] = $inter[$pct] ?? $id;          // IGST5 / IGST18 …
                 } else {

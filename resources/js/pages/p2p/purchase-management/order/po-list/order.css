@@ -589,6 +589,10 @@
     linear-gradient(180deg, rgba(255, 255, 255, .20), rgba(255, 255, 255, 0) 54%),
     linear-gradient(90deg, #0c4f63, #0891b2 52%, #22d3ee);
 }
+/* The icon turns while Zoho is being written to — several calls, a few seconds. */
+.ord-btn--zoho.is-syncing { opacity: .85; cursor: progress; }
+.ord-btn--zoho.is-syncing svg { animation: ord-spin 900ms linear infinite; }
+@keyframes ord-spin { to { transform: rotate(360deg); } }
 .ord-btn--insp {
   background-image:
     linear-gradient(180deg, rgba(255, 255, 255, .18), rgba(255, 255, 255, 0) 54%),
