@@ -136,21 +136,26 @@ class PoPaymentRequestController extends Controller
         $data = $request->validate([
             'payment_type'     => ['required', Rule::in(PoPaymentRequest::PAYMENT_TYPES)],
             'percentage'       => 'nullable|numeric|min:0|max:100',
-            'requested_amount' => 'required|numeric|min:0.01|max:9999999999999.99',
+            'requested_amount' => 'required|numeric|min:1|max:9999999999999.99',
             'reason'           => 'required|string|max:300',
             'requested_to'     => 'required|integer',
         ], [
             'payment_type.required'     => 'Select a payment type.',
             'percentage.max'            => 'Payment percentage cannot be more than 100%.',
             'requested_amount.required' => 'Enter the payment request amount.',
-            'requested_amount.min'      => 'Enter the payment request amount.',
+            'requested_amount.min'      => 'The payment request amount must be at least ₹1.',
             'reason.required'           => 'Enter the reason for this payment.',
             'requested_to.required'     => 'Select who this request goes to.',
         ]);
 
         $approver = DB::table('users')->where('id', $data['requested_to'])->where('client_id', $user->client_id)
-            ->where('status', 'active')->whereNull('deleted_at')->first(['id']);
+            ->where('status', 'active')->whereNull('deleted_at')->first(['id', 'branch_id', 'user_type']);
         if (!$approver) return $this->fail('Select an active user of your company as the approver.', 422, ['requested_to' => ['Select an active user.']]);
+        // Only someone of the PO's branch (or a client admin over every branch) can approve it.
+        $branch = $order->branch_id ?: $user->branch_id;
+        if ($branch && $approver->user_type !== 'client_admin' && (int) $approver->branch_id !== (int) $branch) {
+            return $this->fail("Choose someone from this PO's branch.", 422, ['requested_to' => ["Not in this PO's branch."]]);
+        }
         if ((int) $approver->id === (int) $user->id) return $this->fail('You cannot approve your own request — choose someone else.', 422, ['requested_to' => ['Choose someone else.']]);
 
         $amount = round((float) $data['requested_amount'], 2);
@@ -234,14 +239,14 @@ class PoPaymentRequestController extends Controller
         }
 
         $data = $request->validate([
-            'amount'            => 'required|numeric|min:0.01|max:9999999999999.99',
+            'amount'            => 'required|numeric|min:1|max:9999999999999.99',
             'bank_name'         => 'nullable|string|max:128',
             'utr_cheque_number' => self::UTR_RULE,
             'utr_cheque_date'   => 'nullable|date|before_or_equal:today',
             'proof'             => 'nullable|' . self::PROOF_RULE,
         ], [
             'amount.required'                 => 'Enter the amount paid.',
-            'amount.min'                      => 'Enter the amount paid.',
+            'amount.min'                      => 'The payment amount must be at least ₹1.',
             'utr_cheque_number.regex'         => 'UTR / cheque number must be 6–22 letters or digits.',
             'utr_cheque_date.before_or_equal' => 'UTR / cheque date cannot be in the future.',
             'proof.max'                       => 'Proof of payment must be 10 MB or smaller.',
@@ -324,6 +329,37 @@ class PoPaymentRequestController extends Controller
         return $this->ok(['summary' => $this->poPayload($order->fresh())]);
     }
 
+    /**
+     * POST /p2p/orders/{po}/payment-requests/{req}/payments/{payment}/zoho-sync — from the row's
+     * Zoho Sync button: the PO + bill first if they are not there, then this one payment.
+     */
+    public function zohoSyncPayment(Request $request, int $po, int $req, int $payment): JsonResponse
+    {
+        $user = $this->tenantUser($request);
+        $order = $this->findPo($po);
+        $row = $order->paymentRequests()->findOrFail($req)->payments()->findOrFail($payment);
+        if ((float) $row->zoho_applied_amount > 0) {
+            return $this->fail('This payment is already posted to Zoho Books.');
+        }
+
+        // The same chain every Zoho Sync button runs: PO + bill, payments, then the
+        // cancellation's vendor credit and refunds if this PO has one.
+        $zoho = app(\App\Services\P2p\PoZohoService::class);
+        try {
+            $r = $zoho->syncAll($order, $user->id);
+        } catch (\RuntimeException $e) {
+            return $this->fail($e->getMessage());
+        }
+        if ((float) $row->fresh()->zoho_applied_amount <= 0) {
+            return $this->fail('This payment was not posted — the Zoho bill has no balance left for it.');
+        }
+
+        return $this->ok([
+            'payment' => $this->shapePayment($row->fresh()),
+            'summary' => $this->poPayload($order->fresh()),
+        ], 200, ['message' => 'Synced to Zoho Books — ' . $zoho->summary($r) . '.']);
+    }
+
     /* ══════════════════════════ ALL POs — Payment Request Management ══════════════════════════ */
 
     /** GET /p2p/orders/payment-requests?tab=&search=&mine=&page=&per_page= — paged, with every tab's count. */
@@ -337,7 +373,15 @@ class PoPaymentRequestController extends Controller
         ]);
 
         $base = $this->scopedRequests($user);
-        if ($request->boolean('mine')) $base->where('r.requested_to', $user->id);
+        // Who sees what. Deciding stays with the person a request was sent to (can_decide / decide()).
+        //  - client admin: every request of the company, to view
+        //  - branch user (branch head): every request of their branch, to view, plus any sent to them
+        //  - everyone else: only the requests sent to them
+        if ($user->user_type === 'branch_user' && $user->branch_id) {
+            $base->where(fn ($w) => $w->where('r.branch_id', $user->branch_id)->orWhere('r.requested_to', $user->id));
+        } elseif ($user->user_type !== 'client_admin') {
+            $base->where('r.requested_to', $user->id);
+        }
         if ($s = trim((string) $request->query('search'))) {
             $base->where(fn ($w) => $w->where('r.code', 'ilike', "%{$s}%")->orWhere('po.code', 'ilike', "%{$s}%")
                 ->orWhere('v.vendor_code', 'ilike', "%{$s}%")->orWhere('v.company_name', 'ilike', "%{$s}%")
@@ -391,12 +435,12 @@ class PoPaymentRequestController extends Controller
 
         $data = $request->validate([
             'decision'        => ['required', Rule::in([PoPaymentRequest::STATUS_APPROVED, PoPaymentRequest::STATUS_REJECTED])],
-            'approved_amount' => 'required_if:decision,approved|nullable|numeric|min:0.01',
+            'approved_amount' => 'required_if:decision,approved|nullable|numeric|min:1',
             // A decline reason is capped at 300 characters, an approval remark at 400 (as on the popup).
             'note'            => ['required_if:decision,rejected', 'nullable', 'string', $request->input('decision') === PoPaymentRequest::STATUS_REJECTED ? 'max:300' : 'max:400'],
         ], [
             'approved_amount.required_if' => 'Enter the amount to approve.',
-            'approved_amount.min'         => 'Enter the amount to approve.',
+            'approved_amount.min'         => 'The approved amount must be at least ₹1.',
             'note.required_if'            => 'Give a reason for declining.',
         ]);
 

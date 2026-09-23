@@ -98,6 +98,8 @@ export type RefundStatus = 'pending' | 'partial' | 'recovered';
 export type PoListRefund = {
   id: number; code: string; date: string | null; paid: number; refund: number; retained: number;
   recovered: number; balance: number; status: RefundStatus;
+  /** The vendor credit and every refund are in Zoho Books. */
+  zoho_synced: boolean;
 };
 
 export type PoListTab = 'all' | 'with' | 'without' | 'cancelinit' | 'cancelclosed';
@@ -242,6 +244,8 @@ export type SupplierOption = {
 export type SupplierDetail = {
   id: number; code: string; name: string; legalName: string | null; type: string | null;
   risk: string | null; category: string | null; segments: string[];
+  /** Products mapped straight to this supplier (Product Master → Vendors, Supplier → Products). */
+  mapped_product_ids?: number[];
   addr: string | null; country: string | null; state: string | null; stateCode: string | null; city: string | null;
   contact: string | null; desig: string | null; phone: string | null; email: string | null;
   scrutiny: string | null; gstNo: string | null; gstStatus: string | null; filing: string | null; remarks: string | null;
@@ -629,6 +633,14 @@ export const poPaymentApi = {
     call('Delete payment', () => api.delete(`/p2p/orders/${poId}/payment-requests/${requestId}/payments/${paymentId}`),
       dataOf<{ summary: PoPaymentsPayload }>),
 
+  /** Post one payment to the Zoho bill (the PO and bill are created first if missing). */
+  zohoSyncPayment: (poId: number, requestId: number, paymentId: number) =>
+    call('Payment Zoho sync', () => api.post(`/p2p/orders/${poId}/payment-requests/${requestId}/payments/${paymentId}/zoho-sync`),
+      (b) => {
+        const body = b as { data?: { payment: PoPaymentRow; summary: PoPaymentsPayload }; message?: string } | null;
+        return { ...(body?.data as { payment: PoPaymentRow; summary: PoPaymentsPayload }), message: body?.message ?? null };
+      }),
+
   /** Payment Request Management: every request of the company, paged, with tab counts. */
   list: (q: { tab?: PayRequestTab; search?: string; page?: number; per_page?: number; mine?: boolean } = {}) =>
     call('Payment requests', () => api.get('/p2p/orders/payment-requests', {
@@ -671,6 +683,8 @@ export type RefundRow = {
   refund_type: string; reason: string;
   paid_amount: number; refund_amount: number; retained_amount: number; retained_type: string | null; retained_remark: string | null;
   recovered_amount: number; balance_amount: number; status: RefundStatus; recoveries_count: number;
+  /** Recoveries not yet refunded in Zoho Books. */
+  zoho_pending_recoveries?: number;
   zoho_vendorcredit_number: string | null; zoho_sync_status: 'synced' | 'failed' | null; zoho_error: string | null; zoho_synced_at: string | null;
   /** The vendor credit is in Zoho — the refund amount can no longer change. */
   amounts_locked: boolean;
@@ -750,6 +764,10 @@ export const refundApi = {
 
   update: (id: number, body: RefundBody) =>
     call('Update refund adjustment', () => api.post(`${refundBase}/${id}`, refundForm(body), multipart), withZoho),
+
+  /** The Advance Receipt Refund Adjustment document, rendered by the server. */
+  pdf: (id: number) =>
+    call('Refund adjustment document', () => api.get(`${refundBase}/${id}/pdf`, { responseType: 'blob' }), (b) => b as Blob),
 
   /** Retry the Zoho vendor credit. */
   zohoSync: (id: number) =>

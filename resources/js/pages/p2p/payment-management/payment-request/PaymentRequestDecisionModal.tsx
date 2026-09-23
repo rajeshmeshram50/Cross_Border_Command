@@ -88,7 +88,8 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
     ? (cap < request.requestedAmount
       ? `Only ${money(cap)} is still open on this document.`
       : `Cannot exceed the ${money(request.requestedAmount)} that was requested.`)
-    : amtText !== '' && amount <= 0 ? 'Enter the amount being approved.' : '';
+    : amtText !== '' && amount <= 0 ? 'Enter the amount being approved.'
+    : amtText !== '' && amount < 1 ? 'The approved amount must be at least ₹1.' : '';
 
   // Figures as the requester saw them when raising the request.
   const awaiting = linked.filter(r => r.status === 'awaiting').reduce((s, r) => s + r.requestedAmount, 0);
@@ -108,6 +109,7 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
   const submit = async () => {
     if (approve) {
       if (amount <= 0) { setError('Enter the amount being approved.'); return; }
+      if (amount < 1) { setError('The approved amount must be at least ₹1.'); return; }
       if (amount > cap) {
         setError(cap < request.requestedAmount
           ? `Only ${money(cap)} is still open on this ${D} — the rest is already paid or committed to other requests.`

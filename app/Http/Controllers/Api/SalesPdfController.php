@@ -1140,32 +1140,7 @@ class SalesPdfController extends Controller
         $branch = \App\Models\Branch::find($po->branch_id);
         $client = !empty($po->client_id) ? \App\Models\Client::find($po->client_id) : null;
 
-        $branchAddress = trim(implode(', ', array_filter([$branch?->address, $branch?->city, $branch?->state, $branch?->pincode, $branch?->country]))) ?: '';
-        $clientAddress = trim(implode(', ', array_filter([$client?->address, $client?->city, $client?->state, $client?->pincode, $client?->country]))) ?: '';
-        $logoData = $this->branchAssetDataUri($branch?->logo) ?: $this->branchAssetDataUri($client?->logo);
-
-        $companyDetails = (object) [
-            'name' => ($branch?->name ?: $client?->org_name) ?: ($branch?->code ?: 'Branch'),
-            'address' => $branchAddress ?: $clientAddress,
-            'mobile' => $branch?->phone ?: ($client?->phone ?? ''),
-            'email' => $branch?->email ?: ($client?->email ?? ''),
-            'website' => $branch?->website ?: ($client?->website ?? ''),
-            'gst_no' => $branch?->gst_number ?: ($client?->gst_number ?? ''),
-            'pan_no' => $branch?->pan_number ?: ($client?->pan_number ?? ''),
-            'gst_state_code' => $branch?->gst_state_code ?? '',
-            'cin' => $branch?->cin ?? '',
-            'iec' => $branch?->iec ?? '',
-            'drug_license' => $branch?->drug_license ?? '',
-            'pcpndt_no' => $branch?->pcpndt_no ?? '',
-            'aeo_code' => $branch?->aeo_code ?? '',
-            'onestartfilename' => $branch?->one_star_file_no ?? '',
-            'onestarudinumber' => $branch?->one_star_udin_no ?? '',
-            'primary_color' => $primaryColor = ($this->normalizeHex($branch?->primary_color ?: $client?->primary_color) ?: '#7CB342'),
-            'secondary_color' => $this->normalizeHex($branch?->secondary_color ?: $client?->secondary_color) ?: '#37B1E0',
-            'primary_text_color' => $this->contrastColor($primaryColor),
-            'logo_data' => $logoData,
-            'signature_data' => $this->branchAssetDataUri($branch?->signature_path) ?? $this->publicImageDataUri('images/test-signature.png'),
-        ];
+        $companyDetails = $this->letterheadFrom($branch, $client);
 
         // Vendor (supplier) block. state/country on VendorAddress are BelongsTo
         // relations (States/Countries) — resolve their names, not the models.
@@ -2391,6 +2366,60 @@ class SalesPdfController extends Controller
         }
 
         return array_values($matched);
+    }
+
+    /**
+     * The shared letterhead: logo, address, statutory numbers, signature and the
+     * tenant's colours. Every PDF that carries our own header uses this one source.
+     */
+    public function letterheadFrom($branch, $client): object
+    {
+        $branchAddress = trim(implode(', ', array_filter([$branch?->address, $branch?->city, $branch?->state, $branch?->pincode, $branch?->country]))) ?: '';
+        $clientAddress = trim(implode(', ', array_filter([$client?->address, $client?->city, $client?->state, $client?->pincode, $client?->country]))) ?: '';
+        $logoData = $this->branchAssetDataUri($branch?->logo) ?: $this->branchAssetDataUri($client?->logo);
+
+        return (object) [
+            'name' => ($branch?->name ?: $client?->org_name) ?: ($branch?->code ?: 'Branch'),
+            'address' => $branchAddress ?: $clientAddress,
+            'mobile' => $branch?->phone ?: ($client?->phone ?? ''),
+            'email' => $branch?->email ?: ($client?->email ?? ''),
+            'website' => $branch?->website ?: ($client?->website ?? ''),
+            'gst_no' => $branch?->gst_number ?: ($client?->gst_number ?? ''),
+            'pan_no' => $branch?->pan_number ?: ($client?->pan_number ?? ''),
+            'gst_state_code' => $branch?->gst_state_code ?? '',
+            'cin' => $branch?->cin ?? '',
+            'iec' => $branch?->iec ?? '',
+            'drug_license' => $branch?->drug_license ?? '',
+            'pcpndt_no' => $branch?->pcpndt_no ?? '',
+            'aeo_code' => $branch?->aeo_code ?? '',
+            'onestartfilename' => $branch?->one_star_file_no ?? '',
+            'onestarudinumber' => $branch?->one_star_udin_no ?? '',
+            'primary_color' => $primaryColor = ($this->normalizeHex($branch?->primary_color ?: $client?->primary_color) ?: '#7CB342'),
+            'secondary_color' => $this->normalizeHex($branch?->secondary_color ?: $client?->secondary_color) ?: '#37B1E0',
+            'primary_text_color' => $this->contrastColor($primaryColor),
+            'logo_data' => $logoData,
+            'signature_data' => $this->branchAssetDataUri($branch?->signature_path) ?? $this->publicImageDataUri('images/test-signature.png'),
+        ];
+    }
+
+    /** Code-128 data URI for any PDF that carries the same barcode strip as the PO. */
+    public function barcodeFor(?string $value): ?string
+    {
+        return $this->makeCode128($value);
+    }
+
+    /** The supplier block a PDF prints, from the vendor's primary address. */
+    public function vendorBlockFor($vendor): object
+    {
+        $a = $vendor?->primaryAddress;
+        return (object) [
+            'name' => $vendor?->company_name ?: ($vendor?->legal_name ?: 'Supplier'),
+            'address' => $this->composeAddress($a?->address_line, $a?->city, $a?->state?->name ?? $a?->state_code, $a?->pincode, $a?->country?->name),
+            'state_code' => (string) ($a?->state_code ?? ''),
+            'email' => $a?->email ?: ($vendor?->primary_email ?? ''),
+            'contact_no' => $a?->contact_no ?? '',
+            'gst_no' => (string) ($vendor?->gst_number ?? ''),
+        ];
     }
 
     /**

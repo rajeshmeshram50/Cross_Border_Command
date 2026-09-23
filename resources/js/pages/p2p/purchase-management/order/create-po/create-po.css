@@ -1300,7 +1300,9 @@
 .cpd-tbl--pd thead tr.cpd-grp th:first-child { box-shadow: none; }
 .cpd-tbl--pd thead tr:last-child th { box-shadow: inset 1px 0 0 rgba(255, 255, 255, .10); }
 .cpd-tbl--pd thead th.cpd-edh { background: rgba(255, 255, 255, .16); box-shadow: inset 0 -2px 0 rgba(165, 243, 252, .85); }
-.cpd-tbl--pd thead .cpd-stick { background: #0e7490; z-index: 6; }
+/* Above the other header cells (z-index 7), which are sticky for the top edge:
+   otherwise they slide sideways over the frozen Sr No / Product (PI) headers. */
+.cpd-tbl--pd thead .cpd-stick { background: #0e7490; z-index: 8; }
 .cpd-tbl--pd thead th.cpd-th-left { text-align: left; }
 
 /* Only the product columns hold a width; the rest shrink to their content. */
@@ -1360,6 +1362,12 @@
    it becomes the containing block for the position:fixed footer, which then
    floats into the middle of the page instead of sitting at the bottom. */
 .cpf-form .spi-dt-pill { backdrop-filter: none; -webkit-backdrop-filter: none; }
+/* Pencil on a reference pill (Stage 02 supplier): edit the supplier from here. */
+.spi-dt-pill-edit { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-left: 8px; flex-shrink: 0; border: 1px solid #b9e4ef; border-radius: 7px; background: #fff; color: #0e7490; cursor: pointer; transition: background .15s, color .15s, transform .15s; }
+.spi-dt-pill-edit:hover { background: #0e7490; border-color: #0e7490; color: #fff; transform: translateY(-1px); }
+.spi-dt-pill-edit svg { width: 13px; height: 13px; }
+[data-bs-theme="dark"] .spi-dt-pill-edit { background: transparent; border-color: rgba(34, 211, 238, .3); color: #67e8f9; }
+[data-bs-theme="dark"] .spi-dt-pill-edit:hover { background: rgba(34, 211, 238, .18); color: #cffafe; }
 
 /* "+ Add Supplier" opens the Supplier master's chooser (.supch-ov) and wizard
    (.avm-backdrop) at z-index 1090, with their own popups at 1100–1180 — all
@@ -2353,17 +2361,20 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 .cpf-supedit:disabled { opacity: .5; cursor: not-allowed; }
 .cpf-supedit svg { width: 15px; height: 15px; }
 
-/* Segment not mapped: the whole line locked in a light warning tint, with the reason under it. */
-.cpd-tbl tbody tr.cpd-row--seglock > td { background: #fffbeb !important; }
-.cpd-tbl tbody tr.cpd-row--seglock > td:first-child { box-shadow: inset 3px 0 0 #f59e0b; }
-.cpd-tbl tbody tr.cpd-row--seglock input { background: #fef3c7; color: #92400e; cursor: not-allowed; }
-.cpd-tbl tbody tr.cpd-seglock-note > td { background: #fffbeb; border-top: 0; padding: 4px 14px 10px; white-space: normal; text-align: left; box-shadow: inset 3px 0 0 #f59e0b; }
-.cpd-seglock-note__msg { display: flex; align-items: flex-start; gap: 8px; color: #92400e; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
-.cpd-seglock-note__msg svg { flex-shrink: 0; margin-top: 2px; color: #d97706; }
-[data-bs-theme="dark"] .cpd-tbl tbody tr.cpd-row--seglock > td,
-[data-bs-theme="dark"] .cpd-tbl tbody tr.cpd-seglock-note > td { background: rgba(245,158,11,0.10) !important; }
-[data-bs-theme="dark"] .cpd-tbl tbody tr.cpd-row--seglock input { background: rgba(245,158,11,0.16); color: #fcd34d; }
-[data-bs-theme="dark"] .cpd-seglock-note__msg { color: #fcd34d; }
+/* Not mapped to this supplier: the whole line locked in a light red tint. */
+.cpd-tbl tbody tr.cpd-row--seglock > td { background: #fef2f2 !important; }
+.cpd-tbl tbody tr.cpd-row--seglock > td:first-child { box-shadow: inset 3px 0 0 #dc2626; }
+.cpd-tbl tbody tr.cpd-row--seglock input { background: #fee2e2; color: #b91c1c; cursor: not-allowed; }
+/* A line this supplier can't be given: the badge carries it, and every such
+   product is named once above the table instead of a note under each row. */
+.cpd-nomap { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 999px; font-size: 9px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: #b91c1c; background: #fee2e2; border: 1px solid #fecaca; cursor: help; white-space: nowrap; }
+.cpd-nomap-note { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 10px; padding: 9px 12px; border-radius: 10px; font-size: 12px; line-height: 1.5; color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; }
+.cpd-nomap-note svg { flex-shrink: 0; margin-top: 2px; color: #dc2626; }
+.cpd-nomap-note__code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+[data-bs-theme="dark"] .cpd-nomap { background: rgba(220, 38, 38, .18); border-color: rgba(248, 113, 113, .35); color: #fca5a5; }
+[data-bs-theme="dark"] .cpd-nomap-note { background: rgba(220, 38, 38, .10); border-color: rgba(248, 113, 113, .3); color: #fca5a5; }
+[data-bs-theme="dark"] .cpd-tbl tbody tr.cpd-row--seglock > td { background: rgba(220,38,38,0.10) !important; }
+[data-bs-theme="dark"] .cpd-tbl tbody tr.cpd-row--seglock input { background: rgba(220,38,38,0.16); color: #fca5a5; }
 
 /* PI quantity held on other POs (e.g. awaiting senior approval) — explains an empty Stage 02 table. */
 .cpd-held { margin: 0 0 10px; padding: 10px 14px; border-radius: 10px; font-size: 12px; line-height: 1.5; background: #eff9fc; border: 1px solid #cdeef6; color: #155e75; }

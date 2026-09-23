@@ -23,11 +23,61 @@ use RuntimeException;
  */
 class PoZohoService
 {
+    /** The single line every advance-refund vendor credit is raised on. */
+    private const CREDIT_ITEM = 'Advance Refund Adjustment';
+
     public function __construct(private ZohoBooksService $books) {}
 
     public function configured(): bool
     {
         return $this->books->isConfigured();
+    }
+
+    /* ══════════════════════════ THE WHOLE CHAIN ══════════════════════════ */
+
+    /**
+     * Everything this PO still owes Zoho, in order — PO + bill, its payments, the
+     * cancellation's vendor credit applied to the bill, then each recovery's refund.
+     * Every Zoho Sync button runs this, so pressing any of them leaves the books complete.
+     * Each step is idempotent: what is already there is reused, never created twice.
+     *
+     * @return array{bill_number:string, already:bool, pushed:int, applied:float, credit:?string, refunds:int}
+     */
+    public function syncAll(PurchaseOrder $po, ?int $userId): array
+    {
+        $this->assertConfigured();
+        $out = $this->syncPo($po, $userId) + ['credit' => null, 'refunds' => 0];
+
+        // Scoped to the PO's own tenant and branch, live rows only — the sync runs
+        // outside the global scope, so the filter is spelled out here.
+        $adj = PoRefundAdjustment::withoutGlobalScope('tenant')
+            ->where('client_id', $po->client_id)
+            ->where('purchase_order_id', $po->id)
+            ->latest('id')->first();
+        if (!$adj) return $out;
+
+        $this->pushVendorCredit($adj, $userId);
+        $adj->refresh();
+        $out['credit'] = (string) $adj->zoho_vendorcredit_number;
+        $pending = $adj->recoveries()->withoutGlobalScope('tenant')
+            ->where('client_id', $adj->client_id)
+            ->whereNull('zoho_refund_id')
+            ->orderBy('id')->get();
+        foreach ($pending as $rec) {
+            $this->pushRecovery($rec, $userId);
+            $out['refunds']++;
+        }
+        return $out;
+    }
+
+    /** One line for the toast: what this run actually did in Zoho. */
+    public function summary(array $r): string
+    {
+        $parts = ['bill ' . ($r['bill_number'] ?? '—')];
+        if (($r['pushed'] ?? 0) > 0) $parts[] = $r['pushed'] . ' payment(s) of ₹' . number_format((float) $r['applied'], 2);
+        if (!empty($r['credit'])) $parts[] = 'vendor credit ' . $r['credit'];
+        if (($r['refunds'] ?? 0) > 0) $parts[] = $r['refunds'] . ' refund(s)';
+        return implode(', ', $parts);
     }
 
     /* ══════════════════════════ PO + BILL ══════════════════════════ */
@@ -181,16 +231,9 @@ class PoZohoService
                     ])->save();
                 }
 
-                // Apply only what the bill still owes; the rest is the refund.
-                $billOpen = round((float) ($this->books->getBill((string) $po->zoho_bill_id)['balance'] ?? 0), 2);
-                $creditOpen = round((float) ($this->books->getVendorCredit($vcId)['balance'] ?? 0), 2);
-                $apply = round(min($billOpen, $creditOpen), 2);
-                if ($apply > 0.005) {
-                    $this->books->applyVendorCreditToBills($vcId, [['bill_id' => (string) $po->zoho_bill_id, 'amount_applied' => $apply]]);
-                }
-
+                // Not applied to the bill: the credit stands for money already released,
+                // so the whole of it has to come back in cash, refund by refund.
                 $adj->forceFill([
-                    'zoho_applied_amount' => round((float) $adj->zoho_applied_amount + max(0, $apply), 2),
                     'zoho_sync_status'    => 'synced',
                     'zoho_synced_at'      => now(),
                     'zoho_error'          => null,
@@ -200,6 +243,66 @@ class PoZohoService
                 throw new RuntimeException($this->clean($e));
             }
         });
+    }
+
+    /**
+     * Exactly what the vendor credit carries — the PO's lines, the single adjustment
+     * (charges less TDS, less what the supplier keeps) and the credit total, worked out
+     * from our own data. Nothing is asked of Zoho, so it also answers before a sync.
+     */
+    public function creditPreview(PoRefundAdjustment $adj): array
+    {
+        $po = PurchaseOrder::withoutGlobalScope('tenant')->with('items')->findOrFail($adj->purchase_order_id);
+        $items = $po->items()->get();
+        $meta = DB::table('products as p')
+            ->leftJoin('master_uom as u', 'u.id', '=', 'p.uom_id')
+            ->leftJoin('master_hsn_codes as h', 'h.id', '=', 'p.hsn_id')
+            ->whereIn('p.id', $items->pluck('product_id')->filter()->unique()->all())
+            ->get(['p.id', 'p.name', 'p.product_code', 'u.short_code', 'u.title', 'h.hsn_code'])
+            ->keyBy('id');
+
+        $lines = $items->values()->map(function ($it) use ($meta) {
+            $m = $meta[(int) $it->product_id] ?? null;
+            $qty = (float) $it->quantity;
+            $rate = (float) $it->rate;
+            $gst = (float) $it->gst_pct;
+            $taxable = round($qty * $rate, 2);
+            return [
+                'name'        => (string) ($m->name ?? $m->product_code ?? 'Item'),
+                'code'        => (string) ($m->product_code ?? ''),
+                'description' => trim((string) $it->description),
+                'hsn'         => (string) ($m->hsn_code ?? ''),
+                'unit'        => (string) ($m ? ($m->short_code ?: $m->title) : ''),
+                'quantity'    => $qty,
+                'rate'        => $rate,
+                'gst_pct'     => $gst,
+                'taxable'     => $taxable,
+                'tax'         => round($taxable * $gst / 100, 2),
+                'amount'      => round($taxable * (1 + $gst / 100), 2),
+            ];
+        })->all();
+
+        $charges = $this->charges($po);
+        $tds = $this->tds($po);
+        $paid = round((float) $adj->paid_amount, 2);
+        $retained = round((float) $adj->retained_amount, 2);
+        $poTotal = round((float) $po->grand_total, 2);
+
+        return [
+            'po'        => $po,
+            'lines'     => $lines,
+            'sub_total' => round(array_sum(array_column($lines, 'taxable')), 2),
+            'tax_total' => round(array_sum(array_column($lines, 'tax')), 2),
+            'charges'   => $charges,
+            'tds'       => $tds,
+            // The credit's own figures: raised on what was released, less what is kept.
+            'po_total'  => $poTotal,
+            'net'       => round($poTotal - $tds, 2),
+            'paid'      => $paid,
+            'retained'  => $retained,
+            'total'     => round($paid - $retained, 2),
+            'tax_mode'  => $po->document_type === 'international' ? 'export' : ((string) $po->tax_mode ?: 'intra'),
+        ];
     }
 
     /* ══════════════════════════ REFUND: RECOVERY ══════════════════════════ */
@@ -387,30 +490,37 @@ class PoZohoService
         return $this->withCurrency($payload, $ctx);
     }
 
+    /**
+     * The credit is raised for the money actually released against the PO — not the
+     * order's value — less what the supplier keeps as cancellation charges. What stays
+     * open on it is therefore exactly the cash the supplier has to send back.
+     */
     private function vendorCreditPayload(PoRefundAdjustment $adj, PurchaseOrder $po, array $ctx): array
     {
+        $paid = round((float) $adj->paid_amount, 2);
+        $retained = round((float) $adj->retained_amount, 2);
+
         $payload = [
             'vendor_id'            => $ctx['vendor_id'],
             'vendor_credit_number' => (string) $adj->code,
             'date'                 => optional($adj->refund_date)->toDateString() ?: now()->toDateString(),
             'reference_number'     => (string) $po->code,
-            'bill_id'              => (string) $po->zoho_bill_id,
-            'line_items'           => $this->lines($po, $ctx),
-            'notes'                => mb_substr('PO cancelled — ' . $adj->reason, 0, 500),
+            'line_items'           => [[
+                'item_id'     => $this->books->findOrCreateItemId(self::CREDIT_ITEM, $paid, null, null, 0.0),
+                'name'        => self::CREDIT_ITEM,
+                'description' => mb_substr('Advance released against PO ' . $po->code . ' — ' . $adj->reason, 0, 5500),
+                'rate'        => $paid,
+                'quantity'    => 1,
+            ]],
+            'notes' => mb_substr('PO cancelled — ' . $adj->reason, 0, 500),
         ];
-        // Additions (charges) and deductions (TDS, amount the supplier keeps) as one adjustment line.
-        $charges = $this->charges($po);
-        $tds = $this->tds($po);
-        $retained = round((float) $adj->retained_amount, 2);
-        $parts = array_filter([
-            $charges != 0.0 ? 'Charges ₹' . number_format($charges, 2) : null,
-            $tds > 0 ? 'less TDS ₹' . number_format($tds, 2) : null,
-            $retained > 0 ? 'less retained by supplier ₹' . number_format($retained, 2) . ($adj->retained_type ? ' (' . $adj->retained_type . ')' : '') : null,
-        ]);
-        $adjustment = round($charges - $tds - $retained, 2);
-        if ($adjustment != 0.0) {
-            $payload['adjustment'] = $adjustment;
-            $payload['adjustment_description'] = mb_substr(implode(' ', $parts), 0, 250);
+        if ($retained > 0) {
+            $payload['adjustment'] = -$retained;
+            $payload['adjustment_description'] = mb_substr(
+                'less cancellation charges ₹' . number_format($retained, 2) . ($adj->retained_type ? ' (' . $adj->retained_type . ')' : ''),
+                0,
+                250,
+            );
         }
         return $this->withCurrency($payload, $ctx);
     }

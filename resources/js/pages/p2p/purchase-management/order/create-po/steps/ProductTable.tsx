@@ -108,21 +108,35 @@ type Props = {
   standalone?: boolean;
   /** The supplier's segments; products outside them are shown locked. Null = not loaded (no lock). */
   supplierSegments?: string[] | null;
+  /** Products mapped straight to the supplier — orderable even outside its segments. */
+  supplierProducts?: number[] | null;
   /** The summary on later steps shows the same table with plain values. */
   readOnly?: boolean;
 };
 
-export default function ProductTable({ rows, products, taxMode, onChange, onRemove, onProductsChanged, errors = {}, standalone = false, supplierSegments = null, readOnly }: Props) {
+export default function ProductTable({ rows, products, taxMode, onChange, onRemove, onProductsChanged, errors = {}, standalone = false, supplierSegments = null, supplierProducts = null, readOnly }: Props) {
   const options = useMemo(() => products.map(productLabel), [products]);
-  // Products whose segment this supplier doesn't deal in: listed, but locked with the reason.
+  // Every product is listed with its segment; only those whose segment — or the product itself —
+  // is mapped to the supplier can be picked. The rest are locked with the reason.
   const lockedProducts = useMemo(() => {
     const out: Record<string, string> = {};
     for (const p of products) {
-      const why = segmentMismatch(p, supplierSegments);
+      const why = segmentMismatch(p, supplierSegments, supplierProducts);
       if (why) out[productLabel(p)] = why;
     }
     return out;
-  }, [products, supplierSegments]);
+  }, [products, supplierSegments, supplierProducts]);
+  // The list shows each product's segment; one this supplier can't be given is red.
+  const segmentBadges = useMemo(() => {
+    const out: Record<string, { text: string; tone: 'green' | 'red' }> = {};
+    for (const p of products) {
+      out[productLabel(p)] = {
+        text: p.segment.trim() || 'No segment',
+        tone: lockedProducts[productLabel(p)] ? 'red' : 'green',
+      };
+    }
+    return out;
+  }, [products, lockedProducts]);
   // The product whose detail view is open, from "Read more" on its description.
   const [detailId, setDetailId] = useState<number | null>(null);
   /* The product master's own Add / Edit wizard, opened from the two buttons in
@@ -139,6 +153,12 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
   const colCount = 1 + (withPi ? 1 : 0) + 2 + (withPi ? 3 : 1) + 1 + taxCols + taxCols + 3;
   // Read-only recaps show only what is ordered.
   const shown = readOnly ? rows.filter((r) => r.qtyPo > 0) : rows;
+  // Every line this supplier can't be given, named once above the table instead of a note per row.
+  const unmapped = useMemo(() => (readOnly ? [] : shown
+    .map((r) => productOf(r, products))
+    .filter((p): p is ProductOpt => !!p && !!segmentMismatch(p, supplierSegments, supplierProducts))
+    .map((p) => ({ code: p.code || p.name, segment: p.segment.trim() }))),
+  [readOnly, shown, products, supplierSegments, supplierProducts]);
   const lines = shown.map((r) => computeLine(r, products, taxMode));
   const totals = lines.reduce(
     (sum, l, i) => ({
@@ -150,6 +170,22 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
   );
 
   return (
+    <>
+      {unmapped.length > 0 && (
+        <div className="cpd-nomap-note">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+          <span>
+            <b>{unmapped.length === 1 ? '1 product is' : `${unmapped.length} products are`} not mapped to this supplier:</b>{' '}
+            {unmapped.map((u, n) => (
+              <Fragment key={u.code + n}>
+                {n > 0 && ', '}
+                <b className="cpd-nomap-note__code">{u.code}</b>{u.segment ? ` (${u.segment})` : ' (no segment)'}
+              </Fragment>
+            ))}
+            . Map {unmapped.length === 1 ? 'it' : 'them'} to the supplier in Product Master → Vendors, or map the supplier to the segment, then come back to {unmapped.length === 1 ? 'this line' : 'these lines'}.
+          </span>
+        </div>
+      )}
     <div className="cpd-scroll">
       {detailId != null && (
         <Suspense fallback={null}>
@@ -214,7 +250,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             const desc = po?.description || row.pi?.description || '';
             const rowErr = readOnly ? {} : (errors[row.key] ?? {});
             // Product outside the supplier's segments: the whole line is locked until the segment is mapped.
-            const segLock = !readOnly && po ? segmentMismatch(po, supplierSegments) : null;
+            const segLock = !readOnly && po ? segmentMismatch(po, supplierSegments, supplierProducts) : null;
             const seg = po?.segment.trim() ?? '';
             const locked = () => toast.warning('Segment not mapped', seg
               ? `${seg} is not mapped to this supplier — map it in the Supplier Master first.`
@@ -255,6 +291,8 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                         options={options}
                         readOnly={!!segLock}
                         locked={lockedProducts}
+                        badges={segmentBadges}
+                        listBadgesOnly
                         onLockedClick={(label) => (label ? toast.warning('Segment mismatch', lockedProducts[label] ?? 'This product is not in a segment this supplier deals in.') : locked())}
                         placeholder="— Select product —"
                         onChange={(label) => {
@@ -273,6 +311,8 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                   )}
                   <div className="cpd-prod__meta">
                     {readOnly && po?.code && <span className="cpd-code">{po.code}</span>}
+                    {/* The whole reason lives in the badge; the line above the table names them all. */}
+                    {segLock && <span className="cpd-nomap" title={segLock}>Not mapped</span>}
                     <span className="cpd-kv">HSN <b>{hsn}</b></span>
                     <span className="cpd-prod__dot" />
                     <span className="cpd-kv">{gstCell}</span>
@@ -339,20 +379,6 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                 <td className="cpd-gst"><FitText text={money(line.gstAmt)} /></td>
                 <td className="cpd-final"><FitText text={money(line.withGst)} /></td>
               </tr>
-              {segLock && (
-                <tr className="cpd-seglock-note">
-                  <td colSpan={colCount}>
-                    <span className="cpd-seglock-note__msg">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
-                      <span>
-                        <b>Segment not mapped — {po?.code || poName || 'this product'} can't be ordered from this supplier.</b>{' '}
-                        {seg ? <>It is in <b>{seg}</b>, which this supplier is not mapped to. First map the supplier to {seg} in the Supplier Master</> : <>It has no segment in the product master. Set it first</>}
-                        {row.pi ? ', then come back to this line.' : ', or remove this line.'}
-                      </span>
-                    </span>
-                  </td>
-                </tr>
-              )}
               </Fragment>
             );
           })}
@@ -377,6 +403,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
         </tfoot>
       </table>
     </div>
+    </>
   );
 }
 

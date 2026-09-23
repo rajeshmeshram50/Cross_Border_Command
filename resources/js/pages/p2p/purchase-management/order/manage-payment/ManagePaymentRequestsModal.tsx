@@ -287,6 +287,7 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
       setReleases(res.payments.map((p) => ({
         id: p.id, amount: p.amount, bank: p.bank_name ?? '', utr: p.utr_cheque_number ?? '',
         date: p.utr_cheque_date ?? '', file: p.proof_name ?? undefined, fileUrl: p.proof_url,
+        zohoSynced: !!p.zoho_synced, zohoError: p.zoho_error ?? null,
       })));
       setPayReq(q);
     } catch (e) { failToast('Could not load the payment history', e); }
@@ -318,6 +319,16 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
       await afterPayment(payReq, res.summary);
       return true;
     } catch (e) { failToast('Could not update the payment', e); return false; }
+  };
+  // The PO and its bill are created in Zoho first if they are not there yet.
+  const syncPayment = async (i: number) => {
+    const target = releases[i];
+    if (!row.id || !payReq || !target?.id) return;
+    try {
+      const res = await poPaymentApi.zohoSyncPayment(row.id, payReq.rid, target.id);
+      toast.success('Posted to Zoho Books', res.message ?? `${money(target.amount)} against ${row.po}.`);
+      await afterPayment(payReq, res.summary);
+    } catch (e) { failToast('Zoho Books sync failed', e); }
   };
   const deletePayment = async (i: number) => {
     const target = releases[i];
@@ -351,6 +362,7 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
             onRecord={recordPayment}
             onUpdate={updatePayment}
             onDelete={deletePayment}
+            onZohoSync={syncPayment}
           />
         </Suspense>
       )}

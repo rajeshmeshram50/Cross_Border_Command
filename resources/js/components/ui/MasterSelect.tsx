@@ -161,6 +161,7 @@ export function MasterSelect({
   loadingMore,
   currentValueLabel,
   emptyText,
+  listBadgesOnly,
   searchable = true,
   onDisabledClick,
 }: {
@@ -190,6 +191,9 @@ export function MasterSelect({
      missing or who can change it. Only shown for a genuinely empty list — a
      search that matches nothing still says "No results". */
   emptyText?: string;
+  /* Badges help while choosing but say nothing once a value is picked — this
+     keeps them in the open list and off the closed trigger. */
+  listBadgesOnly?: boolean;
   disabled?: boolean;
   invalid?: boolean;
   /* When true, the toggle renders a shimmer block instead of the
@@ -365,7 +369,7 @@ export function MasterSelect({
             <Tooltip label={selected.fullLabel ?? selected.label} position="bottom">
               <span className="master-select-value">
                 <span className="master-select-value-text">{selected.selectedLabel ?? selected.label}</span>
-                {badgesOf(selected).map((b, i) => <OptBadge key={i} b={b} staticPill />)}
+                {!listBadgesOnly && badgesOf(selected).map((b, i) => <OptBadge key={i} b={b} staticPill />)}
               </span>
             </Tooltip>
           ) : currentValue && currentValueLabel ? (
@@ -418,7 +422,10 @@ export function MasterSelect({
             { name: 'flip', options: { boundary: 'viewport', fallbackPlacements: ['top', 'bottom'] } },
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
           ] as any}
-          style={menuWidth ? { width: menuWidth, minWidth: menuWidth } : undefined}
+          /* The trigger's width is the MINIMUM, not the width: in a narrow field a
+             long option plus its badge used to be cut off at the menu's edge. The
+             menu grows to fit its widest row and stops before the viewport edge. */
+          style={menuWidth ? { minWidth: menuWidth, width: 'max-content', maxWidth: `min(${Math.round(menuWidth) + 260}px, calc(100vw - 24px))` } : undefined}
         >
           {showSearch && (
             <div

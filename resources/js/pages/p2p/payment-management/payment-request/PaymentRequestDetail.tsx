@@ -148,7 +148,7 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
 
   if (detail === undefined) {
     return createPortal(
-      <div className="prd-root"><div className="prd-shell prd-shell--empty"><span className="spinner-border text-info" role="status" /></div></div>,
+      <DetailSkeleton onBack={onBack} />,
       document.body,
     );
   }
@@ -1059,6 +1059,48 @@ function HistoryPanel({ detail, onSoon }: { detail: Detail; onSoon: (what: strin
         </span>
       </div>
       <OrderTable rows={rows} onInspect={() => onSoon('Physical Inspection')} onManage={() => onSoon('Payment Requests')} />
+    </div>
+  );
+}
+
+/* Shimmer while the request loads, laid out like the real page (header, chips, the two
+   detail columns and the tables below) so nothing jumps when the data arrives. */
+function DetailSkeleton({ onBack }: { onBack: () => void }) {
+  const bar = (w: number | string, h = 12) => <span className="spi-sk-bar" style={{ width: w, height: h }} />;
+  const field = (k: number) => (
+    <div key={k} className="prd-sk-field">{bar('70px', 9)}{bar('90%', 13)}</div>
+  );
+  return (
+    <div className="prd-root" aria-busy="true" aria-label="Loading payment request">
+      <div className="prd-shell">
+        <div className="prd-head">
+          <div className="prd-hrow">
+            <div className="prd-titlewrap">
+              <span className="spi-sk-bar prd-sk-ico" />
+              <div className="prd-titleblock prd-sk-title">{bar(220, 20)}{bar(320, 11)}</div>
+            </div>
+            <div className="prd-right">
+              <div className="prd-chips">{[0, 1, 2, 3, 4].map((i) => <span key={i} className="spi-sk-bar prd-sk-chip" />)}</div>
+              <div className="prd-hactions">
+                {[0, 1, 2].map((i) => <span key={i} className="spi-sk-bar prd-sk-btn" />)}
+                <button type="button" className="prd-close" title="Back to Payment Request Management" onClick={onBack}><IcoArrowL size={13} stroke={2.6} /></button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="prd-cols">
+          {[0, 1].map((c) => (
+            <div key={c} className="prd-col">
+              <div className="prd-col__hd">{bar(180, 14)}</div>
+              <div className="prd-col__grid">{Array.from({ length: 8 }).map((_, i) => field(i))}</div>
+            </div>
+          ))}
+        </div>
+        <div className="prd-sk-block">
+          {bar(200, 14)}
+          {Array.from({ length: 4 }).map((_, i) => <span key={i} className="spi-sk-bar prd-sk-row" />)}
+        </div>
+      </div>
     </div>
   );
 }

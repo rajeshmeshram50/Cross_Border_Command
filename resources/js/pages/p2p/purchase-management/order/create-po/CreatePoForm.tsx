@@ -19,6 +19,7 @@ import {
   type FieldErrors, type LineErrors,
 } from './validation';
 import type { PoDraft, PoLineRow } from './po-draft';
+import type { SupplierDetail } from '../api/po-api';
 import GstNoticeModal, { type GstNotice } from './GstNoticeModal';
 // The supplier master's wizard, opened on its GST Scrutiny tab when scrutiny is missing or stale.
 const AddVendorModal = lazy(() => import('../../../p2p-master-management/supplier-management/AddVendorModal'));
@@ -48,6 +49,10 @@ export type StepCtx = {
   saving: boolean;
   /** Re-read the supplier's vault after documents are uploaded from it. */
   refreshVault: () => void;
+  /** Re-read the supplier after it is edited — its mapped products drive Stage 02. */
+  reloadSupplier: (vendorId: number) => Promise<SupplierDetail | null>;
+  /** Suppliers and products again, after one of them is edited from a step. */
+  reloadSupplierList: () => void;
   /** Re-read the PO — after documents go out for signature, so Steps 01–03 lock at once. */
   reloadDetail: () => void;
   /** Inline errors — shown once the step has been saved (or failed on the server). */
@@ -291,7 +296,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
 
   const saveStage2 = async (): Promise<boolean> => {
     setShown(([a]) => [a, true]);
-    const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International');
+    const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids);
     const bad = Object.keys(v.rows).length;
     if (bad || v.general) {
       if (!bad) { toast.warning('No products ordered', v.general); return false; }
@@ -382,11 +387,11 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     pi: link.shipment?.pi_number ?? detail?.pi_code ?? null,
     procurement: detail?.procurement_request_code ?? null,
   };
-  const ctx: StepCtx = { lookups, taxMode: draft.docType === 'International' ? 'export' : (detail?.tax_mode ?? 'intra'), piCode: refs.pi, detail, saveLines, saving, refreshVault, reloadDetail: () => { void reloadApproval(); }, savedLines, piHolders,
+  const ctx: StepCtx = { lookups, taxMode: draft.docType === 'International' ? 'export' : (detail?.tax_mode ?? 'intra'), piCode: refs.pi, detail, saveLines, saving, refreshVault, reloadSupplier: loadSupplier, reloadSupplierList: lookups.reloadSuppliers, reloadDetail: () => { void reloadApproval(); }, savedLines, piHolders,
     errors: shown[0] ? { ...serverErrors, ...validateStage1(draft) } : serverErrors,
     ...(() => {
       if (!shown[1]) return { lineErrors: serverLineErrors };
-      const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International');
+      const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids);
       return { lineErrors: { ...serverLineErrors, ...v.rows }, linesGeneral: v.general };
     })(),
   };

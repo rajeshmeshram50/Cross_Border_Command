@@ -545,3 +545,13 @@
 [data-bs-theme="dark"] .ptv-c--amt { color: #e2e8f0; }
 [data-bs-theme="dark"] .ptv-ft { background: #0f1827; border-top-color: #1f2d42; }
 [data-bs-theme="dark"] .ptv-close { background: #111a2b; color: #cbd5e1; box-shadow: inset 0 0 0 1.5px #1f2d42; }
+
+/* Detail shimmer (while a request loads) — shapes only; bars are the shared .spi-sk-bar. */
+.prd-sk-ico { width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0; }
+.prd-sk-title { display: flex; flex-direction: column; gap: 8px; }
+.prd-sk-chip { width: 120px; height: 46px; border-radius: 10px; }
+.prd-sk-btn { width: 110px; height: 36px; border-radius: 10px; }
+.prd-sk-field { display: flex; flex-direction: column; gap: 7px; padding: 10px 0; }
+.prd-sk-block { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; padding: 16px; border-radius: 14px; background: rgba(255, 255, 255, .6); }
+.prd-sk-row { width: 100%; height: 38px; border-radius: 8px; }
+[data-bs-theme="dark"] .prd-sk-block { background: rgba(255, 255, 255, .03); }
