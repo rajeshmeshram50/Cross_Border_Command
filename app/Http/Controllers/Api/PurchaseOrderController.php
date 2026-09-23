@@ -1349,6 +1349,8 @@ class PurchaseOrderController extends Controller
             'remarks' => $g ? ($g->prev_non_gst_2a_invoice ?: $g->red_flags) : null,
             // Create PO: a product is orderable when its segment OR the product itself is mapped to this supplier.
             'mapped_product_ids' => app(\App\Services\P2p\PurchaseOrderService::class)->vendorProductIds((int) $v->id),
+            // What this supplier charges per mapped product — a PO line takes it over the master price.
+            'product_rates' => app(\App\Services\P2p\PurchaseOrderService::class)->vendorProductRates((int) $v->id),
         ]]);
     }
 

@@ -59,19 +59,42 @@ export function segmentMismatch(product: ProductOpt | undefined, supplierSegment
   return `Segment mismatch — ${seg} is not mapped to this supplier. Add ${seg} to the supplier's segments.`;
 }
 
+/** A product listed but not orderable: inactive in the master. */
+export function inactiveProduct(product: ProductOpt | undefined): string | null {
+  if (!product || product.status === 'active') return null;
+  return `This product is ${product.status} in the product master — activate it there to order it.`;
+}
+
+/** The replacement must stay in the PI line's own segment. */
+export function piSegmentMismatch(product: ProductOpt | undefined, piSegment: string | null | undefined): string | null {
+  const want = (piSegment ?? '').trim();
+  if (!product || !want) return null;
+  const has = product.segment.trim();
+  if (has.toLowerCase() === want.toLowerCase()) return null;
+  return `The PI line is in ${want} — pick a product from the same segment.`;
+}
+
 export function validateLines(lines: PoLineRow[], products: ProductOpt[], supplierSegments?: string[] | null, international = false, mappedProductIds?: number[] | null): { rows: LineErrors; general?: string } {
   const rows: LineErrors = {};
   const set = (key: string, cell: 'product' | 'qty' | 'rate', msg: string) => { rows[key] = { ...rows[key], [cell]: msg }; };
+  const byId = (id: number | null) => products.find((p) => p.id === id);
 
   for (const l of lines) {
-    if (!l.pi && !l.productId) set(l.key, 'product', 'Pick a product, or remove the line.');
-    if (!l.pi && l.qtyPo <= 0) set(l.key, 'qty', 'Enter a quantity.');
+    // A line left at 0 is simply not on this PO — it goes on the next one, so it
+    // carries no errors at all. Everything below is checked once it is ordered.
+    if (l.qtyPo <= 0) {
+      if (!l.pi && l.productId) set(l.key, 'qty', 'Enter a quantity, or remove the line.');
+      continue;
+    }
+    if (!l.productId) set(l.key, 'product', l.pi ? 'Pick the product for this PI line.' : 'Pick a product, or remove the line.');
     if (l.pi && l.qtyPo > l.pi.pending_qty) set(l.key, 'qty', `Only ${l.pi.pending_qty} is still pending on the PI.`);
-    // A PI line left at 0 is simply not ordered; any ordered line needs a price and GST.
-    if (l.qtyPo > 0 && l.rate <= 0) set(l.key, 'rate', 'Enter a rate.');
-    if (!international && l.qtyPo > 0 && l.productId && gstOf(l, products) === null) set(l.key, 'product', 'No GST % on the product master — set it there first.');
-    const seg = l.qtyPo > 0 ? segmentMismatch(products.find((p) => p.id === l.productId), supplierSegments, mappedProductIds) : null;
-    if (seg) set(l.key, 'product', seg);
+    if (l.rate <= 0) set(l.key, 'rate', 'Enter a rate.');
+    if (!international && l.productId && gstOf(l, products) === null) set(l.key, 'product', 'No GST % on the product master — set it there first.');
+    const chosen = byId(l.productId);
+    const why = inactiveProduct(chosen)
+      ?? segmentMismatch(chosen, supplierSegments, mappedProductIds)
+      ?? piSegmentMismatch(chosen, l.pi ? byId(l.pi.product_id)?.segment : null);
+    if (why) set(l.key, 'product', why);
   }
   const ordered = lines.some((l) => l.qtyPo > 0);
   return { rows, general: ordered ? undefined : 'Enter a quantity on at least one line.' };

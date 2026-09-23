@@ -10,6 +10,7 @@ import { useToast } from '../../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../../contexts/ConfirmContext';
 import { PoApiError, poApprovalApi, type GstApprovalRequest, type GstApprovalReview } from '../api/po-api';
 import { PO_TYPE_LABEL, fmtDate, fmtDateTime, fmtMoney, initialsOf, monthsAgoText } from './approval-format';
+import { formatProductCode } from '../../../../../utils/formatProductCode';
 import './gst-approval.css';
 import { formatProductCode } from '../../../../../utils/formatProductCode';
 

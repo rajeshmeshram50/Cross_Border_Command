@@ -18,6 +18,7 @@ import {
 import InspectionAttachmentsModal from './InspectionAttachmentsModal';
 import CameraCaptureModal from './CameraCaptureModal';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import { formatProductCode } from '../../../../../utils/formatProductCode';
 import './physical-inspection.css';
 
 // The product master's detail view, opened by "Read more".

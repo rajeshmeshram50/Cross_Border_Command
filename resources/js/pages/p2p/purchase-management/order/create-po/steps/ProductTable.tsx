@@ -2,12 +2,12 @@
 // Only three cells are editable (PO product, Qty PO, Rate); everything else is
 // carried from the PI or calculated, which is what the legend line says.
 // Tax is worked out exactly as the server does on save, so the totals match.
-import { Fragment, lazy, Suspense, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { EditSelect, FitInput, FitText } from '../form-fields';
 import type { PoLineRow } from '../po-draft';
 import type { ProductOpt } from '../use-po-lookups';
 import type { TaxMode } from '../../api/po-api';
-import { segmentMismatch, type LineErrors } from '../validation';
+import { inactiveProduct, piSegmentMismatch, segmentMismatch, type LineErrors } from '../validation';
 import { IcoPencil, IcoPlus, IcoTrash } from '../../shared/icons';
 import { useToast } from '../../../../../../contexts/ToastContext';
 import { formatProductCode } from '../../../../../../utils/formatProductCode';
@@ -74,7 +74,13 @@ export function computeLine(row: PoLineRow, products: ProductOpt[], taxMode: Tax
   };
 }
 
-export const productLabel = (p: ProductOpt) => `${p.code} — ${p.name}`;
+export const productLabel = (p: ProductOpt) => `${formatProductCode(p.code)} — ${p.name}`;
+
+/** What a freshly picked product costs on this PO: the supplier's own rate, else the master price. */
+const rateFor = (p: ProductOpt, rates?: Record<number, number> | null) => {
+  const own = rates?.[p.id];
+  return own != null && own > 0 ? own : p.price;
+};
 
 const money = (n: number) => '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
@@ -111,28 +117,52 @@ type Props = {
   supplierSegments?: string[] | null;
   /** Products mapped straight to the supplier — orderable even outside its segments. */
   supplierProducts?: number[] | null;
+  /** The supplier's own rate per product; a picked line takes it over the master price. */
+  supplierRates?: Record<number, number> | null;
   /** The summary on later steps shows the same table with plain values. */
   readOnly?: boolean;
 };
 
-export default function ProductTable({ rows, products, taxMode, onChange, onRemove, onProductsChanged, errors = {}, standalone = false, supplierSegments = null, supplierProducts = null, readOnly }: Props) {
+export default function ProductTable({ rows, products, taxMode, onChange, onRemove, onProductsChanged, errors = {}, standalone = false, supplierSegments = null, supplierProducts = null, supplierRates = null, readOnly }: Props) {
   const options = useMemo(() => products.map(productLabel), [products]);
   // Every product is listed with its segment; only those whose segment — or the product itself —
   // is mapped to the supplier can be picked. The rest are locked with the reason.
   const lockedProducts = useMemo(() => {
     const out: Record<string, string> = {};
     for (const p of products) {
-      const why = segmentMismatch(p, supplierSegments, supplierProducts);
+      const why = inactiveProduct(p) ?? segmentMismatch(p, supplierSegments, supplierProducts);
       if (why) out[productLabel(p)] = why;
     }
     return out;
   }, [products, supplierSegments, supplierProducts]);
+  /* On a PI line the replacement has to stay in the PI product's own segment, so
+     each segment gets its own locked map — built once per segment, not per row. */
+  const lockedBySegment = useMemo(() => {
+    const cache = new Map<string, Record<string, string>>();
+    return (piSegment: string | null | undefined) => {
+      const seg = (piSegment ?? '').trim();
+      if (!seg) return lockedProducts;
+      const hit = cache.get(seg.toLowerCase());
+      if (hit) return hit;
+      const out: Record<string, string> = { ...lockedProducts };
+      for (const p of products) {
+        const label = productLabel(p);
+        if (!out[label]) {
+          const why = piSegmentMismatch(p, seg);
+          if (why) out[label] = why;
+        }
+      }
+      cache.set(seg.toLowerCase(), out);
+      return out;
+    };
+  }, [products, lockedProducts]);
   // The list shows each product's segment; one this supplier can't be given is red.
   const segmentBadges = useMemo(() => {
     const out: Record<string, { text: string; tone: 'green' | 'red' }> = {};
     for (const p of products) {
+      const dead = inactiveProduct(p);
       out[productLabel(p)] = {
-        text: p.segment.trim() || 'No segment',
+        text: dead ? 'Inactive' : (p.segment.trim() || 'No segment'),
         tone: lockedProducts[productLabel(p)] ? 'red' : 'green',
       };
     }
@@ -144,6 +174,10 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
      the PO product cell: the pencil edits the line's product, + adds a new one. */
   const [editing, setEditing] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
+  /* The row whose + opened the wizard, and the product it created: once the
+     reloaded list carries that product, it is picked onto that very row. */
+  const [addFor, setAddFor] = useState<number | null>(null);
+  const [justAdded, setJustAdded] = useState<{ row: number; id: number } | null>(null);
   const toast = useToast();
   // Inter-state is one IGST pair; intra-state splits into CGST + SGST; an import is one Tax pair at 0%.
   const exportPo = taxMode === 'export';
@@ -160,6 +194,29 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
     .filter((p): p is ProductOpt => !!p && !!segmentMismatch(p, supplierSegments, supplierProducts))
     .map((p) => ({ code: p.code || p.name, segment: p.segment.trim() }))),
   [readOnly, shown, products, supplierSegments, supplierProducts]);
+  /* A product created from a line's + goes straight onto that line, as long as it
+     may be ordered here: active, mapped to the supplier, and — on a PI line — in
+     the PI product's own segment. Otherwise it stays in the master and we say why. */
+  useEffect(() => {
+    if (!justAdded) return;
+    const p = products.find((x) => x.id === justAdded.id);
+    if (!p) return;                       // the reloaded list hasn't landed yet
+    const row = rows[justAdded.row];
+    setJustAdded(null);
+    if (!row) return;
+    const piProduct = row.pi ? products.find((x) => x.id === row.pi?.product_id) : undefined;
+    const why = inactiveProduct(p)
+      ?? segmentMismatch(p, supplierSegments, supplierProducts)
+      ?? piSegmentMismatch(p, piProduct?.segment);
+    if (why) {
+      toast.warning(`${formatProductCode(p.code)} saved, but not selected`, why);
+      return;
+    }
+    onChange(justAdded.row, { productId: p.id, ...(row.pi ? {} : { rate: rateFor(p, supplierRates) }) });
+    toast.success('Product added', `${formatProductCode(p.code)} — ${p.name} is now on this line.`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [justAdded, products, supplierSegments, supplierProducts]);
+
   const lines = shown.map((r) => computeLine(r, products, taxMode));
   const totals = lines.reduce(
     (sum, l, i) => ({
@@ -180,7 +237,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             {unmapped.map((u, n) => (
               <Fragment key={u.code + n}>
                 {n > 0 && ', '}
-                <b className="cpd-nomap-note__code">{u.code}</b>{u.segment ? ` (${u.segment})` : ' (no segment)'}
+                <b className="cpd-nomap-note__code">{formatProductCode(u.code)}</b>{u.segment ? ` (${u.segment})` : ' (no segment)'}
               </Fragment>
             ))}
             . Map {unmapped.length === 1 ? 'it' : 'them'} to the supplier in Product Master → Vendors, or map the supplier to the segment, then come back to {unmapped.length === 1 ? 'this line' : 'these lines'}.
@@ -197,15 +254,20 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
           none it creates one. It saves to the product master itself. */}
       {(adding || editing != null) && (
         <Suspense fallback={null}>
+          {/* Supplier mapping stays available here: a product added for this PO has
+              to be mapped to its supplier, or the line can't use it. */}
           <AddProductModal
             productId={editing}
-            hideSupplierMapping
-            onClose={() => { setAdding(false); setEditing(null); }}
-            onSaved={(_id, finalised) => {
+            onClose={() => { setAdding(false); setEditing(null); setAddFor(null); }}
+            onSaved={(id, finalised) => {
               if (!finalised) return;
-              toast.success(editing != null ? 'Product updated' : 'Product added', 'Saved in the product master.');
+              if (editing != null) toast.success('Product updated', 'Saved in the product master.');
+              else if (addFor == null) toast.success('Product added', 'Saved in the product master.');
+              // A product added from a row is picked onto it once the list reloads.
+              if (editing == null && addFor != null && id) setJustAdded({ row: addFor, id });
               setAdding(false);
               setEditing(null);
+              setAddFor(null);
               onProductsChanged?.();
             }}
           />
@@ -251,14 +313,25 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             const desc = po?.description || row.pi?.description || '';
             const rowErr = readOnly ? {} : (errors[row.key] ?? {});
             // Product outside the supplier's segments: the whole line is locked until the segment is mapped.
-            const segLock = !readOnly && po ? segmentMismatch(po, supplierSegments, supplierProducts) : null;
+            const piProduct = row.pi ? products.find((p) => p.id === row.pi?.product_id) : undefined;
+            const segLock = !readOnly && po
+              ? (inactiveProduct(po) ?? segmentMismatch(po, supplierSegments, supplierProducts) ?? piSegmentMismatch(po, piProduct?.segment))
+              : null;
             const seg = po?.segment.trim() ?? '';
             const locked = () => toast.warning('Segment not mapped', seg
               ? `${seg} is not mapped to this supplier — map it in the Supplier Master first.`
               : 'This product has no segment in the product master — set it first.');
-            const gstCell = line.gstPct === null
+            /* The chip always shows the product master's own GST, even on an import
+               where the PO charges no Indian GST — the Tax columns stay 0, this is
+               only what the product is registered at. */
+            const masterGst = gstOf(row, products) ?? (row.pi?.gst_pct ?? null);
+            const gstCell = masterGst === null
               ? <span className="cpd-miss" title="Set the GST % on the product master">GST not set</span>
-              : <>GST <b>{line.gstPct}%</b></>;
+              : (
+                <span title={exportPo ? 'The product master\'s GST — an import is not charged Indian GST, so the Tax columns stay 0.' : undefined}>
+                  GST <b>{masterGst}%</b>
+                </span>
+              );
             return (
               <Fragment key={row.key}>
               <tr className={segLock ? 'cpd-row--seglock' : undefined} title={segLock ?? undefined}>
@@ -291,14 +364,14 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                         value={po ? productLabel(po) : poName}
                         options={options}
                         readOnly={!!segLock}
-                        locked={lockedProducts}
+                        locked={lockedBySegment(piProduct?.segment)}
                         badges={segmentBadges}
                         listBadgesOnly
                         onLockedClick={(label) => (label ? toast.warning('Segment mismatch', lockedProducts[label] ?? 'This product is not in a segment this supplier deals in.') : locked())}
                         placeholder="— Select product —"
                         onChange={(label) => {
                           const picked = products.find((p) => productLabel(p) === label);
-                          if (picked) onChange(index, { productId: picked.id, ...(row.pi ? {} : { rate: picked.price }) });
+                          if (picked) onChange(index, { productId: picked.id, ...(row.pi ? {} : { rate: rateFor(picked, supplierRates) }) });
                         }}
                       />
                       <button type="button" className="cpd-iconbtn" title="Edit this product in the product master"
@@ -311,14 +384,20 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                     </div>
                   )}
                   <div className="cpd-prod__meta">
-                    {readOnly && po?.code && <span className="cpd-code">{po.code}</span>}
+                    {readOnly && po?.code && <span className="cpd-code">{formatProductCode(po.code)}</span>}
                     {/* The whole reason lives in the badge; the line above the table names them all. */}
-                    {segLock && <span className="cpd-nomap" title={segLock}>Not mapped</span>}
+                    {segLock && (
+                      <span className="cpd-nomap" title={segLock}>
+                        {inactiveProduct(po) ? 'Inactive' : piProduct && piSegmentMismatch(po, piProduct.segment) ? 'Other segment' : 'Not mapped'}
+                      </span>
+                    )}
                     <span className="cpd-kv">HSN <b>{hsn}</b></span>
                     <span className="cpd-prod__dot" />
                     <span className="cpd-kv">{gstCell}</span>
                     {!readOnly && (
-                      <button type="button" className="cpd-addbtn" title="Add a new product to the master" onClick={() => setAdding(true)}>
+                      <button type="button" className="cpd-addbtn"
+                        title="Add a new product — it goes on this line if it can be ordered from this supplier"
+                        onClick={() => { setAddFor(index); setAdding(true); }}>
                         <IcoPlus />
                       </button>
                     )}

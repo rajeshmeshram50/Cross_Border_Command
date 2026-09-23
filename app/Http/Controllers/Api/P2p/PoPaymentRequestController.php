@@ -151,9 +151,13 @@ class PoPaymentRequestController extends Controller
         $approver = DB::table('users')->where('id', $data['requested_to'])->where('client_id', $user->client_id)
             ->where('status', 'active')->whereNull('deleted_at')->first(['id', 'branch_id', 'user_type']);
         if (!$approver) return $this->fail('Select an active user of your company as the approver.', 422, ['requested_to' => ['Select an active user.']]);
-        // Only someone of the PO's branch (or a client admin over every branch) can approve it.
+        // Only someone of the PO's branch: the branch head is the last approver, and a
+        // client admin cannot open the P2P screens to act on it anyway.
         $branch = $order->branch_id ?: $user->branch_id;
-        if ($branch && $approver->user_type !== 'client_admin' && (int) $approver->branch_id !== (int) $branch) {
+        if ($approver->user_type === 'client_admin') {
+            return $this->fail('A request stops at the branch head — choose someone from this branch.', 422, ['requested_to' => ['Choose someone from this branch.']]);
+        }
+        if ($branch && (int) $approver->branch_id !== (int) $branch) {
             return $this->fail("Choose someone from this PO's branch.", 422, ['requested_to' => ["Not in this PO's branch."]]);
         }
         if ((int) $approver->id === (int) $user->id) return $this->fail('You cannot approve your own request — choose someone else.', 422, ['requested_to' => ['Choose someone else.']]);

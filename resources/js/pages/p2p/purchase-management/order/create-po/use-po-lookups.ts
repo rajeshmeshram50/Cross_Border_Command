@@ -14,6 +14,8 @@ export type ProductOpt = {
   price: number;
   /** The product's segment (clm_segments); a PO orders only its supplier's segments. */
   segment: string;
+  /** active / inactive / draft — anything but active is listed, locked. */
+  status: string;
 };
 
 export type PoLookups = {
@@ -44,6 +46,7 @@ function toProduct(p: Row): ProductOpt {
     description: str(p.description),
     price: num(p.base_price),
     segment: str((p.segment as { name?: unknown } | null | undefined)?.name),
+    status: (str(p.status) || 'active').toLowerCase(),
   };
 }
 

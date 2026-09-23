@@ -246,6 +246,8 @@ export type SupplierDetail = {
   risk: string | null; category: string | null; segments: string[];
   /** Products mapped straight to this supplier (Product Master → Vendors, Supplier → Products). */
   mapped_product_ids?: number[];
+  /** What this supplier charges per mapped product — a line prefers it over the master price. */
+  product_rates?: Record<number, number>;
   addr: string | null; country: string | null; state: string | null; stateCode: string | null; city: string | null;
   contact: string | null; desig: string | null; phone: string | null; email: string | null;
   scrutiny: string | null; gstNo: string | null; gstStatus: string | null; filing: string | null; remarks: string | null;
