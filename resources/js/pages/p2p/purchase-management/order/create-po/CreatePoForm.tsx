@@ -24,11 +24,14 @@ import type { SupplierDetail } from '../api/po-api';
 import GstNoticeModal, { type GstNotice } from './GstNoticeModal';
 // The supplier master's wizard, opened on its GST Scrutiny tab when scrutiny is missing or stale.
 const AddVendorModal = lazy(() => import('../../../p2p-master-management/supplier-management/AddVendorModal'));
+/* Also opened from the Step 03 footer, so the missing paperwork can be filled
+   in before the submit is even tried — the popup is not the only way in. */
+const SupplierEvidenceVaultModal = lazy(() => import('../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 import { PoApiError, poApi, poLookupApi, type PiHolder, type PoDetail, type ShipmentOption, type TaxMode } from '../api/po-api';
 import { useToast } from '../../../../../contexts/ToastContext';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './create-po.css';
-import { IcoCheck, IcoChevronL, IcoLock, IcoChevronR, IcoDoc, IcoLines, IcoShip, IcoTarget, IcoX } from '../shared/icons';
+import { IcoCheck, IcoChevronL, IcoLock, IcoChevronR, IcoDoc, IcoLines, IcoShield, IcoShip, IcoTarget, IcoX } from '../shared/icons';
 
 // What the Create PO popup passes in: how this PO is linked. `editId` is set
 // when Edit PO opens an existing order in this same form.
@@ -237,6 +240,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   const standardDocs = draft.legal?.sections?.[0] ?? null;
   const vaultTarget = draft.supplier ? vaultTargetOf(draft.supplier) : null;
   const [docsNotice, setDocsNotice] = useState<SupplierDocsNotice | null>(null);
+  const [vaultOpen, setVaultOpen] = useState(false);
   const [scrutinyFor, setScrutinyFor] = useState<number | null>(null);
   // After the supplier's scrutiny is updated, reload it so the GST check runs again.
   const closeScrutiny = () => {
@@ -256,12 +260,21 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
      (the server's GST gate). */
   const viewOnly = paidView || signView;
   const showGstAction = stage === 2 && !!gst.notice && !viewOnly;
+  /* Step 03 holds the submit while this supplier's standard documents are
+     incomplete, so the way to fix that sits in the footer too — beside Back,
+     reachable before the submit is pressed and while a senior GST approval is
+     still pending. */
+  const docsPending = stage === 2 && !viewOnly && !!standardDocs && standardDocs.done < standardDocs.total && !!vaultTarget?.db_id;
   // Only an overdue return can be approved past; a stale scrutiny always blocks.
   const approval = gst.notice?.tone === 'warn' ? detail?.gst_approval ?? null : null;
   const gstCleared = !gst.notice || approval?.status === 'approved';
   const gstActionLabel = approval?.status === 'pending' ? 'Awaiting senior approval'
     : approval?.status === 'approved' ? 'Senior approved'
       : approval?.status === 'rejected' ? 'Rejected — send again' : gst.state.action;
+  /* The request is with the senior: nothing this screen does can submit the PO
+     until they decide, so the submit is frozen rather than left to be pressed
+     into a refusal. The rest of Step 03 stays editable. */
+  const awaitingApproval = stage === 2 && !viewOnly && approval?.status === 'pending';
 
   /** After a request is sent: re-read the PO so Step 03 shows where it stands. */
   const reloadApproval = async () => {
@@ -564,6 +577,12 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
             <button type="button" className="spi-dt-btn-ghost" onClick={goBack} disabled={saving}>
               <IcoChevronL /> {backLabel}
             </button>
+            {docsPending && (
+              <button type="button" className="spi-dt-btn-ghost cpf-foot-docs" onClick={() => setVaultOpen(true)} disabled={saving}>
+                <IcoShield /> Evidence Vault
+                <span className="cpf-foot-docs__n">{standardDocs!.total - standardDocs!.done} pending</span>
+              </button>
+            )}
             {showGstAction && (
               <button
                 type="button"
@@ -580,7 +599,8 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
               type="button"
               className={isSubmit ? 'spi-dt-btn-map' : 'spi-dt-btn-next'}
               onClick={goNext}
-              disabled={saving || booting}
+              disabled={saving || booting || awaitingApproval}
+              title={awaitingApproval ? `Waiting for ${detail?.gst_approval?.requested_to_name ?? 'the senior'} to approve — the PO cannot be submitted yet.` : undefined}
             >
               {isSubmit && <IcoCheck />} {nextLabel} <IcoChevronR />
             </button>
@@ -599,6 +619,12 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
       )}
       {docsNotice && (
         <SupplierDocsNoticeModal notice={docsNotice} onClose={() => setDocsNotice(null)} onVaultChange={refreshVault} />
+      )}
+      {vaultOpen && vaultTarget && (
+        <Suspense fallback={null}>
+          {/* The same vault the popup opens — reached straight from the footer. */}
+          <SupplierEvidenceVaultModal open supplier={vaultTarget as never} onVaultChange={refreshVault} onClose={() => setVaultOpen(false)} />
+        </Suspense>
       )}
     </div>,
     document.body,

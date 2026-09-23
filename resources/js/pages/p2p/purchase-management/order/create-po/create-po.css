@@ -1406,7 +1406,12 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 }
 /* The body is a column flex container with a fixed height, so its sections
    would shrink to fit instead of overflowing — then nothing scrolls. */
-.cpf-form .spi-dt-body > * { flex-shrink: 0; }
+/* The step wrapper is display:contents, so its children are the body's real
+   flex items — but a child combinator does not see through it, and every
+   "spi-dt-body > …" rule has to name it too or the sections shrink to fit and
+   clip what is below them instead of scrolling. */
+.cpf-form .spi-dt-body > *,
+.cpf-form .cpf-stepwrap > * { flex-shrink: 0; }
 /* No supplier picked yet — the compliance bar sits empty. */
 .cpf-lgbar__fill.is-empty { width: 0; }
 
@@ -1980,13 +1985,15 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
    The documents card takes whatever height is left under the summary, so the
    table grows with the window instead of leaving dead space below it. Its
    rows scroll inside the card and the send actions stay at the bottom. */
-.cpf-form .spi-dt-body > .cpf-fill {
+.cpf-form .spi-dt-body > .cpf-fill,
+.cpf-form .cpf-stepwrap > .cpf-fill {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 320px;
 }
-.cpf-form .spi-dt-body > .cpf-fill.is-collapsed { flex: 0 0 auto; min-height: 0; }
+.cpf-form .spi-dt-body > .cpf-fill.is-collapsed,
+.cpf-form .cpf-stepwrap > .cpf-fill.is-collapsed { flex: 0 0 auto; min-height: 0; }
 .cpf-fill > .spi-dt-sec-body {
   display: flex;
   flex-direction: column;
@@ -2005,6 +2012,7 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
    (measured 31px tall with 290px of rows inside). Size to content instead. */
 @media (max-width: 760px) {
   .cpf-form .spi-dt-body > .cpf-fill,
+  .cpf-form .cpf-stepwrap > .cpf-fill,
   .cpf-fill > .spi-dt-sec-body,
   .cpf-fill .cpd-scroll { flex: 0 0 auto; min-height: 0; }
 }
@@ -2193,6 +2201,20 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
   background: #fff;
   box-shadow: 0 0 8px 2px rgba(255, 255, 255, .85);
 }
+
+/* Step 03 footer: the way into the supplier's Evidence Vault, beside Back.
+   A ghost button, not a second loud one — the submit and the GST action keep
+   that job; amber only says there is paperwork waiting. */
+.cpf-form .spi-dt-btn-ghost.cpf-foot-docs { border-color: #fcd34d; color: #b45309; background: #fffbeb; }
+.cpf-form .spi-dt-btn-ghost.cpf-foot-docs:hover { background: #fef3c7; border-color: #f59e0b; }
+.cpf-foot-docs__n {
+  padding: 2px 8px; border-radius: 999px; background: #f59e0b; color: #fff;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .2px; white-space: nowrap;
+}
+[data-bs-theme="dark"] .cpf-form .spi-dt-btn-ghost.cpf-foot-docs {
+  background: rgba(245, 158, 11, .12); border-color: rgba(245, 158, 11, .38); color: #fcd34d;
+}
+[data-bs-theme="dark"] .cpf-form .spi-dt-btn-ghost.cpf-foot-docs:hover { background: rgba(245, 158, 11, .2); }
 
 /* GST banner button height (the prototype uses normal line height). */
 /* Step 03 footer: the GST action sits left of Submit PO when the supplier's

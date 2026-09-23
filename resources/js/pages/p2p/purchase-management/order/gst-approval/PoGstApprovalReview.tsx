@@ -253,18 +253,10 @@ export default function PoGstApprovalReview() {
             )}
           </section>
 
-          <section className="pga-card">
-            <h3 className="pga-card__t"><i className="ri-chat-quote-line" /> Request</h3>
-            <div className="pga-person">
-              <span className="pga-person__av">{initialsOf(req.requested_by_name)}</span>
-              <div className="pga-person__txt">
-                <div className="pga-person__n">{req.requested_by_name ?? '—'}</div>
-                <div className="pga-person__s">Sent {fmtDateTime(req.requested_at)}</div>
-              </div>
-            </div>
-            <div className="pga-quote">{req.request_note || <span className="pga-muted">No note added.</span>}</div>
-          </section>
-
+          {/* The decision comes before the request note: on a laptop screen the
+              approver landed with Reject / Approve below the fold and had to
+              scroll to find them. What they came to do is now in view, and the
+              note that explains it reads underneath. */}
           {data.can_decide ? (
             <section className="pga-card pga-decide">
               <h3 className="pga-card__t"><i className="ri-scales-3-line" /> Your decision</h3>
@@ -304,6 +296,18 @@ export default function PoGstApprovalReview() {
               {req.reason && <div className="pga-outcome__reason">“{req.reason}”</div>}
             </section>
           )}
+
+          <section className="pga-card">
+            <h3 className="pga-card__t"><i className="ri-chat-quote-line" /> Request</h3>
+            <div className="pga-person">
+              <span className="pga-person__av">{initialsOf(req.requested_by_name)}</span>
+              <div className="pga-person__txt">
+                <div className="pga-person__n">{req.requested_by_name ?? '—'}</div>
+                <div className="pga-person__s">Sent {fmtDateTime(req.requested_at)}</div>
+              </div>
+            </div>
+            <div className="pga-quote">{req.request_note || <span className="pga-muted">No note added.</span>}</div>
+          </section>
 
           {data.history.length > 1 && (
             <section className="pga-card">
