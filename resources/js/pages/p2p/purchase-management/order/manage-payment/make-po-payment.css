@@ -280,7 +280,7 @@
 
 .cpay-cols {
   display: grid;
-  grid-template-columns: 54px minmax(118px, 1fr) minmax(118px, 1fr) minmax(104px, 1fr) minmax(110px, 1fr) minmax(120px, 1fr) minmax(104px, 1fr) minmax(150px, 1.2fr) 120px;
+  grid-template-columns: 54px minmax(118px, 1fr) minmax(118px, 1fr) minmax(104px, 1fr) minmax(110px, 1fr) minmax(120px, 1fr) minmax(104px, 1fr) minmax(150px, 1.2fr) 232px;
   gap: 8px 10px;
   align-items: center;
   padding: 8px 14px;
@@ -491,6 +491,26 @@
   gap: 6px;
   justify-content: center;
 }
+
+/* Each payment is posted to the Zoho bill from its own row. */
+.cpay-zoho {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.cpay-zoho svg { width: 13px; height: 13px; }
+.cpay-zoho--btn { background: linear-gradient(135deg, #0ea5b7, #0891b2); color: #fff; cursor: pointer; }
+.cpay-zoho--btn:hover:not(:disabled) { filter: brightness(1.06); }
+.cpay-zoho--btn:disabled { opacity: .55; cursor: default; }
+.cpay-zoho--ok { background: #e7f6ef; color: #0a6f47; border: 1px solid #b6e2ce; cursor: help; }
+[data-bs-theme="dark"] .cpay-zoho--ok { background: rgba(10, 135, 84, .16); border-color: rgba(10, 179, 156, .34); color: #7ddfbf; }
 
 .cpay-act {
   display: inline-flex;

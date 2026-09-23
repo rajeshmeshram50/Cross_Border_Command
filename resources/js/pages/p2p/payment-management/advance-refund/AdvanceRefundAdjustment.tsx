@@ -65,7 +65,7 @@ const EMPTY: Record<TabKey, string> = {
   recovered: 'No refund adjustment has been fully recovered yet.',
 };
 
-const PAGE_SIZES = [5, 10, 15];
+const PAGE_SIZES = [10, 25, 50];
 
 /** Zoho runs after the save; a failure is only reported, the save stands. */
 export function toastZoho(toast: ReturnType<typeof useToast>, zoho: ZohoOutcome) {
@@ -154,7 +154,8 @@ export default function AdvanceRefundAdjustment() {
       const pager = card.querySelector<HTMLElement>('.wl-pager');
       const pagerH = pager ? pager.offsetHeight + parseFloat(getComputedStyle(pager).marginTop) : 0;
       const room = cardH - 2 - qh('.spi-segrow') - qh('.arf-table thead') - bar - pagerH;
-      const fit = Math.max(1, Math.floor(room / row));
+      // As in the Segment Master: what fits, never fewer than 10 (server caps at 50).
+      const fit = Math.min(50, Math.max(10, Math.floor(room / row)));
       setPageSize((prev) => (prev === fit ? prev : fit));
     };
     recompute();
@@ -166,6 +167,22 @@ export default function AdvanceRefundAdjustment() {
   }, [guideOpen, loading]);
 
   const start = (page - 1) * pageSize;
+
+  // Zoho Books is synced from here only: the vendor credit, then any recoveries not yet refunded.
+  const [syncingId, setSyncingId] = useState<number | null>(null);
+  const syncZoho = async (r: RefundAdjustment) => {
+    if (syncingId) return;
+    setSyncingId(r.id);
+    try {
+      const res = await refundApi.zohoSync(r.id);
+      toast.success(`${r.no} synced`, res.message ?? 'Synced to Zoho Books.');
+    } catch (e) {
+      toast.error('Zoho Books sync failed', e instanceof PoApiError ? e.firstError : 'Please try again.');
+    } finally {
+      setSyncingId(null);
+      reload();
+    }
+  };
 
   const onSaved = (saved: RefundAdjustment, zoho: ZohoOutcome, created: boolean) => {
     setForm(null);
@@ -258,6 +275,7 @@ export default function AdvanceRefundAdjustment() {
                 <th>TOTAL PO PAID AMOUNT</th>
                 <th>AMOUNT NOT REFUNDED</th>
                 <th>AMOUNT TO BE REFUNDED</th>
+                <th>ZOHO SYNC</th>
                 <th>PAYMENT RECOVERY STATUS</th>
                 <th>PO CANCELLATION STATUS</th>
                 <th>ACTION</th>
@@ -267,12 +285,13 @@ export default function AdvanceRefundAdjustment() {
               {loading ? (
                 Array.from({ length: pageSize }).map((_, i) => <SkeletonRow key={i} />)
               ) : rows.length === 0 ? (
-                <tr className="arf-empty-row"><td colSpan={16}>
+                <tr className="arf-empty-row"><td colSpan={17}>
                   <div className="spi-empty"><div className="spi-empty-t">No refund adjustments found</div><div className="spi-empty-s">{search ? 'Try a different search.' : EMPTY[tab]}</div></div>
                 </td></tr>
               ) : rows.map((r, i) => (
-                <RefundRow key={r.id} sr={start + i + 1} refund={r}
-                  onEdit={() => setForm({ editId: r.id })} onRecover={() => setRecoveringId(r.id)} onVault={() => setVaultId(r.id)} />
+                <RefundRow key={r.id} sr={start + i + 1} refund={r} syncing={syncingId === r.id}
+                  onEdit={() => setForm({ editId: r.id })} onRecover={() => setRecoveringId(r.id)} onVault={() => setVaultId(r.id)}
+                  onSync={() => void syncZoho(r)} />
               ))}
             </tbody>
           </table>
@@ -330,6 +349,7 @@ function SkeletonRow() {
       <td>{num}</td>
       <td>{num}</td>
       <td>{num}</td>
+      <td><span className="arf-sk-stack"><span className="spi-sk-bar arf-sk-tag" /><span className="spi-sk-bar arf-sk-btn" /></span></td>
       <td>
         <span className="arf-sk-stack arf-sk-stack--rec">
           <span className="arf-sk-stack">
@@ -360,9 +380,11 @@ function IdCell({ id, date, children }: { id?: string | null; date?: string | nu
 
 const RECOVERY_LABEL = { full: 'Fully Recovered', partial: 'Partially Recovered', pending: 'Recovery Not Started' } as const;
 
-function RefundRow({ sr, refund, onEdit, onRecover, onVault }: {
-  sr: number; refund: RefundAdjustment; onEdit: () => void; onRecover: () => void; onVault: () => void;
+function RefundRow({ sr, refund, syncing, onEdit, onRecover, onVault, onSync }: {
+  sr: number; refund: RefundAdjustment; syncing: boolean; onEdit: () => void; onRecover: () => void; onVault: () => void; onSync: () => void;
 }) {
+  // Synced once the vendor credit is in Zoho and every recovery is refunded there.
+  const zohoSynced = refund.zohoStatus === 'synced' && refund.zohoPending === 0;
   const po = refund.poInfo;
   const fig = refundFigures(refund);
   const tds = po?.tds ?? 0;
@@ -404,6 +426,25 @@ function RefundRow({ sr, refund, onEdit, onRecover, onVault }: {
       </td>
       <td><span className={`ord-amt${fig.toRefund > 0 ? ' arf-amt--due' : ''}`}>{money(fig.toRefund)}</span></td>
       <td>
+        <div className="ord-statcell">
+          {zohoSynced ? (
+            <>
+              <span className="ord-status ord-status--ok"><span className="ord-status__dot" />Synced</span>
+              {refund.zohoNumber && <span className="ord-idcell__date">{refund.zohoNumber}</span>}
+            </>
+          ) : (
+            <>
+              <span className="ord-status ord-status--bad" title={refund.zohoError ?? undefined}><span className="ord-status__dot" />Not Sync</span>
+              {refund.zohoPending > 0 && refund.zohoStatus === 'synced' && <span className="ord-idcell__date">{refund.zohoPending} refund(s) pending</span>}
+              <button type="button" className="ord-btn ord-btn--zoho" disabled={syncing} onClick={onSync} title={refund.zohoError ?? 'Send the vendor credit and recoveries to Zoho Books'}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" width="13" height="13"><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><polyline points="21 3 21 8 16 8" /><polyline points="3 21 3 16 8 16" /></svg>
+                <span>{syncing ? 'Syncing…' : 'Zoho Sync'}</span>
+              </button>
+            </>
+          )}
+        </div>
+      </td>
+      <td>
         <div className="ord-paycell">
           <div className={`ord-progress is-${fig.status}`}>
             <div className="ord-progress__top">
@@ -419,9 +460,6 @@ function RefundRow({ sr, refund, onEdit, onRecover, onVault }: {
             </div>
           </div>
           <span className="arf-chip arf-refchip"><IcoFile />{refund.no}</span>
-          {/* Zoho vendor credit: synced, or the reason it failed (Manage Recovery can retry). */}
-          {refund.zohoStatus === 'synced' && <span className="arf-zoho arf-zoho--ok" title={`Zoho vendor credit ${refund.zohoNumber ?? ''}`}>Zoho · {refund.zohoNumber ?? 'Synced'}</span>}
-          {refund.zohoStatus === 'failed' && <span className="arf-zoho arf-zoho--bad" title={refund.zohoError ?? ''}>Zoho sync failed</span>}
           {/* Same dark button in both states, as in the prototype — only the
               label says whether anything is still owed. */}
           <button type="button" className="ord-btn ord-btn--hist" onClick={onRecover}>

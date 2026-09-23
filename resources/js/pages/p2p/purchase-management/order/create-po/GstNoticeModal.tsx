@@ -24,8 +24,6 @@ export type GstNotice = {
 
 type Approval = NonNullable<PoDetail['gst_approval']>;
 
-// Approvers rarely change within a session.
-let approversCache: GstApprover[] | null = null;
 
 /** `poId` + `onSent` send the senior-approval request; `approval` is the one already raised. */
 export default function GstNoticeModal({ notice, onClose, poId, approval, onSent, onOpenScrutiny }: {
@@ -37,8 +35,8 @@ export default function GstNoticeModal({ notice, onClose, poId, approval, onSent
   const toast = useToast();
   const [note, setNote] = useState('');
   const [approverId, setApproverId] = useState('');
-  const [approvers, setApprovers] = useState<GstApprover[]>(approversCache ?? []);
-  const [loadingApprovers, setLoadingApprovers] = useState(!approversCache);
+  const [approvers, setApprovers] = useState<GstApprover[]>([]);
+  const [loadingApprovers, setLoadingApprovers] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
 
@@ -51,9 +49,10 @@ export default function GstNoticeModal({ notice, onClose, poId, approval, onSent
   const sendBackTo = approval?.status === 'rejected' ? approval.requested_to_name : null;
 
   useEffect(() => {
-    if (!canSend || sendBackTo || approversCache) return;
+    // Read on each open: the list follows the active branch (this branch's people + client admins).
+    if (!canSend || sendBackTo) return;
     poApprovalApi.approvers()
-      .then((rows) => { approversCache = rows; setApprovers(rows); })
+      .then((rows) => setApprovers(rows))
       .catch((e) => toast.error('Could not load approvers', e instanceof PoApiError ? e.firstError : 'Please try again.'))
       .finally(() => setLoadingApprovers(false));
   }, [canSend, sendBackTo, toast]);

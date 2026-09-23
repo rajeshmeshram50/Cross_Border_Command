@@ -14,7 +14,11 @@ import { useEscapeClose } from './useEscapeClose';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './advance-refund.css';
 
-type VaultFile = { key: string; name: string; meta: string; url?: string; tag?: 'release' | 'refund' };
+type VaultFile = {
+  key: string; name: string; meta: string; url?: string; tag?: 'release' | 'refund';
+  /** A document the server renders on demand — fetched with the session, not linked. */
+  fetchBlob?: () => Promise<Blob>;
+};
 
 /* The prototype's own marks, drawn at their own stroke weights. */
 function Svg({ sw, children }: { sw: number; children: ReactNode }) {
@@ -56,9 +60,13 @@ export default function EvidenceVaultModal({ refundId, onClose }: { refundId: nu
   const poFiles: VaultFile[] = (refund?.documents ?? []).map((d) => ({
     key: `doc-${d.id}`, name: d.name, url: d.url ?? undefined, meta: [d.status, d.date ? fmtDate(d.date) : null].filter(Boolean).join(' · '),
   }));
-  const receiptFiles: VaultFile[] = refund?.attachment ? [{
-    key: 'receipt', name: refund.attachment, url: refund.attachmentUrl,
+  // The adjustment's own document, rendered by the server from what the vendor
+  // credit carries — not the file the supplier sent us.
+  const receiptFiles: VaultFile[] = refund ? [{
+    key: 'adr-doc',
+    name: `${refund.no.replace(/\//g, '_')}.pdf`,
     meta: `${refund.supplierRef ? `Supplier ref ${refund.supplierRef} · ` : ''}${fmtDate(refund.date)} · ${money(refund.amount)}`,
+    fetchBlob: () => refundApi.pdf(refund.id),
   }] : [];
   const proofs: VaultFile[] = [
     ...(refund?.payments ?? []).filter((p) => p.proof_url).map((p) => ({
@@ -88,8 +96,8 @@ export default function EvidenceVaultModal({ refundId, onClose }: { refundId: nu
         <div className="spi-mdl-body arf-vault-body">
           <Group icon={<IcoOrder />} title="Purchase Order" sub="Documents generated or signed for the order"
             files={poFiles} empty={refund ? 'No purchase order document with a file on record.' : 'Loading…'} />
-          <Group icon={<IcoNote />} title="Advance Refund Receipt" sub="The refund document as the supplier issued it"
-            files={receiptFiles} empty={refund ? 'No refund reference attachment uploaded.' : 'Loading…'} />
+          <Group icon={<IcoNote />} title="Advance Refund Receipt" sub="The credit note this adjustment raises, generated from our records"
+            files={receiptFiles} empty={refund ? 'No refund adjustment on record.' : 'Loading…'} />
           <Group icon={<IcoPay />} title="All Payment Proofs" sub="Money released against the order, and refunds against the adjustment"
             files={proofs} empty={refund ? 'No payment or refund proof uploaded yet.' : 'Loading…'} />
         </div>
@@ -108,6 +116,29 @@ export default function EvidenceVaultModal({ refundId, onClose }: { refundId: nu
 function Group({ icon, title, sub, files, empty }: {
   icon: ReactNode; title: string; sub: string; files: VaultFile[]; empty: string;
 }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  // A rendered document is fetched with the session, then opened or saved from memory.
+  const useBlob = async (f: VaultFile, save: boolean) => {
+    if (busy) return;
+    setBusy(f.key);
+    try {
+      const url = URL.createObjectURL(await f.fetchBlob!());
+      if (save) {
+        const a = document.createElement('a');
+        a.href = url; a.download = f.name; a.click();
+      } else {
+        window.open(url, '_blank', 'noopener');
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      toast.error('Could not open the document', e instanceof PoApiError ? e.firstError : 'Please try again.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <section className="arf-vg">
       <div className="arf-vg-head">
@@ -129,8 +160,21 @@ function Group({ icon, title, sub, files, empty }: {
             </div>
             {f.tag && <span className={`arf-vtag arf-vtag--${f.tag}`}>{f.tag === 'release' ? 'Release' : 'Refund'}</span>}
             <span className="arf-vf-acts">
-              <a className="arf-vact" title="View" href={f.url} target="_blank" rel="noopener noreferrer"><IcoView /><span>View</span></a>
-              <a className="arf-vact arf-vact--get" title="Download" href={f.url} download={f.name}><IcoGet /><span>Download</span></a>
+              {f.fetchBlob ? (
+                <>
+                  <button type="button" className="arf-vact" title="View" disabled={busy === f.key} onClick={() => void useBlob(f, false)}>
+                    <IcoView /><span>{busy === f.key ? 'Opening…' : 'View'}</span>
+                  </button>
+                  <button type="button" className="arf-vact arf-vact--get" title="Download" disabled={busy === f.key} onClick={() => void useBlob(f, true)}>
+                    <IcoGet /><span>Download</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <a className="arf-vact" title="View" href={f.url} target="_blank" rel="noopener noreferrer"><IcoView /><span>View</span></a>
+                  <a className="arf-vact arf-vact--get" title="Download" href={f.url} download={f.name}><IcoGet /><span>Download</span></a>
+                </>
+              )}
             </span>
           </div>
         ))}

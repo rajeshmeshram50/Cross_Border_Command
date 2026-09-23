@@ -1347,6 +1347,8 @@ class PurchaseOrderController extends Controller
             'gstStatus' => optional($g)->status,
             'filing' => $g && $g->last_filing_date ? $g->last_filing_date->toDateString() : null,
             'remarks' => $g ? ($g->prev_non_gst_2a_invoice ?: $g->red_flags) : null,
+            // Create PO: a product is orderable when its segment OR the product itself is mapped to this supplier.
+            'mapped_product_ids' => app(\App\Services\P2p\PurchaseOrderService::class)->vendorProductIds((int) $v->id),
         ]]);
     }
 

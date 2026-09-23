@@ -24,6 +24,9 @@ export type ReleasePayment = {
   fileUrl?: string | null;
   /** A newly chosen proof file, sent with the save. */
   upload?: File | null;
+  /** Posted to the Zoho bill already; the row then shows Synced instead of the button. */
+  zohoSynced?: boolean;
+  zohoError?: string | null;
 };
 
 export type MakePoPaymentProps = {
@@ -42,6 +45,8 @@ export type MakePoPaymentProps = {
   onRecord: (p: ReleasePayment) => Promise<boolean> | void;
   onUpdate: (index: number, p: ReleasePayment) => Promise<boolean> | void;
   onDelete: (index: number) => void;
+  /** Posts that one payment to the Zoho bill. */
+  onZohoSync: (index: number) => Promise<void> | void;
   onOpenTds: () => void;
   onClose: () => void;
 };
@@ -67,6 +72,10 @@ const ICON_EYE = (
 const ICON_DL = (
   <svg {...ic} strokeWidth={2.4}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
 );
+const ICON_SYNC = (
+  <svg {...ic}><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><polyline points="21 3 21 8 16 8" /><polyline points="3 21 3 16 8 16" /></svg>
+);
+const ICON_TICK_SM = <svg {...ic} strokeWidth={3}><path d="M20 6 9 17l-5-5" /></svg>;
 const ICON_MAIL = (
   <svg {...ic} strokeWidth={2.4}><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 6-10 7L2 6" /></svg>
 );
@@ -91,7 +100,7 @@ function Field({ label, mod, children }: { label: string; mod?: string; children
 
 export default function MakePoPaymentModal({
   row, requestId, requestDate, requestType, requestedAmount, approved, approver, approverRole,
-  alreadyPaid, payments, tds, onRecord, onUpdate, onDelete, onOpenTds, onClose,
+  alreadyPaid, payments, tds, onRecord, onUpdate, onDelete, onZohoSync, onOpenTds, onClose,
 }: MakePoPaymentProps) {
   useScrollLock(true, '.mpr-card--pay');
 
@@ -106,6 +115,13 @@ export default function MakePoPaymentModal({
 
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<number | null>(null);
+  const [syncing, setSyncing] = useState<number | null>(null);
+
+  const syncRow = async (i: number) => {
+    if (syncing !== null) return;
+    setSyncing(i);
+    try { await onZohoSync(i); } finally { setSyncing(null); }
+  };
 
   const closeForm = () => { setAdding(false); setEditing(null); };
 
@@ -282,6 +298,16 @@ export default function MakePoPaymentModal({
                   </span>
                   <span data-l="Action">
                     <span className="cpay-acts">
+                      {/* A posted payment can no longer be edited or deleted — the bill in Zoho already has it. */}
+                      {p.zohoSynced ? (
+                        <span className="cpay-zoho cpay-zoho--ok" title="Posted against the bill in Zoho Books">{ICON_TICK_SM}Synced</span>
+                      ) : (
+                        <button type="button" className="cpay-zoho cpay-zoho--btn" disabled={syncing !== null || !p.id}
+                          title={p.zohoError ?? 'Post this payment against the bill in Zoho Books'}
+                          onClick={() => void syncRow(i)}>
+                          {ICON_SYNC}<span>{syncing === i ? 'Syncing…' : 'Zoho Sync'}</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="cpay-act cpay-act--mail"
@@ -292,8 +318,11 @@ export default function MakePoPaymentModal({
                       >
                         {ICON_MAIL}
                       </button>
-                      <button type="button" className="cpay-act cpay-act--edit" title="Edit payment" onClick={() => setEditing(i)}>{ICON_EDIT}</button>
-                      <button type="button" className="cpay-act cpay-act--del" title="Delete payment"
+                      <button type="button" className="cpay-act cpay-act--edit" disabled={p.zohoSynced}
+                        title={p.zohoSynced ? 'Posted to Zoho Books — this payment can no longer be changed' : 'Edit payment'}
+                        onClick={() => setEditing(i)}>{ICON_EDIT}</button>
+                      <button type="button" className="cpay-act cpay-act--del" disabled={p.zohoSynced}
+                        title={p.zohoSynced ? 'Posted to Zoho Books — this payment can no longer be deleted' : 'Delete payment'}
                         onClick={() => { if (window.confirm(`Delete the ${money(p.amount)} payment? It returns to the balance.`)) onDelete(i); }}>
                         {ICON_DEL}
                       </button>

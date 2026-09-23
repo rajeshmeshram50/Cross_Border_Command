@@ -174,7 +174,8 @@ class PurchaseOrderController extends Controller
             ->with(['vendor:id,vendor_code,company_name,legal_name,risk_level_id,supplier_category', 'vendor.riskLevel:id,name'])
             // Request count and the two notes under the payment bar, as subqueries — not one query per row.
             ->withCount('paymentRequests')
-            ->with('refundAdjustment')
+            // The cancellation and, as a subquery, its refunds still to reach Zoho.
+            ->with(['refundAdjustment' => fn ($q) => $q->withCount(['recoveries as zoho_pending_recoveries' => fn ($r) => $r->whereNull('zoho_refund_id')])])
             // Payments not yet posted to the Zoho bill.
             ->withCount(['payments as zoho_unposted_payments' => fn ($q) => $q->whereColumn('zoho_applied_amount', '<', 'amount')])
             // A document out for signature or signed — Edit PO becomes View PO.
@@ -480,6 +481,7 @@ class PurchaseOrderController extends Controller
         $products = $this->loadProducts(array_values(array_filter($effective)));
         // A PO orders only products in a segment its supplier deals in.
         $supplierSegments = $this->vendorSegmentIds((int) $po->vendor_id);
+        $supplierProducts = $this->svc->vendorProductIds((int) $po->vendor_id);
         foreach ($data['lines'] as $i => $line) {
             if (isset($errors["lines.$i.pi_item_id"])) continue;
             $field = !empty($line['product_id']) ? "lines.$i.product_id" : "lines.$i.pi_item_id";
@@ -488,9 +490,10 @@ class PurchaseOrderController extends Controller
             } elseif ($po->document_type !== 'international' && $products->get($effective[$i])->gst_pct === null) {
                 // Purchase GST comes only from the product master, never the sales PI.
                 $errors[$field] = ['This product has no GST % in the product master — set it there first.'];
-            } elseif (!in_array((int) $products->get($effective[$i])->segment_id, $supplierSegments, true)) {
+            } elseif (!in_array((int) $products->get($effective[$i])->segment_id, $supplierSegments, true)
+                && !in_array((int) $effective[$i], $supplierProducts, true)) {
                 $seg = $products->get($effective[$i])->segment_name ?: 'no segment';
-                $errors[$field] = ["Segment mismatch — this product is in {$seg}, which is not mapped to the supplier. Add the segment to the supplier first."];
+                $errors[$field] = ["Not mapped — this product is in {$seg}, and neither that segment nor the product is mapped to the supplier. Map one of them first."];
             }
         }
         if ($errors) throw ValidationException::withMessages($errors);
@@ -600,9 +603,10 @@ class PurchaseOrderController extends Controller
             $segs = $this->vendorSegmentIds((int) $po->vendor_id);
             $outside = DB::table('p2p_purchase_order_items as i')->join('products as p', 'p.id', '=', 'i.product_id')
                 ->where('i.purchase_order_id', $po->id)->where(fn ($w) => $w->whereNull('p.segment_id')->orWhereNotIn('p.segment_id', $segs ?: [0]))
+                ->whereNotIn('p.id', $this->svc->vendorProductIds((int) $po->vendor_id) ?: [0])
                 ->pluck('p.product_code');
             if ($outside->isNotEmpty()) {
-                return $this->fail($outside->implode(', ') . ' — not in a segment this supplier is mapped to. Map the segment to the supplier, or change the lines in Stage 02, before submitting.');
+                return $this->fail($outside->implode(', ') . ' — neither the product nor its segment is mapped to this supplier. Map one of them, or change the lines in Stage 02, before submitting.');
             }
             // Re-read the supplier's GST position at the moment of submission.
             $gst = $this->svc->gstGate($po->vendor_id, $po->document_type === 'international');
@@ -708,18 +712,18 @@ class PurchaseOrderController extends Controller
         return $this->ok($this->shapeDetail($po->fresh()));
     }
 
-    /** POST /p2p/orders/{id}/zoho-sync — Zoho PO + bill (once), then any payments not posted yet. */
+    /** POST /p2p/orders/{id}/zoho-sync — the whole chain: PO + bill, payments, vendor credit, refunds. */
     public function zohoSync(Request $request, int $id): JsonResponse
     {
         $user = $this->tenantUser($request);
         $po = $this->findPo($id);
+        $zoho = app(\App\Services\P2p\PoZohoService::class);
         try {
-            $r = app(\App\Services\P2p\PoZohoService::class)->syncPo($po, $user->id);
+            $r = $zoho->syncAll($po, $user->id);
         } catch (\RuntimeException $e) {
             return $this->fail($e->getMessage());
         }
-        $paid = $r['pushed'] > 0 ? ', posted ' . $r['pushed'] . ' payment(s) of ₹' . number_format($r['applied'], 2) : '';
-        return response()->json(['status' => true, 'message' => ($r['already'] ? 'Already in Zoho Books — bill ' : 'Synced to Zoho Books — bill ') . $r['bill_number'] . $paid . '.']);
+        return response()->json(['status' => true, 'message' => 'Synced to Zoho Books — ' . $zoho->summary($r) . '.']);
     }
 
     /** DELETE /p2p/orders/{id} — drafts only; a submitted PO is cancelled instead. */
@@ -928,6 +932,8 @@ class PurchaseOrderController extends Controller
                 'id' => $a->id, 'code' => $a->code, 'date' => $a->refund_date?->toDateString(),
                 'paid' => (float) $a->paid_amount, 'refund' => (float) $a->refund_amount, 'retained' => (float) $a->retained_amount,
                 'recovered' => (float) $a->recovered_amount, 'balance' => (float) $a->balance_amount, 'status' => $a->status,
+                // The PO row is only "Synced" once its cancellation is in Zoho too.
+                'zoho_synced' => $a->zoho_sync_status === 'synced' && (int) ($a->zoho_pending_recoveries ?? 0) === 0,
             ] : null,
             'zoho_status'         => $po->zoho_status,
             'zoho_bill_number'    => $po->zoho_bill_number,

@@ -49,6 +49,8 @@ export type RefundAdjustment = {
   zohoStatus: 'synced' | 'failed' | null;
   zohoError: string | null;
   zohoNumber: string | null;
+  /** Recoveries not yet refunded in Zoho Books. */
+  zohoPending: number;
   /** The vendor credit is in Zoho — the refund amount can no longer change. */
   amountsLocked: boolean;
   payments: NonNullable<RefundDetail['payments']>;
@@ -100,6 +102,7 @@ export function toRefund(r: RefundRow | RefundDetail): RefundAdjustment {
       file: x.proof_name ?? undefined, fileUrl: x.proof_url ?? undefined, zohoStatus: x.zoho_sync_status, zohoError: x.zoho_error,
     })),
     zohoStatus: r.zoho_sync_status, zohoError: r.zoho_error, zohoNumber: r.zoho_vendorcredit_number,
+    zohoPending: r.zoho_pending_recoveries ?? 0,
     amountsLocked: r.amounts_locked,
     payments: d.payments ?? [], documents: d.documents ?? [],
   };

@@ -21,8 +21,8 @@ use Illuminate\Validation\Rule;
  *
  * Raising one cancels a PO that has money released (Cancellation Initiated); the supplier's
  * refunds are logged as recoveries until nothing is outstanding (Cancellation Closed).
- * Zoho Books: vendor credit on raise, vendor-credit refund per recovery — best effort after
- * the save, with a retry endpoint for each.
+ * Zoho Books is synced from the list's Zoho Sync column (zohoSync): the vendor credit, then
+ * a vendor-credit refund per recovery. Saving never calls Zoho.
  */
 class PoRefundAdjustmentController extends Controller
 {
@@ -82,7 +82,7 @@ class PoRefundAdjustmentController extends Controller
 
         $page = $base->whereRaw(self::TABS[$request->query('tab', 'all')])
             ->with(['purchaseOrder' => fn ($q) => $q->withoutGlobalScope('tenant'), 'vendor:id,vendor_code,company_name,legal_name'])
-            ->withCount('recoveries')
+            ->withCount(['recoveries', 'recoveries as zoho_pending_count' => fn ($q) => $q->whereNull('zoho_refund_id')])
             ->orderByDesc('id')
             ->paginate($request->integer('per_page') ?: 10);
 
@@ -190,8 +190,8 @@ class PoRefundAdjustmentController extends Controller
             return $adj;
         }, [$path]);
 
-        $zoho = $this->tryZoho(fn () => $this->zoho->pushVendorCredit($adj, $user->id));
-        return $this->ok($this->detail($adj->fresh()), 201, ['zoho' => $zoho]);
+        // Zoho Books is synced from the list's Zoho Sync column, not on save.
+        return $this->ok($this->detail($adj->fresh()), 201);
     }
 
     /** POST /refund-adjustments/{id} (multipart) — edit; amounts are fixed once the vendor credit is in Zoho. */
@@ -227,17 +227,20 @@ class PoRefundAdjustmentController extends Controller
         return $this->ok($this->detail($adj->fresh()));
     }
 
-    /** POST /refund-adjustments/{id}/zoho-sync — create / apply the vendor credit again. */
+    /**
+     * POST /refund-adjustments/{id}/zoho-sync — from the list's Zoho Sync column: the vendor credit
+     * (created and applied to the bill once), then every recovery not yet refunded in Zoho.
+     */
     public function zohoSync(Request $request, int $id): JsonResponse
     {
         $user = $this->tenantUser($request);
         $adj = PoRefundAdjustment::findOrFail($id);
         try {
-            $this->zoho->pushVendorCredit($adj, $user->id);
+            $r = $this->zoho->syncAll($this->poOf($adj), $user->id);
         } catch (\RuntimeException $e) {
             return $this->fail($e->getMessage());
         }
-        return $this->ok($this->detail($adj->fresh()), 200, ['message' => 'Vendor credit synced to Zoho Books.']);
+        return $this->ok($this->detail($adj->fresh()), 200, ['message' => 'Synced to Zoho Books — ' . $this->zoho->summary($r) . '.']);
     }
 
     /* ══════════════════════════ RECOVERIES ══════════════════════════ */
@@ -261,13 +264,13 @@ class PoRefundAdjustmentController extends Controller
         $existing = $recId ? $adj->recoveries()->findOrFail($recId) : null;
 
         $data = $request->validate([
-            'amount'         => 'required|numeric|min:0.01|max:9999999999999.99',
+            'amount'         => 'required|numeric|min:1|max:9999999999999.99',
             'recovered_date' => 'required|date|before_or_equal:today|after_or_equal:' . $adj->refund_date->toDateString(),
             'reference_no'   => 'nullable|string|max:64',
             'proof'          => 'nullable|' . self::PROOF_RULE,
         ], [
             'amount.required'                => 'Enter the recovered amount.',
-            'amount.min'                     => 'Enter the recovered amount.',
+            'amount.min'                     => 'The recovered amount must be at least ₹1.',
             'recovered_date.before_or_equal' => 'Refunded date cannot be in the future.',
             'recovered_date.after_or_equal'  => 'Refunded date cannot be before the refund adjustment date.',
             'proof.max'                      => 'Proof of payment must be 10 MB or smaller.',
@@ -307,8 +310,7 @@ class PoRefundAdjustmentController extends Controller
             return $rec;
         }, [$path]);
 
-        $zoho = $this->tryZoho(fn () => $this->zoho->pushRecovery($saved, $user->id));
-        return $this->ok($this->detail($adj->fresh()), $existing ? 200 : 201, ['zoho' => $zoho]);
+        return $this->ok($this->detail($adj->fresh()), $existing ? 200 : 201);
     }
 
     /** DELETE /refund-adjustments/{id}/recoveries/{rec} — removed from Zoho first, then soft-deleted. */
@@ -335,12 +337,16 @@ class PoRefundAdjustmentController extends Controller
         $user = $this->tenantUser($request);
         $adj = PoRefundAdjustment::findOrFail($id);
         $row = $adj->recoveries()->findOrFail($rec);
+        // Same chain as every other Zoho Sync button, so this refund can never land
+        // before the PO, its bill, its payments and the vendor credit are there.
         try {
-            $this->zoho->pushRecovery($row, $user->id);
+            $r = $this->zoho->syncAll($this->poOf($adj), $user->id);
         } catch (\RuntimeException $e) {
             return $this->fail($e->getMessage());
         }
-        return $this->ok($this->detail($adj->fresh()), 200, ['message' => 'Refund synced to Zoho Books.']);
+        if (empty($row->fresh()->zoho_refund_id)) return $this->fail('This refund was not posted to Zoho Books — try again.');
+
+        return $this->ok($this->detail($adj->fresh()), 200, ['message' => 'Synced to Zoho Books — ' . $this->zoho->summary($r) . '.']);
     }
 
     /* ══════════════════════════ HELPERS ══════════════════════════ */
@@ -485,6 +491,7 @@ class PoRefundAdjustmentController extends Controller
             'retained_amount' => (float) $a->retained_amount, 'retained_type' => $a->retained_type, 'retained_remark' => $a->retained_remark,
             'recovered_amount' => (float) $a->recovered_amount, 'balance_amount' => (float) $a->balance_amount,
             'status' => $a->status, 'recoveries_count' => (int) ($a->recoveries_count ?? 0),
+            'zoho_pending_recoveries' => (int) ($a->zoho_pending_count ?? 0),
             'zoho_vendorcredit_number' => $a->zoho_vendorcredit_number, 'zoho_sync_status' => $a->zoho_sync_status,
             'zoho_error' => $a->zoho_error, 'zoho_synced_at' => $a->zoho_synced_at?->toIso8601String(),
             'amounts_locked' => (bool) $a->zoho_vendorcredit_id,
@@ -492,10 +499,91 @@ class PoRefundAdjustmentController extends Controller
         ];
     }
 
+    /** The adjustment's PO, tenant-scoped like every other read here. */
+    private function poOf(PoRefundAdjustment $a): PurchaseOrder
+    {
+        return PurchaseOrder::findOrFail($a->purchase_order_id);
+    }
+
+    /**
+     * GET /refund-adjustments/{id}/pdf[?download=1] — the Advance Receipt Refund Adjustment
+     * document, on our own letterhead. It prints what we raise the vendor credit with,
+     * worked out from our data; Zoho is never called to build it.
+     */
+    public function pdf(Request $request, int $id)
+    {
+        $adj = PoRefundAdjustment::findOrFail($id);
+        $name = preg_replace('/[^A-Za-z0-9_-]/', '_', (string) $adj->code) . '.pdf';
+
+        return response($this->renderPdf($adj), 200, [
+            'Content-Type'        => 'application/pdf',
+            'Content-Disposition' => ($request->boolean('download') ? 'attachment' : 'inline') . '; filename="' . $name . '"',
+        ]);
+    }
+
+    private function renderPdf(PoRefundAdjustment $adj): string
+    {
+        @set_time_limit(180);
+        return \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.vendor-credit', $this->creditViewData($adj))
+            ->setPaper('A4', 'portrait')->setOption('isPhpEnabled', true)->output();
+    }
+
+    /** Everything pdf/vendor-credit.blade.php prints. */
+    private function creditViewData(PoRefundAdjustment $adj): array
+    {
+        $p = $this->zoho->creditPreview($adj);
+        $po = $p['po'];
+        $sales = app(\App\Http\Controllers\Api\SalesPdfController::class);
+        $vendor = $po->vendor_id ? \App\Models\Vendor::withTrashed()->with('primaryAddress')->find($po->vendor_id) : null;
+        $branch = \App\Models\Branch::find($po->branch_id);
+        // Same barcode strip as the PO: the branch website, else its name.
+        $barcodeValue = trim((string) ($branch?->website ?? '')) ?: trim((string) ($branch?->name ?? ''));
+
+        $view = [
+            'companyDetails' => $sales->letterheadFrom($branch, \App\Models\Client::find($po->client_id)),
+            'barcodeData'    => $barcodeValue !== '' ? $sales->barcodeFor($barcodeValue) : null,
+            'barcodeText'    => $barcodeValue,
+            'vendor'         => $sales->vendorBlockFor($vendor),
+            'adr' => (object) [
+                'code'            => $adj->code,
+                'date'            => optional($adj->refund_date)->format('d/m/Y') ?: '',
+                'po_code'         => $po->code,
+                'po_date'         => optional($po->po_date)->format('d/m/Y') ?: '',
+                'refund_type'     => ucwords(str_replace('_', ' ', (string) $adj->refund_type)),
+                'reason'          => (string) $adj->reason,
+                'retained_type'   => (string) $adj->retained_type,
+                'retained_remark' => (string) $adj->retained_remark,
+                'supplier_ref'    => (string) $adj->supplier_ref_no,
+                'currency'        => $po->currency_code ?: 'INR',
+                'document_type'   => ucfirst((string) ($po->document_type ?: 'domestic')),
+                'shipment'        => (string) ($po->shipment_code ?? ''),
+                'opportunity'     => (string) ($po->opportunity_code ?? ''),
+            ],
+            'lines'  => $p['lines'],
+            'totals' => (object) [
+                'sub_total'    => $p['sub_total'],
+                'tax_total'    => $p['tax_total'],
+                'charges'      => $p['charges'],
+                'tds'          => $p['tds'],
+                'retained'     => $p['retained'],
+                'credit_total' => $p['total'],
+                'tax_mode'     => $p['tax_mode'],
+                'po_total'     => $p['po_total'],
+                'net'          => $p['net'],
+                'paid'         => $p['paid'],
+                'refund'       => (float) $adj->refund_amount,
+                'recovered'    => (float) $adj->recovered_amount,
+                'balance'      => (float) $adj->balance_amount,
+            ],
+        ];
+
+        return $view;
+    }
+
     private function detail(PoRefundAdjustment $a): array
     {
         $a->loadMissing(['purchaseOrder' => fn ($q) => $q->withoutGlobalScope('tenant'), 'vendor:id,vendor_code,company_name,legal_name']);
-        $a->loadCount('recoveries');
+        $a->loadCount(['recoveries', 'recoveries as zoho_pending_count' => fn ($q) => $q->whereNull('zoho_refund_id')]);
         $refs = $a->purchaseOrder ? $this->linkRefs(collect([$a->purchaseOrder])) : [];
         return $this->shape($a, $refs) + [
             'recoveries' => $a->recoveries()->get()->map(fn (PoRefundRecovery $r) => [

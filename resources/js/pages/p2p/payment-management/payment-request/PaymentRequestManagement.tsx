@@ -5,6 +5,7 @@ import { useDebouncedValue } from '../../../../hooks/useDebouncedValue';
 import { useToast } from '../../../../contexts/ToastContext';
 import { PoApiError, type PayRequestListMeta } from '../../purchase-management/order/api/po-api';
 import WorklistPager from '../../../../components/ui/WorklistPager';
+import { useFitPageSize } from '../../../../hooks/useFitPageSize';
 import Badge, { type BadgeVariant } from '../../../../components/ui/Badge';
 import { IcoAlert, IcoArrowR, IcoCard, IcoStar, IcoChat, IcoCheck, IcoChevron, IcoCircleX, IcoClock, IcoEye, IcoFile, IcoList, IcoScales, IcoSearch, IcoSend } from '../../icons';
 import DeclineReasonModal from './DeclineReasonModal';
@@ -82,7 +83,7 @@ const COLUMNS: { label: string; width: number; groupEnd?: boolean }[] = [
 
 const TABLE_WIDTH = COLUMNS.reduce((sum, c) => sum + c.width, 0);
 // Eight rows a page, per CS-428.
-const PAGE_SIZES = [8, 16, 24];
+const PAGE_SIZES = [10, 25, 50];
 
 const STATUS_VARIANT: Record<RequestStatus, BadgeVariant> = {
   awaiting: 'gold', approved: 'success', declined: 'danger',
@@ -150,7 +151,9 @@ export default function PaymentRequestManagement() {
   const [tab, setTab] = useState<TabKey>('all');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
+  // Rows per page as in the Segment Master: what fits the table, never fewer than 10.
+  const tableRef = useRef<HTMLDivElement>(null);
+  const [pageSize, setPageSize, refitSize] = useFitPageSize(tableRef);
   const [reasonRow, setReasonRow] = useState<PaymentRequestRow | null>(null);
   const [viewId, setViewId] = useState<number | null>(null);
   const closeView = useCallback(() => setViewId(null), []);
@@ -168,6 +171,8 @@ export default function PaymentRequestManagement() {
       .finally(() => { if (ticket === latest.current) setLoading(false); });
   }, [tab, debouncedSearch, page, pageSize, reload, toast]);
   const refresh = useCallback(() => setReload(n => n + 1), []);
+  // Re-measure once real rows are on screen; a larger fit fetches that many.
+  useEffect(() => { if (rows.length) refitSize(); }, [rows.length, refitSize]);
 
   const counts = meta?.counts ?? { all: 0, awaiting: 0, approved: 0, declined: 0 };
   const total = meta?.total ?? 0;
@@ -194,8 +199,8 @@ export default function PaymentRequestManagement() {
           <div>
             <div className="spi-head-title">Payment Request Management</div>
             <div className="spi-head-sub">
-              Review and action every pending payment request raised against a purchase order or a supplier
-              invoice — approve, part-approve or decline, then track the release.
+              Payment requests raised against a purchase order or a supplier invoice — approve, part-approve or decline the ones sent to you,
+              then track the release.
             </div>
           </div>
         </div>
@@ -274,7 +279,7 @@ export default function PaymentRequestManagement() {
             {search.trim() ? 'No payment requests match your search.' : 'No payment requests in this category.'}
           </div>
         ) : (
-          <div className={`ord-table-scroll${loading ? ' is-refreshing' : ''}`}>
+          <div className={`ord-table-scroll${loading ? ' is-refreshing' : ''}`} ref={tableRef}>
             {/* Columns keep their widths, but the table still fills a wide screen. */}
             <table className="ord-table" style={{ minWidth: TABLE_WIDTH, width: '100%' }}>
               <colgroup>

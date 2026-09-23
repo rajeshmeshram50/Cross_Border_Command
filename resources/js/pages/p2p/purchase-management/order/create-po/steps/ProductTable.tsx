@@ -108,21 +108,32 @@ type Props = {
   standalone?: boolean;
   /** The supplier's segments; products outside them are shown locked. Null = not loaded (no lock). */
   supplierSegments?: string[] | null;
+  /** Products mapped straight to the supplier — orderable even outside its segments. */
+  supplierProducts?: number[] | null;
   /** The summary on later steps shows the same table with plain values. */
   readOnly?: boolean;
 };
 
-export default function ProductTable({ rows, products, taxMode, onChange, onRemove, onProductsChanged, errors = {}, standalone = false, supplierSegments = null, readOnly }: Props) {
+export default function ProductTable({ rows, products, taxMode, onChange, onRemove, onProductsChanged, errors = {}, standalone = false, supplierSegments = null, supplierProducts = null, readOnly }: Props) {
   const options = useMemo(() => products.map(productLabel), [products]);
-  // Products whose segment this supplier doesn't deal in: listed, but locked with the reason.
+  // Every product is listed with its segment; only those whose segment — or the product itself —
+  // is mapped to the supplier can be picked. The rest are locked with the reason.
   const lockedProducts = useMemo(() => {
     const out: Record<string, string> = {};
     for (const p of products) {
-      const why = segmentMismatch(p, supplierSegments);
+      const why = segmentMismatch(p, supplierSegments, supplierProducts);
       if (why) out[productLabel(p)] = why;
     }
     return out;
-  }, [products, supplierSegments]);
+  }, [products, supplierSegments, supplierProducts]);
+  const segmentBadges = useMemo(() => {
+    const out: Record<string, { text: string; tone: 'green' | 'gray' }> = {};
+    for (const p of products) {
+      const direct = !!supplierProducts?.includes(p.id);
+      out[productLabel(p)] = { text: direct ? 'Mapped product' : (p.segment.trim() || 'No segment'), tone: lockedProducts[productLabel(p)] ? 'gray' : 'green' };
+    }
+    return out;
+  }, [products, supplierProducts, lockedProducts]);
   // The product whose detail view is open, from "Read more" on its description.
   const [detailId, setDetailId] = useState<number | null>(null);
   /* The product master's own Add / Edit wizard, opened from the two buttons in
@@ -214,7 +225,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             const desc = po?.description || row.pi?.description || '';
             const rowErr = readOnly ? {} : (errors[row.key] ?? {});
             // Product outside the supplier's segments: the whole line is locked until the segment is mapped.
-            const segLock = !readOnly && po ? segmentMismatch(po, supplierSegments) : null;
+            const segLock = !readOnly && po ? segmentMismatch(po, supplierSegments, supplierProducts) : null;
             const seg = po?.segment.trim() ?? '';
             const locked = () => toast.warning('Segment not mapped', seg
               ? `${seg} is not mapped to this supplier — map it in the Supplier Master first.`
@@ -255,6 +266,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                         options={options}
                         readOnly={!!segLock}
                         locked={lockedProducts}
+                        badges={segmentBadges}
                         onLockedClick={(label) => (label ? toast.warning('Segment mismatch', lockedProducts[label] ?? 'This product is not in a segment this supplier deals in.') : locked())}
                         placeholder="— Select product —"
                         onChange={(label) => {
@@ -346,7 +358,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
                       <span>
                         <b>Segment not mapped — {po?.code || poName || 'this product'} can't be ordered from this supplier.</b>{' '}
-                        {seg ? <>It is in <b>{seg}</b>, which this supplier is not mapped to. First map the supplier to {seg} in the Supplier Master</> : <>It has no segment in the product master. Set it first</>}
+                        {seg ? <>It is in <b>{seg}</b>, which this supplier is not mapped to. First map the supplier to {seg}, or map this product to the supplier (Product Master → Vendors)</> : <>It has no segment in the product master. Set it first</>}
                         {row.pi ? ', then come back to this line.' : ', or remove this line.'}
                       </span>
                     </span>

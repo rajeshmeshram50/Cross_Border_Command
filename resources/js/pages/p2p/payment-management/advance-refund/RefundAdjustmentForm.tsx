@@ -110,7 +110,7 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
   }, [poId, editId]);
 
   // Esc closes the vault first when it is open (it registers its own handler).
-  useEscapeClose(vault ? () => {} : onClose);
+  useEscapeClose(vault || saving ? () => {} : onClose);
 
   const paid = edit?.paid ?? info?.paid ?? 0;
   const recovered = edit?.recovered ?? 0;
@@ -379,6 +379,16 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
       </div>
 
       {vault && vaultRefund && <EvidenceVaultModal refundId={vaultRefund.id} onClose={() => setVault(false)} />}
+      {/* Full-page loader while saving: nothing can be clicked or changed until the server answers. */}
+      {saving && (
+        <div className="arf-saving" role="alert" aria-busy="true" aria-live="assertive">
+          <div className="arf-saving__box">
+            <span className="arf-saving__spin" aria-hidden />
+            <div className="arf-saving__t">{edit ? 'Updating refund adjustment…' : 'Raising refund adjustment…'}</div>
+            <div className="arf-saving__s">{edit ? 'Saving the changes.' : 'Saving the adjustment and cancelling the PO.'} Please wait.</div>
+          </div>
+        </div>
+      )}
     </div>,
     document.body,
   );

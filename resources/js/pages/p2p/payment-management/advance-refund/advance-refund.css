@@ -404,7 +404,7 @@
    on white, keeps the search at 620px on the right, and uses 15px tab icons
    with a softer idle colour. Spacing follows the page's 8px rhythm above. */
 .arf-list .spi-segrow { margin:0; padding:8px; gap:8px; background:#fff; }
-/* The table scrolls sideways (1906px wide). With a transparent scroll box
+/* The table scrolls sideways (2092px wide). With a transparent scroll box
    Chrome will not hand the scroll to the GPU — it would lose the sharp LCD
    text — so it repaints the whole table on the main thread every frame, and
    the sticky header visibly trails the rows. An opaque background lets it
@@ -545,8 +545,8 @@
 
 /* The prototype pins every column and lets the table scroll sideways, rather
    than stretching columns to the viewport. These are its own widths, measured
-   at 1920 (36 … 178, 1906 in total). */
-.arf-table { table-layout:fixed; width:1906px; min-width:1906px; }
+   at 1920 (36 … 178, 2092 in total). */
+.arf-table { table-layout:fixed; width:2092px; min-width:2092px; }
 .arf-table thead th { max-width:none; }
 .arf-table thead th:nth-child(1)  { width:36px;  min-width:36px; }
 .arf-table thead th:nth-child(2)  { width:126px; min-width:126px; }
@@ -561,9 +561,10 @@
 .arf-table thead th:nth-child(11) { width:98px;  min-width:98px; }
 .arf-table thead th:nth-child(12) { width:122px; min-width:122px; }
 .arf-table thead th:nth-child(13) { width:104px; min-width:104px; }
-.arf-table thead th:nth-child(14) { width:258px; min-width:258px; }
-.arf-table thead th:nth-child(15) { width:114px; min-width:114px; }
-.arf-table thead th:nth-child(16) { width:178px; min-width:178px; }
+.arf-table thead th:nth-child(14) { width:150px; min-width:150px; } /* Zoho Sync */
+.arf-table thead th:nth-child(15) { width:258px; min-width:258px; } /* Payment Recovery Status */
+.arf-table thead th:nth-child(16) { width:150px; min-width:150px; } /* PO Cancellation Status */
+.arf-table thead th:nth-child(17) { width:178px; min-width:178px; } /* Action */
 
 /* Money owed back to us (TDS held, amount to be refunded). */
 .arf-amt--due { color:#dc2626; }
@@ -705,8 +706,14 @@
    breakpoint — below it the shared cpay-cols card layout takes over. */
 @container mprcard (min-width: 994px) {
   /* .cpay-cols.arf-rec-cols: beats the shared rule whatever order the CSS loads in. */
-  .cpay-cols.arf-rec-cols { grid-template-columns: 54px minmax(100px,.8fr) minmax(96px,.8fr) minmax(150px,1.1fr) minmax(230px,1.7fr) 190px; }
+  .cpay-cols.arf-rec-cols { grid-template-columns: 54px minmax(96px,.8fr) minmax(94px,.8fr) minmax(130px,1fr) minmax(210px,1.5fr) 250px; }
 }
+/* Each recovery is refunded to Zoho Books on its own, from its row. */
+.arf-recsync { display:inline-flex; align-items:center; gap:5px; height:30px; padding:0 10px; border:0; border-radius:8px; background:linear-gradient(135deg,#0ea5b7,#0891b2); color:#fff; font-size:11.5px; font-weight:700; white-space:nowrap; cursor:pointer; }
+.arf-recsync:hover:not(:disabled) { filter:brightness(1.06); }
+.arf-recsync:disabled { opacity:.55; cursor:default; }
+.arf-recsync svg { width:13px; height:13px; }
+.arf-rec .cpay-acts { gap:6px; flex-wrap:nowrap; }
 .arf-rec .cpay-file__name { min-width:70px; max-width:150px; }
 /* Add / Edit Recovered Payment: prototype width; the button carries a save icon. */
 .apay-card.arf-addrec { width:min(1025px, 95vw); }
@@ -907,3 +914,30 @@
 [data-bs-theme="dark"] .arf-zoho--ok { background: rgba(10,135,84,0.16); border-color: rgba(10,179,156,0.34); color: #7ddfbf; }
 [data-bs-theme="dark"] .arf-zoho--bad { background: rgba(177,64,29,0.16); border-color: rgba(240,101,72,0.34); color: #fda192; }
 [data-bs-theme="dark"] .arf-zbar { background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.35); color: #fcd34d; }
+
+/* Full-page loader while the refund adjustment saves (above the form overlay). */
+.arf-saving { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: center; justify-content: center; background: rgba(15, 23, 42, .45); backdrop-filter: blur(2px); cursor: progress; }
+.arf-saving__box { display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 300px; max-width: 420px; padding: 26px 30px; border-radius: 16px; background: #fff; box-shadow: 0 24px 60px rgba(0, 0, 0, .25); text-align: center; }
+.arf-saving__spin { width: 42px; height: 42px; border-radius: 50%; border: 4px solid #cdeef6; border-top-color: #0891b2; animation: arf-spin .8s linear infinite; }
+.arf-saving__t { font-size: 15px; font-weight: 700; color: #0f3a4a; }
+.arf-saving__s { font-size: 12.5px; color: #5b7582; line-height: 1.45; }
+@keyframes arf-spin { to { transform: rotate(360deg); } }
+[data-bs-theme="dark"] .arf-saving__box { background: #13232c; }
+[data-bs-theme="dark"] .arf-saving__spin { border-color: rgba(34, 211, 238, .2); border-top-color: #22d3ee; }
+[data-bs-theme="dark"] .arf-saving__t { color: #e2f3f8; }
+[data-bs-theme="dark"] .arf-saving__s { color: #94b4c2; }
+
+/* Proof of payment once a file is there: name + View / Download / Reupload / Remove. */
+.arf-proof { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #d4eef5; border-radius: 12px; background: #f6fcfe; }
+.arf-proof__ico { display: inline-flex; width: 18px; height: 18px; color: #0e7490; flex-shrink: 0; }
+.arf-proof__ico svg { width: 18px; height: 18px; }
+.arf-proof__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; color: #0f3a4a; }
+.arf-proof__acts { display: inline-flex; gap: 6px; flex-shrink: 0; }
+.arf-proof__btn { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border: 1px solid #b9e4ef; border-radius: 8px; background: #fff; color: #0e7490; font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: none; }
+.arf-proof__btn:hover { background: #ecfbff; color: #0e7490; }
+.arf-proof__btn--del { border-color: #fecaca; color: #dc2626; }
+.arf-proof__btn--del:hover { background: #fef2f2; color: #dc2626; }
+[data-bs-theme="dark"] .arf-proof { background: rgba(8, 145, 178, .08); border-color: rgba(34, 211, 238, .2); }
+[data-bs-theme="dark"] .arf-proof__name { color: #e2f3f8; }
+[data-bs-theme="dark"] .arf-proof__btn { background: transparent; border-color: rgba(34, 211, 238, .3); color: #67e8f9; }
+[data-bs-theme="dark"] .arf-proof__btn--del { border-color: rgba(248, 113, 113, .35); color: #fca5a5; }

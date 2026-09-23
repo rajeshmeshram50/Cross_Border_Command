@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
+import { useAuth } from '../../../../../contexts/AuthContext';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import type { OrderRow } from '../po-list/Order';
 import {
@@ -54,9 +55,6 @@ const ICON_ALERT = (
 );
 
 const TYPE_OPTIONS = PAYMENT_TYPES.map((t) => ({ value: t, label: t }));
-// Users of the company who can be asked, loaded once per session.
-let approversCache: GstApprover[] | null = null;
-
 const REASON_MAX = 300;
 
 export default function RaisePaymentRequestModal({
@@ -78,14 +76,17 @@ export default function RaisePaymentRequestModal({
   const [pctText, setPctText] = useState('');
   const [amtText, setAmtText] = useState('');
   const [approver, setApprover] = useState('');
-  const [approvers, setApprovers] = useState<GstApprover[]>(approversCache ?? []);
-  const [loadingApprovers, setLoadingApprovers] = useState(!approversCache);
+  // Read on each open: the list follows the active branch (this branch's people + client admins).
+  const { user } = useAuth();
+  const [approvers, setApprovers] = useState<GstApprover[]>([]);
+  const [loadingApprovers, setLoadingApprovers] = useState(true);
   useEffect(() => {
-    if (approversCache) return;
     poApprovalApi.approvers()
-      .then((rows) => { approversCache = rows; setApprovers(rows); })
+      // A payment request cannot go to its own raiser.
+      .then((rows) => setApprovers(rows.filter((a) => a.id !== user?.id)))
       .catch(() => setError('Could not load the approver list — please reopen this form.'))
       .finally(() => setLoadingApprovers(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const approverOptions = approvers.map((a) => ({
     value: String(a.id),
@@ -132,6 +133,7 @@ export default function RaisePaymentRequestModal({
       return;
     }
     if (!amount) { setError('Enter a payment request amount before submitting.'); return; }
+    if (amount < 1) { setError('The payment request amount must be at least ₹1.'); return; }
     if (amount > available) {
       setError(`The requested amount exceeds the available balance of ${money(available)}.`);
       return;

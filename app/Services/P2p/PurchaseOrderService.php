@@ -234,6 +234,15 @@ class PurchaseOrderService
             ->all();
     }
 
+    /** Products mapped straight to a supplier, from either side (Product Master → Vendors, Supplier → Products). */
+    public function vendorProductIds(int $vendorId): array
+    {
+        if (!$vendorId) return [];
+        $a = DB::table('product_vendor_maps')->where('vendor_id', $vendorId)->pluck('product_id');
+        $b = DB::table('vendor_product_mappings')->where('vendor_id', $vendorId)->whereNull('deleted_at')->pluck('product_id');
+        return $a->merge($b)->filter()->map(fn ($v) => (int) $v)->unique()->values()->all();
+    }
+
     /** The tenant's own GST state code: the branch's, or the first two digits of its GSTIN. */
     public function homeStateCode(?int $branchId): ?string
     {

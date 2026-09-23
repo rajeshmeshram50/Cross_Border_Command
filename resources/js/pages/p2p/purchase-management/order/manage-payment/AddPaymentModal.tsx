@@ -99,6 +99,7 @@ export default function AddPaymentModal({
     if (saving) return;
     const amt = amountValue(amount);
     if (!(amt > 0)) { setError('Please enter a valid amount'); return; }
+    if (amt < 1) { setError('The payment amount must be at least ₹1.'); return; }
     if (amt > room + 0.5) {
       setError(`Only ${money(room)} is still approved and unreleased on this request`);
       return;

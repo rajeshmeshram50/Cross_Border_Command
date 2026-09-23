@@ -291,7 +291,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
 
   const saveStage2 = async (): Promise<boolean> => {
     setShown(([a]) => [a, true]);
-    const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International');
+    const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids);
     const bad = Object.keys(v.rows).length;
     if (bad || v.general) {
       if (!bad) { toast.warning('No products ordered', v.general); return false; }
@@ -386,7 +386,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     errors: shown[0] ? { ...serverErrors, ...validateStage1(draft) } : serverErrors,
     ...(() => {
       if (!shown[1]) return { lineErrors: serverLineErrors };
-      const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International');
+      const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids);
       return { lineErrors: { ...serverLineErrors, ...v.rows }, linesGeneral: v.general };
     })(),
   };

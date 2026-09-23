@@ -1,14 +1,14 @@
 // Recover Payment — every refund received against one Advance Receipt Refund
 // Adjustment, with the summary above it. Built on the Order module's payment
 // popups: mpr-hero / Box / Stat (Manage Payment Requests) and the cpay-* payment
-// list (Make PO Payment). Each recovery is a Zoho vendor-credit refund.
+// list (Make PO Payment). Each row syncs its own refund to Zoho Books.
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { Box, Chip, ICON_X, STAT_ICONS, Stat, money, shortDate } from '../../purchase-management/order/manage-payment/payment-shared';
-import { PoApiError, refundApi, type RecoveryBody, type ZohoOutcome } from '../../purchase-management/order/api/po-api';
+import { PoApiError, refundApi, type RecoveryBody } from '../../purchase-management/order/api/po-api';
 import { IcoCheck, IcoDocSm, IcoDownload, IcoEye, IcoPencil, IcoPlus, IcoRefund, IcoTrash } from '../../icons';
 import { FitTip } from '../../purchase-management/order/create-po/form-fields';
 import AddRecoveryModal from './AddRecoveryModal';
@@ -26,13 +26,13 @@ type Props = {
   onClose: () => void;
 };
 
-const SYNC = (
+const errText = (e: unknown) => (e instanceof PoApiError ? e.firstError : 'Please try again.');
+
+const ICON_SYNC = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><polyline points="21 3 21 8 16 8" /><polyline points="3 21 3 16 8 16" />
   </svg>
 );
-
-const errText = (e: unknown) => (e instanceof PoApiError ? e.firstError : 'Please try again.');
 
 export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Props) {
   useScrollLock(true, '.mpr-card');
@@ -53,10 +53,9 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
   }, [refundId, toast, onClose]);
   useEffect(() => { load(); }, [load]);
 
-  const applied = (r: RefundAdjustment, zoho: ZohoOutcome) => {
+  const applied = (r: RefundAdjustment) => {
     setRefund(r);
     onChanged();
-    if (zoho?.status === 'failed') toast.warning('Saved — Zoho Books sync failed', zoho.message ?? 'Use Zoho Sync on the row to try again.');
   };
 
   const save = async (body: RecoveryBody) => {
@@ -66,7 +65,7 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
         ? await refundApi.addRecovery(refund.id, body)
         : await refundApi.updateRecovery(refund.id, editing, body);
       toast.success(editing === -1 ? 'Recovered payment added' : 'Recovered payment updated', `${money(body.amount)} against ${refund.no}`);
-      applied(toRefund(res.refund), res.zoho);
+      applied(toRefund(res.refund));
       setEditing(null);
       return true;
     } catch (e) {
@@ -87,7 +86,7 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
     setBusy(`del-${id}`);
     try {
       const res = await refundApi.deleteRecovery(refund.id, id);
-      applied(toRefund(res.refund), null);
+      applied(toRefund(res.refund));
       toast.success('Recovered payment deleted');
     } catch (e) {
       toast.error('Could not delete the recovered payment', errText(e));
@@ -96,31 +95,16 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
     }
   };
 
+  // Pushes the vendor credit first if it is not in Zoho yet, then this refund.
   const syncRow = async (id: number) => {
-    if (!refund) return;
-    setBusy(`sync-${id}`);
+    if (!refund || busy) return;
+    setBusy(`zoho-${id}`);
     try {
       const res = await refundApi.syncRecovery(refund.id, id);
-      applied(toRefund(res.refund), null);
-      toast.success('Synced to Zoho Books', 'The refund is recorded against the vendor credit.');
+      applied(toRefund(res.refund));
+      toast.success('Refund synced to Zoho Books', res.message ?? undefined);
     } catch (e) {
       toast.error('Zoho Books sync failed', errText(e));
-      load();
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const syncCredit = async () => {
-    if (!refund) return;
-    setBusy('vc');
-    try {
-      const res = await refundApi.zohoSync(refund.id);
-      applied(toRefund(res.refund), null);
-      toast.success('Vendor credit synced to Zoho Books', 'Applied to the PO bill; the rest is the refund owed.');
-    } catch (e) {
-      toast.error('Zoho Books sync failed', errText(e));
-      load();
     } finally {
       setBusy(null);
     }
@@ -175,19 +159,6 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
         </div>
 
         <div className="mpr-bd">
-          {/* The vendor credit must be in Zoho before any refund can be recorded there. */}
-          {refund.zohoStatus !== 'synced' && (
-            <div className="arf-zbar">
-              <span>
-                <b>Vendor credit not in Zoho Books yet.</b>{' '}
-                {refund.zohoError ?? 'It is created against the PO bill; recoveries are refunded against it.'}
-              </span>
-              <button type="button" className="ord-btn ord-btn--zoho arf-sync" disabled={busy === 'vc'} onClick={() => void syncCredit()}>
-                {SYNC}<span>{busy === 'vc' ? 'Syncing…' : 'Sync Vendor Credit'}</span>
-              </button>
-            </div>
-          )}
-
           <Box label="Summary" title="PO Payment & Recovery Summary" sub="How this payment stands today · read-only">
             <div className="mpr-stats">
               <Stat mod="mpr-stat--paid" icon={STAT_ICONS.wallet} label="Total PO Paid Amount" value={money(fig.paid)} sub="Released to the supplier" />
@@ -245,14 +216,15 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
                   </span>
                   <span data-l="Action">
                     <span className="cpay-acts">
-                      {r.zohoStatus === 'synced'
-                        ? <span className="arf-zoho arf-zoho--ok" title="Recorded as a vendor-credit refund in Zoho Books"><IcoCheck /> Zoho Synced</span>
-                        : (
-                          <button type="button" className="ord-btn ord-btn--zoho arf-sync" disabled={busy === `sync-${r.id}`}
-                            title={r.zohoError ?? 'Record this refund in Zoho Books'} onClick={() => void syncRow(r.id)}>
-                            {SYNC}<span>{busy === `sync-${r.id}` ? 'Syncing…' : r.zohoStatus === 'failed' ? 'Retry Zoho' : 'Zoho Sync'}</span>
-                          </button>
-                        )}
+                      {r.zohoStatus === 'synced' ? (
+                        <span className="arf-zoho arf-zoho--ok" title="Refunded against the vendor credit in Zoho Books"><IcoCheck />Synced</span>
+                      ) : (
+                        <button type="button" className="arf-recsync" disabled={busy !== null}
+                          title={r.zohoError ?? 'Refund this amount against the vendor credit in Zoho Books'}
+                          onClick={() => void syncRow(r.id)}>
+                          {ICON_SYNC}<span>{busy === `zoho-${r.id}` ? 'Syncing…' : 'Zoho Sync'}</span>
+                        </button>
+                      )}
                       <button type="button" className="cpay-act cpay-act--edit" title="Edit recovered payment" onClick={() => setEditing(r.id)}><IcoPencil /></button>
                       <button type="button" className="cpay-act cpay-act--del" title="Delete recovered payment" disabled={busy === `del-${r.id}`}
                         onClick={() => void remove(r.id, r.amount, r.zohoStatus === 'synced')}><IcoTrash /></button>

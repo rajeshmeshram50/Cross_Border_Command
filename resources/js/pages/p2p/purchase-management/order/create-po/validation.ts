@@ -49,16 +49,17 @@ export function validateStage1(d: PoDraft): FieldErrors {
 }
 
 /** Per-row checks for Step 02, plus a message when nothing is ordered at all. */
-/** Why a product can't go on this PO's supplier, or null when its segment is mapped. */
-export function segmentMismatch(product: ProductOpt | undefined, supplierSegments: string[] | null | undefined): string | null {
+/** Why a product can't go on this PO's supplier, or null when its segment — or the product itself — is mapped. */
+export function segmentMismatch(product: ProductOpt | undefined, supplierSegments: string[] | null | undefined, mappedProductIds?: number[] | null): string | null {
   if (!product || !supplierSegments) return null;       // supplier not loaded yet — the server still checks
+  if (mappedProductIds?.includes(product.id)) return null;   // mapped to this supplier directly
   const seg = product.segment.trim();
   if (!seg) return 'Segment mismatch — this product has no segment set in the product master.';
   if (supplierSegments.some((x) => x.trim().toLowerCase() === seg.toLowerCase())) return null;
   return `Segment mismatch — ${seg} is not mapped to this supplier. Add ${seg} to the supplier's segments.`;
 }
 
-export function validateLines(lines: PoLineRow[], products: ProductOpt[], supplierSegments?: string[] | null, international = false): { rows: LineErrors; general?: string } {
+export function validateLines(lines: PoLineRow[], products: ProductOpt[], supplierSegments?: string[] | null, international = false, mappedProductIds?: number[] | null): { rows: LineErrors; general?: string } {
   const rows: LineErrors = {};
   const set = (key: string, cell: 'product' | 'qty' | 'rate', msg: string) => { rows[key] = { ...rows[key], [cell]: msg }; };
 
@@ -69,7 +70,7 @@ export function validateLines(lines: PoLineRow[], products: ProductOpt[], suppli
     // A PI line left at 0 is simply not ordered; any ordered line needs a price and GST.
     if (l.qtyPo > 0 && l.rate <= 0) set(l.key, 'rate', 'Enter a rate.');
     if (!international && l.qtyPo > 0 && l.productId && gstOf(l, products) === null) set(l.key, 'product', 'No GST % on the product master — set it there first.');
-    const seg = l.qtyPo > 0 ? segmentMismatch(products.find((p) => p.id === l.productId), supplierSegments) : null;
+    const seg = l.qtyPo > 0 ? segmentMismatch(products.find((p) => p.id === l.productId), supplierSegments, mappedProductIds) : null;
     if (seg) set(l.key, 'product', seg);
   }
   const ordered = lines.some((l) => l.qtyPo > 0);

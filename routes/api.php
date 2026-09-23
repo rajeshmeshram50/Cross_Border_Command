@@ -446,6 +446,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         // POST, not PUT: the edit may carry a new proof file (multipart).
         Route::post  ('/{po}/payment-requests/{req}/payments/{payment}', [$pay, 'updatePayment'])->whereNumber('po')->whereNumber('req')->whereNumber('payment');
         Route::delete('/{po}/payment-requests/{req}/payments/{payment}', [$pay, 'destroyPayment'])->whereNumber('po')->whereNumber('req')->whereNumber('payment');
+        Route::post  ('/{po}/payment-requests/{req}/payments/{payment}/zoho-sync', [$pay, 'zohoSyncPayment'])->whereNumber('po')->whereNumber('req')->whereNumber('payment');
 
         // Senior approval when the supplier's GST return is overdue (raised here, decided from the Inbox)
         $gap = \App\Http\Controllers\Api\P2p\PoGstApprovalController::class;
@@ -468,6 +469,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         // POST, not PUT: the edit may carry a new attachment (multipart).
         Route::post  ('/refund-adjustments/{id}',                          [$adr, 'update'])->whereNumber('id');
         Route::post  ('/refund-adjustments/{id}/zoho-sync',                [$adr, 'zohoSync'])->whereNumber('id');
+        // The Advance Receipt Refund Adjustment document, rendered from our own data.
+        Route::get   ('/refund-adjustments/{id}/pdf',                      [$adr, 'pdf'])->whereNumber('id');
         Route::post  ('/refund-adjustments/{id}/recoveries',               [$adr, 'storeRecovery'])->whereNumber('id');
         Route::post  ('/refund-adjustments/{id}/recoveries/{rec}',         [$adr, 'updateRecovery'])->whereNumber('id')->whereNumber('rec');
         Route::delete('/refund-adjustments/{id}/recoveries/{rec}',         [$adr, 'destroyRecovery'])->whereNumber('id')->whereNumber('rec');

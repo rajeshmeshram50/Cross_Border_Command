@@ -8,6 +8,7 @@ import { FitTip } from '../create-po/form-fields';
 import { PoApiError, poApi, type PoListRow } from '../api/po-api';
 import { useDebouncedValue } from '../../../../../hooks/useDebouncedValue';
 import { useServerList } from '../../../../../hooks/useServerList';
+import { useFitPageSize } from '../../../../../hooks/useFitPageSize';
 import { useToast } from '../../../../../contexts/ToastContext';
 const RecoverPaymentModal = lazy(() => import('../../../payment-management/advance-refund/RecoverPaymentModal'));
 // The PO form is a screen of its own: loaded only when one is being created,
@@ -401,8 +402,9 @@ export function toOrderRow(r: PoListRow): OrderRow {
     balance: Number(r.balance_amount) || 0,
     breakdown: { base: Number(r.taxable_total) || 0, gst: Number(r.gst_total) || 0, extra: Number(r.charges_total) || 0 },
     invoices: [],
-    // Synced once the PO + bill are in Zoho and every payment is posted to the bill.
-    zohoSynced: r.zoho_status === 'synced' && !r.zoho_unposted_payments,
+    // Synced once the PO + bill are in Zoho, every payment is posted to the bill and,
+    // on a cancelled PO, the vendor credit and its refunds are there too.
+    zohoSynced: r.zoho_status === 'synced' && !r.zoho_unposted_payments && (!r.refund || r.refund.zoho_synced),
     zohoError: r.zoho_status === 'failed' ? (r.zoho_error ?? undefined)
       : r.zoho_status === 'synced' && r.zoho_unposted_payments ? `${r.zoho_unposted_payments} payment(s) not posted to bill ${r.zoho_bill_number ?? ''}` : undefined,
     zohoUnposted: Number(r.zoho_unposted_payments) || 0,
@@ -548,7 +550,9 @@ const ICON_VAULT = (
 );
 
 // Cancelled POs are read-only: their action buttons render disabled.
-function ZohoCell({ synced, cancelled = false, onSync, error }: { synced: boolean; cancelled?: boolean; onSync?: () => void; error?: string }) {
+function ZohoCell({ synced, cancelled = false, unpaid = false, onSync, error }: {
+  synced: boolean; cancelled?: boolean; unpaid?: boolean; onSync?: () => void; error?: string;
+}) {
   if (synced) {
     return (
       <div className="ord-statcell">
@@ -559,7 +563,16 @@ function ZohoCell({ synced, cancelled = false, onSync, error }: { synced: boolea
   return (
     <div className="ord-statcell">
       <span className="ord-status ord-status--bad" title={error}><span className="ord-status__dot" />Not Sync</span>
-      <button type="button" className="ord-btn ord-btn--zoho" disabled={cancelled} onClick={onSync}>{ICON_SYNC}<span>Zoho Sync</span></button>
+      {/* The bill carries the payments, so the first payment has to exist before anything goes across.
+          A cancelled PO still syncs: the same press also sends its vendor credit and refunds. */}
+      <button type="button" className="ord-btn ord-btn--zoho" disabled={unpaid} onClick={onSync}
+        title={unpaid
+          ? 'Record the first payment on this PO before syncing it to Zoho Books'
+          : error || (cancelled
+            ? 'Send this PO, its bill, payments, vendor credit and refunds to Zoho Books'
+            : 'Send this PO, its bill and payments to Zoho Books')}>
+        {ICON_SYNC}<span>Zoho Sync</span>
+      </button>
     </div>
   );
 }
@@ -942,7 +955,7 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
 
             {isFirst && (
               <>
-                <PoCell span={span}><ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} error={row.zohoError} onSync={onZoho && (() => onZoho(row))} /></PoCell>
+                <PoCell span={span}><ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} unpaid={row.paid <= 0} error={row.zohoError} onSync={onZoho && (() => onZoho(row))} /></PoCell>
                 <PoCell span={span}>
                   <InspectionCell required={row.physicalInspection} done={inspected} cancelled={row.cancelled} onOpen={() => onInspect(row)} />
                 </PoCell>
@@ -960,7 +973,7 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
   );
 }
 
-const PAGE_SIZE_OPTIONS = [5, 10, 25, 50];
+const PAGE_SIZE_OPTIONS = [10, 25, 50];
 const DEFAULT_PAGE_SIZE = 10;
 
 const PHONE_QUERY = '(max-width: 768px)';
@@ -1071,7 +1084,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, 
       <div className="ord-card__status">
         <div className="ord-card__block">
           <span className="ord-card__label">Zohobook Status</span>
-          <ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} error={row.zohoError} onSync={() => onZoho(row)} />
+          <ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} unpaid={row.paid <= 0} error={row.zohoError} onSync={() => onZoho(row)} />
         </div>
         <div className="ord-card__block">
           <span className="ord-card__label">Physical Inspection</span>
@@ -1114,8 +1127,10 @@ export default function Order() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search.trim(), 400);
   const isPhone = useIsPhone();
-  // Unset = the server's default page size (10).
-  const [pageSize, setPageSize] = useState<number | undefined>(undefined);
+  // Rows per page as in the Segment Master: what fits the table, never fewer than 10 (phone cards: server default).
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [fitSize, setFitSize, refitSize] = useFitPageSize(scrollRef, { enabled: !isPhone });
+  const pageSize = isPhone ? undefined : fitSize;
 
   // Tabs, search and paging all run on the server; phone cards load the next page on scroll.
   const list = useServerList(
@@ -1196,6 +1211,8 @@ export default function Order() {
 
 
   const rows = list.rows;
+  // Re-measure once real rows are on screen; a larger fit fetches that many.
+  useEffect(() => { if (rows.length) refitSize(); }, [rows.length, refitSize]);
   const total = list.meta?.total ?? 0;
   const perPage = list.meta?.per_page ?? DEFAULT_PAGE_SIZE;
   const tabCounts: Record<TabKey, number> = { all: 0, with: 0, without: 0, cancelinit: 0, cancelclosed: 0, ...(list.meta?.counts ?? {}) };
@@ -1222,7 +1239,7 @@ export default function Order() {
     scrollListToTop();
   };
   const changePageSize = (size: number) => {
-    setPageSize(size);
+    setFitSize(size);
     scrollListToTop();
   };
 
@@ -1236,7 +1253,6 @@ export default function Order() {
     return () => io.disconnect();
   });
 
-  const scrollRef = useRef<HTMLDivElement>(null);
   const scrollTimer = useRef<number | undefined>(undefined);
   /* The table is swapped for the shimmer while it reloads, which would drop
      the reader back to the first column — and Edit PO lives in the last ones.
