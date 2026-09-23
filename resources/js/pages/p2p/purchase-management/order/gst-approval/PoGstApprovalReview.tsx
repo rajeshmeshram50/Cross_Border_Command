@@ -12,7 +12,6 @@ import { PoApiError, poApprovalApi, type GstApprovalRequest, type GstApprovalRev
 import { PO_TYPE_LABEL, fmtDate, fmtDateTime, fmtMoney, initialsOf, monthsAgoText } from './approval-format';
 import { formatProductCode } from '../../../../../utils/formatProductCode';
 import './gst-approval.css';
-import { formatProductCode } from '../../../../../utils/formatProductCode';
 
 const REASON_MAX = 1000;
 
