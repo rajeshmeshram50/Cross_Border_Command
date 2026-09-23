@@ -1321,6 +1321,11 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .clm-table tbody tr:hover { background: rgba(8,145,178,.16); }
 [data-bs-theme="dark"] .clm-table tbody td { color: #e2e8f0; }
 [data-bs-theme="dark"] .clm-td-name { color: #f1f5f9; }
+/* The cell inherits the light text, but these two carry their own slate-600
+   from light mode — on the dark table that reads as almost nothing, which is
+   how the Trade Documents "Purpose" column went missing. Muted, not invisible. */
+[data-bs-theme="dark"] .clm-td-desc,
+[data-bs-theme="dark"] .clm-td-trunc { color: #cbd5e1; }
 
 /* DCP — Segment Rule modal document tables (KYC / Due Diligence /
  * Trade Licenses / Trade Documents / Quality & Compliance). The doc

@@ -973,8 +973,12 @@ function Stage1(p: {
       setDocxPages(0);
       await waitForPagination(ctcEd.editor, setDocxPages);
       toast.success('Document imported', 'Your file was converted into the editor.');
-    } catch {
-      toast.error('Import failed', 'Could not convert this document. Please try another file.');
+    } catch (e: any) {
+      /* Say what the server said. It refuses an upload for reasons it can
+         explain — too long, an old binary .doc, no readable text — and
+         replacing all of them with "try another file" left the user with
+         nothing to act on (CTC upload: "within the limit but import failed"). */
+      toast.error('Import failed', e?.response?.data?.message ?? 'Could not convert this document. Please try another file.');
     } finally {
       setDocxBusy(false);
     }
@@ -1708,6 +1712,17 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
   const cp1 = cps[0] ?? null;
   const cp2 = cps[1] ?? null;
   const summary: [string, string][] = [['Agreement', agTitle || 'Agreement Draft'], ['Type', agType || '—'], ['Eff. Date', effDate || '—'], ['End Date', endDate || '—'], ['Renewable', 'No'], ['Term', '30 days']];
+  /* Dark mode paints the preview page itself dark, so a header or footer left
+     on its default paper white sat inside it as a bright slab — the band the
+     document was drafted with, glaring out of a themed page. A colour someone
+     actually chose in Stage 1 is kept as it is; only the untouched default
+     follows the theme, the same way the body text does. */
+  const PAPER_BG = ['', '#fff', '#ffffff', 'white', 'transparent'];
+  // The two defaults that ship with the header / footer panel, plus plain black.
+  const PAPER_FG = ['', '#111827', '#6b7280', '#000', '#000000', 'black'];
+  const asIs = (v: unknown) => String(v ?? '').trim().toLowerCase();
+  const bandBg = (bg?: string | null) => (t.dark && PAPER_BG.includes(asIs(bg)) ? 'transparent' : (bg ?? undefined));
+  const bandFg = (fg?: string | null) => (t.dark && PAPER_FG.includes(asIs(fg)) ? t.textSub : (fg ?? undefined));
 
   return (
     <div className="ctc-workspace" style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
@@ -1766,7 +1781,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                 const cp = (p?: { x?: number; y?: number }) => ({ x: Math.max(0, Math.min(100, p?.x ?? 50)), y: Math.max(0, Math.min(100, p?.y ?? 50)) });
                 const lp = cp(header.logo_pos), tp = cp(header.title_pos);
                 return (
-                  <div style={{ position: 'relative', minHeight: Math.max(64, logoH + 24), marginBottom: 14, borderBottom: '2px solid rgba(124,58,237,.18)', background: header.background, color: header.text_color, borderRadius: 6, overflow: 'hidden' }}>
+                  <div style={{ position: 'relative', minHeight: Math.max(64, logoH + 24), marginBottom: 14, borderBottom: '2px solid rgba(124,58,237,.18)', background: bandBg(header.background), color: bandFg(header.text_color), borderRadius: 6, overflow: 'hidden' }}>
                     {header.show_logo && header.logo_url && <img src={header.logo_url} alt="logo" style={{ position: 'absolute', left: `${lp.x}%`, top: `${lp.y}%`, transform: 'translate(-50%,-50%)', height: logoH, maxWidth: Math.max(180, logoH * 3), objectFit: 'contain' }} />}
                     {header.show_title && (
                       <div style={{ position: 'absolute', left: `${tp.x}%`, top: `${tp.y}%`, transform: 'translate(-50%,-50%)', textAlign: header.align, maxWidth: '60%' }}>
@@ -1782,7 +1797,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                 ? <div className="ctc-editor" style={{ fontSize: 10, color: t.textSub, lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: previewDraft }} />
                 : <div style={{ fontSize: 10, color: t.textMuted, lineHeight: 1.7, textAlign: 'center', padding: '40px 10px', fontStyle: 'italic' }}>No agreement content drafted yet.</div>}
               {/* Configured document footer (text + pagination) from Stage 1 */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center', gap: 6, marginTop: 26, paddingTop: 10, borderTop: '1.5px solid rgba(124,58,237,.18)', background: footer.background, color: footer.text_color, fontSize: 9, fontWeight: 500 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center', gap: 6, marginTop: 26, paddingTop: 10, borderTop: '1.5px solid rgba(124,58,237,.18)', background: bandBg(footer.background), color: bandFg(footer.text_color), fontSize: 9, fontWeight: 500 }}>
                 {(['left', 'center', 'right'] as const).map(cell => {
                   const pn = footer.page_number_format === 'N' ? '1' : footer.page_number_format === 'Page N' ? 'Page 1' : footer.page_number_format === 'N / M' ? '1 / 1' : 'Page 1 of 1';
                   return (

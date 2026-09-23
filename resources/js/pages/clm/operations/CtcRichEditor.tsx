@@ -2083,6 +2083,52 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
     if (tr.docChanged) view.dispatch(tr);
     editor.commands.focus();
   };
+
+  /* prosemirror-tables builds an inserted row or column out of bare cells: no
+     border, no padding, and on the header row none of the header's own
+     background — so a new column arrived as a dark gap in a white header
+     (QA #16). The table already says what a cell of each kind looks like, so
+     an unstyled cell copies its nearest relative: another cell of the same
+     kind in its row, else the same column, else anywhere in the table. */
+  const dressNewCells = () => {
+    const { state, view } = editor;
+    const $from = state.selection.$from;
+    let table: { node: any; pos: number } | null = null;
+    for (let d = $from.depth; d > 0; d--) {
+      const n = $from.node(d);
+      if (n.type.name === 'table') { table = { node: n, pos: $from.before(d) }; break; }
+    }
+    if (!table) return;
+
+    const byKind: Record<string, string> = {};
+    const byColumn: Record<string, string> = {};
+    table.node.forEach((row: any) => {
+      row.forEach((cell: any, _off: number, i: number) => {
+        const style = cell.attrs.style;
+        if (!style) return;
+        if (!byKind[cell.type.name]) byKind[cell.type.name] = style;
+        const col = cell.type.name + ':' + i;
+        if (!byColumn[col]) byColumn[col] = style;
+      });
+    });
+
+    const tr = state.tr;
+    table.node.forEach((row: any, rowOff: number) => {
+      const rowPos = table!.pos + 1 + rowOff;
+      const inRow: Record<string, string> = {};
+      row.forEach((cell: any) => {
+        if (cell.attrs.style && !inRow[cell.type.name]) inRow[cell.type.name] = cell.attrs.style;
+      });
+      row.forEach((cell: any, cellOff: number, i: number) => {
+        if (cell.attrs.style) return;
+        const kind = cell.type.name;
+        const model = inRow[kind] ?? byColumn[kind + ':' + i] ?? byKind[kind];
+        if (!model) return;
+        tr.setNodeMarkup(rowPos + 1 + cellOff, undefined, { ...cell.attrs, style: model });
+      });
+    });
+    if (tr.docChanged) view.dispatch(tr);
+  };
   /* Heading first — getAttributes('paragraph') is empty while the caret sits in
      a heading, and the control would read as unset. */
   const blockAttrs = Object.keys(editor.getAttributes('heading')).length
@@ -2393,10 +2439,12 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
 
               <div className="ctcte-spcsep" />
               {([
-                ['Insert Row Above',    () => editor.chain().focus().addRowBefore().run()],
-                ['Insert Row Below',    () => editor.chain().focus().addRowAfter().run()],
-                ['Insert Column Left',  () => editor.chain().focus().addColumnBefore().run()],
-                ['Insert Column Right', () => editor.chain().focus().addColumnAfter().run()],
+                /* dressNewCells after each one: the command itself adds bare
+                   cells, and the table's own styling is put on them next. */
+                ['Insert Row Above',    () => { editor.chain().focus().addRowBefore().run(); dressNewCells(); }],
+                ['Insert Row Below',    () => { editor.chain().focus().addRowAfter().run(); dressNewCells(); }],
+                ['Insert Column Left',  () => { editor.chain().focus().addColumnBefore().run(); dressNewCells(); }],
+                ['Insert Column Right', () => { editor.chain().focus().addColumnAfter().run(); dressNewCells(); }],
               ] as [string, () => void][]).map(([label, run]) => (
                 <button
                   key={label}
@@ -2977,6 +3025,11 @@ export const CTC_EDITOR_CSS = `
 
 [data-bs-theme="dark"] .ctcte-content.ctcte-pageview .ProseMirror { background: #1b2028; color: #e5e7eb; }
 [data-bs-theme="dark"] .ctcte-pagegap { background: #12151c; border-color: #2a3140; }
+/* The desk the sheets sit on. Dark mode already darkened the sheet and the gap
+   between pages, but this surface kept its light grey — in the full-page
+   editor that is most of the screen, which is what "everything except the
+   draft is white" was describing. */
+[data-bs-theme="dark"] .ctcte-content.ctcte-pageview { background: #12151c; }
 
 /* ── "PAGE N ENDS" boundary markers HIDDEN in the editor ───────────────────
    The Live PDF Preview now shows the real page breaks, so the editor's own

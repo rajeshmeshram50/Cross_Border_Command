@@ -1021,11 +1021,19 @@ class ClmTradeDocumentController extends Controller
         try {
             $abs  = $request->file('docx')->getRealPath();
             $html = $this->docxToHtml($abs);
-            // Same ceiling as the HR template upload — both feed the same
-            // editors and the same PDF renderer, so the limit belongs to the
-            // conversion, not to whichever screen happened to call it.
-            if ($err = $this->docxPageLimitError($abs, $html)) {
-                return response()->json(['status' => false, 'message' => $err], 422);
+            /* Measured in characters, like everything else these editors do.
+               This used to refuse anything over 70 pages, which works out at
+               roughly 210,000 characters — so a document the CTC / agreement /
+               trade-document editor would happily hold (their counter and the
+               row's own save both allow a million) could not be uploaded into
+               it, and a file exported from the Trade Document library came
+               straight back as "Import failed". The renderers give out at the
+               million, which is where the refusal belongs. */
+            if (($len = mb_strlen((string) $html)) > self::RENDER_MAX_CHARS) {
+                return response()->json(['status' => false, 'message' => 'This document converts to '
+                    . number_format($len) . ' characters. The limit is ' . number_format(self::RENDER_MAX_CHARS)
+                    . ' characters (~1 MB) — past it the PDF and Word exports stop working. '
+                    . 'Please shorten it, or split it into smaller documents.'], 422);
             }
         } catch (\Throwable $e) {
             return response()->json(['status' => false, 'message' => 'Could not read this document.'], 422);
