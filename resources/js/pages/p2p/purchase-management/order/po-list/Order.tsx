@@ -566,7 +566,8 @@ function ZohoCell({ synced, cancelled = false, unpaid = false, onSync, error }: 
       <span className="ord-status ord-status--bad" title={error}><span className="ord-status__dot" />Not Sync</span>
       {/* The bill carries the payments, so the first payment has to exist before anything goes across.
           A cancelled PO still syncs: the same press also sends its vendor credit and refunds. */}
-      <button type="button" className="ord-btn ord-btn--zoho" disabled={unpaid} onClick={onSync}
+      {/* Clickable even with no payment: the press says why it can't go across yet. */}
+      <button type="button" className="ord-btn ord-btn--zoho" onClick={onSync}
         title={unpaid
           ? 'Record the first payment on this PO before syncing it to Zoho Books'
           : error || (cancelled
@@ -1171,6 +1172,11 @@ export default function Order() {
   const onZoho = async (row: OrderRow) => {
     if (!row.id || syncingId) return;
     if (row.draft) { toast.info('Submit the PO first', `${row.po} is still a draft — submit it before syncing to Zoho Books.`); return; }
+    // The Zoho bill is what payments are posted against, so one has to exist first.
+    if (row.paid <= 0) {
+      toast.warning('No payment found against this PO', `Nothing has been released on ${row.po} yet — record a payment, then sync.`);
+      return;
+    }
     setSyncingId(row.id);
     try {
       const r = await poApi.zohoSync(row.id);
