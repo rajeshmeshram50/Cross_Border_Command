@@ -63,10 +63,8 @@ class PurchaseOrderDocumentController extends Controller
     /** Documents of the PO with their signature requests, statuses synced first. */
     private function listShaped(PurchaseOrder $order): array
     {
-        // Trade documents / agreements are signed through the CLM flow, which
-        // raises its request against the library id — claim those first, then
-        // bring every linked request's status up to date.
-        $this->docs->adoptClmSignatures($order);
+        // Each row already knows its signature request (recorded when this PO
+        // sent it, see markSent) — this only brings their statuses up to date.
         $this->docs->syncSignatures($order->documents()->get());
         $docs = $order->documents()->orderBy('id')->get();
         $sigs = ClmSignatureRequest::whereIn('id', $docs->pluck('signature_request_id')->filter()->unique())->get()->keyBy('id');
@@ -133,6 +131,45 @@ class PurchaseOrderDocumentController extends Controller
                     'needed_by'  => $user?->id,
                     'needed_at'  => now(),
                     'updated_by' => $user?->id,
+                ]);
+            }
+        });
+
+        return $this->ok($this->listShaped($order->fresh()));
+    }
+
+    /**
+     * POST /p2p/orders/{po}/documents/mark-sent — this PO just sent these rows
+     * for signature through the CLM flow, under this signature request.
+     *
+     * The link is recorded here, at the moment of sending, because nothing in
+     * the request itself points back at a purchase order: matching one up
+     * afterwards by supplier + library id claimed requests raised from other
+     * screens, and a document this PO never sent showed as Signed.
+     */
+    public function markSent(Request $request, int $po): JsonResponse
+    {
+        [$order] = $this->find($po);
+        if ($order->isCancelled()) return $this->fail('This PO is cancelled.');
+
+        $data = $request->validate([
+            'document_ids'          => 'required|array|min:1',
+            'document_ids.*'        => 'integer',
+            'signature_request_id'  => 'required|integer|exists:clm_signature_requests,id',
+        ]);
+
+        $docs = $order->documents()->whereIn('id', $data['document_ids'])->get();
+        if ($docs->count() !== count(array_unique($data['document_ids']))) {
+            return $this->fail('Some documents were not found on this PO.');
+        }
+
+        $this->inTransaction('record the signature request', function () use ($docs, $data, $request) {
+            foreach ($docs as $doc) {
+                $doc->update([
+                    'signature_request_id' => $data['signature_request_id'],
+                    'status'               => PurchaseOrderDocument::STATUS_SENT,
+                    'sent_at'              => now(),
+                    'updated_by'           => $request->user()?->id,
                 ]);
             }
         });

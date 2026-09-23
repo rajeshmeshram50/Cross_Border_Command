@@ -11,6 +11,7 @@ import { useConfirm } from '../../../../../contexts/ConfirmContext';
 import { PoApiError, poApprovalApi, type GstApprovalRequest, type GstApprovalReview } from '../api/po-api';
 import { PO_TYPE_LABEL, fmtDate, fmtDateTime, fmtMoney, initialsOf, monthsAgoText } from './approval-format';
 import './gst-approval.css';
+import { formatProductCode } from '../../../../../utils/formatProductCode';
 
 const REASON_MAX = 1000;
 
@@ -197,7 +198,7 @@ export default function PoGstApprovalReview() {
                       <td>{l.line_no}</td>
                       <td className="pga-l">
                         <div className="pga-prod">{l.product_name ?? '—'}</div>
-                        <div className="pga-prod-code">{[l.product_code, l.hsn_code && `HSN ${l.hsn_code}`].filter(Boolean).join(' · ')}</div>
+                        <div className="pga-prod-code">{[formatProductCode(l.product_code), l.hsn_code && `HSN ${l.hsn_code}`].filter(Boolean).join(' · ')}</div>
                       </td>
                       <td>{l.quantity.toLocaleString('en-IN')}{l.uom ? ` ${l.uom}` : ''}</td>
                       <td>{fmtMoney(l.rate, cur)}</td>

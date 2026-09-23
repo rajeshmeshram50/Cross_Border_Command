@@ -120,7 +120,10 @@ interface Props {
   open: boolean;
   customer: SendForSignatureCustomer | null;
   onClose: () => void;
-  onSent?: (sentDocIds: number[]) => void;
+  /** Second argument: the signature request just created, so a caller that
+   *  keeps its own rows can record WHICH request signed them instead of
+   *  matching one back later. Callers that ignore it are unaffected. */
+  onSent?: (sentDocIds: number[], signatureRequestId?: number | null) => void;
   /** Pre-checked Trade Document IDs when launched from the party's
    * Stage 3 Trade Documents tab — the user can still toggle them off
    * or add more before sending. */
@@ -1060,7 +1063,7 @@ export default function SalesCustomerSendForSignatureModal({
           ...(Object.keys(contentOverrides).length ? { content_overrides:        contentOverrides } : {}),
         });
         toast.success('Sent for signature', r.data?.message ?? `${selectedIds.length} agreement(s) sent.`);
-        onSent?.(selectedIds.slice());
+        onSent?.(selectedIds.slice(), r.data?.data?.signature_request_id ?? null);
         onClose();
       } catch (e: any) {
         const msg = e?.response?.data?.message
@@ -1197,7 +1200,7 @@ export default function SalesCustomerSendForSignatureModal({
       const r = await api.post('/clm/signature-requests', payload);
       const data = r.data?.data;
       toast.success('Sent for signature', `${data?.document_count ?? selectedIds.length} document(s) emailed to the signer.`);
-      onSent?.(selectedIds.slice());
+      onSent?.(selectedIds.slice(), data?.signature_request_id ?? null);
       onClose();
     } catch (e: any) {
       const msg = e?.response?.data?.message

@@ -298,12 +298,20 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
             preselectedDocIds={signing.trade}
             mixedAgreements={signing.agreements}
             onClose={() => setSigning(null)}
-            onSent={() => {
+            onSent={(_ids, signatureRequestId) => {
               const sent = signing.rows.map((d) => d.id);
               setSigning(null);
               setSelected((all) => all.filter((id) => !sent.includes(id)));
-              reload();
-              ctx.reloadDetail(); // out for signature: Steps 01–03 go view-only now
+              /* Record which request went out for THESE rows. The CLM request
+                 knows nothing about a purchase order, so without this the only
+                 way back is matching by supplier + library id — which claimed
+                 requests other screens had raised. */
+              const done = () => { reload(); ctx.reloadDetail(); };
+              if (signatureRequestId) {
+                poDocumentApi.markSent(poId as number, sent, signatureRequestId).then(setDocs).catch(fail).finally(done);
+              } else {
+                done();
+              }
             }}
           />
         </Suspense>

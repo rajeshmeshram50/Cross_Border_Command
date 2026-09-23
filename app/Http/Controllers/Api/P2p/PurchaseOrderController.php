@@ -745,17 +745,14 @@ class PurchaseOrderController extends Controller
 
     /**
      * Brings the PO's documents in step with their signature requests before
-     * the edit lock is read: claims CLM requests raised against the library
-     * (so a trade document / agreement sent from Step 04 counts as sent) and
-     * reads Zoho's latest state (a declined / recalled request frees the PO).
+     * the edit lock is read, so a declined / recalled request frees the PO.
+     * Each row already knows its request — Stage 04 records it when it sends.
      * Best effort — a Zoho outage must not stop the PO from opening.
      */
     private function refreshSigning(PurchaseOrder $po): void
     {
         try {
-            $docs = app(\App\Services\P2p\PoDocumentService::class);
-            $docs->adoptClmSignatures($po);
-            $docs->syncSignatures($po->documents()->get());
+            app(\App\Services\P2p\PoDocumentService::class)->syncSignatures($po->documents()->get());
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('PO signing refresh failed', ['po' => $po->id, 'err' => $e->getMessage()]);
         }

@@ -314,6 +314,12 @@ export type PiHolder = {
 const multipart = { headers: { 'Content-Type': 'multipart/form-data' } };
 
 export const poDocumentApi = {
+  /** Records the signature request this PO just raised for these rows, so the
+   *  link is stored rather than guessed back from the supplier + library id. */
+  markSent: (poId: number, documentIds: number[], signatureRequestId: number) =>
+    call('PO documents sent', () => api.post(`/p2p/orders/${poId}/documents/mark-sent`,
+      { document_ids: documentIds, signature_request_id: signatureRequestId }), dataOf<PoDocument[]>),
+
   /** Mark documents Necessary / Not necessary on this PO — one call for the set. */
   setNeeds: (poId: number, items: { id: number; needed: boolean }[]) =>
     call('PO document decisions', () => api.post(`/p2p/orders/${poId}/documents/needs`, { items }), dataOf<PoDocument[]>),

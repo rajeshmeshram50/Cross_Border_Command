@@ -10,6 +10,7 @@ import type { TaxMode } from '../../api/po-api';
 import { segmentMismatch, type LineErrors } from '../validation';
 import { IcoPencil, IcoPlus, IcoTrash } from '../../shared/icons';
 import { useToast } from '../../../../../../contexts/ToastContext';
+import { formatProductCode } from '../../../../../../utils/formatProductCode';
 // The Product Management detail view, opened by "Read more" on a description.
 const InspectionProductView = lazy(() => import('../../physical-inspection/InspectionProductView'));
 // The product master's Add / Edit wizard, opened by the cell's two buttons.
@@ -269,7 +270,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                         <>
                           <div className="cpd-prod__nm cpd-prod__nm--clamp" title={row.pi.product_name ?? undefined}>{row.pi.product_name}</div>
                           <div className="cpd-prod__meta">
-                            {row.pi.product_code && <span className="cpd-code">{row.pi.product_code}</span>}
+                            {row.pi.product_code && <span className="cpd-code">{formatProductCode(row.pi.product_code)}</span>}
                             <span className="cpd-kv">HSN <b>{row.pi.hsn_code || '—'}</b></span>
                           </div>
                         </>

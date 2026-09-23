@@ -2387,3 +2387,74 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 [data-bs-theme="dark"] .cpd-held--empty { background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.3); color: #fcd34d; }
 [data-bs-theme="dark"] .cpd-held__st--wait { background: rgba(245,158,11,0.2); color: #fcd34d; }
 [data-bs-theme="dark"] .cpd-held__st--ok { background: rgba(14,165,233,0.2); color: #7dd3fc; }
+
+/* ── Step 03 stop: the supplier's standard documents are not complete ──────
+   Wide and short: the three document names sit in a row, so the dialog is a
+   band across the screen rather than a column. Teal like every other popup in
+   this module — the amber header shouted over the page it interrupts. */
+.cdocn-modal {
+  position: fixed; inset: 0; z-index: 10500;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: rgba(8, 40, 60, .45); backdrop-filter: blur(2px);
+  font-family: 'DM Sans', system-ui, sans-serif; letter-spacing: 0;
+  animation: cgstIn .16s ease;
+}
+.cdocn-card {
+  width: min(640px, 100%); max-height: 88vh; overflow: auto;
+  border-radius: 16px; background: #fff; box-shadow: 0 24px 60px rgba(8, 40, 60, .32);
+}
+.cdocn-head {
+  display: flex; align-items: center; gap: 12px; padding: 13px 16px; color: #fff;
+  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
+}
+.cdocn-ico {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 32px; height: 32px; border-radius: 10px;
+  background: rgba(255, 255, 255, .18); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .28);
+}
+.cdocn-headtxt { min-width: 0; }
+.cdocn-title { font-size: 14px; font-weight: 800; letter-spacing: -.2px; }
+.cdocn-sub { margin-top: 1px; font-size: 11px; font-weight: 600; color: rgba(255, 255, 255, .84); }
+.cdocn-x {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 28px; height: 28px; margin-left: auto; padding: 0;
+  border: 1.5px solid rgba(255, 255, 255, .28); border-radius: 9px;
+  background: rgba(255, 255, 255, .14); color: #fff; cursor: pointer; transition: background .15s;
+}
+.cdocn-x:hover { background: rgba(255, 255, 255, .26); }
+.cdocn-x svg { width: 13px; height: 13px; }
+
+.cdocn-body { padding: 14px 16px 0; }
+.cdocn-lead { font-size: 14px; font-weight: 700; color: #0f172a; }
+.cdocn-lead b { font-weight: 800; color: #0e7490; }
+/* The note explains, it does not decide — kept a step below the count. */
+.cdocn-p { margin: 5px 0 0; font-size: 11px; line-height: 1.45; color: #64748b; }
+/* The three names, in a row. */
+.cdocn-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+.cdocn-chip {
+  padding: 5px 11px; border-radius: 999px; background: #eefafd; border: 1px solid #c8eef6;
+  font-size: 11.5px; font-weight: 700; color: #0e7490; white-space: nowrap;
+}
+
+.cdocn-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 16px; }
+.cdocn-btn {
+  display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px;
+  border-radius: 10px; border: 1.5px solid transparent; cursor: pointer;
+  font-family: inherit; font-size: 12px; font-weight: 800; transition: filter .15s, background .15s;
+}
+.cdocn-btn--ghost { background: #f1f5f9; border-color: #e2e8f0; color: #475569; }
+.cdocn-btn--ghost:hover { background: #e8eef4; }
+.cdocn-btn--go {
+  color: #fff;
+  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
+  box-shadow: 0 4px 12px -4px rgba(8, 145, 178, .7);
+}
+.cdocn-btn--go:hover:not(:disabled) { filter: brightness(1.06); }
+.cdocn-btn--go:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+
+[data-bs-theme="dark"] .cdocn-card { background: #0e1b24; }
+[data-bs-theme="dark"] .cdocn-lead { color: #e2e8f0; }
+[data-bs-theme="dark"] .cdocn-lead b { color: #67e8f9; }
+[data-bs-theme="dark"] .cdocn-p { color: #94a3b8; }
+[data-bs-theme="dark"] .cdocn-chip { background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .28); color: #67e8f9; }
+[data-bs-theme="dark"] .cdocn-btn--ghost { background: #1e293b; border-color: rgba(148, 163, 184, .25); color: #cbd5e1; }

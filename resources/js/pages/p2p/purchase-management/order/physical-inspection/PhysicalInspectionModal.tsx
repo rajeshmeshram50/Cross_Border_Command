@@ -5,6 +5,7 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
+import { formatProductCode } from '../../../../../utils/formatProductCode';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { useAuth } from '../../../../../contexts/AuthContext';
 import type { OrderRow } from '../po-list/Order';
@@ -256,7 +257,7 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
       {attFor !== null && (
         <InspectionAttachmentsModal
           productName={attFor === NOTE ? 'Inspection Note' : attLine?.product_name ?? ''}
-          productCode={attFor === NOTE ? 'Sign-off' : attLine?.product_code ?? ''}
+          productCode={attFor === NOTE ? 'Sign-off' : formatProductCode(attLine?.product_code)}
           files={filesOf(attFor)}
           onView={(i) => viewFile(filesOf(attFor)[i])}
           onDownload={(i) => dlFile(filesOf(attFor)[i], attFor)}
@@ -348,7 +349,7 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
                       <td>
                         <div className="pins-prod__nm">{l.product_name ?? '—'}</div>
                         <div className="pins-prod__meta">
-                          {l.product_code && <span className="pins-code">{l.product_code}</span>}
+                          {l.product_code && <span className="pins-code">{formatProductCode(l.product_code)}</span>}
                           <span className="pins-kv">HSN <b>{l.hsn_code || '—'}</b></span>
                           <span className="pins-prod__dot" />
                           <span className="pins-kv">GST <b>{l.gst_pct}%</b></span>

@@ -5,6 +5,7 @@ import type { PoLineRow } from '../po-draft';
 import type { ProductOpt } from '../use-po-lookups';
 import type { TaxMode } from '../../api/po-api';
 import { IcoOk } from '../../shared/icons';
+import { formatProductCode } from '../../../../../../utils/formatProductCode';
 
 type Props = { rows: PoLineRow[]; products: ProductOpt[]; taxMode: TaxMode };
 
@@ -38,7 +39,7 @@ export default function MissingProducts({ rows, products, taxMode }: Props) {
             return (
               <tr key={row.key}>
                 <td>{i + 1}</td>
-                <td><span className="cpd-code">{pi.product_code || '—'}</span></td>
+                <td><span className="cpd-code">{formatProductCode(pi.product_code) || '—'}</span></td>
                 <td className="cpd-td-left cpd-name">{pi.product_name}</td>
                 {/* Still not ordered on the PI after this PO and earlier POs. */}
                 <td title={`PI quantity ${pi.pi_quantity} · pending before this PO ${pi.pending_qty} · on this PO ${row.qtyPo}`}>

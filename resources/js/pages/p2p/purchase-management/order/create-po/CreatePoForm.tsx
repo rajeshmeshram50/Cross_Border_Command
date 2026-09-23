@@ -11,7 +11,8 @@ import Step3Terms from './steps/Step3Terms';
 import Step4Documents from './steps/Step4Documents';
 import { draftFromDetail, itemsBody, rowFromPi, stage1Body, usePoDraft } from './po-draft';
 import { gstCheck } from './gst-check';
-import { legalFromVault } from './supplier-checks';
+import { legalFromVault, vaultTargetOf } from './supplier-checks';
+import SupplierDocsNoticeModal, { type SupplierDocsNotice } from './SupplierDocsNoticeModal';
 import { usePoLookups, type PoLookups } from './use-po-lookups';
 import { FitTip } from './form-fields';
 import {
@@ -231,6 +232,11 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   // beside "Submit PO & Next" on Step 03 — only when the check calls for one.
   const gst = gstCheck(draft);
   const [gstNotice, setGstNotice] = useState<GstNotice | null>(null);
+  /* The supplier's one-time paperwork (Company DD, Owner KYC, Trade Licenses),
+     read from its Evidence Vault. Incomplete stops the submit on Step 03. */
+  const standardDocs = draft.legal?.sections?.[0] ?? null;
+  const vaultTarget = draft.supplier ? vaultTargetOf(draft.supplier) : null;
+  const [docsNotice, setDocsNotice] = useState<SupplierDocsNotice | null>(null);
   const [scrutinyFor, setScrutinyFor] = useState<number | null>(null);
   // After the supplier's scrutiny is updated, reload it so the GST check runs again.
   const closeScrutiny = () => {
@@ -294,9 +300,30 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     return true;
   };
 
+  /** Step 02 as it stands right now — the same check its own save runs. */
+  const checkLines = () => validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids);
+
+  /* Step 02 is not something a later step can leave behind: the stepper lets an
+     already-saved PO jump straight to Step 03, which would submit a PO whose
+     lines are still wrong (a product no longer mapped to the supplier, a missing
+     rate). Any forward move, and the submit itself, comes back here first. */
+  const linesBlock = (): boolean => {
+    if (viewOnly) return false;
+    const v = checkLines();
+    const bad = Object.keys(v.rows).length;
+    if (!bad && !v.general) return false;
+    setShown(([a]) => [a, true]);
+    setStage(1);
+    if (bad) toast.warning('Fix Step 02 first', `${bad} product ${bad === 1 ? 'line needs' : 'lines need'} attention — a PO cannot be submitted with ${bad === 1 ? 'it' : 'them'}.`);
+    else toast.warning('No products ordered', v.general);
+    // The step has to render before its first error can be scrolled to.
+    setTimeout(scrollToFirstError, 150);
+    return true;
+  };
+
   const saveStage2 = async (): Promise<boolean> => {
     setShown(([a]) => [a, true]);
-    const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids);
+    const v = checkLines();
     const bad = Object.keys(v.rows).length;
     if (bad || v.general) {
       if (!bad) { toast.warning('No products ordered', v.general); return false; }
@@ -315,6 +342,8 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   };
 
   const saveStage3 = async (): Promise<boolean> => {
+    // The lines the PO is submitted with must still be valid, whatever route led here.
+    if (linesBlock()) return false;
     // Same rule the server applies on submit; stopping here opens the matching popup.
     if (!gstCleared) { setGstNotice(gst.notice); return false; }
     const d = await poApi.saveTerms(poId as number, { terms: draft.terms, submit: 'yes' });
@@ -332,6 +361,21 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     if (isLast) {
       toast.success(isEdit ? 'Purchase order updated' : 'Purchase order generated', detail?.code ?? '');
       onClose();
+      return;
+    }
+    // What is being ordered comes before whose paperwork is missing.
+    if (isSubmit && linesBlock()) return;
+    /* The supplier's one-time paperwork has to be complete before the PO is
+       submitted. The popup names what is missing and opens the Evidence Vault,
+       where it is fixed; the status re-reads on close, so submitting again
+       goes straight through. */
+    if (isSubmit && standardDocs && standardDocs.done < standardDocs.total) {
+      setDocsNotice({
+        target: vaultTarget as SupplierDocsNotice['target'],
+        supplier: draft.supplier?.legalName || draft.supplier?.name || '',
+        code: draft.supplier?.code ?? '',
+        section: standardDocs,
+      });
       return;
     }
     setSaving(true);
@@ -366,6 +410,12 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   const goTo = (target: number) => {
     if (target === stage || saving) return;
     if (target > reached && !paidView && !signView) { toast.info('Save this step first', 'Use the button below to save and continue.'); return; }
+    /* Leaving Step 02 forward with broken lines is how a wrong PO reached the
+       submit — but only on a PO still being raised. Once it is submitted its
+       saved lines have already passed the server, and Step 04's documents must
+       stay reachable whatever the draft on screen looks like; the submit itself
+       is still checked. */
+    if (target > 1 && stage <= 1 && detail?.status !== 'submitted' && linesBlock()) return;
     setStage(target);
   };
 
@@ -546,6 +596,9 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
       {gstNotice && (
         <GstNoticeModal notice={gstNotice} onClose={() => setGstNotice(null)} poId={poId} approval={approval} onSent={reloadApproval}
           onOpenScrutiny={draft.vendorId ? () => setScrutinyFor(draft.vendorId) : undefined} />
+      )}
+      {docsNotice && (
+        <SupplierDocsNoticeModal notice={docsNotice} onClose={() => setDocsNotice(null)} onVaultChange={refreshVault} />
       )}
     </div>,
     document.body,
