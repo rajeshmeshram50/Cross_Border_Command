@@ -8,7 +8,7 @@ import { useToast } from '../../../../../contexts/ToastContext';
 import { PoApiError, poPaymentApi, type PoPaymentBody, type PoPaymentsPayload, type PoPayRequest } from '../api/po-api';
 import {
   Box, HeroRefChips, ICON_X, PoSummaryCards, STAT_ICONS, Stat, TdsStrip,
-  initials, money, rowBreakdown, shortDate,
+  initials, moneyIn, rowBreakdown, shortDate,
 } from './payment-shared';
 
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
@@ -73,12 +73,15 @@ function payLabel(q: PaymentRequest): string {
   return q.paid >= q.approved ? 'Paid in full' : 'Partially paid';
 }
 
-function RequestRow({ q, index, net, onPay }: {
+function RequestRow({ q, index, net, onPay, ccy }: {
   q: PaymentRequest; index: number; net: number; onPay: (q: PaymentRequest) => void;
+  /** The PO's own currency. */
+  ccy?: string | null;
 }) {
+  const money = moneyIn(ccy);
   const due = Math.max(0, q.approved - q.paid);
   const st = STATUS[q.status];
-  const pct = q.pct ?? (net > 0 ? Math.round((q.amount / net) * 1000) / 10 : 0);
+  const pct = net > 0 ? Math.round((q.amount / net) * 1000) / 10 : 0;
   const settled = q.status === 'approved' && q.approved > 0 && due <= 0;
 
   return (
@@ -178,6 +181,8 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
   row: OrderRow; startWithRaise?: boolean; onClose: () => void;
 }) {
   useScrollLock(true, '.mpr-card--history');
+  // Every figure on this screen is in the PO's own currency.
+  const money = moneyIn(row.currency);
 
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => { cardRef.current?.focus(); }, []);
@@ -352,6 +357,7 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
             requestType={payReq.type}
             requestedAmount={payReq.amount}
             approved={payReq.approved}
+            requestStatus={payReq.status}
             approver={payReq.approver}
             approverRole={payReq.role}
             alreadyPaid={0}
@@ -440,11 +446,12 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
             label="Summary"
             title="PO Payment Details Summary"
             sub="How this PO’s value is made up and where it stands today · read-only"
-            headerExtra={!row.cancelled && po?.tds_applies && (
-              <TdsStrip tds={tds} total={live.total} supplier={row.supplier} onOpen={openTds} locked={po?.tds_locked} />
+            headerExtra={!row.cancelled && !!po && (
+              <TdsStrip tds={tds} total={live.total} supplier={row.supplier} onOpen={openTds} locked={po.tds_locked}
+                ccy={row.currency} international={!po.tds_applies} />
             )}
           >
-            <PoSummaryCards total={live.total} paid={live.paid} balance={live.balance} net={live.net} complete={f.complete} split={split} />
+            <PoSummaryCards total={live.total} paid={live.paid} balance={live.balance} net={live.net} complete={f.complete} split={split} ccy={row.currency} />
           </Box>
 
           <Box
@@ -527,7 +534,7 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
                   <span className="mpr-c">Paid Amount</span>
                   <span className="mpr-c">Action</span>
                 </div>
-                {list.map((q, i) => <RequestRow key={q.rid} q={q} index={i} net={live.net} onPay={openPay} />)}
+                {list.map((q, i) => <RequestRow key={q.rid} q={q} index={i} net={live.net} onPay={openPay} ccy={row.currency} />)}
               </div>
             )}
           </div>

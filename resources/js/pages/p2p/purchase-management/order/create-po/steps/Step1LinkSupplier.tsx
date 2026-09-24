@@ -88,7 +88,8 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
   // The supplier stays changeable until the PO is sent for senior approval (pending or approved).
   const approval = ctx.detail?.gst_approval?.status;
   const supplierLocked = approval === 'pending' || approval === 'approved';
-  // Only suppliers whose type fits the PO type; a blacklisted one is listed but cannot be picked.
+  // Every supplier is listed with its own type; one that doesn't fit the PO type
+  // is shown locked (CS-559/CS-560) rather than hidden, so the reason is visible.
   const needType = draft.poType || OPEN_PO_TYPE;
   const docTypeLocked = !!draft.vendorId;
   const clearSupplier = () => set({ vendorId: null, supplier: null, vault: null, legal: null });
@@ -102,8 +103,18 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
 
   // Dropdown shows "S-004 — Company"; the option text maps back to the vendor id.
   const supplierOptions = useMemo(() => lookups.suppliers
-    .filter((s) => (s.supplier_type ?? '').trim().toLowerCase() === needType.toLowerCase() || s.id === draft.vendorId)
-    .map((s) => ({ id: s.id, label: `${s.code} — ${s.name}`, doc: s.document_type, blacklisted: (s.supplier_category ?? '').toLowerCase().includes('blacklist') })),
+    .map((s) => {
+      const type = (s.supplier_type ?? '').trim();
+      return {
+        id: s.id,
+        label: `${s.code} — ${s.name}`,
+        doc: s.document_type,
+        type,
+        blacklisted: (s.supplier_category ?? '').toLowerCase().includes('blacklist'),
+        // The supplier already on the PO stays pickable even if the PO type was changed after.
+        wrongType: s.id !== draft.vendorId && type.toLowerCase() !== needType.toLowerCase(),
+      };
+    }),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [lookups.suppliers, needType, draft.vendorId]);
   const pickedOption = supplierOptions.find((o) => o.id === draft.vendorId)?.label ?? (sup ? `${sup.code} — ${sup.name}` : '');
@@ -112,10 +123,16 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
   // Every supplier is listed; picking one sets the document type to its origin (badge).
   const supplierSelectOptions = useMemo(() => supplierOptions.map((o) => ({
     value: String(o.id), label: o.label,
-    ...(o.blacklisted ? { disabled: true, disabledReason: 'Blacklisted — a purchase order cannot be raised on this supplier.' } : {}),
+    ...(o.blacklisted
+      ? { disabled: true, disabledReason: 'Blacklisted — a purchase order cannot be raised on this supplier.' }
+      : o.wrongType
+        ? { disabled: true, disabledReason: `${o.type || 'Untyped'} supplier — this is a ${needType} purchase order.` }
+        : {}),
+    // The supplier's own type sits beside its origin, so a locked row explains itself.
+    badges: [{ text: o.type || 'No type', tone: 'gray' as const, ...(o.wrongType ? { lock: true } : {}) }],
     badge: o.blacklisted ? { text: 'Blacklisted', tone: 'red' as const, lock: true }
       : o.doc === 'international' ? { text: 'International', tone: 'violet' as const } : { text: 'Domestic', tone: 'green' as const },
-  })), [supplierOptions]);
+  })), [supplierOptions, needType]);
 
   const pickSupplier = async (label: string) => {
     const opt = supplierOptions.find((o) => o.label === label);
@@ -316,6 +333,7 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
                     if (o) void pickSupplier(o.label);
                   }}
                   placeholder={lookups.loading && !supplierOptions.length ? 'Loading suppliers…' : '— Select Supplier —'}
+                  onDisabledClick={(o) => toast.warning('Supplier not available', o.disabledReason ?? 'This supplier cannot be used on this PO.')}
                 />
               )}
                 {draft.vendorId && canEditSupplier && (
@@ -327,7 +345,7 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
               </div>
               {supplierLocked
                 ? <span className="cpf-lockhint"><IcoLock /> Fixed — the PO has gone for senior approval</span>
-                : <span className="cpf-lockhint">Only {needType} suppliers are listed</span>}
+                : <span className="cpf-lockhint">Only {needType} suppliers can be picked — the rest are listed locked</span>}
             </Field>
             {/* Everything below comes from the supplier master and is read-only here. */}
             <Field label="COMPANY LEGAL NAME">

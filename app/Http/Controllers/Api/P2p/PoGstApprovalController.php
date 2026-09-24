@@ -71,8 +71,12 @@ class PoGstApprovalController extends Controller
             ->where('u.client_id', $user->client_id)
             ->where('u.status', 'active')
             ->whereNull('u.deleted_at')
-            // A branch head is the senior of the branch, so they may pick themselves; others cannot.
-            ->when($user->user_type !== 'branch_user', fn ($q) => $q->where('u.id', '!=', $user->id))
+            /* A branch head is the senior of their branch, so they may always pick
+               themselves. Everyone else is listed only when the caller asks for it
+               (?include_self=1) — a payment request may be sent to yourself, a senior
+               GST approval may not. */
+            ->when($user->user_type !== 'branch_user' && !$request->boolean('include_self'),
+                fn ($q) => $q->where('u.id', '!=', $user->id))
             // This branch's people only — the branch head is the last approver, so the
             // client admin is never sent a PO approval.
             ->where('u.user_type', '!=', 'client_admin')
@@ -81,7 +85,8 @@ class PoGstApprovalController extends Controller
             ->orderByRaw("CASE WHEN u.user_type = 'branch_user' THEN 0 ELSE 1 END")
             ->orderBy('u.name')
             ->get(['u.id', 'u.name', 'u.email', 'u.user_type', 'e.id as employee_id', 'e.emp_code',
-                'd.name as department', DB::raw('COALESCE(g.name, u.designation) as designation')]);
+                'd.name as department',
+                DB::raw("COALESCE(g.name, NULLIF(u.designation, ''), CASE WHEN u.user_type = 'branch_user' THEN 'Branch User' END) as designation")]);
         return $this->ok($rows->unique('id')->values());
     }
 

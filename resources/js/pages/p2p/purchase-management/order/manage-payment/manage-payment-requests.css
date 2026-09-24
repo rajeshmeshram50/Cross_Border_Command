@@ -307,6 +307,18 @@
   transform: translateY(0);
 }
 
+/* International PO: the button stays put but dead — it must not lift on hover. */
+.mpr-tdsbtn.is-frozen,
+.mpr-tdsbtn.is-frozen:hover,
+.mpr-tdsbtn.is-frozen:active {
+  filter: grayscale(1);
+  opacity: .55;
+  cursor: not-allowed;
+  transform: none;
+  background: linear-gradient(135deg, #0c4a6e, #0e7490 60%, #0891b2);
+  box-shadow: 0 2px 6px -3px rgba(12, 74, 110, .4);
+}
+
 .mpr-tdsbtn__ico {
   display: inline-flex;
   align-items: center;

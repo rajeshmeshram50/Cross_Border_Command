@@ -1,8 +1,13 @@
 import { useState, type ReactNode } from 'react';
 import type { OrderRow } from '../po-list/Order';
 import { FitTip } from '../create-po/form-fields';
+import { useToast } from '../../../../../contexts/ToastContext';
 
-export const money = (v: number) => '₹' + Math.round(v || 0).toLocaleString('en-IN');
+import { CCY_SYMBOL, ccySymbol, moneyIn } from '../../../../../utils/currency';
+export { CCY_SYMBOL, ccySymbol, moneyIn };
+
+/** Default for screens with no PO in hand; the rest bind moneyIn(row.currency). */
+export const money = moneyIn('INR');
 
 export const round2 = (v: number) => Math.round(v * 100) / 100;
 
@@ -123,15 +128,15 @@ export function HeroRefChips({ row }: { row: OrderRow }) {
       <Chip label="PO Number" value={row.po} meta={fmtDate(row.poDate)} />
       <Chip
         label={row.invoices.length > 1 ? 'SPI Numbers' : 'SPI Number'}
-        value={spi ? spi.spi : '—'}
+        value={spi ? spi.spi : 'NA'}
         meta={spi ? fmtDate(spi.spiDate) : undefined}
         extra={row.invoices.length > 1
           ? <span className="mpr-hero__chip-meta">+{row.invoices.length - 1}</span>
           : undefined}
       />
-      <Chip label="Shipment ID" value={row.shipment || '—'} meta={row.shipment ? fmtDate(row.shipmentDate) : undefined} />
-      <Chip label="Opportunity ID" value={row.opportunity || '—'} meta={row.opportunity ? fmtDate(row.opportunityDate) : undefined} />
-      <Chip label="Procurement ID" value={row.procurement || '—'} meta={row.procurement && row.procurementDate ? fmtDate(row.procurementDate) : undefined} />
+      <Chip label="Shipment ID" value={row.shipment || 'NA'} meta={row.shipment ? fmtDate(row.shipmentDate) : undefined} />
+      <Chip label="Opportunity ID" value={row.opportunity || 'NA'} meta={row.opportunity ? fmtDate(row.opportunityDate) : undefined} />
+      <Chip label="Procurement ID" value={row.procurement || 'NA'} meta={row.procurement && row.procurementDate ? fmtDate(row.procurementDate) : undefined} />
     </div>
   );
 }
@@ -198,11 +203,14 @@ export const STAT_ICONS = {
   check: <path d="M20 6 9 17l-5-5" />,
 };
 
-export function PoSummaryCards({ total, paid, balance, net, complete, split }: {
+export function PoSummaryCards({ total, paid, balance, net, complete, split, ccy }: {
   total: number; paid: number; balance: number; net: number; complete: boolean;
   /** The PO's real value split; without it the split is estimated from the total. */
   split?: { base: number; gst: number; extra: number; gstPct: number };
+  /** The PO's own currency — an import must not print ₹. */
+  ccy?: string | null;
 }) {
+  const money = moneyIn(ccy);
   const { base, gst, extra, gstPct } = split ?? valueBreakdown(total);
   const pctPaid = net > 0 ? Math.round((paid / net) * 100) : 0;
   return (
@@ -231,11 +239,17 @@ const ICON_WALLET = (
   </svg>
 );
 
-export function TdsStrip({ tds, total, supplier, onOpen, locked = false }: {
+export function TdsStrip({ tds, total, supplier, onOpen, locked = false, ccy, international = false }: {
   tds: number; total: number; supplier: string; onOpen: () => void;
   /** A payment is recorded: the button only views the TDS. */
   locked?: boolean;
+  /** The PO's own currency — an import must not print ₹. */
+  ccy?: string | null;
+  /** Indian TDS has no place on an international PO, so the button is frozen. */
+  international?: boolean;
 }) {
+  const money = moneyIn(ccy);
+  const toast = useToast();
   return (
     <div className="mpr-tds" onClick={(e) => e.stopPropagation()}>
       {tds > 0 && (
@@ -256,15 +270,24 @@ export function TdsStrip({ tds, total, supplier, onOpen, locked = false }: {
           </span>
         </>
       )}
+      {/* Frozen rather than disabled: a click on it has to say why, not go unanswered. */}
       <button
         type="button"
-        className={`mpr-tdsbtn${tds > 0 ? ' mpr-tdsbtn--edit' : ''}`}
-        title={locked ? 'View the TDS — fixed once the first payment is recorded'
-          : tds > 0 ? 'Revise the tax deducted at source on this PO' : 'Withhold tax at source against this PO'}
-        onClick={onOpen}
+        className={`mpr-tdsbtn${tds > 0 ? ' mpr-tdsbtn--edit' : ''}${international ? ' is-frozen' : ''}`}
+        aria-disabled={international}
+        title={international ? 'Indian TDS does not apply to an international purchase order'
+          : locked ? 'View the TDS — fixed once the first payment is recorded'
+            : tds > 0 ? 'Revise the tax deducted at source on this PO' : 'Withhold tax at source against this PO'}
+        onClick={() => {
+          if (international) {
+            toast.info('TDS not applicable', 'This is an international purchase order — Indian tax deducted at source does not apply to it.');
+            return;
+          }
+          onOpen();
+        }}
       >
         <span className="mpr-tdsbtn__ico">{ICON_TDS}</span>
-        <span>{locked ? 'View TDS' : tds > 0 ? 'Revise TDS' : 'Deduct TDS Here'}</span>
+        <span>{international ? 'TDS Not Applicable' : locked ? 'View TDS' : tds > 0 ? 'Revise TDS' : 'Deduct TDS Here'}</span>
       </button>
     </div>
   );

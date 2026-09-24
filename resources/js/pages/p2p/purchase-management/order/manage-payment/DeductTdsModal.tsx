@@ -8,6 +8,9 @@ const money = (v: number) => '₹' + Math.round(v || 0).toLocaleString('en-IN');
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
+/** The highest rate that may be withheld at source; the server enforces the same (CS-426). */
+const TDS_MAX_PCT = 40;
+
 const ico = {
   viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
   strokeWidth: 2.2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const,
@@ -68,14 +71,17 @@ export default function DeductTdsModal({
   const [amtText, setAmtText] = useState(saved > 0 ? String(saved) : '');
   const [typed, setTyped] = useState(saved);
 
-  const amount = Math.min(Math.max(0, typed), room);
-  const capped = typed > room;
+  // 40% of the base is the ceiling, and what is still unsettled caps it further.
+  const maxByRate = Math.floor((base * TDS_MAX_PCT) / 100);
+  const ceiling = Math.min(room, maxByRate);
+  const amount = Math.min(Math.max(0, typed), ceiling);
+  const capped = typed > ceiling;
   const net = Math.max(0, total - amount);
   const pctOfBase = base > 0 ? round2((amount / base) * 100) : 0;
 
   // TDS % is 0–100 with up to 2 decimals; anything else is refused as it is typed.
   const fromPct = (v: string) => {
-    if (v !== '' && (!/^\d{0,3}(\.\d{0,2})?$/.test(v) || parseFloat(v) > 100)) return;
+    if (v !== '' && (!/^\d{0,3}(\.\d{0,2})?$/.test(v) || parseFloat(v) > TDS_MAX_PCT)) return;
     setPctText(v);
     const p = parseFloat(v);
     const a = Number.isNaN(p) || p < 0 ? 0 : Math.round((base * p) / 100);
@@ -85,6 +91,9 @@ export default function DeductTdsModal({
 
   const fromAmt = (v: string) => {
     if (v !== '' && !/^\d{0,13}(\.\d{0,2})?$/.test(v)) return;
+    // Typing an amount past 40% of the base is refused, same as a percentage above 40.
+    const typedAmt = parseFloat(v);
+    if (!Number.isNaN(typedAmt) && typedAmt > maxByRate) return;
     setAmtText(v);
     const a = parseFloat(v);
     const clean = Number.isNaN(a) || a < 0 ? 0 : Math.round(a);
@@ -168,12 +177,16 @@ export default function DeductTdsModal({
                 <>
                   <b>{pctOfBase}%</b> of the {money(base)} base = <b>{money(amount)}</b> withheld ·
                   supplier receives <b>{money(net)}</b>
-                  {capped && <> · <span className="mtds-cap">capped at the {money(room)} still unsettled</span></>}
+                  {capped && (
+                    <> · <span className="mtds-cap">
+                      capped at {money(ceiling)}{maxByRate <= room ? ` (${TDS_MAX_PCT}% of the base)` : ' still unsettled'}
+                    </span></>
+                  )}
                 </>
               ) : (
                 <>
                   TDS is calculated on the PO base amount of <b>{money(base)}</b> · without GST or extra charges ·
-                  fill either field and the other follows · up to {money(room)} can be withheld
+                  fill either field and the other follows · up to {money(ceiling)} ({TDS_MAX_PCT}% max) can be withheld
                 </>
               )}
             </span>

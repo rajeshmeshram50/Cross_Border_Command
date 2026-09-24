@@ -704,10 +704,18 @@
  * than its share ellipsises (rule below) instead of widening the table.
  *
  * Percentages are budgeted by how much each column actually needs:
- *   1 Sr No 4 · 2 Customer ID 7 · 3 Company Name 10 · 4 Cust Category 8
- *   5 Customer Type 8 · 6 Segment 10 · 7 Country 5 · 8 Contact Person 10
- *   9 Contact No 9 · 10 Email 12 · 11 WhatsApp 5 · 12 Consignees 5 · 13 Actions 7
+ *   1 Sr No 4 · 2 Customer ID 6 · 3 Company Name 10 · 4 Cust Category 8
+ *   5 Customer Type 8 · 6 Segment 10 · 7 Country 4 · 8 Contact Person 9
+ *   9 Contact No 9 · 10 Email 11 · 11 WhatsApp 6 · 12 Consignees 6 · 13 Actions 9
  * They MUST keep summing to 100 — a short sum re-creates the leftover problem.
+ *
+ * WhatsApp and Consignees carry one small centred pill each and were the two
+ * narrowest columns on the table (4 + 5), so their two pills sat almost
+ * shoulder to shoulder while every other pair on the row had air around it.
+ * Widening both moves each pill's centre further from the border they share.
+ * The 3 points come off columns whose content never fills them: the ID chip
+ * (C-021), the 2-letter ISO country code, and Contact Person, which truncates
+ * at 16 chars well before its old share ran out.
  */
 .smc-table-wrap .table {
   table-layout: fixed;
@@ -718,17 +726,17 @@
   min-width: 1440px;
 }
 .smc-table-wrap .table thead th:nth-child(1),  .smc-table-wrap .table tbody td:nth-child(1)  { width: 4%; }
-.smc-table-wrap .table thead th:nth-child(2),  .smc-table-wrap .table tbody td:nth-child(2)  { width: 7%; }
+.smc-table-wrap .table thead th:nth-child(2),  .smc-table-wrap .table tbody td:nth-child(2)  { width: 6%; }
 .smc-table-wrap .table thead th:nth-child(3),  .smc-table-wrap .table tbody td:nth-child(3)  { width: 10%; }
 .smc-table-wrap .table thead th:nth-child(4),  .smc-table-wrap .table tbody td:nth-child(4)  { width: 8%; }
 .smc-table-wrap .table thead th:nth-child(5),  .smc-table-wrap .table tbody td:nth-child(5)  { width: 8%; }
 .smc-table-wrap .table thead th:nth-child(6),  .smc-table-wrap .table tbody td:nth-child(6)  { width: 10%; }
-.smc-table-wrap .table thead th:nth-child(7),  .smc-table-wrap .table tbody td:nth-child(7)  { width: 5%; }
-.smc-table-wrap .table thead th:nth-child(8),  .smc-table-wrap .table tbody td:nth-child(8)  { width: 10%; }
+.smc-table-wrap .table thead th:nth-child(7),  .smc-table-wrap .table tbody td:nth-child(7)  { width: 4%; }
+.smc-table-wrap .table thead th:nth-child(8),  .smc-table-wrap .table tbody td:nth-child(8)  { width: 9%; }
 .smc-table-wrap .table thead th:nth-child(9),  .smc-table-wrap .table tbody td:nth-child(9)  { width: 9%; }
 .smc-table-wrap .table thead th:nth-child(10), .smc-table-wrap .table tbody td:nth-child(10) { width: 11%; }
-.smc-table-wrap .table thead th:nth-child(11), .smc-table-wrap .table tbody td:nth-child(11) { width: 4%; }
-.smc-table-wrap .table thead th:nth-child(12), .smc-table-wrap .table tbody td:nth-child(12) { width: 5%; }
+.smc-table-wrap .table thead th:nth-child(11), .smc-table-wrap .table tbody td:nth-child(11) { width: 6%; }
+.smc-table-wrap .table thead th:nth-child(12), .smc-table-wrap .table tbody td:nth-child(12) { width: 6%; }
 .smc-table-wrap .table thead th:nth-child(13), .smc-table-wrap .table tbody td:nth-child(13) { width: 9%; }
 
 /* Fixed layout can't grow a column to fit its content, so anything too long has

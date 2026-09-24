@@ -46,7 +46,7 @@ const badgeToneStyle = (tone?: OptBadgeSpec['tone']): CSSProperties => {
    it isn't clipped by the option list's `overflow: auto`. `staticPill`
    forces the plain, non-interactive span (used inside the toggle, which is
    itself a <button> — a nested interactive control there would be invalid). */
-export function OptBadge({ b, staticPill }: { b: OptBadgeSpec; staticPill?: boolean }) {
+export function OptBadge({ b, staticPill, shrink }: { b: OptBadgeSpec; staticPill?: boolean; shrink?: boolean }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const ref = useRef<HTMLSpanElement>(null);
@@ -76,7 +76,8 @@ export function OptBadge({ b, staticPill }: { b: OptBadgeSpec; staticPill?: bool
     marginLeft: 8, padding: '1px 8px', borderRadius: 999,
     fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
     // Only the segment chip may shrink; a status pill (Active/Inactive) stays whole.
-    maxWidth: 160, minWidth: 0, flexShrink: b.reg !== undefined ? 1 : 0, overflow: 'hidden', textOverflow: 'ellipsis',
+    // `shrink`: a row carrying two pills lets them ellipsise rather than spill past the list edge.
+    maxWidth: 160, minWidth: shrink ? 44 : 0, flexShrink: (shrink || b.reg !== undefined) ? 1 : 0, overflow: 'hidden', textOverflow: 'ellipsis',
     ...badgeToneStyle(b.tone),
   };
 
@@ -506,8 +507,8 @@ export function MasterSelect({
                           <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.label}</span>
                           {/* The product NAME wins the row: the segment chip shrinks (its own
                               text ellipsises) before the label gives up any width. */}
-                          <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', flex: '0 1 auto', minWidth: 0, maxWidth: '45%' }}>
-                            {badgesOf(opt).map((b, i) => <OptBadge key={i} b={b} />)}
+                          <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', flex: '0 1 auto', minWidth: 0, maxWidth: '55%', overflow: 'hidden' }}>
+                            {badgesOf(opt).map((b, i, all) => <OptBadge key={i} b={b} shrink={all.length > 1} />)}
                           </span>
                         </span>
                       ) : (

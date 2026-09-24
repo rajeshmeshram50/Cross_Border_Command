@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { useAuth } from '../../../../../contexts/AuthContext';
+import { shortDesignation } from '../../../../../utils/positionHierarchy';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import type { OrderRow } from '../po-list/Order';
 import {
   Box, HeroRefChips, PAYMENT_TYPES, PoSummaryCards, STAT_ICONS, Stat, rowBreakdown,
-  ICON_PENCIL, ICON_X, money,
+  ICON_PENCIL, ICON_X, ccySymbol, moneyIn,
 } from './payment-shared';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './manage-payment-requests.css';
@@ -61,6 +62,9 @@ export default function RaisePaymentRequestModal({
   row, nextId, requested, approvedTotal, pendingAmt, pendingCount, approvedUnpaid,
   requestCount, available, complete, busy = false, onSubmit, onClose,
 }: RaiseRequestProps) {
+  // Amounts follow the PO's own currency.
+  const money = moneyIn(row.currency);
+  const sym = ccySymbol(row.currency);
   useScrollLock(true, '.mpr-card--raise');
 
   const cardRef = useRef<HTMLDivElement>(null);
@@ -81,9 +85,9 @@ export default function RaisePaymentRequestModal({
   const [approvers, setApprovers] = useState<GstApprover[]>([]);
   const [loadingApprovers, setLoadingApprovers] = useState(true);
   useEffect(() => {
-    poApprovalApi.approvers()
-      // A payment request cannot go to its own raiser.
-      .then((rows) => setApprovers(rows.filter((a) => a.id !== user?.id)))
+    poApprovalApi.approvers(true)
+      // A payment request may be sent to yourself (CS-422), so the raiser stays listed.
+      .then(setApprovers)
       .catch(() => setError('Could not load the approver list — please reopen this form.'))
       .finally(() => setLoadingApprovers(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -94,7 +98,7 @@ export default function RaisePaymentRequestModal({
     fullLabel: [a.name, a.department, a.designation].filter(Boolean).join(' · '),
     badges: [
       ...(a.department ? [{ text: a.department, tone: 'gray' as const }] : []),
-      ...(a.designation ? [{ text: a.designation, tone: 'violet' as const }] : []),
+      ...(a.designation ? [{ text: shortDesignation(a.designation), title: a.designation, tone: 'violet' as const }] : []),
     ],
   }));
   const [reason, setReason] = useState('');
@@ -105,12 +109,17 @@ export default function RaisePaymentRequestModal({
   const pctPaid = row.net > 0 ? Math.round((row.paid / row.net) * 100) : 0;
   const progPct = row.total > 0 ? Math.round((row.paid / row.total) * 100) : 0;
 
+  // Percentages are of the net payable — grand total less TDS — so 100% is the whole
+  // of what can be released, and a request for the balance reads as its true share.
+  const basis = row.net > 0 ? row.net : row.total;
+  const pctOf = (v: number) => (basis > 0 ? Math.round((v / basis) * 1000) / 10 : 0);
+
   // A percentage is 0–100 with up to 2 decimals; anything else is refused as it is typed.
   const fromPct = (v: string) => {
     if (v !== '' && (!/^\d{0,3}(\.\d{0,2})?$/.test(v) || parseFloat(v) > 100)) return;
     setPctText(v);
     const p = parseFloat(v);
-    const a = Number.isNaN(p) || p < 0 ? 0 : Math.round((row.total * p) / 100);
+    const a = Number.isNaN(p) || p < 0 ? 0 : Math.round((basis * p) / 100);
     setAmtText(a ? String(a) : '');
   };
 
@@ -120,7 +129,18 @@ export default function RaisePaymentRequestModal({
     setAmtText(v);
     const a = parseFloat(v);
     const clean = Number.isNaN(a) || a < 0 ? 0 : a;
-    setPctText(clean && row.total > 0 ? String(Math.round((clean / row.total) * 1000) / 10) : '');
+    setPctText(clean ? String(pctOf(clean)) : '');
+  };
+
+  /* CS-422 — "Balance Payment" means the balance: picking it fills the amount and the
+     percentage with what is still open to request, rather than leaving both blank. */
+  const pickType = (t: string) => {
+    setType(t);
+    if (t === 'Balance Payment' && available > 0) {
+      const a = Math.round(available);
+      setAmtText(String(a));
+      setPctText(String(pctOf(a)));
+    }
   };
 
   const submit = () => {
@@ -133,7 +153,7 @@ export default function RaisePaymentRequestModal({
       return;
     }
     if (!amount) { setError('Enter a payment request amount before submitting.'); return; }
-    if (amount < 1) { setError('The payment request amount must be at least ₹1.'); return; }
+    if (amount < 1) { setError(`The payment request amount must be at least ${sym}1.`); return; }
     if (amount > available) {
       setError(`The requested amount exceeds the available balance of ${money(available)}.`);
       return;
@@ -147,7 +167,7 @@ export default function RaisePaymentRequestModal({
     onSubmit({
       id: nextId,
       amount,
-      pct: pct > 0 ? pct : (row.total > 0 ? Math.round((amount / row.total) * 1000) / 10 : 0),
+      pct: pct > 0 ? pct : pctOf(amount),
       type,
       reason: reason.trim(),
       approver: who.name,
@@ -203,12 +223,12 @@ export default function RaisePaymentRequestModal({
 
             <div className="rpr-formgrid">
               <div className="rpr-field">
-                <label htmlFor="rpr-type">Payment Type</label>
+                <label htmlFor="rpr-type">Payment Type<span className="spi-dt-req">*</span></label>
                 <MasterSelect
                   value={type}
                   placeholder="Select type…"
                   options={TYPE_OPTIONS}
-                  onChange={setType}
+                  onChange={pickType}
                 />
               </div>
 
@@ -231,9 +251,9 @@ export default function RaisePaymentRequestModal({
               </div>
 
               <div className="rpr-field">
-                <label htmlFor="rpr-amt">Payment Request Amount</label>
+                <label htmlFor="rpr-amt">Payment Request Amount<span className="spi-dt-req">*</span></label>
                 <div className="rpr-amtwrap">
-                  <span className="rpr-amtwrap__cur">₹</span>
+                  <span className="rpr-amtwrap__cur">{sym}</span>
                   <input
                     id="rpr-amt"
                     type="text"
@@ -254,7 +274,7 @@ export default function RaisePaymentRequestModal({
               </div>
 
               <div className="rpr-field">
-                <label htmlFor="rpr-approver">Request To</label>
+                <label htmlFor="rpr-approver">Request To<span className="spi-dt-req">*</span></label>
                 <MasterSelect
                   value={approver}
                   placeholder={loadingApprovers ? "Loading…" : "Select approver…"}
@@ -268,7 +288,7 @@ export default function RaisePaymentRequestModal({
             <div className="rpr-field rpr-field--reason">
               <div className="rpr-field__hd">
                 <label htmlFor="rpr-reason">
-                  Payment Reason <span className="rpr-opt">Payment Note</span>
+                  Payment Reason<span className="spi-dt-req">*</span> <span className="rpr-opt">Payment Note</span>
                 </label>
                 <span className={`rpr-reasoncount${reason.length > REASON_MAX - 40 ? ' is-near' : ''}`}>
                   {reason.length} / {REASON_MAX}

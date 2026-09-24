@@ -3,7 +3,6 @@ import { formatDmy } from '../../../../../utils/formatDmy';
 import { createPortal } from 'react-dom';
 import api from '../../../../../api';
 import { useToast } from '../../../../../contexts/ToastContext';
-import { useConfirm } from '../../../../../contexts/ConfirmContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 import type { StageAcknowledgement } from '../SalesMatrixDetail';
 import Tooltip from '../../../../../components/ui/Tooltip';
@@ -48,7 +47,6 @@ type MasterPayload = {
 
 export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, reloadLead, canEnterNextStage }: StageProps) {
   const toast = useToast();
-  const confirm = useConfirm();
 
   /* Optimistic pending rows — prepended to the Activity Report the instant
    * the user clicks Submit, so the table updates without waiting for the
@@ -134,21 +132,27 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
       return;
     }
 
-    /* Un-qualifying a lead that has already moved on is a real decision,
-       not a toggle (QA #31). Products may be sourced against it, prices
-       shared, a quotation raised — and Stage 3 onwards locks the moment
-       this saves, so the work becomes unreachable. It is still allowed:
-       a lead genuinely can turn out to be bad after sourcing starts. It
-       just should not happen by mistake on the way past. */
-    if (pickerBucket !== 'qualified' && (header.leadStageId ?? 1) > 2) {
-      const ok = await confirm({
-        tone: 'warning',
-        title: pickerBucket === 'disqualified' ? 'Disqualify this lead?' : 'Move this lead back to Clarity Pending?',
-        message: 'This opportunity has already moved past Lead Acknowledgement. Saving this will lock Product Sourcing and every stage after it until the lead is marked Qualified again. Anything already sourced or priced stays on the lead.',
-        confirmLabel: 'Yes, save it',
-        cancelLabel: 'Go back',
-      });
-      if (!ok) return;
+    /* A lead carrying sourced work cannot be un-qualified (CS-257).
+       Stage 3 onwards locks itself to qualified leads, so saving a
+       Disqualified / Clarity Pending verdict over mapped products, a
+       quotation or a PI strands that work: unreachable in the UI, still
+       counted everywhere that reads it.
+
+       This used to be a confirm keyed off `leadStageId > 2`, which the
+       reported path walked straight past — mapping a product does not move
+       lead_stage_id (only Save & Next does), so entering Stage 3 from the
+       stage tracker left it at 2 and the dialog never appeared. The check now
+       measures the WORK, and the API refuses the same save independently:
+       an invariant cannot rest on a dialog. */
+    const work = header.downstreamWork ?? [];
+    if (pickerBucket !== 'qualified' && work.length > 0) {
+      toast.error(
+        pickerBucket === 'disqualified' ? 'Cannot disqualify this lead' : 'Cannot move this lead back',
+        'This opportunity already carries ' + work.join(' and ')
+          + '. Remove that work from Stage 3 onwards first — the verdict is open '
+          + 'again once the lead is clean.',
+      );
+      return;
     }
 
     /* Build optimistic placeholder rows from the in-modal master list so

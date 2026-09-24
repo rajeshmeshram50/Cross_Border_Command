@@ -445,3 +445,54 @@
 }
 
 [data-bs-theme="dark"] .apay-f > label { color: #94a3b8; }
+
+/* Saving: the card is inert until the payment and its proof are through (CS-423). */
+.apay-card.is-saving { position: relative; }
+
+.apay-wait {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, .82);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  cursor: progress;
+}
+
+[data-bs-theme="dark"] .apay-wait { background: rgba(15, 23, 42, .84); }
+
+.apay-wait__ring {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid #cffafe;
+  border-top-color: #0891b2;
+  animation: apay-spin 800ms linear infinite;
+}
+
+@keyframes apay-spin { to { transform: rotate(360deg); } }
+
+.apay-wait__t {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -.2px;
+  color: #0f2b38;
+}
+
+.apay-wait__s { font-size: 11px; font-weight: 500; color: #64748b; }
+
+[data-bs-theme="dark"] .apay-wait__t { color: #e2e8f0; }
+[data-bs-theme="dark"] .apay-wait__s { color: #94a3b8; }
+
+/* A disabled field must read as locked, not merely unresponsive. */
+.apay-in:disabled,
+.apay-card.is-saving .apay-drop {
+  opacity: .6;
+  cursor: not-allowed;
+}

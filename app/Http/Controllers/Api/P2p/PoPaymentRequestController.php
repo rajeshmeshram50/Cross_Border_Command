@@ -31,6 +31,8 @@ class PoPaymentRequestController extends Controller
     private const PROOF_RULE = 'file|max:10240|mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png,webp';
     // Cheque (6 digits) through RTGS UTR (22), letters and digits only — as in the old PO payments.
     private const UTR_RULE = ['nullable', 'string', 'regex:/^[A-Za-z0-9]{6,22}$/'];
+    /** The highest rate that may be withheld at source on a PO. */
+    public const TDS_MAX_PCT = 40.0;
 
     /** Tabs of Payment Request Management: condition on the request row. */
     private const TABS = [
@@ -93,10 +95,10 @@ class PoPaymentRequestController extends Controller
         if ($order->document_type === 'international') return $this->fail('TDS does not apply to an international PO.');
 
         $data = $request->validate([
-            'tds_percentage' => 'required_without:tds_amount|nullable|numeric|min:0|max:100',
+            'tds_percentage' => 'required_without:tds_amount|nullable|numeric|min:0|max:' . self::TDS_MAX_PCT,
             'tds_amount'     => 'required_without:tds_percentage|nullable|numeric|min:0',
         ], [
-            'tds_percentage.max' => 'TDS cannot be more than 100%.',
+            'tds_percentage.max' => 'TDS cannot be more than ' . self::TDS_MAX_PCT . '%.',
         ]);
 
         $base = round((float) $order->taxable_total, 2);
@@ -107,6 +109,11 @@ class PoPaymentRequestController extends Controller
                 ['tds_amount' => ['TDS cannot be more than the PO base amount.']]);
         }
         $pct = $base > 0 ? round($amount / $base * 100, 2) : 0;
+        // The cap holds whichever field was typed — an amount above 40% is the same deduction.
+        if ($pct > self::TDS_MAX_PCT + 0.001) {
+            return $this->fail('TDS cannot be more than ' . self::TDS_MAX_PCT . '% — at most ' . number_format($base * self::TDS_MAX_PCT / 100, 2) . ' on this PO.', 422,
+                ['tds_amount' => ['TDS cannot be more than ' . self::TDS_MAX_PCT . '%.']]);
+        }
 
         $this->inTransaction('save the TDS', function () use ($order, $user, $amount, $pct) {
             // Row lock: a payment saved at the same moment can't slip in under the old TDS.
@@ -143,7 +150,7 @@ class PoPaymentRequestController extends Controller
             'payment_type.required'     => 'Select a payment type.',
             'percentage.max'            => 'Payment percentage cannot be more than 100%.',
             'requested_amount.required' => 'Enter the payment request amount.',
-            'requested_amount.min'      => 'The payment request amount must be at least ₹1.',
+            'requested_amount.min'      => 'The payment request amount must be at least 1.',
             'reason.required'           => 'Enter the reason for this payment.',
             'requested_to.required'     => 'Select who this request goes to.',
         ]);
@@ -160,7 +167,6 @@ class PoPaymentRequestController extends Controller
         if ($branch && (int) $approver->branch_id !== (int) $branch) {
             return $this->fail("Choose someone from this PO's branch.", 422, ['requested_to' => ["Not in this PO's branch."]]);
         }
-        if ((int) $approver->id === (int) $user->id) return $this->fail('You cannot approve your own request — choose someone else.', 422, ['requested_to' => ['Choose someone else.']]);
 
         $amount = round((float) $data['requested_amount'], 2);
         $row = $this->inTransaction('raise the payment request', function () use ($order, $user, $data, $amount) {
@@ -180,7 +186,7 @@ class PoPaymentRequestController extends Controller
                 'purchase_order_id' => $locked->id,
                 'code'              => $this->svc->nextPaymentRequestCode((int) $locked->client_id),
                 'payment_type'      => $data['payment_type'],
-                'percentage'        => $data['percentage'] ?? ((float) $locked->grand_total > 0 ? round($amount / (float) $locked->grand_total * 100, 2) : null),
+                'percentage'        => $this->requestPct($locked, $amount, $data['percentage'] ?? null),
                 'requested_amount'  => $amount,
                 'reason'            => trim($data['reason']),
                 'requested_by'      => $user->id,
@@ -250,7 +256,7 @@ class PoPaymentRequestController extends Controller
             'proof'             => 'nullable|' . self::PROOF_RULE,
         ], [
             'amount.required'                 => 'Enter the amount paid.',
-            'amount.min'                      => 'The payment amount must be at least ₹1.',
+            'amount.min'                      => 'The payment amount must be at least 1.',
             'utr_cheque_number.regex'         => 'UTR / cheque number must be 6–22 letters or digits.',
             'utr_cheque_date.before_or_equal' => 'UTR / cheque date cannot be in the future.',
             'proof.max'                       => 'Proof of payment must be 10 MB or smaller.',
@@ -444,7 +450,7 @@ class PoPaymentRequestController extends Controller
             'note'            => ['required_if:decision,rejected', 'nullable', 'string', $request->input('decision') === PoPaymentRequest::STATUS_REJECTED ? 'max:300' : 'max:400'],
         ], [
             'approved_amount.required_if' => 'Enter the amount to approve.',
-            'approved_amount.min'         => 'The approved amount must be at least ₹1.',
+            'approved_amount.min'         => 'The approved amount must be at least 1.',
             'note.required_if'            => 'Give a reason for declining.',
         ]);
 
@@ -639,6 +645,19 @@ class PoPaymentRequestController extends Controller
             'created_at' => $p->created_at?->toIso8601String(),
             'zoho_synced' => (float) $p->zoho_applied_amount > 0, 'zoho_sync_status' => $p->zoho_sync_status, 'zoho_error' => $p->zoho_error,
         ];
+    }
+
+    /**
+     * A request's percentage is measured against the net payable (grand total less TDS) —
+     * that is the money the PO can actually release, so 100% means the whole of it.
+     */
+    private function requestPct(PurchaseOrder $po, float $amount, $typed): ?float
+    {
+        $net = round((float) $po->grand_total - (float) $po->tds_amount, 2);
+        if ($net <= 0) return null;
+        $fromAmount = round($amount / $net * 100, 2);
+        // A typed percentage is trusted only when it agrees with the amount it produced.
+        return $typed !== null && abs((float) $typed - $fromAmount) < 0.05 ? round((float) $typed, 2) : $fromAmount;
     }
 
     /** Posted to the Zoho bill already: changing it here would leave the books wrong. */

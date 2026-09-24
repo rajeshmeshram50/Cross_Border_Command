@@ -14,3 +14,17 @@ export function formatProductCode(raw?: string | null): string {
   if (!m) return s;
   return `${m[1] || 'P-'}${m[2].padStart(3, '0')}`;
 }
+
+/**
+ * A proforma-invoice line stores its product name with the code baked in, at the
+ * padding of the day ("P-04 – Cheese"). Beside a code chip that reads P-004 the
+ * two look like different products, so the prefix is dropped when it IS the row's
+ * own code — the chip already carries it. Anything else is left untouched.
+ */
+export function productNameWithoutCode(name?: string | null, code?: string | null): string {
+  const text = String(name ?? '').trim();
+  if (!text || !code) return text;
+  const m = text.match(/^([A-Za-z]{0,4}[\s._-]*\d{1,6})\s*[-–—:|]\s*(.+)$/s);
+  if (!m) return text;
+  return formatProductCode(m[1]) === formatProductCode(code) ? m[2].trim() : text;
+}

@@ -75,6 +75,8 @@ export type PoListRow = PoLinkRefs & {
   link_type: LinkType | null; shipment_order_id: number | null;
   procurement_request_id: number | null; procurement_request_code: string | null;
   expected_delivery_date: string | null; grand_total: number;
+  /** The PO's own currency; every money figure on its screens follows it. */
+  currency_code: string | null;
   /** Base (without GST), GST and extra charges — the split the payment screens show. */
   taxable_total: number; gst_total: number; charges_total: number;
   /** Stored payment position, rebuilt on every payment. */
@@ -90,6 +92,8 @@ export type PoListRow = PoLinkRefs & {
   refund: PoListRefund | null;
   /** Zoho Books: synced once the PO + bill exist; unposted = payments not on the bill yet. */
   zoho_status: 'synced' | 'failed' | null; zoho_bill_number: string | null; zoho_error: string | null;
+  /** True once the PO or its bill exists in Zoho — the tracker opens only then. */
+  zoho_started: boolean;
   zoho_unposted_payments: number;
 };
 
@@ -234,6 +238,34 @@ export type ShipmentOption = {
   opportunity_id: number | null; opportunity_code: string | null;
   proforma_invoice_id: number | null; pi_number: string | null;
 };
+/** One link of the Zoho chain, in the order the sync itself runs them. */
+export type ZohoTrackerStep = {
+  key: 'purchase_order' | 'bill' | 'payments' | 'vendor_credit' | 'refunds';
+  title: string; sub: string;
+  state: 'done' | 'pending' | 'failed';
+  /** The Zoho document number or id, once it exists. */
+  ref: string | null;
+  at: string | null;
+  note: string | null;
+  /** Posted / refunded total for this step — printed in the PO's own currency. */
+  amount: number | null;
+  /** One line per payment / refund, so a part-posted step says which one is missing. */
+  items: ZohoTrackerItem[];
+  error: string | null;
+};
+
+export type ZohoTrackerItem = {
+  label: string; amount: number;
+  state: 'done' | 'pending' | 'failed';
+  ref: string | null; at: string | null; error: string | null;
+};
+
+export type ZohoTracker = {
+  po_code: string; currency: string; cancelled: boolean;
+  done: number; total: number;
+  steps: ZohoTrackerStep[];
+};
+
 export type SupplierOption = {
   id: number; code: string; name: string; document_type: DocTypeKey;
   /** master_vendor_types.name, e.g. "Material / Goods" — must fit the PO type. */
@@ -290,6 +322,10 @@ export const poApi = {
 
   cancel: (id: number, reason: string) =>
     call('PO cancel', () => api.post(`/p2p/orders/${id}/cancel`, { reason }), dataOf<PoDetail>),
+
+  /** Where the PO stands in Zoho Books — read from our own columns, no Zoho call. */
+  zohoTracker: (id: number) =>
+    call('PO Zoho tracker', () => api.get(`/p2p/orders/${id}/zoho-tracker`), dataOf<ZohoTracker>),
 
   /** Zoho Books: PO + bill once, then any payments not posted yet. */
   zohoSync: (id: number) =>
@@ -519,8 +555,9 @@ export type GstApprovalReview = {
 
 export const poApprovalApi = {
   /** Users the request can be sent to. */
-  approvers: () =>
-    call('GST approvers', () => api.get('/p2p/orders/gst-approvals/approvers'), dataOf<GstApprover[]>),
+  /** `self` lists the caller too — a payment request may be raised to yourself. */
+  approvers: (self = false) =>
+    call('GST approvers', () => api.get('/p2p/orders/gst-approvals/approvers', { params: self ? { include_self: 1 } : undefined }), dataOf<GstApprover[]>),
 
   /** Raised from Step 03 when the supplier's GST return is overdue.
    *  On a re-send after a rejection the server keeps the same approver, so

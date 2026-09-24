@@ -5,9 +5,8 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
+import { moneyIn } from '../../../../../utils/currency';
 import './cancel-po.css';
-
-const money = (n: number) => '₹' + Math.round(n || 0).toLocaleString('en-IN');
 
 const IcoCancel = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>;
 const IcoWarn = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>;
@@ -17,7 +16,7 @@ const IcoPlus = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none
 const IcoWallet = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" /><path d="M3 5v14a2 2 0 0 0 2 2h16v-5" /><path d="M18 12a2 2 0 0 0 0 4h4v-4z" /></svg>;
 const IcoInfo = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>;
 
-export type CancelPoTarget = { po: string; supplier: string; balance: number; paid: number };
+export type CancelPoTarget = { po: string; supplier: string; balance: number; paid: number; currency?: string | null };
 
 type Props = {
   target: CancelPoTarget;
@@ -43,6 +42,7 @@ export default function CancelPoModal(props: Props) {
 
 /* One question, asked plainly: the order, what is still open, and yes or no. */
 function CancelConfirm({ target, busy, onClose, onConfirm }: Props) {
+  const money = moneyIn(target.currency);
   useScrollLock(true, '.pocan-box');
   useEscape(onClose);
   return createPortal(
@@ -75,6 +75,7 @@ function CancelConfirm({ target, busy, onClose, onConfirm }: Props) {
 
 /* Money has gone out: the refund adjustment comes first, and raising it initiates the cancellation. */
 function RefundGate({ target, onClose, onCreateRefund }: Props) {
+  const money = moneyIn(target.currency);
   useScrollLock(true, '.porec-bd');
   useEscape(onClose);
   const step = (n: number, t: string, s: string, state: 'now' | 'next') => (

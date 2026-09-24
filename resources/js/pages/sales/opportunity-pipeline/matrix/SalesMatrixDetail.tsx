@@ -85,6 +85,8 @@ export type OppHeaderData = {
    * badge in Stage 1's header. */
   qualified?:    boolean;
   disqualified?: boolean;
+  /** Mapped products / quotations / PIs already on the lead, as printable phrases. */
+  downstreamWork?: string[];
   /* Latest persisted Task Manager row, hydrated by the parent on
    * fetch + after every save. Stage 1 reads this for its read-only
    * display; the right-side TaskManagerPanel reads the same value
@@ -391,6 +393,12 @@ export default function SalesMatrixDetail() {
   const [serverHeader, setServerHeader] = useState<{
     qualified?:           boolean;
     disqualified?:        boolean;
+    /* What Stage 3 onwards is already holding (mapped products, quotations,
+       PIs), as phrases the UI can print. Empty while the lead is still clean.
+       Stage 2 reads it to refuse an un-qualifying verdict before it
+       optimistically renders the row as saved; the API enforces the same rule
+       on the write itself. */
+    downstreamWork?:      string[];
     /* The lead was reassigned AWAY from this user. They keep read access so
      * they can follow its history, but every write is refused server-side.
      * The API has always sent this; the page simply never read it, so the
@@ -472,6 +480,7 @@ export default function SalesMatrixDetail() {
     return api.get<{ status: boolean; data: {
       qualified: boolean;
       disqualified: boolean;
+      downstream_work?: string[];
       key_opportunity: boolean;
       lead_stage_id: number;
       salesperson_id: number | null;
@@ -508,6 +517,7 @@ export default function SalesMatrixDetail() {
         setServerHeader({
           qualified:           d.qualified,
           disqualified:        d.disqualified,
+          downstreamWork:      d.downstream_work ?? [],
           keyOpportunity:      !!d.key_opportunity,
           taskManager:         d.task_manager,
           acknowledgements:    d.acknowledgements ?? [],
@@ -930,6 +940,7 @@ export default function SalesMatrixDetail() {
     leadStageId:        serverHeader.leadStageId,
     qualified:          serverHeader.qualified,
     disqualified:       serverHeader.disqualified,
+    downstreamWork:     serverHeader.downstreamWork ?? [],
     taskManager:        serverHeader.taskManager,
     acknowledgements:   serverHeader.acknowledgements,
     customerId:         serverHeader.customerId,

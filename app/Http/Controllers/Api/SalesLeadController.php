@@ -684,6 +684,11 @@ class SalesLeadController extends Controller
         // malformed/legacy paths so we don't surface a broken "View" link.
         $lead->setAttribute('whatsapp_screenshot_url', file_url($lead->whatsapp_screenshot));
 
+        /* What Stage 3 onwards is holding. Stage 2 reads this to refuse an
+         * un-qualifying verdict BEFORE it optimistically shows the row as
+         * saved; the same list is what the write paths enforce. */
+        $lead->setAttribute('downstream_work', $this->downstreamWork($lead));
+
         // Task-manager attachment — same treatment as the WhatsApp screenshot
         // above. The Deal Execution "View" button used to rebuild the URL from
         // the bare disk path on the client, which resolved against the SPA origin
@@ -840,6 +845,21 @@ class SalesLeadController extends Controller
                 'status'  => false,
                 'message' => 'A lead cannot be both Qualified and Disqualified at the same time.',
             ], 422);
+        }
+
+        /* The verdict is also settable straight through this endpoint, so it
+         * carries the same downstream-work gate as Stage 2's acknowledgement
+         * save — otherwise the rule is one PUT away from being bypassed.
+         * Only a change that REMOVES the qualification is gated; re-saving a
+         * lead that is already disqualified must stay possible. */
+        $losesQualification = (array_key_exists('disqualified', $data) && !empty($data['disqualified']) && !$lead->disqualified)
+            || (array_key_exists('qualified', $data) && empty($data['qualified']) && $lead->qualified);
+        if ($losesQualification) {
+            $blocked = $this->blockUnqualifyWithWork(
+                $lead,
+                !empty($data['disqualified']) ? 'Disqualified' : 'not Qualified',
+            );
+            if ($blocked) return $blocked;
         }
 
         // Gate the move to Stage 6 (Victory): the opportunity must have a
@@ -1552,6 +1572,10 @@ class SalesLeadController extends Controller
         $this->applyScope($leadQ, $user);
         $lead = $leadQ->findOrFail($leadId);
 
+        // Stage 3+ write — needs a live Qualified verdict (see helper).
+        $blocked = $this->blockSourcingUnlessQualified($lead);
+        if ($blocked) return $blocked;
+
         $row = LeadProduct::with('product:id,status')
             ->where('lead_id', $lead->id)
             ->findOrFail($mappingId);
@@ -1603,6 +1627,10 @@ class SalesLeadController extends Controller
         $leadQ = Lead::query();
         $this->applyScope($leadQ, $user);
         $lead = $leadQ->findOrFail($leadId);
+
+        // Stage 3+ write — needs a live Qualified verdict (see helper).
+        $blocked = $this->blockSourcingUnlessQualified($lead);
+        if ($blocked) return $blocked;
 
         $row = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
 
@@ -1672,6 +1700,10 @@ class SalesLeadController extends Controller
         $leadQ = Lead::query();
         $this->applyScope($leadQ, $user);
         $lead = $leadQ->findOrFail($leadId);
+
+        // Stage 3+ write — needs a live Qualified verdict (see helper).
+        $blocked = $this->blockSourcingUnlessQualified($lead);
+        if ($blocked) return $blocked;
 
         $row = LeadProduct::with('product:id,status')
             ->where('lead_id', $lead->id)
@@ -1897,6 +1929,10 @@ class SalesLeadController extends Controller
             ], 404);
         }
 
+        // Stage 3+ write — needs a live Qualified verdict (see helper).
+        $blocked = $this->blockSourcingUnlessQualified($lead);
+        if ($blocked) return $blocked;
+
         $data = $request->validate([
             'product_id'   => 'required|integer|exists:products,id',
             // Currency stored as free-form code (USD, INR, EUR …). No
@@ -2011,6 +2047,10 @@ class SalesLeadController extends Controller
         $leadQ = Lead::query();
         $this->applyScope($leadQ, $user);
         $lead = $leadQ->findOrFail($leadId);
+
+        // Stage 3+ write — needs a live Qualified verdict (see helper).
+        $blocked = $this->blockSourcingUnlessQualified($lead);
+        if ($blocked) return $blocked;
 
         $row = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
 
@@ -2284,6 +2324,16 @@ class SalesLeadController extends Controller
             ], 422);
         }
         $type = $types->first();
+
+        /* A lead with sourced work behind it cannot be un-decided here.
+         * See blockUnqualifyWithWork() for why this is a server-side gate. */
+        if ($type !== LeadAckReason::TYPE_QUALIFIED) {
+            $blocked = $this->blockUnqualifyWithWork(
+                $lead,
+                $type === LeadAckReason::TYPE_DISQUALIFIED ? 'Disqualified' : 'Clarity Pending',
+            );
+            if ($blocked) return $blocked;
+        }
 
         $created = DB::transaction(function () use ($lead, $reasons, $type, $user) {
             $rows = [];
@@ -2709,6 +2759,101 @@ class SalesLeadController extends Controller
     /* ─────────────────────────────────────────────────────────────────
      *  Helpers
      * ───────────────────────────────────────────────────────────────── */
+
+    /**
+     * Work that only exists because someone decided to PURSUE this lead.
+     *
+     * Stage 3 onwards is built on the Stage 2 verdict, so a lead cannot be
+     * un-decided while that work is sitting on it. Returns a human-readable
+     * list of what is already there ([] when the lead is still clean), which
+     * the caller puts straight into the error so the user knows what to clear.
+     *
+     * Soft-deleted rows are excluded by the models' own global scope: a
+     * removed product is no longer work.
+     *
+     * @return string[]
+     */
+    private function downstreamWork(Lead $lead): array
+    {
+        $bits = [];
+
+        $products = LeadProduct::where('lead_id', $lead->id)->count();
+        if ($products) {
+            $bits[] = $products . ' mapped product' . ($products === 1 ? '' : 's');
+        }
+
+        $quotations = \App\Models\Quotation::where('opp_id', $lead->id)->count();
+        if ($quotations) {
+            $bits[] = $quotations . ' quotation' . ($quotations === 1 ? '' : 's');
+        }
+
+        $pis = \App\Models\ProformaInvoice::where('opp_id', $lead->id)->count();
+        if ($pis) {
+            $bits[] = $pis . ' proforma invoice' . ($pis === 1 ? '' : 's');
+        }
+
+        return $bits;
+    }
+
+    /**
+     * Refuse to un-qualify a lead that already carries downstream work.
+     *
+     * Stage 2 could re-judge a lead at any time, so the reported sequence
+     * (qualify, map a product in Stage 3, come back and disqualify) saved
+     * happily and left a Disqualified lead holding sourced products: the
+     * products were then unreachable, because Stage 3 onwards locks itself to
+     * qualified leads, yet they still counted everywhere that reads them.
+     *
+     * The frontend did warn, but only when lead_stage_id had passed 2 — and
+     * mapping a product does not move lead_stage_id (only Save & Next does),
+     * so walking into Stage 3 from the stage tracker skipped the warning
+     * entirely. That is the exact path in the report, which is why this gate
+     * measures the WORK rather than the stage number, and why it lives here:
+     * a confirm dialog cannot be the thing protecting the invariant.
+     *
+     * The lead stays re-judgeable — clear the sourced work first and the
+     * verdict is open again.
+     *
+     * @return \Illuminate\Http\JsonResponse|null  422 when blocked, null when allowed.
+     */
+    private function blockUnqualifyWithWork(Lead $lead, string $verdict)
+    {
+        $work = $this->downstreamWork($lead);
+        if (!$work) return null;
+
+        return response()->json([
+            'status'  => false,
+            'message' => 'This opportunity already carries ' . implode(' and ', $work)
+                . '. Remove that work from Stage 3 onwards before marking the lead '
+                . $verdict . '.',
+            'errors'  => ['reason_ids' => ['Downstream work must be cleared first.']],
+        ], 422);
+    }
+
+    /**
+     * Stage 3 onwards is work on a lead worth pursuing, so every write there
+     * needs a live Qualified verdict. The detail page already refuses to
+     * navigate past Stage 2 without one, but that is a client-side lock: an
+     * open tab from before the lead was disqualified, or a direct API call,
+     * walked straight past it.
+     *
+     * Deletes are deliberately NOT gated — a lead that has been disqualified
+     * has to stay clearable, or a lead carrying products could never be
+     * disqualified and then cleaned up.
+     *
+     * @return \Illuminate\Http\JsonResponse|null  422 when blocked, null when allowed.
+     */
+    private function blockSourcingUnlessQualified(Lead $lead)
+    {
+        if ($lead->qualified && !$lead->disqualified) return null;
+
+        return response()->json([
+            'status'  => false,
+            'message' => $lead->disqualified
+                ? 'This lead is Disqualified — mark it Qualified in Lead Acknowledgement before changing its products or pricing.'
+                : 'This lead is not Qualified yet — acknowledge it as Qualified before changing its products or pricing.',
+        ], 422);
+    }
 
     /**
      * Tenant scope — pin rows to the caller's tenant. Branch users are

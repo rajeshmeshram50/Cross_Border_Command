@@ -458,6 +458,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::post  ('/{id}/cancel',                    [$po, 'cancel'])->whereNumber('id');
         // Zoho Books: PO + bill, then payments not posted yet
         Route::post  ('/{id}/zoho-sync',                 [$po, 'zohoSync'])->whereNumber('id');
+        Route::get   ('/{id}/zoho-tracker',              [$po, 'zohoTracker'])->whereNumber('id');
 
         // Advance Receipt Refund Adjustment (cancel with money released) and its recoveries
         $adr = \App\Http\Controllers\Api\P2p\PoRefundAdjustmentController::class;

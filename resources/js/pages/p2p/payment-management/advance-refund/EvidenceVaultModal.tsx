@@ -4,6 +4,7 @@
 // the group cards and file rows are the prototype's own (arf-vg-* / arf-vf-*).
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { downloadFile } from '../../../../utils/downloadFile';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { useToast } from '../../../../contexts/ToastContext';
 import { IcoX } from '../../icons';
@@ -172,7 +173,8 @@ function Group({ icon, title, sub, files, empty }: {
               ) : (
                 <>
                   <a className="arf-vact" title="View" href={f.url} target="_blank" rel="noopener noreferrer"><IcoView /><span>View</span></a>
-                  <a className="arf-vact arf-vact--get" title="Download" href={f.url} download={f.name}><IcoGet /><span>Download</span></a>
+                  <button type="button" className="arf-vact arf-vact--get" title="Download"
+                    onClick={() => void downloadFile(f.url, f.name)}><IcoGet /><span>Download</span></button>
                 </>
               )}
             </span>

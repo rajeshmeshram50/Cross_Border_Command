@@ -11189,6 +11189,22 @@
 }
 .att-reg-keka-note:focus { border-color: #14b8a6 !important; box-shadow: 0 0 0 3px rgba(20,184,166,0.15) !important; outline: none !important; }
 
+/* "A request for this date is already pending approval" notice.
+   A class rather than the inline style it used to carry: inline styles win
+   over the dark-mode block below, so the amber-on-cream banner kept its light
+   surface inside the dark modal and glared. */
+.att-reg-keka-warn {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+}
+.att-reg-keka-warn i { margin-top: 1px; }
+
 /* Footer */
 .att-reg-keka-foot {
   display: flex; align-items: center; justify-content: flex-end; gap: 10px;
@@ -11371,6 +11387,13 @@
   .att-aq-search .form-control::placeholder,
   .att-reg-keka-note::placeholder {
     color: rgba(255,255,255,0.40);
+  }
+
+  /* Pending-request notice — same amber semantics, dark surface. */
+  .att-reg-keka-warn {
+    background: rgba(245,158,11,0.10);
+    border-color: rgba(245,158,11,0.35);
+    color: #fcd34d;
   }
 
   /* Tables — Bootstrap's table-light header gets a dark variant via Velzon.

@@ -689,8 +689,11 @@ export default function SalesConsignee() {
           <div className="smcg-search ui-search-abs">
             <i className="ri-search-line smcg-search-icon" />
             <input
-              type="text"
-              autoComplete="off"
+              type="search"
+              name="consignee-list-search"
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-form-type="other"
               placeholder="Search by consignee ID, customer, company, country, risk..."
               value={q}
               onChange={(e) => onSearch(e.target.value)}
@@ -939,9 +942,12 @@ export default function SalesConsignee() {
                 <i className="ri-search-line" style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: mc.textMuted, fontSize: 15 }} />
                 <input
                   type="search"
+                  name="consignee-mapped-customer-search"
                   value={mappedSearch}
                   onChange={e => setMappedSearch(e.target.value)}
-                  autoComplete="off"
+                  autoComplete="new-password"
+                  data-lpignore="true"
+                  data-form-type="other"
                   placeholder="Search customers…"
                   style={{ width: '100%', padding: '9px 14px 9px 36px', borderRadius: 10, border: `1px solid ${mc.border}`, background: mc.card, color: mc.textStrong, fontSize: 13, outline: 'none' }}
                 />

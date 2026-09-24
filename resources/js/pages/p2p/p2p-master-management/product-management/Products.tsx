@@ -673,9 +673,17 @@ export default function Products() {
         <div className="prd-toolbar-find">
         <div className="prd-search">
           <svg className="prd-search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+          {/* Autofill guard — Chrome ignores autocomplete="off" on a field it
+              classifies as contact info and drops an email / address into it
+              (QA #8 on Customers, QA #25 on Consignee). An explicit name,
+              autocomplete="new-password" and the LastPass / Dashlane opt-outs
+              keep it out of this one. */}
           <input
             type="text"
-            autoComplete="off"
+            name="product-list-search"
+            autoComplete="new-password"
+            data-lpignore="true"
+            data-form-type="other"
             placeholder="Search products by code, name, HSN or segment…"
             value={q}
             onChange={(e) => setQ(e.target.value)}

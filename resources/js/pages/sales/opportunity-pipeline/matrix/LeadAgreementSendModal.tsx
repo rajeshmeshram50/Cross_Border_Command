@@ -141,6 +141,9 @@ export type ApplicablePayload = {
     pi_id: number; pi_code: string; name: string; status: string;
     signature_request: {
       id: number; status: string;
+      /* Counterparty tally behind "1 of 2 Signed" (BR-12) — the poll below
+         projects it onto this row the same way it does for a trade doc. */
+      cpSigned?: number; cpTotal?: number;
       reminder_count?: number; last_reminder_sent_at?: string | null;
       /* Signed PDF + Certificate of Completion — same fields every other
          signable row carries, so the PI can offer the same downloads. */
@@ -1019,6 +1022,27 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
     onSent?.();
   };
 
+  /* Same refresh after the PI's OWN send. It used to just close the wizard and
+     tell the parent, leaving this popup's copy of pi_document untouched — so
+     the invoice went out and its row still read Pending with a live Send
+     button until the popup was closed and reopened. The polls below watch
+     `agreement` and `trade_doc` requests, so nothing else on screen ever
+     learned the PI had been sent (QA: Send stays enabled after sending). */
+  const onPiSent = async () => {
+    setPiSend(null);
+    setPiSelected(false);
+    if (leadId) {
+      try {
+        // light=1: only the statuses matter here, not the agreement bodies.
+        const ref = await api.get(`/clm/leads/${leadId}/agreement-applicable`, { params: { light: 1 } });
+        setPayload((ref.data?.data ?? null) as ApplicablePayload | null);
+      } catch {
+        // ignore — the PI poll below picks the new request up on its next tick
+      }
+    }
+    onSent?.();
+  };
+
   /* The signer the Trade Documents wizard sends to is derived from the active
    * tab: the Consignee tab signs as the consignee, everything else (Buyer /
    * Both / the buyer==consignee flat list) signs as the customer. */
@@ -1262,6 +1286,81 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
     const intervalId = window.setInterval(() => fetchTd(true), 15000);
     return () => { cancelled = true; window.clearInterval(intervalId); };
   }, [open, leadId, payload?.lead.id]);
+
+  /* Third 15s poll — the PI row's own signature request
+   * (document_type=proforma_invoice). The two polls above scope themselves
+   * strictly to `agreement` and `trade_doc`, so the PI was the one row in this
+   * table whose status never moved while the popup stayed open: sent, it kept
+   * its Send button and never grew a Remind button, and signed, it never
+   * offered the PDF or the certificate — all of it waited for a close-reopen.
+   * The send stores the PI id in trade_doc_id / trade_doc_ids (document_type
+   * is the discriminator, see ClmSignatureController), so match on that rather
+   * than trusting the newest row to be this invoice's. */
+  useEffect(() => {
+    if (!open || !leadId) return;
+    const piId = payload?.pi_document?.pi_id;
+    if (!piId) return;
+    let cancelled = false;
+
+    const fetchPi = async (withSync: boolean) => {
+      try {
+        const response = await api.get('/clm/signature-requests', {
+          params: { lead_id: leadId, document_type: 'proforma_invoice', sync: withSync ? 1 : 0 },
+        });
+        const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+        const row = rows.find((r: any) => {
+          const ids = Array.isArray(r.trade_doc_ids) ? r.trade_doc_ids.map(Number) : [];
+          return Number(r.trade_doc_id) === piId || ids.includes(piId);
+        });
+        if (cancelled || !row) return;
+        const signedArr = row.signed_document_paths;
+        let rawSignedUrl: string | null = null;
+        if (Array.isArray(signedArr)) {
+          const entry = signedArr[0] as { url?: string; path?: string; file_url?: string } | string | undefined;
+          if (typeof entry === 'string') rawSignedUrl = entry;
+          else if (entry && typeof entry === 'object') rawSignedUrl = entry.url || entry.file_url || entry.path || null;
+        }
+        if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || row.signed_document_path || null;
+        const rawCertUrl = row.certificate_url || row.certificate_path || null;
+        /* Same counterparty tally the trade-doc rows use (BR-12): a signed
+           recipient is a completed counterparty; declined / viewed / sent are
+           not counted. */
+        const sgs = Array.isArray(row.signers) ? row.signers : [];
+        const doneCount = sgs.filter((x: any) => {
+          const a = String(x?.action_status ?? '').toLowerCase();
+          return !x?.declined && (a === 'signed' || a === 'completed' || a === 'approved' || !!x?.signed);
+        }).length;
+        setPayload((prev) => {
+          if (!prev?.pi_document) return prev;
+          const existing = prev.pi_document.signature_request;
+          return {
+            ...prev,
+            pi_document: {
+              ...prev.pi_document,
+              status: row.status,
+              signature_request: {
+                ...(existing ?? {}),
+                id: row.id,
+                status: row.status,
+                cpSigned: doneCount,
+                cpTotal: sgs.length,
+                signed_url: rawSignedUrl ? resolveFileUrl(rawSignedUrl) : (existing?.signed_url ?? null),
+                certificate_url: rawCertUrl ? resolveFileUrl(rawCertUrl) : (existing?.certificate_url ?? null),
+                reminder_count: typeof row.reminder_count === 'number' ? row.reminder_count : (existing?.reminder_count ?? 0),
+                last_reminder_sent_at: row.last_reminder_sent_at ?? existing?.last_reminder_sent_at ?? null,
+              },
+            },
+          };
+        });
+      } catch {
+        // Silent — polling failures shouldn't toast every 15s.
+      }
+    };
+
+    fetchPi(false);
+    const intervalId = window.setInterval(() => fetchPi(true), 15000);
+    return () => { cancelled = true; window.clearInterval(intervalId); };
+  }, [open, leadId, payload?.pi_document?.pi_id]);
 
   /* Resend a Zoho reminder for an existing in-progress signature
    * request. Hits the same /clm/signature-requests/{id}/remind
@@ -2321,7 +2420,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
           leadId={leadId}
           customerName={payload?.lead?.customer?.name ?? null}
           onClose={() => setPiSend(null)}
-          onSent={() => { setPiSend(null); setPiSelected(false); onSent?.(); }}
+          onSent={() => { void onPiSent(); }}
         />
       )}
 

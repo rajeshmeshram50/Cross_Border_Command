@@ -10,7 +10,7 @@ export const EMPTY_CHARGES: Charges = { ship: '', pack: '', other: '' };
 export const chargesTotal = (c: Charges) =>
   (Number(c.ship) || 0) + (Number(c.pack) || 0) + (Number(c.other) || 0);
 
-const money = (n: number) => '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { ccySymbol, money2In } from '../../../../../../utils/currency';
 
 type Props = {
   base: number;
@@ -21,9 +21,13 @@ type Props = {
   action?: ReactNode;
   /** International PO: "Tax" instead of "GST". */
   taxLabel?: string;
+  /** The PO's own currency — an import shows its own, not ₹. */
+  ccy?: string | null;
 };
 
-export default function ChargesSummary({ base, gst, charges, onChange, action, taxLabel = 'GST' }: Props) {
+export default function ChargesSummary({ base, gst, charges, onChange, action, taxLabel = 'GST', ccy }: Props) {
+  const money = money2In(ccy);
+  const sym = ccySymbol(ccy);
   const total = chargesTotal(charges);
 
   return (
@@ -32,9 +36,9 @@ export default function ChargesSummary({ base, gst, charges, onChange, action, t
         <div className="cpd-sum__charges">
           <div className="cpd-sum__hd">Additional Charges</div>
           <div className="cpd-chg-grid">
-            <Charge label="Shipping Charges" value={charges.ship} onChange={(v) => onChange({ ship: v })} />
-            <Charge label="Packaging Charges" value={charges.pack} onChange={(v) => onChange({ pack: v })} />
-            <Charge label="Other Charges" value={charges.other} onChange={(v) => onChange({ other: v })} />
+            <Charge label="Shipping Charges" value={charges.ship} onChange={(v) => onChange({ ship: v })} sym={sym} />
+            <Charge label="Packaging Charges" value={charges.pack} onChange={(v) => onChange({ pack: v })} sym={sym} />
+            <Charge label="Other Charges" value={charges.other} onChange={(v) => onChange({ other: v })} sym={sym} />
           </div>
         </div>
         {action && <div className="cpd-savebar">{action}</div>}
@@ -60,12 +64,12 @@ const capCharge = (raw: string) => {
   return frac === undefined ? whole.slice(0, CHARGE_DIGITS) : `${whole.slice(0, CHARGE_DIGITS)}.${frac.slice(0, 2)}`;
 };
 
-function Charge({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function Charge({ label, value, onChange, sym }: { label: string; value: string; onChange: (v: string) => void; sym: string }) {
   return (
     <div className="cpd-chg-f">
       <label>{label}</label>
       <div className="cpd-chg-inwrap">
-        <span className="cpd-chg-cur">₹</span>
+        <span className="cpd-chg-cur">{sym}</span>
         <input
           className="cpd-chg-in"
           type="number"

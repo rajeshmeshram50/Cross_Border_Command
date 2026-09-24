@@ -620,6 +620,11 @@
     linear-gradient(180deg, rgba(255, 255, 255, .18), rgba(255, 255, 255, 0) 54%),
     linear-gradient(90deg, #17435c, #3b82a6 52%, #7ab8d2);
 }
+.ord-btn--track {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, .18), rgba(255, 255, 255, 0) 54%),
+    linear-gradient(90deg, #0c4a6e, #0e7490 52%, #22d3ee);
+}
 .ord-btn--cancel {
   background-image:
     linear-gradient(180deg, rgba(255, 255, 255, .22), rgba(255, 255, 255, 0) 54%),
@@ -766,11 +771,16 @@
 .ord-progress.is-pending .ord-progress__due  { color: #dc2626; }
 
 .ord-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  justify-items: stretch;
+  gap: 7px;
+  min-width: 250px;
+  margin: 0 auto;
 }
+
+.ord-actions .ord-btn { width: 100%; justify-content: center; }
 
 .ord-dash {
   font-weight: 700;
@@ -1153,8 +1163,7 @@
 .ord-card .ord-progress { width: 100%; min-width: 0; margin: 0; }
 .ord-card .ord-btn { height: 38px; padding: 0 12px; font-size: 11px; }
 .ord-card .ord-paycell .ord-btn { align-self: stretch; }
-.ord-card .ord-actions { flex-wrap: wrap; }
-.ord-card .ord-actions .ord-btn { flex: 1 1 100px; }
+.ord-card .ord-actions { min-width: 0; }
 
 [data-bs-theme="dark"] .ord-card {
   background: #1e293b;
@@ -1472,3 +1481,4 @@ body:has(.ord-page) .master-select-item.active { background: rgba(8, 145, 178, .
 .ord-status-badge svg { flex-shrink: 0; width: 10px; height: 10px; }
 .ord-po-cell > .ord-cancelbadge { margin: 0 auto; }
 .ord-card__tags .ord-status-badge { margin: 0; }
+
