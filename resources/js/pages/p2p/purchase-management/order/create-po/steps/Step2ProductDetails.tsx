@@ -8,6 +8,7 @@ import MissingProducts, { missingCount } from './MissingProducts';
 import StageSummary from './StageSummary';
 import { FitTip } from '../form-fields';
 import { manualRow, type PoDraft, type PoLineRow, type SetDraft } from '../po-draft';
+import { CpfSpinner } from '../CreatePoForm';
 import type { StepCtx } from '../CreatePoForm';
 import { IcoAlert, IcoBox, IcoChevron, IcoLines, IcoPencil, IcoPin, IcoUser } from '../../shared/icons';
 import { useAuth } from '../../../../../../contexts/AuthContext';
@@ -147,7 +148,7 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
           onChange={patchCharges}
           action={(
             <button type="button" className="spi-dt-btn-next" disabled={ctx.saving} onClick={() => { void ctx.saveLines(); }}>
-              {ctx.saving ? 'Saving…' : 'Save'}
+              {ctx.saving && <CpfSpinner />} {ctx.saving ? 'Saving…' : 'Save'}
             </button>
           )}
         />

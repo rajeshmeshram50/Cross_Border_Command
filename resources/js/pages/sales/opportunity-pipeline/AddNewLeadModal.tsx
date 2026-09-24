@@ -390,6 +390,21 @@ export default function AddNewLeadModal(props: {
       <style>{SCOPED_CSS}</style>
       <MasterFormStyles />
       <div className="anl-modal" onClick={(e) => e.stopPropagation()}>
+        {/* Saving state, made visible.
+            `inert` + the footer spinner already froze the form, but the only
+            thing that SAID so was a 14px spinner in the button and a 0.6
+            opacity dip — on a modal this tall the eye never gets there, so a
+            slow POST read as a click that did nothing (QA #60). This is the
+            app's standard busy veil (see BusyOverlay / app.css): the form the
+            user typed stays legible underneath rather than being swapped for
+            skeleton bars, which is the right treatment for content that is
+            being acted on rather than fetched. */}
+        {saving && (
+          <div className="busy-veil anl-saving-veil" role="status" aria-live="polite">
+            <span className="busy-veil-spinner" />
+            <span className="busy-veil-label">Saving lead…</span>
+          </div>
+        )}
         {/* Header */}
         <div className="anl-head">
           <div className="anl-head-left">
@@ -746,6 +761,8 @@ const SCOPED_CSS = `
 .anl-modal {
   width: 100%; max-width: 820px;
   margin: auto;
+  /* Positioning context for .anl-saving-veil. */
+  position: relative;
   background: #fff;
   border-radius: 20px;
   overflow: hidden;
@@ -755,6 +772,16 @@ const SCOPED_CSS = `
   max-height: calc(100vh - 72px);
 }
 .anl-modal *, .anl-modal *::before, .anl-modal *::after { box-sizing: border-box; }
+/* Above the sticky footer, and blurring the form it covers — .busy-veil only
+   brings the scrim + spinner, since it is normally paired with BusyOverlay's
+   own .busy-content wrapper, which this modal has no room to introduce. */
+.anl-saving-veil {
+  z-index: 20;
+  border-radius: 20px;
+  backdrop-filter: blur(2.5px);
+  -webkit-backdrop-filter: blur(2.5px);
+}
+[data-bs-theme="dark"] .anl-saving-veil { background: rgba(6, 22, 33, .55); }
 
 /* Header — teal/cyan gradient matching the Assign Leads modal so the
  * two sibling popups (both fired from the same My Workplace toolbar)

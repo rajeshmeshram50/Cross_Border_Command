@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use App\Support\ClmDocCode;
 
 class ClmQcController extends Controller
 {
@@ -269,27 +270,10 @@ class ClmQcController extends Controller
     private function nextCode(int $clientId, ?int $branchId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
-        // Branch-scoped so each branch restarts from QC-001 rather than
-        // continuing another branch's tally — the QC master is branch-
-        // isolated via MasterVisibility. A client-level creator ($branchId
-        // null) sequences the shared rows.
-        $query = ClmQcDocument::where('client_id', $clientId);
-        $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
-        $codes = $query->pluck('code')->all();
-        $maxN = 0;
-        $taken = [];
-        foreach ($codes as $c) {
-            if (preg_match('/^QC-(\d+)$/', (string) $c, $m)) {
-                $n = (int) $m[1];
-                if ($n > $maxN) $maxN = $n;
-            }
-            $taken[(string) $c] = true;
-        }
-        $n = $maxN;
-        do {
-            $n++;
-            $code = sprintf('QC-%03d', $n);
-        } while (isset($taken[$code]));
-        return $code;
+
+        /* The counter never reissues a number, even after the row that
+           held it is deleted — a recycled code would drag the old
+           document's segment rules and uploads onto the new row. */
+        return ClmDocCode::next('QC', ClmQcDocument::class, $clientId, $branchId);
     }
 }

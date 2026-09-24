@@ -537,7 +537,43 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     }
     // Fresh load — no unsaved changes yet (the editor re-seed doesn't fire onChange).
     setDirty(false);
+    syncedToEditor.current = false;
   }, [open, existing]);
+
+  /* One measurement, not two (QA #12).
+   *
+   * The counter reads `content`, while the save and the PDF / Word export read
+   * the editor's own HTML — and TipTap re-serialises whatever it parses, so a
+   * document stored at a million characters comes back out of the editor
+   * longer. Nothing showed that until Full Page, whose button happens to copy
+   * editor.getHTML() into `content`: the count then jumped past the limit
+   * without a keystroke being typed.
+   *
+   * Once the editor holds the loaded document, `content` and the length the
+   * save guard compares against are both taken from it, so the number on
+   * screen is the number that decides — the same before and after Full Page,
+   * and honest from the moment the draft opens. */
+  /* The writer's own count: the text with its markup taken off, so restyling a
+     selection leaves it exactly where it was. Memoised — the document can be a
+     megabyte and this runs on every keystroke otherwise. */
+  const textLength = useMemo(
+    () => (content ?? '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&[a-z]+;/gi, ' ').length,
+    [content],
+  );
+
+  const syncedToEditor = useRef(false);
+  useEffect(() => {
+    if (syncedToEditor.current) return;
+    const ed = ted.editor;
+    if (!ed || !content) return;
+    const html = ed.getHTML();
+    // Still empty means the editor has not parsed the document yet.
+    if (!html || html === '<p></p>') return;
+    syncedToEditor.current = true;
+    if (html === content) return;
+    loadedLen.current = html.length;
+    setContent(html);
+  }, [ted.editor, content]);
 
   // Keep our names list in sync with the parent — picks up new entries
   // added via the standalone "Trade Documents List" tab while the modal
@@ -1161,13 +1197,22 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                       headerConfig={headerConfig as unknown as Record<string, unknown>}
                       footerConfig={footerConfig as unknown as Record<string, unknown>}
                       dark={ops.dark}
+                      /* Render when asked for (↻ Update Preview, or Ctrl+S),
+                         not after every pause in typing (QA #80). One render is
+                         a full dompdf pass over the whole document, so a draft
+                         being written spent most of the time watching the panel
+                         rebuild a version it had already moved past. The panel
+                         marks itself stale meanwhile, so it never quietly shows
+                         an out-of-date page as if it were current. The same
+                         mode the CTC draft editor has been running in. */
+                      manualRefresh
                     />
                   </div>
                 )}
                 </div>
                 <div className="tdw-editor-foot" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span className="tdw-editor-foot-hint">ℹ Placeholders auto-fill on document generation</span>
-                  <TdwCharCounter length={(content ?? '').length} />
+                  <TdwCharCounter length={(content ?? '').length} textLength={textLength} />
                 </div>
               </div>
               ); return fullPage ? createPortal(editorShell, document.body) : editorShell; })()}
@@ -1820,17 +1865,35 @@ const TDW_RENDER_MAX_CHARS = 1000000;
  * that whole-tree re-render was the editor lag (QA #40). `baseLength` seeds the
  * count from freshly-loaded content; `remountKey` (the full-page flag) makes the
  * listener re-attach when the editor element is re-created by the portal. */
-function TdwCharCounter({ length }: { length: number }) {
-  // `length` = the current HTML length, fed from the parent's `content` state
-  // (TipTap's onChange keeps it debounced/current). No DOM reads here anymore.
+/* What the writer typed, and what the renderer has to carry (QA #14).
+ *
+ * The limit is on the DOCUMENT, not on the writing: it exists because the PDF
+ * and Word exports give out around a megabyte of HTML, and every bit of
+ * formatting is part of that HTML. Changing a selection's font size wraps it
+ * in <span style="font-size:…"> — real characters, so a single number called
+ * "characters" jumped without a word being typed and read like a bug.
+ *
+ * Two readings instead. The text count is the writer's own and never moves
+ * when something is restyled; the size beside it is what the limit is actually
+ * measured against, and it is the one that turns amber and red. */
+function TdwCharCounter({ length, textLength }: { length: number; textLength: number }) {
   const pct = length / TDW_RENDER_MAX_CHARS;
   const over = length > TDW_RENDER_MAX_CHARS;
   const color = over ? '#e11d48' : pct > 0.8 ? '#d97706' : '#5e7888';
+  /* 1,000,000 characters of HTML is the ~1 MB the renderers choke at. Small
+     drafts are shown in bytes rather than rounding down to a flat "0 KB". */
+  const asSize = (n: number) => (n >= 1000000 ? `${(n / 1000000).toFixed(2)} MB`
+    : n >= 10000 ? `${Math.round(n / 1000)} KB`
+      : n >= 1000 ? `${(n / 1000).toFixed(1)} KB` : `${n} B`);
   return (
     <span
-      title={over ? 'Over the 1,000,000-character limit — the PDF/Word download will be blocked until you shorten it.' : `${TDW_RENDER_MAX_CHARS.toLocaleString()} character limit (~1 MB) for PDF/Word export`}
+      title={over
+        ? `This document is ${length.toLocaleString()} characters of HTML — over the 1,000,000 (~1 MB) the PDF and Word exports can carry. They stay blocked until it is shortened.`
+        : `${textLength.toLocaleString()} characters of text. The limit is on document size — text plus its formatting — because that is what the PDF and Word exports carry: ${length.toLocaleString()} of 1,000,000 characters (~1 MB).`}
       style={{ fontSize: 11, fontWeight: 700, color, whiteSpace: 'nowrap' }}>
-      {length.toLocaleString()} / {TDW_RENDER_MAX_CHARS.toLocaleString()}{over ? ' ⚠' : ''}
+      <span style={{ color: '#5e7888' }}>{textLength.toLocaleString()} chars</span>
+      {' · '}
+      {asSize(length)} / 1 MB{over ? ' ⚠' : ''}
     </span>
   );
 }

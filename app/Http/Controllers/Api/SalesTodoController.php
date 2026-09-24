@@ -336,7 +336,13 @@ class SalesTodoController extends Controller
             'opp_date'   => 'nullable|date',
             'subject'    => ['required','string','max:255', $this->safeTextRule(3, 255)],
             'set_date'   => ['required','date'],
-            'tat'        => 'nullable|string|max:60',
+            /* Required (QA #61). TAT is the turnaround a reminder is chased
+               against — without one it can be neither late nor on time, and
+               the lead's reminder table prints a dash where the pill goes.
+               Safe for both callers: the Lead > Reminders form now validates
+               it, and the Sales To-Do form has always defaulted it to
+               '24 Hours' rather than sending it empty. */
+            'tat'        => 'required|string|max:60',
             'remark'     => 'nullable|string|max:2000',
             'status'     => ['nullable', Rule::in(SalesReminder::STATUSES)],
             'attachment' => 'nullable|file|max:' . self::ATTACH_MAX_KB . '|mimes:' . self::ATTACH_MIMES,

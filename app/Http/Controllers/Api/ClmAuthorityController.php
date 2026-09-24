@@ -147,19 +147,18 @@ class ClmAuthorityController extends Controller
             'status'      => ['nullable', Rule::in(ClmAuthority::STATUSES)],
         ]);
 
-        // Reject duplicate authority names within the caller's branch scope
-        // (case-insensitive). A sibling branch that can't see this row may
-        // reuse the name — consistent with branch-isolated masters.
+        /* The NAME alone is the identity of an authority (QA #2). It used to be
+           unique only together with the description, so "FSSAI" could be added
+           a second time by typing a different description — and a list with two
+           FSSAI rows is a list nobody can use. Case-insensitive, and scoped to
+           what the caller can see: a sibling branch that cannot see this row may
+           still use the name, as with every other branch-isolated master. */
         $name = trim($data['name']);
-        // Unique on the name + description PAIR — same name with a different
-        // description is allowed.
-        $dupe = ClmAuthority::query()
-            ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)])
-            ->whereRaw('LOWER(TRIM(description)) = ?', [mb_strtolower(trim($data['description']))]);
+        $dupe = ClmAuthority::query()->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)]);
         MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
         if ($dupe->exists()) {
             throw ValidationException::withMessages([
-                'name' => "An authority with this name and description already exists.",
+                'name' => "An authority named \"{$name}\" already exists.",
             ]);
         }
 
@@ -197,8 +196,10 @@ class ClmAuthorityController extends Controller
         $existing = ClmAuthority::query();
         MasterVisibility::applyReadScope($existing, $user, $user->branch_id ?: null);
         $seen = [];
-        $key = fn($n, $d) => mb_strtolower(trim((string) $n)) . " " . mb_strtolower(trim((string) $d));
-        foreach ($existing->get(['name', 'description']) as $e) $seen[$key($e->name, $e->description)] = true;
+        // Keyed on the NAME alone, like the single add and the rename (QA #2):
+        // an import must not be the way in for a duplicate the form refuses.
+        $key = fn($n) => mb_strtolower(trim((string) $n));
+        foreach ($existing->get(['name']) as $e) $seen[$key($e->name)] = true;
 
         $imported = [];
         $failed   = [];
@@ -214,14 +215,14 @@ class ClmAuthorityController extends Controller
             elseif ($desc === '')                    $reason = 'Description is required';
             elseif (mb_strlen($name) > 255)          $reason = 'Authority name exceeds 255 characters';
             elseif (mb_strlen($desc) > 500)          $reason = 'Description exceeds 500 characters';
-            elseif (isset($seen[$key($name, $desc)])) $reason = 'An authority with this name and description already exists';
+            elseif (isset($seen[$key($name)]))       $reason = 'An authority with this name already exists';
 
             if ($reason) {
                 $failed[] = ['row' => $rowNo, 'name' => $name, 'description' => $desc, 'reason' => $reason];
                 continue;
             }
 
-            $seen[$key($name, $desc)] = true;
+            $seen[$key($name)] = true;
             $valid[] = ['row' => $rowNo, 'name' => $name, 'description' => $desc];
         }
 
@@ -306,17 +307,15 @@ class ClmAuthorityController extends Controller
 
         // Reject rename to a duplicate within the caller's branch scope
         // (case-insensitive, excluding self).
-        if (isset($data['name']) || isset($data['description'])) {
-            $newName = $data['name'] ?? (string) $row->name;
-            $newDesc = $data['description'] ?? (string) $row->description;
+        if (isset($data['name'])) {
+            $newName = trim((string) $data['name']);
             $clash = ClmAuthority::query()->where('id', '!=', $row->id)
-                ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($newName))])
-                ->whereRaw('LOWER(TRIM(description)) = ?', [mb_strtolower(trim($newDesc))]);
+                ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($newName)]);
             MasterVisibility::applyReadScope($clash, $user, $user->branch_id ?: null);
             $clash = $clash->exists();
             if ($clash) {
                 throw ValidationException::withMessages([
-                    'name' => "Another authority with this name and description already exists.",
+                    'name' => "Another authority named \"{$newName}\" already exists.",
                 ]);
             }
         }

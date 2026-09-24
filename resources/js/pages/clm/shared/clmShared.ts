@@ -1311,10 +1311,17 @@ body > .dropdown-menu.master-select-menu,
    instead of matching it exactly, so the empty space still reads as surface. */
 [data-bs-theme="dark"] .clm-table-fill { background: linear-gradient(180deg, #101d2e, #0f172a); }
 [data-bs-theme="dark"] .clm-table-fill > .clm-table { background: #0f172a; }
+/* The header has to read as a header (QA #9). On the dark surface a 18% teal
+   wash sat only a shade above the rows, the labels were weight 500 like the
+   data, and the rule under them was a 1.5px line at 30% — so the first row of
+   values looked like part of the heading. Solid band, bolder labels, and a
+   proper rule beneath it. */
 [data-bs-theme="dark"] .clm-table thead th {
-  background: rgba(8,145,178,.18);
-  color: #cffafe;
-  border-bottom-color: rgba(6,182,212,.30);
+  background: #12303d;
+  color: #a5f3fc;
+  font-weight: 700;
+  border-bottom: 2px solid rgba(34,211,238,.55);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
 }
 [data-bs-theme="dark"] .clm-table tbody tr { border-bottom-color: rgba(6,182,212,.10); }
 [data-bs-theme="dark"] .clm-table tbody tr:nth-child(even) { background: rgba(8,145,178,.06); }

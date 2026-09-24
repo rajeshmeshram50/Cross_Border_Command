@@ -1295,6 +1295,13 @@ function AgrEditor({
             headerConfig={headerConfig as unknown as Record<string, unknown>}
             footerConfig={footerConfig as unknown as Record<string, unknown>}
             dark={ops.dark}
+            /* Rendered when asked for (↻ Update Preview, or Ctrl+S), not after
+               every pause in typing — the same as the CTC and Trade Document
+               drafts (QA #80). A render is a full dompdf pass over the whole
+               agreement, so auto-refresh spent the writing time rebuilding a
+               version already moved past; the panel marks itself stale instead,
+               so it never shows an out-of-date page as if it were current. */
+            manualRefresh
           />
         </div>
       )}

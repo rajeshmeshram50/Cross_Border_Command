@@ -3375,6 +3375,42 @@ const CTC_FORM_CSS = `
 .ctc-editor img { max-width: 100%; height: auto; }
 .ctc-editor table { max-width: 100%; table-layout: fixed; }
 .ctc-editor td, .ctc-editor th { overflow-wrap: break-word; }
+/* Dark mode: the drafted content carries the author's own colours — white
+   table cells, black text, whatever Word or the clause library brought in —
+   and on a dark sheet those cells sat as bright white slabs with the rest of
+   the agreement themed around them. The preview is a reading surface, not the
+   printed output (the PDF and the DOCX keep the author's colours exactly), so
+   here the cells follow the sheet and the text follows the theme. The header
+   row keeps a tint of its own so a table still reads as a table. */
+[data-bs-theme="dark"] .ctc-editor table,
+[data-bs-theme="dark"] .ctc-editor thead,
+[data-bs-theme="dark"] .ctc-editor tbody,
+[data-bs-theme="dark"] .ctc-editor tr,
+[data-bs-theme="dark"] .ctc-editor th,
+[data-bs-theme="dark"] .ctc-editor td {
+  background-color: transparent !important;
+  color: #e5e7eb !important;
+  border-color: rgba(255, 255, 255, .16) !important;
+}
+[data-bs-theme="dark"] .ctc-editor thead th,
+[data-bs-theme="dark"] .ctc-editor tr:first-child th { background-color: rgba(139, 92, 246, .18) !important; }
+/* Every background the author painted, and every colour they typed.
+   Cells alone were not enough: the text inside them carries its own colour —
+   black from Word, near-black from the clause library — and once the cell went
+   dark that text disappeared into it. On a dark reading surface the whole
+   document takes the theme's ink; headings keep an accent of ours so the
+   structure still reads. The PDF and the DOCX are untouched. */
+[data-bs-theme="dark"] .ctc-editor,
+[data-bs-theme="dark"] .ctc-editor * {
+  background-color: transparent !important;
+  color: #e5e7eb !important;
+}
+[data-bs-theme="dark"] .ctc-editor h1,
+[data-bs-theme="dark"] .ctc-editor h2,
+[data-bs-theme="dark"] .ctc-editor h3 { color: #c4b5fd !important; }
+[data-bs-theme="dark"] .ctc-editor a { color: #93c5fd !important; }
+[data-bs-theme="dark"] .ctc-editor thead th,
+[data-bs-theme="dark"] .ctc-editor tr:first-child th { background-color: rgba(139, 92, 246, .18) !important; }
 .ctc-spin { animation: ctcSpin .7s linear infinite; }
 @keyframes ctcSpin { to { transform: rotate(360deg); } }
 @keyframes ataSlideUp { from { opacity: 0; transform: translateY(14px) scale(.96); } to { opacity: 1; transform: none; } }
