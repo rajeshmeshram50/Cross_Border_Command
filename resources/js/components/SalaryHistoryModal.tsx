@@ -52,6 +52,23 @@ type Props = {
 const inr = (n: number) =>
   '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/* Annual CTC carries no paise. (CBC #35)
+ *
+ * It is not a figure anyone is paid — it is the agreed package, and it was
+ * being PRINTED as monthly_ctc x 12 to two decimals. A monthly amount is the
+ * CTC divided by twelve and stored to the paisa, so twelfths that do not
+ * divide cleanly came back a few paise short of the package they came from:
+ * a configured ₹4,00,000 is ₹33,333.33 a month, and ₹33,333.33 x 12 prints
+ * ₹3,99,999.96. Nothing was mis-stored; the reader was simply shown the
+ * round trip instead of the agreed number, and it disagreed with the
+ * Compensation card (which has always rounded to the rupee) by four paise.
+ *
+ * Whole rupees here, matching EmployeeProfile's Current Compensation. The
+ * paise stay where they are earned — monthly gross, and every payroll
+ * column, which must reconcile by eye. */
+const inrWhole = (n: number) =>
+  '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+
 const longDate = (d?: string | null) =>
   d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
@@ -259,7 +276,20 @@ export default function SalaryHistoryModal({ open, onClose, employee }: Props) {
                   <div className="d-flex flex-wrap gap-4 py-3">
                     <div>
                       <div className="text-muted" style={{ fontSize: 10, letterSpacing: '.05em' }}>ANNUAL CTC</div>
-                      <div className="fw-bold" style={{ fontSize: 14 }}>{inr(v.monthly_ctc * 12)}</div>
+                      {/* The CURRENT version shows the package actually
+                          configured on the employee, not a figure re-derived
+                          from the monthly amount — same number the Revise
+                          Salary form opens with, so the two cannot disagree.
+                          Superseded versions have no stored annual of their
+                          own (the column lives on the employee, and it moves
+                          with each revision), so those stay derived. */}
+                      <div className="fw-bold" style={{ fontSize: 14 }}>
+                        {inrWhole(
+                          isCurrent && Number(employee?.annual_salary) > 0
+                            ? Number(employee?.annual_salary)
+                            : v.monthly_ctc * 12,
+                        )}
+                      </div>
                     </div>
                     <div>
                       <div className="text-muted" style={{ fontSize: 10, letterSpacing: '.05em' }}>MONTHLY GROSS</div>
