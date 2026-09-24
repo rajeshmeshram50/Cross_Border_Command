@@ -285,6 +285,57 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     try { setDetail(await poApi.show(poId)); } catch (e) { fail(e); }
   };
 
+  /* A pending request is decided on someone else's screen, so this one has to
+     ask. While a request is waiting the PO is re-read every 20 seconds and
+     whenever the tab comes back to the front — so an approval or a rejection
+     shows up here on its own instead of on the next reload (QA #85). Quiet:
+     one small GET, only while something is actually pending and the tab is
+     visible, and it stops the moment a decision lands. */
+  /* Read from the PO itself, not from the tone-filtered `approval` above: that
+     one is null unless the supplier's GST reads as "approval required" on this
+     screen, and a request can be waiting whatever this screen currently makes
+     of the supplier. If the server says a decision is outstanding, this form
+     watches for it. */
+  const pendingApproval = detail?.gst_approval?.status === 'pending';
+  useEffect(() => {
+    if (!poId || !pendingApproval) return;
+    let alive = true;
+    const read = async () => {
+      if (document.hidden || savingRef.current) return;
+      try {
+        const fresh = await poApi.show(poId);
+        if (alive) setDetail(fresh);
+      } catch { /* a background poll never interrupts the user */ }
+    };
+    const timer = window.setInterval(read, 20_000);
+    const onVisible = () => { if (!document.hidden) void read(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [poId, pendingApproval]);
+
+  /* The decision itself, announced once. Without this the panel simply changed
+     colour while the user was looking at another part of the form. */
+  const lastApprovalStatus = useRef<string | null>(null);
+  useEffect(() => {
+    const now = detail?.gst_approval?.status ?? null;
+    const before = lastApprovalStatus.current;
+    lastApprovalStatus.current = now;
+    if (!before || before !== 'pending' || now === 'pending' || !now) return;
+    const who = detail?.gst_approval?.requested_to_name ?? 'The senior';
+    if (now === 'approved') toast.success('Senior approved', `${who} approved this PO — you can submit it now.`);
+    if (now === 'rejected') {
+      toast.error('Senior rejected', detail?.gst_approval?.reason
+        ? `${who}: “${detail.gst_approval.reason}”`
+        : `${who} rejected this request. Send it again once the reason is addressed.`);
+    }
+  }, [approval?.status, detail?.gst_approval?.reason, detail?.gst_approval?.requested_to_name, toast]);
+
   /* ── Saving each stage ── */
 
   /** Marks the step's errors visible and says how many fields need attention. */
@@ -605,7 +656,9 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
               disabled={saving || booting || awaitingApproval}
               title={awaitingApproval ? `Waiting for ${detail?.gst_approval?.requested_to_name ?? 'the senior'} to approve — the PO cannot be submitted yet.` : undefined}
             >
-              {isSubmit && <IcoCheck />} {nextLabel} <IcoChevronR />
+              {saving ? <CpfSpinner /> : isSubmit && <IcoCheck />}
+              {nextLabel}
+              {saving ? null : <IcoChevronR />}
             </button>
           </div>
         </div>
@@ -645,6 +698,18 @@ export function HeadPill({ icon, label, value, mono, alt }: { icon: React.ReactN
         </FitTip>
       </div>
     </div>
+  );
+}
+
+/* The save in progress, said in the button itself. "Saving…" alone was a word
+   change on a disabled button — easy to miss, and on a fast save easy to doubt
+   it happened at all (QA #86). */
+export function CpfSpinner() {
+  return (
+    <svg className="cpf-spin" width="14" height="14" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden>
+      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+    </svg>
   );
 }
 

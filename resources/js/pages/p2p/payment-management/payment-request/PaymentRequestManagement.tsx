@@ -273,7 +273,7 @@ export default function PaymentRequestManagement() {
         </div>
 
         {loading && !rows.length ? (
-          <div className="ord-empty">Loading payment requests…</div>
+          <PrmListSkeleton />
         ) : pageRows.length === 0 ? (
           <div className="ord-empty">
             {search.trim() ? 'No payment requests match your search.' : 'No payment requests in this category.'}
@@ -385,6 +385,40 @@ export default function PaymentRequestManagement() {
           <PaymentRequestDetail requestId={viewId} onBack={closeView} onChanged={refresh} />
         </Suspense>
       )}
+    </div>
+  );
+}
+
+/* The list while it loads (QA #87): the table it is about to become, with bars
+   where the values will be, instead of the line "Loading payment requests…".
+   Same bars (.spi-sk-bar) and the same column widths the PO list uses, so the
+   two lists wait in the same way. */
+function PrmListSkeleton() {
+  return (
+    <div className="ord-table-scroll">
+      <table className="ord-table" style={{ minWidth: TABLE_WIDTH, width: '100%' }}>
+        <colgroup>
+          {COLUMNS.map(c => <col key={c.label} style={{ width: c.width }} />)}
+        </colgroup>
+        <thead>
+          <tr>
+            {COLUMNS.map(c => (
+              <th key={c.label} className={c.groupEnd ? 'ord-table__group-end' : undefined}>{c.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: 6 }).map((_, row) => (
+            <tr key={row} className="ord-skel-tr">
+              {COLUMNS.map(c => (
+                <td key={c.label} className={c.groupEnd ? 'ord-table__group-end' : undefined}>
+                  <span className="spi-sk-bar" style={{ width: Math.round(c.width * 0.6) }} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

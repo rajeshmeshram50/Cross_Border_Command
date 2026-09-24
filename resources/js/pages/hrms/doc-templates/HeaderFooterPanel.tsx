@@ -260,6 +260,8 @@ export default function HeaderFooterPanel({
   const [dragging, setDragging] = useState<'logo' | 'title' | null>(null);
   // Latest position produced by the in-flight drag, read once on release.
   const lastDragRef = useRef<PointPct | null>(null);
+  // True for the click that follows a drag, so it does not open the settings.
+  const draggedRef = useRef(false);
 
   const startDrag = (which: 'logo' | 'title') => (e: React.MouseEvent) => {
     if (readOnly) return;
@@ -301,6 +303,11 @@ export default function HeaderFooterPanel({
     };
     const onUp = () => {
       setDragging(null);
+      /* A drag that ends off the logo — which is most of them, since the point
+         is to move it somewhere else — fires its click on the band, and the
+         band opens Header Settings. Remember that a drag just happened so that
+         click can be ignored. */
+      if (lastDragRef.current) draggedRef.current = true;
       // Settle onto the printed geometry (printMode only); a click with no
       // movement leaves everything exactly as it was.
       if (printMode && lastDragRef.current) snapToPrintGeometry(which, lastDragRef.current);
@@ -412,6 +419,16 @@ export default function HeaderFooterPanel({
     left: edgeSnappedLeft(pos, halfPx, live),
     top:  `${pos.y}%`,
     transform: 'translate(-50%, -50%)',
+    /* Intrinsic width, capped at the band — never "whatever is left".
+       An absolutely positioned box with only `left` set sizes itself from the
+       space remaining to its right, and the logo inside is capped at 100% OF
+       THAT. Dragging the logo rightwards therefore squeezed it: less room →
+       narrower logo → smaller measured half-width → the clamp let it go
+       further right → narrower still. It ended as a 1px sliver at the edge,
+       which read as the logo vanishing. max-content breaks the loop; the 100%
+       cap still scales a logo wider than the band itself. */
+    width: 'max-content',
+    maxWidth: '100%',
     cursor: readOnly ? 'default' : 'grab',
     userSelect: 'none',
     touchAction: 'none',
@@ -457,6 +474,8 @@ export default function HeaderFooterPanel({
           // inline-editable) or the logo (which is draggable).
           if (readOnly) return;
           if ((e.target as HTMLElement).closest('[data-tpl-no-popover="1"]')) return;
+          // The click that ends a drag is not a click on the backdrop.
+          if (draggedRef.current) { draggedRef.current = false; return; }
           setOpenZone(openZone === 'header' ? null : 'header');
         }}
         title={readOnly ? '' : 'Drag the logo / title; click any empty area to edit settings'}

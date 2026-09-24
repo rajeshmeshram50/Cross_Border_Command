@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use App\Support\ClmDocCode;
 
 class ClmKycController extends Controller
 {
@@ -90,12 +91,12 @@ class ClmKycController extends Controller
         $name = trim($data['name']);
         $dupe = ClmKycDocument::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
         MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
-        $newAuth = ClmAuthority::normalizeIds($data['authority'] ?? null, $user->client_id);
-        // Unique on name + issuing authority TOGETHER — the same name under a
-        // different authority set is a different document.
-        if ($dupe->pluck('authority')->contains(fn ($a) => ClmAuthority::sameIdSet($a, $newAuth))) {
+        // The name alone must be unique — a second document with the same name
+        // under a different authority is still a duplicate to the people reading
+        // the list.
+        if ($dupe->exists()) {
             throw ValidationException::withMessages([
-                'name' => "A KYC document named \"{$name}\" with the same issuing authority already exists.",
+                'name' => "A KYC document named \"{$name}\" already exists.",
             ]);
         }
 
@@ -148,15 +149,14 @@ class ClmKycController extends Controller
             }
         }
 
-        if (isset($data['name']) || isset($data['authority'])) {
-            $checkName = $data['name'] ?? trim((string) $row->name);
-            $checkAuth = $data['authority'] ?? (string) $row->authority;
+        if (isset($data['name'])) {
+            $checkName = trim((string) $data['name']);
             $clash = ClmKycDocument::query()->where('id', '!=', $row->id)
                 ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($checkName)]);
             MasterVisibility::applyReadScope($clash, $user, $user->branch_id ?: null);
-            if ($clash->pluck('authority')->contains(fn ($a) => ClmAuthority::sameIdSet($a, $checkAuth))) {
+            if ($clash->exists()) {
                 throw ValidationException::withMessages([
-                    'name' => "Another KYC document named \"{$checkName}\" with the same issuing authority already exists.",
+                    'name' => "Another KYC document named \"{$checkName}\" already exists.",
                 ]);
             }
         }
@@ -196,24 +196,10 @@ class ClmKycController extends Controller
     private function nextCode(int $clientId, ?int $branchId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
-        
-        $query = ClmKycDocument::where('client_id', $clientId);
-        $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
-        $codes = $query->pluck('code')->all();
-        $maxN = 0;
-        $taken = [];
-        foreach ($codes as $c) {
-            if (preg_match('/^KYC-(\d+)$/', (string) $c, $m)) {
-                $n = (int) $m[1];
-                if ($n > $maxN) $maxN = $n;
-            }
-            $taken[(string) $c] = true;
-        }
-        $n = $maxN;
-        do {
-            $n++;
-            $code = sprintf('KYC-%03d', $n);
-        } while (isset($taken[$code]));
-        return $code;
+
+        /* The counter never reissues a number, even after the row that
+           held it is deleted — a recycled code would drag the old
+           document's segment rules and uploads onto the new row. */
+        return ClmDocCode::next('KYC', ClmKycDocument::class, $clientId, $branchId);
     }
 }

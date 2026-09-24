@@ -2198,6 +2198,10 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
   box-shadow: 0 0 8px 2px rgba(255, 255, 255, .85);
 }
 
+/* The save spinner in a footer / step button. */
+.cpf-spin { animation: cpf-spin 0.7s linear infinite; flex-shrink: 0; }
+@keyframes cpf-spin { to { transform: rotate(360deg); } }
+
 /* ── Supplier fields while the master record is being read ──
    Picking a supplier fetches its record, its vault and its GST position; the
    read-only boxes used to sit empty with the word "Loading…" in one of them.

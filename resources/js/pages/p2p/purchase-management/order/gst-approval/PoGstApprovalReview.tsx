@@ -121,9 +121,7 @@ export default function PoGstApprovalReview() {
       </div>
     );
   }
-  if (!data) {
-    return <div className="pga-page"><div className="pga-loading"><span className="spinner-border spinner-border-sm" /> Loading request…</div></div>;
-  }
+  if (!data) return <PgaSkeleton />;
 
   const { request: req, po, supplier, gst, lines } = data;
   const cur = po.currency_code;
@@ -531,6 +529,84 @@ function SupplierPanel({ supplier, gst, riskTone, inactive }: {
       </div>
 
     </section>
+  );
+}
+
+/* The page while it loads: the shape it is about to take, so the wait reads as
+   the page arriving rather than a spinner in an empty white box. Opened from a
+   notification, this is the approver's first impression of the request. */
+function PgaSkeleton() {
+  return (
+    <div className="pga-page pga-skel" aria-busy="true" aria-label="Loading the request">
+      <header className="prd-head pga-head">
+        <div className="prd-hrow">
+          <div className="prd-titlewrap">
+            <div className="prd-hicon" />
+            <div className="prd-titleblock">
+              <span className="pga-sk pga-sk--title" />
+              <span className="pga-sk pga-sk--sub" />
+            </div>
+          </div>
+          <div className="prd-right">
+            <div className="prd-chips">
+              {[0, 1, 2, 3, 4].map((i) => <div className="prd-chip" key={i}><span className="pga-sk pga-sk--chip" /></div>)}
+            </div>
+            <div className="prd-hactions">
+              <span className="pga-sk pga-sk--btn" />
+              <span className="pga-sk pga-sk--btn pga-sk--btn-wide" />
+            </div>
+          </div>
+        </div>
+        <div className="prd-cols prd-cols--one">
+          <div className="prd-col">
+            <span className="pga-sk pga-sk--label" />
+            <div className="prd-col__grid">
+              {[0, 1, 2].map((i) => <div className="prd-refcard" key={i}><span className="pga-sk pga-sk--tile" /></div>)}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="pga-tiles">
+        {[0, 1, 2].map((i) => (
+          <div className="pga-tile" key={i}>
+            <span className="pga-sk pga-sk--ico" />
+            <div className="pga-tile__txt">
+              <span className="pga-sk pga-sk--label" />
+              <span className="pga-sk pga-sk--value" />
+              <span className="pga-sk pga-sk--sub" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="pga-layout">
+        <div className="pga-main">
+          <section className="pga-card">
+            <span className="pga-sk pga-sk--head" />
+            <div className="pga-facts pga-facts--grid">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <div className="pga-fact" key={i}>
+                  <span className="pga-sk pga-sk--label" />
+                  <span className="pga-sk pga-sk--value" />
+                </div>
+              ))}
+            </div>
+          </section>
+          <section className="pga-card">
+            <span className="pga-sk pga-sk--head" />
+            {[0, 1, 2].map((i) => <span className="pga-sk pga-sk--row" key={i} />)}
+          </section>
+        </div>
+        <aside className="pga-side">
+          <div className="pga-sk pga-sk--amt" />
+          <section className="pga-card">
+            <span className="pga-sk pga-sk--head" />
+            <span className="pga-sk pga-sk--box" />
+          </section>
+        </aside>
+      </div>
+    </div>
   );
 }
 

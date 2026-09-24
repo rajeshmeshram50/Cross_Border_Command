@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use App\Support\ClmDocCode;
 
 class ClmTradeLicenseController extends Controller
 {
@@ -90,11 +91,11 @@ class ClmTradeLicenseController extends Controller
         $name = trim($data['name']);
         $dupe = ClmTradeLicense::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
         MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
-        $newAuth = ClmAuthority::normalizeIds($data['authority'] ?? null, $user->client_id);
-        // Unique on name + issuing authority TOGETHER — the same name under a
-        // different authority set is a different document.
-        if ($dupe->pluck('authority')->contains(fn ($a) => ClmAuthority::sameIdSet($a, $newAuth))) {
-            $msg = "A trade licence named \"{$name}\" with the same issuing authority already exists.";
+        // The name alone must be unique — a second licence with the same name
+        // under a different authority is still a duplicate to the people reading
+        // the list.
+        if ($dupe->exists()) {
+            $msg = "A trade licence named \"{$name}\" already exists.";
             
             return response()->json([
                 'status'  => false,
@@ -152,14 +153,13 @@ class ClmTradeLicenseController extends Controller
             }
         }
 
-        if (isset($data['name']) || isset($data['authority'])) {
-            $checkName = $data['name'] ?? trim((string) $row->name);
-            $checkAuth = $data['authority'] ?? (string) $row->authority;
+        if (isset($data['name'])) {
+            $checkName = trim((string) $data['name']);
             $clash = ClmTradeLicense::query()->where('id', '!=', $row->id)
                 ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($checkName)]);
             MasterVisibility::applyReadScope($clash, $user, $user->branch_id ?: null);
-            if ($clash->pluck('authority')->contains(fn ($a) => ClmAuthority::sameIdSet($a, $checkAuth))) {
-                $msg = "Another trade licence named \"{$checkName}\" with the same issuing authority already exists.";
+            if ($clash->exists()) {
+                $msg = "Another trade licence named \"{$checkName}\" already exists.";
                 return response()->json([
                     'status'  => false,
                     'message' => $msg,
@@ -204,24 +204,10 @@ class ClmTradeLicenseController extends Controller
     private function nextCode(int $clientId, ?int $branchId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
-      
-        $query = ClmTradeLicense::where('client_id', $clientId);
-        $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
-        $codes = $query->pluck('code')->all();
-        $maxN = 0;
-        $taken = [];
-        foreach ($codes as $c) {
-            if (preg_match('/^TL-(\d+)$/', (string) $c, $m)) {
-                $n = (int) $m[1];
-                if ($n > $maxN) $maxN = $n;
-            }
-            $taken[(string) $c] = true;
-        }
-        $n = $maxN;
-        do {
-            $n++;
-            $code = sprintf('TL-%03d', $n);
-        } while (isset($taken[$code]));
-        return $code;
+
+        /* The counter never reissues a number, even after the row that
+           held it is deleted — a recycled code would drag the old
+           document's segment rules and uploads onto the new row. */
+        return ClmDocCode::next('TL', ClmTradeLicense::class, $clientId, $branchId);
     }
 }

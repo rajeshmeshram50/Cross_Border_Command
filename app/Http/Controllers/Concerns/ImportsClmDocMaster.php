@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Concerns;
 
 use App\Models\ClmAuthority;
+use App\Support\ClmDocCode;
 use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -53,11 +54,11 @@ trait ImportsClmDocMaster
         // Existing names in the caller's scope — the duplicate check.
         $existing = $modelClass::query();
         MasterVisibility::applyReadScope($existing, $user, $user->branch_id ?: null);
-        // Unique on name + issuing-authority SET (order-insensitive), same rule
-        // as the Add/Edit forms.
-        $key = fn ($n, $a) => mb_strtolower(trim((string) $n)) . "\0" . ClmAuthority::canonicalIds($a);
+        // Unique on NAME alone, same rule as the Add/Edit forms — the same name
+        // under a different authority is still a duplicate in the list.
+        $key = fn ($n) => mb_strtolower(trim((string) $n));
         $seen = [];
-        foreach ($existing->get(['name', 'authority']) as $e) $seen[$key($e->name, $e->authority)] = true;
+        foreach ($existing->get(['name']) as $e) $seen[$key($e->name)] = true;
 
         $imported = [];
         $failed   = [];
@@ -96,13 +97,12 @@ trait ImportsClmDocMaster
             if ($unknown) { $fail('Unknown authority: ' . implode(', ', $unknown) . ' — use a name from the Authority Master'); continue; }
             if (!$ids)    { $fail('Authority is required'); continue; }
 
-            $authIds = implode(', ', array_keys($ids));
-            if (isset($seen[$key($name, $authIds)])) {
-                $fail("A {$label} named \"{$name}\" with the same issuing authority already exists");
+            if (isset($seen[$key($name)])) {
+                $fail("A {$label} named \"{$name}\" already exists");
                 continue;
             }
 
-            $seen[$key($name, $authIds)] = true;
+            $seen[$key($name)] = true;
             $valid[] = [
                 'row'       => $rowNo,
                 'name'      => $name,
@@ -121,22 +121,20 @@ trait ImportsClmDocMaster
                 DB::transaction(function () use ($user, $valid, $modelClass, $prefix, $validityCol, &$imported) {
                     DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
 
-                    $q = $modelClass::where('client_id', $user->client_id);
-                    $user->branch_id ? $q->where('branch_id', $user->branch_id) : $q->whereNull('branch_id');
-                    $maxN = 0; $taken = [];
-                    foreach ($q->pluck('code') as $c) {
-                        if (preg_match('/^' . preg_quote($prefix, '/') . '-(\d+)$/', (string) $c, $m) && (int) $m[1] > $maxN) {
-                            $maxN = (int) $m[1];
-                        }
-                        $taken[(string) $c] = true;
-                    }
+                    /* Codes come from the counter, which never reissues a
+                       number. Reusing a deleted document's code handed its
+                       segment rules and uploads to the imported row, so a fresh
+                       import came out already "in use" and undeletable. */
+                    $codes = ClmDocCode::allocate(
+                        $prefix, $modelClass, (int) $user->client_id, $user->branch_id ?: null, count($valid)
+                    );
 
                     $now = now();
-                    $n   = $maxN;
+                    $i   = 0;
                     foreach (array_chunk($valid, 500) as $chunk) {
                         $insert = [];
                         foreach ($chunk as $v) {
-                            do { $n++; $code = sprintf('%s-%03d', $prefix, $n); } while (isset($taken[$code]));
+                            $code = $codes[$i++];
                             $insert[] = [
                                 'client_id'   => $user->client_id,
                                 'branch_id'   => $user->branch_id,

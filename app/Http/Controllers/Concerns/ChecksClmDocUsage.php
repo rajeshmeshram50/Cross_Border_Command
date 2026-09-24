@@ -90,7 +90,19 @@ trait ChecksClmDocUsage
         if (Schema::hasTable('clm_segment_rules') && Schema::hasColumn('clm_segment_rules', 'doc_selections')) {
             $q = DB::table('clm_segment_rules');
             if ($clientId) $q->where('client_id', $clientId);
-            foreach ($q->get(['branch_id', 'doc_selections']) as $r) {
+
+            /* Segment names, so the delete refusal can say WHERE the document is
+               used. "In use by Segment Rules" with nothing else to go on reads
+               as wrong to whoever is trying to delete it — they have no way to
+               find the rule holding it. */
+            $segNames = [];
+            if (Schema::hasTable('clm_segments')) {
+                $sq = DB::table('clm_segments');
+                if ($clientId) $sq->where('client_id', $clientId);
+                foreach ($sq->get(['id', 'name']) as $s) $segNames[(int) $s->id] = (string) $s->name;
+            }
+
+            foreach ($q->get(['branch_id', 'doc_selections', 'segment_id']) as $r) {
                 $arr = is_array($r->doc_selections) ? $r->doc_selections : (json_decode((string) $r->doc_selections, true) ?: []);
                 $bk  = self::clmBranchKey($r->branch_id);
                 /* Shape is { kyc: {CODE: 'M'}, dd: {...}, tl: {...}, qc: {...} }.
@@ -99,9 +111,14 @@ trait ChecksClmDocUsage
                    unexpected key is still found — the per-row version matched
                    on `LIKE '%"CODE"%'` across the whole blob, which behaved
                    the same way. */
+                $where = $segNames[(int) ($r->segment_id ?? 0)] ?? null;
                 foreach ($arr as $bucket) {
                     if (is_array($bucket)) {
-                        foreach (array_keys($bucket) as $code) $rules[$bk][(string) $code] = true;
+                        foreach (array_keys($bucket) as $code) {
+                            $code = (string) $code;
+                            if (!isset($rules[$bk][$code])) $rules[$bk][$code] = [];
+                            if ($where !== null && $where !== '') $rules[$bk][$code][$where] = true;
+                        }
                     }
                 }
             }
@@ -142,8 +159,38 @@ trait ChecksClmDocUsage
     {
         if (!$code) return [];
         $labels = [];
-        if (self::clmUsageHas($sets['rules'], $branchId, $code))   $labels[] = 'Segment Rules';
+        if (self::clmUsageHas($sets['rules'], $branchId, $code)) {
+            $where = self::clmUsageWhere($sets['rules'], $branchId, $code);
+            $labels[] = $where ? 'Segment Rules for ' . implode(', ', $where) : 'Segment Rules';
+        }
         if (self::clmUsageHas($sets['uploads'], $branchId, $code)) $labels[] = 'Segment Doc Uploads';
         return $labels;
+    }
+
+    /**
+     * The segment names holding `$code`, at most three and each kept short —
+     * a segment name can be hundreds of characters and this lands in a tooltip.
+     */
+    protected static function clmUsageWhere(array $byBranch, $branchId, string $code): array
+    {
+        $buckets = $branchId === null
+            ? array_values($byBranch)
+            : [$byBranch[self::clmBranchKey($branchId)] ?? [], $byBranch['shared'] ?? []];
+
+        $names = [];
+        foreach ($buckets as $set) {
+            foreach (array_keys(is_array($set[$code] ?? null) ? $set[$code] : []) as $n) {
+                $n = (string) $n;
+                $names[mb_strlen($n) > 30 ? mb_substr($n, 0, 30) . '…' : $n] = true;
+            }
+        }
+
+        $names = array_keys($names);
+        if (count($names) > 3) {
+            $rest  = count($names) - 3;
+            $names = array_slice($names, 0, 3);
+            $names[] = '+' . $rest . ' more';
+        }
+        return $names;
     }
 }
