@@ -190,6 +190,34 @@ class SalesVisibility
     private static array $userDeptCache = [];
 
     /**
+     * True when this account is confined to ONE branch — its own.
+     *
+     * Only the client-level roles (Super Admin, Client Admin, Client User)
+     * work across branches; they carry the BranchSwitcher and pick what they
+     * are looking at. A Branch Admin (branch_user) and an EMPLOYEE each belong
+     * to exactly one branch and get no switcher at all (BRANCH_SWITCHER.md
+     * §2), so their rows are pinned here, server-side, instead of trusting the
+     * branch_id the client happens to send.
+     *
+     * Employees were missing from this test, and it only showed on the
+     * accounts that escape the designation narrowing: an employee whose
+     * designation is Director/CEO or HOD resolves to the 'all' tier, which
+     * returns no salesperson filter, so nothing at all was left to scope them
+     * and they read every branch's leads in the tenant. The branch_id the SPA
+     * injects could not cover for it either — BranchSwitcherContext stores a
+     * branch only for branch_user, so an employee's GETs carry no branch_id.
+     *
+     * An account holding no branch_id is deliberately NOT pinned: reading that
+     * as "branch NULL only" would empty the screen for it rather than protect
+     * anything.
+     */
+    public static function pinnedToOwnBranch($user): bool
+    {
+        return in_array($user->user_type ?? null, ['branch_user', 'employee'], true)
+            && !empty($user->branch_id);
+    }
+
+    /**
      * True when the user is an EMPLOYEE in a department that shares the branch
      * customer / consignee book (see CUSTOMER_BOOK_DEPARTMENTS). Every other
      * account type keeps the standard creator-hierarchy visibility.

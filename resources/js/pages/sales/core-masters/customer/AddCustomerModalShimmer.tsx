@@ -106,6 +106,50 @@ export const ACM_SHELL_CSS = `
 .acm-row-4 { grid-template-columns: repeat(4, 1fr); }
 .acm-row-1 { grid-template-columns: 1fr; }
 .acm-field { display: flex; flex-direction: column; min-width: 0; }
+
+/* ── Dark mode ──
+   These shell rules are the ONLY styling the skeleton has: it renders
+   before the AddCustomerModal chunk arrives, so that chunk's own dark
+   rules (in SCOPED_CSS) are not on the page yet. Without the block
+   below the skeleton painted a white card, white body and white
+   section panels in dark mode, and the .shimmer bars themselves ARE
+   dark-aware (app.css switches them to #3a4256) — so the placeholders
+   went dark-on-white and the modal flashed white until the form loaded.
+
+   Values are copied from the modal's own dark rules so the skeleton and
+   the real form are the same colour and the swap is invisible. The real
+   modal injects SCOPED_CSS after this sheet, so there it simply
+   re-states them and nothing here can override it. */
+[data-bs-theme="dark"] .acm-card {
+  background: linear-gradient(165deg, #0b1220 0%, #11182a 45%, #131c30 100%);
+  border-color: rgba(167,139,250,0.20);
+  box-shadow: 0 32px 80px -20px rgba(0,0,0,0.7), 0 12px 30px rgba(0,0,0,0.45);
+}
+[data-bs-theme="dark"] .acm-body {
+  background: #0c1322;
+  scrollbar-color: #4c1d95 #11182a;
+}
+[data-bs-theme="dark"] .acm-stepper,
+[data-bs-theme="dark"] .acm-tabs {
+  background: #0c1322;
+  border-bottom-color: rgba(167,139,250,0.18);
+}
+[data-bs-theme="dark"] .acm-step-pending {
+  background: rgba(40,52,70,0.75);
+  border-color: rgba(167,139,250,0.18);
+  opacity: 0.92;
+}
+[data-bs-theme="dark"] .acm-section {
+  background: #1f2942;
+  border-color: rgba(167,139,250,0.35);
+  box-shadow: 0 6px 22px rgba(0,0,0,0.50), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+[data-bs-theme="dark"] .acm-section-purple { border-top-color: #a78bfa; }
+[data-bs-theme="dark"] .acm-section-head {
+  background: linear-gradient(110deg, rgba(124,58,237,0.22) 0%, rgba(167,139,250,0.10) 100%);
+  border-bottom-color: rgba(167,139,250,0.28);
+}
+[data-bs-theme="dark"] .acm-top-progress { background: rgba(167,139,250,.14); }
 `;
 
 /* ───── Stepper shimmer ─────

@@ -573,12 +573,23 @@ class SalesLeadController extends Controller
             return Lead::create(array_merge($data, [
                 'client_id'       => $user->client_id,
                 'branch_id'       => $user->branch_id,
-                // Auto-assign the lead to the creating EMPLOYEE so it shows in
-                // THEIR Lead Worksheet by default (QA #71). The worksheet scopes
-                // an employee's leads to salesperson_id = self, so an unassigned
-                // lead would only surface at the branch level. Admin / branch
-                // creators are left unassigned so they can still distribute.
-                'salesperson_id'  => (($user->user_type ?? null) === 'employee') ? $user->id : null,
+                /* Auto-assign the lead to WHOEVER CREATED IT so it shows in
+                 * their own Lead Worksheet by default (QA #71).
+                 *
+                 * This used to fire only for user_type = employee; a branch
+                 * admin (or client admin / client user) who captured a lead by
+                 * hand got an ownerless row, so the worksheet showed
+                 * "Unassigned" next to a lead the creator had just typed in and
+                 * the distribution page counted it as work nobody had picked up.
+                 * Capturing a lead IS taking it, so the creator now owns it and
+                 * hands it on through Assign like any other owner.
+                 *
+                 * Super Admin is the one exception: it is a cross-tenant
+                 * operator account, not a salesperson, and it is deliberately
+                 * absent from the distribution roster (salespersonSummary) —
+                 * leads parked on it would count as assigned with no row to
+                 * redistribute them from. Those stay unassigned. */
+                'salesperson_id'  => (($user->user_type ?? null) === 'super_admin') ? null : $user->id,
                 'opp_code'        => $this->nextOppCode($user->client_id, $user->branch_id),
                 'unique_query_id' => (string) mt_rand(100000000, 999999999),
                 'platform'        => 'Offline',
@@ -603,7 +614,14 @@ class SalesLeadController extends Controller
             \App\Support\LeadActivity::ACTION_GENERATED,
             'Lead generated (' . ($lead->query_type ?: 'Manual') . ' · ' . ($lead->platform ?: 'Offline') . ')',
             null,
-            ['opp_code' => $lead->opp_code],
+            /* The lead is born with an owner (the creator, above), so the
+             * timeline's first card names them instead of opening on a
+             * blank owner that a later 'assigned' row had to explain. */
+            [
+                'opp_code'         => $lead->opp_code,
+                'salesperson_id'   => $lead->salesperson_id ? (int) $lead->salesperson_id : null,
+                'salesperson_name' => $lead->salesperson?->name,
+            ],
         );
 
         return response()->json(['status' => true, 'data' => $lead], 201);
@@ -665,6 +683,11 @@ class SalesLeadController extends Controller
         // dashboard instead of the file. file_url() also returns null for
         // malformed/legacy paths so we don't surface a broken "View" link.
         $lead->setAttribute('whatsapp_screenshot_url', file_url($lead->whatsapp_screenshot));
+
+        /* What Stage 3 onwards is holding. Stage 2 reads this to refuse an
+         * un-qualifying verdict BEFORE it optimistically shows the row as
+         * saved; the same list is what the write paths enforce. */
+        $lead->setAttribute('downstream_work', $this->downstreamWork($lead));
 
         // Task-manager attachment — same treatment as the WhatsApp screenshot
         // above. The Deal Execution "View" button used to rebuild the URL from
@@ -822,6 +845,21 @@ class SalesLeadController extends Controller
                 'status'  => false,
                 'message' => 'A lead cannot be both Qualified and Disqualified at the same time.',
             ], 422);
+        }
+
+        /* The verdict is also settable straight through this endpoint, so it
+         * carries the same downstream-work gate as Stage 2's acknowledgement
+         * save — otherwise the rule is one PUT away from being bypassed.
+         * Only a change that REMOVES the qualification is gated; re-saving a
+         * lead that is already disqualified must stay possible. */
+        $losesQualification = (array_key_exists('disqualified', $data) && !empty($data['disqualified']) && !$lead->disqualified)
+            || (array_key_exists('qualified', $data) && empty($data['qualified']) && $lead->qualified);
+        if ($losesQualification) {
+            $blocked = $this->blockUnqualifyWithWork(
+                $lead,
+                !empty($data['disqualified']) ? 'Disqualified' : 'not Qualified',
+            );
+            if ($blocked) return $blocked;
         }
 
         // Gate the move to Stage 6 (Victory): the opportunity must have a
@@ -1283,15 +1321,37 @@ class SalesLeadController extends Controller
         $this->applyScope($leadQ, $user);
         $lead = $leadQ->findOrFail($leadId);
 
+        /* Purchase-decision-maker details are a CONTACT, so they are held to
+         * the same shape the customer / consignee / candidate forms use.
+         *
+         *  name  – `string` alone took "Rahul 123" and worse. Letters, spaces,
+         *          dots, hyphens and apostrophes only, starting on a letter –
+         *          the same person-name rule CandidateController applies.
+         *  email – `email` alone is RFC validation, and `#&^%^%&@mailinator.com`
+         *          is a legal RFC address (those characters are all permitted in
+         *          a local part), so it saved without a murmur. The regex holds
+         *          both sides of the @ to the label shape a working contact
+         *          address actually has, and is kept identical to EMAIL_RE in
+         *          TaskManagerPanel.tsx so the form and the API refuse the same
+         *          strings. */
         $data = $request->validate([
-            'name'        => 'required|string|max:255',
+            'name'        => ['required', 'string', 'max:150', "regex:/^[A-Za-z][A-Za-z .'\-]*$/"],
             'mobile_no'   => ['required', 'string', 'regex:/^\d{6,15}$/'],
-            'email'       => 'required|email|max:255',
+            'email'       => [
+                'required',
+                'email:rfc',
+                'max:191',
+                'regex:/^[A-Za-z0-9_%+-]+(?:\.[A-Za-z0-9_%+-]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/',
+                'not_regex:/\.\./',
+            ],
             'order_value' => 'nullable|numeric|min:0',
             'buying_plan' => 'nullable|date_format:Y-m-d',
             'attachment'  => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:5120',
         ], [
             'mobile_no.regex' => 'Mobile number must be 6–15 digits',
+            'name.regex'      => 'Name can contain only letters, spaces, dots, hyphens and apostrophes',
+            'email.regex'     => 'Please enter a valid email address',
+            'email.not_regex' => 'Please enter a valid email address',
         ]);
 
         $existing = LeadTaskManager::where('client_id', $user->client_id)
@@ -1512,6 +1572,10 @@ class SalesLeadController extends Controller
         $this->applyScope($leadQ, $user);
         $lead = $leadQ->findOrFail($leadId);
 
+        // Stage 3+ write — needs a live Qualified verdict (see helper).
+        $blocked = $this->blockSourcingUnlessQualified($lead);
+        if ($blocked) return $blocked;
+
         $row = LeadProduct::with('product:id,status')
             ->where('lead_id', $lead->id)
             ->findOrFail($mappingId);
@@ -1563,6 +1627,10 @@ class SalesLeadController extends Controller
         $leadQ = Lead::query();
         $this->applyScope($leadQ, $user);
         $lead = $leadQ->findOrFail($leadId);
+
+        // Stage 3+ write — needs a live Qualified verdict (see helper).
+        $blocked = $this->blockSourcingUnlessQualified($lead);
+        if ($blocked) return $blocked;
 
         $row = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
 
@@ -1632,6 +1700,10 @@ class SalesLeadController extends Controller
         $leadQ = Lead::query();
         $this->applyScope($leadQ, $user);
         $lead = $leadQ->findOrFail($leadId);
+
+        // Stage 3+ write — needs a live Qualified verdict (see helper).
+        $blocked = $this->blockSourcingUnlessQualified($lead);
+        if ($blocked) return $blocked;
 
         $row = LeadProduct::with('product:id,status')
             ->where('lead_id', $lead->id)
@@ -1857,6 +1929,10 @@ class SalesLeadController extends Controller
             ], 404);
         }
 
+        // Stage 3+ write — needs a live Qualified verdict (see helper).
+        $blocked = $this->blockSourcingUnlessQualified($lead);
+        if ($blocked) return $blocked;
+
         $data = $request->validate([
             'product_id'   => 'required|integer|exists:products,id',
             // Currency stored as free-form code (USD, INR, EUR …). No
@@ -1971,6 +2047,10 @@ class SalesLeadController extends Controller
         $leadQ = Lead::query();
         $this->applyScope($leadQ, $user);
         $lead = $leadQ->findOrFail($leadId);
+
+        // Stage 3+ write — needs a live Qualified verdict (see helper).
+        $blocked = $this->blockSourcingUnlessQualified($lead);
+        if ($blocked) return $blocked;
 
         $row = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
 
@@ -2245,6 +2325,16 @@ class SalesLeadController extends Controller
         }
         $type = $types->first();
 
+        /* A lead with sourced work behind it cannot be un-decided here.
+         * See blockUnqualifyWithWork() for why this is a server-side gate. */
+        if ($type !== LeadAckReason::TYPE_QUALIFIED) {
+            $blocked = $this->blockUnqualifyWithWork(
+                $lead,
+                $type === LeadAckReason::TYPE_DISQUALIFIED ? 'Disqualified' : 'Clarity Pending',
+            );
+            if ($blocked) return $blocked;
+        }
+
         $created = DB::transaction(function () use ($lead, $reasons, $type, $user) {
             $rows = [];
             foreach ($reasons as $r) {
@@ -2363,8 +2453,10 @@ class SalesLeadController extends Controller
 
         if ($user->user_type !== 'super_admin') {
             $usersQ->where('client_id', $user->client_id);
-            if ($user->user_type === 'branch_user') {
-                // Every branch is an isolated peer — lock to own branch.
+            if (\App\Support\SalesVisibility::pinnedToOwnBranch($user)) {
+                // Every branch is an isolated peer — lock branch-pinned
+                // accounts (branch admin + employee) to their own branch, so
+                // the roster can't name another branch's people.
                 $usersQ->where(function ($w) use ($user) {
                     $w->whereNull('branch_id')->orWhere('branch_id', $user->branch_id);
                 });
@@ -2580,8 +2672,13 @@ class SalesLeadController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
+        /* Pass the BranchSwitcher's branch through. Without it the modal
+         * offered platforms / query types / countries drawn from EVERY branch,
+         * so a client admin viewing one branch got filter values that match no
+         * row in front of them — and that list is itself a readout of what the
+         * other branches are working on. */
         $base = Lead::query();
-        $this->applyScope($base, $user);
+        $this->applyScope($base, $user, $request->integer('branch_id') ?: null);
 
         $platforms = (clone $base)
             ->select('platform')->whereNotNull('platform')
@@ -2664,6 +2761,101 @@ class SalesLeadController extends Controller
      * ───────────────────────────────────────────────────────────────── */
 
     /**
+     * Work that only exists because someone decided to PURSUE this lead.
+     *
+     * Stage 3 onwards is built on the Stage 2 verdict, so a lead cannot be
+     * un-decided while that work is sitting on it. Returns a human-readable
+     * list of what is already there ([] when the lead is still clean), which
+     * the caller puts straight into the error so the user knows what to clear.
+     *
+     * Soft-deleted rows are excluded by the models' own global scope: a
+     * removed product is no longer work.
+     *
+     * @return string[]
+     */
+    private function downstreamWork(Lead $lead): array
+    {
+        $bits = [];
+
+        $products = LeadProduct::where('lead_id', $lead->id)->count();
+        if ($products) {
+            $bits[] = $products . ' mapped product' . ($products === 1 ? '' : 's');
+        }
+
+        $quotations = \App\Models\Quotation::where('opp_id', $lead->id)->count();
+        if ($quotations) {
+            $bits[] = $quotations . ' quotation' . ($quotations === 1 ? '' : 's');
+        }
+
+        $pis = \App\Models\ProformaInvoice::where('opp_id', $lead->id)->count();
+        if ($pis) {
+            $bits[] = $pis . ' proforma invoice' . ($pis === 1 ? '' : 's');
+        }
+
+        return $bits;
+    }
+
+    /**
+     * Refuse to un-qualify a lead that already carries downstream work.
+     *
+     * Stage 2 could re-judge a lead at any time, so the reported sequence
+     * (qualify, map a product in Stage 3, come back and disqualify) saved
+     * happily and left a Disqualified lead holding sourced products: the
+     * products were then unreachable, because Stage 3 onwards locks itself to
+     * qualified leads, yet they still counted everywhere that reads them.
+     *
+     * The frontend did warn, but only when lead_stage_id had passed 2 — and
+     * mapping a product does not move lead_stage_id (only Save & Next does),
+     * so walking into Stage 3 from the stage tracker skipped the warning
+     * entirely. That is the exact path in the report, which is why this gate
+     * measures the WORK rather than the stage number, and why it lives here:
+     * a confirm dialog cannot be the thing protecting the invariant.
+     *
+     * The lead stays re-judgeable — clear the sourced work first and the
+     * verdict is open again.
+     *
+     * @return \Illuminate\Http\JsonResponse|null  422 when blocked, null when allowed.
+     */
+    private function blockUnqualifyWithWork(Lead $lead, string $verdict)
+    {
+        $work = $this->downstreamWork($lead);
+        if (!$work) return null;
+
+        return response()->json([
+            'status'  => false,
+            'message' => 'This opportunity already carries ' . implode(' and ', $work)
+                . '. Remove that work from Stage 3 onwards before marking the lead '
+                . $verdict . '.',
+            'errors'  => ['reason_ids' => ['Downstream work must be cleared first.']],
+        ], 422);
+    }
+
+    /**
+     * Stage 3 onwards is work on a lead worth pursuing, so every write there
+     * needs a live Qualified verdict. The detail page already refuses to
+     * navigate past Stage 2 without one, but that is a client-side lock: an
+     * open tab from before the lead was disqualified, or a direct API call,
+     * walked straight past it.
+     *
+     * Deletes are deliberately NOT gated — a lead that has been disqualified
+     * has to stay clearable, or a lead carrying products could never be
+     * disqualified and then cleaned up.
+     *
+     * @return \Illuminate\Http\JsonResponse|null  422 when blocked, null when allowed.
+     */
+    private function blockSourcingUnlessQualified(Lead $lead)
+    {
+        if ($lead->qualified && !$lead->disqualified) return null;
+
+        return response()->json([
+            'status'  => false,
+            'message' => $lead->disqualified
+                ? 'This lead is Disqualified — mark it Qualified in Lead Acknowledgement before changing its products or pricing.'
+                : 'This lead is not Qualified yet — acknowledge it as Qualified before changing its products or pricing.',
+        ], 422);
+    }
+
+    /**
      * Tenant scope — pin rows to the caller's tenant. Branch users are
      * pinned to their own branch (every branch is an isolated peer).
      * Mirror of SalesTodoController::applyScope tailored for leads.
@@ -2689,10 +2881,15 @@ class SalesLeadController extends Controller
                 : \App\Support\SalesVisibility::applyToLeads($qq, $user);
         };
 
-        if ($user->user_type === 'branch_user') {
-            // Branch users are locked to their own branch — every branch is an
-            // isolated peer; they can't use the BranchSwitcher, so
-            // $branchFilter is ignored here.
+        if (\App\Support\SalesVisibility::pinnedToOwnBranch($user)) {
+            // Branch admins AND employees are locked to their own branch —
+            // every branch is an isolated peer and neither gets the
+            // BranchSwitcher, so $branchFilter is ignored here.
+            //
+            // Employees used to fall through to the client-level path below,
+            // where the only narrowing left was the designation tier — and an
+            // employee on the 'all' tier (Director/CEO, HOD) has no narrowing
+            // at all, so they read every branch's leads in the tenant.
             $q->where(function ($w) use ($user) {
                 $w->whereNull('branch_id')->orWhere('branch_id', $user->branch_id);
             });

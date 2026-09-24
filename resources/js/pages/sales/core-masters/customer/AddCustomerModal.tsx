@@ -5849,12 +5849,19 @@ const SCOPED_CSS = `
   max-height: 380px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
+  scrollbar-color: #a78bfa #ede9fe;
 }
+/* The scroller had a styled thumb but NO track rule, and a thumb at 35%
+   alpha. Styling ::-webkit-scrollbar takes the bar over completely, so
+   with no track it painted a faint violet sliver on nothing — on the
+   Stage 2 document list people read that as "there is no scrollbar" and
+   never found the rows below the fold. Same track + thumb the modal body
+   (.acm-body) already uses, so the two scrollers match. */
 .acm-table-wrap::-webkit-scrollbar { height: 8px; width: 8px; }
-.acm-table-wrap::-webkit-scrollbar-thumb {
-  background: rgba(124,58,237,.35); border-radius: 999px;
-}
-.acm-table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,.55); }
+.acm-table-wrap::-webkit-scrollbar-track { background: #ede9fe; border-radius: 999px; }
+.acm-table-wrap::-webkit-scrollbar-thumb { background: #a78bfa; border-radius: 999px; }
+.acm-table-wrap::-webkit-scrollbar-thumb:hover { background: #7c3aed; }
+.acm-table-wrap::-webkit-scrollbar-corner { background: #ede9fe; }
 .acm-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; min-width: 900px; font-family: var(--font-sans); }
 .acm-table thead tr { background: linear-gradient(180deg, #faf7ff, #f5efff); }
 /* Sticky header — position:sticky needs an OWN background on the <th>
@@ -6632,7 +6639,14 @@ const SCOPED_CSS = `
    light tint from the section card so the table flush-fits the
    dark background. */
 [data-bs-theme="dark"] .acm-section-body-table { background: transparent !important; }
-[data-bs-theme="dark"] .acm-table-wrap { background: transparent; }
+[data-bs-theme="dark"] .acm-table-wrap { background: transparent; scrollbar-color: #6d28d9 #11182a; }
+/* Dark had no scrollbar rules at all, so the light thumb stayed and the
+   transparent track left it invisible against the dark card. Mirrors the
+   dark .acm-body scroller. */
+[data-bs-theme="dark"] .acm-table-wrap::-webkit-scrollbar-track { background: #11182a; }
+[data-bs-theme="dark"] .acm-table-wrap::-webkit-scrollbar-thumb { background: #6d28d9; }
+[data-bs-theme="dark"] .acm-table-wrap::-webkit-scrollbar-thumb:hover { background: #7c3aed; }
+[data-bs-theme="dark"] .acm-table-wrap::-webkit-scrollbar-corner { background: #11182a; }
 
 /* Status / expiry pills in tables */
 [data-bs-theme="dark"] .acm-status-active { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.40); }

@@ -1121,6 +1121,12 @@ function HfpDarkStyles() {
     <style>{`
       :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-page-shell {
         border-color: var(--vz-border-color) !important;
+        /* The shell carries an inline white background and is wider than the
+           page bands it holds, so in dark mode it showed as a white margin
+           down both sides of the header, body and footer — the "everything
+           except the draft is white" full-page editor. The bands already go
+           dark above; the frame around them now follows. */
+        background: var(--vz-secondary-bg) !important;
       }
       /* Pills sit on the (always-white) header/footer band — solid colors
          render the same in both themes, so we don't override them in dark

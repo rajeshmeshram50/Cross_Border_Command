@@ -55,7 +55,29 @@ type Props = {
 };
 
 const digitsOnly = (s: string) => s.replace(/\D/g, '').slice(0, 15);
-const isValidEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
+
+/* Purchase decision maker = a person, so the name is held to the same shape
+ * the customer / consignee / candidate forms use: letters, spaces, dots,
+ * hyphens and apostrophes, starting on a letter. It was unvalidated, so
+ * "Rahul 123" saved as a contact name with nothing said about it (CS-277). */
+const NAME_RE = /^[A-Za-z][A-Za-z .'\-]*$/;
+
+/* The old check was /^[^\s@]+@[^\s@]+\.[^\s@]+$/ — "anything, @, anything with
+ * a dot" — which let `#&^%^%&@mailinator.com` through the form AND the API,
+ * since Laravel's `email` rule is RFC validation and those characters are
+ * legal in a local part (CS-276). This is the pattern the candidate form and
+ * the API now share: each label starts and ends alphanumeric, the TLD is two
+ * or more letters, and dots are separators so they cannot lead, trail or
+ * double up on either side of the @. */
+const EMAIL_RE = /^[A-Za-z0-9_%+-]+(?:\.[A-Za-z0-9_%+-]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/;
+
+const isValidEmail = (raw: string): boolean => {
+  const v = raw.trim();
+  // Consecutive dots are invalid either side of the @ and are awkward to
+  // forbid inside the pattern — cheaper to rule out here.
+  if (v === '' || v.length > 191 || v.includes('..')) return false;
+  return EMAIL_RE.test(v);
+};
 
 export default function TaskManagerPanel({ leadId, salespersonName, initial, onSaved, locked = false }: Props) {
   const toast = useToast();
@@ -93,10 +115,12 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
   const validate = (): boolean => {
     const e: typeof errors = {};
     if (!name.trim())                    e.name   = 'Name is required';
+    else if (name.trim().length > 150)   e.name   = 'Name must be 150 characters or fewer';
+    else if (!NAME_RE.test(name.trim())) e.name   = 'Name can contain only letters, spaces, dots, hyphens and apostrophes';
     if (!mobile.trim())                  e.mobile = 'Mobile is required';
     else if (!/^\d{6,15}$/.test(mobile)) e.mobile = 'Mobile must be 6–15 digits';
     if (!email.trim())                   e.email  = 'Email is required';
-    else if (!isValidEmail(email))       e.email  = 'Enter a valid email';
+    else if (!isValidEmail(email))       e.email  = 'Please enter a valid email address';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -319,6 +343,14 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
               placeholder="Enter name"
               value={name}
               onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: undefined })); }}
+              /* Flag it on the way out of the field rather than holding the
+                 complaint back until Save. */
+              onBlur={() => {
+                const v = name.trim();
+                if (v && !NAME_RE.test(v)) {
+                  setErrors(p => ({ ...p, name: 'Name can contain only letters, spaces, dots, hyphens and apostrophes' }));
+                }
+              }}
             />
           </Field>
           <Field label={<>MOBILE NUMBER <span className="smd-req">*</span></>} error={errors.mobile}>
@@ -341,6 +373,12 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
               placeholder="Enter email address"
               value={email}
               onChange={e => { setEmail(e.target.value); setErrors(p => ({ ...p, email: undefined })); }}
+              onBlur={() => {
+                const v = email.trim();
+                if (v && !isValidEmail(v)) {
+                  setErrors(p => ({ ...p, email: 'Please enter a valid email address' }));
+                }
+              }}
             />
           </Field>
         </div>

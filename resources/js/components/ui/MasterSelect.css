@@ -146,7 +146,9 @@
   .master-select-search-input {
     width: 100%;
     height: 34px;
-    padding: 6px 10px 6px 34px;
+    /* 34px right as well as left: the clear button is pinned in that
+       gutter, so a long query must not run underneath it. */
+    padding: 6px 34px 6px 34px;
     border: 1px solid var(--vz-border-color);
     border-radius: 8px;
     font-size: 12.5px;
@@ -163,6 +165,22 @@
   .master-select-search-input::placeholder {
     color: var(--vz-secondary-color);
     opacity: 0.65;
+  }
+  /* The x that empties the box.
+     SearchClear carries no positioning of its own by design: it expects to be
+     the last child of a FLEX search row and simply sit after the input. This
+     wrapper is the one exception in the app - position:relative with an
+     absolutely-placed magnifier and a full-width block input - so the button
+     flowed BELOW the input and landed on top of the first option. Pin it in
+     the input's right gutter, mirroring how the magnifier is pinned left
+     (same top formula: the row's 6px bottom padding shifts its centre). */
+  .master-select-search .ui-search-clear {
+    position: absolute;
+    right: 8px;
+    top: calc(50% - 3px);
+    transform: translateY(-50%);
+    width: 22px;
+    height: 22px;
   }
   /* Scroll area — caps to ~4 items, rest scrolls */
   .master-select-list {
