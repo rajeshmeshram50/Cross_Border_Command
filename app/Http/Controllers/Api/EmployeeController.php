@@ -2199,6 +2199,30 @@ class EmployeeController extends Controller
      * able to move, and `enable_payroll`, which is how HR takes a leaver out of
      * the run — neither is a change to what the employee is paid.
      */
+    /**
+     * Reconcile pf_type with PF applicability for a partial step save. (QA #214)
+     *
+     * PF on  -> a type is always named; an absent/empty one becomes 'statutory',
+     *           which is what PayrollService assumes anyway, now stored so both
+     *           screens show it.
+     * PF off -> the type is cleared, matching SalaryStructureController::store().
+     *
+     * Returns $data untouched when the save carries neither key, so a step that
+     * has nothing to do with PF never restates it.
+     */
+    private function normalisePfType(Employee $row, array $data): array
+    {
+        if (!array_key_exists('pf_eligible', $data) && !array_key_exists('pf_type', $data)) {
+            return $data;
+        }
+        $pfOn = array_key_exists('pf_eligible', $data)
+            ? (bool) $data['pf_eligible']
+            : (bool) $row->pf_eligible;
+        $pfType = array_key_exists('pf_type', $data) ? $data['pf_type'] : $row->pf_type;
+        $data['pf_type'] = $pfOn ? ($pfType ?: 'statutory') : null;
+        return $data;
+    }
+
     private function assertSalaryNotLockedByExit(Employee $row, array $data): void
     {
         // Money-defining columns only. pf/esi applicability is included because
@@ -2356,6 +2380,30 @@ class EmployeeController extends Controller
             // just saved). Fall back to the existing row value so
             // display_name doesn't get smashed to "" when the wizard
             // saves a later step alone.
+            /* Keep PF Type honest against PF applicability. (QA #214)
+             *
+             * The two live in different places — pf_eligible mirrors onto the
+             * salary structure, pf_type is employee-only — and every screen
+             * that writes them is a PARTIAL step save, so they drifted apart:
+             *
+             *  - a step that sends pf_eligible=false without pf_type left the
+             *    old type standing, so Compensation showed "PF: No" while the
+             *    stored config still named a PF Type;
+             *  - a step that sends pf_eligible=true without pf_type left it
+             *    NULL, and PayrollService::computeForEmployee() then silently
+             *    treats NULL as Statutory — a PF base nobody chose and neither
+             *    screen displays.
+             *
+             * Normalising here makes the rule the same one
+             * SalaryStructureController::store() already applies on the Revise
+             * Salary side, so the two sections cannot disagree whichever of
+             * them saved last. Runs AFTER assertSalaryNotLockedByExit() so a
+             * derived value can never trip the exit lock on its own.
+             *
+             * Untouched when the step carries neither key — a partial save of
+             * some other step must not restate PF at all. */
+            $data = $this->normalisePfType($row, $data);
+
             $first  = $data['first_name']  ?? $row->first_name;
             $middle = array_key_exists('middle_name', $data) ? $data['middle_name'] : $row->middle_name;
             $last   = array_key_exists('last_name', $data)   ? $data['last_name']   : $row->last_name;
@@ -2496,6 +2544,13 @@ class EmployeeController extends Controller
             'annual_salary',
             'enable_payroll',
             'pf_eligible',
+            /* PF Type picks the PF base (Statutory caps at 15,000, Standard
+               charges full Basic), so changing it alone changes what the
+               payslip deducts — it belongs here exactly as pf_eligible does.
+               Without it, switching Statutory <-> Standard left every draft
+               payslip on the old base and the Salary Report unchanged, which
+               reads as "the change did not apply". (QA #214) */
+            'pf_type',
             'esi_applicable',
             'gender',
             'state_id',
