@@ -12,7 +12,9 @@ import Tooltip from '../../../components/ui/Tooltip';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import SearchClear from '../../../components/ui/SearchClear';
 
-/* Central CLM → Terms & Conditions Master (two tabs: Categories + Library). */
+/* Central CLM → Terms & Conditions Master. Three tabs: the document categories,
+   the segment-wise T&C matched by a product's segment, and one global T&C per
+   category that applies to every document of that category. */
 
 /* The backend still requires a non-null short_code (12-char column) even
  * though the figma-aligned UI no longer exposes it. Derive a sensible
@@ -31,6 +33,12 @@ export function deriveShortCode(name: string): string {
 
 type Cat = { id: number; code: string; name: string };
 type Lib = { id: number; code: string; segment: string; regulatory?: 'highly' | 'less' | null; category: string; content: string | null };
+/* One per document category. `id` is null until something is written against it. */
+type GlobalTnc = {
+  category_id: number; category_code: string; category: string;
+  id: number | null; code: string | null; content: string | null;
+  status: string; updated_at: string | null;
+};
 type Seg = { id: number; code: string; name: string; regulatory_status: 'highly' | 'less' };
 
 /* The "Applies To" column and its Buyer/Consignee/Supplier-Material label map
@@ -44,7 +52,8 @@ const regLabel = (r?: 'highly' | 'less' | null): string => (r === 'less' ? 'Less
 
 export default function ClmTncPage() {
   const toast = useToast();
-  const [tab, setTab]     = useState<'cat'|'lib'>('cat');
+  const [tab, setTab]     = useState<'cat'|'lib'|'glob'>('cat');
+  const [glob, setGlob]   = useState<GlobalTnc[]>([]);
   const [cats, setCats]   = useState<Cat[]>([]);
   const [lib, setLib]     = useState<Lib[]>([]);
   const [segs, setSegs]   = useState<Seg[]>([]);
@@ -56,7 +65,11 @@ export default function ClmTncPage() {
       api.get<{ status: boolean; data: Cat[] }>('/clm/tnc-categories'),
       api.get<{ status: boolean; data: Lib[] }>('/clm/tnc-library'),
       api.get<{ status: boolean; data: Seg[] }>('/clm/segments'),
-    ]).then(([c, l, s]) => { setCats(c.data.data ?? []); setLib(l.data.data ?? []); setSegs(s.data.data ?? []); })
+      api.get<{ status: boolean; data: GlobalTnc[] }>('/clm/tnc-global')
+        .catch(() => ({ data: { data: [] as GlobalTnc[] } })),
+    ]).then(([c, l, s, g]) => {
+      setCats(c.data.data ?? []); setLib(l.data.data ?? []); setSegs(s.data.data ?? []); setGlob(g.data.data ?? []);
+    })
       .catch(() => toast.error('Load failed', 'Could not load T&C data'))
       .finally(() => setLoading(false));
   };
@@ -70,7 +83,11 @@ export default function ClmTncPage() {
       </button>
       <button className={`clm-pill ${tab === 'lib' ? 'active' : ''}`} onClick={() => setTab('lib')}>
         <span className="clm-pill-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>
-        T&amp;C Library
+        T&amp;C Segment Wise
+      </button>
+      <button className={`clm-pill ${tab === 'glob' ? 'active' : ''}`} onClick={() => setTab('glob')}>
+        <span className="clm-pill-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"/></svg></span>
+        T&amp;C Global
       </button>
     </div>
   );
@@ -100,9 +117,9 @@ export default function ClmTncPage() {
         ]}
       />
 
-      {tab === 'cat'
-        ? <CategoriesPane rows={cats} loading={loading} reload={reload} />
-        : <LibraryPane rows={lib} cats={cats} segs={segs} loading={loading} reload={reload} />}
+      {tab === 'cat' ? <CategoriesPane rows={cats} loading={loading} reload={reload} />
+        : tab === 'glob' ? <GlobalPane rows={glob} cats={cats} loading={loading} reload={reload} />
+          : <LibraryPane rows={lib} cats={cats} segs={segs} loading={loading} reload={reload} />}
     </div>
   );
 }
@@ -196,6 +213,115 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
               <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* The global T&C: one entry per document category, printed on every document of
+   that category whatever segments it carries. The list is the category list, so a
+   category with nothing written yet is still shown, ready to fill. */
+function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: Cat[]; loading: boolean; reload: () => void }) {
+  const [search, setSearch] = useState('');
+  const [edit, setEdit] = useState<GlobalTnc | null>(null);
+  const [open, setOpen] = useState(false);
+
+  const written = useMemo(() => rows.filter((r) => r.id), [rows]);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return written;
+    return written.filter((r) => `${r.category} ${r.code ?? ''} ${r.content ?? ''}`.toLowerCase().includes(q));
+  }, [written, search]);
+
+  // A global entry exists per document category and no further: once all six are
+  // written there is nothing to add, only the existing entry to change.
+  const pending = useMemo(() => rows.filter((r) => !r.id), [rows]);
+  const [adding, setAdding] = useState(false);
+  const openFor = (r: GlobalTnc | null) => { setAdding(!r); setEdit(r); setOpen(true); };
+  // Adding offers the categories still free; editing holds the row's own.
+  const pickable = useMemo(
+    () => (adding ? cats.filter((c) => pending.some((p) => p.category === c.name)) : cats.filter((c) => c.name === edit?.category)),
+    [cats, pending, adding, edit],
+  );
+
+  return (
+    <div className="clm-page-card">
+      <ClmTncWizardModal
+        open={open}
+        scope="global"
+        existing={edit ? { id: edit.id ?? 0, code: edit.code ?? '', segment: '', regulatory: null, category: edit.category, content: edit.content } : null}
+        cats={pickable}
+        segments={[]}
+        nextCode=""
+        onClose={() => { setOpen(false); setEdit(null); setAdding(false); }}
+        onSaved={() => { setOpen(false); setEdit(null); setAdding(false); reload(); }}
+      />
+
+      <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
+        <div className="clm-search clm-search-grow">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input autoComplete="off" type="text" placeholder="Search global T&C…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <SearchClear show={search} onClear={() => setSearch('')} />
+        </div>
+        <Tooltip label={pending.length
+          ? `Write the global T&C of a document category · ${pending.length} still free`
+          : 'Every document category already has its global T&C — edit the entry instead'}>
+          <span>
+            <button className="clm-add-btn" disabled={!pending.length} onClick={() => openFor(null)}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Global T&amp;C
+            </button>
+          </span>
+        </Tooltip>
+      </div>
+
+      <div className={`clm-tab-body ${filtered.length > 0 ? 'has-data' : ''}`}>
+        {filtered.length === 0 && !loading ? (
+          <div className="clm-empty">
+            <div className="clm-empty-ico">{ICO.bTnc}</div>
+            <div className="clm-empty-title">No global T&amp;C yet</div>
+            <div className="clm-empty-sub">Add one per document category — it prints on every document of that category.</div>
+          </div>
+        ) : (
+        <div className="clm-table-wrap clm-table-fill">
+          <table className="clm-table">
+            <thead><tr>
+              <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
+              <th style={{ width: 130, textAlign: 'center' }}>T&amp;C ID</th>
+              <th style={{ width: 240 }}>DOCUMENT CATEGORY</th>
+              <th>GLOBAL TERMS &amp; CONDITIONS</th>
+              <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
+            </tr></thead>
+            <tbody>
+              {loading && <ClmSkeletonRows cols={5} />}
+              {!loading && filtered.map((r, i) => {
+                const plain = (r.content ?? '').replace(/<[^>]*>/g, ' ').replace(/s+/g, ' ').trim();
+                return (
+                  <tr key={r.category_id}>
+                    <td className="clm-td-num">{i + 1}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      {r.code
+                        ? <Tooltip label={`Auto-generated T&C ID · ${r.code}`}><span className="clm-code-pill">{r.code}</span></Tooltip>
+                        : <span style={{ color: '#94a3b8' }}>—</span>}
+                    </td>
+                    <td className="clm-td-name">{r.category}</td>
+                    <td style={{ color: plain ? undefined : '#94a3b8' }}>
+                      {plain ? (plain.length > 110 ? `${plain.slice(0, 110)}…` : plain) : 'Not written yet'}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <Tooltip label={plain ? `Edit the global T&C for ${r.category}` : `Write the global T&C for ${r.category}`}>
+                        <button type="button" className="clm-act clm-act-edit" onClick={() => openFor(r)} aria-label={`Edit ${r.category}`}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                        </button>
+                      </Tooltip>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
         )}
       </div>
     </div>

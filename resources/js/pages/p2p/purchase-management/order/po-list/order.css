@@ -770,17 +770,24 @@
 .ord-progress.is-pending .ord-progress__paid { color: #a8b8c2; }
 .ord-progress.is-pending .ord-progress__due  { color: #dc2626; }
 
+/* All four actions on one line; the column widens rather than wrapping them. */
 .ord-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
   align-items: center;
-  justify-items: stretch;
+  justify-content: center;
   gap: 7px;
-  min-width: 250px;
-  margin: 0 auto;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
-.ord-actions .ord-btn { width: 100%; justify-content: center; }
+.ord-actions .ord-btn { flex: 0 0 auto; justify-content: center; }
+
+.ord-btn--ico {
+  flex: 0 0 auto;
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+}
 
 .ord-dash {
   font-weight: 700;
@@ -1163,7 +1170,8 @@
 .ord-card .ord-progress { width: 100%; min-width: 0; margin: 0; }
 .ord-card .ord-btn { height: 38px; padding: 0 12px; font-size: 11px; }
 .ord-card .ord-paycell .ord-btn { align-self: stretch; }
-.ord-card .ord-actions { min-width: 0; }
+.ord-card .ord-actions { flex-wrap: wrap; }
+.ord-card .ord-actions .ord-btn:not(.ord-btn--ico) { flex: 1 1 110px; }
 
 [data-bs-theme="dark"] .ord-card {
   background: #1e293b;

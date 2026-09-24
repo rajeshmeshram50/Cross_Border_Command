@@ -7,8 +7,9 @@ import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { formatDmy } from '../../../../../utils/formatDmy';
+import { moneyIn } from '../../../../../utils/currency';
 import Tooltip from '../../../../../components/ui/Tooltip';
-import { PoApiError, poDocumentApi, poSignatureApi, type PoDocument } from '../api/po-api';
+import { PoApiError, poApi, poDocumentApi, poSignatureApi, type PoDocument, type PoProofFile, type PoProofs } from '../api/po-api';
 import '../cancel-po/cancel-po.css';
 import './evidence-vault.css';
 
@@ -36,9 +37,11 @@ const IcOrder = () => <svg {...ic} strokeWidth={2.2}><path d="M14 2H6a2 2 0 0 0-
 const IcInv = () => <svg {...ic} strokeWidth={2.2}><path d="M4 2h12l4 4v16l-3-2-3 2-3-2-3 2-3-2-1 1V4a2 2 0 0 1 2-2z" /><line x1="8" y1="9" x2="15" y2="9" /><line x1="8" y1="13" x2="15" y2="13" /></svg>;
 const IcTrade = () => <svg {...ic} strokeWidth={2.2}><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M9 14l2 2 4-4" /></svg>;
 const IcPay = () => <svg {...ic} strokeWidth={2.2}><path d="M6 3h12" /><path d="M6 8h12" /><path d="m6 13 8.5 8" /><path d="M6 13h3" /><path d="M9 13c6.667 0 6.667-10 0-10" /></svg>;
+const IcAdr = () => <svg {...ic} strokeWidth={2.2}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><path d="M9 15h6" /><path d="M12 12v6" /></svg>;
 const IcBack = () => <svg {...ic} strokeWidth={2.2}><polyline points="9 14 4 9 9 4" /><path d="M20 20v-7a4 4 0 0 0-4-4H4" /></svg>;
 
 const TAG_TEXT = { signed: 'Signed', out: 'Release', in: 'Recovered' } as const;
+const money = moneyIn('INR');
 const kindOf = (name: string): 'pdf' | 'jpg' => (/\.(jpe?g|png|webp|heic)$/i.test(name) ? 'jpg' : 'pdf');
 
 /** A PO document as vault entries: the file on record, plus its signed copy once signed. */
@@ -62,10 +65,34 @@ function filesOf(poId: number, d: PoDocument): VaultFile[] {
   return out;
 }
 
+/** A payment or recovery proof as a vault entry; one without a file is not listed. */
+function proofFile(p: PoProofFile, prefix: string, tag: 'out' | 'in', word: string): VaultFile {
+  const name = p.name || `${prefix.toUpperCase()}${p.id}.pdf`;
+  const url = p.url;
+  return {
+    key: `${prefix}${p.id}`, name, kind: kindOf(name), tag,
+    meta: [p.ref, `${word} ${money(p.amount)}`, p.date ? formatDmy(p.date) : ''].filter(Boolean).join('  ·  '),
+    fetch: url ? async () => (await fetch(url)).blob() : undefined,
+  };
+}
+
+/* The document filed with the refund adjustment when it was raised. The receipt the
+   system generates is not evidence, so it is not kept here. */
+function adjustmentFiles(a: PoProofs['adjustment']): VaultFile[] {
+  if (!a?.attachment_url || !a.attachment_name) return [];
+  const url = a.attachment_url;
+  return [{
+    key: `adra${a.id}`, name: a.attachment_name, kind: kindOf(a.attachment_name),
+    meta: [a.code, a.date ? formatDmy(a.date) : '', `${money(a.refund_amount)} to be refunded`].filter(Boolean).join('  ·  '),
+    fetch: async () => (await fetch(url)).blob(),
+  }];
+}
+
 export default function PoEvidenceVaultModal({ po, onClose }: { po: VaultPo; onClose: () => void }) {
   useScrollLock(true, '.scnv-bd');
   const toast = useToast();
   const [docs, setDocs] = useState<PoDocument[] | null>(null);
+  const [proofs, setProofs] = useState<PoProofs | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
@@ -75,6 +102,15 @@ export default function PoEvidenceVaultModal({ po, onClose }: { po: VaultPo; onC
       .catch((e) => { if (alive) { setDocs([]); toast.error('Could not load the vault', e instanceof PoApiError ? e.firstError : 'Please try again.'); } });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [po.id]);
+
+  // Money files come from the payments and recoveries themselves, not from PO documents.
+  useEffect(() => {
+    let alive = true;
+    poApi.proofs(po.id)
+      .then((r) => { if (alive) setProofs(r); })
+      .catch(() => { if (alive) setProofs({ adjustment: null, payments: [], recoveries: [] }); });
+    return () => { alive = false; };
   }, [po.id]);
 
   useEffect(() => {
@@ -88,10 +124,13 @@ export default function PoEvidenceVaultModal({ po, onClose }: { po: VaultPo; onC
     return {
       order: list.filter((d) => d.doc_kind === 'purchase_order').flatMap((d) => filesOf(po.id, d)),
       trade: list.filter((d) => d.doc_kind !== 'purchase_order').flatMap((d) => filesOf(po.id, d)),
-      // Invoices, payments and recoveries are not built on the new PO yet.
-      inv: [] as VaultFile[], paid: [] as VaultFile[], rec: [] as VaultFile[],
+      // A supplier invoice is not raised on the new PO yet; the money files are real.
+      inv: [] as VaultFile[],
+      adr: adjustmentFiles(proofs?.adjustment ?? null),
+      paid: (proofs?.payments ?? []).map((p) => proofFile(p, 'p', 'out', 'Released')),
+      rec: (proofs?.recoveries ?? []).map((p) => proofFile(p, 'r', 'in', 'Recovered')),
     };
-  }, [docs, po.id]);
+  }, [docs, proofs, po.id]);
 
   const open = async (f: VaultFile, mode: 'view' | 'get') => {
     if (!f.fetch || busy) return;
@@ -127,7 +166,10 @@ export default function PoEvidenceVaultModal({ po, onClose }: { po: VaultPo; onC
     </div>
   );
 
-  const group = (ico: ReactNode, title: string, sub: string, files: VaultFile[], empty: string) => (
+  /* A section only appears once it can hold something: the refund sections after a
+     cancellation, invoices once an SPI exists. An applicable section with nothing in it
+     still shows, and says so. */
+  const group = (ico: ReactNode, title: string, sub: string, files: VaultFile[], empty: string, when = true) => (!when ? null : (
     <div className="scnv-grp">
       <div className="scnv-grp__hd">
         <span className="scnv-grp__ico">{ico}</span>
@@ -138,10 +180,12 @@ export default function PoEvidenceVaultModal({ po, onClose }: { po: VaultPo; onC
         ? <div className="scnv-none">Loading…</div>
         : files.length ? files.map(doc) : <div className="scnv-none">{empty}</div>}
     </div>
-  );
+  ));
 
   /* A long supplier name wrapped over three lines and pushed the header out of
      shape, so it is cut here and the whole name shows on hover. */
+  // Refund and recovery only exist once the order was cancelled with money released.
+  const cancelled = !!proofs?.adjustment;
   const supplier = (po.supplier ?? '').trim();
   const supplierShort = supplier.length > SUPPLIER_MAX ? `${supplier.slice(0, SUPPLIER_MAX).trimEnd()}…` : supplier;
 
@@ -172,13 +216,15 @@ export default function PoEvidenceVaultModal({ po, onClose }: { po: VaultPo; onC
           {group(<IcOrder />, 'Purchase Order', 'The order everything here is filed against', groups.order,
             'The PO document is created when the order is submitted.')}
           {group(<IcInv />, 'Supplier Purchase Invoices', 'Invoices raised by the supplier under this order', groups.inv,
-            'No supplier invoice has been raised against this order yet.')}
+            'No supplier invoice has been raised against this order yet.', groups.inv.length > 0)}
           {group(<IcTrade />, 'Trade Documents & Agreements', 'Signed paperwork and shipping documents for this order', groups.trade,
             'No trade document has been generated yet.')}
+          {group(<IcAdr />, 'Advance Receipt Refund Adjustment', 'The document filed with the refund raised on this order', groups.adr,
+            'No reference document was attached when the refund adjustment was raised.', cancelled)}
           {group(<IcPay />, 'All Payment Paid Proofs', 'Money released to the supplier against this order', groups.paid,
             'No payment has been released on this order yet.')}
           {group(<IcBack />, 'All Recovery Payment Proofs', 'Money recovered back through refunds and debit notes', groups.rec,
-            'Nothing has been recovered against this order.')}
+            'Nothing has been recovered against this order yet.', cancelled)}
         </div>
         <div className="porec-ft">
           <button type="button" className="pocn-btn pocn-btn--ghost" onClick={onClose}>Close</button>

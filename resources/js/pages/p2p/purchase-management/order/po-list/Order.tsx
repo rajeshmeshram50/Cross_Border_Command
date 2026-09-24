@@ -179,7 +179,8 @@ export const ORDER_COLUMNS: Column[] = [
   { label: 'Advance Receipt Refund Adjustment', width: 238 },
   { label: 'Payment Recovery Status',    width: 246 },
   { label: 'PO Status',                  width: 118 },
-  { label: 'Action',                     width: 412 },
+  // Four buttons on one line: Cancel, Edit, Evidence Vault, PO Timeline.
+  { label: 'Action',                     width: 530 },
 ];
 
 const TABLE_WIDTH = ORDER_COLUMNS.reduce((total, col) => total + col.width, 0);
@@ -884,18 +885,18 @@ function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onTrack
           {ICON_EDIT}<span>{viewOnly ? 'View PO' : 'Edit PO'}</span>
         </button>
       </Tooltip>
-      {onTrack && (
-        <Tooltip label={trackable
-          ? 'Zoho Books Tracker — how far this PO has gone across'
-          : 'Nothing of this PO is in Zoho Books yet — sync it once to follow the chain'}>
-          <button type="button" className="ord-btn ord-btn--track" disabled={!trackable} onClick={onTrack}>
-            {ICON_TRACK}<span>Tracker</span>
-          </button>
-        </Tooltip>
-      )}
       <Tooltip label="Evidence Vault — the order, its documents and payment proofs">
         <button type="button" className="ord-btn ord-btn--vault" onClick={onVault}>{ICON_VAULT}<span>Evidence Vault</span></button>
       </Tooltip>
+      {onTrack && (
+        <Tooltip label={trackable
+          ? 'PO Timeline — how far this PO has gone across to Zoho Books'
+          : 'Nothing of this PO is in Zoho Books yet — sync it once to follow the timeline'}>
+          <button type="button" className="ord-btn ord-btn--track" disabled={!trackable} onClick={onTrack}>
+            {ICON_TRACK}<span>PO Timeline</span>
+          </button>
+        </Tooltip>
+      )}
     </div>
   );
 }

@@ -96,7 +96,9 @@ class ClmTncController extends Controller
             return response()->json(['status' => true, 'data' => [], 'count' => 0]);
         }
         // Branch-scoped read (globals + client-level + own branch; siblings hidden).
-        $query = ClmTncLibrary::query()->orderBy('id', 'desc');   // newest entry first
+        $query = ClmTncLibrary::query()
+            ->where('scope', ClmTncLibrary::SCOPE_SEGMENT)
+            ->orderBy('id', 'desc');   // newest entry first
         MasterVisibility::applyReadScope($query, $user, $request->integer('branch_id') ?: null);
         $rows = $query->get();
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
@@ -159,6 +161,7 @@ class ClmTncController extends Controller
                 'segment_ids' => $this->segmentIdsFor($user->client_id, $user->branch_id, $data['segment'] ?? '', $data['regulatory'] ?? 'highly'),
                 'regulatory' => $data['regulatory'] ?? 'highly',
                 'category'   => trim($data['category']),
+                'scope'      => ClmTncLibrary::SCOPE_SEGMENT,
                 'party'      => trim((string) ($data['party'] ?? '')),
                 'content'    => $data['content'] ?? null,
                 'created_by' => $user->id,
@@ -279,6 +282,110 @@ class ClmTncController extends Controller
         }
         $row->delete();
         return response()->json(['status' => true, 'message' => 'Deleted']);
+    }
+
+    /**
+     * GET /clm/tnc-global - one row per document category. A category with nothing
+     * written yet comes back with a null id, so the screen always shows the full set.
+     */
+    public function globalIndex(Request $request)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        if (!$user->client_id) return response()->json(['status' => true, 'data' => [], 'count' => 0]);
+
+        $branchId = $request->integer('branch_id') ?: null;
+
+        $cats = ClmTncCategory::query()->whereRaw("LOWER(TRIM(COALESCE(status, 'active'))) = 'active'");
+        MasterVisibility::applyReadScope($cats, $user, $branchId);
+
+        $rows = ClmTncLibrary::query()->where('scope', ClmTncLibrary::SCOPE_GLOBAL);
+        MasterVisibility::applyReadScope($rows, $user, $branchId);
+        $own = $branchId ?: ($user->branch_id ? (int) $user->branch_id : null);
+        $byCategory = $rows->get()
+            // Own branch first, so it wins the keyBy over a client-level row.
+            ->sortByDesc(fn ($r) => (int) ($own !== null && (int) $r->branch_id === $own))
+            ->keyBy(fn ($r) => mb_strtolower(trim((string) $r->category)));
+
+        $data = $cats->orderBy('id')->get(['id', 'code', 'name'])->map(function ($c) use ($byCategory) {
+            $row = $byCategory->get(mb_strtolower(trim((string) $c->name)));
+            return [
+                'category_id'   => (int) $c->id,
+                'category_code' => $c->code,
+                'category'      => $c->name,
+                'id'            => $row?->id,
+                'code'          => $row?->code,
+                'content'       => $row?->content,
+                'status'        => $row?->status ?? 'active',
+                'updated_at'    => $row?->updated_at?->toIso8601String(),
+            ];
+        })->values();
+
+        return response()->json(['status' => true, 'data' => $data, 'count' => $data->count()]);
+    }
+
+    /** PUT /clm/tnc-global - write the global T&C of one document category. */
+    public function globalSave(Request $request)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
+
+        $data = $request->validate([
+            'category' => 'required|string|max:255',
+            'content'  => 'nullable|string',
+            'status'   => 'nullable|string|max:16',
+        ], ['category.required' => 'Select the document category.']);
+
+        $branchId = $user->branch_id ? (int) $user->branch_id : null;
+        $row = ClmTncLibrary::query()
+            ->where('scope', ClmTncLibrary::SCOPE_GLOBAL)
+            ->where('client_id', $user->client_id)
+            // Edit the row at the caller's own level, never another branch's.
+            ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($branchId === null, fn ($q) => $q->whereNull('branch_id'))
+            ->whereRaw('LOWER(TRIM(category)) = ?', [mb_strtolower(trim($data['category']))])
+            ->first();
+
+        if ($row) {
+            if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+                return response()->json(['status' => false, 'message' => $msg], 403);
+            }
+            $row->update([
+                'content'    => $data['content'] ?? null,
+                'status'     => $data['status'] ?? $row->status ?? 'active',
+                'updated_by' => $user->id,
+            ]);
+            return response()->json(['status' => true, 'data' => $row]);
+        }
+
+        $known = ClmTncCategory::query()->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($data['category']))]);
+        MasterVisibility::applyReadScope($known, $user, $branchId);
+        if (!$known->exists()) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Pick one of the document categories — a global T&C belongs to a category.',
+                'errors'  => ['category' => ['Unknown document category.']],
+            ], 422);
+        }
+
+        $row = DB::transaction(function () use ($user, $data, $branchId) {
+            DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
+            return ClmTncLibrary::create([
+                'client_id'  => $user->client_id,
+                'branch_id'  => $user->branch_id,
+                'code'       => $this->nextCode(ClmTncLibrary::class, $user->client_id, $branchId, 'TNC-'),
+                'segment'    => '',
+                'segment_ids' => null,
+                'regulatory' => '',
+                'category'   => trim($data['category']),
+                'scope'      => ClmTncLibrary::SCOPE_GLOBAL,
+                'party'      => '',
+                'content'    => $data['content'] ?? null,
+                'status'     => $data['status'] ?? 'active',
+                'created_by' => $user->id,
+                'updated_by' => $user->id,
+            ]);
+        });
+        return response()->json(['status' => true, 'data' => $row], 201);
     }
 
     /**

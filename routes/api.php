@@ -350,6 +350,9 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::post  ('/clm/tnc-library',      [ClmTncController::class, 'libraryStore']);
     Route::put   ('/clm/tnc-library/{id}', [ClmTncController::class, 'libraryUpdate']);
     Route::delete('/clm/tnc-library/{id}', [ClmTncController::class, 'libraryDestroy']);
+    // Global T&C: one entry per document category, applied to every document of that category.
+    Route::get   ('/clm/tnc-global',       [ClmTncController::class, 'globalIndex']);
+    Route::put   ('/clm/tnc-global',       [ClmTncController::class, 'globalSave']);
 
     
     Route::get   ('/clm/agreement-types',      [ClmAgreementController::class, 'typesIndex']);
@@ -459,6 +462,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         // Zoho Books: PO + bill, then payments not posted yet
         Route::post  ('/{id}/zoho-sync',                 [$po, 'zohoSync'])->whereNumber('id');
         Route::get   ('/{id}/zoho-tracker',              [$po, 'zohoTracker'])->whereNumber('id');
+        Route::get   ('/{id}/proofs',                    [$po, 'proofs'])->whereNumber('id');
 
         // Advance Receipt Refund Adjustment (cancel with money released) and its recoveries
         $adr = \App\Http\Controllers\Api\P2p\PoRefundAdjustmentController::class;

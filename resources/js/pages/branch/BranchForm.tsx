@@ -731,6 +731,18 @@ export default function BranchForm({ onBack, editId }: Props) {
    * masters land OR cache hit fires (whichever comes first). */
   const [loadingLookups, setLoadingLookups] = useState(true);
 
+  /* Is the auto-assigned branch code still being fetched?
+   *
+     Separate from loadingLookups on purpose. A warm masters cache flips that
+     one false synchronously, so the real form paints while the bundle call
+     that carries next_code is still in flight — and the Branch Code input,
+     empty at that point, showed its "BR-001" placeholder. BR-001 is a code the
+     client already USES, so for a moment the field read as a real, taken code
+     before flipping to the new one (QA #2). The field now shimmers until the
+     server answers, so nothing that looks like a code appears before the code
+     it will actually get. */
+  const [codeLoading, setCodeLoading] = useState(!isEdit);
+
   /* Bundled form fetch — /branches/form-bundle returns countries + states +
    * next_code in ONE round-trip, replacing the previous 3 separate calls
    * (/master/countries, /master/states, /branches/next-code).
@@ -786,7 +798,7 @@ export default function BranchForm({ onBack, editId }: Props) {
         }
       })
       .catch(() => { /* dropdowns stay empty on failure */ })
-      .finally(() => setLoadingLookups(false));
+      .finally(() => { setLoadingLookups(false); setCodeLoading(false); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit]);
 
@@ -1162,6 +1174,17 @@ export default function BranchForm({ onBack, editId }: Props) {
     setForm(empty); setValidationErrors({}); touchedRef.current = {};
     setLogoFile(null); setLogoPreview(null); setSavedLogo(null);
     setShifts([blankShift()]); setShiftErrors({});
+    /* "New Branch" blanked the code and nothing ever refilled it, so the field
+       fell back to its placeholder — and sat on a used code indefinitely. It
+       also has to be a FRESH read: the branch just saved took the previous
+       one. Shimmer covers the round-trip. */
+    if (!isEdit) {
+      setCodeLoading(true);
+      api.get<{ code?: string }>('/branches/next-code')
+        .then(res => { if (res.data?.code) setForm(f => ({ ...f, code: res.data.code! })); })
+        .catch(() => { /* leave it blank — store() allocates the real code anyway */ })
+        .finally(() => setCodeLoading(false));
+    }
   };
 
   /* Form-shaped shimmer — fires while EITHER the edit-mode entity
@@ -1802,6 +1825,13 @@ export default function BranchForm({ onBack, editId }: Props) {
                     </span>
                   )}
                 </Lbl>
+                {codeLoading ? (
+                  /* Shimmer, not the empty input: its placeholder was a
+                     REAL code ("BR-001") that this client already uses, so
+                     waiting on the server looked like an answer — and a wrong
+                     one — until the true code replaced it (QA #2). */
+                  <Shimmer height={38} radius={10} />
+                ) : (
                 <Input
                   // Read-only at all times — the server is the source of
                   // truth for branch codes. On add: pre-filled with the
@@ -1821,10 +1851,15 @@ export default function BranchForm({ onBack, editId }: Props) {
                     cursor: 'not-allowed',
                   }}
                   value={form.code}
-                  placeholder="BR-001"
+                  /* Never a sample code here. The fetch failed if we are
+                     showing an empty field, and the server allocates the real
+                     one on save either way — say that instead of printing a
+                     code the user would read as theirs. */
+                  placeholder={isEdit ? '' : 'Assigned on save'}
                   maxLength={20}
                   title="Branch code is auto-assigned and cannot be edited"
                 />
+                )}
               </Col>
               <Col md={4}>
                 <Lbl>Branch Type</Lbl>

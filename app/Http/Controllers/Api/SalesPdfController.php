@@ -1291,6 +1291,7 @@ class SalesPdfController extends Controller
             // Master T&Cs auto-matched by the document category (Domestic /
             // International Purchase Order) + supplier party (Material / FFD /
             // Services) + each line product's segment & tier. Rendered on the PDF.
+            'globalTermsConditions'  => $this->fetchGlobalTncs($po->client_id, $po->branch_id, $this->poTncCategory($po)),
             'segmentTermsConditions' => $this->fetchPoTncs($po),
         ];
     }
@@ -2191,6 +2192,7 @@ class SalesPdfController extends Controller
             // Auto-fetched from the T&C Library: matched by the document's
             // type (International/Domestic) + kind (Quotation/PI) + each
             // product's segment & regulatory tier. Rendered on the PDF only.
+            'globalTermsConditions'  => $this->fetchGlobalTncs($q->client_id ?? null, $q->branch_id ?? null, $this->salesTncCategory($q)),
             'segmentTermsConditions' => $this->fetchSegmentTncs($q, $docLabelShort),
             'base_currency_total'    => $grandTotal,
             'exchange_rate'          => $q->exchange_rate ? (float) $q->exchange_rate : null,
@@ -2216,6 +2218,49 @@ class SalesPdfController extends Controller
      *
      * Returns a de-duplicated list of ['code','category','segment','content'].
      */
+    /**
+     * The GLOBAL Terms & Conditions of one document category: a single entry that
+     * applies to every document of that category, whatever segments it carries.
+     * Rendered between the form's own terms and the segment-wise blocks.
+     *
+     * @return array<int, string>
+     */
+    private function fetchGlobalTncs(?int $clientId, ?int $branchId, string $category): array
+    {
+        if (!$clientId || $category === '') return [];
+
+        return \App\Models\ClmTncLibrary::query()
+            ->withoutGlobalScope('tenant')
+            ->where('scope', \App\Models\ClmTncLibrary::SCOPE_GLOBAL)
+            ->whereRaw('LOWER(TRIM(category)) = ?', [mb_strtolower(trim($category))])
+            ->whereRaw("LOWER(TRIM(COALESCE(status, 'active'))) = 'active'")
+            ->where(fn ($w) => $w->whereNull('client_id')->orWhere('client_id', $clientId))
+            ->where(fn ($w) => $w->whereNull('branch_id')->orWhere('branch_id', $branchId))
+            ->orderBy('id')
+            ->pluck('content')
+            ->map(fn ($c) => trim((string) $c))
+            ->filter(fn ($c) => $c !== '')
+            ->values()
+            ->all();
+    }
+
+    /** "Domestic Purchase Order" / "International Purchase Order" for a PO. */
+    private function poTncCategory($po): string
+    {
+        $intl = str_contains(mb_strtolower(trim((string) ($po->document_type ?? ''))), 'international');
+        return ($intl ? 'International' : 'Domestic') . ' Purchase Order';
+    }
+
+    /**
+     * "Domestic Proforma Invoice" / "International Proforma Invoice". A quotation
+     * shares the PI's T&C set, exactly as fetchSegmentTncs does.
+     */
+    private function salesTncCategory($q): string
+    {
+        $intl = str_contains(mb_strtolower(trim((string) ($q->doc_type ?? 'International'))), 'international');
+        return ($intl ? 'International' : 'Domestic') . ' Proforma Invoice';
+    }
+
     private function fetchSegmentTncs($q, string $docLabelShort): array
     {
         $clientId = $q->client_id ?? null;
