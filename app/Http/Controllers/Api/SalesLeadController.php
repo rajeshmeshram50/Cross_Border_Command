@@ -794,9 +794,7 @@ class SalesLeadController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $q = Lead::query();
-        $this->applyScope($q, $user);
-        $lead = $q->findOrFail($id);
+        $lead = $this->findLeadForWrite($user, $id, 'edit it');
 
         $data = $request->validate([
             'sender_name'        => 'sometimes|required|string|max:255',
@@ -1001,9 +999,7 @@ class SalesLeadController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $q = Lead::query();
-        $this->applyScope($q, $user);
-        $lead = $q->findOrFail($id);
+        $lead = $this->findLeadForWrite($user, $id, 'delete it');
         $lead->delete();
 
         return response()->json(['status' => true, 'message' => 'Lead deleted']);
@@ -1317,9 +1313,7 @@ class SalesLeadController extends Controller
 
         // Tenant-scoped lookup — a hostile id from another tenant 404s
         // instead of leaking the record's existence.
-        $leadQ = Lead::query();
-        $this->applyScope($leadQ, $user);
-        $lead = $leadQ->findOrFail($leadId);
+        $lead = $this->findLeadForWrite($user, $leadId, 'add tasks to it');
 
         /* Purchase-decision-maker details are a CONTACT, so they are held to
          * the same shape the customer / consignee / candidate forms use.
@@ -1423,9 +1417,7 @@ class SalesLeadController extends Controller
             return response()->json(['status' => false, 'message' => 'No client tenant on user'], 422);
         }
 
-        $leadQ = Lead::query();
-        $this->applyScope($leadQ, $user);
-        $lead = $leadQ->findOrFail($leadId);
+        $lead = $this->findLeadForWrite($user, $leadId, 'change its WhatsApp details');
 
         $data = $request->validate([
             'whatsapp_status' => 'required|string|in:connected,pending,not_connected,opted_out',
@@ -1568,9 +1560,7 @@ class SalesLeadController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $leadQ = Lead::query();
-        $this->applyScope($leadQ, $user);
-        $lead = $leadQ->findOrFail($leadId);
+        $lead = $this->findLeadForWrite($user, $leadId, 'change its sourcing status');
 
         // Stage 3+ write — needs a live Qualified verdict (see helper).
         $blocked = $this->blockSourcingUnlessQualified($lead);
@@ -1624,9 +1614,7 @@ class SalesLeadController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $leadQ = Lead::query();
-        $this->applyScope($leadQ, $user);
-        $lead = $leadQ->findOrFail($leadId);
+        $lead = $this->findLeadForWrite($user, $leadId, 'mark its products sourced');
 
         // Stage 3+ write — needs a live Qualified verdict (see helper).
         $blocked = $this->blockSourcingUnlessQualified($lead);
@@ -1697,9 +1685,7 @@ class SalesLeadController extends Controller
             return response()->json(['status' => false, 'message' => 'No client tenant on user'], 422);
         }
 
-        $leadQ = Lead::query();
-        $this->applyScope($leadQ, $user);
-        $lead = $leadQ->findOrFail($leadId);
+        $lead = $this->findLeadForWrite($user, $leadId, 'share prices on it');
 
         // Stage 3+ write — needs a live Qualified verdict (see helper).
         $blocked = $this->blockSourcingUnlessQualified($lead);
@@ -1900,34 +1886,11 @@ class SalesLeadController extends Controller
             return response()->json(['status' => false, 'message' => 'No client tenant on user'], 422);
         }
 
-        /* Owner-scoped, deliberately. A former owner may READ this lead but not
-         * write to it.
-         *
-         * findOrFail alone was doing the blocking correctly, but its
-         * ModelNotFoundException reaches the browser as
-         * "No query results for model [App\Models\Lead] 40" — a framework
-         * string that names an internal class and a raw id, tells the user
-         * nothing, and reads like the lead has been deleted. Separating the two
-         * cases lets each say what actually happened. */
-        $leadQ = Lead::query();
-        $this->applyScope($leadQ, $user);
-        $lead = $leadQ->find($leadId);
-
-        if (!$lead) {
-            // Visible on the read path but not the write path = reassigned away.
-            $readQ = Lead::query();
-            $this->applyScope($readQ, $user, null, true);
-            if ($readQ->whereKey($leadId)->exists()) {
-                return response()->json([
-                    'status'  => false,
-                    'message' => 'This opportunity has been reassigned to another user — you can view it, but not change its products.',
-                ], 403);
-            }
-            return response()->json([
-                'status'  => false,
-                'message' => 'Opportunity not found, or it is outside your access.',
-            ], 404);
-        }
+        /* Owner-scoped, deliberately: a former owner may READ this lead but not
+           write to it. The helper draws that distinction in the MESSAGE too —
+           this endpoint was the only one that did, and every sibling write
+           path was still leaking the raw ModelNotFound string (QA #242). */
+        $lead = $this->findLeadForWrite($user, $leadId, 'add products to it');
 
         // Stage 3+ write — needs a live Qualified verdict (see helper).
         $blocked = $this->blockSourcingUnlessQualified($lead);
@@ -2044,9 +2007,7 @@ class SalesLeadController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $leadQ = Lead::query();
-        $this->applyScope($leadQ, $user);
-        $lead = $leadQ->findOrFail($leadId);
+        $lead = $this->findLeadForWrite($user, $leadId, 'change its products');
 
         // Stage 3+ write — needs a live Qualified verdict (see helper).
         $blocked = $this->blockSourcingUnlessQualified($lead);
@@ -2133,9 +2094,7 @@ class SalesLeadController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $leadQ = Lead::query();
-        $this->applyScope($leadQ, $user);
-        $lead = $leadQ->findOrFail($leadId);
+        $lead = $this->findLeadForWrite($user, $leadId, 'remove its products');
 
         $row = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
 
@@ -2294,9 +2253,7 @@ class SalesLeadController extends Controller
             return response()->json(['status' => false, 'message' => 'No client tenant on user'], 422);
         }
 
-        $leadQ = Lead::query();
-        $this->applyScope($leadQ, $user);
-        $lead = $leadQ->findOrFail($leadId);
+        $lead = $this->findLeadForWrite($user, $leadId, 'record an acknowledgement on it');
 
         $data = $request->validate([
             'reason_ids'   => 'required|array|min:1',
@@ -2860,6 +2817,50 @@ class SalesLeadController extends Controller
      * pinned to their own branch (every branch is an isolated peer).
      * Mirror of SalesTodoController::applyScope tailored for leads.
      */
+    /**
+     * Resolve a lead for a WRITE, or fail with a message that says what
+     * actually happened.
+     *
+     * Read and write see different sets of leads: a lead assigned away from
+     * the user stays READABLE (applyScope's $includeFormerOwned) but is not
+     * writable. Every write path used to express that with a plain
+     * findOrFail on the write-scoped query, which is correct — the write is
+     * refused — but its ModelNotFoundException reaches the browser as
+     * "No query results for model [App\Models\Lead] 1116". The user of a
+     * view-only lead therefore got an internal class name and a raw id in a
+     * red toast, which says nothing, names nothing they can act on, and reads
+     * like the lead has been deleted (QA #242).
+     *
+     * The two cases are separated here so each can say its own thing:
+     *   · readable but not writable → 403, "this lead is view-only for you"
+     *   · not readable either       → 404, it is gone or was never theirs
+     *
+     * $action completes the sentence "…so you cannot ___", so each endpoint
+     * names the thing the user just tried to do.
+     */
+    private function findLeadForWrite($user, int $leadId, string $action = 'change it'): Lead
+    {
+        $writeQ = Lead::query();
+        $this->applyScope($writeQ, $user);
+        $lead = $writeQ->find($leadId);
+        if ($lead) return $lead;
+
+        // Visible on the read path but not the write path = view-only.
+        $readQ = Lead::query();
+        $this->applyScope($readQ, $user, null, true);
+        if ($readQ->whereKey($leadId)->exists()) {
+            abort(response()->json([
+                'status'  => false,
+                'message' => "This lead is view-only for you — it is assigned to another user, so you cannot {$action}.",
+            ], 403));
+        }
+
+        abort(response()->json([
+            'status'  => false,
+            'message' => 'This lead no longer exists, or it is not one you have access to.',
+        ], 404));
+    }
+
     private function applyScope($q, $user, ?int $branchFilter = null, bool $includeFormerOwned = false): void
     {
         if ($user->user_type === 'super_admin') {

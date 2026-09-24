@@ -501,7 +501,18 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
       setDraft(EMPTY_DRAFT); setEditingId(null); setDraftOpen(false); setErrors({});
       onChanged?.();   // refresh inline Stage 3 (list + count badges) without a page reload
     } catch (e: any) {
-      toast.error(editingId ? 'Update failed' : 'Save failed', e?.response?.data?.message ?? 'Could not save this product');
+      /* A refused write is not a failure to report as one. The server sends
+         403 with a sentence explaining it (a lead assigned to someone else is
+         view-only), so title it for what it is instead of "Update failed" —
+         which, next to the raw ModelNotFound string this used to carry, read
+         like the save had broken (QA #242). */
+      const status = e?.response?.status;
+      const serverMsg = e?.response?.data?.message;
+      if (status === 403) {
+        toast.warning('View-only lead', serverMsg ?? 'You can view this lead, but not change its products.');
+      } else {
+        toast.error(editingId ? 'Update failed' : 'Save failed', serverMsg ?? 'Could not save this product');
+      }
     } finally {
       setSaving(false);
     }
