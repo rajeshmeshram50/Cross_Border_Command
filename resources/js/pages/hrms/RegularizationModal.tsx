@@ -545,12 +545,8 @@ export default function RegularizationModal({
               undecided does not stop this one — it only takes the hours it asks
               for off the table, which the overlap check enforces. */}
           {!!pendingOther?.length && (
-            <div
-              className="d-flex align-items-start gap-2 mb-2"
-              role="status"
-              style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 10px', color: '#92400e', fontSize: 12 }}
-            >
-              <i className="ri-information-line" style={{ marginTop: 1 }} />
+            <div className="att-reg-keka-warn" role="status">
+              <i className="ri-information-line" />
               <span>
                 {pendingOther.length === 1 ? 'A request' : `${pendingOther.length} requests`} for this date
                 {pendingOther.length === 1 ? ' is' : ' are'} already pending approval
