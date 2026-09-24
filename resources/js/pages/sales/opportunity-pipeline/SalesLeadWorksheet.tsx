@@ -1175,15 +1175,23 @@ export default function SalesLeadWorksheet() {
             <circle cx="11" cy="11" r="8" />
             <path d="m21 21-4.35-4.35" />
           </svg>
+          {/* Autofill guard — Chrome ignores autocomplete="off" on a field it
+              classifies as contact info and drops an email / address into it
+              (QA #8 on Customers, QA #25 on Consignee). An explicit name,
+              autocomplete="new-password" and the LastPass / Dashlane opt-outs
+              keep it out of this one. */}
           <input
-            type="text"
+            type="search"
+            name="worklist-search"
+            data-lpignore="true"
+            data-form-type="other"
             /* Placeholder lists the most common targets, but the
              * backend now searches every column on the My Workplace
              * table (opp id, type, source, customer name / number /
              * email / company, product, country, remark, assigned
              * salesperson, etc.) so "anything you can see, you can
              * search". */
-            autoComplete="off"
+            autoComplete="new-password"
             placeholder="Search anything — ID, name, phone, email, product, country…"
             value={q}
             onChange={e => setQ(e.target.value)}

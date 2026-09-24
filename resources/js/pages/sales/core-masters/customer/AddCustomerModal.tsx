@@ -6731,13 +6731,19 @@ const SCOPED_CSS = `
  * ============================================================ */
 
 /* ── Small laptop (≤ 1440px) ─────────────────────────────────
-   1366×768 / 1440×900 are the most common laptop sizes. The
-   modal caps at max-width: 1440 so on a 1440px viewport it fills
-   the entire screen edge-to-edge — give it breathing room. */
+   1366×768 / 1440×900 are the most common laptop sizes. Only the
+   HEIGHT and the screen-edge gutter change here.
+   This block used to set a bare max-width: calc(100vw - 20px),
+   written back when the card's own cap was 1440px and the point was to
+   keep it off the screen edges. The cap has since come down to 1224
+   (see ACM_SHELL_CSS), but the override stayed — and being a media rule
+   it WINS, so on every laptop at 100% zoom the form ignored its 1224
+   cap and stretched edge-to-edge again. min() keeps the card at its own
+   width and lets the viewport only shrink it further. */
 @media (max-width: 1440px) {
   .acm-root { padding: 10px; }
   .acm-card {
-    max-width: calc(100vw - 20px);
+    max-width: min(1224px, calc(100vw - 20px));
     height: min(94vh, calc(100vh - 16px));
   }
   .acm-header { padding: 12px 18px; }
@@ -6767,7 +6773,7 @@ const SCOPED_CSS = `
 @media (max-width: 1024px) {
   .acm-root { padding: 8px; }
   .acm-card {
-    max-width: calc(100vw - 16px);
+    max-width: min(1224px, calc(100vw - 16px));
     height: min(96vh, calc(100vh - 12px));
   }
   .acm-row-4 { grid-template-columns: 1fr 1fr; }
