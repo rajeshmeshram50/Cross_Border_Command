@@ -162,10 +162,18 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
             <Row className="g-2 align-items-center mb-3">
               <Col xs={12}>
                 <div className="search-box w-100">
+                  {/* Autofill guard — Chrome ignores autocomplete="off" on a field it
+                      classifies as contact info and drops an email / address into it
+                      (QA #8 on Customers, QA #25 on Consignee). An explicit name,
+                      autocomplete="new-password" and the LastPass / Dashlane opt-outs
+                      keep it out of this one. */}
                   <Input
-                    type="text"
+                    type="search"
                     className="form-control"
-                    autoComplete="off"
+                    name="branch-list-search"
+                    autoComplete="new-password"
+                    data-lpignore="true"
+                    data-form-type="other"
                     placeholder="Search by name, code, city..."
                     value={searchInput}
                     onChange={e => setSearchInput(e.target.value)}

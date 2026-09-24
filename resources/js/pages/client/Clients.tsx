@@ -775,10 +775,18 @@ export default function Clients({ onNavigate }: Props) {
             <div className="clients-list-frame">
               <div className="clients-frame-filter p-3">
                 <div className="search-box">
+                  {/* Autofill guard — Chrome ignores autocomplete="off" on a field it
+                      classifies as contact info and drops an email / address into it
+                      (QA #8 on Customers, QA #25 on Consignee). An explicit name,
+                      autocomplete="new-password" and the LastPass / Dashlane opt-outs
+                      keep it out of this one. */}
                   <Input
-                    type="text"
+                    type="search"
                     className="form-control"
-                    autoComplete="off"
+                    name="client-list-search"
+                    autoComplete="new-password"
+                    data-lpignore="true"
+                    data-form-type="other"
                     placeholder="Search by name or ID..."
                     value={searchInput}
                     onChange={e => setSearchInput(e.target.value)}

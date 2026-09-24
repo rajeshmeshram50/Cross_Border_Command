@@ -8652,8 +8652,15 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
     max-width: min(1440px, calc(100vw - 20px));
     max-height: min(94vh, calc(100vh - 16px));
   }
+  /* Only the HEIGHT is capped here. This used to set
+     max-width: calc(100vw - 20px), copied from .acm-wiz above — but the
+     wizard is a full-width form and the picker is a 460px card, so on any
+     screen at or under 1440 (i.e. every normal laptop, at 100% zoom) the
+     override threw away the 460px cap and stretched a single search field
+     across the whole viewport. min() keeps the card its own size and only
+     lets the viewport shrink it further on very narrow screens. */
   .acm-pick {
-    max-width: calc(100vw - 20px);
+    max-width: min(460px, calc(100vw - 20px));
     max-height: min(94vh, calc(100vh - 16px));
   }
   .acm-wiz-header { padding: 12px 18px; }
@@ -8687,8 +8694,14 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 /* ── Tablet landscape (≤ 1024px) ─────────────────────────────── */
 @media (max-width: 1024px) {
   .acm-overlay { padding: 8px; }
-  .acm-wiz, .acm-pick {
+  .acm-wiz {
     max-width: calc(100vw - 16px);
+    max-height: min(96vh, calc(100vh - 12px));
+  }
+  /* Picker keeps its card width (see the 1440 block) — only the height and
+     the screen-edge gutter follow the breakpoint. */
+  .acm-pick {
+    max-width: min(460px, calc(100vw - 16px));
     max-height: min(96vh, calc(100vh - 12px));
   }
   /* Form section grids collapse */
@@ -8717,8 +8730,12 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
    to crowd — collapse to single column, slim down headers, drop the
    stepper sub-text so each step still fits two-up. */
 @media (max-width: 820px) {
-  .acm-wiz, .acm-pick {
+  .acm-wiz {
     max-width: calc(100vw - 12px);
+    max-height: min(97vh, calc(100vh - 10px));
+  }
+  .acm-pick {
+    max-width: min(460px, calc(100vw - 12px));
     max-height: min(97vh, calc(100vh - 10px));
   }
   .acm-grid-4, .acm-grid-3, .acm-grid-2 { grid-template-columns: 1fr; }
