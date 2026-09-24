@@ -847,12 +847,23 @@ export default function SalesLeadWorksheet() {
       });
       toast.success('Saved', 'Lead created');
       setAddLeadOpen(false);
-      // Jump to the Qualified tab on page 1 so the newly created lead is visible.
-      setTab('qualified'); setPage(1);
-      // Refresh the tab badges too, then force a refetch with the NEW tab/page.
-      // (Bumping reloadKey re-runs the fetch effect once state has settled — no
-      // stale-closure race that previously hid the lead until a manual refresh.)
+      // Jump to the Qualified tab so the newly created lead is visible.
+      setTab('qualified');
+      /* A create is a NEW question, not a background refresh.
+         It used to take the background-reload path (keep the rows, dim the
+         tbody to 55%) — the treatment that path is right for, when the table
+         is re-answering the SAME question. But this create also switches tab
+         and jumps to page one, so the rows being dimmed belong to a tab the
+         user is leaving, and what they got back was a pale table that then
+         swapped underneath them, with no loading state anywhere (QA #60).
+         startNewQuery clears the rows, raises `loading` in the same batch and
+         starts the skeleton's minimum-display timer, which is what puts the
+         shimmer up — the same as a tab switch or a filter, because that is
+         what this is. It sets page 1 for us. */
       countSigRef.current = '';
+      startNewQuery();
+      // Force the refetch even when tab + page already matched, so the new
+      // lead can't stay hidden until a manual refresh.
       setReloadKey(k => k + 1);
     } catch (e: any) {
       // Laravel validation errors arrive as { errors: { field: ["msg"] } }.

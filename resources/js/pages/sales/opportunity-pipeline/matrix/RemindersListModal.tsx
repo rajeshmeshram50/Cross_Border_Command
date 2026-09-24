@@ -5,6 +5,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import RemindersForLeadModal from './RemindersForLeadModal';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../../../components/ui/Tooltip';
+import WorklistPager from '../../../../components/ui/WorklistPager';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Reminders Directory — list of every reminder against the current
@@ -23,6 +24,12 @@ type Reminder = {
   opp_id?:   string | null;
   opp_date?: string | null;
   status:    ReminderStatus;
+  /* The Add form has always accepted a file and the API has always returned
+     it (SalesReminder appends attachment_url), but this table never showed a
+     column for it — so a reminder's attachment could be uploaded and then
+     never reached from the place the reminders are listed (QA #58). */
+  attachment_url?:           string | null;
+  attachment_original_name?: string | null;
 };
 
 type Props = {
@@ -39,6 +46,11 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
   const [addOpen, setAddOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Reminder | null>(null);
   const [deleting, setDeleting] = useState(false);
+  /* Paged client-side (QA #62). The list is already fetched whole — it is one
+     opportunity's reminders, not the tenant's — so paging here is a slice, not
+     another round-trip, and every page lands instantly. */
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(5);
 
   const refresh = () => {
     if (!oppId) return;
@@ -50,7 +62,8 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
   };
 
   useEffect(() => {
-    if (!open) { setRows([]); setAddOpen(false); return; }
+    if (!open) { setRows([]); setAddOpen(false); setPage(1); return; }
+    setPage(1);
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, oppId]);
@@ -93,6 +106,14 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
   };
 
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  /* Page slice. Clamped so deleting the last row on the final page falls back
+     to a page that exists instead of showing an empty table with a pager that
+     says there is data. */
+  const totalRows = rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / perPage));
+  const safePage = Math.min(page, totalPages);
+  const pagedRows = rows.slice((safePage - 1) * perPage, (safePage - 1) * perPage + perPage);
+
   const fmtDate = (s: string) => {
     if (!s) return '—';
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
@@ -147,6 +168,7 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
                     <th>SUBJECT</th>
                     <th style={{ width: 120 }}>SET DATE</th>
                     <th style={{ width: 100 }}>TAT</th>
+                    <th style={{ width: 130 }}>ATTACHMENT</th>
                     <th style={{ width: 130 }}>STATUS</th>
                     <th style={{ width: 130 }}>ACTION</th>
                   </tr>
@@ -161,22 +183,33 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
                       </td>
                       <td><span className="rlm-sk rlm-sk-line" style={{ width: 74 }} /></td>
                       <td><span className="rlm-sk rlm-sk-pill" /></td>
+                      <td><span className="rlm-sk rlm-sk-line" style={{ width: 86 }} /></td>
                       <td><span className="rlm-sk rlm-sk-pill" /></td>
                       <td><span className="rlm-sk rlm-sk-btn" /></td>
                     </tr>
                   ))}
                   {!loading && rows.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="rlm-status">
+                      <td colSpan={7} className="rlm-status">
                         No reminders yet — click <strong>+ Add Reminder</strong> to add the first.
                       </td>
                     </tr>
                   )}
-                  {rows.map((r, i) => {
+                  {/* !loading, like the skeleton block and the empty state
+                      above. Without it a refresh painted BOTH: four shimmer
+                      rows stacked on top of the reminders still held in state
+                      from the last load, so the table looked like it had seven
+                      rows, four of them ghosts. refresh() deliberately keeps
+                      the old rows (so the table does not flash empty), which
+                      makes the guard the thing that decides which of the two
+                      is on screen (QA #59). */}
+                  {!loading && pagedRows.map((r, i) => {
                     const done = r.status === 'Done';
                     return (
                       <tr key={r.id}>
-                        <td><span className="rlm-num">{i + 1}</span></td>
+                        {/* Numbered across the whole list, not within the
+                            page — otherwise page 2 starts at 1 again. */}
+                        <td><span className="rlm-num">{(safePage - 1) * perPage + i + 1}</span></td>
                         <td>
                           <div className="rlm-subj-cell">
                             <Tooltip label={r.subject}><span className="rlm-subj">{r.subject}</span></Tooltip>
@@ -185,6 +218,30 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
                         </td>
                         <td className="rlm-date">{fmtDate(r.set_date)}</td>
                         <td>{r.tat ? <span className="rlm-tat-pill">{r.tat}</span> : <span className="rlm-muted">—</span>}</td>
+                        <td>
+                          {/* Opens in a new tab rather than downloading: the
+                              allowed types are images and PDF (see the Add
+                              form's ATTACH_EXTS), which every browser renders
+                              inline, and the row is a glance, not a filing
+                              step. The file name is the tooltip — printing it
+                              in the cell would blow the column out, since it
+                              is whatever the uploader happened to call it. */}
+                          {r.attachment_url ? (
+                            <Tooltip label={r.attachment_original_name || 'Open attachment'}>
+                              <a
+                                href={r.attachment_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rlm-attach"
+                              >
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                                </svg>
+                                View
+                              </a>
+                            </Tooltip>
+                          ) : <span className="rlm-muted">—</span>}
+                        </td>
                         <td>
                           <span className={`rlm-status-pill ${done ? 'rlm-status-done' : 'rlm-status-prog'}`}>
                             <span className="rlm-status-dot" /> {r.status}
@@ -218,6 +275,21 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
                 </tbody>
               </table>
             </div>
+            {/* Same WorklistPager the Customer / master lists and the sibling
+                matrix modals use, so the controls read identically wherever a
+                table is paged. Hidden while loading and when there is nothing
+                to page — a pager over an empty table is noise. */}
+            {!loading && totalRows > 0 && (
+              <WorklistPager
+                total={totalRows}
+                page={safePage}
+                pageSize={perPage}
+                onPage={setPage}
+                onPageSize={(n) => { setPerPage(n); setPage(1); }}
+                pageSizeOptions={[5, 10, 25, 50]}
+                className="rlm-pager"
+              />
+            )}
           </div>
         </div>
       </div>
@@ -364,6 +436,17 @@ const RLM_CSS = `
   font-size: 10.5px; font-weight: 700;
 }
 .rlm-muted { color: #94a3b8; font-style: italic; }
+.rlm-pager { flex-shrink: 0; margin-top: 0; border-radius: 0 0 14px 14px; }
+.rlm-attach {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: 999px;
+  background: #eef2ff; color: #4338ca;
+  border: 1px solid #c7d2fe;
+  font-size: 10.5px; font-weight: 700;
+  text-decoration: none; cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.rlm-attach:hover { background: #e0e7ff; border-color: #a5b4fc; color: #3730a3; }
 
 .rlm-status-pill {
   display: inline-flex; align-items: center; gap: 5px;
@@ -425,6 +508,16 @@ const RLM_CSS = `
 [data-bs-theme="dark"] .rlm-tat-pill {
   background: rgba(167, 139, 250, .18);
   color: #d8b4fe;
+}
+[data-bs-theme="dark"] .rlm-attach {
+  background: rgba(99, 102, 241, .18);
+  border-color: rgba(129, 140, 248, .38);
+  color: #c7d2fe;
+}
+[data-bs-theme="dark"] .rlm-attach:hover {
+  background: rgba(99, 102, 241, .28);
+  border-color: rgba(165, 180, 252, .55);
+  color: #e0e7ff;
 }
 [data-bs-theme="dark"] .rlm-status-prog {
   background: rgba(245, 158, 11, .16); border-color: rgba(252, 211, 77, .40); color: #fbbf24;
