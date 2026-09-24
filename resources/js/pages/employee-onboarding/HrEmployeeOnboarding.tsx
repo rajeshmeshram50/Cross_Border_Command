@@ -2880,7 +2880,13 @@ function InitiateOnboardingModal({
 
     await api.post('/salary-structures', {
       employee_id: empId,
-      effective_from: s1.salary_effective_from || new Date().toISOString().slice(0, 10),
+      /* Falls back to the JOINING DATE, not today. The first salary runs from
+         the day the person joined — that is the whole reason the field above
+         is read-only and mirrored — so defaulting to today would silently
+         date the structure wrongly for anyone joining on any other day. Today
+         stays as the last resort for a record carrying no joining date at
+         all, which validateStage1 refuses to save anyway. */
+      effective_from: s1.salary_effective_from || s1.date_of_joining || new Date().toISOString().slice(0, 10),
       earnings: earn,
       deductions: ded,
       pf_applicable: !!s1.pf_eligible,
@@ -3253,12 +3259,28 @@ const joinMin = (!isRehired && joinDateOrig && joinDateOrig < joinTodayIso) ? jo
    the payload is what creates salary_structures.effective_from, and an edit to
    the joining date has to carry through to it rather than leaving the old one
    behind. */
+/* Watching the VALUE as well as the joining date. (CBC #36)
+ *
+ * It used to watch the joining date alone, which only re-syncs when that date
+ * CHANGES — so anything that emptied salary_effective_from while the joining
+ * date stayed put left the pair out of step, and nothing ever put them back.
+ * A save is the ordinary way in: the field is stored on the employee, so a
+ * record that has none (an invite-created row, or one last saved with payroll
+ * off) hydrates it as '' while the joining date hydrates unchanged. The box on
+ * screen reads the joining date directly, so it went on showing "24 Sept 2026"
+ * while the value behind it was blank — and Next Stage refused with "Salary
+ * effective date is required" pointing at a field that was visibly filled and
+ * read-only, with nothing the user could do to satisfy it.
+ *
+ * Now the effect re-runs whenever the value itself drifts from the joining
+ * date, from any cause. It already no-ops when the two agree, so watching the
+ * value costs a comparison and cannot loop. */
 useEffect(() => {
   const doj = s1.date_of_joining || '';
   setS1(p => (p.salary_effective_from === doj ? p : { ...p, salary_effective_from: doj }));
   setS1Errors(p => (p.salary_effective_from ? { ...p, salary_effective_from: '' } : p));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [s1.date_of_joining]);
+}, [s1.date_of_joining, s1.salary_effective_from]);
 
 // Probation length + end date, derived live from the joining date + probation
 // policy. Stored on save (probation_months / probation_end_date) so the daily
@@ -3448,11 +3470,17 @@ const validateStage1 = (): boolean => {
     /* The salary effective date IS the joining date — the field mirrors it and
        is read-only. Checked anyway because the value can still arrive wrong:
        a record saved before this rule existed, or a direct API write. */
-    const sef = s1.salary_effective_from?.trim() ?? '';
+    /* Reads the joining date when the mirrored value is missing, rather than
+       refusing. The field is read-only and AUTO — there is no control to fix
+       it with — so an error here is a dead end for whoever is filling the
+       form: the box shows the joining date, the message says the date is
+       required, and no amount of clicking changes either. The mirror effect
+       keeps the two in step; this is what makes a moment where they are not
+       harmless instead of blocking. A missing JOINING date is still a real
+       error, and it names the field that can actually be filled. */
+    const sef = (s1.salary_effective_from?.trim() || doj);
     if (!doj) {
       errors.salary_effective_from = 'Set the joining date — the salary effective date follows it';
-    } else if (!sef) {
-      errors.salary_effective_from = 'Salary effective date is required';
     } else if (sef !== doj) {
       errors.salary_effective_from = 'Salary effective date must be the same as the joining date';
     }
