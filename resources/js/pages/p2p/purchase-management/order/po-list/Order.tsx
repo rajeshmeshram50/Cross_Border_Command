@@ -1538,10 +1538,13 @@ export default function Order() {
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
 
+            {/* Short enough to fit the box. What it actually searches is on
+                hover — spelled out, the placeholder was cut mid-word. */}
             <input
               type="text"
               aria-label="Search purchase orders"
-              placeholder="Search PO, supplier, ID, type or status..."
+              placeholder="Search PO list"
+              title="Search by PO number, supplier, shipment / opportunity / PI id, PO type, document type or status"
               value={search}
               onChange={(e) => changeSearch(e.target.value)}
             />

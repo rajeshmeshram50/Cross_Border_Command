@@ -136,12 +136,15 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   // Supplier master record + Evidence Vault; the vault also feeds the legal status.
   const loadSupplier = async (vendorId: number) => {
     setSupplierLoading(true);
+    /* Two reads, and only one of them the fields wait for. The Evidence Vault
+       is the slower — it walks every document group — and only the legal
+       status card needs it, so the supplier's own boxes fill as soon as its
+       record lands instead of the whole form sitting on "Loading…". */
+    const vault = poLookupApi.supplierVault(vendorId).catch(() => null);
+    void vault.then((v) => set({ vault: v, legal: legalFromVault(v) }));
     try {
-      const [supplier, vault] = await Promise.all([
-        poLookupApi.supplier(vendorId),
-        poLookupApi.supplierVault(vendorId).catch(() => null),
-      ]);
-      set({ vendorId, supplier, vault, legal: legalFromVault(vault) });
+      const supplier = await poLookupApi.supplier(vendorId);
+      set({ vendorId, supplier });
       return supplier;
     } catch (e) {
       fail(e);

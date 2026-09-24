@@ -315,7 +315,7 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
             <span className={`cpf-chev ${supCardOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
           </div>
           {supCardOpen && (
-          <div className="spi-dt-grid4 cpf-grid5">
+          <div className={`spi-dt-grid4 cpf-grid5${supplierLoading ? ' cpf-sup-loading' : ''}`}>
             <Field label="SELECT SUPPLIER" req error={err.supplier}>
               <div className="cpf-supsel">
               {supplierLocked ? (
@@ -349,7 +349,7 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
             </Field>
             {/* Everything below comes from the supplier master and is read-only here. */}
             <Field label="COMPANY LEGAL NAME">
-              <input className="spi-dt-inp" readOnly value={supplierLoading ? 'Loading…' : v(sup?.legalName || sup?.name)} placeholder="—" />
+              <input className="spi-dt-inp" readOnly value={supplierLoading ? '' : v(sup?.legalName || sup?.name)} placeholder="—" />
             </Field>
             <Field label="SUPPLIER TYPE">
               <EditSelect readOnly value={v(sup?.type)} options={[]} onChange={() => {}} />
@@ -371,7 +371,7 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
             <span className={`cpf-chev ${addrOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
           </div>
           {addrOpen && (
-          <div className="spi-dt-grid4">
+          <div className={`spi-dt-grid4${supplierLoading ? ' cpf-sup-loading' : ''}`}>
             <Field label="REGISTERED OFFICE ADDRESS" full>
               <input className="spi-dt-inp" readOnly value={v(sup?.addr)} placeholder="—" />
             </Field>
@@ -431,7 +431,14 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
                   ))}
                 </div>
               ) : (
-                <div className="spi-dt-legal-note">{supplierLoading ? 'Loading legal status…' : 'Select a supplier to view legal & compliance status.'}</div>
+                /* The vault lands after the supplier's own record, so this card
+                   keeps waiting for a moment after the fields have filled — it
+                   says so rather than reading as "nothing on file". */
+                <div className="spi-dt-legal-note">
+                  {supplierLoading || draft.vendorId
+                    ? 'Reading the supplier’s Evidence Vault…'
+                    : 'Select a supplier to view legal & compliance status.'}
+                </div>
               )}
             </div>
           )}
@@ -466,7 +473,7 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
             </span>
           </div>
 
-          <div className="spi-dt-grid4">
+          <div className={`spi-dt-grid4${supplierLoading ? ' cpf-sup-loading' : ''}`}>
             <Field label="SCRUTINY DATE"><input className="spi-dt-inp" readOnly value={isInternational ? NA : sup?.scrutiny ? formatDmy(sup.scrutiny) : ''} placeholder="—" /></Field>
             <Field label="GST NUMBER"><input className="spi-dt-inp" readOnly value={isInternational ? NA : v(sup?.gstNo)} placeholder="—" /></Field>
             <Field label="GST STATUS"><EditSelect readOnly value={isInternational ? NA : v(sup?.gstStatus)} options={[]} onChange={() => {}} /></Field>
