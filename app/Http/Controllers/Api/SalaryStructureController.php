@@ -255,7 +255,13 @@ class SalaryStructureController extends Controller
 
     public function store(Request $request)
     {
-        if ($deny = $this->denyUnlessManager($request, 'change')) return $deny;
+        /* Fast fail before validation for a caller who holds neither write
+         * flag. The precise flag (add for a first structure, edit for a
+         * revision) needs the employee, so it is checked again below once the
+         * employee is resolved. (QA #153) */
+        if (!$this->canAct($request, 'can_add') && !$this->canAct($request, 'can_edit')) {
+            return $this->denyResponse('change');
+        }
         $data = $request->validate([
             'employee_id'     => ['required', 'integer'],
             'effective_from'  => ['required', 'date'],
@@ -307,6 +313,20 @@ class SalaryStructureController extends Controller
         if ($user && in_array($user->user_type, ['branch_user', 'employee'], true)
             && $user->branch_id && (int) $employee->branch_id !== (int) $user->branch_id) {
             abort(403, 'Employee belongs to another branch.');
+        }
+
+        /* Add vs Edit. (QA #153)
+         *
+         * There is no separate revise route — this one endpoint both creates
+         * the first structure and supersedes it — so the two cases have to be
+         * told apart here or the Permissions matrix cannot distinguish them.
+         * An employee who already has a structure is being REVISED (can_edit);
+         * one who has none is being SET UP (can_add). */
+        $isRevision = SalaryStructure::where('employee_id', $employee->id)
+            ->whereIn('status', ['active', 'superseded'])
+            ->exists();
+        if (!$this->canAct($request, $isRevision ? 'can_edit' : 'can_add')) {
+            return $this->denyResponse($isRevision ? 'revise' : 'create');
         }
 
         /* Bound the effective date. (QA #87)
@@ -631,7 +651,7 @@ class SalaryStructureController extends Controller
 
     public function destroy(Request $request, int $id)
     {
-        if ($deny = $this->denyUnlessManager($request, 'delete')) return $deny;
+        if (!$this->canAct($request, 'can_delete')) return $this->denyResponse('delete');
         $s = $this->findScoped($request, $id);
         abort_unless($s, 404, 'Salary structure not found.');
         if ($s->status === 'active') {
@@ -821,6 +841,50 @@ class SalaryStructureController extends Controller
             ->where('module_id', $moduleId)
             ->where(fn ($q) => $q->where('can_edit', true)->orWhere('can_approve', true))
             ->exists();
+    }
+
+    /**
+     * Does this caller hold one specific write flag on `hr.payroll`? (QA #153)
+     *
+     * canManage() below is the READ gate and deliberately lets any
+     * `branch_user` through, because a branch admin has to be able to open
+     * Salary Setup for their own branch. That blanket tier pass was also the
+     * only gate on the WRITE paths, which is the bug: a branch admin granted
+     * Payroll with View only could still press Revise, change the CTC and
+     * save, because the permission row was never consulted for their tier.
+     *
+     * Writes therefore resolve per flag instead:
+     *   - super_admin / client_admin pass (tenant owners, as in
+     *     PayrollController::canManage)
+     *   - the `employee` tier never writes salary
+     *   - everyone else, branch_user included, must actually hold the flag
+     *
+     * $flag is a column on `permissions`: can_add for a first structure,
+     * can_edit for a revision, can_delete for a removal.
+     */
+    private function canAct(Request $request, string $flag): bool
+    {
+        $user = $request->user();
+        if (!$user) return false;
+        if (in_array($user->user_type, ['super_admin', 'client_admin'], true)) return true;
+        if ($user->user_type === 'employee') return false;
+
+        $moduleId = Module::where('slug', 'hr.payroll')->value('id');
+        if (!$moduleId) return false;   // never seeded → nobody holds the grant
+
+        return Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)
+            ->where($flag, true)
+            ->exists();
+    }
+
+    /** The 403 body used by the write gates. */
+    private function denyResponse(string $verb)
+    {
+        return response()->json(
+            ['message' => "You are not allowed to {$verb} salary structures."],
+            403,
+        );
     }
 
     /** 403 response when the caller may not manage salary, else null. */

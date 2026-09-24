@@ -9,6 +9,7 @@ import SalaryStructureModal, { type SalaryEmployeeLite } from '../../components/
 import SalaryHistoryModal from '../../components/SalaryHistoryModal';
 import PaymentDisbursementModal from '../../components/PaymentDisbursementModal';
 import { useToast } from '../../contexts/ToastContext';
+import useModulePermission from '../../hooks/useModulePermission';
 import { Shimmer } from '../../components/ui/Shimmer';
 import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import api from '../../api';
@@ -255,6 +256,12 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; pr
 
 export default function HrPayroll() {
   const toast = useToast();
+  /* Salary Setup writes are gated on the Payroll module's Add/Edit flags —
+     Set Salary creates a structure (can_add), Revise supersedes one
+     (can_edit). Without this the button rendered live for a view-only user,
+     who could fill the whole modal and only then meet the server's 403.
+     (QA #153) */
+  const perm = useModulePermission('hr.payroll', 'salary structures');
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -1981,19 +1988,25 @@ export default function HrPayroll() {
            full & final, not by re-cutting their structure here. The row still
            shows (payroll must pay them until they leave); the action does not. */
         const exiting = !!emp.exit_in_progress;
+        /* Revising an existing structure needs Edit; setting the first one
+           needs Add. The row itself tells us which, via has_structure. */
+        const action = emp.has_structure ? 'edit' as const : 'add' as const;
+        const noRights = perm.ready && !perm.can(action);
+        const locked = exiting || noRights;
         return (
           <div className="d-inline-flex align-items-center gap-1">
             <button
               type="button"
               className="onb-vault-btn"
               disabled={exiting}
-              style={exiting ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+              aria-disabled={locked || undefined}
+              style={locked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
               title={exiting
                 ? `Exit in progress${emp.exit_last_working_day ? ` — last working day ${emp.exit_last_working_day}` : ''}. Settle this in Exit Management, not here.`
-                : undefined}
-              onClick={() => { if (!exiting) setSalaryEmp(emp); }}
+                : perm.lockedTitle(action)}
+              onClick={() => { if (!exiting) perm.guard(action, () => setSalaryEmp(emp)); }}
             >
-              <i className={`me-1 ${exiting ? 'ri-lock-line' : (emp.has_structure ? 'ri-edit-line' : 'ri-add-line')}`} style={{ fontSize: 13 }} />
+              <i className={`me-1 ${locked ? 'ri-lock-line' : (emp.has_structure ? 'ri-edit-line' : 'ri-add-line')}`} style={{ fontSize: 13 }} />
               {exiting ? 'Exiting' : (emp.has_structure ? 'Revise' : 'Set Salary')}
             </button>
 
@@ -2019,7 +2032,7 @@ export default function HrPayroll() {
       },
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], []);
+  ], [perm.ready, perm.canAdd, perm.canEdit]);
 
   /* Department / Status pickers + result count — shared by the three tabs that
      list payroll rows (Salary Setup renders the roster and has no filters). */
