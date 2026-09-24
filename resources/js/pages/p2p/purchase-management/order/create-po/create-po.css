@@ -2198,6 +2198,31 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
   box-shadow: 0 0 8px 2px rgba(255, 255, 255, .85);
 }
 
+/* ── Supplier fields while the master record is being read ──
+   Picking a supplier fetches its record, its vault and its GST position; the
+   read-only boxes used to sit empty with the word "Loading…" in one of them.
+   Every box now shimmers instead, so the wait reads as the form filling in.
+   The picker itself is untouched — it is the one control still in use. */
+.cpf-sup-loading .spi-dt-inp,
+.cpf-sup-loading .spi-dt-textarea,
+.cpf-sup-loading .spi-dt-select {
+  color: transparent !important;
+  /* The field's own `background:` shorthand comes later in the cascade and
+     would wipe a plain background-image, so the sweep is forced. */
+  background-image: linear-gradient(90deg, #eef2f6 25%, #f8fafc 37%, #eef2f6 63%) !important;
+  background-size: 400% 100% !important;
+  animation: cpf-sup-shimmer 1.15s ease-in-out infinite;
+}
+.cpf-sup-loading .spi-dt-select svg { opacity: 0; }
+.cpf-sup-loading .spi-dt-inp::placeholder,
+.cpf-sup-loading .spi-dt-textarea::placeholder { color: transparent; }
+@keyframes cpf-sup-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+[data-bs-theme="dark"] .cpf-sup-loading .spi-dt-inp,
+[data-bs-theme="dark"] .cpf-sup-loading .spi-dt-textarea,
+[data-bs-theme="dark"] .cpf-sup-loading .spi-dt-select {
+  background-image: linear-gradient(90deg, #16303b 25%, #1d3d4a 37%, #16303b 63%) !important;
+}
+
 /* Step 03 footer: the way into the supplier's Evidence Vault, beside Back.
    A ghost button, not a second loud one — the submit and the GST action keep
    that job; amber only says there is paperwork waiting. */
