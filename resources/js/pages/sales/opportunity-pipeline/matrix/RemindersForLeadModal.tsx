@@ -225,12 +225,18 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
 
             <div className="rfl-fld">
               <label className="rfl-lbl">STATUS</label>
+              {/* Add-only form, so "In Progress" is the only status on offer.
+                  A reminder that is Done the moment it is created is a
+                  contradiction — nothing was ever chased — and offering it here
+                  let a new reminder be filed straight into the completed pile,
+                  where nobody looks. The list's own Done / Reopen buttons are
+                  where the status changes after that, and the Sales To-Do
+                  editor still offers both when EDITING an existing one. */}
               <MasterSelect
                 value={status}
                 onChange={(v) => setStatus(v as ReminderStatus)}
                 options={[
                   { value: 'In Progress', label: 'In Progress' },
-                  { value: 'Done',        label: 'Done'        },
                 ]}
                 placeholder="Select status"
               />
