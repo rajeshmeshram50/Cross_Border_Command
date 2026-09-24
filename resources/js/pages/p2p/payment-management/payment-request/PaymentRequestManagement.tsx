@@ -1,6 +1,6 @@
 // P2P → Payment Request Management: every payment request raised on a PO or an SPI.
 // Rows, tab counts and paging come from GET /p2p/orders/payment-requests; the layout reuses the shared P2P styles.
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useDebouncedValue } from '../../../../hooks/useDebouncedValue';
 import { useToast } from '../../../../contexts/ToastContext';
 import { PoApiError, type PayRequestListMeta } from '../../purchase-management/order/api/po-api';
@@ -63,7 +63,9 @@ const TABS: { key: TabKey; label: string; icon: ReactNode }[] = [
   },
 ];
 
-const COLUMNS: { label: string; width: number; groupEnd?: boolean }[] = [
+type Column = { label: string; width: number; groupEnd?: boolean };
+
+const COLUMNS: Column[] = [
   { label: 'Sr. No', width: 52 },
   { label: 'Payment Request ID', width: 140 },
   { label: 'Request Raised Against', width: 210 },
@@ -81,7 +83,12 @@ const COLUMNS: { label: string; width: number; groupEnd?: boolean }[] = [
   { label: 'Action', width: 212 },
 ];
 
-const TABLE_WIDTH = COLUMNS.reduce((sum, c) => sum + c.width, 0);
+const columnsFor = (tab: TabKey): Column[] => (tab !== 'awaiting'
+  ? COLUMNS
+  : COLUMNS.filter(c => c.label !== 'Approved Amount')
+    .map(c => (c.label === 'Requested Payment Amount' ? { ...c, groupEnd: true } : c)));
+
+const tableWidth = (cols: Column[]) => cols.reduce((sum, c) => sum + c.width, 0);
 // Eight rows a page, per CS-428.
 const PAGE_SIZES = [10, 25, 50];
 
@@ -149,6 +156,9 @@ export default function PaymentRequestManagement() {
   const [loading, setLoading] = useState(true);
   const [guideOpen, setGuideOpen] = useState(true);
   const [tab, setTab] = useState<TabKey>('all');
+  // Awaiting requests have nothing approved yet, so that column is left out (CS-429).
+  const columns = useMemo(() => columnsFor(tab), [tab]);
+  const showApproved = tab !== 'awaiting';
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   // Rows per page as in the Segment Master: what fits the table, never fewer than 10.
@@ -281,13 +291,13 @@ export default function PaymentRequestManagement() {
         ) : (
           <div className={`ord-table-scroll${loading ? ' is-refreshing' : ''}`} ref={tableRef}>
             {/* Columns keep their widths, but the table still fills a wide screen. */}
-            <table className="ord-table" style={{ minWidth: TABLE_WIDTH, width: '100%' }}>
+            <table className="ord-table" style={{ minWidth: tableWidth(columns), width: '100%' }}>
               <colgroup>
-                {COLUMNS.map(c => <col key={c.label} style={{ width: c.width }} />)}
+                {columns.map(c => <col key={c.label} style={{ width: c.width }} />)}
               </colgroup>
               <thead>
                 <tr>
-                  {COLUMNS.map(c => (
+                  {columns.map(c => (
                     <th key={c.label} className={c.groupEnd ? 'ord-table__group-end' : undefined}>{c.label}</th>
                   ))}
                 </tr>
@@ -326,8 +336,11 @@ export default function PaymentRequestManagement() {
                     </td>
 
                     <td><span className="ord-amt">{fmtMoney(row.totalAmount)}</span></td>
-                    <td><span className="ord-amt ord-amt--net">{fmtMoney(row.requestedAmount)}</span></td>
+                    <td className={showApproved ? undefined : 'ord-table__group-end'}>
+                      <span className="ord-amt ord-amt--net">{fmtMoney(row.requestedAmount)}</span>
+                    </td>
 
+                    {showApproved && (
                     <td className="ord-table__group-end">
                       {row.approvedAmount === null ? (
                         <div className="prm-amtcell">
@@ -341,6 +354,7 @@ export default function PaymentRequestManagement() {
                         </div>
                       )}
                     </td>
+                    )}
 
                     <td><span className="prm-paytype">{row.paymentType}</span></td>
                     <td><Party party={row.requestedBy} /></td>

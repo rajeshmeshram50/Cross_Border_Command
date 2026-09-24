@@ -258,10 +258,15 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
      declined / recalled. The PO is submitted by then, so every step can be
      browsed, and Step 04 keeps working — the rest still has to be sent. */
   const signView = !paidView && !!detail?.signing_started;
+  // Cancelled: the server refuses every save, so the form opens to be read.
+  const cancelledView = isEdit && detail?.status === 'cancelled';
+  // The reason rides in one banner line, so a long one is cut rather than wrapped.
+  const reason = (detail?.cancel_reason ?? '').trim();
+  const cancelNote = reason.length > 90 ? `${reason.slice(0, 90)}…` : reason;
   /* A pending senior GST approval does NOT freeze the form: the PO stays
      editable, and only the submit is held back until the senior approves
      (the server's GST gate). */
-  const viewOnly = paidView || signView;
+  const viewOnly = paidView || signView || cancelledView;
   const showGstAction = stage === 2 && !!gst.notice && !viewOnly;
   /* Step 03 holds the submit while this supplier's standard documents are
      incomplete, so the way to fix that sits in the footer too — beside Back,
@@ -545,13 +550,17 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
               {viewOnly && (
                 <div className="cpf-viewonly-banner">
                   <IcoLock /> <b>View only.</b>{' '}
-                  {signView
-                    ? 'Documents on this PO have been sent for signature, so it cannot be edited — it opens for editing again only if the request is declined or recalled.'
-                    : 'Payments have started on this PO, so it can no longer be edited — you can still look through every step.'}
+                  {cancelledView
+                    ? `This PO has been cancelled, so nothing on it can change${cancelNote ? ` — ${cancelNote}` : ''}. Every step is still here to read.`
+                    : signView
+                      ? 'Documents on this PO have been sent for signature, so it cannot be edited — it opens for editing again only if the request is declined or recalled.'
+                      : 'Payments have started on this PO, so it can no longer be edited — you can still look through every step.'}
                 </div>
               )}
               {/* A disabled fieldset turns every field and button in Steps 01–03 off at once. */}
-              <fieldset className="cpf-viewonly" disabled={viewOnly && stage < 3}>
+              {/* Step 04 stays live on a paid PO — documents still have to go out —
+                  but a cancelled PO is frozen end to end. */}
+              <fieldset className="cpf-viewonly" disabled={viewOnly && (stage < 3 || cancelledView)}>
                 {stage === 0 && (
                   <Step1LinkSupplier draft={draft} set={set} ctx={ctx} supplierLoading={supplierLoading} onPickSupplier={loadSupplier} />
                 )}

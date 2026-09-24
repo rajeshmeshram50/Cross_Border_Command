@@ -662,6 +662,12 @@ class PurchaseOrderController extends Controller
                 };
                 return $this->fail($msg, 422, ['gst' => $gst, 'gst_approval_status' => $approval?->status]);
             }
+
+            // Case to Case: this supplier's earlier POs must have their necessary
+            // Stage 04 paperwork signed before another order is placed on it.
+            if ($outstanding = $this->unsignedCaseToCase($po)) {
+                return $this->fail($outstanding['message'], 422, ['case_to_case' => $outstanding['documents']]);
+            }
         }
 
         $this->inTransaction($submit ? 'submit the PO' : 'save the terms', function () use ($po, $user, $data, $submit) {
@@ -676,6 +682,55 @@ class PurchaseOrderController extends Controller
         if ($submit) \App\Jobs\P2p\GeneratePoDocumentPdf::dispatch($po->id, $user->id)->afterCommit();
 
         return $this->ok($this->shapeDetail($po->fresh()));
+    }
+
+    /**
+     * Documents marked necessary on an EARLIER PO of the same supplier that are
+     * still unsigned. A PO is not placed on a supplier while the paperwork of the
+     * last one is outstanding — the signature is what closes it, so "sent" or
+     * "generated" is not enough.
+     *
+     * The PO being submitted is excluded: its own Stage 04 comes after this step.
+     *
+     * @return array{message: string, documents: array}|null  null = nothing outstanding
+     */
+    private function unsignedCaseToCase(PurchaseOrder $po): ?array
+    {
+        if (!$po->vendor_id) return null;
+
+        $rows = DB::table('p2p_purchase_order_documents as d')
+            ->join('p2p_purchase_orders as prev', 'prev.id', '=', 'd.purchase_order_id')
+            ->where('prev.client_id', $po->client_id)
+            ->where('prev.vendor_id', $po->vendor_id)
+            ->where('prev.id', '!=', $po->id)
+            ->where('prev.status', PurchaseOrder::STATUS_SUBMITTED)
+            ->whereNull('prev.deleted_at')
+            ->whereNull('d.deleted_at')
+            // Stage 04 paperwork only; the PO document itself is not case-to-case.
+            ->where('d.doc_kind', '!=', 'purchase_order')
+            ->where(fn ($w) => $w->where('d.needed', 'yes')->orWhere('d.is_required', 'yes'))
+            ->where(fn ($w) => $w->whereNull('d.status')->orWhere('d.status', '!=', 'signed'))
+            ->orderBy('prev.id')
+            ->limit(20)
+            ->get(['d.code', 'd.name', 'd.status', 'prev.code as po_code']);
+
+        if ($rows->isEmpty()) return null;
+
+        $pos = $rows->pluck('po_code')->unique()->values();
+        $names = $rows->take(3)->map(fn ($r) => $r->name ?: $r->code)->implode(', ');
+        $more = $rows->count() > 3 ? ' and ' . ($rows->count() - 3) . ' more' : '';
+
+        return [
+            'message' => $pos->count() === 1
+                ? "{$pos->first()} still has unsigned documents on this supplier — {$names}{$more}. Get them signed before raising another PO."
+                : $rows->count() . ' documents on ' . $pos->implode(', ') . " are still unsigned for this supplier — {$names}{$more}. Get them signed before raising another PO.",
+            'documents' => $rows->map(fn ($r) => [
+                'po_code' => $r->po_code,
+                'code'    => $r->code,
+                'name'    => $r->name,
+                'status'  => $r->status,
+            ])->all(),
+        ];
     }
 
     /**

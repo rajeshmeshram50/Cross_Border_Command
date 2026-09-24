@@ -25,6 +25,7 @@ use App\Models\ShipmentOrder;
 use App\Models\Vendor;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -847,6 +848,14 @@ class SegmentDocUploadController extends Controller
             ? $this->buildVendorDeals($owner, $cid, $company_dd, $owner_kyc, $trade_licenses, $trade_documents)
             : ['with_shipment' => [], 'without_shipment' => [], 'ratios' => null];
 
+        if (in_array($type, ['supplier', 'vendor'], true) && $cid) {
+            $poDeals = $this->buildPoDeals($owner, $cid, $vendorDeals['ratios'] ?? []);
+            if ($poDeals) {
+                $vendorDeals['with_shipment']    = $poDeals['with_shipment'];
+                $vendorDeals['without_shipment'] = $poDeals['without_shipment'];
+            }
+        }
+
         return response()->json([
             'data' => [
                 'same_as_customer'       => $sameAsCustomer,
@@ -912,8 +921,16 @@ class SegmentDocUploadController extends Controller
             ->where('vendor_id', $owner->id)
             ->whereNull('deleted_at')
             ->orderByDesc('id')
-            ->get(['id', 'code', 'po_date', 'shipment_code', 'customer_name', 'consignee_name', 'status']);
+            ->get(['id', 'code', 'po_date', 'shipment_order_id', 'proforma_invoice_id', 'status']);
         if ($pos->isEmpty()) return null;
+
+        // The shipment code and the customer live on the shipment order and the PI.
+        $ships = DB::table('shipment_orders')
+            ->whereIn('id', $pos->pluck('shipment_order_id')->filter()->unique()->all() ?: [0])
+            ->pluck('shipment_code', 'id');
+        $pis = DB::table('proforma_invoices')
+            ->whereIn('id', $pos->pluck('proforma_invoice_id')->filter()->unique()->all() ?: [0])
+            ->get(['id', 'customer_name'])->keyBy('id');
 
         $docs = DB::table('p2p_purchase_order_documents')
             ->whereIn('purchase_order_id', $pos->pluck('id'))
@@ -953,12 +970,13 @@ class SegmentDocUploadController extends Controller
                 'agreements' => $agr,
             ];
 
-            if (!empty($po->shipment_code)) {
+            $shipCode = $po->shipment_order_id ? ($ships[$po->shipment_order_id] ?? null) : null;
+            if ($shipCode) {
                 $with[] = $base + [
                     'sr'          => ++$srWith,
-                    'shipment_id' => $po->shipment_code,
-                    'customer'    => $po->customer_name ?: '—',
-                    'consignee'   => $po->consignee_name ?: '—',
+                    'shipment_id' => $shipCode,
+                    'customer'    => $pis[$po->proforma_invoice_id]->customer_name ?? '—',
+                    'consignee'   => '—',
                 ];
             } else {
                 $without[] = $base + [
@@ -992,8 +1010,8 @@ class SegmentDocUploadController extends Controller
             'name'                 => $d->name ?: $d->code,
             'reference'            => $d->code,
             'authority'            => null,
-            'issue_date'           => $d->generated_on ? IlluminateSupportCarbon::parse($d->generated_on)->format('d-M-Y') : null,
-            'expiry'               => $d->valid_up_to ? IlluminateSupportCarbon::parse($d->valid_up_to)->format('d-M-Y') : '—',
+            'issue_date'           => $d->generated_on ? Carbon::parse($d->generated_on)->format('d-M-Y') : null,
+            'expiry'               => $d->valid_up_to ? Carbon::parse($d->valid_up_to)->format('d-M-Y') : '—',
             'attachment'           => $d->original_name,
             'attachment_url'       => $d->file_path ? file_url($d->file_path) : null,
             'status'               => $status,

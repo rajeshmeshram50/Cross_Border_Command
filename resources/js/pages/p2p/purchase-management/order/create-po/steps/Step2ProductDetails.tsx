@@ -120,9 +120,9 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
                 </span>
               </span>
             ))}
-            {ctx.piHolders.some((h) => h.approval_status === 'pending')
-              ? '. That quantity is released back to this PI only if the senior rejects it or the PO is cancelled.'
-              : '. Raise a standalone PO for anything extra.'}
+            {/* True of every holder, not just one still with the senior. */}
+            {'. That quantity is released back to this PI only if the senior rejects that PO or it is cancelled.'}
+            {lines.length === 0 && ' Raise a standalone PO for anything extra.'}
           </div>
         )}
         <ProductTable rows={lines} products={products} taxMode={ctx.taxMode} ccy={draft.currency} onChange={patchLine} onRemove={removeLine}

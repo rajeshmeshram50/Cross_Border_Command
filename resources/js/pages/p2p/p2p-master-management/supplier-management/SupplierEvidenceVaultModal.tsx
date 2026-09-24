@@ -218,148 +218,6 @@ const EMPTY_VAULT: VaultData = {
   last_updated:            '—',
 };
 
-/* ══ Case-to-Case demo data ═══════════════════════════════════════
- * The per-deal half of the vault has no backend feed yet — /vault returns
- * empty vendor_with_shipment / vendor_without_shipment arrays — so the whole
- * Case to Case group rendered as "No shipments for this supplier yet." and
- * every KPI above it read 0.
- *
- * Until that API lands, the section is filled from this fixture so the design
- * is reviewable end to end. It is a FALLBACK, never an override: the moment
- * the server returns a single deal row, the real data wins (see the `vault`
- * memo). Delete this block and its two call sites when the endpoint ships.
- *
- * The numbers are built to match the approved design: 9 trade documents
- * (6 signed / 3 pending) + 3 agreements (2 signed / 1 pending) across three
- * shipments, one complete, one partial, one pending.
- *
- * Docs deliberately carry NO db_id, doc_code, attachment_url or
- * signature_request_id: every row action (send, remind, re-upload, view,
- * signing tracker) is gated on one of those, so nothing here offers a button
- * that would call the API with an id that doesn't exist.
- */
-const demoDoc = (
-  name: string,
-  reference: string,
-  signed: boolean,
-  issue_date: string,
-  expiry: string,
-): VaultDoc => ({
-  name,
-  reference,
-  status: signed ? 'Signed' : 'Pending',
-  sig_state: signed ? 'completed' : null,
-  issue_date: signed ? issue_date : null,
-  expiry: signed ? expiry : null,
-  requirement: 'M',
-  attachment: null,
-  attachment_url: null,
-  db_id: null,
-  signature_request_id: null,
-  id: 0
-});
-
-function demoCaseToCase(supplierName: string): {
-  with_shipment: VendorDealRow[];
-  without_shipment: VendorDealRow[];
-} {
-  const s = supplierName || 'Supplier';
-  return {
-    with_shipment: [
-      {
-        sr: 1,
-        shipment_id: 'SHP-001',
-        customer: 'Shree Exports Pvt Ltd',
-        consignee: 'Dubai Trade Hub LLC',
-        supplier: s,
-        ratios: { kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 3, t: 4 } },
-        docs: [
-          demoDoc('Commercial Invoice',        'INV/2026-27/0148', true,  '12-Jul-2026', '11-Jul-2027'),
-          demoDoc('Packing List',              'PL/2026-27/0148',  true,  '12-Jul-2026', '11-Jul-2027'),
-          demoDoc('Bill of Lading',            'BL/MAEU/778213',   true,  '15-Jul-2026', '14-Jul-2027'),
-          demoDoc('Certificate of Origin',     'COO/2026/00931',   false, '',            ''),
-        ],
-        agreements: [
-          demoDoc('Purchase Agreement',        'PA/2026-27/0041',  true,  '02-Jul-2026', '01-Jul-2028'),
-        ],
-      },
-      {
-        sr: 2,
-        shipment_id: 'SHP-002',
-        customer: 'Nova Foods FZE',
-        consignee: 'Jebel Ali Trade Co',
-        supplier: s,
-        ratios: { kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 3, t: 3 } },
-        docs: [
-          demoDoc('Commercial Invoice',        'INV/2026-27/0152', true,  '21-Jul-2026', '20-Jul-2027'),
-          demoDoc('Phytosanitary Certificate', 'PSC/2026/01188',   true,  '22-Jul-2026', '21-Oct-2026'),
-          demoDoc('Insurance Certificate',     'INS/2026/00447',   true,  '22-Jul-2026', '21-Jul-2027'),
-        ],
-        agreements: [
-          demoDoc('Supply Agreement',          'SA/2026-27/0018',  true,  '10-Jun-2026', '09-Jun-2028'),
-        ],
-      },
-      {
-        sr: 3,
-        shipment_id: 'SHP-003',
-        customer: 'Bright Star Trading LLC',
-        consignee: 'Colombo Spice House',
-        supplier: s,
-        ratios: { kyc: { d: 2, t: 4 }, dd: { d: 1, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 0, t: 2 } },
-        docs: [
-          demoDoc('Commercial Invoice',        'INV/2026-27/0161', false, '', ''),
-          demoDoc('Inspection Report',         'QC/2026/00612',    false, '', ''),
-        ],
-        agreements: [
-          demoDoc('Non-Disclosure Agreement',  'NDA/2026-27/0009', false, '', ''),
-        ],
-      },
-    ],
-    without_shipment: [
-      {
-        sr: 1,
-        procurement_id: 'PRC-001',
-        supplier: s,
-        ratios: { kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 3, t: 3 } },
-        docs: [
-          demoDoc('Purchase Order',            'PO/2026-27/0233',  true,  '05-Aug-2026', '04-Aug-2027'),
-          demoDoc('Proforma Invoice',          'PI/2026-27/0233',  true,  '05-Aug-2026', '04-Aug-2027'),
-          demoDoc('Material Test Certificate', 'MTC/2026/00291',   true,  '07-Aug-2026', '06-Aug-2027'),
-        ],
-        agreements: [
-          demoDoc('Supply Agreement',          'SA/2026-27/0021',  true,  '01-Aug-2026', '31-Jul-2028'),
-        ],
-      },
-      {
-        sr: 2,
-        procurement_id: 'PRC-002',
-        supplier: s,
-        ratios: { kyc: { d: 4, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 2, t: 3 } },
-        docs: [
-          demoDoc('Purchase Order',            'PO/2026-27/0240',  true,  '18-Aug-2026', '17-Aug-2027'),
-          demoDoc('Weighment Slip',            'WS/2026/00874',    true,  '19-Aug-2026', '18-Aug-2027'),
-          demoDoc('Quality Analysis Report',   'QAR/2026/00512',   false, '', ''),
-        ],
-        agreements: [
-          demoDoc('Purchase Agreement',        'PA/2026-27/0046',  true,  '12-Aug-2026', '11-Aug-2028'),
-        ],
-      },
-      {
-        sr: 3,
-        procurement_id: 'PRC-003',
-        supplier: s,
-        ratios: { kyc: { d: 1, t: 4 }, dd: { d: 0, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 0, t: 2 } },
-        docs: [
-          demoDoc('Purchase Order',            'PO/2026-27/0248',  false, '', ''),
-          demoDoc('Delivery Challan',          'DC/2026/00355',    false, '', ''),
-        ],
-        agreements: [
-          demoDoc('Non-Disclosure Agreement',  'NDA/2026-27/0012', false, '', ''),
-        ],
-      },
-    ],
-  };
-}
 
 export default function SupplierEvidenceVaultModal({ open, supplier, onClose, data, viewOnly = false, onVaultChange }: Props) {
   const toast = useToast();
@@ -391,20 +249,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
 
   const [shipmentIdMode, setShipmentIdMode] = useState<'with' | 'without'>('with');
 
-  /* Case to Case is not ready to be opened yet, so BOTH of its entry points —
-     the card itself and the "Send Documents & Agreements for Signature" button
-     that opens the overview — say so instead of going in. Handled here rather
-     than by disabling the buttons so a click still gets an answer: a dead card
-     reads as a broken one. Nothing behind the toast changes, so the vault stays
-     on whatever was already showing.
-
-     The Case to Case rendering below is left intact, not deleted — this gate is
-     the only thing standing between it and the screen when the feature lands. */
-  const comingSoon = () =>
-    toast.info('Coming soon', 'Case to Case documents & agreements are still being built.');
-
   const selectGroup = (g: GroupKey) => {
-    if (g === 'case-to-case') { comingSoon(); return; }
     setGroup(g);
     const first = TABS.find(t => t.group === g);
     if (first) setTab(first.key);
@@ -567,19 +412,12 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
       return { ...r, docs, agreements, ratios: { ...r.ratios, td: { d: signed, t: docs.length } } };
     });
 
-    /* Case-to-Case has no API yet — fall back to the fixture ONLY when the
-       server returned nothing on both sides. One real deal row and the demo
-       data is out of the picture entirely. */
-    const hasLiveDeals = (base.vendor_with_shipment?.length ?? 0) > 0
-      || (base.vendor_without_shipment?.length ?? 0) > 0;
-    const demo = hasLiveDeals ? null : demoCaseToCase(supplier.company);
-
     return {
       ...base,
       trade_documents: mergedTd as typeof base.trade_documents,
       trade_documents_count: mergedTd.length,
-      vendor_with_shipment:    overlayRows(demo ? demo.with_shipment : base.vendor_with_shipment),
-      vendor_without_shipment: overlayRows(demo ? demo.without_shipment : base.vendor_without_shipment),
+      vendor_with_shipment:    overlayRows(base.vendor_with_shipment),
+      vendor_without_shipment: overlayRows(base.vendor_without_shipment),
 
       verified_signed: Math.max(0, (base.verified_signed ?? 0) - baseSegmentSigned) + mergedSigned,
       pending:         Math.max(0, (base.pending ?? 0)         - baseSegmentPending) + mergedPending,
@@ -854,15 +692,11 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                 {/* The hover has to agree with the click: promising "view all
                     documents" on a button that answers "coming soon" is the
                     same broken-looking card the gate exists to avoid. */}
-                <Tooltip label={g.key === 'case-to-case' ? 'Coming soon' : 'View all documents in one list'}>
+                <Tooltip label="View all documents in one list">
                   <button
                     type="button"
                     className="cev-group-overview"
-                    onClick={() => {
-                      // Same gate as the card above — see selectGroup.
-                      if (g.key === 'case-to-case') { comingSoon(); return; }
-                      setOverview(g.key); setOverviewPage(1); setOvDeal(null); setOvPicked([]);
-                    }}
+                    onClick={() => { setOverview(g.key); setOverviewPage(1); setOvDeal(null); setOvPicked([]); }}
                   >
                     <Glyph d={VAULT_GLYPHS.list} size={12} sw={2.3} /> {g.overview}
                   </button>

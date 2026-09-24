@@ -856,20 +856,36 @@ const paymentsStarted = (row: OrderRow) => row.paid > 0 || !!row.paymentNote;
 /** Why the PO opens view-only, or undefined when it can be edited. Same rules
     as the server's edit gate. */
 const viewOnlyReason = (row: OrderRow) =>
-  paymentsStarted(row) ? 'Payments have started — the PO opens view-only'
-    : row.signingStarted ? 'Documents sent for signature — view-only unless the request is declined or recalled'
-      : undefined;
+  row.cancelled ? 'This PO is cancelled — it opens view-only'
+    : paymentsStarted(row) ? 'Payments have started — the PO opens view-only'
+      : row.signingStarted ? 'Documents sent for signature — view-only unless the request is declined or recalled'
+        : undefined;
 
-function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onTrack, trackable = false, onVault, viewOnly }: {
+/** Cancelled with the refund still being chased — what is left to recover. */
+const recoverPendingOf = (row: OrderRow) =>
+  (row.cancelStage === 'initiated' ? formatMoney(recoveryOf(row).pending, row.currency) : undefined);
+
+function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onTrack, trackable = false, onVault, viewOnly, recoverPending, onRecover }: {
   cancelled?: boolean; cancelReason?: string; onEdit: () => void; onCancel?: () => void; onTrack?: () => void;
   /** Nothing of this PO is in Zoho yet, so there is no chain to track. */
   trackable?: boolean; onVault?: () => void;
   /** Set when the form opens read-only — the reason, shown on hover. */
   viewOnly?: string;
+  /** Cancelled with money still to come back: what is left, formatted. */
+  recoverPending?: string;
+  onRecover?: () => void;
 }) {
   return (
     <div className="ord-actions">
-      {cancelled ? (
+      {/* Cancellation is not instant on a PO with money against it: while the
+          refund is being chased this slot is the way into Manage Recovery. */}
+      {recoverPending ? (
+        <Tooltip label={`Cancellation initiated — ${recoverPending} still to recover. Opens Manage Recovery.`}>
+          <button type="button" className="ord-btn ord-btn--cancel is-initiated" onClick={onRecover}>
+            {ICON_CLOCK}<span>Recovery Pending</span>
+          </button>
+        </Tooltip>
+      ) : cancelled ? (
         <Tooltip label={cancelReason || 'This PO has been cancelled'}>
           <button type="button" className="ord-btn ord-btn--cancel is-cancelled" disabled>
             {ICON_CANCEL}<span>Cancelled</span>
@@ -880,9 +896,10 @@ function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onTrack
           <button type="button" className="ord-btn ord-btn--cancel" onClick={onCancel}>{ICON_CANCEL}<span>Cancel PO</span></button>
         </Tooltip>
       )}
-      <Tooltip label={viewOnly || (cancelled ? 'This PO has been cancelled' : 'Open this Purchase Order')}>
-        <button type="button" className="ord-btn ord-btn--edit" disabled={cancelled} onClick={onEdit}>
-          {ICON_EDIT}<span>{viewOnly ? 'View PO' : 'Edit PO'}</span>
+      {/* A cancelled PO still opens — read-only, so its terms stay readable. */}
+      <Tooltip label={viewOnly || 'Open this Purchase Order'}>
+        <button type="button" className="ord-btn ord-btn--edit" onClick={onEdit}>
+          {viewOnly ? ICON_EYE : ICON_EDIT}<span>{viewOnly ? 'View PO' : 'Edit PO'}</span>
         </button>
       </Tooltip>
       <Tooltip label="Evidence Vault — the order, its documents and payment proofs">
@@ -1025,7 +1042,7 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
                 <PoCell span={span}><AdrCell adr={row.adr} ccy={row.currency} /></PoCell>
                 <PoCell span={span}><RecoveryCell row={row} onRecover={onRecover} /></PoCell>
                 <PoCell span={span}><StatusBadge row={row} /></PoCell>
-                {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={viewOnlyReason(row)} onEdit={() => onEdit?.(row)} onCancel={onCancel && (() => onCancel(row))} onTrack={onTrack && (() => onTrack(row))} trackable={row.zohoStarted} onVault={onVault && (() => onVault(row))} /></PoCell>}
+                {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={viewOnlyReason(row)} onEdit={() => onEdit?.(row)} onCancel={onCancel && (() => onCancel(row))} onTrack={onTrack && (() => onTrack(row))} trackable={row.zohoStarted} onVault={onVault && (() => onVault(row))} recoverPending={recoverPendingOf(row)} onRecover={onRecover && (() => onRecover(row))} /></PoCell>}
               </>
             )}
           </tr>
@@ -1172,7 +1189,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onTrack, o
         <RecoveryCell row={row} onRecover={onRecover} />
       </div>
 
-      <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={viewOnlyReason(row)} onEdit={() => onEdit(row)} onCancel={() => onCancel(row)} onTrack={() => onTrack(row)} trackable={row.zohoStarted} onVault={() => onVault(row)} />
+      <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={viewOnlyReason(row)} onEdit={() => onEdit(row)} onCancel={() => onCancel(row)} onTrack={() => onTrack(row)} trackable={row.zohoStarted} onVault={() => onVault(row)} recoverPending={recoverPendingOf(row)} onRecover={onRecover && (() => onRecover(row))} />
     </article>
   );
 }

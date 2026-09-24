@@ -128,8 +128,9 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
       : o.wrongType
         ? { disabled: true, disabledReason: `${o.type || 'Untyped'} supplier — this is a ${needType} purchase order.` }
         : {}),
-    // The supplier's own type sits beside its origin, so a locked row explains itself.
-    badges: [{ text: o.type || 'No type', tone: 'gray' as const, ...(o.wrongType ? { lock: true } : {}) }],
+    // The supplier's own type sits beside its origin, so a locked row explains
+    // itself. It stays in the list only — off the field once picked (CS-561).
+    badges: [{ text: o.type || 'No type', tone: 'gray' as const, listOnly: true, ...(o.wrongType ? { lock: true } : {}) }],
     badge: o.blacklisted ? { text: 'Blacklisted', tone: 'red' as const, lock: true }
       : o.doc === 'international' ? { text: 'International', tone: 'violet' as const } : { text: 'Domestic', tone: 'green' as const },
   })), [supplierOptions, needType]);
