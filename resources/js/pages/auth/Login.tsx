@@ -340,7 +340,10 @@ export default function Login({ onForgotPassword }: LoginProps) {
           <div className="flex-grow border-t border-slate-200"></div>
         </div>
 
-        <div ref={googleBtnRef} className="w-full flex justify-center min-h-[44px]" />
+        {/* cbc-google-btn — the hook the dark-mode rules in AuthCardLayout use.
+            Google renders its own markup in here, so its backdrop can only be
+            reached from CSS (QA #3). */}
+        <div ref={googleBtnRef} className="cbc-google-btn w-full flex justify-center min-h-[44px]" />
 
         {/* Face-based sign-in. Visually distinct from the email + Google
             paths so it reads as the "premium" option — gradient pill with

@@ -24,7 +24,7 @@
   display: inline-flex; align-items: center; gap: 8px;
   padding: 9px 18px; border-radius: 10px; cursor: pointer;
   border: 1.5px solid var(--vz-border-color);
-  background: var(--vz-card-bg); color: var(--vz-body-color);
+  background: var(--vz-card-bg, var(--vz-secondary-bg)); color: var(--vz-body-color);
   font-size: 13px; font-weight: 700; transition: all .15s;
 }
 .ib-tab-btn.is-active {
@@ -488,16 +488,28 @@
 }
 
 /* Modals — rendered as siblings of the page card, scoped only by the
-   class names on the modal itself. */
+   class names on the modal itself.
+
+   These reached for var(--vz-card-bg), which Bootstrap only declares inside
+   `.card` — and this modal is its own shell, not a card. The variable
+   resolved to nothing, the declaration was dropped, and the surfaces fell
+   back to TRANSPARENT: the Inbox row behind the modal showed straight through
+   the footer, so the footer strip looked missing and the buttons appeared to
+   float over the page (QA #4). app.css now also declares that variable at the
+   root, but these rules name the surfaces outright so the modal does not
+   depend on a component variable it sits outside of.
+
+   The pairing keeps light mode's hierarchy: shell and footer share one
+   surface, the body is a step darker so the document sits in a recess. */
 [data-bs-theme="dark"] .inbox-modal-card {
-  background: var(--vz-card-bg) !important;
-  color: var(--vz-body-color);
+  background: var(--vz-secondary-bg, #212529) !important;
+  color: var(--vz-body-color) !important;
 }
 [data-bs-theme="dark"] .inbox-modal-body {
-  background: var(--vz-secondary-bg) !important;
+  background: var(--vz-body-bg, #1a1d21) !important;
 }
 [data-bs-theme="dark"] .inbox-modal-footer {
-  background: var(--vz-card-bg) !important;
+  background: var(--vz-secondary-bg, #212529) !important;
   border-top-color: var(--vz-border-color) !important;
   box-shadow: 0 -3px 10px rgba(0,0,0,0.25) !important;
 }

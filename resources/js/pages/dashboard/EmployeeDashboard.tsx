@@ -1087,12 +1087,24 @@ export default function EmployeeDashboard() {
         size="lg"
         modalClassName="master-modal"
       >
+        {/* flexShrink: 0 -- the band must keep its full height.
+            .modal-content is a flex column, and this header is a plain div
+            rather than a .modal-header, so it never picked up the
+            flex-shrink: 0 Bootstrap gives that class. With a long enough
+            announcement the column squeezed it, and because the band clips
+            (overflow-hidden, for the decorative glows) the squeeze ate the
+            bottom of it -- which is where the "Announced on ..." line sits, so
+            the date disappeared exactly when the heading grew to two lines
+            (QA #10). The body is the scrollable region; the header is not.
+            The heading itself already wraps rather than truncating (QA #9,
+            see the note on the h4 below). */}
         <div
           className="position-relative overflow-hidden"
           style={{
             background:
               'linear-gradient(135deg, #2b3a85 0%, #405189 28%, #5562c4 55%, #6e7eee 78%, #8b6fe8 100%)',
             padding: '22px 24px',
+            flexShrink: 0,
           }}
         >
           {/* Decorative glows + diagonal sheen — same recipe as the master header. */}
@@ -1159,7 +1171,7 @@ export default function EmployeeDashboard() {
               >
                 {openAnn?.title}
               </h4>
-              <small style={{ color: 'rgba(255,255,255,0.82)', fontSize: 12 }}>
+              <small className="d-block" style={{ color: 'rgba(255,255,255,0.82)', fontSize: 12, marginTop: 2 }}>
                 {openAnn?.created_at ? `Announced on ${fmtDateShort(openAnn.created_at)}` : 'Announcement details'}
               </small>
             </div>
