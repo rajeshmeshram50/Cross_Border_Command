@@ -101,13 +101,24 @@ class FaceBiometricController extends Controller
 
             $conflict = $this->findDuplicateOwner($employee, $captured);
             if ($conflict !== null) {
-                $who = $conflict->display_name ?: ('Employee #' . $conflict->id);
-                $code = $conflict->emp_code ? " ({$conflict->emp_code})" : '';
+                /* Says THAT the face is taken, never WHO holds it.
+                 *
+                 * Uniqueness is scanned tenant-wide, so the match is often an
+                 * employee in a different branch — and the message used to name
+                 * them, display name and employee code, to whoever happened to
+                 * be at the enrolment screen. That handed a branch user the
+                 * identity of someone they have no visibility of anywhere else
+                 * in the product (CS-, 23-09-2026).
+                 *
+                 * The name never helped the person reading it either: if the
+                 * holder is outside their branch they cannot open the record to
+                 * act on it. Resolving a genuine clash is an HR/admin job, done
+                 * from the employee record, not from this toast. */
                 throw \Illuminate\Validation\ValidationException::withMessages([
-                    'descriptor' => [sprintf(
-                        'This face is already registered for %s%s. Each face can only be linked to one employee.',
-                        $who, $code,
-                    )],
+                    'descriptor' => [
+                        'This face is already registered with another employee. '
+                        . 'Each face can only be linked to one employee — contact HR if you think this is a mistake.',
+                    ],
                 ]);
             }
 
