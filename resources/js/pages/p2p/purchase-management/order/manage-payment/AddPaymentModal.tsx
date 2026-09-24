@@ -79,7 +79,7 @@ export default function AddPaymentModal({
   useEffect(() => { (amountRef.current ?? cardRef.current)?.focus(); }, []);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !savingRef.current) onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
@@ -96,6 +96,9 @@ export default function AddPaymentModal({
   const [file, setFile] = useState('');
   const [upload, setUpload] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  // Read by the Escape handler, which is bound once and would otherwise see a stale value.
+  const savingRef = useRef(false);
+  savingRef.current = saving;
   const [error, setError] = useState('');
 
   const shownFile = file || initial?.file || '';
@@ -130,7 +133,14 @@ export default function AddPaymentModal({
 
   return createPortal(
     <div className="spi-mdl-backdrop">
-      <div className="apay-card" role="dialog" aria-modal="true" aria-labelledby="apay-title" tabIndex={-1} ref={cardRef}>
+      <div className={`apay-card${saving ? ' is-saving' : ''}`} role="dialog" aria-modal="true" aria-labelledby="apay-title" tabIndex={-1} ref={cardRef} aria-busy={saving}>
+        {saving && (
+          <div className="apay-wait" role="status" aria-live="polite">
+            <span className="apay-wait__ring" />
+            <span className="apay-wait__t">{editing ? 'Updating payment…' : 'Recording payment…'}</span>
+            <span className="apay-wait__s">Please wait, the proof is being uploaded</span>
+          </div>
+        )}
 
         <div className="apay-hd">
           <span className="apay-hd__ico">{ICON_CARD}</span>
@@ -148,7 +158,7 @@ export default function AddPaymentModal({
               />
             )}
           </div>
-          <button type="button" className="apay-hd__x" onClick={onClose} aria-label="Close">{ICON_X}</button>
+          <button type="button" className="apay-hd__x" onClick={onClose} disabled={saving} aria-label="Close">{ICON_X}</button>
         </div>
 
         <div className="apay-bd">
@@ -176,6 +186,7 @@ export default function AddPaymentModal({
                   inputMode="decimal"
                   placeholder="0.00"
                   value={amount}
+                  disabled={saving}
                   onChange={(e) => { setAmount(e.target.value); setError(''); }}
                 />
               </div>
@@ -183,17 +194,17 @@ export default function AddPaymentModal({
 
             <div className="apay-f">
               <label htmlFor="apay-date">UTR / Cheque Date</label>
-              <input id="apay-date" className="apay-in" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              <input id="apay-date" className="apay-in" type="date" value={date} disabled={saving} onChange={(e) => setDate(e.target.value)} />
             </div>
 
             <div className="apay-f">
               <label htmlFor="apay-bank">Bank Name</label>
-              <input id="apay-bank" className="apay-in" placeholder="Enter bank name" value={bank} onChange={(e) => setBank(e.target.value)} />
+              <input id="apay-bank" className="apay-in" placeholder="Enter bank name" value={bank} disabled={saving} onChange={(e) => setBank(e.target.value)} />
             </div>
 
             <div className="apay-f">
               <label htmlFor="apay-utr">UTR / Cheque Number</label>
-              <input id="apay-utr" className="apay-in" placeholder="Enter UTR / cheque number" value={utr} onChange={(e) => setUtr(e.target.value)} />
+              <input id="apay-utr" className="apay-in" placeholder="Enter UTR / cheque number" value={utr} disabled={saving} onChange={(e) => setUtr(e.target.value)} />
             </div>
 
             <div className="apay-f apay-f--full">
@@ -211,6 +222,7 @@ export default function AddPaymentModal({
                   className="apay-file-in"
                   type="file"
                   accept=".pdf,.jpg,.jpeg,.png"
+                  disabled={saving}
                   onChange={(e) => { const picked = e.target.files?.[0] ?? null; setUpload(picked); setFile(picked?.name ?? ''); }}
                 />
               </label>
@@ -226,7 +238,7 @@ export default function AddPaymentModal({
         </div>
 
         <div className="apay-ft">
-          <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
+          <button type="button" className="spi-mdl-cancel" onClick={onClose} disabled={saving}>Cancel</button>
           <button type="button" className="spi-mdl-confirm" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Payment'}</button>
         </div>
 
