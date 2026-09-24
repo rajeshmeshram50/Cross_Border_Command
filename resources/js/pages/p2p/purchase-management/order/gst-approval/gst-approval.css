@@ -132,7 +132,107 @@
 .pga-empty > i { font-size: 34px; color: #f59e0b; }
 .pga-empty__t { max-width: 460px; text-align: center; color: var(--pga-v); }
 
-/* Hero */
+/* The reused payment-request header sits inside this page's own column, so it
+   takes the page's rounding; the strip itself is styled where it lives. */
+.pga-page > .pga-head { border-radius: 14px; overflow: hidden; }
+.pga-page > .pga-head .prd-hrow { padding: 16px 20px; }
+/* One panel now, so it spans the strip instead of leaving half of it empty. */
+.pga-page > .pga-head .prd-cols--one { grid-template-columns: minmax(0, 1fr); padding: 0 20px 14px; }
+/* Three tiles, sized to what they hold. The payment-request grid splits the
+   full width between however many tiles there are — right for six, absurd for
+   three, which came out a third of the page each. */
+.pga-page > .pga-head .prd-col { padding: 9px 11px 11px; }
+.pga-page > .pga-head .prd-col__grid { grid-auto-columns: minmax(118px, max-content); justify-content: start; gap: 8px; }
+.pga-page > .pga-head .prd-refcard { padding: 6px 16px; gap: 3px; }
+.pga-page > .pga-head .prd-refcard__val { font-size: 11px; }
+.pga-page > .pga-head .prd-refcard__val.is-amt { font-size: 12px; }
+.pga-page > .pga-head .prd-col__t { font-size: 9.5px; }
+.pga-page > .pga-head .prd-chip__lbl i { font-size: 11px; }
+
+/* ── The three readings the decision turns on ──
+   A row of tiles above the reason: risk, GST position, verified paperwork.
+   Each carries its own tone down the left edge, so the row reads at a glance
+   before a word of it is read. */
+.pga-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1100px) { .pga-tiles { grid-template-columns: 1fr; } }
+.pga-tile {
+  display: flex; align-items: flex-start; gap: 11px; min-width: 0; padding: 14px 16px;
+  border-radius: 14px; background: var(--pga-card); border: 1px solid var(--pga-line);
+  border-left: 4px solid var(--pga-tile-accent, var(--pga-teal));
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .03), 0 10px 24px rgba(8, 47, 73, .04);
+}
+.pga-tile--ok   { --pga-tile-accent: #16a34a; --pga-tile-soft: #ecfdf5; --pga-tile-ink: #15803d; }
+.pga-tile--warn { --pga-tile-accent: #f59e0b; --pga-tile-soft: #fffbeb; --pga-tile-ink: #b45309; }
+.pga-tile--bad  { --pga-tile-accent: #ef4444; --pga-tile-soft: #fef2f2; --pga-tile-ink: #b91c1c; }
+.pga-tile__ico {
+  flex-shrink: 0; width: 38px; height: 38px; border-radius: 11px; display: flex; align-items: center; justify-content: center;
+  background: var(--pga-tile-soft); color: var(--pga-tile-ink); font-size: 18px;
+}
+.pga-tile__txt { min-width: 0; flex: 1 1 auto; }
+.pga-tile__lbl {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--pga-k);
+}
+.pga-tile__val { margin-top: 3px; font-size: 17px; font-weight: 800; letter-spacing: -.3px; color: var(--pga-tile-ink); overflow-wrap: anywhere; }
+.pga-tile__val--mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: var(--pga-v); }
+.pga-tile__val--sm { font-size: 13px; color: var(--pga-k); }
+.pga-tile__sub { margin-top: 2px; font-size: 11.5px; font-weight: 600; color: var(--pga-k); overflow-wrap: anywhere; }
+.pga-tile__rows { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; font-size: 11.5px; font-weight: 600; color: var(--pga-k); }
+.pga-tile__rows b { display: inline-block; min-width: 40px; font-weight: 800; color: var(--pga-v); }
+.pga-donut { flex-shrink: 0; }
+.pga-donut__track { fill: none; stroke: var(--pga-line); stroke-width: 7; }
+.pga-donut__fill { fill: none; stroke: var(--pga-tile-accent); stroke-width: 7; stroke-linecap: round; }
+.pga-donut__txt { font-size: 13px; font-weight: 800; fill: var(--pga-tile-ink); font-family: inherit; }
+[data-bs-theme="dark"] .pga-tile--ok   { --pga-tile-soft: rgba(22, 163, 74, .14); --pga-tile-ink: #6ee7b7; }
+[data-bs-theme="dark"] .pga-tile--warn { --pga-tile-soft: rgba(245, 158, 11, .14); --pga-tile-ink: #fcd34d; }
+[data-bs-theme="dark"] .pga-tile--bad  { --pga-tile-soft: rgba(239, 68, 68, .14); --pga-tile-ink: #fca5a5; }
+
+/* ── Supplier and purchase order, side by side ──
+   Two records of six short facts each. Full width they read as loose text with
+   a gutter of white down the middle; paired, each is a card you scan. Their
+   facts drop to two columns at that width, and the pair stacks on a laptop. */
+.pga-duo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.pga-duo > .pga-card { height: 100%; }
+/* Six facts read as 3 × 2, not 2 × 3 — the same shape in both cards, and two
+   short rows instead of three. Tighter gutters, since the columns are inside
+   half a page. */
+.pga-duo .pga-facts--grid { column-gap: 10px; }
+.pga-duo .pga-facts--grid .pga-fact { padding-right: 10px; }
+.pga-duo .pga-fact__v { font-size: 12.5px; }
+.pga-duo .pga-fact__s { font-size: 11px; }
+@media (max-width: 1280px) { .pga-duo { grid-template-columns: minmax(0, 1fr); } }
+
+/* ── Supplier panel ──
+   Two soft boxes under the supplier's own facts: where its GST stands, and how
+   much of its paperwork is verified. Quiet surfaces, so the numbers carry. */
+.pga-sup__code {
+  padding: 2px 9px; border-radius: 7px; background: var(--pga-soft); border: 1px solid var(--pga-line);
+  font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; font-weight: 700; color: var(--pga-teal);
+}
+.pga-sup__spacer { flex: 1 1 auto; }
+/* A one-line note, not a paragraph: the risk tags above carry the alarm, so
+   this only has to be read once and got past. */
+.pga-sup__alert { margin: 2px 0 6px; padding: 7px 11px; font-size: 11.5px; font-weight: 600; }
+.pga-sup__alert > i { font-size: 13px; }
+.pga-sup__alert b { font-weight: 800; }
+.pga-sup__split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 2px; }
+@media (max-width: 900px) { .pga-sup__split { grid-template-columns: 1fr; } }
+.pga-sup__box { padding: 11px 13px 12px; border-radius: 12px; background: var(--pga-soft); border: 1px solid var(--pga-line); }
+.pga-sup__boxt {
+  display: flex; align-items: center; gap: 7px; margin-bottom: 8px;
+  font-size: 11.5px; font-weight: 800; letter-spacing: -.1px; color: var(--pga-v);
+}
+.pga-sup__boxt > i { color: var(--pga-teal); font-size: 14px; }
+.pga-sup__boxt .pga-tag { margin-left: auto; }
+.pga-sup__rows { display: flex; flex-direction: column; gap: 7px; }
+.pga-sup__rows > span { display: flex; align-items: center; gap: 8px; }
+.pga-sup__rows i { flex: 1 1 auto; min-width: 0; font-style: normal; font-size: 11.5px; font-weight: 600; color: var(--pga-k); }
+.pga-sup__rows b { font-size: 12px; font-weight: 800; color: var(--pga-v); white-space: nowrap; }
+.pga-sup__empty { font-size: 11.5px; padding: 6px 0 2px; }
+[data-bs-theme="dark"] .pga-sup__box { background: rgba(255, 255, 255, .03); border-color: rgba(255, 255, 255, .08); }
+[data-bs-theme="dark"] .pga-sup__code { background: rgba(255, 255, 255, .05); border-color: rgba(255, 255, 255, .1); }
+
+/* Hero (kept for the empty / error states) */
 .pga-hero {
   display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
   padding: 14px 18px; border-radius: 14px; color: #fff;
@@ -168,7 +268,8 @@
 .pga-status--ok { background: #dcfce7; color: #15803d; }
 .pga-status--bad { background: #fee2e2; color: #b91c1c; }
 
-.pga-alert { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 11px; font-size: 12.5px; font-weight: 700; border: 1px solid; }
+.pga-alert { display: flex; align-items: flex-start; gap: 8px; padding: 10px 14px; border-radius: 11px; font-size: 12.5px; font-weight: 700; line-height: 1.5; border: 1px solid; }
+.pga-alert > i { flex-shrink: 0; line-height: 1.4; }
 .pga-alert--bad { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
 .pga-alert--ok { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
 
@@ -205,10 +306,16 @@
   display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex-shrink: 0;
   border-radius: 9px; background: #fef3c7; border: 1px solid #fde3a3; font-size: 15px; color: #b45309;
 }
-.pga-why__t { margin: 0 auto 0 0; font-size: 13.5px; font-weight: 800; letter-spacing: -.1px; color: var(--pga-v); }
-.pga-why__body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.pga-why__p { margin: 0; font-size: 12.5px; line-height: 1.65; color: #51616f; }
-.pga-why__p b { font-weight: 700; color: var(--pga-v); }
+/* Quieter than it was: at 800 weight with 13px values the card shouted the
+   whole way down, and everything in it read as equally important. */
+.pga-why__t { margin: 0 auto 0 0; font-size: 12.5px; font-weight: 700; letter-spacing: -.1px; color: var(--pga-v); }
+.pga-why__body { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pga-why__p { margin: 0; font-size: 12px; line-height: 1.6; color: #51616f; }
+.pga-why__p b { font-weight: 650; color: var(--pga-v); }
+.pga-why .pga-fact__v { font-size: 12px; font-weight: 650; }
+.pga-why .pga-fact__k { font-weight: 700; letter-spacing: .06em; }
+.pga-why .pga-fact__s { font-size: 11px; }
+.pga-why .pga-tag { font-weight: 700; }
 .pga-why__foot { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 11.5px; color: var(--pga-k); }
 .pga-why__foot b { font-weight: 700; color: #475569; }
 .pga-ok-ico { color: #16a34a; }
@@ -222,14 +329,24 @@
 .pga-fact__s { font-size: 11.5px; font-weight: 500; color: var(--pga-k); }
 /* A record, not loose text: every cell the same height, ruled off from its
    neighbours, so the eye reads rows and columns instead of drifting. */
-.pga-facts--grid { gap: 0; border-radius: 10px; border: 1px solid var(--pga-line); background: var(--pga-soft); overflow: hidden; }
-.pga-facts--grid .pga-fact { padding: 12px 16px; border-left: 1px solid var(--pga-line); border-top: 1px solid var(--pga-line); }
-.pga-facts--grid .pga-fact:nth-child(3n + 1) { border-left: 0; }
-.pga-facts--grid .pga-fact:nth-child(-n + 3) { border-top: 0; }
+/* Flat, not boxed. The card IS the container: a filled, bordered, rounded
+   grid inside it made every record read as a box within a box, and the page
+   became nothing but frames. One hairline between rows is enough to keep the
+   cells aligned. */
+.pga-facts--grid { gap: 0; background: transparent; border: 0; border-radius: 0; }
+.pga-facts--grid .pga-fact { padding: 11px 16px 11px 0; border-top: 1px solid var(--pga-line); }
+.pga-facts--grid .pga-fact:nth-child(-n + 3) { border-top: 0; padding-top: 2px; }
 
-.pga-facts--split { gap: 0; padding: 12px 4px; border-radius: 10px; background: var(--pga-soft); border: 1px solid var(--pga-line); }
-.pga-facts--split .pga-fact { padding: 0 16px; border-left: 1px solid var(--pga-line); }
+.pga-facts--split { gap: 0; padding: 2px 0; background: transparent; border: 0; }
+.pga-facts--split .pga-fact { padding: 0 18px; border-left: 1px solid var(--pga-line); }
 .pga-facts--split .pga-fact:first-child { padding-left: 0; border-left: 0; }
+/* Four readings, one line. At three columns the GSTIN dropped onto a row of
+   its own and left the strip looking half-filled. */
+.pga-why .pga-facts--split { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: start; }
+@media (max-width: 1280px) {
+  .pga-why .pga-facts--split { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 14px; }
+  .pga-why .pga-facts--split .pga-fact:nth-child(2n + 1) { padding-left: 0; border-left: 0; }
+}
 .pga-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px; }
 
 /* The amount panel. The figure the decision is about sits beside the decision,
@@ -258,6 +375,19 @@
 .pga-tag--ok { background: #dcfce7; color: #15803d; }
 .pga-tag--warn { background: #fde68a; color: #92400e; }
 .pga-tag--bad { background: #fee2e2; color: #b91c1c; }
+/* Status chips beside a card title: a dot and a hairline, with room to breathe.
+   Flat pills of heavy uppercase read as smudges next to the heading. */
+.pga-card__t .pga-tag {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px;
+  font-size: 9.5px; font-weight: 700; letter-spacing: .07em; border: 1px solid transparent;
+}
+.pga-card__t .pga-tag::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.pga-card__t .pga-tag--ok { border-color: #bbf7d0; }
+.pga-card__t .pga-tag--warn { border-color: #fcd34d; }
+.pga-card__t .pga-tag--bad { border-color: #fecaca; }
+[data-bs-theme="dark"] .pga-card__t .pga-tag--ok { border-color: rgba(52, 211, 153, .35); }
+[data-bs-theme="dark"] .pga-card__t .pga-tag--warn { border-color: rgba(245, 158, 11, .35); }
+[data-bs-theme="dark"] .pga-card__t .pga-tag--bad { border-color: rgba(248, 113, 113, .35); }
 
 /* Products */
 .pga-tbl-wrap { overflow-x: auto; border: 1px solid var(--pga-line); border-radius: 12px; }
@@ -270,8 +400,18 @@
 .pga-tbl tbody tr:nth-child(even) td { background: #fafdff; }
 .pga-tbl tbody tr:hover td { background: #f2fbfe; }
 .pga-tbl tbody tr:first-child td { border-top: 0; }
-.pga-tbl th:first-child, .pga-tbl td:first-child { text-align: center; width: 44px; }
-.pga-tbl .pga-l { text-align: left; white-space: normal; min-width: 200px; }
+/* Shares of the width, not "whatever is left". On auto layout the product
+   column swallowed everything and pushed Qty, Rate, GST % and Total into a
+   huddle on the right, with a canyon of empty table between the two. */
+.pga-tbl { table-layout: fixed; }
+.pga-tbl th:first-child, .pga-tbl td:first-child { text-align: center; width: 48px; }
+.pga-tbl .pga-l { text-align: left; white-space: normal; width: 40%; }
+.pga-tbl th:nth-child(3), .pga-tbl td:nth-child(3) { width: 14%; }
+.pga-tbl th:nth-child(4), .pga-tbl td:nth-child(4) { width: 15%; }
+.pga-tbl th:nth-child(5), .pga-tbl td:nth-child(5) { width: 12%; }
+.pga-tbl th:nth-child(6), .pga-tbl td:nth-child(6) { width: 16%; }
+/* Fixed layout clips rather than stretching, so a long name ends in an ellipsis. */
+.pga-prod, .pga-prod-code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pga-prod { font-weight: 800; }
 .pga-prod-code { margin-top: 2px; font-size: 11px; font-weight: 500; color: var(--pga-k); }
 .pga-strong { font-weight: 800 !important; color: var(--pga-teal) !important; }
@@ -313,7 +453,15 @@
 .pga-ta-foot { display: flex; justify-content: space-between; gap: 10px; }
 .pga-err { font-size: 11px; font-weight: 700; color: #dc2626; }
 .pga-counter { font-size: 10.5px; font-weight: 700; color: var(--pga-k); }
-.pga-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* The card holds the reason; the decision is taken in the header. */
+.pga-decide__hint {
+  display: flex; align-items: flex-start; gap: 7px; padding: 9px 11px; border-radius: 10px;
+  background: var(--pga-soft); border: 1px solid var(--pga-line);
+  font-size: 11.5px; font-weight: 600; line-height: 1.5; color: var(--pga-k);
+}
+.pga-decide__hint > i { color: var(--pga-teal); font-size: 14px; line-height: 1.2; }
+.pga-decide__hint b { color: var(--pga-v); font-weight: 800; }
+[data-bs-theme="dark"] .pga-decide__hint { background: rgba(255, 255, 255, .03); border-color: rgba(255, 255, 255, .08); }
 
 .pga-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 42px; padding: 0 16px;
@@ -323,8 +471,6 @@
 .pga-btn:hover:not(:disabled) { transform: translateY(-1px); }
 .pga-btn:disabled { opacity: .6; cursor: not-allowed; }
 .pga-btn--ghost { background: #fff; color: #5b7585; border: 1.5px solid #dbe7ee; }
-.pga-btn--approve { background: linear-gradient(135deg, #15803d, #16a34a 55%, #22c55e); box-shadow: 0 4px 12px rgba(22, 163, 74, .3); }
-.pga-btn--reject { background: linear-gradient(135deg, #b91c1c, #dc2626 55%, #ef4444); box-shadow: 0 4px 12px rgba(220, 38, 38, .28); }
 
 .pga-wait { flex-direction: row; align-items: center; gap: 10px; font-size: 13px; color: var(--pga-v); }
 .pga-wait > i { font-size: 20px; color: #f59e0b; }

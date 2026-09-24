@@ -560,7 +560,14 @@ export type GstApprovalReview = {
     created_by_name: string | null;
     shipment_code: string | null; pi_code: string | null; customer_name: string | null; opportunity_code: string | null;
   };
-  supplier: { code: string | null; name: string | null; gstin: string | null; state_code: string | null; risk: string | null; category: string | null } | null;
+  supplier: {
+    id: number; code: string | null; name: string | null; company_name: string | null;
+    gstin: string | null; gst_applicable: string | null;
+    state_code: string | null; state: string | null; city: string | null; address: string | null;
+    email: string | null; contact_name: string | null; contact_no: string | null;
+    type: string | null; status: string | null; website: string | null;
+    risk: string | null; category: string | null;
+  } | null;
   gst: { gate: GstGate; scrutiny_date: string | null; filing_date: string | null; gstin: string | null; stale_months: number } | null;
   lines: { line_no: number; product_code: string | null; product_name: string | null; hsn_code: string | null; uom: string | null;
     quantity: number; rate: number; gst_pct: number; taxable_amount: number; gst_amount: number; line_total: number }[];

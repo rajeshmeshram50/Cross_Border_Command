@@ -1232,6 +1232,28 @@ tbody tr:nth-child(10) {
   background-color: #1f1b3a;
   color: #ddd6fe;
 }
+/* ── --vz-card-bg outside a .card ──────────────────────────────────────
+   Bootstrap declares --vz-card-bg INSIDE `.card` — it is a component
+   variable, sitting next to --vz-card-spacer-y and friends — not on the theme
+   root the way --vz-secondary-bg and --vz-body-bg are. So `background:
+   var(--vz-card-bg)` written on anything that is NOT inside a .card has
+   nothing to resolve against: the declaration is invalid at computed-value
+   time and the element comes out TRANSPARENT.
+
+   Not a theoretical footgun. The Inbox's Document Preview / Review & Decide
+   modal is its own shell rather than a .card, and its dark-mode rules reach
+   for this variable — so card, body and footer all rendered see-through, the
+   table row behind the modal read straight through the footer, and the footer
+   strip looked like it simply wasn't there (QA #4). Around 70 files use this
+   variable; every one of them outside a .card has the same hole waiting.
+
+   Declaring it at the root gives those elements the value they were written
+   for. It cannot affect anything INSIDE a .card: that component declares its
+   own copy ON itself, which is nearer the element and still wins. The value
+   mirrors Bootstrap's own (--vz-card-bg: var(--vz-secondary-bg)), so a card
+   and a card-styled element outside one finally agree. */
+:root { --vz-card-bg: var(--vz-secondary-bg); }
+
 .wl-pager {
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 8px;

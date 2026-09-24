@@ -11,6 +11,7 @@ import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { onNetworkChange, stopAll, resumeAll, pendingRequests } from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import logoFallback from '../assets/images/igc-logo.png';
+import NotificationsDrawer, { useUnreadNotifications } from '../../components/NotificationsDrawer';
 import * as LucideIcons from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -211,6 +212,12 @@ export default function IdimsHeader() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [isFs, setIsFs] = useState(false);
+  /* The bell opens the notifications drawer rather than jumping to /inbox:
+     what arrived is read here, and a row opens the thing itself (a PO waiting
+     for approval opens its review page). The Inbox is still one click away
+     from the drawer's own footer. */
+  const [notifOpen, setNotifOpen] = useState(false);
+  const notifCount = useUnreadNotifications();
 
   /* Live network state for the Stop / Resume button: how many reads are on
      the wire, and how many the user has stopped and not yet resumed.
@@ -824,9 +831,10 @@ export default function IdimsHeader() {
                     {IC.mail}
                   </button>
                 )}
-                <button type="button" className="idims-action-btn" title="Inbox" onClick={() => go('/inbox')}>
+                <button type="button" className="idims-action-btn" title="Notifications"
+                  onClick={() => { closeMenus(); setNotifOpen(true); }}>
                   {IC.bell}
-                  {!!user?.inbox_count && <span className="idims-action-badge" />}
+                  {(!!notifCount.count || !!user?.inbox_count) && <span className="idims-action-badge" />}
                 </button>
                 <button type="button" className="idims-action-btn idims-logout-btn" title="Logout" onClick={() => { closeMenus(); setLogoutOpen(true); }}>
                   {IC.logout}
@@ -1060,6 +1068,9 @@ export default function IdimsHeader() {
           </div>
         </>
       )}
+
+      {/* What arrived, and the way into it. */}
+      <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} onCountChange={notifCount.refresh} />
 
       {/* Logout confirm modal */}
       {logoutOpen && (

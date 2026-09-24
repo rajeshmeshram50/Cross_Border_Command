@@ -386,6 +386,33 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
               [data-bs-theme="dark"] .cbc-login-card .divider-line {
                 border-color: rgba(255,255,255,0.10) !important;
               }
+              /* ── Google Sign-In button, dark mode (QA #3) ────────────────
+                 Login.tsx already asks Google for its dark variant
+                 ('filled_black') and re-renders on a theme flip, and that part
+                 works — the pill, its text and the G mark all come back dark.
+                 What stayed white is the BACKDROP Google draws its button on:
+                 the wrapper it generates inside our host element renders on a
+                 light canvas, so the dark pill sat in a white rounded box on
+                 the dark card.
+                 We can't style Google's markup directly (it owns everything
+                 inside the host), so the host clears the canvas instead:
+                 color-scheme stops the UA painting a light backdrop for the
+                 button's frame, and the wrapper is made transparent so the
+                 login card shows through.
+                 :not([role="button"]) is the important part — the button
+                 itself, and the white circle behind the G inside it, are
+                 Google's own branding and must keep their fills. This only
+                 ever clears the container around it. */
+              [data-bs-theme="dark"] .cbc-login-card .cbc-google-btn {
+                color-scheme: dark;
+                background: transparent !important;
+              }
+              [data-bs-theme="dark"] .cbc-login-card .cbc-google-btn > div:not([role="button"]),
+              [data-bs-theme="dark"] .cbc-login-card .cbc-google-btn > div:not([role="button"]) > div:not([role="button"]),
+              [data-bs-theme="dark"] .cbc-login-card .cbc-google-btn iframe {
+                background: transparent !important;
+                background-color: transparent !important;
+              }
             `}</style>
 
             <div className="mt-3 sm:mt-4 text-center text-white/40 text-[10px] sm:text-[11px] font-medium lg:hidden">
