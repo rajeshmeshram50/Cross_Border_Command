@@ -69,13 +69,23 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
     const ref = reference.trim();
     if (ref.length > 64) { setError('Reference number can be at most 64 characters.'); return; }
     setSaving(true);
-    await onSave({ amount: amt, recovered_date: date, reference_no: ref || undefined, proof: file });
-    setSaving(false);
+    try {
+      await onSave({ amount: amt, recovered_date: date, reference_no: ref || undefined, proof: file });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return createPortal(
     <div className="spi-mdl-backdrop">
-      <div className="apay-card arf-addrec" role="dialog" aria-modal="true" aria-labelledby="arf-add-title" tabIndex={-1}>
+      <div className={`apay-card arf-addrec${saving ? ' is-saving' : ''}`} role="dialog" aria-modal="true" aria-labelledby="arf-add-title" tabIndex={-1} aria-busy={saving}>
+        {saving && (
+          <div className="apay-wait" role="status" aria-live="polite">
+            <span className="apay-wait__ring" />
+            <span className="apay-wait__t">{initial ? 'Updating recovered payment…' : 'Recording recovered payment…'}</span>
+            <span className="apay-wait__s">Please wait, the proof is being uploaded</span>
+          </div>
+        )}
         <div className="mpr-hero">
           <div className="mpr-hero__icon"><IcoWallet /></div>
           <div className="mpr-hero__titleblock">
@@ -88,7 +98,7 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
             <Chip label="PO Number" value={refund.po} meta={poDate ? shortDate(poDate) : undefined} />
             <Chip label="Advance Receipt Refund Adjustment" value={refund.no} meta={shortDate(refund.date)} />
           </div>
-          <button type="button" className="mpr-hero__close" onClick={onClose} aria-label="Close">{ICON_X}</button>
+          <button type="button" className="mpr-hero__close" onClick={onClose} disabled={saving} aria-label="Close">{ICON_X}</button>
         </div>
 
         <div className="apay-bd">
@@ -98,17 +108,18 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
               <div className="apay-inwrap">
                 <span className="apay-prefix">₹</span>
                 <input id="arf-add-amt" ref={amountRef} className="apay-in" inputMode="decimal" placeholder="0.00" maxLength={16}
+                  disabled={saving}
                   value={amount} onChange={(e) => { setAmount(e.target.value.replace(/[^\d.,]/g, '')); setError(''); }} />
               </div>
             </div>
             <div className="apay-f">
               <label htmlFor="arf-add-date">Refunded Date</label>
-              <input id="arf-add-date" className="apay-in" type="date" min={refund.date} max={todayIso()}
+              <input id="arf-add-date" className="apay-in" type="date" min={refund.date} max={todayIso()} disabled={saving}
                 value={date} onChange={(e) => { setDate(e.target.value); setError(''); }} />
             </div>
             <div className="apay-f apay-f--full">
               <label htmlFor="arf-add-ref">Reference No. (Cheque / UTR)</label>
-              <input id="arf-add-ref" className="apay-in" placeholder="Enter cheque / UTR number" maxLength={64}
+              <input id="arf-add-ref" className="apay-in" placeholder="Enter cheque / UTR number" maxLength={64} disabled={saving}
                 value={reference} onChange={(e) => setReference(e.target.value)} />
             </div>
             <div className="apay-f apay-f--full">
@@ -127,8 +138,8 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
                         <button type="button" className="arf-proof__btn" onClick={() => void downloadFile(fileUrl, fileName)} title="Download this proof">Download</button>
                       </>
                     )}
-                    <button type="button" className="arf-proof__btn" onClick={() => fileRef.current?.click()} title="Replace this proof">Reupload</button>
-                    {file && <button type="button" className="arf-proof__btn arf-proof__btn--del" onClick={undoPick} title="Remove the file you just picked">Remove</button>}
+                    <button type="button" className="arf-proof__btn" disabled={saving} onClick={() => fileRef.current?.click()} title="Replace this proof">Reupload</button>
+                    {file && <button type="button" className="arf-proof__btn arf-proof__btn--del" disabled={saving} onClick={undoPick} title="Remove the file you just picked">Remove</button>}
                   </span>
                 </div>
               ) : (
@@ -140,7 +151,7 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
                   </div>
                 </label>
               )}
-              <input id="arf-add-file" ref={fileRef} className="apay-file-in" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp"
+              <input id="arf-add-file" ref={fileRef} className="apay-file-in" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" disabled={saving}
                 onChange={(e) => { pick(e.target.files?.[0] ?? null); e.target.value = ''; }} />
             </div>
           </div>

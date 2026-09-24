@@ -278,6 +278,19 @@ class PoRefundAdjustmentController extends Controller
             'proof.mimes'                    => 'Proof of payment must be a PDF or image file.',
         ]);
 
+        $ref = !empty($data['reference_no']) ? mb_strtoupper(trim($data['reference_no'])) : null;
+        if ($ref !== null && $ref !== '') {
+            $dup = PoRefundRecovery::withoutGlobalScope('tenant')
+                ->where('client_id', $adj->client_id)
+                ->whereRaw('UPPER(TRIM(reference_no)) = ?', [$ref])
+                ->when($existing, fn ($q) => $q->where('id', '!=', $existing->id))
+                ->exists();
+            if ($dup) {
+                return $this->fail('This cheque / UTR number is already used on another recovered payment.', 422,
+                    ['reference_no' => ['Already used on another recovered payment.']]);
+            }
+        }
+
         $file = $request->file('proof');
         $path = $file?->store("p2p/refund-recoveries/{$adj->id}", 'public');
         $amount = round((float) $data['amount'], 2);
@@ -291,7 +304,7 @@ class PoRefundAdjustmentController extends Controller
             }
             $attrs = [
                 'amount' => $amount, 'recovered_date' => $data['recovered_date'],
-                'reference_no' => !empty($data['reference_no']) ? strtoupper(trim($data['reference_no'])) : null,
+                'reference_no' => $ref,
                 'updated_by' => $user->id,
             ];
             if ($path) $attrs += ['proof_path' => $path, 'proof_name' => $file->getClientOriginalName()];

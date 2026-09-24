@@ -325,6 +325,12 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             const locked = () => toast.warning('Segment not mapped', seg
               ? `${seg} is not mapped to this supplier — map it in the Supplier Master first.`
               : 'This product has no segment in the product master — set it first.');
+            // Quantity and rate belong to a product: nothing to enter until one is picked.
+            const noProduct = !readOnly && row.productId == null;
+            const cellLock = !!segLock || noProduct;
+            const lockedCell = () => (segLock ? locked() : toast.warning('Pick the product first',
+              withPi ? 'Choose the PO product for this PI line before entering quantity or rate.'
+                : 'Choose the product on this line before entering quantity or rate.'));
             /* The chip always shows the product master's own GST, even on an import
                where the PO charges no Indian GST — the Tax columns stay 0, this is
                only what the product is registered at. */
@@ -397,9 +403,13 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                         {inactiveProduct(po) ? 'Inactive' : piProduct && piSegmentMismatch(po, piProduct.segment) ? 'Other segment' : 'Not mapped'}
                       </span>
                     )}
-                    <span className="cpd-kv">HSN <b>{hsn}</b></span>
-                    <span className="cpd-prod__dot" />
-                    <span className="cpd-kv">{gstCell}</span>
+                    {po && (
+                      <>
+                        <span className="cpd-kv">HSN <b>{hsn}</b></span>
+                        <span className="cpd-prod__dot" />
+                        <span className="cpd-kv">{gstCell}</span>
+                      </>
+                    )}
                     {!readOnly && (
                       <button type="button" className="cpd-addbtn"
                         title="Add a new product — it goes on this line if it can be ordered from this supplier"
@@ -424,15 +434,15 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                     {row.pi ? plain(row.pi.pending_qty) : '—'}
                   </td>
                 )}
-                <td className={readOnly ? undefined : `cpd-ed${rowErr.qty ? ' cpd-cell-err' : ''}`}>
+                <td className={readOnly ? undefined : `${noProduct ? '' : 'cpd-ed'}${rowErr.qty ? ' cpd-cell-err' : ''}`}>
                   {readOnly ? <FitText text={plain(row.qtyPo)} /> : (
                     <FitInput
                       className="cpd-in"
                       inputMode="decimal"
                       maxLength={QTY_DIGITS + 4}
                       tooltip={plain(row.qtyPo)}
-                      readOnly={!!segLock}
-                      onClick={segLock ? locked : undefined}
+                      readOnly={cellLock}
+                      onClick={cellLock ? lockedCell : undefined}
                       value={row.qtyPo}
                       onChange={(e) => onChange(index, { qtyPo: cleanQty(e.target.value) })}
                     />
@@ -441,15 +451,15 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                 </td>
                 {withPi && <td className={line.missing > 0 ? 'cpd-miss' : ''}>{row.pi ? plain(line.missing) : '—'}</td>}
 
-                <td className={readOnly ? undefined : `cpd-ed${rowErr.rate ? ' cpd-cell-err' : ''}`}>
+                <td className={readOnly ? undefined : `${noProduct ? '' : 'cpd-ed'}${rowErr.rate ? ' cpd-cell-err' : ''}`}>
                   {readOnly ? <FitText text={money(row.rate)} /> : (
                     <FitInput
                       className="cpd-in"
                       inputMode="decimal"
                       maxLength={RATE_DIGITS + 3}
                       tooltip={money(row.rate)}
-                      readOnly={!!segLock}
-                      onClick={segLock ? locked : undefined}
+                      readOnly={cellLock}
+                      onClick={cellLock ? lockedCell : undefined}
                       value={row.rate}
                       onChange={(e) => onChange(index, { rate: cleanRate(e.target.value) })}
                     />

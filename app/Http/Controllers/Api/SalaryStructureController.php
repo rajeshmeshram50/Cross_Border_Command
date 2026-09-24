@@ -31,6 +31,9 @@ class SalaryStructureController extends Controller
      *  form's annual ÷ 12 seed and nothing more. */
     private const SALARY_ROUNDING_SLACK = 12;
 
+    /** Stages in the onboarding wizard; below this the employee is still being set up. */
+    private const ONBOARDING_STAGES = 6;
+
     /** Memoised hr.payroll grant answer for this request — see hasPayrollGrant(). */
     private ?bool $payrollGrant = null;
 
@@ -255,13 +258,6 @@ class SalaryStructureController extends Controller
 
     public function store(Request $request)
     {
-        /* Fast fail before validation for a caller who holds neither write
-         * flag. The precise flag (add for a first structure, edit for a
-         * revision) needs the employee, so it is checked again below once the
-         * employee is resolved. (QA #153) */
-        if (!$this->canAct($request, 'can_add') && !$this->canAct($request, 'can_edit')) {
-            return $this->denyResponse('change');
-        }
         $data = $request->validate([
             'employee_id'     => ['required', 'integer'],
             'effective_from'  => ['required', 'date'],
@@ -325,7 +321,32 @@ class SalaryStructureController extends Controller
         $isRevision = SalaryStructure::where('employee_id', $employee->id)
             ->whereIn('status', ['active', 'superseded'])
             ->exists();
-        if (!$this->canAct($request, $isRevision ? 'can_edit' : 'can_add')) {
+        /* Still being set up? The onboarding wizard re-posts the structure
+         * every time the CTC or the breakup changes, so only the FIRST of
+         * those posts is a "create" — the rest are revisions of a salary that
+         * has never been paid. Gating those on Payroll would block the wizard
+         * from its second CTC edit onwards, which is the same wall by another
+         * name. (#153 follow-up) */
+        $inSetup = !$isRevision
+            || (int) ($employee->onboarding_stage_completed ?? 0) < self::ONBOARDING_STAGES;
+
+        if (!$inSetup) {
+            // An onboarded employee's salary is payroll's to revise.
+            if (!$this->canAct($request, 'can_edit')) {
+                return $this->denyResponse('revise');
+            }
+        } elseif (!$this->canAct($request, $isRevision ? 'can_edit' : 'can_add')
+               && !$this->hasGrant($request->user(), 'hr.employee', ['can_add', 'can_edit'])) {
+            /* The FIRST structure is part of setting an employee up, not of
+             * managing payroll. The onboarding wizard posts it from Stage 1
+             * (Employee Onboarding Setup) as soon as a CTC is entered, and the
+             * Add Employee wizard does the same from its Compensation step —
+             * both run as HR who may hold hr.employee without any hr.payroll
+             * grant. Gating this on Payroll alone blocked onboarding outright.
+             *
+             * So whoever may create or edit employees may lay down their
+             * opening salary. Revising one afterwards still needs Payroll,
+             * which is what #153 was actually about. */
             return $this->denyResponse($isRevision ? 'revise' : 'create');
         }
 
@@ -875,6 +896,27 @@ class SalaryStructureController extends Controller
         return Permission::where('user_id', $user->id)
             ->where('module_id', $moduleId)
             ->where($flag, true)
+            ->exists();
+    }
+
+    /**
+     * Does this user hold any of $flags on the module $slug?
+     *
+     * Same shape as canAct(), but for a module other than hr.payroll — used to
+     * let an employee-setup caller lay down a first salary structure.
+     */
+    private function hasGrant($user, string $slug, array $flags): bool
+    {
+        if (!$user) return false;
+
+        $moduleId = Module::where('slug', $slug)->value('id');
+        if (!$moduleId) return false;
+
+        return Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)
+            ->where(function ($q) use ($flags) {
+                foreach ($flags as $f) $q->orWhere($f, true);
+            })
             ->exists();
     }
 

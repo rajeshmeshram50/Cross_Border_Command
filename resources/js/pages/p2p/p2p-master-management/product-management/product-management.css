@@ -467,9 +467,11 @@
   overflow-y: auto;
 }
 
+/* Narrower than the page: the product popup reads as a dialog, not a screen
+   (CS-409). Below this the two-column body still holds at 1024px. */
 .prd-detail-modal {
   width: 100%;
-  max-width: 1440px;
+  max-width: 1180px;
   margin: auto;
   border-radius: 26px;
   overflow: hidden;

@@ -61,7 +61,7 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
   /* Inline field errors shown beneath the required fields. The toast was
    * the only feedback before, which the user could miss while looking at
    * the form — now Subject / Set Date show a red message under the box. */
-  const [errors, setErrors]   = useState<{ subject?: string; setDate?: string; attachment?: string }>({});
+  const [errors, setErrors]   = useState<{ subject?: string; setDate?: string; tat?: string; attachment?: string }>({});
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
@@ -118,7 +118,7 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
     // The Subject content rules mirror the backend safeTextRule so the same
     // "special characters / must contain letters" feedback shows INLINE under
     // the field instead of coming back as a toast after a failed save.
-    const nextErrors: { subject?: string; setDate?: string } = {};
+    const nextErrors: { subject?: string; setDate?: string; tat?: string } = {};
     const subj = subject.trim();
     if (!subj) {
       nextErrors.subject = 'Reminder subject is required';
@@ -134,6 +134,10 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
     if (!setDate) nextErrors.setDate = 'Reminder set date is required';
     // Backstop for the picker's minDate — a reminder can't be set in the past.
     else if (setDate < todayStr) nextErrors.setDate = 'Reminder set date cannot be in the past.';
+    /* TAT is required (QA #61). It is the turnaround the reminder is chased
+       against, so a reminder without one cannot be judged late or on time —
+       and the list prints a "—" where the pill belongs. */
+    if (!tat) nextErrors.tat = 'TAT is required';
     if (Object.keys(nextErrors).length) {
       setErrors(nextErrors);
       return;
@@ -148,7 +152,7 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
       fd.append('set_date', setDate);
       fd.append('status', status);
       if (isoOppDate)    fd.append('opp_date', isoOppDate);
-      if (tat)           fd.append('tat', tat);
+      fd.append('tat', tat);
       if (remark.trim()) fd.append('remark', remark.trim());
       if (picked)        fd.append('attachment', picked);
 
@@ -221,12 +225,18 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
 
             <div className="rfl-fld">
               <label className="rfl-lbl">STATUS</label>
+              {/* Add-only form, so "In Progress" is the only status on offer.
+                  A reminder that is Done the moment it is created is a
+                  contradiction — nothing was ever chased — and offering it here
+                  let a new reminder be filed straight into the completed pile,
+                  where nobody looks. The list's own Done / Reopen buttons are
+                  where the status changes after that, and the Sales To-Do
+                  editor still offers both when EDITING an existing one. */}
               <MasterSelect
                 value={status}
                 onChange={(v) => setStatus(v as ReminderStatus)}
                 options={[
                   { value: 'In Progress', label: 'In Progress' },
-                  { value: 'Done',        label: 'Done'        },
                 ]}
                 placeholder="Select status"
               />
@@ -254,10 +264,10 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
               {errors.setDate && <div className="rfl-err">{errors.setDate}</div>}
             </div>
             <div className="rfl-fld">
-              <label className="rfl-lbl">TAT</label>
+              <label className="rfl-lbl">TAT <span className="rfl-req">*</span></label>
               <MasterSelect
                 value={tat}
-                onChange={setTat}
+                onChange={(v) => { setTat(v); if (errors.tat) setErrors(p => ({ ...p, tat: undefined })); }}
                 options={[
                   { value: '24 Hours', label: '24 Hours' },
                   { value: '48 Hours', label: '48 Hours' },
@@ -268,6 +278,7 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
                 ]}
                 placeholder="Select TAT"
               />
+              {errors.tat && <div className="rfl-err">{errors.tat}</div>}
             </div>
 
             <div className="rfl-fld">

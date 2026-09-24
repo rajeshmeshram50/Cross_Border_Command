@@ -13,7 +13,9 @@ import './MasterSelect.css';
 // `reg` adds the segment Reg-High / Reg-Low badge after the pill (text '' = badge only).
 type OptBadgeItem = string | { text: string; reg?: string | null };
 // `lock` draws a padlock icon before the text (used for locked options).
-type OptBadgeSpec = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string; items?: OptBadgeItem[]; reg?: string | null; lock?: boolean };
+type OptBadgeSpec = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string; items?: OptBadgeItem[]; reg?: string | null; lock?: boolean;
+  /** Shown only in the open list, never on the closed field. */
+  listOnly?: boolean };
 
 const LOCK_ICON = (
   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}>
@@ -370,7 +372,7 @@ export function MasterSelect({
             <Tooltip label={selected.fullLabel ?? selected.label} position="bottom">
               <span className="master-select-value">
                 <span className="master-select-value-text">{selected.selectedLabel ?? selected.label}</span>
-                {!listBadgesOnly && badgesOf(selected).map((b, i) => <OptBadge key={i} b={b} staticPill />)}
+                {!listBadgesOnly && badgesOf(selected).filter((b) => !b.listOnly).map((b, i) => <OptBadge key={i} b={b} staticPill />)}
               </span>
             </Tooltip>
           ) : currentValue && currentValueLabel ? (
