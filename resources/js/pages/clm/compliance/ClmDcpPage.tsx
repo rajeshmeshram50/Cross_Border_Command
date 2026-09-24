@@ -300,6 +300,25 @@ export default function ClmDcpPage() {
     return Array.from(set);
   };
 
+  /* Document id → name, across all four catalogues, so the search box can find
+   * a rule by the documents inside it. Searching "KYC-001" found nothing before
+   * — only rule codes, segment codes and segment names were matched, and the
+   * document ids are the column people read off the master pages. */
+  const docNameByCode = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const list of [boot?.kyc, boot?.dd, boot?.tl, boot?.qc]) {
+      for (const d of list ?? []) m.set(d.code.toLowerCase(), (d.title || d.name || '').toLowerCase());
+    }
+    return m;
+  }, [boot]);
+
+  /** Does any document picked in this rule match the query, by id or by name? */
+  const ruleHasDocMatching = (r: SegRule, s: string): boolean =>
+    CAT_KEYS.some(c => Object.keys(r.doc_selections?.[c] ?? {}).some(code => {
+      const lc = code.toLowerCase();
+      return lc.includes(s) || (docNameByCode.get(lc) ?? '').includes(s);
+    }));
+
   
   const allRows = useMemo<SegRule[]>(() => rows, [rows]);
 
@@ -322,7 +341,8 @@ export default function ClmDcpPage() {
         return r.rule_code.toLowerCase().includes(s)
           || r.segment_code.toLowerCase().includes(s)
           || segName.toLowerCase().includes(s)
-          || regLabel.includes(s);
+          || regLabel.includes(s)
+          || ruleHasDocMatching(r, s);
       });
     }
     return base;
@@ -499,7 +519,7 @@ export default function ClmDcpPage() {
           <div className="dcp-toolbar">
             <div className="clm-search">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-              <input autoComplete="off" type="text" placeholder="Search segment rules…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+              <input autoComplete="off" type="text" placeholder="Search rules, segments or document IDs…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
               <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
             </div>
             <button
