@@ -894,6 +894,116 @@ class SegmentDocUploadController extends Controller
      * (no per-shipment document tracking exists in the schema), so the same
      * ratios ride on every row.
      */
+    /**
+     * Case to Case, per purchase order: the Stage 04 trade documents and
+     * agreements of every PO raised on this supplier, with the status each one
+     * actually reached. A document marked "Not necessary" on the PO is left out
+     * — the deal is judged on what was asked for, nothing else.
+     *
+     * A PO linked to a shipment lands under With Shipment ID; a standalone PO
+     * under Without Shipment ID, matching how the PO list itself splits them.
+     *
+     * @return array{with_shipment: array, without_shipment: array}|null  null = this supplier has no PO yet
+     */
+    private function buildPoDeals(Model $owner, int $cid, array $ratios): ?array
+    {
+        $pos = DB::table('p2p_purchase_orders')
+            ->where('client_id', $cid)
+            ->where('vendor_id', $owner->id)
+            ->whereNull('deleted_at')
+            ->orderByDesc('id')
+            ->get(['id', 'code', 'po_date', 'shipment_code', 'customer_name', 'consignee_name', 'status']);
+        if ($pos->isEmpty()) return null;
+
+        $docs = DB::table('p2p_purchase_order_documents')
+            ->whereIn('purchase_order_id', $pos->pluck('id'))
+            ->whereNull('deleted_at')
+            // Stage 04 paperwork only: the PO document itself is not case-to-case.
+            ->where('doc_kind', '!=', 'purchase_order')
+            ->orderBy('id')
+            ->get()
+            ->groupBy('purchase_order_id');
+
+        $supplierName = (string) ($owner->company_name ?? '');
+        $with = [];
+        $without = [];
+        $srWith = 0;
+        $srWithout = 0;
+
+        foreach ($pos as $po) {
+            $rows = ($docs[$po->id] ?? collect())
+                // "Necessary" is what Stage 04 marked as needed.
+                ->filter(fn ($d) => ($d->needed ?? 'no') === 'yes' || ($d->is_required ?? 'no') === 'yes')
+                ->values();
+            if ($rows->isEmpty()) continue;
+
+            $shaped = $rows->map(fn ($d) => $this->shapePoDoc($d))->all();
+            $agr = array_values(array_filter($shaped, fn ($r) => $r['is_agreement']));
+            $td  = array_values(array_filter($shaped, fn ($r) => !$r['is_agreement']));
+            $ratio = fn (array $set) => [
+                'd' => count(array_filter($set, fn ($r) => $r['status'] === 'Signed')),
+                't' => count($set),
+            ];
+            $base = [
+                'po_id'      => (int) $po->id,
+                'po_code'    => $po->code,
+                'supplier'   => $supplierName,
+                'ratios'     => array_merge($ratios, ['td' => $ratio($td)]),
+                'docs'       => $td,
+                'agreements' => $agr,
+            ];
+
+            if (!empty($po->shipment_code)) {
+                $with[] = $base + [
+                    'sr'          => ++$srWith,
+                    'shipment_id' => $po->shipment_code,
+                    'customer'    => $po->customer_name ?: '—',
+                    'consignee'   => $po->consignee_name ?: '—',
+                ];
+            } else {
+                $without[] = $base + [
+                    'sr'             => ++$srWithout,
+                    'procurement_id' => $po->code,
+                ];
+            }
+        }
+
+        return ($with || $without) ? ['with_shipment' => $with, 'without_shipment' => $without] : null;
+    }
+
+    /** One Stage 04 document as the vault renders it. */
+    private function shapePoDoc($d): array
+    {
+        $status = match ((string) $d->status) {
+            'signed'    => 'Signed',
+            'sent'      => 'Pending',
+            'declined'  => 'Declined',
+            'expired'   => 'Expired',
+            default     => 'Pending',
+        };
+        $sub = mb_strtolower((string) ($d->doc_sub ?? '') . ' ' . (string) ($d->doc_kind ?? '') . ' ' . (string) ($d->name ?? ''));
+
+        return [
+            'id'                   => (int) $d->id,
+            'db_id'                => null,                       // not a library row: no Send-for-Signature from here
+            'party'                => 'Vendor',
+            'signature_request_id' => $d->signature_request_id ? (int) $d->signature_request_id : null,
+            'sig_state'            => $d->status,
+            'name'                 => $d->name ?: $d->code,
+            'reference'            => $d->code,
+            'authority'            => null,
+            'issue_date'           => $d->generated_on ? IlluminateSupportCarbon::parse($d->generated_on)->format('d-M-Y') : null,
+            'expiry'               => $d->valid_up_to ? IlluminateSupportCarbon::parse($d->valid_up_to)->format('d-M-Y') : '—',
+            'attachment'           => $d->original_name,
+            'attachment_url'       => $d->file_path ? file_url($d->file_path) : null,
+            'status'               => $status,
+            'doc_code'             => $d->code,
+            'requirement'          => 'M',
+            'certificate_url'      => null,
+            'is_agreement'         => str_contains($sub, 'agreement'),
+        ];
+    }
+
     private function buildVendorDeals(Model $owner, int $cid, array $companyDd, array $ownerKyc, array $tradeLicenses, array $tradeDocuments): array
     {
         $r = fn(array $rows) => [
