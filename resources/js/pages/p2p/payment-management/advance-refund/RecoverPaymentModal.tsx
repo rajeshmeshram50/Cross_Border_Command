@@ -4,6 +4,7 @@
 // list (Make PO Payment). Each row syncs its own refund to Zoho Books.
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { downloadFile } from '../../../../utils/downloadFile';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
@@ -74,12 +75,13 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
     }
   };
 
-  const remove = async (id: number, amount: number, inZoho: boolean) => {
+  const remove = async (id: number, amount: number) => {
     if (!refund) return;
     const ok = await confirm({
       title: 'Delete recovered payment?',
-      message: `${money(amount)} will be removed from ${refund.no} and counted as outstanding again.${inZoho ? ' Its refund is also removed from Zoho Books.' : ''}`,
+      message: `${money(amount)} will be removed from ${refund.no} and counted as outstanding again. This cannot be undone.`,
       confirmLabel: 'Delete',
+      cancelLabel: 'Keep It',
       tone: 'danger',
     });
     if (!ok) return;
@@ -209,7 +211,8 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
                         <span className="cpay-file__sep" />
                         <span className="cpay-fbtns">
                           <button type="button" className="cpay-fbtn cpay-fbtn--view" title="View proof of payment" onClick={() => openFile(r.fileUrl)}><IcoEye /></button>
-                          <a className="cpay-fbtn cpay-fbtn--dl" title="Download proof of payment" href={r.fileUrl} download={r.file}><IcoDownload /></a>
+                          <button type="button" className="cpay-fbtn cpay-fbtn--dl" title="Download proof of payment"
+                            disabled={!r.fileUrl} onClick={() => void downloadFile(r.fileUrl, r.file)}><IcoDownload /></button>
                         </span>
                       </span>
                     ) : <span className="cpay-noproof">Not attached</span>}
@@ -225,9 +228,12 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
                           {ICON_SYNC}<span>{busy === `zoho-${r.id}` ? 'Syncing…' : 'Zoho Sync'}</span>
                         </button>
                       )}
-                      <button type="button" className="cpay-act cpay-act--edit" title="Edit recovered payment" onClick={() => setEditing(r.id)}><IcoPencil /></button>
-                      <button type="button" className="cpay-act cpay-act--del" title="Delete recovered payment" disabled={busy === `del-${r.id}`}
-                        onClick={() => void remove(r.id, r.amount, r.zohoStatus === 'synced')}><IcoTrash /></button>
+                      <button type="button" className="cpay-act cpay-act--edit" disabled={r.zohoStatus === 'synced'}
+                        title={r.zohoStatus === 'synced' ? 'Refunded in Zoho Books — this entry can no longer be changed' : 'Edit recovered payment'}
+                        onClick={() => setEditing(r.id)}><IcoPencil /></button>
+                      <button type="button" className="cpay-act cpay-act--del" disabled={r.zohoStatus === 'synced' || busy === `del-${r.id}`}
+                        title={r.zohoStatus === 'synced' ? 'Refunded in Zoho Books — this entry can no longer be deleted' : 'Delete recovered payment'}
+                        onClick={() => void remove(r.id, r.amount)}><IcoTrash /></button>
                     </span>
                   </span>
                 </div>

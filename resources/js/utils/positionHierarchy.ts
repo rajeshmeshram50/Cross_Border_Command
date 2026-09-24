@@ -50,3 +50,8 @@ export const rankOutranks = (
   managerRank?: number | null,
   hireRank?: number | null,
 ): boolean => hireRank == null || managerRank == null || managerRank < hireRank;
+
+/** A designation's badge form: its parenthetical short name when it carries one
+    ("Head of Department (HOD)" → "HOD"), so a pill never has to truncate. */
+export const shortDesignation = (name: string): string =>
+  name.match(/\(([^)]{1,12})\)\s*$/)?.[1]?.trim() || name;

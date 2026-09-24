@@ -262,6 +262,7 @@ class PoRefundAdjustmentController extends Controller
         $user = $this->tenantUser($request);
         $adj = PoRefundAdjustment::findOrFail($id);
         $existing = $recId ? $adj->recoveries()->findOrFail($recId) : null;
+        if ($blocked = $this->zohoLockedRecovery($existing)) return $blocked;
 
         $data = $request->validate([
             'amount'         => 'required|numeric|min:1|max:9999999999999.99',
@@ -276,12 +277,6 @@ class PoRefundAdjustmentController extends Controller
             'proof.max'                      => 'Proof of payment must be 10 MB or smaller.',
             'proof.mimes'                    => 'Proof of payment must be a PDF or image file.',
         ]);
-
-        // A recovery already in Zoho is taken out there first, so the two never disagree.
-        if ($existing?->zoho_refund_id) {
-            try { $this->zoho->removeRecovery($existing); }
-            catch (\RuntimeException $e) { return $this->fail($e->getMessage()); }
-        }
 
         $file = $request->file('proof');
         $path = $file?->store("p2p/refund-recoveries/{$adj->id}", 'public');
@@ -319,8 +314,7 @@ class PoRefundAdjustmentController extends Controller
         $user = $this->tenantUser($request);
         $adj = PoRefundAdjustment::findOrFail($id);
         $row = $adj->recoveries()->findOrFail($rec);
-        try { $this->zoho->removeRecovery($row); }
-        catch (\RuntimeException $e) { return $this->fail($e->getMessage()); }
+        if ($blocked = $this->zohoLockedRecovery($row)) return $blocked;
 
         $this->inTransaction('delete the recovery', function () use ($adj, $row, $user) {
             $locked = PoRefundAdjustment::whereKey($adj->id)->lockForUpdate()->first();
@@ -329,6 +323,14 @@ class PoRefundAdjustmentController extends Controller
             $this->refreshTotals($locked);
         });
         return $this->ok($this->detail($adj->fresh()));
+    }
+
+    /** A refund already in Zoho Books cannot be pulled back, so the row is frozen here. */
+    private function zohoLockedRecovery(?PoRefundRecovery $r): ?JsonResponse
+    {
+        return $r && ($r->zoho_sync_status === 'synced' || !empty($r->zoho_refund_id))
+            ? $this->fail('This refund is already posted to Zoho Books — it can no longer be changed or deleted.')
+            : null;
     }
 
     /** POST /refund-adjustments/{id}/recoveries/{rec}/zoho-sync — post the refund to Zoho again. */

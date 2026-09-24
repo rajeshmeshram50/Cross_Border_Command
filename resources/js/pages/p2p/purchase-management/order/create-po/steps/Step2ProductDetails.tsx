@@ -125,7 +125,7 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
               : '. Raise a standalone PO for anything extra.'}
           </div>
         )}
-        <ProductTable rows={lines} products={products} taxMode={ctx.taxMode} onChange={patchLine} onRemove={removeLine}
+        <ProductTable rows={lines} products={products} taxMode={ctx.taxMode} ccy={draft.currency} onChange={patchLine} onRemove={removeLine}
           supplierSegments={draft.supplier?.segments ?? null}
           supplierProducts={draft.supplier?.mapped_product_ids ?? null}
           supplierRates={draft.supplier?.product_rates ?? null}
@@ -140,6 +140,7 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
             it sits beside the Grand Total. */}
         <ChargesSummary
           taxLabel={ctx.taxMode === 'export' ? 'Tax' : 'GST'}
+          ccy={draft.currency}
           base={base}
           gst={gst}
           charges={draft.charges}

@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { useAuth } from '../../../../../contexts/AuthContext';
+import { shortDesignation } from '../../../../../utils/positionHierarchy';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import type { OrderRow } from '../po-list/Order';
 import {
   Box, HeroRefChips, PAYMENT_TYPES, PoSummaryCards, STAT_ICONS, Stat, rowBreakdown,
-  ICON_PENCIL, ICON_X, money,
+  ICON_PENCIL, ICON_X, ccySymbol, moneyIn,
 } from './payment-shared';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './manage-payment-requests.css';
@@ -61,6 +62,9 @@ export default function RaisePaymentRequestModal({
   row, nextId, requested, approvedTotal, pendingAmt, pendingCount, approvedUnpaid,
   requestCount, available, complete, busy = false, onSubmit, onClose,
 }: RaiseRequestProps) {
+  // Amounts follow the PO's own currency.
+  const money = moneyIn(row.currency);
+  const sym = ccySymbol(row.currency);
   useScrollLock(true, '.mpr-card--raise');
 
   const cardRef = useRef<HTMLDivElement>(null);
@@ -81,9 +85,9 @@ export default function RaisePaymentRequestModal({
   const [approvers, setApprovers] = useState<GstApprover[]>([]);
   const [loadingApprovers, setLoadingApprovers] = useState(true);
   useEffect(() => {
-    poApprovalApi.approvers()
-      // A payment request cannot go to its own raiser.
-      .then((rows) => setApprovers(rows.filter((a) => a.id !== user?.id)))
+    poApprovalApi.approvers(true)
+      // A payment request may be sent to yourself (CS-422), so the raiser stays listed.
+      .then(setApprovers)
       .catch(() => setError('Could not load the approver list — please reopen this form.'))
       .finally(() => setLoadingApprovers(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -94,7 +98,7 @@ export default function RaisePaymentRequestModal({
     fullLabel: [a.name, a.department, a.designation].filter(Boolean).join(' · '),
     badges: [
       ...(a.department ? [{ text: a.department, tone: 'gray' as const }] : []),
-      ...(a.designation ? [{ text: a.designation, tone: 'violet' as const }] : []),
+      ...(a.designation ? [{ text: shortDesignation(a.designation), title: a.designation, tone: 'violet' as const }] : []),
     ],
   }));
   const [reason, setReason] = useState('');
@@ -133,7 +137,7 @@ export default function RaisePaymentRequestModal({
       return;
     }
     if (!amount) { setError('Enter a payment request amount before submitting.'); return; }
-    if (amount < 1) { setError('The payment request amount must be at least ₹1.'); return; }
+    if (amount < 1) { setError(`The payment request amount must be at least ${sym}1.`); return; }
     if (amount > available) {
       setError(`The requested amount exceeds the available balance of ${money(available)}.`);
       return;
@@ -203,7 +207,7 @@ export default function RaisePaymentRequestModal({
 
             <div className="rpr-formgrid">
               <div className="rpr-field">
-                <label htmlFor="rpr-type">Payment Type</label>
+                <label htmlFor="rpr-type">Payment Type<span className="spi-dt-req">*</span></label>
                 <MasterSelect
                   value={type}
                   placeholder="Select type…"
@@ -231,9 +235,9 @@ export default function RaisePaymentRequestModal({
               </div>
 
               <div className="rpr-field">
-                <label htmlFor="rpr-amt">Payment Request Amount</label>
+                <label htmlFor="rpr-amt">Payment Request Amount<span className="spi-dt-req">*</span></label>
                 <div className="rpr-amtwrap">
-                  <span className="rpr-amtwrap__cur">₹</span>
+                  <span className="rpr-amtwrap__cur">{sym}</span>
                   <input
                     id="rpr-amt"
                     type="text"
@@ -254,7 +258,7 @@ export default function RaisePaymentRequestModal({
               </div>
 
               <div className="rpr-field">
-                <label htmlFor="rpr-approver">Request To</label>
+                <label htmlFor="rpr-approver">Request To<span className="spi-dt-req">*</span></label>
                 <MasterSelect
                   value={approver}
                   placeholder={loadingApprovers ? "Loading…" : "Select approver…"}
@@ -268,7 +272,7 @@ export default function RaisePaymentRequestModal({
             <div className="rpr-field rpr-field--reason">
               <div className="rpr-field__hd">
                 <label htmlFor="rpr-reason">
-                  Payment Reason <span className="rpr-opt">Payment Note</span>
+                  Payment Reason<span className="spi-dt-req">*</span> <span className="rpr-opt">Payment Note</span>
                 </label>
                 <span className={`rpr-reasoncount${reason.length > REASON_MAX - 40 ? ' is-near' : ''}`}>
                   {reason.length} / {REASON_MAX}

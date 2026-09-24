@@ -132,7 +132,7 @@ class PurchaseOrderController extends Controller
         'shipment_order_id', 'proforma_invoice_id', 'procurement_request_id', 'procurement_request_code',
         'expected_delivery_date', 'grand_total', 'physical_inspection', 'inspection_status', 'cancel_reason', 'created_at',
         'taxable_total', 'total_cgst', 'total_sgst', 'total_igst', 'shipping_charges', 'packaging_charges', 'other_charges',
-        'tds_amount', 'paid_amount', 'balance_amount',
+        'tds_amount', 'paid_amount', 'balance_amount', 'currency_code',
         'cancel_stage', 'zoho_status', 'zoho_bill_id', 'zoho_bill_number', 'zoho_error',
     ];
 
@@ -946,6 +946,7 @@ class PurchaseOrderController extends Controller
             'current_step'        => $po->current_step,
             'po_type'             => $po->po_type,
             'document_type'       => $po->document_type,
+            'currency_code'       => $po->currency_code,
             'vendor_id'           => $po->vendor_id,
             'supplier_code'       => $po->vendor?->vendor_code,
             'supplier_name'       => $po->vendor ? ($po->vendor->legal_name ?: $po->vendor->company_name) : null,

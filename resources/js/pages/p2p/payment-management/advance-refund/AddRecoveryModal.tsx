@@ -2,6 +2,7 @@
 // Order module's Add New Payment popup body (apay-*) under the Manage Payment
 // Requests hero header (mpr-hero).
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { downloadFile } from '../../../../utils/downloadFile';
 import { createPortal } from 'react-dom';
 import { Chip, ICON_X, fmtDate, money, shortDate } from '../../purchase-management/order/manage-payment/payment-shared';
 import type { RecoveryBody } from '../../purchase-management/order/api/po-api';
@@ -123,7 +124,7 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
                     {fileUrl && (
                       <>
                         <a className="arf-proof__btn" href={fileUrl} target="_blank" rel="noopener noreferrer" title="View this proof">View</a>
-                        <a className="arf-proof__btn" href={fileUrl} download={fileName} title="Download this proof">Download</a>
+                        <button type="button" className="arf-proof__btn" onClick={() => void downloadFile(fileUrl, fileName)} title="Download this proof">Download</button>
                       </>
                     )}
                     <button type="button" className="arf-proof__btn" onClick={() => fileRef.current?.click()} title="Replace this proof">Reupload</button>

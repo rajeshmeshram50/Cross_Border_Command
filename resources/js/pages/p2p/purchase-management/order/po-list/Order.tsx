@@ -11,6 +11,7 @@ import Tooltip from '../../../../../components/ui/Tooltip';
 import { useServerList } from '../../../../../hooks/useServerList';
 import { useFitPageSize } from '../../../../../hooks/useFitPageSize';
 import { useToast } from '../../../../../contexts/ToastContext';
+import { ccyCode, ccySymbol } from '../../../../../utils/currency';
 const RecoverPaymentModal = lazy(() => import('../../../payment-management/advance-refund/RecoverPaymentModal'));
 // The PO form is a screen of its own: loaded only when one is being created,
 // so the list page doesn't carry it. The type import costs nothing at runtime.
@@ -216,6 +217,8 @@ export type OrderRow = {
   draft?: boolean;
   po: string; poDate: string; physicalInspection: boolean;
   type: PoType; docType: DocType;
+  /** The PO's own currency — payment screens print in it, not in ₹. */
+  currency?: string | null;
   shipment: string | null; shipmentDate: string;
   // An empty id renders as a dash (standalone PO, no procurement linked yet).
   opportunity: string; opportunityDate: string;
@@ -338,7 +341,11 @@ const PAYMENT_LABEL: Record<PaymentStatus, string> = {
 
 const seqOf = (id: string) => id.match(/(\d+)$/)?.[1] ?? id;
 
-const formatMoney = (value: number) => '₹' + value.toLocaleString('en-IN');
+// Every amount on a PO row prints in that PO's own currency, never a fixed ₹.
+const formatMoney = (value: number, ccy?: string | null) => {
+  const code = ccyCode(ccy);
+  return ccySymbol(code) + (value || 0).toLocaleString(code === 'INR' ? 'en-IN' : 'en-US');
+};
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -386,6 +393,7 @@ export function toOrderRow(r: PoListRow): OrderRow {
     physicalInspection: r.physical_inspection === 'yes',
     type: API_PO_TYPE[r.po_type ?? ''] ?? 'materials',
     docType: r.document_type === 'international' ? 'International' : 'Domestics',
+    currency: r.currency_code,
     shipment: r.link_type === 'with_shipment' ? (r.shipment_code ?? '') : null,
     shipmentDate: r.shipment_date ?? '',
     opportunity: r.opportunity_code ?? '', opportunityDate: r.pi_date ?? '',
@@ -448,14 +456,14 @@ function DocTop({ label, index, count, id }: { label: string; index: number; cou
   );
 }
 
-function InvoiceCells({ line, index, count }: { line: InvoiceLine; index: number; count: number }) {
+function InvoiceCells({ line, index, count, ccy }: { line: InvoiceLine; index: number; count: number; ccy?: string | null }) {
   return (
     <>
       <td className="ord-doc ord-doc--spi">
         <div className="ord-doc__card">
           <DocTop label="SPI" index={index} count={count} id={line.spi} />
           <div className="ord-doc__meta">
-            <span className="ord-doc__money">{formatMoney(line.amount)}</span>
+            <span className="ord-doc__money">{formatMoney(line.amount, ccy)}</span>
             <span className="ord-doc__dot">·</span>
             <span>{formatDate(line.spiDate)}</span>
           </div>
@@ -464,8 +472,8 @@ function InvoiceCells({ line, index, count }: { line: InvoiceLine; index: number
               <span className="ord-pill__dot" />{PAYMENT_LABEL[line.status]}
             </span>
             <span className="ord-doc__sub">
-              <b className="ord-doc__paid">{formatMoney(line.paid)}</b> paid ·{' '}
-              <b className="ord-doc__due">{formatMoney(line.due)}</b> due
+              <b className="ord-doc__paid">{formatMoney(line.paid, ccy)}</b> paid ·{' '}
+              <b className="ord-doc__due">{formatMoney(line.due, ccy)}</b> due
             </span>
           </div>
         </div>
@@ -569,13 +577,24 @@ function ZohoCell({ synced, cancelled = false, unpaid = false, onSync, error }: 
       </div>
     );
   }
+  // Cancelled with nothing released: no bill was ever raised, so nothing will go across.
+  if (cancelled && unpaid) {
+    return (
+      <div className="ord-statcell">
+        <span className="ord-status ord-status--na" title="This PO was cancelled before any payment — nothing to send to Zoho Books">
+          <span className="ord-status__dot" />Not Applicable
+        </span>
+      </div>
+    );
+  }
   return (
     <div className="ord-statcell">
       <span className="ord-status ord-status--bad" title={error}><span className="ord-status__dot" />Not Sync</span>
       {/* The bill carries the payments, so the first payment has to exist before anything goes across.
           A cancelled PO still syncs: the same press also sends its vendor credit and refunds. */}
-      {/* Clickable even with no payment: the press says why it can't go across yet. */}
-      <button type="button" className={`ord-btn ord-btn--zoho${busy ? ' is-syncing' : ''}`} disabled={busy} onClick={() => void go()}
+      {/* Clickable even when it can't go across: the press says why. */}
+      <button type="button" className={`ord-btn ord-btn--zoho${busy ? ' is-syncing' : ''}`}
+        disabled={busy} onClick={() => void go()}
         title={busy ? 'Sending to Zoho Books…' : unpaid
           ? 'Record the first payment on this PO before syncing it to Zoho Books'
           : error || (cancelled
@@ -618,8 +637,8 @@ function PaymentCell({ row, onManage }: { row: OrderRow; onManage: (row: OrderRo
 
   const noteText = !row.paymentNote ? ''
     : row.paymentNote.kind === 'ready'
-      ? `${formatMoney(row.paymentNote.amount)} approved · ready to pay`
-      : `${formatMoney(row.paymentNote.amount)} awaiting approval`;
+      ? `${formatMoney(row.paymentNote.amount, row.currency)} approved · ready to pay`
+      : `${formatMoney(row.paymentNote.amount, row.currency)} awaiting approval`;
 
   return (
     <div className="ord-paycell">
@@ -636,8 +655,8 @@ function PaymentCell({ row, onManage }: { row: OrderRow; onManage: (row: OrderRo
           </div>
         </div>
         <div className="ord-progress__meta">
-          <span className="ord-progress__paid"><span className="ord-progress__mdot" />{formatMoney(row.paid)} paid</span>
-          <span className="ord-progress__due"><span className="ord-progress__mdot" />{formatMoney(row.balance)} due</span>
+          <span className="ord-progress__paid"><span className="ord-progress__mdot" />{formatMoney(row.paid, row.currency)} paid</span>
+          <span className="ord-progress__due"><span className="ord-progress__mdot" />{formatMoney(row.balance, row.currency)} due</span>
         </div>
 
         {row.paymentNote && (
@@ -672,7 +691,7 @@ function PaymentCell({ row, onManage }: { row: OrderRow; onManage: (row: OrderRo
    note, what went out, and what is coming back. The shortfall is only named
    when the two don't match. The progress bar belongs to Payment Recovery
    Status, which is where the movement actually happens. */
-function AdrCell({ adr }: { adr?: AdvanceRefund }) {
+function AdrCell({ adr, ccy }: { adr?: AdvanceRefund; ccy?: string | null }) {
   if (!adr) return <span className="ord-dash">—</span>;
 
   const notRefunded = Math.max(0, adr.paid - adr.credited);
@@ -687,9 +706,9 @@ function AdrCell({ adr }: { adr?: AdvanceRefund }) {
       </button>
       <div className="ord-adr__dt">{formatDate(adr.date)}</div>
       <div className="ord-adr__fig">
-        <AdrRow label="Paid" value={formatMoney(adr.paid)} />
-        <AdrRow label="To Be Refunded" value={formatMoney(adr.credited)} tone="refund" />
-        {notRefunded > 0 && <AdrRow label="Not Refunded" value={formatMoney(notRefunded)} tone="none" />}
+        <AdrRow label="Paid" value={formatMoney(adr.paid, ccy)} />
+        <AdrRow label="To Be Refunded" value={formatMoney(adr.credited, ccy)} tone="refund" />
+        {notRefunded > 0 && <AdrRow label="Not Refunded" value={formatMoney(notRefunded, ccy)} tone="none" />}
       </div>
     </div>
   );
@@ -750,8 +769,8 @@ function RecoveryCell({ row, onRecover }: { row: OrderRow; onRecover?: (row: Ord
 
   const tip = !g.noteRaised ? 'Raise the supplier credit note before recording any recovery'
     : g.complete ? `Fully recovered under ${g.noteNo} — open the record of ${entryWord(g.entries)}`
-      : g.started ? `${formatMoney(g.pending)} still to recover from the supplier`
-        : `Nothing recovered yet — ${formatMoney(g.target)} is recoverable under ${g.noteNo}`;
+      : g.started ? `${formatMoney(g.pending, row.currency)} still to recover from the supplier`
+        : `Nothing recovered yet — ${formatMoney(g.target, row.currency)} is recoverable under ${g.noteNo}`;
 
   const button = (
     <button
@@ -777,7 +796,7 @@ function RecoveryCell({ row, onRecover }: { row: OrderRow; onRecover?: (row: Ord
           <div className="ord-progress__top">
             <span className="ord-pill ord-pill--await"><span className="ord-pill__dot" />Awaiting Credit Note</span>
           </div>
-          <span className="ord-recnote" title={`The credit note sets how much of ${formatMoney(g.paid)} paid out is recoverable`}>
+          <span className="ord-recnote" title={`The credit note sets how much of ${formatMoney(g.paid, row.currency)} paid out is recoverable`}>
             Credit note sets the recoverable amount
           </span>
         </div>
@@ -789,7 +808,7 @@ function RecoveryCell({ row, onRecover }: { row: OrderRow; onRecover?: (row: Ord
   // Reuses Payment Progress's three states: full / partial / pending.
   const status: PaymentStatus = g.complete ? 'full' : g.started ? 'partial' : 'pending';
   const label = g.complete ? 'Fully Recovered' : g.started ? 'Partially Recovered' : 'Recovery Not Started';
-  const noteTitle = `${formatMoney(g.target)} recoverable under ${g.noteNo}`
+  const noteTitle = `${formatMoney(g.target, row.currency)} recoverable under ${g.noteNo}`
     + (g.entries ? ` · ${entryWord(g.entries)}` : '');
 
   return (
@@ -805,8 +824,8 @@ function RecoveryCell({ row, onRecover }: { row: OrderRow; onRecover?: (row: Ord
           </div>
         </div>
         <div className="ord-progress__meta">
-          <span className="ord-progress__paid"><span className="ord-progress__mdot" />{formatMoney(g.recovered)} recovered</span>
-          <span className="ord-progress__due"><span className="ord-progress__mdot" />{formatMoney(g.pending)} pending</span>
+          <span className="ord-progress__paid"><span className="ord-progress__mdot" />{formatMoney(g.recovered, row.currency)} recovered</span>
+          <span className="ord-progress__due"><span className="ord-progress__mdot" />{formatMoney(g.pending, row.currency)} pending</span>
         </div>
         <span className={`ord-paynote ord-paynote--${g.complete ? 'ready' : 'waiting'}`} title={noteTitle}>
           {ICON_NOTE}
@@ -953,17 +972,17 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
 
                 <PoCell span={span}><span className="ord-edd">{row.expectedDelivery ? formatDate(row.expectedDelivery) : '—'}</span></PoCell>
 
-                <PoCell span={span}><span className="ord-amt">{formatMoney(row.total)}</span></PoCell>
-                <PoCell span={span}><span className="ord-amt ord-amt--net">{formatMoney(row.net)}</span></PoCell>
-                <PoCell span={span}><span className="ord-amt ord-amt--paid">{formatMoney(row.paid)}</span></PoCell>
+                <PoCell span={span}><span className="ord-amt">{formatMoney(row.total, row.currency)}</span></PoCell>
+                <PoCell span={span}><span className="ord-amt ord-amt--net">{formatMoney(row.net, row.currency)}</span></PoCell>
+                <PoCell span={span}><span className="ord-amt ord-amt--paid">{formatMoney(row.paid, row.currency)}</span></PoCell>
                 <PoCell span={span} groupEnd>
-                  <span className="ord-amt ord-amt--bal">{formatMoney(row.balance)}</span>
+                  <span className="ord-amt ord-amt--bal">{formatMoney(row.balance, row.currency)}</span>
                 </PoCell>
               </>
             )}
 
             {line ? (
-              <InvoiceCells line={line} index={lineIndex} count={span} />
+              <InvoiceCells line={line} index={lineIndex} count={span} ccy={row.currency} />
             ) : (
               <>
                 <td className="ord-doc ord-doc--spi"><span className="ord-dash">—</span></td>
@@ -979,7 +998,7 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
                   <InspectionCell required={row.physicalInspection} done={inspected} cancelled={row.cancelled} onOpen={() => onInspect(row)} />
                 </PoCell>
                 <PoCell span={span}><PaymentCell row={row} onManage={onManage} /></PoCell>
-                <PoCell span={span}><AdrCell adr={row.adr} /></PoCell>
+                <PoCell span={span}><AdrCell adr={row.adr} ccy={row.currency} /></PoCell>
                 <PoCell span={span}><RecoveryCell row={row} onRecover={onRecover} /></PoCell>
                 <PoCell span={span}><StatusBadge row={row} /></PoCell>
                 {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={viewOnlyReason(row)} onEdit={() => onEdit?.(row)} onCancel={onCancel && (() => onCancel(row))} onVault={onVault && (() => onVault(row))} /></PoCell>}
@@ -1063,10 +1082,10 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, 
       </dl>
 
       <dl className="ord-card__grid">
-        <div><dt>Total PO Amount</dt><dd><span className="ord-amt">{formatMoney(row.total)}</span></dd></div>
-        <div><dt>Net Payable</dt><dd><span className="ord-amt ord-amt--net">{formatMoney(row.net)}</span></dd></div>
-        <div><dt>Total Paid</dt><dd><span className="ord-amt ord-amt--paid">{formatMoney(row.paid)}</span></dd></div>
-        <div><dt>Balance</dt><dd><span className="ord-amt ord-amt--bal">{formatMoney(row.balance)}</span></dd></div>
+        <div><dt>Total PO Amount</dt><dd><span className="ord-amt">{formatMoney(row.total, row.currency)}</span></dd></div>
+        <div><dt>Net Payable</dt><dd><span className="ord-amt ord-amt--net">{formatMoney(row.net, row.currency)}</span></dd></div>
+        <div><dt>Total Paid</dt><dd><span className="ord-amt ord-amt--paid">{formatMoney(row.paid, row.currency)}</span></dd></div>
+        <div><dt>Balance</dt><dd><span className="ord-amt ord-amt--bal">{formatMoney(row.balance, row.currency)}</span></dd></div>
       </dl>
 
       <div className="ord-card__section">
@@ -1076,14 +1095,14 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, 
           <div className="ord-card__invoice" key={line.spi}>
             <DocTop label="SPI" index={i} count={count} id={line.spi} />
             <div className="ord-doc__meta">
-              <span className="ord-doc__money">{formatMoney(line.amount)}</span>
+              <span className="ord-doc__money">{formatMoney(line.amount, row.currency)}</span>
               <span className="ord-doc__dot">·</span>
               <span>{formatDate(line.spiDate)}</span>
             </div>
             <div className="ord-doc__foot">
               <span className={`ord-pill ord-pill--${line.status}`}><span className="ord-pill__dot" />{PAYMENT_LABEL[line.status]}</span>
               <span className="ord-doc__sub">
-                <b className="ord-doc__paid">{formatMoney(line.paid)}</b> paid · <b className="ord-doc__due">{formatMoney(line.due)}</b> due
+                <b className="ord-doc__paid">{formatMoney(line.paid, row.currency)}</b> paid · <b className="ord-doc__due">{formatMoney(line.due, row.currency)}</b> due
               </span>
             </div>
             <div className="ord-card__chain">
@@ -1120,7 +1139,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, 
       {row.adr && (
         <div className="ord-card__section">
           <span className="ord-card__label">Advance Receipt Refund Adjustment</span>
-          <AdrCell adr={row.adr} />
+          <AdrCell adr={row.adr} ccy={row.currency} />
         </div>
       )}
 
@@ -1180,6 +1199,8 @@ export default function Order() {
   const onZoho = async (row: OrderRow) => {
     if (!row.id || syncingId) return;
     if (row.draft) { toast.info('Submit the PO first', `${row.po} is still a draft — submit it before syncing to Zoho Books.`); return; }
+    /* A cancelled PO still syncs from here: the press sends the whole chain —
+       PO, bill, payments, then the vendor credit and each refund. */
     // The Zoho bill is what payments are posted against, so one has to exist first.
     if (row.paid <= 0) {
       toast.warning('No payment found against this PO', `Nothing has been released on ${row.po} yet — record a payment, then sync.`);
@@ -1348,7 +1369,7 @@ export default function Order() {
       {cancelRow && (
         <Suspense fallback={null}>
           <CancelPoModal
-            target={{ po: cancelRow.po, supplier: cancelRow.supplier, balance: cancelRow.balance, paid: cancelRow.paid }}
+            target={{ po: cancelRow.po, supplier: cancelRow.supplier, balance: cancelRow.balance, paid: cancelRow.paid, currency: cancelRow.currency }}
             busy={cancelling}
             onClose={() => { if (!cancelling) setCancelRow(null); }}
             onConfirm={() => { void confirmCancel(); }}

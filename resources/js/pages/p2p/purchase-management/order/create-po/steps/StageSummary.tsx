@@ -12,9 +12,10 @@ import { IcoCheck, IcoChevron, IcoHistory } from '../../shared/icons';
 
 const dash = (x: string) => (x && x.trim() !== '' ? x : '— Not provided');
 const v = (x: string | null | undefined) => x ?? '';
-const money = (n: number) => '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { money2In } from '../../../../../../utils/currency';
 
 export default function StageSummary({ draft, ctx, upto }: { draft: PoDraft; ctx: StepCtx; upto: 1 | 2 | 3 }) {
+  const money = money2In(draft.currency);
   const [open, setOpen] = useState(false);
   const sup = draft.supplier;
   const legal = draft.legal;
@@ -138,7 +139,7 @@ export default function StageSummary({ draft, ctx, upto }: { draft: PoDraft; ctx
             <div className="spi-dt-sumstep-body">
               <div>
                 <div className="spi-dt-rogroup-hd">Product Details</div>
-                <ProductTable rows={draft.lines} products={products} taxMode={ctx.taxMode} onChange={() => {}} readOnly standalone={ctx.detail?.link_type === 'standalone'} />
+                <ProductTable rows={draft.lines} products={products} taxMode={ctx.taxMode} ccy={draft.currency} onChange={() => {}} readOnly standalone={ctx.detail?.link_type === 'standalone'} />
               </div>
 
               <div>

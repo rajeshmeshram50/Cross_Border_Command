@@ -75,6 +75,8 @@ export type PoListRow = PoLinkRefs & {
   link_type: LinkType | null; shipment_order_id: number | null;
   procurement_request_id: number | null; procurement_request_code: string | null;
   expected_delivery_date: string | null; grand_total: number;
+  /** The PO's own currency; every money figure on its screens follows it. */
+  currency_code: string | null;
   /** Base (without GST), GST and extra charges — the split the payment screens show. */
   taxable_total: number; gst_total: number; charges_total: number;
   /** Stored payment position, rebuilt on every payment. */
@@ -512,8 +514,9 @@ export type GstApprovalReview = {
 
 export const poApprovalApi = {
   /** Users the request can be sent to. */
-  approvers: () =>
-    call('GST approvers', () => api.get('/p2p/orders/gst-approvals/approvers'), dataOf<GstApprover[]>),
+  /** `self` lists the caller too — a payment request may be raised to yourself. */
+  approvers: (self = false) =>
+    call('GST approvers', () => api.get('/p2p/orders/gst-approvals/approvers', { params: self ? { include_self: 1 } : undefined }), dataOf<GstApprover[]>),
 
   /** Raised from Step 03 when the supplier's GST return is overdue.
    *  On a re-send after a rejection the server keeps the same approver, so

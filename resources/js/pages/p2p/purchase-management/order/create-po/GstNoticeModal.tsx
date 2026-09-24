@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { formatDmy } from '../../../../../utils/formatDmy';
+import { shortDesignation } from '../../../../../utils/positionHierarchy';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import { IcoShieldAlert, IcoUser } from '../shared/icons';
 import { PoApiError, poApprovalApi, type GstApprover, type PoDetail } from '../api/po-api';
@@ -89,7 +90,7 @@ export default function GstNoticeModal({ notice, onClose, poId, approval, onSent
   const options = approvers.map((a) => {
     const badges = [
       ...(a.department ? [{ text: a.department, tone: 'gray' as const }] : []),
-      ...(a.designation ? [{ text: a.designation, tone: 'violet' as const }] : []),
+      ...(a.designation ? [{ text: shortDesignation(a.designation), title: a.designation, tone: 'violet' as const }] : []),
       ...(!a.employee_id && a.user_type === 'client_admin' ? [{ text: 'Company admin', tone: 'green' as const }] : []),
     ];
     return {

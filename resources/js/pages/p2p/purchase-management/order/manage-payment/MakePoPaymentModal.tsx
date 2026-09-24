@@ -1,9 +1,11 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
+import { useConfirm } from '../../../../../contexts/ConfirmContext';
+import { downloadFile } from '../../../../../utils/downloadFile';
 import type { OrderRow } from '../po-list/Order';
 import {
-  Box, HeroRefChips, ICON_X, PoSummaryCards, TdsStrip, initials, money, rowBreakdown, shortDate,
+  Box, HeroRefChips, ICON_X, PoSummaryCards, TdsStrip, initials, moneyIn, rowBreakdown, shortDate,
 } from './payment-shared';
 import { FitTip } from '../create-po/form-fields';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
@@ -38,6 +40,8 @@ export type MakePoPaymentProps = {
   approved: number;
   approver: string;
   approverRole: string;
+  /** The request's real approval status — a pending one opens read-only. */
+  requestStatus?: 'approved' | 'pending' | 'rejected';
   alreadyPaid: number;
   payments: ReleasePayment[];
   tds: number;
@@ -89,6 +93,13 @@ const ICON_DEL = (
   </svg>
 );
 
+/** Same wording and colours as the request list's own status chip. */
+const REQ_STATUS = {
+  approved: { cls: 'mpr-st--done', label: 'Approved' },
+  pending: { cls: 'mpr-st--wait', label: 'Awaiting Approval' },
+  rejected: { cls: 'mpr-st--stop', label: 'Declined' },
+} as const;
+
 function Field({ label, mod, children }: { label: string; mod?: string; children: React.ReactNode }) {
   return (
     <div className={`cpay-f${mod ? ' ' + mod : ''}`}>
@@ -100,9 +111,24 @@ function Field({ label, mod, children }: { label: string; mod?: string; children
 
 export default function MakePoPaymentModal({
   row, requestId, requestDate, requestType, requestedAmount, approved, approver, approverRole,
-  alreadyPaid, payments, tds, onRecord, onUpdate, onDelete, onZohoSync, onOpenTds, onClose,
+  alreadyPaid, payments, tds, requestStatus = 'approved', onRecord, onUpdate, onDelete, onZohoSync, onOpenTds, onClose,
 }: MakePoPaymentProps) {
   useScrollLock(true, '.mpr-card--pay');
+  // Every figure on this screen is in the PO's own currency.
+  const money = moneyIn(row.currency);
+  const confirm = useConfirm();
+
+  // A payment already posted to Zoho Books cannot be pulled back, so it cannot be deleted here.
+  const askDelete = async (index: number, amount: number) => {
+    const ok = await confirm({
+      title: 'Delete this payment?',
+      message: `The ${money(amount)} released on this request will be removed and returned to the PO balance. This cannot be undone.`,
+      tone: 'danger',
+      confirmLabel: 'Delete Payment',
+      cancelLabel: 'Keep It',
+    });
+    if (ok) onDelete(index);
+  };
 
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => { cardRef.current?.focus(); }, []);
@@ -125,6 +151,7 @@ export default function MakePoPaymentModal({
 
   const closeForm = () => { setAdding(false); setEditing(null); };
 
+  const approvedRequest = requestStatus === 'approved';
   const released = payments.reduce((s, p) => s + (p.amount || 0), 0);
   const paidOnRequest = alreadyPaid + released;
   const room = Math.max(0, approved - paidOnRequest);
@@ -147,6 +174,7 @@ export default function MakePoPaymentModal({
             spiCount={row.invoices.length}
             approved={approved}
             paid={paidOnRequest}
+            ccy={row.currency}
             initial={editing !== null ? payments[editing] : undefined}
             onClose={closeForm}
             onSave={async (p) => {
@@ -166,7 +194,7 @@ export default function MakePoPaymentModal({
               <span className="mpr-hero__title" id="cpay-title">Payment Against Request ID</span>
               <span className="mpr-hero__idpill">{requestId}</span>
             </div>
-            <div className="mpr-hero__sub">Release the approved amount on this request</div>
+            <div className="mpr-hero__sub">{approvedRequest ? 'Release the approved amount on this request' : 'Read-only — this request has not been approved'}</div>
           </div>
           <HeroRefChips row={row} />
           <button type="button" className="mpr-hero__close" onClick={onClose} aria-label="Close">{ICON_X}</button>
@@ -195,11 +223,12 @@ export default function MakePoPaymentModal({
                 </span>
               </Field>
               <Field label="Request Approval Status" mod="cpay-f--st">
-                <span className="mpr-st mpr-st--done"><span className="mpr-st__dot" />Approved</span>
+                <span className={`mpr-st ${REQ_STATUS[requestStatus].cls}`}>
+                  <span className="mpr-st__dot" />{REQ_STATUS[requestStatus].label}
+                </span>
               </Field>
               <Field label="Approved Amount" mod="cpay-f--hi">
-                {money(approved)}
-                {ICON_TICK}
+                {requestStatus === 'pending' ? <span className="cpay-none">—</span> : <>{money(approved)}{ICON_TICK}</>}
               </Field>
             </div>
           </Box>
@@ -209,7 +238,8 @@ export default function MakePoPaymentModal({
             title="PO Payment Details Summary"
             sub="How this PO’s value is made up and where it stands today · read-only"
             headerExtra={!row.cancelled && (
-              <TdsStrip tds={tds} total={row.total} supplier={row.supplier} onOpen={onOpenTds} locked={row.paid > 0} />
+              <TdsStrip tds={tds} total={row.total} supplier={row.supplier} onOpen={onOpenTds} locked={row.paid > 0}
+                ccy={row.currency} international={row.docType === 'International'} />
             )}
           >
             <PoSummaryCards
@@ -219,6 +249,7 @@ export default function MakePoPaymentModal({
               net={row.net}
               complete={poBalance <= 0}
               split={rowBreakdown(row)}
+              ccy={row.currency}
             />
           </Box>
 
@@ -230,11 +261,15 @@ export default function MakePoPaymentModal({
               <button
                 type="button"
                 className="cpay-add"
-                disabled={room <= 0}
+                disabled={room <= 0 || !approvedRequest}
                 onClick={() => setAdding(true)}
-                title={room > 0
-                  ? 'Record a payment against this request'
-                  : 'Fully released — nothing left approved on this request'}
+                title={!approvedRequest
+                  ? (requestStatus === 'pending'
+                    ? 'This request is still awaiting approval — pay once it is approved'
+                    : 'This request was declined — nothing can be paid against it')
+                  : room > 0
+                    ? 'Record a payment against this request'
+                    : 'Fully released — nothing left approved on this request'}
               >
                 {ICON_PLUS}<span>Add New Payment</span>
               </button>
@@ -290,8 +325,8 @@ export default function MakePoPaymentModal({
                         <span className="cpay-fbtns">
                           <button type="button" className="cpay-fbtn cpay-fbtn--view" title="View proof of payment" disabled={!p.fileUrl}
                             onClick={() => p.fileUrl && window.open(p.fileUrl, '_blank', 'noopener')}>{ICON_EYE}</button>
-                          <a className="cpay-fbtn cpay-fbtn--dl" title="Download proof of payment" href={p.fileUrl ?? undefined}
-                            download={p.file} target="_blank" rel="noopener noreferrer">{ICON_DL}</a>
+                          <button type="button" className="cpay-fbtn cpay-fbtn--dl" title="Download proof of payment"
+                            disabled={!p.fileUrl} onClick={() => void downloadFile(p.fileUrl, p.file)}>{ICON_DL}</button>
                         </span>
                       </span>
                     ) : <span className="cpay-noproof">Not attached</span>}
@@ -323,7 +358,7 @@ export default function MakePoPaymentModal({
                         onClick={() => setEditing(i)}>{ICON_EDIT}</button>
                       <button type="button" className="cpay-act cpay-act--del" disabled={p.zohoSynced}
                         title={p.zohoSynced ? 'Posted to Zoho Books — this payment can no longer be deleted' : 'Delete payment'}
-                        onClick={() => { if (window.confirm(`Delete the ${money(p.amount)} payment? It returns to the balance.`)) onDelete(i); }}>
+                        onClick={() => void askDelete(i, p.amount)}>
                         {ICON_DEL}
                       </button>
                     </span>

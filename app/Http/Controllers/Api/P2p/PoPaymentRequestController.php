@@ -143,7 +143,7 @@ class PoPaymentRequestController extends Controller
             'payment_type.required'     => 'Select a payment type.',
             'percentage.max'            => 'Payment percentage cannot be more than 100%.',
             'requested_amount.required' => 'Enter the payment request amount.',
-            'requested_amount.min'      => 'The payment request amount must be at least ₹1.',
+            'requested_amount.min'      => 'The payment request amount must be at least 1.',
             'reason.required'           => 'Enter the reason for this payment.',
             'requested_to.required'     => 'Select who this request goes to.',
         ]);
@@ -160,7 +160,6 @@ class PoPaymentRequestController extends Controller
         if ($branch && (int) $approver->branch_id !== (int) $branch) {
             return $this->fail("Choose someone from this PO's branch.", 422, ['requested_to' => ["Not in this PO's branch."]]);
         }
-        if ((int) $approver->id === (int) $user->id) return $this->fail('You cannot approve your own request — choose someone else.', 422, ['requested_to' => ['Choose someone else.']]);
 
         $amount = round((float) $data['requested_amount'], 2);
         $row = $this->inTransaction('raise the payment request', function () use ($order, $user, $data, $amount) {
@@ -250,7 +249,7 @@ class PoPaymentRequestController extends Controller
             'proof'             => 'nullable|' . self::PROOF_RULE,
         ], [
             'amount.required'                 => 'Enter the amount paid.',
-            'amount.min'                      => 'The payment amount must be at least ₹1.',
+            'amount.min'                      => 'The payment amount must be at least 1.',
             'utr_cheque_number.regex'         => 'UTR / cheque number must be 6–22 letters or digits.',
             'utr_cheque_date.before_or_equal' => 'UTR / cheque date cannot be in the future.',
             'proof.max'                       => 'Proof of payment must be 10 MB or smaller.',
@@ -444,7 +443,7 @@ class PoPaymentRequestController extends Controller
             'note'            => ['required_if:decision,rejected', 'nullable', 'string', $request->input('decision') === PoPaymentRequest::STATUS_REJECTED ? 'max:300' : 'max:400'],
         ], [
             'approved_amount.required_if' => 'Enter the amount to approve.',
-            'approved_amount.min'         => 'The approved amount must be at least ₹1.',
+            'approved_amount.min'         => 'The approved amount must be at least 1.',
             'note.required_if'            => 'Give a reason for declining.',
         ]);
 

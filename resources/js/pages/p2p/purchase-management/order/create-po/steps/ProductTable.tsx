@@ -10,7 +10,7 @@ import type { TaxMode } from '../../api/po-api';
 import { inactiveProduct, piSegmentMismatch, segmentMismatch, type LineErrors } from '../validation';
 import { IcoPencil, IcoPlus, IcoTrash } from '../../shared/icons';
 import { useToast } from '../../../../../../contexts/ToastContext';
-import { formatProductCode } from '../../../../../../utils/formatProductCode';
+import { formatProductCode, productNameWithoutCode } from '../../../../../../utils/formatProductCode';
 // The Product Management detail view, opened by "Read more" on a description.
 const InspectionProductView = lazy(() => import('../../physical-inspection/InspectionProductView'));
 // The product master's Add / Edit wizard, opened by the cell's two buttons.
@@ -82,7 +82,10 @@ const rateFor = (p: ProductOpt, rates?: Record<number, number> | null) => {
   return own != null && own > 0 ? own : p.price;
 };
 
-const money = (n: number) => '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+import { ccyCode, ccySymbol } from '../../../../../../utils/currency';
+
+const moneyIn2 = (ccy?: string | null) => (n: number) =>
+  ccySymbol(ccy) + n.toLocaleString(ccyCode(ccy) === 'INR' ? 'en-IN' : 'en-US', { maximumFractionDigits: 2 });
 
 /* No visible limit: long values end in "…" and show in full on hover
    (FitText / FitInput). The 12-digit ceiling is only a safety net — past ~15
@@ -121,9 +124,12 @@ type Props = {
   supplierRates?: Record<number, number> | null;
   /** The summary on later steps shows the same table with plain values. */
   readOnly?: boolean;
+  /** The PO's own currency — an import prints its own, not ₹. */
+  ccy?: string | null;
 };
 
-export default function ProductTable({ rows, products, taxMode, onChange, onRemove, onProductsChanged, errors = {}, standalone = false, supplierSegments = null, supplierProducts = null, supplierRates = null, readOnly }: Props) {
+export default function ProductTable({ rows, products, taxMode, onChange, onRemove, onProductsChanged, errors = {}, standalone = false, supplierSegments = null, supplierProducts = null, supplierRates = null, readOnly, ccy }: Props) {
+  const money = moneyIn2(ccy);
   const options = useMemo(() => products.map(productLabel), [products]);
   // Every product is listed with its segment; only those whose segment — or the product itself —
   // is mapped to the supplier can be picked. The rest are locked with the reason.
@@ -185,7 +191,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
   const withPi = !standalone;
   // Inter-state is one IGST pair; intra-state splits into CGST + SGST.
   const taxCols = inter ? 1 : 2;
-  const colCount = 1 + (withPi ? 1 : 0) + 2 + (withPi ? 3 : 1) + 1 + taxCols + taxCols + 3;
+  const colCount = 1 + (withPi ? 1 : 0) + 2 + (withPi ? 3 : 1) + 1 + taxCols + taxCols + 1;
   // Read-only recaps show only what is ordered.
   const shown = readOnly ? rows.filter((r) => r.qtyPo > 0) : rows;
   // Every line this supplier can't be given, named once above the table instead of a note per row.
@@ -294,9 +300,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             {inter
               ? <th className="cpd-th-amt cpd-th-amt--tax">{exportPo ? 'Tax Amount' : 'IGST Amount'}</th>
               : <><th className="cpd-th-amt cpd-th-amt--tax">CGST Amount</th><th className="cpd-th-amt cpd-th-amt--tax">SGST Amount</th></>}
-            <th className="cpd-th-amt">Product Cost<span className="cpd-th-sub cpd-th-sub--wo">{exportPo ? 'Without Tax' : 'Without GST'}</span></th>
-            <th className="cpd-th-amt">{exportPo ? 'Total Tax Amount' : 'Total GST Amount'}</th>
-            <th className="cpd-th-amt cpd-th-final">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">{exportPo ? 'With Tax' : 'With GST'}</span></th>
+            <th className="cpd-th-amt cpd-th-final">Product Cost</th>
           </tr>
         </thead>
 
@@ -308,7 +312,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             const line = lines[i];
             const po = productOf(row, products);
             const index = rows.indexOf(row);
-            const poName = po?.name ?? (row.pi && row.productId === row.pi.product_id ? row.pi.product_name : '') ?? '';
+            const poName = po?.name ?? (row.pi && row.productId === row.pi.product_id ? productNameWithoutCode(row.pi.product_name, row.pi.product_code) : '') ?? '';
             const hsn = po?.hsn || row.pi?.hsn_code || '—';
             const desc = po?.description || row.pi?.description || '';
             const rowErr = readOnly ? {} : (errors[row.key] ?? {});
@@ -341,7 +345,9 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                     <div className="cpd-prod">
                       {row.pi ? (
                         <>
-                          <div className="cpd-prod__nm cpd-prod__nm--clamp" title={row.pi.product_name ?? undefined}>{row.pi.product_name}</div>
+                          <div className="cpd-prod__nm cpd-prod__nm--clamp" title={row.pi.product_name ?? undefined}>
+                            {productNameWithoutCode(row.pi.product_name, row.pi.product_code)}
+                          </div>
                           <div className="cpd-prod__meta">
                             {row.pi.product_code && <span className="cpd-code">{formatProductCode(row.pi.product_code)}</span>}
                             <span className="cpd-kv">HSN <b>{row.pi.hsn_code || '—'}</b></span>
@@ -455,9 +461,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                 {inter
                   ? <td><FitText text={money(line.igstAmt)} /></td>
                   : <><td><FitText text={money(line.cgstAmt)} /></td><td><FitText text={money(line.sgstAmt)} /></td></>}
-                <td><FitText text={money(line.base)} /></td>
-                <td className="cpd-gst"><FitText text={money(line.gstAmt)} /></td>
-                <td className="cpd-final"><FitText text={money(line.withGst)} /></td>
+                <td className="cpd-final"><FitText text={money(line.base)} /></td>
               </tr>
               </Fragment>
             );
@@ -476,9 +480,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             {inter
               ? <td><FitText text={money(totals.igst)} /></td>
               : <><td><FitText text={money(totals.cgst)} /></td><td><FitText text={money(totals.sgst)} /></td></>}
-            <td><FitText text={money(totals.base)} /></td>
-            <td><FitText text={money(totals.gst)} /></td>
-            <td className="cpd-final"><FitText text={money(totals.withGst)} /></td>
+            <td className="cpd-final"><FitText text={money(totals.base)} /></td>
           </tr>
         </tfoot>
       </table>

@@ -46,6 +46,7 @@ class PoZohoService
     public function syncAll(PurchaseOrder $po, ?int $userId): array
     {
         $this->assertConfigured();
+        $this->preflight($po);
         $out = $this->syncPo($po, $userId) + ['credit' => null, 'refunds' => 0];
 
         // Scoped to the PO's own tenant and branch, live rows only — the sync runs
@@ -68,6 +69,57 @@ class PoZohoService
             $out['refunds']++;
         }
         return $out;
+    }
+
+    /**
+     * Everything that can be checked BEFORE a single document is written to Zoho.
+     * Zoho cannot be rolled back, so a run that would fail halfway — a missing tax
+     * rate, no bank account — is stopped here instead, with every problem named at
+     * once rather than one refusal per press. Nothing in this method writes.
+     */
+    public function preflight(PurchaseOrder $po): void
+    {
+        $this->assertConfigured();
+        if (empty($po->zoho_bill_id)) $this->assertSyncable($po);
+
+        $problems = [];
+        $international = $po->document_type === 'international';
+        $inter = false;
+        try {
+            $inter = (bool) $this->context($po)['inter_state'];
+        } catch (\Throwable $e) {
+            $problems[] = $this->clean($e);
+        }
+
+        // Every GST rate the lines carry has to exist in Zoho, on the right side.
+        if (!$international && !$problems) {
+            $rates = $po->items()->get()->pluck('gst_pct')->map(fn ($v) => round((float) $v, 2))
+                ->filter(fn ($v) => $v > 0)->unique()->values();
+            foreach ($rates as $rate) {
+                try { $this->books->resolveTaxId($rate, $inter); }
+                catch (\Throwable $e) { $problems[] = $this->clean($e); }
+            }
+        }
+
+        $adj = PoRefundAdjustment::withoutGlobalScope('tenant')
+            ->where('client_id', $po->client_id)->where('purchase_order_id', $po->id)->latest('id')->first();
+
+        // The credit line carries the org's 0% rate; a refund needs an account to land in.
+        if ($adj && !$problems) {
+            try { $this->books->resolveTaxId(0.0, $inter); }
+            catch (\Throwable $e) { $problems[] = 'The vendor credit needs a 0% rate: ' . $this->clean($e); }
+        }
+        $needsBank = $po->payments()->withoutGlobalScope('tenant')->whereColumn('zoho_applied_amount', '<', 'amount')->exists()
+            || ($adj && $adj->recoveries()->whereNull('zoho_refund_id')->exists());
+        if ($needsBank && !$this->books->resolvePaidThroughAccountId(null)) {
+            $problems[] = 'Zoho Books has no bank or cash account — add one, then sync.';
+        }
+
+        if ($problems) {
+            throw new RuntimeException(count($problems) === 1
+                ? $problems[0]
+                : "Nothing was sent to Zoho Books — fix these first: \n• " . implode("\n• ", array_unique($problems)));
+        }
     }
 
     /** One line for the toast: what this run actually did in Zoho. */
@@ -323,6 +375,19 @@ class PoZohoService
             try {
                 $account = $this->books->resolvePaidThroughAccountId(null);
                 if (!$account) throw new RuntimeException('Zoho Books has no bank account to receive the refund into — add one in Zoho, then sync.');
+                /* The credit is meant to come back as cash, so it is never applied to the
+                   bill from here. Someone can still apply it by hand in Zoho ("Apply
+                   Credits" on the bill), which leaves too little to refund — say so
+                   plainly instead of passing Zoho's own wording back. */
+                $amount = round((float) $rec->amount, 2);
+                $open = round((float) ($this->books->getVendorCredit((string) $adj->zoho_vendorcredit_id)['balance'] ?? 0), 2);
+                if ($open + 0.005 < $amount) {
+                    throw new RuntimeException(
+                        'Vendor credit ' . ($adj->zoho_vendorcredit_number ?: $adj->code) . ' has only ₹' . number_format($open, 2)
+                        . ' left in Zoho Books but this refund is ₹' . number_format($amount, 2)
+                        . ' — it was applied to a bill there. Un-apply it in Zoho (Bill → Credits Applied), then sync again.'
+                    );
+                }
                 $po = PurchaseOrder::withoutGlobalScope('tenant')->find($rec->purchase_order_id);
                 $payload = [
                     'date'        => optional($rec->recovered_date)->toDateString() ?: now()->toDateString(),
@@ -499,21 +564,35 @@ class PoZohoService
     {
         $paid = round((float) $adj->paid_amount, 2);
         $retained = round((float) $adj->retained_amount, 2);
+        /* Returning an advance is not itself a taxable supply, but Zoho refuses a line
+           that names no tax ("Specify either a Tax or Tax Exemption or Reverse Charge"),
+           so the org's own 0% rate carries it — it adds nothing to the credit. */
+        $zeroTax = null;
+        try { $zeroTax = $this->books->resolveTaxId(0.0, (bool) $ctx['inter_state']); }
+        catch (\Throwable $e) { Log::warning('P2P Zoho: no 0% tax for the vendor credit', ['err' => $e->getMessage()]); }
+
+        $line = [
+            'item_id'     => $this->books->findOrCreateItemId(self::CREDIT_ITEM, $paid, $zeroTax, null, 0.0),
+            'name'        => self::CREDIT_ITEM,
+            'description' => mb_substr('Advance released against PO ' . $po->code . ' — ' . $adj->reason, 0, 5500),
+            'rate'        => $paid,
+            'quantity'    => 1,
+        ];
+        if ($zeroTax) $line['tax_id'] = $zeroTax;
 
         $payload = [
             'vendor_id'            => $ctx['vendor_id'],
             'vendor_credit_number' => (string) $adj->code,
             'date'                 => optional($adj->refund_date)->toDateString() ?: now()->toDateString(),
             'reference_number'     => (string) $po->code,
-            'line_items'           => [[
-                'item_id'     => $this->books->findOrCreateItemId(self::CREDIT_ITEM, $paid, null, null, 0.0),
-                'name'        => self::CREDIT_ITEM,
-                'description' => mb_substr('Advance released against PO ' . $po->code . ' — ' . $adj->reason, 0, 5500),
-                'rate'        => $paid,
-                'quantity'    => 1,
-            ]],
+            'line_items'           => [$line],
             'notes' => mb_substr('PO cancelled — ' . $adj->reason, 0, 500),
         ];
+        /* The org refuses a vendor credit that names no bill ("Select the associated
+           bill number or bill type"), so the PO's bill is stated here. Naming it only
+           associates the credit for GST reporting — it is NOT applied to the bill, so
+           the whole credit stays open for the supplier to refund in cash. */
+        if (!empty($po->zoho_bill_id)) $payload['bill_id'] = (string) $po->zoho_bill_id;
         if ($retained > 0) {
             $payload['adjustment'] = -$retained;
             $payload['adjustment_description'] = mb_substr(

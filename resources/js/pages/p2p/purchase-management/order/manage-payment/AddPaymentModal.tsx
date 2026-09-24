@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import type { ReleasePayment } from './MakePoPaymentModal';
-import { Chip, ICON_X, money } from './payment-shared';
+import { Chip, ICON_X, ccySymbol, moneyIn } from './payment-shared';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './manage-payment-requests.css';
 import './add-payment.css';
@@ -18,6 +18,8 @@ export type AddPaymentProps = {
   initial?: ReleasePayment;
   onSave: (p: ReleasePayment) => void | Promise<void>;
   onClose: () => void;
+  /** The PO's own currency. */
+  ccy?: string | null;
 };
 
 const ic = {
@@ -65,9 +67,12 @@ export function Ref({ label, value, mono, extra }: { label: string; value: strin
 const blankIfDash = (v?: string) => (!v || v === '—' ? '' : v);
 
 export default function AddPaymentModal({
-  requestId, supplier, poNumber, spiNumber, spiCount, approved, paid, initial, onSave, onClose,
+  requestId, supplier, poNumber, spiNumber, spiCount, approved, paid, initial, onSave, onClose, ccy,
 }: AddPaymentProps) {
   useScrollLock(true, '.apay-card');
+  // Amounts here follow the PO's own currency.
+  const money = moneyIn(ccy);
+  const sym = ccySymbol(ccy);
 
   const cardRef = useRef<HTMLDivElement>(null);
   const amountRef = useRef<HTMLInputElement>(null);
@@ -99,7 +104,7 @@ export default function AddPaymentModal({
     if (saving) return;
     const amt = amountValue(amount);
     if (!(amt > 0)) { setError('Please enter a valid amount'); return; }
-    if (amt < 1) { setError('The payment amount must be at least ₹1.'); return; }
+    if (amt < 1) { setError(`The payment amount must be at least ${sym}1.`); return; }
     if (amt > room + 0.5) {
       setError(`Only ${money(room)} is still approved and unreleased on this request`);
       return;
@@ -163,7 +168,7 @@ export default function AddPaymentModal({
             <div className="apay-f">
               <label htmlFor="apay-amount">Amount To Be Pay</label>
               <div className="apay-inwrap">
-                <span className="apay-prefix">₹</span>
+                <span className="apay-prefix">{sym}</span>
                 <input
                   id="apay-amount"
                   ref={amountRef}
