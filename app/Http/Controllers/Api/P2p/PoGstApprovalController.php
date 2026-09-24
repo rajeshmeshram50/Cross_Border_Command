@@ -223,12 +223,19 @@ class PoGstApprovalController extends Controller
         }
         $po = PurchaseOrder::withoutGlobalScope('tenant')->withTrashed()->with('items')->findOrFail($row->purchase_order_id);
 
+        /* Enough of the supplier to judge it here: who they are, what type of
+           supplier they are, where they sit and how to reach them. The senior
+           was otherwise deciding on a code and a name. */
         $vendor = $po->vendor_id ? DB::table('vendors as v')
             ->leftJoin('vendor_addresses as ad', fn ($j) => $j->on('ad.vendor_id', '=', 'v.id')->where('ad.is_primary', true))
             ->leftJoin('master_risk_levels as r', 'r.id', '=', 'v.risk_level_id')
+            ->leftJoin('master_vendor_types as vt', 'vt.id', '=', 'v.vendor_type_id')
+            ->leftJoin('master_states as st', 'st.id', '=', 'ad.state_id')
             ->where('v.id', $po->vendor_id)->where('v.client_id', $user->client_id)
             ->first(['v.id', 'v.vendor_code', 'v.company_name', 'v.legal_name', 'v.gst_number', 'v.supplier_category',
-                'ad.state_code', 'r.name as risk_level']) : null;
+                'v.primary_email', 'v.website', 'v.status', 'v.gst_applicable',
+                'ad.state_code', 'ad.city', 'ad.address_line', 'ad.contact_name', 'ad.contact_no', 'ad.email as contact_email',
+                'st.name as state_name', 'vt.name as vendor_type', 'r.name as risk_level']) : null;
 
         $refs = $this->refs($po);
         $live = $this->svc->lineDetails($po->items);
@@ -253,8 +260,14 @@ class PoGstApprovalController extends Controller
                 'created_by_name' => DB::table('users')->where('id', $po->created_by)->value('name'),
             ] + $refs,
             'supplier' => $vendor ? [
+                'id' => $vendor->id,
                 'code' => $vendor->vendor_code, 'name' => $vendor->legal_name ?: $vendor->company_name,
-                'gstin' => $vendor->gst_number, 'state_code' => $vendor->state_code,
+                'company_name' => $vendor->company_name,
+                'gstin' => $vendor->gst_number, 'gst_applicable' => $vendor->gst_applicable,
+                'state_code' => $vendor->state_code, 'state' => $vendor->state_name, 'city' => $vendor->city,
+                'address' => $vendor->address_line, 'email' => $vendor->primary_email ?: $vendor->contact_email,
+                'contact_name' => $vendor->contact_name, 'contact_no' => $vendor->contact_no,
+                'type' => $vendor->vendor_type, 'status' => $vendor->status, 'website' => $vendor->website,
                 'risk' => $vendor->risk_level, 'category' => $vendor->supplier_category,
             ] : null,
             // Read live, so the senior sees today's position, not the one at request time.
