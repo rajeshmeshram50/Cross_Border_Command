@@ -2229,9 +2229,9 @@ class SalesPdfController extends Controller
     {
         if (!$clientId || $category === '') return [];
 
-        return AppModelsClmTncLibrary::query()
+        return \App\Models\ClmTncLibrary::query()
             ->withoutGlobalScope('tenant')
-            ->where('scope', AppModelsClmTncLibrary::SCOPE_GLOBAL)
+            ->where('scope', \App\Models\ClmTncLibrary::SCOPE_GLOBAL)
             ->whereRaw('LOWER(TRIM(category)) = ?', [mb_strtolower(trim($category))])
             ->whereRaw("LOWER(TRIM(COALESCE(status, 'active'))) = 'active'")
             ->where(fn ($w) => $w->whereNull('client_id')->orWhere('client_id', $clientId))
