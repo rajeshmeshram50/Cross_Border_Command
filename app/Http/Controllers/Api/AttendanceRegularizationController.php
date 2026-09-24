@@ -55,6 +55,31 @@ class AttendanceRegularizationController extends Controller
             }
         }
 
+        /* Branch guard — employee_id arrives from the caller, so the tenant
+         * check above was the only thing standing between a branch user and a
+         * sibling branch employee's whole regularization history. Own row and
+         * direct reports stay reachable; see findScopedOrFail() for why the
+         * reporting manager is exempt. */
+        if (
+            in_array($user->user_type, ['branch_user', 'employee'], true)
+            && $user->branch_id
+        ) {
+            $targetBranchId = Employee::withTrashed()->where('id', $employeeId)->value('branch_id');
+            if ((int) $targetBranchId !== (int) $user->branch_id) {
+                $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
+                $isOwn = $myEmployeeId && (int) $employeeId === (int) $myEmployeeId;
+                $reportsToMe = Employee::where('id', $employeeId)
+                    ->where(function ($w) use ($user, $myEmployeeId) {
+                        $w->where('reporting_manager_user_id', $user->id);
+                        if ($myEmployeeId) $w->orWhere('reporting_manager_id', $myEmployeeId);
+                    })
+                    ->exists();
+                if (!$isOwn && !$reportsToMe) {
+                    abort(404);
+                }
+            }
+        }
+
         $q = AttendanceRegularization::query()
             ->where('employee_id', $employeeId)
             ->with(['approver:id,name'])
@@ -540,12 +565,46 @@ class AttendanceRegularizationController extends Controller
             $q->where('client_id', $user->client_id);
         }
 
-        /* Branch filter. Rows carrying NO branch are deliberately kept: the
-         * column is nullable (it is copied from the employee, who may have no
-         * branch), while the Axios interceptor puts a branch_id on every GET.
-         * A plain where() therefore hid those requests from the one queue
-         * whose whole job is to show everything. */
-        if ($branchId = $request->integer('branch_id')) {
+        /* Branch scope — a LOCK and a NARROWING are two different things, and
+         * only the second was ever implemented here.
+         *
+         * A branch user is locked to their own branch; a client admin merely
+         * narrows with the switcher. Both were left to the `branch_id` the
+         * Axios interceptor injects — but that id is never persisted for a
+         * branch user: BranchSwitcherContext writes it only inside setBranch(),
+         * which returns early for exactly those logins. Their request therefore
+         * arrived carrying no branch at all, the filter below never ran, and
+         * this queue answered with the WHOLE TENANT — every other branch's
+         * employees, their names, departments and attendance corrections, on
+         * every tab, with View opening the detail and Approve/Reject acting on
+         * it. The tenant guard above held; branch isolation did not.
+         *
+         * The pin is now server-side and does not consult the request, the way
+         * EmployeeController::applyScope() and AttendanceController already do
+         * it — passing a sibling branch_id cannot widen it either.
+         *
+         * Matched on the EMPLOYEE's branch rather than the row's own stamp:
+         * branch_id is copied onto the row at store() time, so a later transfer
+         * leaves that copy pointing at the old branch.
+         *
+         * Only applied on the admin-scope path. The narrow path below is
+         * already "mine + my direct reports", which is tighter than any branch
+         * pin, and pinning it too would hide an employee's OWN requests when
+         * their record carries no branch. */
+        $isBranchLocked = in_array($user->user_type, ['branch_user', 'employee'], true);
+        if ($isAdminScope && $isBranchLocked && $user->branch_id) {
+            $q->whereIn('employee_id', function ($sub) use ($user) {
+                $sub->select('id')->from('employees')
+                    ->where('client_id', $user->client_id)
+                    ->where('branch_id', $user->branch_id);
+            });
+        } elseif ($branchId = $request->integer('branch_id')) {
+            /* Switcher narrowing, for the roles that can actually switch.
+             * Rows carrying NO branch are deliberately kept: the column is
+             * nullable (copied from an employee who may have no branch), while
+             * the interceptor puts a branch_id on every GET. A plain where()
+             * therefore hid those requests from the one queue whose whole job
+             * is to show everything. */
             $q->where(function ($w) use ($branchId) {
                 $w->where('branch_id', $branchId)->orWhereNull('branch_id');
             });
@@ -1782,6 +1841,37 @@ class AttendanceRegularizationController extends Controller
         ) {
             abort(404);
         }
+
+        /* Branch isolation — the same pin approvals() applies, enforced here so
+         * an id that leaked (or was simply guessed: they are sequential) cannot
+         * open another branch's employee, and approve()/reject()/cancel() and
+         * approvers() cannot act through it. Every single-row endpoint funnels
+         * through this method, so this is the one place it has to hold.
+         *
+         * Two exemptions, both deliberate:
+         *  - the caller's OWN request, so an employee whose record carries no
+         *    branch can still open what they filed;
+         *  - the reporting manager, who is authorised by the org chart rather
+         *    than by branch and may legitimately sit in another branch — the
+         *    approval chain names them, so blocking them here would strand the
+         *    request as Pending with nobody able to act. */
+        if (
+            in_array($user->user_type, ['branch_user', 'employee'], true)
+            && $user->branch_id
+        ) {
+            $empBranchId = Employee::withTrashed()
+                ->where('id', $row->employee_id)
+                ->value('branch_id');
+
+            if ((int) $empBranchId !== (int) $user->branch_id) {
+                $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
+                $isOwn = $myEmployeeId && (int) $row->employee_id === (int) $myEmployeeId;
+                if (!$isOwn && !$this->isReportingManager($user, $row)) {
+                    abort(404);
+                }
+            }
+        }
+
         return $row;
     }
 }
