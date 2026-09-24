@@ -70,7 +70,10 @@ const DONE = ['verified', 'signed', 'approved'];
 
 function toSupplier(d: SupplierDetail | null, row: PaymentRequestRow, vault: Record<string, unknown> | null): Supplier {
   const risk = (d?.risk ?? '').toLowerCase();
-  const done = (key: string) => (Array.isArray(vault?.[key]) ? (vault![key] as { status?: unknown }[]) : [])
+  const rows = (key: string) => (Array.isArray(vault?.[key]) ? (vault![key] as { status?: unknown }[]) : []);
+  // What the vault lists for this supplier IS the requirement - the DCP rules decide it.
+  const required = (key: string) => rows(key).length;
+  const done = (key: string) => rows(key)
     .filter((x) => DONE.includes(String(x.status ?? '').toLowerCase())).length;
   return {
     key: d?.name ?? row.supplier, code: d?.code ?? row.supplierCode ?? '—', legalName: d?.legalName ?? d?.name ?? row.supplier,
@@ -81,6 +84,7 @@ function toSupplier(d: SupplierDetail | null, row: PaymentRequestRow, vault: Rec
     contact: d?.contact ?? '—', desig: d?.desig ?? '—', phone: d?.phone ?? '—', email: d?.email ?? '—',
     scrutiny: d?.scrutiny ?? '', gstNo: d?.gstNo ?? '—', gstStatus: d?.gstStatus ?? '—', filing: d?.filing ?? '', remarks: d?.remarks ?? '',
     legalDone: VAULT_KEYS.map(done),
+    legalTotal: VAULT_KEYS.map(required),
   };
 }
 

@@ -239,6 +239,24 @@ export type ShipmentOption = {
   proforma_invoice_id: number | null; pi_number: string | null;
 };
 /** One link of the Zoho chain, in the order the sync itself runs them. */
+/** One proof file behind a payment or a recovery. */
+export type PoProofFile = {
+  id: number; amount: number; date: string | null; ref: string;
+  name: string | null; url: string | null;
+};
+
+/** The refund adjustment raised on the PO, with its own reference attachment. */
+export type PoProofAdjustment = {
+  id: number; code: string; date: string | null; refund_amount: number;
+  attachment_name: string | null; attachment_url: string | null;
+};
+
+export type PoProofs = {
+  adjustment: PoProofAdjustment | null;
+  payments: PoProofFile[];
+  recoveries: PoProofFile[];
+};
+
 export type ZohoTrackerStep = {
   key: 'purchase_order' | 'bill' | 'payments' | 'vendor_credit' | 'refunds';
   title: string; sub: string;
@@ -322,6 +340,10 @@ export const poApi = {
 
   cancel: (id: number, reason: string) =>
     call('PO cancel', () => api.post(`/p2p/orders/${id}/cancel`, { reason }), dataOf<PoDetail>),
+
+  /** The money files of one PO for the Evidence Vault: payments released and refunds recovered. */
+  proofs: (id: number) =>
+    call('PO proofs', () => api.get(`/p2p/orders/${id}/proofs`), dataOf<PoProofs>),
 
   /** Where the PO stands in Zoho Books — read from our own columns, no Zoho call. */
   zohoTracker: (id: number) =>

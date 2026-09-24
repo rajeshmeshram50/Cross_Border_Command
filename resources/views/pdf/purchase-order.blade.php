@@ -663,13 +663,26 @@
             </div>
         @endif
 
+        {{-- GLOBAL TERMS & CONDITIONS — the one entry filed against this document
+             category, printed before the segment-wise blocks. --}}
+        @if(!empty($globalTermsConditions))
+            <div style="margin-top: 18px;">
+                <div style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 6px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
+                    General Terms And Conditions :
+                </div>
+                @foreach($globalTermsConditions as $__g)
+                    <div class="po-terms" style="margin-bottom: 8px;">{!! $__g !!}</div>
+                @endforeach
+            </div>
+        @endif
+
         {{-- MASTER TERMS & CONDITIONS — auto-matched from the T&C Library by the
              document category (Domestic / International Purchase Order), supplier
              party (Material / FFD / Services) and each product's segment. --}}
         @if(!empty($segmentTermsConditions))
             <div style="margin-top: 18px;">
                 <div style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 6px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
-                    Terms And Conditions :
+                    Segment Terms And Conditions :
                 </div>
                 @foreach($segmentTermsConditions as $tnc)
                     <div class="po-terms" style="margin-bottom: 8px;">

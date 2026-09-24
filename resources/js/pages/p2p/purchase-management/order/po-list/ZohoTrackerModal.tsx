@@ -76,13 +76,13 @@ export default function ZohoTrackerModal({ poId, poCode, onClose }: {
 
   return createPortal(
     <div className="zt-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="zt-card" role="dialog" aria-modal="true" aria-label="Zoho Books tracker">
+      <div className="zt-card" role="dialog" aria-modal="true" aria-label="PO timeline">
 
         <div className="zt-hero">
           <div className="zt-hero__ico">{ICON_CHAIN}</div>
           <div className="zt-hero__mid">
             <div className="zt-hero__eyebrow">{poCode} · Zoho Books Sync</div>
-            <div className="zt-hero__title">Zoho Sync Tracker</div>
+            <div className="zt-hero__title">PO Timeline</div>
             <div className="zt-hero__sub">{data?.cancelled ? 'Cancelled purchase order — credit & refund' : 'Purchase order, bill & payment'}</div>
           </div>
           <button type="button" className="zt-hero__close" onClick={onClose} aria-label="Close">{ICON_X}</button>

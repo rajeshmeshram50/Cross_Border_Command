@@ -126,11 +126,18 @@ interface Props {
   /** All segments with their regulatory tier — drives the tier-filtered picker. */
   segments: SegOpt[];
   nextCode: string;
+  /**
+   * 'segment' (default) — the two-step wizard: segment & category, then content.
+   * 'global' — one entry per document category, with no segment: the same editor
+   * on a single page, saved through /clm/tnc-global.
+   */
+  scope?: 'segment' | 'global';
   onClose: () => void;
   onSaved: () => void;
 }
 
-export default function ClmTncWizardModal({ open, existing, cats: initialCats, segments, nextCode, onClose, onSaved }: Props) {
+export default function ClmTncWizardModal({ open, existing, cats: initialCats, segments, nextCode, scope = 'segment', onClose, onSaved }: Props) {
+  const isGlobal = scope === 'global';
   const toast = useToast();
   useSelectionLock(open);   // block selecting/copying the background while open
   useScrollLock(open);      // freeze background page scroll while open
@@ -160,6 +167,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
   const [editorFs, setEditorFs] = useState(false);
   const [signatureOpen, setSignatureOpen] = useState(false);
   const [drawSigOpen, setDrawSigOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const editor = useEditor({
@@ -191,6 +199,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
     setStep(1);
     setErrors({});
     setSaving(false);
+    setImporting(false);
     setLocalSegs([]);
     if (existing) {
       const reg: Reg = existing.regulatory === 'less' ? 'less' : 'highly';
@@ -224,9 +233,10 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
   }, [open, saving, onClose]);
 
   const headerCode = useMemo(() => {
-    if (editingId && existing?.code) return existing.code;
-    return nextCode;
-  }, [editingId, existing, nextCode]);
+    if (existing?.code) return existing.code;
+    // A global category with nothing written yet has no code until it is saved.
+    return isGlobal ? '' : nextCode;
+  }, [existing, nextCode, isGlobal]);
 
   // Segment names available for the CURRENT tier: the matching
   // clm_segments rows + any quick-added-in-this-modal names tagged to the
@@ -269,7 +279,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
     }
     // Debit/Credit Note skip the segment step — only the document name (above)
     // and the content (step 2) are required.
-    if (!isNoteDoc) {
+    if (!isNoteDoc && !isGlobal) {
       if (regulatory === 'highly') {
         if (!segment.trim()) next.segment = 'Select a segment';
       } else {
@@ -303,7 +313,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
     // Debit/Credit Note carry NO segment / regulatory — persist them blank so
     // the list shows "—" for those columns. Other docs use the picked values:
     // highly → one segment; less → CSV of the chosen segments.
-    const segmentCsv = isNoteDoc
+    const segmentCsv = (isNoteDoc || isGlobal)
       ? ''
       : (regulatory === 'highly' ? segment.trim() : Array.from(segmentsMulti).join(','));
     // No `party` key: a T&C has no applicable party. The server blanks the
@@ -311,11 +321,18 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
     // re-saved.
     const payload = {
       segment: segmentCsv,
-      regulatory: (isNoteDoc ? '' : regulatory) as Reg | '',
+      regulatory: ((isNoteDoc || isGlobal) ? '' : regulatory) as Reg | '',
       category: category.trim(),
       content: content?.trim() ? content : null,
     };
     try {
+      if (isGlobal) {
+        // One entry per category: the server upserts on the category itself.
+        await api.put('/clm/tnc-global', { category: payload.category, content: payload.content });
+        toast.success(editingId ? 'Updated' : 'Added', payload.category);
+        onSaved();
+        return;
+      }
       if (editingId) {
         await api.put(`/clm/tnc-library/${editingId}`, payload);
         toast.success('Updated', payload.category);
@@ -385,6 +402,9 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
 
   if (!open) return null;
 
+  // A global entry is keyed on its category, so an edit cannot move it to another.
+  const categoryLocked = isGlobal && !!existing;
+
   // Shared T&C Document Name selector — placed on its own for note docs and
   // paired beside Segment for every other document, so it's defined once.
   const documentNameField = (
@@ -396,6 +416,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
         key={`tnw-cat-${cats.length}`}
         value={category}
         invalid={!!errors.category}
+        disabled={categoryLocked}
         placeholder="— Select Category —"
         options={[
           ...cats.map(c => ({ value: c.name, label: c.name })),
@@ -403,7 +424,11 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
         ]}
         onChange={(v) => { setCategory(v); setErrors(p => ({ ...p, category: '' })); }}
       />
-      <div className="tnw-hint">One T&amp;C per document · title auto-derived from name</div>
+      <div className="tnw-hint">
+        {categoryLocked
+          ? 'The document category identifies this entry, so it cannot be changed here.'
+          : 'One T&C per document · title auto-derived from name'}
+      </div>
       {errors.category && <div className="tnw-err">{errors.category}</div>}
     </div>
   );
@@ -424,6 +449,17 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
             (ClmKycPage, ClmSegmentPage, ClmClauseLibraryPage …) — the buttons
             keep their own `disabled` as the real lock. */}
         {saving && <div className="clm-saving-veil" aria-hidden />}
+        {/* Reading a Word file is a round trip; the modal waits rather than
+            looking idle while the document is converted. */}
+        {importing && (
+          <div className="tnw-importing" role="status" aria-live="polite"
+            title="Reading the document — click to dismiss if it does not finish"
+            onClick={() => setImporting(false)}>
+            <span className="tnw-importing__ring" />
+            <span className="tnw-importing__t">Reading the Word document…</span>
+            <span className="tnw-importing__s">Converting it and loading the content into the editor</span>
+          </div>
+        )}
         {/* ── Header ── */}
         <div className="tnw-head">
           <div className="tnw-head-left">
@@ -433,16 +469,18 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
               </svg>
             </div>
             <div className="tnw-head-text">
-              <div className="tnw-head-eyebrow">T&amp;C LIBRARY</div>
-              <div className="tnw-head-title">{editingId ? 'Edit T&C' : 'Add New T&C'}</div>
-              <div className="tnw-head-sub">Create reusable Terms &amp; Conditions content.</div>
+              <div className="tnw-head-eyebrow">{isGlobal ? 'T&C GLOBAL' : 'T&C LIBRARY'}</div>
+              <div className="tnw-head-title">{isGlobal ? (existing ? 'Edit Global T&C' : 'Add Global T&C') : (editingId ? 'Edit T&C' : 'Add New T&C')}</div>
+              <div className="tnw-head-sub">{isGlobal ? (category ? `${category} · printed on every document of this category.` : 'One entry per document category · printed on every document of that category.') : 'Create reusable Terms & Conditions content.'}</div>
             </div>
           </div>
           <div className="tnw-head-right">
-            <div className="tnw-id-chip">
-              <div className="tnw-id-chip-label">T&amp;C ID</div>
-              <div className="tnw-id-chip-val">{headerCode}</div>
-            </div>
+            {headerCode && (
+              <div className="tnw-id-chip">
+                <div className="tnw-id-chip-label">T&amp;C ID</div>
+                <div className="tnw-id-chip-val">{headerCode}</div>
+              </div>
+            )}
             <button type="button" className="tnw-close" onClick={onClose} aria-label="Close" disabled={saving}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -452,7 +490,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
         </div>
 
         {/* ── Stepper ── */}
-        <div className="tnw-stepper">
+        {!isGlobal && <div className="tnw-stepper">
           <div className="tnw-stepper-row">
             {STEPS.map((s, idx) => {
               const active   = s.key === step;
@@ -480,11 +518,30 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
           <div className="tnw-stepper-progress">
             <div className="tnw-stepper-label">Step {step} of {STEPS.length}</div>
           </div>
-        </div>
+        </div>}
 
         {/* ── Body ── */}
-        <div className={`tnw-body${step === 2 ? ' is-editor' : ''}`}>
-          {step === 1 ? (
+        <div className={`tnw-body${(step === 2 || isGlobal) ? ' is-editor' : ''}`}>
+          {isGlobal ? (
+            <div className="tnw-step-body">
+              {documentNameField}
+              <TncEditor
+                editor={editor}
+                fullScreen={editorFs}
+                onToggleFullScreen={() => setEditorFs(v => !v)}
+                onUploadWord={() => fileInputRef.current?.click()}
+                onOpenClauseLibrary={() => { setClauseOpen(o => !o); setSignatureOpen(false); }}
+                clauseOpen={clauseOpen}
+                onInsertPlaceholder={() => editor?.chain().focus().insertContent('{{PLACEHOLDER}}').run()}
+                onCloseClauseLibrary={() => setClauseOpen(false)}
+                onOpenSignature={() => { setSignatureOpen(o => !o); setClauseOpen(false); }}
+                signatureOpen={signatureOpen}
+                onCloseSignature={() => setSignatureOpen(false)}
+                onOpenDrawSignature={() => { setDrawSigOpen(true); setSignatureOpen(false); }}
+              />
+              {errors.content && <div className="tnw-err">{errors.content}</div>}
+            </div>
+          ) : step === 1 ? (
             <div className="tnw-step-body">
               {/* Regulatory Type leads for a normal document; picking Debit
                   Note / Credit Note as the document name hides it (and the
@@ -630,64 +687,68 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                   }}
                 />
               )}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file || !editor) return;
-                  e.target.value = '';
-                  const lower = file.name.toLowerCase();
-                  // "Upload Word" accepts Word documents ONLY. The accept filter
-                  // is a hint the user can bypass ("All files"), so reject any
-                  // non-Word file here (e.g. an .html renamed or picked directly).
-                  if (!lower.endsWith('.docx') && !lower.endsWith('.doc')) {
-                    toast.error('Unsupported file', 'Please upload a Word document (.doc or .docx).');
-                    return;
-                  }
-                  // Word documents are ZIP-packed XML — reading them as text
-                  // yields binary garbage. Convert server-side (PhpWord) via
-                  // the shared /clm/docx-to-html endpoint, then insert the
-                  // returned HTML.
-                  const fd = new FormData();
-                  fd.append('docx', file);
-                  api.post<{ status: boolean; html: string }>('/clm/docx-to-html', fd, {
-                    headers: { 'Content-Type': 'multipart/form-data' },
-                  })
-                    .then(({ data }) => {
-                      const html = (data?.html ?? '').trim();
-                      if (!html) { toast.warning('Nothing to import', 'The document appears to be empty.'); return; }
-                      /* The 1,000,000-character ceiling, checked BEFORE the
-                         content goes in. Past it the PDF and Word exports of
-                         whatever hosts this T&C are dead, and seeding first
-                         would leave the user to undo it by hand.
-                         INSERTED, not replaced, so the existing content counts
-                         towards the total — a clause pasted into an already
-                         long T&C has to be measured against what is there. */
-                      const total = (editor.getHTML()?.length ?? 0) + html.length;
-                      if (total > TNC_MAX_CHARS) {
-                        toast.error(
-                          'Document too long',
-                          `${file.name} would take this T&C to ${total.toLocaleString()} characters — the limit is ${TNC_MAX_CHARS.toLocaleString()}. Shorten it or split it into separate T&Cs.`,
-                        );
-                        return;
-                      }
-                      editor.chain().focus().insertContent(html).run();
-                      toast.success('Imported', `${file.name} loaded into the editor.`);
-                    })
-                    .catch((err: any) => toast.error('Import failed', err?.response?.data?.message ?? 'Could not read this Word document.'));
-                }}
-              />
             </div>
           )}
         </div>
 
+        {/* Mounted for the whole modal: the single-page global form has no step 2. */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (!file || !editor) return;
+            e.target.value = '';
+            const lower = file.name.toLowerCase();
+            // "Upload Word" accepts Word documents ONLY. The accept filter
+            // is a hint the user can bypass ("All files"), so reject any
+            // non-Word file here (e.g. an .html renamed or picked directly).
+            if (!lower.endsWith('.docx') && !lower.endsWith('.doc')) {
+              toast.error('Unsupported file', 'Please upload a Word document (.doc or .docx).');
+              return;
+            }
+            // Word documents are ZIP-packed XML — reading them as text
+            // yields binary garbage. Convert server-side (PhpWord) via
+            // the shared /clm/docx-to-html endpoint, then insert the
+            // returned HTML.
+            const fd = new FormData();
+            fd.append('docx', file);
+            setImporting(true);
+            api.post<{ status: boolean; html: string }>('/clm/docx-to-html', fd, {
+              headers: { 'Content-Type': 'multipart/form-data' },
+            })
+              .then(({ data }) => {
+                const html = (data?.html ?? '').trim();
+                if (!html) { toast.warning('Nothing to import', 'The document appears to be empty.'); return; }
+                /* The 1,000,000-character ceiling, checked BEFORE the
+                   content goes in. Past it the PDF and Word exports of
+                   whatever hosts this T&C are dead, and seeding first
+                   would leave the user to undo it by hand.
+                   INSERTED, not replaced, so the existing content counts
+                   towards the total — a clause pasted into an already
+                   long T&C has to be measured against what is there. */
+                const total = (editor.getHTML()?.length ?? 0) + html.length;
+                if (total > TNC_MAX_CHARS) {
+                  toast.error(
+                    'Document too long',
+                    `${file.name} would take this T&C to ${total.toLocaleString()} characters — the limit is ${TNC_MAX_CHARS.toLocaleString()}. Shorten it or split it into separate T&Cs.`,
+                  );
+                  return;
+                }
+                editor.chain().focus().insertContent(html).run();
+                toast.success('Imported', `${file.name} loaded into the editor.`);
+              })
+              .catch((err: any) => toast.error('Import failed', err?.response?.data?.message ?? 'Could not read this Word document.'))
+              .finally(() => setImporting(false));
+          }}
+        />
+
         {/* ── Footer ── */}
         <div className="tnw-foot">
           <div className="tnw-foot-left">
-            {step === 2 && (
+            {step === 2 && !isGlobal && (
               <button type="button" className="tnw-btn tnw-btn-back" onClick={goBack} disabled={saving}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
                 Back to Basic Details
@@ -698,7 +759,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
             <button type="button" className="tnw-btn tnw-btn-cancel" onClick={onClose} disabled={saving}>
               Cancel
             </button>
-            {step === 1 ? (
+            {step === 1 && !isGlobal ? (
               <button type="button" className="tnw-btn tnw-btn-primary" onClick={goNext} disabled={saving}>
                 Save &amp; Next
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
@@ -1489,6 +1550,28 @@ const TNW_CSS = `
 /* Full screen — the card grows to the viewport and the editor, being
    flex:1 inside it, takes the extra height. Width capped just short of the
    edge so the dialog still reads as a dialog. */
+/* Word import: the whole card waits, so nothing is typed into an editor that
+   is about to have a document dropped into it. */
+.tnw-importing {
+  position: absolute; inset: 0; z-index: 60;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
+  border-radius: inherit;
+  background: rgba(240, 253, 255, .86);
+  backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+  cursor: progress;
+}
+.tnw-importing__ring {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 3px solid rgba(8,145,178,.20); border-top-color: #0891b2;
+  animation: tnwSpin 800ms linear infinite;
+}
+@keyframes tnwSpin { to { transform: rotate(360deg); } }
+.tnw-importing__t { font-size: 13px; font-weight: 800; letter-spacing: -.2px; color: #0e7490; }
+.tnw-importing__s { font-size: 11px; font-weight: 500; color: #64748b; }
+[data-bs-theme="dark"] .tnw-importing { background: rgba(7, 30, 50, .86); }
+[data-bs-theme="dark"] .tnw-importing__t { color: #67e8f9; }
+[data-bs-theme="dark"] .tnw-importing__s { color: #94a3b8; }
+
 .tnw-shell.is-fullscreen {
   width: calc(100vw - 24px);
   max-width: calc(100vw - 24px);
@@ -1577,6 +1660,13 @@ const TNW_CSS = `
    child refuses to shrink below its content, so the frame would grow instead of
    the area scrolling — which is the state this was in. */
 .tnw-editor-area { position: relative; flex: 1; min-height: 0; overflow-y: auto; }
+/* Teal scrollbar on the draft, matching the other CLM editors — without it the
+   area scrolls with no visible affordance and reads as clipped content. */
+.tnw-editor-area { scrollbar-gutter: stable; }
+.tnw-editor-area::-webkit-scrollbar { width: 10px; }
+.tnw-editor-area::-webkit-scrollbar-track { background: transparent; }
+.tnw-editor-area::-webkit-scrollbar-thumb { background: rgba(8,145,178,.28); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+.tnw-editor-area::-webkit-scrollbar-thumb:hover { background: rgba(8,145,178,.48); background-clip: content-box; }
 .tnw-editor, .tnw-editor .ProseMirror {
   min-height: 240px;
   padding: 18px 22px;

@@ -1108,7 +1108,7 @@
                          non-empty. nl2br preserves the line breaks the
                          user typed (DomPDF collapses raw \n otherwise). -->
                 @php($segTncs = $segmentTermsConditions ?? [])
-                @if(!empty(trim($quotation->terms_and_conditions ?? '')) || !empty($segTncs))
+                @if(!empty(trim($quotation->terms_and_conditions ?? '')) || !empty($segTncs) || !empty($globalTermsConditions ?? []))
                     <div style="margin-top: 18px;">
                         <section style="margin-bottom: 8px;">
                             <div
@@ -1132,6 +1132,10 @@
                                  whenever the segment changes — inside the
                                  non-empty guard, or an all-blank segment would
                                  print a heading with nothing under it. --}}
+                            {{-- Layer 2: the global T&C of this document category. --}}
+                            @foreach(($globalTermsConditions ?? []) as $__g)
+                                <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 6px;">{!! $__g !!}</div>
+                            @endforeach
                             @php($lastTncSeg = null)
                             @foreach($segTncs as $tnc)
                                 @if(!empty(trim(strip_tags($tnc['content'] ?? ''))))
@@ -1337,7 +1341,7 @@
                 on the same page (no forced page break, no repeated
                 header). Same data source
                 ($quotation->terms_and_conditions <- form's `terms`). --}} @php($segTncs = $segmentTermsConditions ?? [])
-                    @if(!empty(trim($quotation->terms_and_conditions ?? '')) || !empty($segTncs)) <div
+                    @if(!empty(trim($quotation->terms_and_conditions ?? '')) || !empty($segTncs) || !empty($globalTermsConditions ?? [])) <div
                                 style="margin-top: 18px;">
                                 <section style="margin-bottom: 8px;">
                                     <div
@@ -1353,6 +1357,10 @@
                                          main layout above — this is the
                                          footer-page copy of the block, and the
                                          two must not drift apart. --}}
+                                    {{-- Layer 2: the global T&C of this document category. --}}
+                                    @foreach(($globalTermsConditions ?? []) as $__g)
+                                        <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 6px;">{!! $__g !!}</div>
+                                    @endforeach
                                     @php($lastTncSeg2 = null)
                                     @foreach($segTncs as $tnc)
                                         @if(!empty(trim(strip_tags($tnc['content'] ?? ''))))

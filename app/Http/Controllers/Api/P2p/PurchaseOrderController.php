@@ -768,6 +768,56 @@ class PurchaseOrderController extends Controller
         return response()->json(['status' => true, 'message' => 'Synced to Zoho Books — ' . $zoho->summary($r) . '.']);
     }
 
+    /**
+     * GET /p2p/orders/{id}/proofs - the money files of one order for the Evidence Vault:
+     * the refund adjustment raised on it, every payment released, and every refund
+     * recovered back, each with the proof filed against it.
+     */
+    public function proofs(Request $request, int $id): JsonResponse
+    {
+        $this->tenantUser($request);
+        $po = $this->findPo($id);
+
+        $payments = DB::table('p2p_po_payments as p')
+            ->leftJoin('p2p_po_payment_requests as r', 'r.id', '=', 'p.payment_request_id')
+            ->where('p.purchase_order_id', $po->id)->whereNull('p.deleted_at')
+            ->orderBy('p.id')
+            ->get(['p.id', 'p.amount', 'p.utr_cheque_number', 'p.utr_cheque_date', 'p.proof_name', 'p.proof_path', 'r.code as request_code']);
+
+        $recoveries = DB::table('p2p_po_refund_recoveries as c')
+            ->leftJoin('p2p_po_refund_adjustments as a', 'a.id', '=', 'c.refund_adjustment_id')
+            ->where('c.purchase_order_id', $po->id)->whereNull('c.deleted_at')
+            ->orderBy('c.id')
+            ->get(['c.id', 'c.amount', 'c.reference_no', 'c.recovered_date', 'c.proof_name', 'c.proof_path', 'a.code as adr_code']);
+
+        $file = fn ($r, string $ref) => [
+            'id'     => (int) $r->id,
+            'amount' => (float) $r->amount,
+            'date'   => $r->utr_cheque_date ?? $r->recovered_date ?? null,
+            'ref'    => $ref,
+            'name'   => $r->proof_name,
+            'url'    => $r->proof_path ? file_url($r->proof_path) : null,
+        ];
+
+        // The adjustment itself: its reference attachment, and the receipt that can be generated from it.
+        $adj = DB::table('p2p_po_refund_adjustments')
+            ->where('purchase_order_id', $po->id)->whereNull('deleted_at')
+            ->orderByDesc('id')->first();
+
+        return $this->ok([
+            'adjustment' => $adj ? [
+                'id'              => (int) $adj->id,
+                'code'            => $adj->code,
+                'date'            => $adj->refund_date,
+                'refund_amount'   => (float) $adj->refund_amount,
+                'attachment_name' => $adj->attachment_name,
+                'attachment_url'  => $adj->attachment_path ? file_url($adj->attachment_path) : null,
+            ] : null,
+            'payments'   => $payments->map(fn ($r) => $file($r, (string) ($r->request_code ?: $r->utr_cheque_number)))->all(),
+            'recoveries' => $recoveries->map(fn ($r) => $file($r, (string) ($r->adr_code ?: $r->reference_no)))->all(),
+        ]);
+    }
+
     /** GET /p2p/orders/{id}/zoho-tracker — where this PO stands in Zoho Books, from our own columns. */
     public function zohoTracker(Request $request, int $id): JsonResponse
     {
