@@ -283,7 +283,7 @@ export default function PaymentRequestManagement() {
         </div>
 
         {loading && !rows.length ? (
-          <PrmListSkeleton />
+          <PrmListSkeleton columns={columns} />
         ) : pageRows.length === 0 ? (
           <div className="ord-empty">
             {search.trim() ? 'No payment requests match your search.' : 'No payment requests in this category.'}
@@ -407,16 +407,26 @@ export default function PaymentRequestManagement() {
    where the values will be, instead of the line "Loading payment requests…".
    Same bars (.spi-sk-bar) and the same column widths the PO list uses, so the
    two lists wait in the same way. */
-function PrmListSkeleton() {
+/* Takes the ACTIVE tab's columns, not the full COLUMNS list.
+   The width came from a bare `TABLE_WIDTH`, which is a module-level const over
+   in the PO list (Order.tsx) and does not exist here — so this component threw
+   ReferenceError the moment it rendered, and since it renders on every first
+   load of the page, the error boundary replaced the whole screen. Widths now
+   come from this module's own tableWidth() helper, which the real table two
+   hundred lines up already uses.
+   Passing the columns in also settles a smaller mismatch: the Awaiting tab
+   drops the "Approved Amount" column, so the skeleton was laying out a column
+   the table it becomes would not have. */
+function PrmListSkeleton({ columns }: { columns: Column[] }) {
   return (
     <div className="ord-table-scroll">
-      <table className="ord-table" style={{ minWidth: TABLE_WIDTH, width: '100%' }}>
+      <table className="ord-table" style={{ minWidth: tableWidth(columns), width: '100%' }}>
         <colgroup>
-          {COLUMNS.map(c => <col key={c.label} style={{ width: c.width }} />)}
+          {columns.map(c => <col key={c.label} style={{ width: c.width }} />)}
         </colgroup>
         <thead>
           <tr>
-            {COLUMNS.map(c => (
+            {columns.map(c => (
               <th key={c.label} className={c.groupEnd ? 'ord-table__group-end' : undefined}>{c.label}</th>
             ))}
           </tr>
@@ -424,7 +434,7 @@ function PrmListSkeleton() {
         <tbody>
           {Array.from({ length: 6 }).map((_, row) => (
             <tr key={row} className="ord-skel-tr">
-              {COLUMNS.map(c => (
+              {columns.map(c => (
                 <td key={c.label} className={c.groupEnd ? 'ord-table__group-end' : undefined}>
                   <span className="spi-sk-bar" style={{ width: Math.round(c.width * 0.6) }} />
                 </td>
