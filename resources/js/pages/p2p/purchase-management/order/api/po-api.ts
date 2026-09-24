@@ -92,6 +92,8 @@ export type PoListRow = PoLinkRefs & {
   refund: PoListRefund | null;
   /** Zoho Books: synced once the PO + bill exist; unposted = payments not on the bill yet. */
   zoho_status: 'synced' | 'failed' | null; zoho_bill_number: string | null; zoho_error: string | null;
+  /** True once the PO or its bill exists in Zoho — the tracker opens only then. */
+  zoho_started: boolean;
   zoho_unposted_payments: number;
 };
 
@@ -236,6 +238,34 @@ export type ShipmentOption = {
   opportunity_id: number | null; opportunity_code: string | null;
   proforma_invoice_id: number | null; pi_number: string | null;
 };
+/** One link of the Zoho chain, in the order the sync itself runs them. */
+export type ZohoTrackerStep = {
+  key: 'purchase_order' | 'bill' | 'payments' | 'vendor_credit' | 'refunds';
+  title: string; sub: string;
+  state: 'done' | 'pending' | 'failed';
+  /** The Zoho document number or id, once it exists. */
+  ref: string | null;
+  at: string | null;
+  note: string | null;
+  /** Posted / refunded total for this step — printed in the PO's own currency. */
+  amount: number | null;
+  /** One line per payment / refund, so a part-posted step says which one is missing. */
+  items: ZohoTrackerItem[];
+  error: string | null;
+};
+
+export type ZohoTrackerItem = {
+  label: string; amount: number;
+  state: 'done' | 'pending' | 'failed';
+  ref: string | null; at: string | null; error: string | null;
+};
+
+export type ZohoTracker = {
+  po_code: string; currency: string; cancelled: boolean;
+  done: number; total: number;
+  steps: ZohoTrackerStep[];
+};
+
 export type SupplierOption = {
   id: number; code: string; name: string; document_type: DocTypeKey;
   /** master_vendor_types.name, e.g. "Material / Goods" — must fit the PO type. */
@@ -292,6 +322,10 @@ export const poApi = {
 
   cancel: (id: number, reason: string) =>
     call('PO cancel', () => api.post(`/p2p/orders/${id}/cancel`, { reason }), dataOf<PoDetail>),
+
+  /** Where the PO stands in Zoho Books — read from our own columns, no Zoho call. */
+  zohoTracker: (id: number) =>
+    call('PO Zoho tracker', () => api.get(`/p2p/orders/${id}/zoho-tracker`), dataOf<ZohoTracker>),
 
   /** Zoho Books: PO + bill once, then any payments not posted yet. */
   zohoSync: (id: number) =>

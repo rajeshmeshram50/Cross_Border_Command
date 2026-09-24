@@ -155,7 +155,13 @@ export default function MakePoPaymentModal({
   const released = payments.reduce((s, p) => s + (p.amount || 0), 0);
   const paidOnRequest = alreadyPaid + released;
   const room = Math.max(0, approved - paidOnRequest);
-  const pct = row.net > 0 ? Math.round((requestedAmount / row.net) * 1000) / 10 : 0;
+  /* CS-423 — this is how far THIS request has been paid, so a request settled in full
+     reads 100%. Before approval there is nothing to pay against, so it stays at 0. */
+  const pct = approved > 0 ? Math.min(100, Math.round((paidOnRequest / approved) * 1000) / 10) : 0;
+  /* CS-423 — a settled or unapproved request is a record, not a form: nothing on it can
+     be added, edited or deleted, whichever button was used to open it. */
+  const settled = approvedRequest && approved > 0 && room <= 0;
+  const readOnly = !approvedRequest || settled;
 
   // The row carries the PO's stored paid / balance, which already include these payments.
   const poPaid = row.paid;
@@ -194,7 +200,9 @@ export default function MakePoPaymentModal({
               <span className="mpr-hero__title" id="cpay-title">Payment Against Request ID</span>
               <span className="mpr-hero__idpill">{requestId}</span>
             </div>
-            <div className="mpr-hero__sub">{approvedRequest ? 'Release the approved amount on this request' : 'Read-only — this request has not been approved'}</div>
+            <div className="mpr-hero__sub">{settled ? 'Paid in full — this request is a record now'
+              : approvedRequest ? 'Release the approved amount on this request'
+                : requestStatus === 'rejected' ? 'Read-only — this request was declined' : 'Read-only — this request is awaiting approval'}</div>
           </div>
           <HeroRefChips row={row} />
           <button type="button" className="mpr-hero__close" onClick={onClose} aria-label="Close">{ICON_X}</button>
@@ -210,7 +218,7 @@ export default function MakePoPaymentModal({
             <div className="cpay-grid">
               <Field label="Payment Request ID"><span className="cpay-id">{requestId}</span></Field>
               <Field label="Payment Type"><span className="cpay-type">{requestType}</span></Field>
-              <Field label="Payment %" mod="cpay-f--pct">
+              <Field label="Payment % (of this request)" mod="cpay-f--pct">
                 <span className="cpay-pct">{pct}%</span>
                 <span className="cpay-bar"><i style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} /></span>
               </Field>
@@ -228,7 +236,7 @@ export default function MakePoPaymentModal({
                 </span>
               </Field>
               <Field label="Approved Amount" mod="cpay-f--hi">
-                {requestStatus === 'pending' ? <span className="cpay-none">—</span> : <>{money(approved)}{ICON_TICK}</>}
+                {requestStatus !== 'approved' ? <span className="cpay-none">—</span> : <>{money(approved)}{ICON_TICK}</>}
               </Field>
             </div>
           </Box>
@@ -261,7 +269,7 @@ export default function MakePoPaymentModal({
               <button
                 type="button"
                 className="cpay-add"
-                disabled={room <= 0 || !approvedRequest}
+                disabled={readOnly || room <= 0}
                 onClick={() => setAdding(true)}
                 title={!approvedRequest
                   ? (requestStatus === 'pending'
@@ -353,11 +361,15 @@ export default function MakePoPaymentModal({
                       >
                         {ICON_MAIL}
                       </button>
-                      <button type="button" className="cpay-act cpay-act--edit" disabled={p.zohoSynced}
-                        title={p.zohoSynced ? 'Posted to Zoho Books — this payment can no longer be changed' : 'Edit payment'}
+                      <button type="button" className="cpay-act cpay-act--edit" disabled={p.zohoSynced || readOnly}
+                        title={p.zohoSynced ? 'Posted to Zoho Books — this payment can no longer be changed'
+                          : settled ? 'This request is paid in full — its payments are a record now'
+                            : readOnly ? 'This request is not open for payment' : 'Edit payment'}
                         onClick={() => setEditing(i)}>{ICON_EDIT}</button>
-                      <button type="button" className="cpay-act cpay-act--del" disabled={p.zohoSynced}
-                        title={p.zohoSynced ? 'Posted to Zoho Books — this payment can no longer be deleted' : 'Delete payment'}
+                      <button type="button" className="cpay-act cpay-act--del" disabled={p.zohoSynced || readOnly}
+                        title={p.zohoSynced ? 'Posted to Zoho Books — this payment can no longer be deleted'
+                          : settled ? 'This request is paid in full — its payments are a record now'
+                            : readOnly ? 'This request is not open for payment' : 'Delete payment'}
                         onClick={() => void askDelete(i, p.amount)}>
                         {ICON_DEL}
                       </button>

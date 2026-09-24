@@ -81,7 +81,7 @@ function RequestRow({ q, index, net, onPay, ccy }: {
   const money = moneyIn(ccy);
   const due = Math.max(0, q.approved - q.paid);
   const st = STATUS[q.status];
-  const pct = q.pct ?? (net > 0 ? Math.round((q.amount / net) * 1000) / 10 : 0);
+  const pct = net > 0 ? Math.round((q.amount / net) * 1000) / 10 : 0;
   const settled = q.status === 'approved' && q.approved > 0 && due <= 0;
 
   return (

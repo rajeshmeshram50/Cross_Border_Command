@@ -19,6 +19,7 @@ import type { PoLink } from '../create-po/CreatePoForm';
 const CreatePoForm = lazy(() => import('../create-po/CreatePoForm'));
 const PhysicalInspectionModal = lazy(() => import('../physical-inspection/PhysicalInspectionModal'));
 const CancelPoModal = lazy(() => import('../cancel-po/CancelPoModal'));
+const ZohoTrackerModal = lazy(() => import('./ZohoTrackerModal'));
 const PoEvidenceVaultModal = lazy(() => import('../evidence-vault/PoEvidenceVaultModal'));
 const ManagePaymentRequestsModal = lazy(() => import('../manage-payment/ManagePaymentRequestsModal'));
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
@@ -235,6 +236,8 @@ export type OrderRow = {
   supplierCode?: string;
   invoices: InvoiceLine[];
   zohoSynced: boolean;
+  /** Something of this PO is already in Zoho — the tracker has a story to tell. */
+  zohoStarted: boolean;
   inspectionDone: boolean;
   paymentRequests: number;
   paymentNote?: PaymentNote;
@@ -414,6 +417,7 @@ export function toOrderRow(r: PoListRow): OrderRow {
     // Synced once the PO + bill are in Zoho, every payment is posted to the bill and,
     // on a cancelled PO, the vendor credit and its refunds are there too.
     zohoSynced: r.zoho_status === 'synced' && !r.zoho_unposted_payments && (!r.refund || r.refund.zoho_synced),
+    zohoStarted: !!r.zoho_started,
     zohoError: r.zoho_status === 'failed' ? (r.zoho_error ?? undefined)
       : r.zoho_status === 'synced' && r.zoho_unposted_payments ? `${r.zoho_unposted_payments} payment(s) not posted to bill ${r.zoho_bill_number ?? ''}` : undefined,
     zohoUnposted: Number(r.zoho_unposted_payments) || 0,
@@ -522,6 +526,13 @@ const ICON_SYNC = (
     <polyline points="21 3 18.7 6 15.6 5.4" /><polyline points="3 21 5.3 18 8.4 18.6" />
   </svg>
 );
+const ICON_TRACK = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="5" cy="6" r="2.4" /><circle cx="5" cy="18" r="2.4" /><path d="M5 8.4v7.2" />
+    <path d="M9.5 6H20" /><path d="M9.5 18H20" />
+  </svg>
+);
+
 const ICON_EYE = (
   <svg {...btnIconProps}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
 );
@@ -560,7 +571,8 @@ const ICON_VAULT = (
 
 // Cancelled POs are read-only: their action buttons render disabled.
 function ZohoCell({ synced, cancelled = false, unpaid = false, onSync, error }: {
-  synced: boolean; cancelled?: boolean; unpaid?: boolean; onSync?: () => void | Promise<void>; error?: string;
+  synced: boolean; cancelled?: boolean; unpaid?: boolean;
+  onSync?: () => void | Promise<void>; error?: string;
 }) {
   /* The sync talks to Zoho — several calls, a few seconds — so the button spins
      until it comes back rather than looking like nothing happened. */
@@ -847,8 +859,10 @@ const viewOnlyReason = (row: OrderRow) =>
     : row.signingStarted ? 'Documents sent for signature — view-only unless the request is declined or recalled'
       : undefined;
 
-function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onVault, viewOnly }: {
-  cancelled?: boolean; cancelReason?: string; onEdit: () => void; onCancel?: () => void; onVault?: () => void;
+function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onTrack, trackable = false, onVault, viewOnly }: {
+  cancelled?: boolean; cancelReason?: string; onEdit: () => void; onCancel?: () => void; onTrack?: () => void;
+  /** Nothing of this PO is in Zoho yet, so there is no chain to track. */
+  trackable?: boolean; onVault?: () => void;
   /** Set when the form opens read-only — the reason, shown on hover. */
   viewOnly?: string;
 }) {
@@ -870,6 +884,15 @@ function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onVault
           {ICON_EDIT}<span>{viewOnly ? 'View PO' : 'Edit PO'}</span>
         </button>
       </Tooltip>
+      {onTrack && (
+        <Tooltip label={trackable
+          ? 'Zoho Books Tracker — how far this PO has gone across'
+          : 'Nothing of this PO is in Zoho Books yet — sync it once to follow the chain'}>
+          <button type="button" className="ord-btn ord-btn--track" disabled={!trackable} onClick={onTrack}>
+            {ICON_TRACK}<span>Tracker</span>
+          </button>
+        </Tooltip>
+      )}
       <Tooltip label="Evidence Vault — the order, its documents and payment proofs">
         <button type="button" className="ord-btn ord-btn--vault" onClick={onVault}>{ICON_VAULT}<span>Evidence Vault</span></button>
       </Tooltip>
@@ -902,10 +925,10 @@ function RiskBadge({ risk }: { risk: RiskLevel | null }) {
 
 // One PO as it appears on the list: a <tbody> spanning a row per mapped SPI.
 // Payment Request Management reuses it (without the Action column) for its status tabs.
-export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, onZoho, onCancel, onVault, onRecover, showActions = true }: {
+export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, onZoho, onTrack, onCancel, onVault, onRecover, showActions = true }: {
   row: OrderRow; sr: number; inspected: boolean;
   onInspect: (row: OrderRow) => void; onManage: (row: OrderRow) => void;
-  onEdit?: (row: OrderRow) => void; onZoho?: (row: OrderRow) => void; onCancel?: (row: OrderRow) => void; onVault?: (row: OrderRow) => void; onRecover?: (row: OrderRow) => void; showActions?: boolean;
+  onEdit?: (row: OrderRow) => void; onZoho?: (row: OrderRow) => void; onTrack?: (row: OrderRow) => void; onCancel?: (row: OrderRow) => void; onVault?: (row: OrderRow) => void; onRecover?: (row: OrderRow) => void; showActions?: boolean;
 }) {
   const lines = row.invoices.length > 0 ? row.invoices : [null];
   const span = lines.length;
@@ -1001,7 +1024,7 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
                 <PoCell span={span}><AdrCell adr={row.adr} ccy={row.currency} /></PoCell>
                 <PoCell span={span}><RecoveryCell row={row} onRecover={onRecover} /></PoCell>
                 <PoCell span={span}><StatusBadge row={row} /></PoCell>
-                {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={viewOnlyReason(row)} onEdit={() => onEdit?.(row)} onCancel={onCancel && (() => onCancel(row))} onVault={onVault && (() => onVault(row))} /></PoCell>}
+                {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={viewOnlyReason(row)} onEdit={() => onEdit?.(row)} onCancel={onCancel && (() => onCancel(row))} onTrack={onTrack && (() => onTrack(row))} trackable={row.zohoStarted} onVault={onVault && (() => onVault(row))} /></PoCell>}
               </>
             )}
           </tr>
@@ -1029,9 +1052,9 @@ function useIsPhone() {
   return isPhone;
 }
 
-function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, onVault, onRecover, inspected }: {
+function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onTrack, onCancel, onVault, onRecover, inspected }: {
   row: OrderRow; index: number; onManage: (row: OrderRow) => void; onInspect: (row: OrderRow) => void;
-  onEdit: (row: OrderRow) => void; onZoho: (row: OrderRow) => void; onCancel: (row: OrderRow) => void; onVault: (row: OrderRow) => void; onRecover: (row: OrderRow) => void; inspected: boolean;
+  onEdit: (row: OrderRow) => void; onZoho: (row: OrderRow) => void; onTrack: (row: OrderRow) => void; onCancel: (row: OrderRow) => void; onVault: (row: OrderRow) => void; onRecover: (row: OrderRow) => void; inspected: boolean;
 }) {
   const category = categoryOf(row);
   const count = row.invoices.length;
@@ -1148,7 +1171,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onCancel, 
         <RecoveryCell row={row} onRecover={onRecover} />
       </div>
 
-      <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={viewOnlyReason(row)} onEdit={() => onEdit(row)} onCancel={() => onCancel(row)} onVault={() => onVault(row)} />
+      <ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={viewOnlyReason(row)} onEdit={() => onEdit(row)} onCancel={() => onCancel(row)} onTrack={() => onTrack(row)} trackable={row.zohoStarted} onVault={() => onVault(row)} />
     </article>
   );
 }
@@ -1196,6 +1219,10 @@ export default function Order() {
   };
   // Zoho Books: PO + bill once, then the payments not posted yet.
   const [syncingId, setSyncingId] = useState<number | null>(null);
+  // Read-only: where the PO already stands in Zoho, whether or not it can sync now.
+  const [trackRow, setTrackRow] = useState<OrderRow | null>(null);
+  const onTrack = (row: OrderRow) => { if (row.id) setTrackRow(row); };
+
   const onZoho = async (row: OrderRow) => {
     if (!row.id || syncingId) return;
     if (row.draft) { toast.info('Submit the PO first', `${row.po} is still a draft — submit it before syncing to Zoho Books.`); return; }
@@ -1363,6 +1390,12 @@ export default function Order() {
             po={{ id: vaultRow.id, po: vaultRow.po, supplier: vaultRow.supplier, poDate: vaultRow.poDate }}
             onClose={() => setVaultRow(null)}
           />
+        </Suspense>
+      )}
+
+      {trackRow?.id && (
+        <Suspense fallback={null}>
+          <ZohoTrackerModal poId={trackRow.id} poCode={trackRow.po} onClose={() => setTrackRow(null)} />
         </Suspense>
       )}
 
@@ -1539,6 +1572,7 @@ export default function Order() {
                 onInspect={onInspect}
                 onEdit={openEdit}
                 onZoho={onZoho}
+                onTrack={onTrack}
                 onRecover={onRecover}
                 onCancel={onCancel}
                 onVault={onVault}
@@ -1579,6 +1613,7 @@ export default function Order() {
                 onManage={onManage}
                 onEdit={openEdit}
                 onZoho={onZoho}
+                onTrack={onTrack}
                 onRecover={onRecover}
                 onCancel={onCancel}
                 onVault={onVault}

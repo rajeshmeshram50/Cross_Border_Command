@@ -123,6 +123,83 @@ class PoZohoService
     }
 
     /** One line for the toast: what this run actually did in Zoho. */
+    /**
+     * What this PO looks like in Zoho Books right now, read only from our own columns.
+     * Same order as syncAll, so the tracker and the sync can never tell different stories:
+     * purchase order -> bill -> payments, and once cancelled, vendor credit -> refunds.
+     */
+    public function tracker(PurchaseOrder $po): array
+    {
+        $step = function (string $key, string $title, string $sub, bool $done, ?string $ref, $at, ?string $note, ?string $error, ?float $amount = null, array $items = []) {
+            return [
+                'key' => $key, 'title' => $title, 'sub' => $sub,
+                'state' => $error ? 'failed' : ($done ? 'done' : 'pending'),
+                'ref' => $ref ?: null, 'at' => $at?->toIso8601String(),
+                'note' => $note, 'amount' => $amount, 'items' => $items, 'error' => $error,
+            ];
+        };
+        // Each payment / refund as its own line, so a part-posted step says which one is missing.
+        $line = fn (string $label, float $amount, bool $done, ?string $ref, $at, ?string $error) => [
+            'label' => $label, 'amount' => $amount,
+            'state' => $error ? 'failed' : ($done ? 'done' : 'pending'),
+            'ref' => $ref ?: null, 'at' => $at?->toIso8601String(), 'error' => $error,
+        ];
+
+        $payments = PoPayment::withoutGlobalScope('tenant')->where('purchase_order_id', $po->id)->orderBy('id')->get();
+        $posted   = $payments->filter(fn ($p) => (float) $p->zoho_applied_amount > 0);
+        $payError = $payments->firstWhere(fn ($p) => !empty($p->zoho_error))?->zoho_error;
+
+        $steps = [
+            $step('purchase_order', 'Purchase Order Created', 'The PO itself, raised in Zoho Books',
+                !empty($po->zoho_purchaseorder_id), $po->zoho_purchaseorder_id, $po->zoho_synced_at, null,
+                empty($po->zoho_purchaseorder_id) ? $po->zoho_error : null),
+            $step('bill', 'Bill Created', 'The purchase order converted to a bill',
+                !empty($po->zoho_bill_id), $po->zoho_bill_number ?: $po->zoho_bill_id, $po->zoho_synced_at, null, null),
+            $step('payments', 'PO Payment Completed', 'Every payment released, posted against the bill',
+                $payments->isNotEmpty() && $posted->count() === $payments->count(),
+                null, $posted->max('zoho_synced_at'),
+                $payments->isEmpty() ? 'No payment released yet' : $posted->count() . ' of ' . $payments->count() . ' posted',
+                $payError, $payments->isEmpty() ? null : (float) $posted->sum('zoho_applied_amount'),
+                $payments->map(fn ($p) => $line(
+                    $p->utr_cheque_number ? 'UTR ' . $p->utr_cheque_number : ($p->bank_name ?: 'Payment #' . $p->id),
+                    (float) $p->amount, (float) $p->zoho_applied_amount > 0, $p->zoho_payment_id,
+                    $p->zoho_synced_at ?: $p->utr_cheque_date, $p->zoho_error,
+                ))->all()),
+        ];
+
+        // A cancelled PO carries two more steps: what is owed back, and what came back.
+        $adj = PoRefundAdjustment::withoutGlobalScope('tenant')
+            ->where('client_id', $po->client_id)->where('purchase_order_id', $po->id)
+            ->latest('id')->first();
+        if ($adj) {
+            $recs = $adj->recoveries()->withoutGlobalScope('tenant')->where('client_id', $adj->client_id)->orderBy('id')->get();
+            $refunded = $recs->filter(fn ($r) => !empty($r->zoho_refund_id));
+            $steps[] = $step('vendor_credit', 'Vendor Credit Created', 'The amount the supplier owes back, as a credit note',
+                !empty($adj->zoho_vendorcredit_id), $adj->zoho_vendorcredit_number ?: $adj->zoho_vendorcredit_id,
+                $adj->zoho_synced_at, $adj->zoho_vendorcredit_number === $adj->code ? null : $adj->code, $adj->zoho_error);
+            $steps[] = $step('refunds', 'Refund Received', 'Each recovery, refunded against the vendor credit',
+                $recs->isNotEmpty() && $refunded->count() === $recs->count(), null, $refunded->max('zoho_synced_at'),
+                $recs->isEmpty() ? 'No refund recorded yet' : $refunded->count() . ' of ' . $recs->count() . ' refunded',
+                $recs->firstWhere(fn ($r) => !empty($r->zoho_error))?->zoho_error,
+                $recs->isEmpty() ? null : (float) $refunded->sum('amount'),
+                $recs->map(fn ($r) => $line(
+                    $r->reference_no ? 'Ref ' . $r->reference_no : 'Recovery #' . $r->id,
+                    (float) $r->amount, !empty($r->zoho_refund_id), $r->zoho_refund_id,
+                    $r->zoho_synced_at ?: $r->recovered_date, $r->zoho_error,
+                ))->all());
+        }
+
+        $done = count(array_filter($steps, fn ($x) => $x['state'] === 'done'));
+        return [
+            'po_code'   => $po->code,
+            'currency'  => $po->currency_code ?: 'INR',
+            'cancelled' => $po->isCancelled(),
+            'done'      => $done,
+            'total'     => count($steps),
+            'steps'     => $steps,
+        ];
+    }
+
     public function summary(array $r): string
     {
         $parts = ['bill ' . ($r['bill_number'] ?? '—')];

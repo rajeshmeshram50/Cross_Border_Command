@@ -133,7 +133,7 @@ class PurchaseOrderController extends Controller
         'expected_delivery_date', 'grand_total', 'physical_inspection', 'inspection_status', 'cancel_reason', 'created_at',
         'taxable_total', 'total_cgst', 'total_sgst', 'total_igst', 'shipping_charges', 'packaging_charges', 'other_charges',
         'tds_amount', 'paid_amount', 'balance_amount', 'currency_code',
-        'cancel_stage', 'zoho_status', 'zoho_bill_id', 'zoho_bill_number', 'zoho_error',
+        'cancel_stage', 'zoho_status', 'zoho_purchaseorder_id', 'zoho_bill_id', 'zoho_bill_number', 'zoho_error',
     ];
 
     /**
@@ -768,6 +768,13 @@ class PurchaseOrderController extends Controller
         return response()->json(['status' => true, 'message' => 'Synced to Zoho Books — ' . $zoho->summary($r) . '.']);
     }
 
+    /** GET /p2p/orders/{id}/zoho-tracker — where this PO stands in Zoho Books, from our own columns. */
+    public function zohoTracker(Request $request, int $id): JsonResponse
+    {
+        $this->tenantUser($request);
+        return $this->ok(app(\App\Services\P2p\PoZohoService::class)->tracker($this->findPo($id)));
+    }
+
     /** DELETE /p2p/orders/{id} — drafts only; a submitted PO is cancelled instead. */
     public function destroy(Request $request, int $id): JsonResponse
     {
@@ -982,6 +989,8 @@ class PurchaseOrderController extends Controller
                 'zoho_synced' => $a->zoho_sync_status === 'synced' && (int) ($a->zoho_pending_recoveries ?? 0) === 0,
             ] : null,
             'zoho_status'         => $po->zoho_status,
+            // Anything at all in Zoho — the tracker has something to show only then.
+            'zoho_started'        => !empty($po->zoho_purchaseorder_id) || !empty($po->zoho_bill_id),
             'zoho_bill_number'    => $po->zoho_bill_number,
             'zoho_error'          => $po->zoho_error,
             'zoho_unposted_payments' => (int) ($po->zoho_unposted_payments ?? 0),

@@ -109,12 +109,17 @@ export default function RaisePaymentRequestModal({
   const pctPaid = row.net > 0 ? Math.round((row.paid / row.net) * 100) : 0;
   const progPct = row.total > 0 ? Math.round((row.paid / row.total) * 100) : 0;
 
+  // Percentages are of the net payable — grand total less TDS — so 100% is the whole
+  // of what can be released, and a request for the balance reads as its true share.
+  const basis = row.net > 0 ? row.net : row.total;
+  const pctOf = (v: number) => (basis > 0 ? Math.round((v / basis) * 1000) / 10 : 0);
+
   // A percentage is 0–100 with up to 2 decimals; anything else is refused as it is typed.
   const fromPct = (v: string) => {
     if (v !== '' && (!/^\d{0,3}(\.\d{0,2})?$/.test(v) || parseFloat(v) > 100)) return;
     setPctText(v);
     const p = parseFloat(v);
-    const a = Number.isNaN(p) || p < 0 ? 0 : Math.round((row.total * p) / 100);
+    const a = Number.isNaN(p) || p < 0 ? 0 : Math.round((basis * p) / 100);
     setAmtText(a ? String(a) : '');
   };
 
@@ -124,7 +129,18 @@ export default function RaisePaymentRequestModal({
     setAmtText(v);
     const a = parseFloat(v);
     const clean = Number.isNaN(a) || a < 0 ? 0 : a;
-    setPctText(clean && row.total > 0 ? String(Math.round((clean / row.total) * 1000) / 10) : '');
+    setPctText(clean ? String(pctOf(clean)) : '');
+  };
+
+  /* CS-422 — "Balance Payment" means the balance: picking it fills the amount and the
+     percentage with what is still open to request, rather than leaving both blank. */
+  const pickType = (t: string) => {
+    setType(t);
+    if (t === 'Balance Payment' && available > 0) {
+      const a = Math.round(available);
+      setAmtText(String(a));
+      setPctText(String(pctOf(a)));
+    }
   };
 
   const submit = () => {
@@ -151,7 +167,7 @@ export default function RaisePaymentRequestModal({
     onSubmit({
       id: nextId,
       amount,
-      pct: pct > 0 ? pct : (row.total > 0 ? Math.round((amount / row.total) * 1000) / 10 : 0),
+      pct: pct > 0 ? pct : pctOf(amount),
       type,
       reason: reason.trim(),
       approver: who.name,
@@ -212,7 +228,7 @@ export default function RaisePaymentRequestModal({
                   value={type}
                   placeholder="Select type…"
                   options={TYPE_OPTIONS}
-                  onChange={setType}
+                  onChange={pickType}
                 />
               </div>
 
