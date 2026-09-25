@@ -53,6 +53,11 @@ import './payment-request-detail.css';
 import './payment-request-decision.css';
 import { ccySymbol } from '../../../../utils/currency';
 
+/* The live camera used by Physical Inspection. A hidden
+   <input type="file" capture="environment"> only opens a camera on a phone;
+   a desktop ignores the attribute and shows the file picker instead. */
+const CameraCaptureModal = lazy(() => import('../../purchase-management/order/physical-inspection/CameraCaptureModal'));
+
 type TxTab = 'current' | 'history';
 type SubTab = 'supplier' | 'linked' | 'summary' | 'physical' | 'status';
 
@@ -912,6 +917,12 @@ function InspectionPanel({ detail }: { detail: Detail }) {
     e.target.value = '';
     if (added.length) setLine(code, { files: [...lineOf(code).files, ...added] });
   };
+  /** Which product line the camera is open for, and what it hands back. */
+  const [camFor, setCamFor] = useState<{ code: string; name: string } | null>(null);
+  const addShots = async (code: string, shots: File[]) => {
+    const added = await toProofFiles(shots);
+    if (added.length) setLine(code, { files: [...lineOf(code).files, ...added] });
+  };
   const removeFile = (code: string, i: number) => {
     const f = lineOf(code).files[i];
     if (f?.url) URL.revokeObjectURL(f.url);
@@ -923,6 +934,17 @@ function InspectionPanel({ detail }: { detail: Detail }) {
 
   return (
     <div className="prd-secwrap">
+      {camFor && (
+        <Suspense fallback={null}>
+          <CameraCaptureModal
+            title="Take inspection photos"
+            subject={camFor.name}
+            namePrefix="inspection"
+            onAttach={(shots) => { void addShots(camFor.code, shots); }}
+            onClose={() => setCamFor(null)}
+          />
+        </Suspense>
+      )}
       {attFor && (
         <InspectionAttachmentsModal
           productName={attFor.name}
@@ -1001,11 +1023,11 @@ function InspectionPanel({ detail }: { detail: Detail }) {
                       <div className="pins-attach">
                         <div className="pins-attach__row">
                           <label className="pins-btn" htmlFor={`prd-up-${p.code}`} title="Upload photos or videos"><IcoUpload size={13} stroke={2.4} /><span>Upload</span></label>
-                          <label className="pins-btn pins-btn--cam" htmlFor={`prd-cam-${p.code}`} title="Capture with camera"><IcoCamera size={13} stroke={2.3} /><span>Camera</span></label>
+                          <button type="button" className="pins-btn pins-btn--cam" title="Capture with camera"
+                            onClick={() => setCamFor({ code: p.code, name: p.name || p.code })}><IcoCamera size={13} stroke={2.3} /><span>Camera</span></button>
                           <span className={`pins-files${n ? ' is-on' : ''}`}>{n} file{n === 1 ? '' : 's'}</span>
                         </div>
                         <input id={`prd-up-${p.code}`} className="pins-file-in" type="file" multiple accept="image/*,video/*,application/pdf" onChange={e => addFiles(p.code, e)} />
-                        <input id={`prd-cam-${p.code}`} className="pins-file-in" type="file" accept="image/*,video/*" capture="environment" onChange={e => addFiles(p.code, e)} />
                         {n > 0 ? (
                           <div className="pins-prooflist">
                             <ProofChip file={line.files[0]} onView={() => viewFile(line.files[0])} onDownload={() => dlFile(line.files[0])} onRemove={() => removeFile(p.code, 0)} />
