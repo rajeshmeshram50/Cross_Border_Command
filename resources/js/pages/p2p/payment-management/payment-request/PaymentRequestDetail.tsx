@@ -1,6 +1,6 @@
 // Payment Request Management → View Request. Opens full screen over the list,
 // so Back returns to the queue with its tab, search and page untouched.
-import { Suspense, lazy, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Badge, { type BadgeVariant } from '../../../../components/ui/Badge';
 import { useAuth } from '../../../../contexts/AuthContext';
@@ -20,16 +20,16 @@ import {
   LEGAL_PARAMS, RISK_GUIDELINES, isRiskMandatory, legalSections, legalTotals, toRiskSubject, type Supplier,
 } from './payment-request-suppliers';
 import {
-  ProofChip, VERDICTS, downloadFile, openFile, toProofFiles,
+  ProofChip, VERDICTS, downloadFile, openFile,
   type InspectionLine, type InspectionProduct, type ProofFile, type Verdict,
 } from '../../purchase-management/order/physical-inspection/inspection-shared';
 import InspectionAttachmentsModal from '../../purchase-management/order/physical-inspection/InspectionAttachmentsModal';
 import InspectionProductView from '../../purchase-management/order/physical-inspection/InspectionProductView';
 import {
-  IcoAlert, IcoArrowL, IcoBriefcase, IcoBuilding, IcoCamera, IcoCard, IcoCart, IcoCheck, IcoChevron,
+  IcoAlert, IcoArrowL, IcoBriefcase, IcoBuilding, IcoCard, IcoCart, IcoCheck, IcoChevron,
   IcoCircleX, IcoClock, IcoDocSm, IcoDownload, IcoEye, IcoFile, IcoHistory, IcoLink, IcoLock, IcoOk,
   IcoPercent, IcoPin, IcoReceipt, IcoRupee, IcoScales, IcoSend, IcoShield, IcoShip, IcoStop, IcoTarget,
-  IcoText, IcoTrend, IcoUpload, IcoUser, IcoWallet, IcoWarn, IcoX,
+  IcoText, IcoTrend, IcoUser, IcoWallet, IcoWarn, IcoX,
   type IconProps,
 } from '../../icons';
 import { STATUS_LABEL, type RequestStatus } from './paymentRequestData';
@@ -891,12 +891,10 @@ function SummaryPanel({ detail }: { detail: Detail }) {
 /* ══ Physical Inspection ══
    The PO module's inspection table against the order behind this request:
    mark each line and attach its proof. A direct SPI has no order, so no gate. */
-const blankLine = (): InspectionLine => ({ verdict: '', files: [] });
 
 function InspectionPanel({ detail }: { detail: Detail }) {
   const toast = useToast();
   const { po, inspection } = detail;
-  const [lines, setLines] = useState<Record<string, InspectionLine>>({});
   const [attFor, setAttFor] = useState<InspectionProduct | null>(null);
   const [viewFor, setViewFor] = useState<InspectionProduct | null>(null);
 
@@ -910,20 +908,12 @@ function InspectionPanel({ detail }: { detail: Detail }) {
   }
 
   const done = inspection.completed;
-  const lineOf = (code: string) => lines[code] ?? (done ? { verdict: 'correct' as Verdict, files: [] } : blankLine());
-  const setLine = (code: string, next: Partial<InspectionLine>) =>
-    setLines(cur => ({ ...cur, [code]: { ...(cur[code] ?? blankLine()), ...next } }));
-
-  const addFiles = async (code: string, e: ChangeEvent<HTMLInputElement>) => {
-    const added = await toProofFiles(e.target.files);
-    e.target.value = '';
-    if (added.length) setLine(code, { files: [...lineOf(code).files, ...added] });
-  };
-  const removeFile = (code: string, i: number) => {
-    const f = lineOf(code).files[i];
-    if (f?.url) URL.revokeObjectURL(f.url);
-    if (f?.thumb) URL.revokeObjectURL(f.thumb);
-    setLine(code, { files: lineOf(code).files.filter((_, ix) => ix !== i) });
+  /* Read from the record, never from this screen: the inspection is taken on the
+     PO list, and here it is only reported. */
+  const markOf = (code: string) => inspection.marks.find(m => m.code === code);
+  const lineOf = (code: string): InspectionLine => {
+    const m = markOf(code);
+    return { verdict: (m?.verdict ?? null) as Verdict | null, files: m?.files ?? [] } as InspectionLine;
   };
   const viewFile = (f: ProofFile) => { if (!openFile(f)) toast.info('Preview', `${f.name} — logic coming soon`); };
   const dlFile = (f: ProofFile) => { if (!downloadFile(f)) toast.info('Download', `${f.name} — logic coming soon`); };
@@ -937,7 +927,6 @@ function InspectionPanel({ detail }: { detail: Detail }) {
           files={lineOf(attFor.code).files}
           onView={ix => viewFile(lineOf(attFor.code).files[ix])}
           onDownload={ix => dlFile(lineOf(attFor.code).files[ix])}
-          onRemove={ix => removeFile(attFor.code, ix)}
           onClose={() => setAttFor(null)}
         />
       )}
@@ -947,7 +936,7 @@ function InspectionPanel({ detail }: { detail: Detail }) {
         <span className="prd-sechead__t">Physical Inspection</span>
         <span className="prd-panel__c">{inspection.products.length}</span>
         <span className={`prd-state ${done ? 'is-done' : 'is-wait'}`}>{done ? 'Completed' : 'Pending'}</span>
-        <span className="prd-sechead__s">Goods on {po.po} · mark every line and attach its proof</span>
+        <span className="prd-sechead__s">Goods on {po.po} · as recorded on the Purchase Order list</span>
       </div>
 
       <div className="pins-scroll">
@@ -989,44 +978,21 @@ function InspectionPanel({ detail }: { detail: Detail }) {
                   </td>
                   <td className="pins-td-c"><span className="pins-qty">{p.qty}</span></td>
                   <td className="pins-td-c">
-                    {done ? (
-                      <span className={`pins-tagv pins-tagv--${line.verdict || 'none'}`}>{tag?.ico}{tag ? tag.t : '—'}</span>
-                    ) : (
-                      <span className="pins-seg">
-                        {VERDICTS.map(v => (
-                          <button type="button" key={v.k} className={`pins-seg__b pins-seg__b--${v.k}${line.verdict === v.k ? ' is-on' : ''}`} onClick={() => setLine(p.code, { verdict: v.k })}>
-                            {v.ico}<span>{v.t}</span>
-                          </button>
-                        ))}
-                      </span>
-                    )}
+                    <span className={`pins-tagv pins-tagv--${line.verdict || 'none'}`}>{tag?.ico}{tag ? tag.t : 'Not marked'}</span>
                   </td>
                   <td className="pins-td-proof">
-                    {done ? (
-                      <span className={`pins-cnt${n ? ' is-on' : ''}`}>{n} file{n === 1 ? '' : 's'}</span>
-                    ) : (
-                      <div className="pins-attach">
-                        <div className="pins-attach__row">
-                          <label className="pins-btn" htmlFor={`prd-up-${p.code}`} title="Upload photos or videos"><IcoUpload size={13} stroke={2.4} /><span>Upload</span></label>
-                          <label className="pins-btn pins-btn--cam" htmlFor={`prd-cam-${p.code}`} title="Capture with camera"><IcoCamera size={13} stroke={2.3} /><span>Camera</span></label>
-                          <span className={`pins-files${n ? ' is-on' : ''}`}>{n} file{n === 1 ? '' : 's'}</span>
-                        </div>
-                        <input id={`prd-up-${p.code}`} className="pins-file-in" type="file" multiple accept="image/*,video/*,application/pdf" onChange={e => addFiles(p.code, e)} />
-                        <input id={`prd-cam-${p.code}`} className="pins-file-in" type="file" accept="image/*,video/*" capture="environment" onChange={e => addFiles(p.code, e)} />
-                        {n > 0 ? (
-                          <div className="pins-prooflist">
-                            <ProofChip file={line.files[0]} onView={() => viewFile(line.files[0])} onDownload={() => dlFile(line.files[0])} onRemove={() => removeFile(p.code, 0)} />
-                            {n > 1 && (
-                              <button type="button" className="pins-more" onClick={() => setAttFor(p)}>
-                                <span className="pins-more__n">+{n - 1}</span>
-                                <span className="pins-more__t">View more proof{n - 1 === 1 ? '' : 's'}</span>
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="pins-empty">No evidence attached for this product yet.</div>
+                    {n > 0 ? (
+                      <div className="pins-prooflist">
+                        <ProofChip file={line.files[0]} onView={() => viewFile(line.files[0])} onDownload={() => dlFile(line.files[0])} />
+                        {n > 1 && (
+                          <button type="button" className="pins-more" onClick={() => setAttFor(p)}>
+                            <span className="pins-more__n">+{n - 1}</span>
+                            <span className="pins-more__t">View more proof{n - 1 === 1 ? '' : 's'}</span>
+                          </button>
                         )}
                       </div>
+                    ) : (
+                      <div className="pins-empty">No evidence on record for this product.</div>
                     )}
                   </td>
                 </tr>

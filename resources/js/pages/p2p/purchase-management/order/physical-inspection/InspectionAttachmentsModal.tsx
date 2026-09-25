@@ -19,7 +19,8 @@ export default function InspectionAttachmentsModal({
   files: ProofFile[];
   onView: (i: number) => void;
   onDownload: (i: number) => void;
-  onRemove: (i: number) => void;
+  /** Absent where the inspection is only being read, not taken. */
+  onRemove?: (i: number) => void;
   onClose: () => void;
 }) {
   useScrollLock(true, '.pinsatt-card');
@@ -54,7 +55,7 @@ export default function InspectionAttachmentsModal({
                   file={f}
                   onView={() => onView(i)}
                   onDownload={() => onDownload(i)}
-                  onRemove={() => onRemove(i)}
+                  onRemove={onRemove && (() => onRemove(i))}
                 />
               ))}
             </div>
