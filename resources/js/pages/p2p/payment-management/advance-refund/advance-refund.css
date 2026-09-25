@@ -994,3 +994,16 @@
 [data-bs-theme="dark"] .arf-att__opt:hover { background: rgba(34, 211, 238, .1); }
 [data-bs-theme="dark"] .arf-att__opt b { color: #e2e8f0; }
 [data-bs-theme="dark"] .arf-att__opt + .arf-att__opt { border-top-color: #1f2d42; }
+
+/* Deleting one recovery: the row's own button spins, and every action on the
+   list is closed until it lands, so a second press cannot reach a gone row. */
+.cpay-act__ring {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .45);
+  border-top-color: #fff;
+  animation: cpay-act-spin 700ms linear infinite;
+}
+@keyframes cpay-act-spin { to { transform: rotate(360deg); } }
+.cpay-act.is-busy { cursor: progress; }
