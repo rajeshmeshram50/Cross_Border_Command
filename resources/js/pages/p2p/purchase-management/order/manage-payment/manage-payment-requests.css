@@ -1409,3 +1409,60 @@
     margin-left: auto;
   }
 }
+
+/* Submitting: the card is inert until the request is through. Without this the
+   form stayed live behind an in-flight save — the fields could be edited and
+   the other buttons clicked while the request was on its way. */
+.mpr-card.is-busy { position: relative; }
+
+.mpr-wait {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, .82);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  cursor: progress;
+}
+
+[data-bs-theme="dark"] .mpr-wait { background: rgba(15, 23, 42, .84); }
+
+.mpr-wait__ring {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid #cffafe;
+  border-top-color: #0891b2;
+  animation: mpr-spin 800ms linear infinite;
+}
+
+@keyframes mpr-spin { to { transform: rotate(360deg); } }
+
+.mpr-wait__t { font-size: 13px; font-weight: 700; color: #0f172a; }
+.mpr-wait__s { font-size: 11.5px; font-weight: 500; color: #64748b; }
+
+[data-bs-theme="dark"] .mpr-wait__t { color: #e2e8f0; }
+[data-bs-theme="dark"] .mpr-wait__s { color: #94a3b8; }
+
+/* A spinner small enough to sit inside the submit button. */
+.mpr-btnspin {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .45);
+  border-top-color: #fff;
+  animation: mpr-spin 700ms linear infinite;
+  display: inline-block;
+  margin-right: 7px;
+  vertical-align: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mpr-wait__ring, .mpr-btnspin { animation-duration: 2.4s; }
+}

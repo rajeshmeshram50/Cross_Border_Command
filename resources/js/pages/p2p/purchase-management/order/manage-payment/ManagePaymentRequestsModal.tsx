@@ -187,12 +187,6 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => { cardRef.current?.focus(); }, []);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   const toast = useToast();
   const [data, setData] = useState<PoPaymentsPayload | null>(null);
   const [tdsOpen, setTdsOpen] = useState(false);
@@ -200,6 +194,14 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
   const [payReq, setPayReq] = useState<PaymentRequest | null>(null);
   const [releases, setReleases] = useState<ReleasePayment[]>([]);
   const [busy, setBusy] = useState(false);
+
+  // Escape closes the payments modal — but not while a save is in flight, or it
+  // takes the child form, and its in-flight request, down with it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose, busy]);
 
   const failToast = (what: string, e: unknown) => toast.error(what, e instanceof PoApiError ? e.firstError : 'Please try again.');
 

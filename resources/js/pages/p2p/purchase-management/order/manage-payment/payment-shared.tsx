@@ -292,3 +292,22 @@ export function TdsStrip({ tds, total, supplier, onOpen, locked = false, ccy, in
     </div>
   );
 }
+
+/**
+ * The "saving" cover for a payment modal: a spinner over the whole card while a
+ * request is in flight, so the form cannot be typed in, clicked or submitted
+ * twice. The Add Payment modal has carried its own copy of this since CS-423;
+ * this is the same thing, shared, for the other payment modals.
+ *
+ * The card it sits in needs `position: relative` and should carry
+ * `aria-busy` — see `.mpr-wait` in manage-payment-requests.css.
+ */
+export function PaymentWait({ title, sub }: { title: string; sub?: string }) {
+  return (
+    <div className="mpr-wait" role="status" aria-live="polite">
+      <span className="mpr-wait__ring" />
+      <span className="mpr-wait__t">{title}</span>
+      {sub && <span className="mpr-wait__s">{sub}</span>}
+    </div>
+  );
+}
