@@ -496,3 +496,36 @@
   opacity: .6;
   cursor: not-allowed;
 }
+
+/* A refused field says so where it is: a red edge on the input and the reason
+   under it. The single banner named neither the field nor the value, so the
+   user had to guess which box the refusal was about (CS-425). */
+.apay-in.is-invalid,
+.apay-drop.is-invalid {
+  border-color: #ef4444;
+  background: #fff5f5;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, .12);
+}
+
+.apay-in.is-invalid:focus {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, .2);
+}
+
+.apay-fielderr {
+  display: block;
+  margin-top: 5px;
+  color: #b91c1c;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+[data-bs-theme="dark"] .apay-in.is-invalid,
+[data-bs-theme="dark"] .apay-drop.is-invalid {
+  border-color: #f87171;
+  background: rgba(239, 68, 68, .08);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, .16);
+}
+
+[data-bs-theme="dark"] .apay-fielderr { color: #fca5a5; }

@@ -1,7 +1,7 @@
 // Approve / Reject a payment request. One dialog, two modes: the request is
 // shown read-only exactly as raised, and the approver sets only the decision —
 // the amount being sanctioned, or the reason for declining.
-import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../../../contexts/AuthContext';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
@@ -15,6 +15,12 @@ import '../../purchase-management/order/manage-payment/raise-payment-request.css
 // For the apay-wait veil shown while the decision saves.
 import '../../purchase-management/order/manage-payment/add-payment.css';
 import './payment-request-decision.css';
+
+/* The live camera the Physical Inspection screen uses. A hidden
+   <input type="file" capture="environment"> only opens a camera on a phone —
+   on a desktop the attribute is ignored and the ordinary file picker appears,
+   which is what "Camera" used to do here. */
+const CameraCaptureModal = lazy(() => import('../../purchase-management/order/physical-inspection/CameraCaptureModal'));
 
 export type DecisionMode = 'approve' | 'decline';
 
@@ -69,7 +75,7 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const camRef = useRef<HTMLInputElement>(null);
+  const [camOpen, setCamOpen] = useState(false);
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -113,6 +119,13 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
     }));
     e.target.value = '';
     if (list.length) setFiles(cur => [...cur, ...list]);
+  };
+  /** Photos from the live camera arrive as real Files, same as picked ones. */
+  const addShots = (shots: File[]) => {
+    if (!shots.length) return;
+    setFiles(cur => [...cur, ...shots.map(f => ({
+      name: f.name || `photo_${Date.now()}.jpg`, size: f.size, cam: true, url: URL.createObjectURL(f),
+    }))]);
   };
   const dropFile = (i: number) => setFiles(cur => {
     URL.revokeObjectURL(cur[i].url);
@@ -160,6 +173,17 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
 
   return createPortal(
     <div className="spi-mdl-backdrop prd-dec-layer">
+      {camOpen && (
+        <Suspense fallback={null}>
+          <CameraCaptureModal
+            title="Take a photo for this remark"
+            namePrefix={approve ? 'approval' : 'decline'}
+            subject={`${approve ? 'Approval' : 'Decline'} remark · ${request.requestId}`}
+            onAttach={addShots}
+            onClose={() => setCamOpen(false)}
+          />
+        </Suspense>
+      )}
       <div
         className={`spi-mdl mpr-card prd-dec${approve ? '' : ' prd-dec--no'}${saving ? ' is-saving' : ''}`}
         role="dialog" aria-modal="true" aria-labelledby="prd-dec-title" tabIndex={-1} ref={cardRef} aria-busy={saving}
@@ -263,11 +287,10 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
                 />
                 <div className="prd-dec__remarkacts">
                   <button type="button" className="prd-dec__rbtn" title="Attach a file" disabled={saving} onClick={() => fileRef.current?.click()}>{ICON_CLIP}<span>Upload</span></button>
-                  <button type="button" className="prd-dec__rbtn" title="Take a photo" disabled={saving} onClick={() => camRef.current?.click()}>{ICON_CAM}<span>Camera</span></button>
+                  <button type="button" className="prd-dec__rbtn" title="Take a photo" disabled={saving} onClick={() => setCamOpen(true)}>{ICON_CAM}<span>Camera</span></button>
                 </div>
               </div>
               <input ref={fileRef} type="file" multiple hidden onChange={e => addFiles(e, false)} />
-              <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={e => addFiles(e, true)} />
               {files.length > 0 && (
                 <div className="prd-dec__files">
                   {files.map((f, i) => (

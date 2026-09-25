@@ -11,6 +11,10 @@ import './camera-capture.css';
 type Props = {
   /** What the photos are for — the product name, or "Inspection note". */
   subject: string;
+  /** Heading, for screens other than Physical Inspection. */
+  title?: string;
+  /** Start of each photo's file name — it ends up on the attachment chip. */
+  namePrefix?: string;
   onAttach: (files: File[]) => void;
   onClose: () => void;
   /** Most photos one session may take. */
@@ -50,7 +54,7 @@ const pad = (n: number) => String(n).padStart(2, '0');
 const stamp = (d = new Date()) =>
   `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 
-export default function CameraCaptureModal({ subject, onAttach, onClose, max = 10 }: Props) {
+export default function CameraCaptureModal({ subject, title = 'Take inspection photos', namePrefix = 'inspection', onAttach, onClose, max = 10 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -127,7 +131,7 @@ export default function CameraCaptureModal({ subject, onAttach, onClose, max = 1
     const n = ++seq.current;
     canvas.toBlob((blob) => {
       if (!blob) return;
-      const file = new File([blob], `inspection-${stamp()}-${n}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+      const file = new File([blob], `${namePrefix}-${stamp()}-${n}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
       setShots((list) => [...list, { file, url: URL.createObjectURL(blob) }]);
     }, 'image/jpeg', 0.9);
     setFlash(true);
@@ -170,7 +174,7 @@ export default function CameraCaptureModal({ subject, onAttach, onClose, max = 1
         <div className="cam-head">
           <span className="cam-head__ico">{ICON_CAM}</span>
           <div className="cam-head__txt">
-            <div className="cam-head__t" id="cam-title">Take inspection photos</div>
+            <div className="cam-head__t" id="cam-title">{title}</div>
             <div className="cam-head__s">{subject}</div>
           </div>
           <button type="button" className="cam-x" onClick={onClose} aria-label="Close camera">{ICON_X}</button>

@@ -269,8 +269,19 @@ class PoPaymentRequestController extends Controller
             $dup = PoPayment::withoutGlobalScope('tenant')->where('client_id', $order->client_id)
                 ->whereRaw('UPPER(utr_cheque_number) = ?', [$utr])
                 ->when($existing, fn ($q) => $q->where('id', '!=', $existing->id))
-                ->exists();
-            if ($dup) return $this->fail('This UTR / cheque number is already used on another payment.', 422, ['utr_cheque_number' => ['Already used on another payment.']]);
+                ->first(['id', 'amount', 'purchase_order_id', 'payment_request_id']);
+            if ($dup) {
+                /* Name the payment holding it. "Already used on another payment"
+                   left the user hunting for which one (CS-425). */
+                $onPo  = PurchaseOrder::withoutGlobalScope('tenant')->whereKey($dup->purchase_order_id)->value('code');
+                $onReq = PoPaymentRequest::withoutGlobalScope('tenant')->whereKey($dup->payment_request_id)->value('code');
+                $where = trim(($onPo ? $onPo : '') . ($onReq ? " · {$onReq}" : ''));
+                $msg = "UTR / cheque number {$utr} is already recorded"
+                    . ($where !== '' ? " on {$where}" : ' on another payment')
+                    . '. Enter the reference from this payment instead.';
+
+                return $this->fail($msg, 422, ['utr_cheque_number' => [$msg]]);
+            }
         }
 
         $amount = round((float) $data['amount'], 2);

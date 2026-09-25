@@ -66,6 +66,14 @@ export function Ref({ label, value, mono, extra }: { label: string; value: strin
 
 const blankIfDash = (v?: string) => (!v || v === '—' ? '' : v);
 
+/** The inputs an error can land on. */
+type FieldKey = 'amount' | 'bank' | 'utr' | 'date' | 'proof';
+
+/** Server field keys -> the inputs on this form. */
+const FIELD_OF: Record<string, FieldKey> = {
+  amount: 'amount', bank_name: 'bank', utr_cheque_number: 'utr', utr_cheque_date: 'date', proof: 'proof',
+};
+
 export default function AddPaymentModal({
   requestId, supplier, poNumber, spiNumber, spiCount, approved, paid, initial, onSave, onClose, ccy,
 }: AddPaymentProps) {
@@ -100,22 +108,32 @@ export default function AddPaymentModal({
   const savingRef = useRef(false);
   savingRef.current = saving;
   const [error, setError] = useState('');
+  /* Which field a message belongs to, so the form can point at it. A single
+     banner ("Already used on another payment.") left the user hunting for the
+     field that was refused (CS-425). */
+  const [fieldErr, setFieldErr] = useState<Partial<Record<FieldKey, string>>>({});
+  /** Put the message on a field AND in the banner, so both read the same. */
+  const fail = (field: FieldKey, message: string) => { setFieldErr({ [field]: message }); setError(message); };
+  const clearErrors = () => { setFieldErr({}); setError(''); };
+  const invalid = (f: FieldKey) => (fieldErr[f] ? ' is-invalid' : '');
+  const FieldError = ({ f }: { f: FieldKey }) => (fieldErr[f] ? <span className="apay-fielderr">{fieldErr[f]}</span> : null);
 
   const shownFile = file || initial?.file || '';
 
   const save = async () => {
     if (saving) return;
+    clearErrors();
     const amt = amountValue(amount);
-    if (!(amt > 0)) { setError('Please enter a valid amount'); return; }
-    if (amt < 1) { setError(`The payment amount must be at least ${sym}1.`); return; }
+    if (!(amt > 0)) { fail('amount', 'Enter the amount being paid.'); return; }
+    if (amt < 1) { fail('amount', `The payment amount must be at least ${sym}1.`); return; }
     if (amt > room + 0.5) {
-      setError(`Only ${money(room)} is still approved and unreleased on this request`);
+      fail('amount', `Only ${money(room)} is still approved and unreleased on this request.`);
       return;
     }
     const ref = utr.trim();
-    if (ref && !/^[A-Za-z0-9]{6,22}$/.test(ref)) { setError('UTR / cheque number must be 6–22 letters or digits'); return; }
-    if (date && date > new Date().toISOString().slice(0, 10)) { setError('UTR / cheque date cannot be in the future'); return; }
-    if (upload && upload.size > 10 * 1024 * 1024) { setError('Proof of payment must be 10 MB or smaller'); return; }
+    if (ref && !/^[A-Za-z0-9]{6,22}$/.test(ref)) { fail('utr', 'UTR / cheque number must be 6–22 letters or digits.'); return; }
+    if (date && date > new Date().toISOString().slice(0, 10)) { fail('date', 'UTR / cheque date cannot be in the future.'); return; }
+    if (upload && upload.size > 10 * 1024 * 1024) { fail('proof', 'Proof of payment must be 10 MB or smaller.'); return; }
     setSaving(true);
     try {
       await onSave({
@@ -126,6 +144,18 @@ export default function AddPaymentModal({
         file: shownFile || undefined,
         upload,
       });
+    } catch (e) {
+      /* The server answers with the field it refused and why; show it on that
+         field instead of as one more line of prose. */
+      const errs = (e as { fieldErrors?: Record<string, string[]> })?.fieldErrors ?? {};
+      const marks: Partial<Record<FieldKey, string>> = {};
+      for (const [key, list] of Object.entries(errs)) {
+        const f = FIELD_OF[key];
+        if (f && list?.[0]) marks[f] = list[0];
+      }
+      const message = (e as { message?: string })?.message || Object.values(marks)[0] || 'The payment could not be saved.';
+      setFieldErr(marks);
+      setError(message);
     } finally {
       setSaving(false);
     }
@@ -182,34 +212,42 @@ export default function AddPaymentModal({
                 <input
                   id="apay-amount"
                   ref={amountRef}
-                  className="apay-in"
+                  className={`apay-in${invalid('amount')}`}
                   inputMode="decimal"
                   placeholder="0.00"
                   value={amount}
                   disabled={saving}
-                  onChange={(e) => { setAmount(e.target.value); setError(''); }}
+                  aria-invalid={!!fieldErr.amount}
+                  onChange={(e) => { setAmount(e.target.value); clearErrors(); }}
                 />
               </div>
+              <FieldError f="amount" />
             </div>
 
             <div className="apay-f">
               <label htmlFor="apay-date">UTR / Cheque Date</label>
-              <input id="apay-date" className="apay-in" type="date" value={date} disabled={saving} onChange={(e) => setDate(e.target.value)} />
+              <input id="apay-date" className={`apay-in${invalid('date')}`} type="date" value={date} disabled={saving}
+                aria-invalid={!!fieldErr.date} onChange={(e) => { setDate(e.target.value); clearErrors(); }} />
+              <FieldError f="date" />
             </div>
 
             <div className="apay-f">
               <label htmlFor="apay-bank">Bank Name</label>
-              <input id="apay-bank" className="apay-in" placeholder="Enter bank name" value={bank} disabled={saving} onChange={(e) => setBank(e.target.value)} />
+              <input id="apay-bank" className={`apay-in${invalid('bank')}`} placeholder="Enter bank name" value={bank} disabled={saving}
+                aria-invalid={!!fieldErr.bank} onChange={(e) => { setBank(e.target.value); clearErrors(); }} />
+              <FieldError f="bank" />
             </div>
 
             <div className="apay-f">
               <label htmlFor="apay-utr">UTR / Cheque Number</label>
-              <input id="apay-utr" className="apay-in" placeholder="Enter UTR / cheque number" value={utr} disabled={saving} onChange={(e) => setUtr(e.target.value)} />
+              <input id="apay-utr" className={`apay-in${invalid('utr')}`} placeholder="Enter UTR / cheque number" value={utr} disabled={saving}
+                aria-invalid={!!fieldErr.utr} onChange={(e) => { setUtr(e.target.value); clearErrors(); }} />
+              <FieldError f="utr" />
             </div>
 
             <div className="apay-f apay-f--full">
               <label htmlFor="apay-file">Proof of Payment</label>
-              <label className="apay-drop" htmlFor="apay-file">
+              <label className={`apay-drop${invalid('proof')}`} htmlFor="apay-file">
                 <div className="apay-drop__ico">{ICON_UPLOAD}</div>
                 <div className="apay-drop__txt">
                   <div className="apay-drop__t">
@@ -226,6 +264,7 @@ export default function AddPaymentModal({
                   onChange={(e) => { const picked = e.target.files?.[0] ?? null; setUpload(picked); setFile(picked?.name ?? ''); }}
                 />
               </label>
+              <FieldError f="proof" />
             </div>
           </div>
 

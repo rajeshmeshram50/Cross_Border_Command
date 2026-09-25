@@ -13,6 +13,8 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Inbox, X } from 'lucide-react';
 import api from '../api';
+import { useAuth } from '../contexts/AuthContext';
+import { canAccessPath } from '../utils/routeAccess';
 
 /** One in-app notification — the toArray() payload of the notification class. */
 export interface InAppNotification {
@@ -50,6 +52,7 @@ export default function NotificationsDrawer({ open, onClose, onCountChange }: {
 }) {
   const panelRef = useRef<HTMLElement>(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [tab, setTab] = useState<'all' | 'unread'>('all');
   const [items, setItems] = useState<InAppNotification[]>([]);
   const [loading, setLoading] = useState(false);
@@ -85,8 +88,16 @@ export default function NotificationsDrawer({ open, onClose, onCountChange }: {
       } catch { /* opening it matters more than the read flag */ }
     }
     const url = n.data?.action_url ?? n.data?.url;
+    if (!url) return;
     // Strip scheme + host so the SPA router takes the path.
-    if (url) navigate(String(url).replace(/^https?:\/\/[^/]+/, '') || '/');
+    const path = String(url).replace(/^https?:\/\/[^/]+/, '') || '/';
+    /* A notification names a page its recipient may not be allowed to open.
+       A reporting manager is asked to decide their team's leave, but the
+       approvals page under HRMS needs an hr.leave_approvals grant they often
+       do not hold — following their own "Action required" notification landed
+       them on Access Denied. The Inbox carries the same approvals, scoped to
+       whoever is looking, and every role can open it. */
+    navigate(canAccessPath(path.split('?')[0], user) ? path : '/inbox');
   };
 
   const markAllRead = async () => {
