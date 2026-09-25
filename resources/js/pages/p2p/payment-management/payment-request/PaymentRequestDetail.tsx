@@ -7,6 +7,8 @@ import { useAuth } from '../../../../contexts/AuthContext';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { formatDmy } from '../../../../utils/formatDmy';
+// Named apart from the inspection helper of the same name imported below.
+import { downloadFile as downloadProofUrl } from '../../../../utils/downloadFile';
 import { formatProductCode } from '../../../../utils/formatProductCode';
 import { ORDER_COLUMNS, OrderRowBody, type OrderRow } from '../../purchase-management/order/po-list/Order';
 import { Field } from '../../purchase-management/order/create-po/form-fields';
@@ -334,7 +336,7 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
           ) : sub === 'linked' ? (
             <LinkedPanel detail={detail} canApprove={canApprove} onDecide={openDecision} />
           ) : sub === 'summary' ? (
-            <SummaryPanel detail={detail} onSoon={soon} />
+            <SummaryPanel detail={detail} />
           ) : sub === 'physical' ? (
             <InspectionPanel key={requestId} detail={detail} />
           ) : (
@@ -826,7 +828,7 @@ function Person({ name }: { name: string }) {
 const PAY_COLS = ['Paid Against Request ID', 'Request Raised Against', 'Paid Amount', 'Bank Name',
   'UTR / Cheque Number', 'UTR / Cheque Date', 'Proof Of Payment'];
 
-function SummaryPanel({ detail, onSoon }: { detail: Detail; onSoon: (what: string) => void }) {
+function SummaryPanel({ detail }: { detail: Detail }) {
   const money = moneyOf(detail.row.currency);
   const { payments, doc } = detail;
   const D = doc.kind === 'spi' ? 'SPI' : 'PO';
@@ -846,7 +848,8 @@ function SummaryPanel({ detail, onSoon }: { detail: Detail; onSoon: (what: strin
               <tbody>
                 {payments.map(p => {
                   const cheque = /cheque|draft/i.test(p.mode);
-                  const file = `POP_${p.ref}.pdf`;
+                  // The proof as filed. A name made up from the UTR named no real file.
+                  const file = p.proofName || '';
                   return (
                     <tr key={`${p.requestId}-${p.ref}`} className="is-first is-last">
                       <td><IdCell id={p.requestId} date={p.requestDate} /></td>
@@ -861,13 +864,17 @@ function SummaryPanel({ detail, onSoon }: { detail: Detail; onSoon: (what: strin
                       </td>
                       <td><span className="prd-date">{formatDmy(p.date)}</span></td>
                       <td>
-                        <span className="prd-file">
-                          <span className="prd-file__ico"><IcoFile size={13} /></span>
-                          <span className="prd-file__name" title={file}>{file}</span>
-                          <span className="prd-file__sep" />
-                          <button type="button" className="prd-fbtn prd-fbtn--view" title="View proof of payment" onClick={() => onSoon(`View ${file}`)}><IcoEye size={13} /></button>
-                          <button type="button" className="prd-fbtn prd-fbtn--dl" title="Download proof of payment" onClick={() => onSoon(`Download ${file}`)}><IcoDownload size={13} /></button>
-                        </span>
+                        {p.proofUrl ? (
+                          <span className="prd-file">
+                            <span className="prd-file__ico"><IcoFile size={13} /></span>
+                            <span className="prd-file__name" title={file}>{file}</span>
+                            <span className="prd-file__sep" />
+                            <a className="prd-fbtn prd-fbtn--view" href={p.proofUrl} target="_blank" rel="noopener noreferrer"
+                              title={`View ${file}`}><IcoEye size={13} /></a>
+                            <button type="button" className="prd-fbtn prd-fbtn--dl" title={`Download ${file}`}
+                              onClick={() => void downloadProofUrl(p.proofUrl, file)}><IcoDownload size={13} /></button>
+                          </span>
+                        ) : <span className="prd-dash">—</span>}
                       </td>
                     </tr>
                   );

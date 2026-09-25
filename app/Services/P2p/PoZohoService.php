@@ -84,6 +84,7 @@ class PoZohoService
         if (empty($po->zoho_bill_id)) $this->assertSyncable($po);
 
         $problems = [];
+        try { $this->assertHsnCodes($po); } catch (\Throwable $e) { $problems[] = $this->clean($e); }
         $international = $po->document_type === 'international';
         $inter = false;
         try {
@@ -228,6 +229,7 @@ class PoZohoService
                 return ['bill_number' => (string) ($po->zoho_bill_number ?: $po->zoho_bill_id), 'already' => true] + $pay;
             }
             $this->assertSyncable($po);
+            $this->assertHsnCodes($po);
 
             $createdPo = null;
             $createdBill = null;
@@ -687,6 +689,30 @@ class PoZohoService
     }
 
     /* ══════════════════════════ HELPERS ══════════════════════════ */
+
+    /**
+     * Zoho Books refuses an HSN that is not all digits, or longer than 8, and
+     * its message names no product — so the sync failed with nothing to act on.
+     * Checked here first so the refusal says which product and what its code is.
+     */
+    private function assertHsnCodes(PurchaseOrder $po): void
+    {
+        $bad = DB::table('p2p_purchase_order_items as i')
+            ->join('products as p', 'p.id', '=', 'i.product_id')
+            ->leftJoin('master_hsn_codes as h', 'h.id', '=', 'p.hsn_id')
+            ->where('i.purchase_order_id', $po->id)
+            ->whereNotNull('h.hsn_code')
+            ->whereRaw("h.hsn_code <> '' AND (h.hsn_code !~ '^[0-9]+$' OR LENGTH(h.hsn_code) > 8)")
+            ->distinct()
+            ->get(['p.product_code', 'p.name', 'h.hsn_code']);
+        if ($bad->isEmpty()) return;
+
+        $named = $bad->map(fn ($r) => trim(($r->product_code ? $r->product_code . ' ' : '') . $r->name)
+            . ' (HSN ' . $r->hsn_code . ')')->implode(', ');
+        throw new RuntimeException(
+            'Zoho Books accepts an HSN of digits only, up to 8. Fix it in the Product master, then sync again — ' . $named . '.'
+        );
+    }
 
     private function assertConfigured(): void
     {

@@ -558,3 +558,8 @@
 
 /* A row with no file on record: its actions say so rather than pretending. */
 .ptv-btn:disabled, .ptv-all:disabled { opacity: .45; cursor: not-allowed; }
+
+/* The View action is an anchor now — it opens the stored proof directly. */
+a.prd-fbtn { text-decoration: none; }
+/* No proof filed with the release: a dash, not an icon over an invented name. */
+.prd-table .prd-dash { font-weight: 800; color: #a9bfca; }

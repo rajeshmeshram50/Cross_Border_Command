@@ -3,6 +3,7 @@
 // Requests hero header (mpr-hero).
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { downloadFile } from '../../../../utils/downloadFile';
+import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import { createPortal } from 'react-dom';
 import { Chip, ICON_X, fmtDate, money, shortDate } from '../../purchase-management/order/manage-payment/payment-shared';
 import type { RecoveryBody } from '../../purchase-management/order/api/po-api';
@@ -55,8 +56,11 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
   /* Where the attachment panel sits. It is portalled to the body, so it is
      placed from the drop zone's box and flips above when the foot is close. */
   const [pickAt, setPickAt] = useState<{ top: number; left: number; width: number } | null>(null);
-  const openPicker = () => {
-    const r = dropRef.current?.getBoundingClientRect();
+  const anchorRef = useRef<HTMLElement | null>(null);
+  const openPicker = (el?: HTMLElement | null) => {
+    const from = el ?? dropRef.current;
+    anchorRef.current = from ?? null;
+    const r = from?.getBoundingClientRect();
     if (!r) return;
     const H = 158;
     const below = r.bottom + 6 + H <= window.innerHeight - 12;
@@ -67,7 +71,7 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
     const close = () => setPickAt(null);
     const onDown = (e: MouseEvent) => {
       const t = e.target as Element | null;
-      if (t?.closest?.('.arf-att') || (t && dropRef.current?.contains(t))) return;
+      if (t?.closest?.('.arf-att') || (t && anchorRef.current?.contains(t))) return;
       close();
     };
     // A scroll anywhere would leave the panel behind, so it goes instead.
@@ -150,8 +154,9 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
             </div>
             <div className="apay-f">
               <label htmlFor="arf-add-date">Refunded Date</label>
-              <input id="arf-add-date" className="apay-in" type="date" min={refund.date} max={todayIso()} disabled={saving}
-                value={date} onChange={(e) => { setDate(e.target.value); setError(''); }} />
+              {/* The app's own calendar; the refund's own window bounds it. */}
+              <MasterDatePicker value={date} onChange={(v) => { setDate(v); setError(''); }} disabled={saving}
+                minDate={refund.date} maxDate={todayIso()} placeholder="Select date" popupClassName="apay-cal" />
             </div>
             <div className="apay-f apay-f--full">
               <label htmlFor="arf-add-ref">Reference No. (Cheque / UTR)</label>
@@ -174,36 +179,36 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
                         <button type="button" className="arf-proof__btn" onClick={() => void downloadFile(fileUrl, fileName)} title="Download this proof">Download</button>
                       </>
                     )}
-                    <button type="button" className="arf-proof__btn" disabled={saving} onClick={() => fileRef.current?.click()} title="Replace this proof">Reupload</button>
+                    <button type="button" className="arf-proof__btn" disabled={saving} onClick={(e) => openPicker(e.currentTarget)} title="Replace this proof — upload a file or take a photo">Reupload</button>
                     {file && <button type="button" className="arf-proof__btn arf-proof__btn--del" disabled={saving} onClick={undoPick} title="Remove the file you just picked">Remove</button>}
                   </span>
                 </div>
               ) : (
                 <>
-                  <button type="button" ref={dropRef} className="apay-drop" disabled={saving} onClick={openPicker}>
+                  <button type="button" ref={dropRef} className="apay-drop" disabled={saving} onClick={(e) => openPicker(e.currentTarget)}>
                     <div className="apay-drop__ico">{UPLOAD}</div>
                     <div className="apay-drop__txt">
                       <div className="apay-drop__t">Click to upload proof of payment</div>
                       <div className="apay-drop__s">PDF, JPG, PNG or WEBP · up to 10 MB</div>
                     </div>
                   </button>
-                  {/* A proof is as often shot on a phone as picked off a disk.
-                      Portalled, or the popup-body's own scroller clips it. */}
-                  {pickAt && createPortal(
-                    <div className="arf-att" role="menu" style={{ top: pickAt.top, left: pickAt.left, width: pickAt.width }}>
-                      <div className="arf-att__hd">Add attachment</div>
-                      <button type="button" className="arf-att__opt" role="menuitem" onClick={() => { setPickAt(null); fileRef.current?.click(); }}>
-                        <span className="arf-att__ico">{UPLOAD}</span>
-                        <span><b>Upload file</b><i>Choose from this device</i></span>
-                      </button>
-                      <button type="button" className="arf-att__opt" role="menuitem" onClick={() => { setPickAt(null); camRef.current?.click(); }}>
-                        <span className="arf-att__ico arf-att__ico--cam">{CAMERA}</span>
-                        <span><b>Take photo</b><i>Capture with the camera</i></span>
-                      </button>
-                    </div>,
-                    document.body,
-                  )}
                 </>
+              )}
+              {/* A proof is as often shot on a phone as picked off a disk.
+                  Portalled, or the popup-body's own scroller clips it. */}
+              {pickAt && createPortal(
+                <div className="arf-att" role="menu" style={{ top: pickAt.top, left: pickAt.left, width: pickAt.width }}>
+                  <div className="arf-att__hd">Add attachment</div>
+                  <button type="button" className="arf-att__opt" role="menuitem" onClick={() => { setPickAt(null); fileRef.current?.click(); }}>
+                    <span className="arf-att__ico">{UPLOAD}</span>
+                    <span><b>Upload file</b><i>Choose from this device</i></span>
+                  </button>
+                  <button type="button" className="arf-att__opt" role="menuitem" onClick={() => { setPickAt(null); camRef.current?.click(); }}>
+                    <span className="arf-att__ico arf-att__ico--cam">{CAMERA}</span>
+                    <span><b>Take photo</b><i>Capture with the camera</i></span>
+                  </button>
+                </div>,
+                document.body,
               )}
               <input id="arf-add-file" ref={fileRef} className="apay-file-in" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" disabled={saving}
                 onChange={(e) => { pick(e.target.files?.[0] ?? null); e.target.value = ''; }} />

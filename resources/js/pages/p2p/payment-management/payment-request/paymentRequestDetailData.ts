@@ -24,6 +24,9 @@ export type PaymentRelease = {
   /** UTR for a transfer, instrument number for a cheque. */
   ref: string;
   date: string;
+  /** The proof filed with the release; absent when none was attached. */
+  proofName: string;
+  proofUrl: string | null;
 };
 
 export type LinkedRequest = PaymentRequestRow & { paid: number };
@@ -174,6 +177,7 @@ export async function fetchPaymentRequestDetail(requestId: number): Promise<Paym
       return {
         requestId: q?.code ?? '—', requestDate: q?.requested_at ?? '', doc: doc.id, docDate: doc.date,
         amount: p.amount, bank: p.bank_name ?? '—', mode: '—', ref: p.utr_cheque_number ?? '—', date: p.utr_cheque_date ?? '',
+        proofName: p.proof_name ?? '', proofUrl: p.proof_url ?? null,
       };
     }),
     po: po ? toOrderRow(po) : null,

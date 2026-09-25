@@ -496,3 +496,6 @@
   opacity: .6;
   cursor: not-allowed;
 }
+
+/* The calendar is portalled to the body, so it needs to clear the dialog. */
+.master-datepicker-popup.apay-cal { z-index: 100010 !important; }
