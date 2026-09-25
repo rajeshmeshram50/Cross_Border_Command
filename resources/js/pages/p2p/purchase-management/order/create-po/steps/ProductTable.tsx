@@ -191,7 +191,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
   const withPi = !standalone;
   // Inter-state is one IGST pair; intra-state splits into CGST + SGST.
   const taxCols = inter ? 1 : 2;
-  const colCount = 1 + (withPi ? 1 : 0) + 2 + (withPi ? 3 : 1) + 1 + taxCols + taxCols + 1;
+  const colCount = 1 + (withPi ? 1 : 0) + 2 + (withPi ? 3 : 1) + 1 + taxCols + taxCols + 3;
   // Read-only recaps show only what is ordered.
   const shown = readOnly ? rows.filter((r) => r.qtyPo > 0) : rows;
   // Every line this supplier can't be given, named once above the table instead of a note per row.
@@ -300,7 +300,11 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             {inter
               ? <th className="cpd-th-amt cpd-th-amt--tax">{exportPo ? 'Tax Amount' : 'IGST Amount'}</th>
               : <><th className="cpd-th-amt cpd-th-amt--tax">CGST Amount</th><th className="cpd-th-amt cpd-th-amt--tax">SGST Amount</th></>}
-            <th className="cpd-th-amt cpd-th-final">Product Cost</th>
+            {/* The Amounts group always closes on these three, whatever the tax
+                split before them — the group's colSpan has always counted them. */}
+            <th className="cpd-th-amt">Product Cost<span className="cpd-th-sub cpd-th-sub--wo">Without GST</span></th>
+            <th className="cpd-th-amt cpd-th-amt--tax">Total GST Amount</th>
+            <th className="cpd-th-amt cpd-th-final">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">With GST</span></th>
           </tr>
         </thead>
 
@@ -472,7 +476,9 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                 {inter
                   ? <td><FitText text={money(line.igstAmt)} /></td>
                   : <><td><FitText text={money(line.cgstAmt)} /></td><td><FitText text={money(line.sgstAmt)} /></td></>}
-                <td className="cpd-final"><FitText text={money(line.base)} /></td>
+                <td><FitText text={money(line.base)} /></td>
+                <td><FitText text={money(line.gstAmt)} /></td>
+                <td className="cpd-final"><FitText text={money(line.withGst)} /></td>
               </tr>
               </Fragment>
             );
@@ -491,7 +497,9 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             {inter
               ? <td><FitText text={money(totals.igst)} /></td>
               : <><td><FitText text={money(totals.cgst)} /></td><td><FitText text={money(totals.sgst)} /></td></>}
-            <td className="cpd-final"><FitText text={money(totals.base)} /></td>
+            <td><FitText text={money(totals.base)} /></td>
+            <td><FitText text={money(totals.gst)} /></td>
+            <td className="cpd-final"><FitText text={money(totals.withGst)} /></td>
           </tr>
         </tfoot>
       </table>
