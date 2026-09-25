@@ -203,6 +203,12 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose, busy]);
 
+  /* A refusal that names fields belongs ON those fields, in the form the user
+     is looking at — the Add Payment form marks them red and prints the reason.
+     Anything else (a network error, a plain message) stays a toast. */
+  const rethrowFieldErrors = (e: unknown) => {
+    if (e instanceof PoApiError && Object.keys(e.fieldErrors ?? {}).length) throw e;
+  };
   const failToast = (what: string, e: unknown) => toast.error(what, e instanceof PoApiError ? e.firstError : 'Please try again.');
 
   const load = useCallback(async () => {
@@ -315,7 +321,7 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
       toast.success('Payment recorded', `${money(p.amount)} released against ${payReq.id}.`);
       await afterPayment(payReq, res.summary);
       return true;
-    } catch (e) { failToast('Could not record the payment', e); return false; }
+    } catch (e) { rethrowFieldErrors(e); failToast('Could not record the payment', e); return false; }
   };
   const updatePayment = async (i: number, p: ReleasePayment) => {
     const target = releases[i];
@@ -325,7 +331,7 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
       toast.success('Payment updated', `${payReq.id} now shows ${money(p.amount)} for this entry.`);
       await afterPayment(payReq, res.summary);
       return true;
-    } catch (e) { failToast('Could not update the payment', e); return false; }
+    } catch (e) { rethrowFieldErrors(e); failToast('Could not update the payment', e); return false; }
   };
   // The PO and its bill are created in Zoho first if they are not there yet.
   const syncPayment = async (i: number) => {
