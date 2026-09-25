@@ -615,6 +615,8 @@ export type PayPerson = { id: number; name: string | null; role: string | null }
 /** The PO's value split and payment position — the "PO Payment Details Summary" cards. */
 export type PoPaymentPosition = {
   id: number; code: string; status: PoStatus; document_type: DocTypeKey | null;
+  /** The PO's own currency — an import is not priced in rupees. */
+  currency_code: string;
   base_amount: number; gst_amount: number; gst_pct: number; extra_charges: number; grand_total: number;
   tds_percentage: number; tds_amount: number; tds_saved: boolean; tds_locked: boolean; tds_applies: boolean;
   net_payable: number; paid: number; balance: number; paid_pct: number; complete: boolean;
@@ -656,6 +658,7 @@ export type PayRequestListRow = {
   shipment_code: string | null; shipment_date: string | null; opportunity_code: string | null; opportunity_date: string | null;
   procurement_code: string | null;
   po_code: string; po_date: string | null; po_status: PoStatus; link_type: LinkType | null;
+  currency_code: string; document_type: DocTypeKey | null;
   po_total: number; po_net: number; po_paid: number; po_balance: number;
   supplier_code: string | null; supplier_name: string | null; supplier_category: string | null;
   requested_by: PayPerson; requested_to: PayPerson; can_decide: boolean;

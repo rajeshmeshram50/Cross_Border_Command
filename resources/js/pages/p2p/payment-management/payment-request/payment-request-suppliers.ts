@@ -71,9 +71,16 @@ export function legalTotals(s: Supplier) {
   return { done, total, pct: ratio(done, total) };
 }
 
-/** What the shared risk checks read from a supplier. */
-export const toRiskSubject = (s: Supplier): RiskSubject => ({
+/**
+ * What the shared risk checks read from a supplier.
+ *
+ * `international` decides which branch those checks take: an import carries no
+ * GST registration, filing or scrutiny, so running the domestic GST checks on
+ * it reported problems that cannot exist (CS-427). It was never passed, so
+ * every supplier was checked as if it were domestic.
+ */
+export const toRiskSubject = (s: Supplier, international = false): RiskSubject => ({
   risk: s.risk, category: s.category, gstStatus: s.gstStatus, gstNo: s.gstNo,
-  filing: s.filing, scrutiny: s.scrutiny, legal: legalTotals(s),
+  filing: s.filing, scrutiny: s.scrutiny, legal: legalTotals(s), international,
 });
 

@@ -521,6 +521,9 @@ class PoPaymentRequestController extends Controller
             'po.vendor_id', 'po.physical_inspection', 'po.inspection_status', 'po.procurement_request_code',
             'sh.shipment_code', 'sh.created_at as shipment_date', 'pi.opp_code', 'pi.created_at as pi_date',
             'po.code as po_code', 'po.po_date', 'po.status as po_status', 'po.grand_total', 'po.tds_amount',
+            // An import is priced in the supplier's currency and carries no GST,
+            // so every screen in this module needs both to print itself right.
+            'po.currency_code', 'po.document_type',
             'po.paid_amount as po_paid', 'po.balance_amount as po_balance', 'po.link_type',
             'v.vendor_code as supplier_code', 'v.supplier_category',
             DB::raw('COALESCE(v.legal_name, v.company_name) as supplier_name'),
@@ -546,6 +549,7 @@ class PoPaymentRequestController extends Controller
             'opportunity_code' => $r->opp_code, 'opportunity_date' => $r->pi_date ? substr((string) $r->pi_date, 0, 10) : null,
             'procurement_code' => $r->procurement_request_code,
             'po_code' => $r->po_code, 'po_date' => $r->po_date, 'po_status' => $r->po_status, 'link_type' => $r->link_type,
+            'currency_code' => $r->currency_code ?: 'INR', 'document_type' => $r->document_type,
             'po_total' => (float) $r->grand_total, 'po_net' => round((float) $r->grand_total - (float) $r->tds_amount, 2),
             'po_paid' => (float) $r->po_paid, 'po_balance' => (float) $r->po_balance,
             'supplier_code' => $r->supplier_code, 'supplier_name' => $r->supplier_name, 'supplier_category' => $r->supplier_category,
@@ -593,6 +597,9 @@ class PoPaymentRequestController extends Controller
         return [
             'po' => [
                 'id' => $po->id, 'code' => $po->code, 'status' => $po->status, 'document_type' => $po->document_type,
+                // An import is priced in the supplier's currency; every amount on
+                // the request screen has to be printed in it, not in rupees.
+                'currency_code' => $po->currency_code ?: 'INR',
                 'base_amount' => $base, 'gst_amount' => $gst, 'gst_pct' => $base > 0 ? round($gst / $base * 100, 2) : 0,
                 'extra_charges' => $extra, 'grand_total' => $total,
                 'tds_percentage' => (float) $po->tds_percentage, 'tds_amount' => $tds, 'tds_saved' => (bool) $po->tds_updated_at,

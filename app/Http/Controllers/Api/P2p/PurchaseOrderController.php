@@ -663,6 +663,13 @@ class PurchaseOrderController extends Controller
                 return $this->fail($msg, 422, ['gst' => $gst, 'gst_approval_status' => $approval?->status]);
             }
 
+            // The supplier's standard paperwork must still be in date. An
+            // expired KYC / DD / trade licence is no cover at all, so the PO
+            // does not leave Stage 03 until it is renewed (CS-407).
+            if ($expired = $this->expiredStandardDocs($po)) {
+                return $this->fail($this->expiredDocsMessage($expired), 422, ['expired_documents' => $expired]);
+            }
+
             // Case to Case: this supplier's earlier POs must have their necessary
             // Stage 04 paperwork signed before another order is placed on it.
             if ($outstanding = $this->unsignedCaseToCase($po)) {
@@ -682,6 +689,52 @@ class PurchaseOrderController extends Controller
         if ($submit) \App\Jobs\P2p\GeneratePoDocumentPdf::dispatch($po->id, $user->id)->afterCommit();
 
         return $this->ok($this->shapeDetail($po->fresh()));
+    }
+
+    /**
+     * The supplier's standard documents — KYC, due diligence and trade licences
+     * — whose expiry date has passed.
+     *
+     * Only an upload carries an expiry: the segment rule's own validity is free
+     * prose ("Lifetime", "2 years"), so a document with no date on it is treated
+     * as not expiring. Quality documents are left out; the Evidence Vault counts
+     * KYC, DD and licences as the supplier's one-time standard paperwork, and
+     * that is what this gate is about.
+     *
+     * @return array<int, array{code: string, name: string, expiry: string}>
+     */
+    private function expiredStandardDocs(PurchaseOrder $po): array
+    {
+        if (!$po->vendor_id) return [];
+
+        return DB::table('segment_doc_uploads')
+            ->where('uploadable_type', \App\Models\Vendor::class)
+            ->where('uploadable_id', $po->vendor_id)
+            ->where('client_id', $po->client_id)
+            ->whereIn('category', ['kyc', 'dd', 'tl'])
+            ->whereNotNull('expiry_date')
+            ->whereDate('expiry_date', '<', now()->toDateString())
+            ->orderBy('expiry_date')
+            ->get(['doc_code', 'doc_name', 'expiry_date'])
+            ->map(fn ($r) => [
+                'code'   => (string) $r->doc_code,
+                'name'   => (string) ($r->doc_name ?: $r->doc_code),
+                'expiry' => \Illuminate\Support\Carbon::parse($r->expiry_date)->format('d-M-Y'),
+            ])
+            ->all();
+    }
+
+    /** "X expired on …, Y expired on … — renew them in the Evidence Vault." */
+    private function expiredDocsMessage(array $expired): string
+    {
+        $named = collect($expired)->take(3)
+            ->map(fn ($d) => $d['name'] . ' (expired ' . $d['expiry'] . ')')
+            ->implode(', ');
+        $rest = count($expired) - 3;
+
+        return 'The supplier\'s paperwork has expired: ' . $named
+            . ($rest > 0 ? ' and ' . $rest . ' more' : '')
+            . '. Renew it in the Evidence Vault before submitting this PO.';
     }
 
     /**

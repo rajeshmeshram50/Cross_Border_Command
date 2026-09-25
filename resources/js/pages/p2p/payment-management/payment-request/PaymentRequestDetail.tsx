@@ -50,6 +50,7 @@ import './payment-request.css';
 import '../../purchase-management/order/manage-payment/manage-payment-requests.css';
 import './payment-request-detail.css';
 import './payment-request-decision.css';
+import { ccySymbol } from '../../../../utils/currency';
 
 type TxTab = 'current' | 'history';
 type SubTab = 'supplier' | 'linked' | 'summary' | 'physical' | 'status';
@@ -64,7 +65,10 @@ const SUBS: { k: SubTab; t: string; ico: Icon }[] = [
   { k: 'status', t: 'Current Transaction Status', ico: IcoClock },
 ];
 
-const money = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+/* Amounts print in the PO's OWN currency. An import is raised in the supplier's
+   currency (AUD, USD …), so a hard-coded rupee sign said one thing while the PO
+   said another (CS-436 / CS-437). */
+const moneyOf = (ccy?: string | null) => (n: number) => `${ccySymbol(ccy)}${Math.round(n).toLocaleString('en-IN')}`;
 
 /** 20/07/2026 — the stamp under the request id. */
 function shortDate(iso: string) {
@@ -142,8 +146,9 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
     setDecide(null);
     setVersion(v => v + 1);
     onChanged?.();
-    if (r.status === 'approved') toast.success(`${r.requestId} approved for ₹${(r.approvedAmount ?? 0).toLocaleString('en-IN')}`, 'Payment can now be released');
-    else toast.warning(`${r.requestId} declined`, `₹${r.requestedAmount.toLocaleString('en-IN')} is back on the available balance`);
+    const amt = moneyOf(r.currency);
+    if (r.status === 'approved') toast.success(`${r.requestId} approved for ${amt(r.approvedAmount ?? 0)}`, 'Payment can now be released');
+    else toast.warning(`${r.requestId} declined`, `${amt(r.requestedAmount)} is back on the available balance`);
   };
 
   if (detail === undefined) {
@@ -173,6 +178,7 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
   }
 
   const { row, doc, ledger, supplier, po } = detail;
+  const money = moneyOf(row.currency);
   const decided = row.status !== 'awaiting';
   const decidedTip = decided
     ? `This request was already ${row.status === 'approved' ? 'approved' : 'declined'} — no further decision can be taken on it`
@@ -218,9 +224,12 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
               <div className="prd-chips">
                 {chip(i9(IcoFile), `${D} Number`, doc.id, longDate(doc.date))}
                 {chip(i9(IcoBuilding), 'Supplier', supplier?.code ?? '—', row.supplier)}
-                {chip(i9(IcoShip), 'Shipment ID', row.shipment?.id ?? '—', longDate(row.shipment?.date))}
-                {chip(i9(IcoTarget), 'Opportunity ID', row.opportunity?.id ?? '—', row.opportunity?.date ? longDate(row.opportunity.date) : '')}
-                {chip(i9(IcoCart), 'Procurement ID', row.procurement?.id ?? '—', row.procurement?.date ? longDate(row.procurement.date) : '')}
+{/* A PO raised without a shipment, opportunity or procurement reads "N/A",
+                    the same as the PO list — a dash looked like the value had failed
+                    to load (CS-427). */}
+                {chip(i9(IcoShip), 'Shipment ID', row.shipment?.id ?? 'N/A', longDate(row.shipment?.date))}
+                {chip(i9(IcoTarget), 'Opportunity ID', row.opportunity?.id ?? 'N/A', row.opportunity?.date ? longDate(row.opportunity.date) : '')}
+                {chip(i9(IcoCart), 'Procurement ID', row.procurement?.id ?? 'N/A', row.procurement?.date ? longDate(row.procurement.date) : '')}
               </div>
               <div className="prd-hactions">
                 <button
@@ -314,7 +323,8 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
           {tx === 'history' ? (
             <HistoryPanel detail={detail} onSoon={soon} />
           ) : sub === 'supplier' ? (
-            <SupplierPanel supplier={supplier} vendorId={detail.row.vendorId} onSupplierChanged={() => setVersion(v => v + 1)} />
+            <SupplierPanel supplier={supplier} vendorId={detail.row.vendorId} international={row.international}
+              onSupplierChanged={() => setVersion(v => v + 1)} />
           ) : sub === 'linked' ? (
             <LinkedPanel detail={detail} canApprove={canApprove} onDecide={openDecision} />
           ) : sub === 'summary' ? (
@@ -386,8 +396,10 @@ function RO({ label, value, full }: { label: string; value: string; full?: boole
   );
 }
 
-function SupplierPanel({ supplier: s, vendorId, onSupplierChanged }: {
+function SupplierPanel({ supplier: s, vendorId, international, onSupplierChanged }: {
   supplier: Supplier | undefined; vendorId: number | null;
+  /** An import: no GST applies, so nothing GST-related is shown or checked. */
+  international: boolean;
   /** Re-load the request after the supplier's GST scrutiny is updated, so the check re-runs. */
   onSupplierChanged: () => void;
 }) {
@@ -401,7 +413,7 @@ function SupplierPanel({ supplier: s, vendorId, onSupplierChanged }: {
   const [vault, setVault] = useState<SupplierVaultTarget | null>(null);
   const toggle = (k: BoxKey) => setOpen(o => ({ ...o, [k]: !o[k] }));
 
-  const risks = useMemo(() => (s ? riskItems(toRiskSubject(s), false) : []), [s]);
+  const risks = useMemo(() => (s ? riskItems(toRiskSubject(s, international), false) : []), [s, international]);
   if (!s) {
     return <Empty ico={IcoBuilding} title="Supplier Details" sub="The supplier record could not be loaded." />;
   }
@@ -520,6 +532,10 @@ function SupplierPanel({ supplier: s, vendorId, onSupplierChanged }: {
         </div>
       </SupBox>
 
+      {/* An international supplier has no GSTIN, no returns and no scrutiny, so
+          the whole block is left out rather than shown empty (CS-427). The risk
+          checks say as much in their own words. */}
+      {!international && (
       <SupBox open={open.gst} onToggle={() => toggle('gst')} icon={<IcoDocSm />} title="Supplier GST Scrutiny Details"
         extras={<span className="spi-dt-fields-badge">5 Fields</span>}>
         <div className="prd-gstbd">
@@ -549,6 +565,7 @@ function SupplierPanel({ supplier: s, vendorId, onSupplierChanged }: {
           </div>
         </div>
       </SupBox>
+      )}
 
       <SupBox open={open.risk} onToggle={() => toggle('risk')} icon={<IcoAlert />} title="Supplier Risk Alerts"
         extras={
@@ -602,6 +619,7 @@ function SupplierPanel({ supplier: s, vendorId, onSupplierChanged }: {
 
 /* ── Running totals, shared by Linked Payment Requests and Payment Summary ── */
 function StatCards({ detail }: { detail: Detail }) {
+  const money = moneyOf(detail.row.currency);
   const { ledger, linked, doc } = detail;
   const D = doc.kind === 'spi' ? 'SPI' : 'PO';
   const requested = linked.reduce((s, r) => s + r.requestedAmount, 0);
@@ -670,6 +688,7 @@ function LinkedPanel({ detail, canApprove, onDecide }: {
   onDecide: (mode: DecisionMode, request: PaymentRequestRow) => void;
 }) {
   const { linked, doc, row: current } = detail;
+  const money = moneyOf(current.currency);
   const [peek, setPeek] = useState<LinkedRequest | null>(null);
   return (
     <div className="prd-secwrap">
@@ -728,6 +747,7 @@ function LinkedPanel({ detail, canApprove, onDecide }: {
 function LinkedRequestPopup({ request: r, doc, onClose }: {
   request: LinkedRequest; doc: Detail['doc']; onClose: () => void;
 }) {
+  const money = moneyOf(r.currency);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
@@ -801,6 +821,7 @@ const PAY_COLS = ['Paid Against Request ID', 'Request Raised Against', 'Paid Amo
   'UTR / Cheque Number', 'UTR / Cheque Date', 'Proof Of Payment'];
 
 function SummaryPanel({ detail, onSoon }: { detail: Detail; onSoon: (what: string) => void }) {
+  const money = moneyOf(detail.row.currency);
   const { payments, doc } = detail;
   const D = doc.kind === 'spi' ? 'SPI' : 'PO';
   return (

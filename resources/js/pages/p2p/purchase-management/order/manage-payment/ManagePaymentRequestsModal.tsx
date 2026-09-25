@@ -407,6 +407,7 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
             saved={tds}
             firstSave={!po.tds_saved}
             readOnly={po.tds_locked}
+            busy={busy}
             onSave={saveTds}
             onClose={() => setTdsOpen(false)}
           />

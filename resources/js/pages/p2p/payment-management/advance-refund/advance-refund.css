@@ -462,15 +462,28 @@
 .arf-list .spi-segrow--search { margin-bottom:0; }
 .arf-list .spi-seg-btn:not(.is-active) { color:#6b8499; }
 .arf-list .spi-seg-ico svg { width:15px; height:15px; }
-/* 620px while there is room; it gives way on narrower screens instead of
-   running past the card. */
+/* Up to 620px while there is room, and it gives that room up as the window
+   narrows. A fixed 620px width could not shrink: the search held its size,
+   wrapped onto its own line the moment the tabs and it stopped fitting, and
+   then sat half the row wide with a gap beside it. Growing and shrinking off
+   the leftover space keeps it beside the tabs for far longer. */
 .arf-list .spi-segrow .spi-search {
-  flex:0 1 620px;
-  width:620px;
-  min-width:0;
+  flex:1 1 260px;
+  width:auto;
+  min-width:240px;
   max-width:620px;
   height:43px;
   padding-left:38px;
+}
+
+/* Below this the tabs alone fill the row, so the search takes the next line
+   whole rather than a 620px block pushed to the right. */
+@media (max-width: 1180px) {
+  .arf-list .spi-segrow .spi-search {
+    flex:1 1 100%;
+    max-width:none;
+    margin-left:0;
+  }
 }
 .arf-list .spi-search input { font-size:13px; }
 /* Count badges: 22px tall (which is what makes the tabs 42), teal numbers on

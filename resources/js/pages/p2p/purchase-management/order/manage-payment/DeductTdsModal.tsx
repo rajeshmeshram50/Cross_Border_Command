@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
+import { PaymentWait } from './payment-shared';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import './manage-payment-requests.css';
 import './deduct-tds.css';
 
 const money = (v: number) => '₹' + Math.round(v || 0).toLocaleString('en-IN');
@@ -40,6 +42,8 @@ export type DeductTdsProps = {
   firstSave?: boolean;
   /** A payment is recorded: the TDS is fixed and shown read-only. */
   readOnly?: boolean;
+  /** A save is in flight: the card waits and takes no more input. */
+  busy?: boolean;
   onSave: (amount: number) => void;
   onClose: () => void;
 };
@@ -54,18 +58,19 @@ function Readonly({ label, value }: { label: string; value: number }) {
 }
 
 export default function DeductTdsModal({
-  po, base, gst, extra, total, room, saved, firstSave = false, readOnly = false, onSave, onClose,
+  po, base, gst, extra, total, room, saved, firstSave = false, readOnly = false, busy = false, onSave, onClose,
 }: DeductTdsProps) {
   useScrollLock(true, '.mtds-card');
 
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => { cardRef.current?.focus(); }, []);
 
+  // Escape closes the card — but not while the save is on its way.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, busy]);
 
   const [pctText, setPctText] = useState(saved > 0 && base > 0 ? String(round2((saved / base) * 100)) : '');
   const [amtText, setAmtText] = useState(saved > 0 ? String(saved) : '');
@@ -103,7 +108,12 @@ export default function DeductTdsModal({
 
   return createPortal(
     <div className="spi-mdl-backdrop">
-      <div className="mtds-card" role="dialog" aria-modal="true" aria-labelledby="mtds-title" tabIndex={-1} ref={cardRef}>
+      <div
+        className={`mtds-card mpr-card${busy ? ' is-busy' : ''}`}
+        role="dialog" aria-modal="true" aria-labelledby="mtds-title" tabIndex={-1} ref={cardRef}
+        aria-busy={busy}
+      >
+        {busy && <PaymentWait title="Saving the TDS deduction…" sub="Please wait, the PO is being updated" />}
 
         <div className="mtds-hd">
           <span className="mtds-hd__ico">{ICON_TDS}</span>
@@ -115,7 +125,7 @@ export default function DeductTdsModal({
                 : `${po} · figures derived from the PO · enter the deduction to compute the net payable`}
             </span>
           </div>
-          <button type="button" className="mtds-hd__x" onClick={onClose} aria-label="Close">{ICON_X}</button>
+          <button type="button" className="mtds-hd__x" onClick={onClose} aria-label="Close" disabled={busy}>{ICON_X}</button>
         </div>
 
         <div className="mtds-bd">
@@ -138,7 +148,7 @@ export default function DeductTdsModal({
                   placeholder="0"
                   value={pctText}
                   readOnly={readOnly}
-                  disabled={readOnly}
+                  disabled={readOnly || busy}
                   onChange={(e) => fromPct(e.target.value)}
                 />
                 <span className="mtds-suffix">%</span>
@@ -159,7 +169,7 @@ export default function DeductTdsModal({
                   placeholder="0"
                   value={amtText}
                   readOnly={readOnly}
-                  disabled={readOnly}
+                  disabled={readOnly || busy}
                   onChange={(e) => fromAmt(e.target.value)}
                 />
               </div>
@@ -195,19 +205,21 @@ export default function DeductTdsModal({
 
         <div className="mtds-ft">
           {!readOnly && saved > 0 && (
-            <button type="button" className="spi-mdl-cancel mtds-remove" onClick={() => onSave(0)}>
+            <button type="button" className="spi-mdl-cancel mtds-remove" onClick={() => onSave(0)} disabled={busy}>
               Remove Deduction
             </button>
           )}
-          <button type="button" className="spi-mdl-cancel" onClick={onClose}>{readOnly ? 'Close' : 'Cancel'}</button>
+          <button type="button" className="spi-mdl-cancel" onClick={onClose} disabled={busy}>{readOnly ? 'Close' : 'Cancel'}</button>
           {!readOnly && (
             <button
               type="button"
               className="spi-mdl-confirm"
-              disabled={amount === saved && !firstSave}
+              disabled={busy || (amount === saved && !firstSave)}
               onClick={() => onSave(amount)}
             >
-              {firstSave && amount === 0 ? 'Save With No TDS' : 'Save TDS Deduction'}
+              {busy
+                ? <><span className="mpr-btnspin" aria-hidden="true" />Saving…</>
+                : firstSave && amount === 0 ? 'Save With No TDS' : 'Save TDS Deduction'}
             </button>
           )}
         </div>
