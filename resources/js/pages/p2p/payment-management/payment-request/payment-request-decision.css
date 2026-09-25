@@ -121,3 +121,14 @@
 [data-bs-theme="dark"] .prd-dec__remarkin { color: #e2e8f0; }
 [data-bs-theme="dark"] .prd-dec__progtxt { color: #bae6fd; }
 [data-bs-theme="dark"] .prd-dec--no .prd-dec__remark { background: rgba(244,63,94,.06); }
+
+/* Deciding: the dialog is inert behind the apay-wait veil (CS-433 / CS-434). */
+.prd-dec.is-saving { position: relative; }
+.prd-dec input:disabled,
+.prd-dec textarea:disabled,
+.prd-dec button:disabled { opacity: .6; cursor: not-allowed; }
+
+/* The attachment chip opens the file, so its name reads as a link. */
+a.prd-dec__filen { color: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+a.prd-dec__filen:hover { color: #0891b2; }
+.prd-dec--no a.prd-dec__filen:hover { color: #dc2626; }

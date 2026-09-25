@@ -2,6 +2,7 @@
 
 namespace App\Services\P2p;
 
+use App\Jobs\AttachRefundAdjustmentToZoho;
 use App\Models\P2p\PoPayment;
 use App\Models\P2p\PoRefundAdjustment;
 use App\Models\P2p\PoRefundRecovery;
@@ -358,6 +359,10 @@ class PoZohoService
                         'zoho_vendorcredit_id'     => $vcId,
                         'zoho_vendorcredit_number' => (string) ($vc['vendor_credit_number'] ?? $adj->code),
                     ])->save();
+                    // The supplier's refund reference goes onto the credit, off the
+                    // request: the sync must not wait on an upload, and a failed
+                    // upload must not fail a credit that was created fine.
+                    if (!empty($adj->attachment_path)) AttachRefundAdjustmentToZoho::dispatch($adj->id);
                 }
 
                 // Not applied to the bill: the credit stands for money already released,

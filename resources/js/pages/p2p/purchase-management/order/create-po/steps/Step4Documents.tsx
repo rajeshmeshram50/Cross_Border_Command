@@ -7,7 +7,7 @@
 // on submit; the Purchase Order PDF is generated then). Selected documents can
 // be emailed or sent to the supplier for e-signature via Zoho Sign; the signing
 // tracker, signed copy and certificate come from the shared signature endpoints.
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import StageSummary from './StageSummary';
 import type { PoDraft } from '../po-draft';
 import type { StepCtx } from '../CreatePoForm';
@@ -108,6 +108,40 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(reload, [poId]);
+
+  /* Signing happens in Zoho, in another tab, so nothing here tells us when it
+     lands. While anything is out for signature the list is re-read quietly —
+     it syncs each request's status server-side — and at once when this tab is
+     looked at again, so a signed document does not wait for a page refresh. */
+  const docsRef = useRef(docs);
+  docsRef.current = docs;
+  const awaitingSign = docs.some((d) => d.status === 'sent');
+  useEffect(() => {
+    if (!poId || !awaitingSign) return;
+    let live = true;
+    const check = () => {
+      poDocumentApi.list(poId).then((fresh) => {
+        if (!live) return;
+        const byId = new Map(docsRef.current.map((d) => [d.id, d]));
+        const moved = fresh.some((f) => byId.get(f.id)?.status !== f.status);
+        if (!moved) return;
+        setDocs(fresh);
+        // Step 04 going quiet unlocks (or re-locks) the earlier steps.
+        ctx.reloadDetail();
+      }).catch(() => { /* a poll that fails is simply the next one's problem */ });
+    };
+    const onBack = () => { if (document.visibilityState === 'visible') check(); };
+    const timer = window.setInterval(check, 15000);
+    document.addEventListener('visibilitychange', onBack);
+    window.addEventListener('focus', check);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onBack);
+      window.removeEventListener('focus', check);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poId, awaitingSign]);
 
   const run = async (key: string, task: () => Promise<void>) => {
     if (busy) return;

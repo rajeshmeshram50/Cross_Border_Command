@@ -100,8 +100,10 @@ let manualSeq = 0;
 /* Nothing is pre-filled: a PO covers only the PI lines it is actually for, and
    whatever is left over goes on the next PO. The buyer picks the product and the
    quantity for each line they want on this one. */
+/* No rate until the PO product is picked: what we pay the supplier is its own
+   purchase price, not the PI's selling rate. */
 export const rowFromPi = (pi: PiLine): PoLineRow => ({
-  key: `pi:${pi.pi_item_id}`, pi, productId: null, qtyPo: 0, rate: pi.rate,
+  key: `pi:${pi.pi_item_id}`, pi, productId: null, qtyPo: 0, rate: 0,
 });
 
 /** A blank line for a product the PI doesn't carry. */

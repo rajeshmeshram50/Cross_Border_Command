@@ -172,11 +172,15 @@ export default function PaymentRequestManagement() {
   const debouncedSearch = useDebouncedValue(search.trim(), 400);
   const [reload, setReload] = useState(0);
   const latest = useRef(0);
+  /* Which query the rows on screen answer. While a different one is in flight
+     the list shimmers rather than showing the previous tab's rows (CS-430). */
+  const queryKey = `${tab}|${debouncedSearch}|${page}|${pageSize}`;
+  const [shownKey, setShownKey] = useState('');
   useEffect(() => {
     const ticket = ++latest.current;
     setLoading(true);
     fetchPaymentRequests({ tab, search: debouncedSearch, page, per_page: pageSize })
-      .then(({ rows: list, meta: m }) => { if (ticket === latest.current) { setRows(list); setMeta(m); } })
+      .then(({ rows: list, meta: m }) => { if (ticket === latest.current) { setRows(list); setMeta(m); setShownKey(`${tab}|${debouncedSearch}|${page}|${pageSize}`); } })
       .catch(e => { if (ticket === latest.current) toast.error('Could not load payment requests', e instanceof PoApiError ? e.firstError : 'Please refresh the page.'); })
       .finally(() => { if (ticket === latest.current) setLoading(false); });
   }, [tab, debouncedSearch, page, pageSize, reload, toast]);
@@ -282,7 +286,7 @@ export default function PaymentRequestManagement() {
           </div>
         </div>
 
-        {loading && !rows.length ? (
+        {loading && (!rows.length || shownKey !== queryKey) ? (
           <PrmListSkeleton columns={columns} />
         ) : pageRows.length === 0 ? (
           <div className="ord-empty">

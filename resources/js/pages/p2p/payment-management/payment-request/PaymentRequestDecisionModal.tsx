@@ -12,6 +12,8 @@ import type { PaymentRequestDetail } from './paymentRequestDetailData';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
 import '../../purchase-management/order/manage-payment/manage-payment-requests.css';
 import '../../purchase-management/order/manage-payment/raise-payment-request.css';
+// For the apay-wait veil shown while the decision saves.
+import '../../purchase-management/order/manage-payment/add-payment.css';
 import './payment-request-decision.css';
 
 export type DecisionMode = 'approve' | 'decline';
@@ -28,7 +30,8 @@ const ICON_FILE = <svg {...ic} strokeWidth={2.3}><path d="M14 2H6a2 2 0 0 0-2 2v
 const ICON_ALERT = <svg {...ic} strokeWidth={2.4}><circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>;
 const ICON_WALLET = <svg {...ic} width="14" height="14" strokeWidth={2.2}><rect x="2" y="7" width="20" height="14" rx="2.5" /><path d="M16 7V5a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v2" /></svg>;
 
-type Attached = { name: string; size: number; cam: boolean };
+/** `url` is a blob link to the picked file, so the chip can open it (CS-433 / CS-434). */
+type Attached = { name: string; size: number; cam: boolean; url: string };
 
 const ROLE_LABEL: Record<string, string> = {
   super_admin: 'Super Admin', client_admin: 'Client Admin', branch_user: 'Branch User', employee: 'Employee',
@@ -71,6 +74,10 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { (approve ? cardRef.current : noteRef.current)?.focus(); }, [approve]);
+  // The blob links live as long as the dialog does.
+  const filesRef = useRef(files);
+  filesRef.current = files;
+  useEffect(() => () => { filesRef.current.forEach(f => URL.revokeObjectURL(f.url)); }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
@@ -101,10 +108,16 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
     el.style.height = `${Math.min(96, Math.max(42, el.scrollHeight))}px`;
   };
   const addFiles = (e: ChangeEvent<HTMLInputElement>, cam: boolean) => {
-    const list = Array.from(e.target.files ?? []).map(f => ({ name: f.name || `photo_${Date.now()}.jpg`, size: f.size, cam }));
+    const list = Array.from(e.target.files ?? []).map(f => ({
+      name: f.name || `photo_${Date.now()}.jpg`, size: f.size, cam, url: URL.createObjectURL(f),
+    }));
     e.target.value = '';
     if (list.length) setFiles(cur => [...cur, ...list]);
   };
+  const dropFile = (i: number) => setFiles(cur => {
+    URL.revokeObjectURL(cur[i].url);
+    return cur.filter((_, ix) => ix !== i);
+  });
 
   const submit = async () => {
     if (approve) {
@@ -148,9 +161,16 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
   return createPortal(
     <div className="spi-mdl-backdrop prd-dec-layer">
       <div
-        className={`spi-mdl mpr-card prd-dec${approve ? '' : ' prd-dec--no'}`}
-        role="dialog" aria-modal="true" aria-labelledby="prd-dec-title" tabIndex={-1} ref={cardRef}
+        className={`spi-mdl mpr-card prd-dec${approve ? '' : ' prd-dec--no'}${saving ? ' is-saving' : ''}`}
+        role="dialog" aria-modal="true" aria-labelledby="prd-dec-title" tabIndex={-1} ref={cardRef} aria-busy={saving}
       >
+        {saving && (
+          <div className="apay-wait" role="status" aria-live="polite">
+            <span className="apay-wait__ring" />
+            <span className="apay-wait__t">{approve ? 'Approving the request…' : 'Declining the request…'}</span>
+            <span className="apay-wait__s">Please wait, the decision is being recorded</span>
+          </div>
+        )}
         <div className="mpr-hero">
           <div className="mpr-hero__icon">{approve ? ICON_OK : ICON_NO}</div>
           <div className="mpr-hero__titleblock">
@@ -171,7 +191,7 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
             <Chip label="Opportunity ID" value={request.opportunity?.id ?? '—'} meta={request.opportunity?.date ? fmtDate(request.opportunity.date) : undefined} />
             <Chip label="Procurement ID" value={request.procurement?.id ?? '—'} meta={request.procurement?.date ? fmtDate(request.procurement.date) : undefined} />
           </div>}
-          <button type="button" className="mpr-hero__close" onClick={onClose} aria-label="Close">{ICON_X}</button>
+          <button type="button" className="mpr-hero__close" onClick={onClose} disabled={saving} aria-label="Close">{ICON_X}</button>
         </div>
 
         <div className="mpr-bd prd-dec__bd">
@@ -215,7 +235,7 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
                   <div className="rpr-amtwrap prd-dec__amt">
                     <span className="rpr-amtwrap__cur">₹</span>
                     <input
-                      id="prd-dec-amt" type="number" className="rpr-amtwrap__in" min={0} max={cap} step={1}
+                      id="prd-dec-amt" type="number" className="rpr-amtwrap__in" min={0} max={cap} step={1} disabled={saving}
                       value={amtText} onChange={e => { setAmtText(e.target.value); setError(''); }}
                     />
                   </div>
@@ -235,15 +255,15 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
               </div>
               <div className="prd-dec__remark">
                 <textarea
-                  id="prd-dec-note" ref={noteRef} className="prd-dec__remarkin" rows={1} maxLength={max} value={note}
+                  id="prd-dec-note" ref={noteRef} className="prd-dec__remarkin" rows={1} maxLength={max} value={note} disabled={saving}
                   placeholder={approve
                     ? 'Why this amount is being approved — conditions, part-approval reason, anything the record should carry'
                     : 'Explain why this request is being declined…'}
                   onChange={e => { setNote(e.target.value); grow(e.target); if (e.target.value.trim()) setError(''); }}
                 />
                 <div className="prd-dec__remarkacts">
-                  <button type="button" className="prd-dec__rbtn" title="Attach a file" onClick={() => fileRef.current?.click()}>{ICON_CLIP}<span>Upload</span></button>
-                  <button type="button" className="prd-dec__rbtn" title="Take a photo" onClick={() => camRef.current?.click()}>{ICON_CAM}<span>Camera</span></button>
+                  <button type="button" className="prd-dec__rbtn" title="Attach a file" disabled={saving} onClick={() => fileRef.current?.click()}>{ICON_CLIP}<span>Upload</span></button>
+                  <button type="button" className="prd-dec__rbtn" title="Take a photo" disabled={saving} onClick={() => camRef.current?.click()}>{ICON_CAM}<span>Camera</span></button>
                 </div>
               </div>
               <input ref={fileRef} type="file" multiple hidden onChange={e => addFiles(e, false)} />
@@ -253,9 +273,10 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
                   {files.map((f, i) => (
                     <span className="prd-dec__file" key={`${f.name}-${i}`}>
                       <span className="prd-dec__fileico">{f.cam ? ICON_CAM : ICON_FILE}</span>
-                      <span className="prd-dec__filen" title={f.name}>{f.name}</span>
+                      {/* The chip opens what was attached — a name alone gives the approver nothing to check. */}
+                      <a className="prd-dec__filen" href={f.url} target="_blank" rel="noopener noreferrer" title={`Open ${f.name}`}>{f.name}</a>
                       {f.size > 0 && <span className="prd-dec__filesz">{kb(f.size)}</span>}
-                      <button type="button" className="prd-dec__filex" title="Remove" onClick={() => setFiles(cur => cur.filter((_, ix) => ix !== i))}>{ICON_X}</button>
+                      <button type="button" className="prd-dec__filex" title="Remove" disabled={saving} onClick={() => dropFile(i)}>{ICON_X}</button>
                     </span>
                   ))}
                 </div>
@@ -278,7 +299,7 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
             </span>
           </div>
           <div className="spi-mdl-foot-btns">
-            <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
+            <button type="button" className="spi-mdl-cancel" onClick={onClose} disabled={saving}>Cancel</button>
             <button type="button" className={`spi-mdl-confirm prd-dec__submit${approve ? '' : ' is-no'}`} disabled={saving} onClick={submit}>
               {approve ? 'Approve Request' : 'Reject Request'}
             </button>

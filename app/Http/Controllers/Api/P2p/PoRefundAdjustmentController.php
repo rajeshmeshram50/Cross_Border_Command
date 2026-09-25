@@ -207,6 +207,10 @@ class PoRefundAdjustmentController extends Controller
 
         $this->inTransaction('update the refund adjustment', function () use ($adj, $user, $data, $file, $path) {
             $row = PoRefundAdjustment::whereKey($adj->id)->lockForUpdate()->first();
+            // Fully recovered: the refund is closed and opens read-only (CS-588).
+            if ($row->status === PoRefundAdjustment::STATUS_RECOVERED) {
+                $this->abort('Every rupee of this refund has been recovered — it can no longer be changed.');
+            }
             $figures = $this->figures($data, (float) $row->paid_amount, (float) $row->recovered_amount);
             $amountsChanged = abs($figures['refund_amount'] - (float) $row->refund_amount) > 0.001
                 || ($figures['retained_type'] ?? null) !== $row->retained_type;

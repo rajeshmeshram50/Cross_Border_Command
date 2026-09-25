@@ -941,3 +941,14 @@
 [data-bs-theme="dark"] .arf-proof__name { color: #e2f3f8; }
 [data-bs-theme="dark"] .arf-proof__btn { background: transparent; border-color: rgba(34, 211, 238, .3); color: #67e8f9; }
 [data-bs-theme="dark"] .arf-proof__btn--del { border-color: rgba(248, 113, 113, .35); color: #fca5a5; }
+
+/* Attachment row actions: View / Download / Camera / Browse sit together and
+   never steal the row's own click, which opens the file picker (CS-588). */
+.arf-form .arf-fileacts { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; }
+.arf-form .arf-fbtn { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; }
+.arf-form .arf-fbtn svg { width: 13px; height: 13px; }
+.arf-form .spi-dt-file-btn:disabled { opacity: .55; cursor: not-allowed; }
+/* A settled refund reads as closed rather than merely unresponsive. */
+.arf-form .arf-body:disabled { border: none; padding: 0; margin: 0; min-width: 0; }
+.arf-form .arf-body:disabled .spi-dt-inp,
+.arf-form .arf-body:disabled .spi-dt-file { opacity: .72; cursor: not-allowed; }

@@ -132,8 +132,10 @@ export async function fetchPaymentRequestDetail(requestId: number): Promise<Paym
 
   const poRows = ok(orders)?.rows ?? [];
   const po = poRows.find((o) => o.id === row.poId);
+  /* Every order actually raised on this supplier is a past transaction — a
+     cancelled one counts, and often carries the money. Only drafts stay out. */
   const history = poRows
-    .filter((o) => o.id !== row.poId && o.status === 'submitted')
+    .filter((o) => o.id !== row.poId && o.status !== 'draft')
     .map(toOrderRow)
     .sort((a, b) => b.poDate.localeCompare(a.poDate));
 
