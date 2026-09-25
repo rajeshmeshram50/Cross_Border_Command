@@ -338,8 +338,17 @@ export function MasterSelect({
   // so a 250-country list never puts 250 rows in the DOM at once.
   const clientPaged = !serverMode && !onScrollEnd;
   const [shown, setShown] = useState(OPTION_PAGE);
-  useEffect(() => { setShown(OPTION_PAGE); }, [search, open]);
+  const [paging, setPaging] = useState(false);
+  useEffect(() => { setShown(OPTION_PAGE); setPaging(false); }, [search, open]);
   const visible = clientPaged ? filtered.slice(0, shown) : filtered;
+  const moreToShow = clientPaged && shown < filtered.length;
+  /* The next ten, on scroll or on clicking the footer. The short wait is what
+     makes the loader visible — without it the rows appear with no sign why. */
+  const loadMore = () => {
+    if (paging || !moreToShow) return;
+    setPaging(true);
+    window.setTimeout(() => { setShown((n) => n + OPTION_PAGE); setPaging(false); }, 180);
+  };
   // Collect an option's badges in render order: extra tags first, then the
   // primary status badge at the far right.
   const badgesOf = (o: { badge?: OptBadgeSpec; badges?: OptBadgeSpec[] }): OptBadgeSpec[] =>
@@ -457,12 +466,12 @@ export function MasterSelect({
           )}
           <div
             className="master-select-list"
-            onScroll={(onScrollEnd || (clientPaged && shown < filtered.length)) ? (e) => {
+            onScroll={(onScrollEnd || moreToShow) ? (e) => {
               const el = e.currentTarget;
               // Near the bottom → the parent's next page, or the next 10 local options.
               if (el.scrollHeight - el.scrollTop - el.clientHeight >= 48) return;
               if (onScrollEnd) onScrollEnd();
-              else setShown((n) => n + OPTION_PAGE);
+              else loadMore();
             } : undefined}
           >
             {filtered.length === 0 && !loadingMore ? (
@@ -519,6 +528,17 @@ export function MasterSelect({
                     </Tooltip>
                   </DropdownItem>
                 ))}
+                {/* How much of the list is on screen, and the way to the rest —
+                    without it a long list looks complete at ten. */}
+                {moreToShow && (
+                  <button type="button" className="master-select-more" onClick={loadMore} aria-live="polite">
+                    {paging ? (
+                      <><span className="master-select-more__ring" aria-hidden />Loading more…</>
+                    ) : (
+                      <>Showing {visible.length} of {filtered.length} · scroll for more</>
+                    )}
+                  </button>
+                )}
                 {loadingMore && (
                   <div className="master-select-empty">Loading…</div>
                 )}

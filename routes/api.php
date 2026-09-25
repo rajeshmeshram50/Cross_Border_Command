@@ -543,6 +543,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
 
 
     Route::get   ('/segment-uploads/download',                     [SegmentDocUploadController::class, 'download']);
+    // P2P attachments stream through us: on Azure the file is off-origin and can only be opened, never saved.
+    Route::get   ('/p2p/files/download',                            [\App\Http\Controllers\Api\P2p\P2pFileController::class, 'download']);
     Route::get   ('/segment-uploads/{type}/{id}/summary',          [SegmentDocUploadController::class, 'summary'])->whereNumber('id');
     
     Route::get   ('/segment-uploads/{type}/{id}/vault',            [SegmentDocUploadController::class, 'vault'])->whereNumber('id');

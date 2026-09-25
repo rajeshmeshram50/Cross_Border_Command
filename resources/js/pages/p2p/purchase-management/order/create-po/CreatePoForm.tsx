@@ -67,6 +67,9 @@ export type StepCtx = {
   /** Other POs holding this PI's quantity — explains an empty Stage 02. */
   piHolders: PiHolder[];
   linesGeneral?: string;
+  /* The form is open to be read only. A disabled fieldset covers the native
+     controls; anything built from a div needs telling. */
+  viewOnly: boolean;
 };
 
 type Stage = { title: string; desc: string };
@@ -509,7 +512,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     pi: link.shipment?.pi_number ?? detail?.pi_code ?? null,
     procurement: detail?.procurement_request_code ?? null,
   };
-  const ctx: StepCtx = { lookups, taxMode: draft.docType === 'International' ? 'export' : (detail?.tax_mode ?? 'intra'), piCode: refs.pi, detail, saveLines, saving, refreshVault, reloadSupplier: loadSupplier, reloadSupplierList: lookups.reloadSuppliers, reloadDetail: () => { void reloadApproval(); }, savedLines, piHolders,
+  const ctx: StepCtx = { lookups, taxMode: draft.docType === 'International' ? 'export' : (detail?.tax_mode ?? 'intra'), piCode: refs.pi, detail, saveLines, saving, refreshVault, reloadSupplier: loadSupplier, reloadSupplierList: lookups.reloadSuppliers, reloadDetail: () => { void reloadApproval(); }, savedLines, piHolders, viewOnly,
     errors: shown[0] ? { ...serverErrors, ...validateStage1(draft) } : serverErrors,
     ...(() => {
       if (!shown[1]) return { lineErrors: serverLineErrors };
@@ -662,8 +665,12 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
               type="button"
               className={isSubmit ? 'spi-dt-btn-map' : 'spi-dt-btn-next'}
               onClick={goNext}
-              disabled={saving || booting || awaitingApproval}
-              title={awaitingApproval ? `Waiting for ${detail?.gst_approval?.requested_to_name ?? 'the senior'} to approve — the PO cannot be submitted yet.` : undefined}
+              /* The supplier lands a moment after it is picked, and the PO
+                 carries its id only then — saving in that window would store the
+                 new document type against the old supplier (CS-403). */
+              disabled={saving || booting || awaitingApproval || supplierLoading}
+              title={awaitingApproval ? `Waiting for ${detail?.gst_approval?.requested_to_name ?? 'the senior'} to approve — the PO cannot be submitted yet.`
+                : supplierLoading ? 'Applying the supplier — one moment.' : undefined}
             >
               {saving ? <CpfSpinner /> : isSubmit && <IcoCheck />}
               {nextLabel}

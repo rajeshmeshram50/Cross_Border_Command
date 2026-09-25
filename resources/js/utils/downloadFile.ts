@@ -25,10 +25,13 @@ export async function downloadFile(rawUrl: string | null | undefined, filename =
   if (!rawUrl) return;
   const name = filename || nameFromUrl(rawUrl);
 
-  // Our segment uploads (Azure on prod) → stream through the backend.
-  if (/segment_doc_uploads\//i.test(rawUrl)) {
+  // Our own uploads (Azure on prod) → stream through the backend.
+  const proxy = /segment_doc_uploads\//i.test(rawUrl) ? '/segment-uploads/download'
+    : /\/p2p\/(po-payments|refund-recoveries|refund-adjustments|po-documents)\//i.test(rawUrl) ? '/p2p/files/download'
+      : null;
+  if (proxy) {
     try {
-      const res = await api.get('/segment-uploads/download', {
+      const res = await api.get(proxy, {
         params: { url: rawUrl },
         responseType: 'blob',
       });

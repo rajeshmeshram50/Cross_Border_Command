@@ -20,7 +20,10 @@ const SUPPLIER_MAX = 30;
 
 type VaultFile = {
   key: string;
+  /** What the row reads as — the document's name in the master. */
   name: string;
+  /** The file itself, for the download and for the PDF / JPG chip. */
+  file: string;
   kind: 'pdf' | 'jpg';
   meta: string;
   tag?: 'signed' | 'out' | 'in';
@@ -48,18 +51,22 @@ const kindOf = (name: string): 'pdf' | 'jpg' => (/\.(jpe?g|png|webp|heic)$/i.tes
 function filesOf(poId: number, d: PoDocument): VaultFile[] {
   const date = d.generated_on ? formatDmy(d.generated_on) : '';
   const out: VaultFile[] = [];
-  const name = d.original_name || `${d.code.replace(/\//g, '_')}.pdf`;
+  /* The row reads as the document's own name from the master. A generated
+     document has no uploaded file name, and falling back to the code printed
+     "DOC_2026-27_010.pdf" where the name belongs (CS-420). */
+  const file = d.original_name || `${d.code.replace(/\//g, '_')}.pdf`;
+  const title = d.name || file;
   if (d.status === 'signed' && d.signature_request_id != null) {
     const sigId = d.signature_request_id;
     out.push({
-      key: `s${d.id}`, name: `Signed_${name}`, kind: 'pdf', tag: 'signed',
-      meta: ['Signed', d.signed_at ? formatDmy(d.signed_at.slice(0, 10)) : '', 'Zoho Sign'].filter(Boolean).join('  ·  '),
+      key: `s${d.id}`, name: title, file: `Signed_${file}`, kind: 'pdf', tag: 'signed',
+      meta: ['Signed', d.signed_at ? formatDmy(d.signed_at.slice(0, 10)) : '', 'Zoho Sign', d.code].filter(Boolean).join('  ·  '),
       fetch: () => poSignatureApi.signedFile(sigId, d.signature_index ?? 0),
     });
   }
   out.push({
-    key: `d${d.id}`, name, kind: kindOf(name),
-    meta: [d.name, date, d.status === 'sent' ? 'Sent for signature' : d.status === 'signed' ? 'Original' : (d.file_path ? 'Draft' : 'Not generated yet')].filter(Boolean).join('  ·  '),
+    key: `d${d.id}`, name: title, file, kind: kindOf(file),
+    meta: [d.code, date, d.status === 'sent' ? 'Sent for signature' : d.status === 'signed' ? 'Original' : (d.file_path ? 'Draft' : 'Not generated yet')].filter(Boolean).join('  ·  '),
     fetch: d.file_path ? () => poDocumentApi.download(poId, d.id) : undefined,
   });
   return out;
@@ -70,7 +77,7 @@ function proofFile(p: PoProofFile, prefix: string, tag: 'out' | 'in', word: stri
   const name = p.name || `${prefix.toUpperCase()}${p.id}.pdf`;
   const url = p.url;
   return {
-    key: `${prefix}${p.id}`, name, kind: kindOf(name), tag,
+    key: `${prefix}${p.id}`, name, file: name, kind: kindOf(name), tag,
     meta: [p.ref, `${word} ${money(p.amount)}`, p.date ? formatDmy(p.date) : ''].filter(Boolean).join('  ·  '),
     fetch: url ? async () => (await fetch(url)).blob() : undefined,
   };
@@ -82,7 +89,7 @@ function adjustmentFiles(a: PoProofs['adjustment']): VaultFile[] {
   if (!a?.attachment_url || !a.attachment_name) return [];
   const url = a.attachment_url;
   return [{
-    key: `adra${a.id}`, name: a.attachment_name, kind: kindOf(a.attachment_name),
+    key: `adra${a.id}`, name: a.attachment_name, file: a.attachment_name, kind: kindOf(a.attachment_name),
     meta: [a.code, a.date ? formatDmy(a.date) : '', `${money(a.refund_amount)} to be refunded`].filter(Boolean).join('  ·  '),
     fetch: async () => (await fetch(url)).blob(),
   }];
@@ -138,7 +145,7 @@ export default function PoEvidenceVaultModal({ po, onClose }: { po: VaultPo; onC
     try {
       const url = URL.createObjectURL(await f.fetch());
       if (mode === 'view') window.open(url, '_blank', 'noopener');
-      else { const a = document.createElement('a'); a.href = url; a.download = f.name; a.click(); }
+      else { const a = document.createElement('a'); a.href = url; a.download = f.file; a.click(); }
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) {
       toast.error(mode === 'view' ? 'Could not open the file' : 'Could not download the file', e instanceof PoApiError ? e.firstError : f.name);

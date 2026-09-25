@@ -222,8 +222,12 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
           <Field label="PO Type" req error={err.poType}>
             <EditSelect value={draft.poType} options={PO_TYPES} locked={LOCKED_PO_TYPES} onLockedClick={lockedPoType} onChange={(x) => set({ poType: x })} invalid={!!err.poType} />
           </Field>
+          {/* It follows the supplier, so it shimmers with it rather than showing
+              a value the supplier being applied may be about to change. */}
           <Field label="Document Type" req error={err.docType}>
-            <EditSelect value={draft.docType} options={DOC_TYPES} readOnly={docTypeLocked} onLockedClick={lockedDocType} onChange={(x) => set({ docType: x })} invalid={!!err.docType} />
+            <div className={supplierLoading ? 'cpf-sup-loading' : undefined}>
+              <EditSelect value={draft.docType} options={DOC_TYPES} readOnly={docTypeLocked} onLockedClick={lockedDocType} onChange={(x) => set({ docType: x })} invalid={!!err.docType} />
+            </div>
             {docTypeLocked && (
               <span className="cpf-lockhint"><IcoLock /> {supplierLocked ? 'Fixed — the PO has gone for senior approval' : 'Set by the supplier — clear the supplier to change it'}</span>
             )}
@@ -238,8 +242,9 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
             </div>
           </Field>
           <Field label="Expected Delivery Date" req error={err.deliveryDate}>
+            {/* Built from a div, so the view-only fieldset does not reach it. */}
             <MasterDatePicker value={draft.deliveryDate} onChange={(x) => set({ deliveryDate: x })} invalid={!!err.deliveryDate}
-              minDate={new Date().toISOString().slice(0, 10)} />
+              disabled={ctx.viewOnly} minDate={new Date().toISOString().slice(0, 10)} />
           </Field>
           <Field label="Delivery Location" req error={err.deliveryLocation}>
             <input className={`spi-dt-inp${inv('deliveryLocation')}`} placeholder="Enter delivery location" maxLength={255} value={draft.deliveryLocation} onChange={(e) => set({ deliveryLocation: e.target.value })} />
@@ -344,9 +349,11 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
                   </button>
                 )}
               </div>
-              {supplierLocked
-                ? <span className="cpf-lockhint"><IcoLock /> Fixed — the PO has gone for senior approval</span>
-                : <span className="cpf-lockhint">Only {needType} suppliers can be picked — the rest are listed locked</span>}
+              {supplierLoading
+                ? <span className="cpf-lockhint cpf-applying"><span className="cpf-applying__ring" aria-hidden />Applying supplier — its details and document type are loading…</span>
+                : supplierLocked
+                  ? <span className="cpf-lockhint"><IcoLock /> Fixed — the PO has gone for senior approval</span>
+                  : <span className="cpf-lockhint">Only {needType} suppliers can be picked — the rest are listed locked</span>}
             </Field>
             {/* Everything below comes from the supplier master and is read-only here. */}
             <Field label="COMPANY LEGAL NAME">
