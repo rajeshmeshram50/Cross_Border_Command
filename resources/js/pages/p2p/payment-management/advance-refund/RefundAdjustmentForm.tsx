@@ -2,7 +2,8 @@
 // after the PO is picked (or straight away when editing). Reuses the shared P2P
 // wizard shell (spi-dt-*) and its Field / EditSelect / HeadPill pieces.
 // Raising it cancels the PO; the vendor credit then goes to Zoho Books.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { downloadFile } from '../../../../utils/downloadFile';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -13,7 +14,7 @@ import { money, shortDate } from '../../purchase-management/order/manage-payment
 import { PoApiError, poLookupApi, refundApi, type SupplierDetail, type ZohoOutcome } from '../../purchase-management/order/api/po-api';
 import { categoryLabel } from '../../purchase-management/order/create-po/supplier-checks';
 import {
-  IcoAlert, IcoCart, IcoChevron, IcoChevronL, IcoChevronR, IcoDocSm, IcoLock, IcoPaperclip,
+  IcoAlert, IcoCamera, IcoCart, IcoChevron, IcoChevronL, IcoChevronR, IcoDocSm, IcoDownload, IcoEye, IcoLock, IcoPaperclip,
   IcoShield, IcoUser, IcoX,
 } from '../../icons';
 import EvidenceVaultModal from './EvidenceVaultModal';
@@ -73,6 +74,7 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
   const [open, setOpen] = useState({ po: true, sup: true, refund: true });
   const [vault, setVault] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const camRef = useRef<HTMLInputElement>(null);
 
   // The PO (new) or the adjustment (edit), then the supplier from the master.
   useEffect(() => {
@@ -115,6 +117,9 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
   const paid = edit?.paid ?? info?.paid ?? 0;
   const recovered = edit?.recovered ?? 0;
   const locked = !!edit?.amountsLocked;
+  /* Every rupee is back: the refund is closed and the form only opens to be
+     read — the server refuses the save too (CS-588). */
+  const settled = edit?.status === 'recovered';
   const po = info?.po ?? '—';
   // Blank amount means "refund everything paid", as the placeholder shows.
   const amount = amtText.trim() === '' ? paid : Math.max(0, Math.round((parseFloat(amtText) || 0) * 100) / 100);
@@ -174,11 +179,16 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
     }
   };
 
-  const pickFile = (f: File | null) => {
+  const pickFile = (f: File | null, cam = false) => {
     if (f && f.size > MAX_FILE) { toast.error('File too large', 'The attachment must be 2 MB or smaller.'); return; }
-    if (f && !/\.(pdf|jpe?g|png|webp)$/i.test(f.name)) { toast.error('File type not allowed', 'Attach a PDF or an image (JPG, PNG, WEBP).'); return; }
-    setFile(f); setAttachment(f?.name ?? ''); clear('attachment');
+    // A camera capture arrives as a JPEG with no name on some devices.
+    if (f && !cam && !/\.(pdf|jpe?g|png|webp)$/i.test(f.name)) { toast.error('File type not allowed', 'Attach a PDF or an image (JPG, PNG, WEBP).'); return; }
+    setFile(f); setAttachment(f ? (f.name || `photo_${Date.now()}.jpg`) : ''); clear('attachment');
   };
+  // What View / Download open: the file just picked, else the one already saved.
+  const localUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => () => { if (localUrl) URL.revokeObjectURL(localUrl); }, [localUrl]);
+  const attUrl = localUrl ?? edit?.attachmentUrl ?? null;
 
   // What the vault shows while the form is open: the saved record, or the PO being raised against.
   const vaultRefund: RefundAdjustment | null = edit;
@@ -232,7 +242,8 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
         </div>
 
         {loading ? <FormSkeleton fullSupplier /> : (
-        <div className="spi-dt-body">
+        // A settled refund is read from end to end: one disabled fieldset turns it all off.
+        <fieldset className="spi-dt-body arf-body" disabled={settled}>
           <Section icon={<IcoCart />} label="Purchase Order" title="Purchase Order Details" sub="The order this refund is raised against"
             badge="Read-only" open={open.po} onToggle={() => toggle('po')}>
             <div className="arf-rogrid">
@@ -288,7 +299,9 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
 
           <Section icon={<IcoDocSm />} label="Refund" title="Advance Receipt Refund Adjustment Details"
             sub="Identity of this refund and the amount due back from the supplier" badge="Auto" open={open.refund} onToggle={() => toggle('refund')}>
-            {locked && (
+            {settled ? (
+              <div className="arf-miss">Fully recovered — {money(recovered)} is back from the supplier, so this refund adjustment is closed and opens for reading only.</div>
+            ) : locked && (
               <div className="arf-miss">The vendor credit is already in Zoho Books ({edit?.zohoNumber ?? 'synced'}) — the refund type and amounts can no longer change.</div>
             )}
             <div className="arf-rgrid">
@@ -298,12 +311,32 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
                 <input className="spi-dt-inp" placeholder="As issued by the supplier" maxLength={64} value={supplierRef} onChange={(e) => setSupplierRef(e.target.value)} />
               </Field>
               <Field label="REFUND REFERENCE ATTACHMENT">
+                {/* Browse or shoot it on the spot, and open what is attached (CS-588). */}
                 <div className={`spi-dt-file is-clickable${invalid.attachment ? ' is-invalid' : ''}`} role="button" tabIndex={0} onClick={() => fileRef.current?.click()}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current?.click(); } }}>
                   <span className="spi-dt-file-txt"><IcoPaperclip /> {attachment || 'Choose file… (PDF / image, max 2 MB)'}</span>
-                  <button type="button" className="spi-dt-file-btn" tabIndex={-1}>Browse</button>
+                  <span className="arf-fileacts" onClick={(e) => e.stopPropagation()}>
+                    {attUrl && (
+                      <>
+                        <Tooltip label="Open this attachment">
+                          <a className="spi-dt-file-btn arf-fbtn" href={attUrl} target="_blank" rel="noopener noreferrer" aria-label="View attachment"><IcoEye size={13} /> View</a>
+                        </Tooltip>
+                        <Tooltip label="Download this attachment">
+                          <button type="button" className="spi-dt-file-btn arf-fbtn" aria-label="Download attachment"
+                            onClick={() => void downloadFile(attUrl, attachment || 'refund-attachment')}><IcoDownload size={13} /></button>
+                        </Tooltip>
+                      </>
+                    )}
+                    <Tooltip label="Take a photo of the reference">
+                      <button type="button" className="spi-dt-file-btn arf-fbtn" disabled={settled} aria-label="Take a photo"
+                        onClick={() => camRef.current?.click()}><IcoCamera size={13} /> Camera</button>
+                    </Tooltip>
+                    <button type="button" className="spi-dt-file-btn" disabled={settled} onClick={() => fileRef.current?.click()}>Browse</button>
+                  </span>
                   <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" hidden
                     onChange={(e) => { pickFile(e.target.files?.[0] ?? null); e.target.value = ''; }} />
+                  <input ref={camRef} type="file" accept="image/*" capture="environment" hidden
+                    onChange={(e) => { pickFile(e.target.files?.[0] ?? null, true); e.target.value = ''; }} />
                 </div>
               </Field>
               <Field label="ADVANCE REFUND TYPE" req>
@@ -358,7 +391,7 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
               </div>
             )}
           </Section>
-        </div>
+        </fieldset>
         )}
 
         <div className="spi-dt-foot">
@@ -370,9 +403,11 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
             <div className="spi-dt-dots"><span className="on" /></div>
           </div>
           <div className="spi-dt-foot-r">
-            <button type="button" className="spi-dt-btn-ghost" disabled={saving} onClick={onCancel}><IcoChevronL /> Cancel</button>
-            <button type="button" className="spi-dt-btn-next" disabled={loading || saving} onClick={() => void submit()}>
-              {saving ? 'Saving…' : edit ? 'Update Refund Adjustment' : 'Submit Refund Adjustment — Cancel PO'} <IcoChevronR />
+            <button type="button" className="spi-dt-btn-ghost" disabled={saving} onClick={onCancel}><IcoChevronL /> {settled ? 'Back' : 'Cancel'}</button>
+            {/* Nothing to save on a settled refund — the footer only leaves. */}
+            <button type="button" className="spi-dt-btn-next" disabled={loading || saving}
+              onClick={() => (settled ? onClose() : void submit())}>
+              {settled ? 'Close' : saving ? 'Saving…' : edit ? 'Update Refund Adjustment' : 'Submit Refund Adjustment — Cancel PO'} <IcoChevronR />
             </button>
           </div>
         </div>

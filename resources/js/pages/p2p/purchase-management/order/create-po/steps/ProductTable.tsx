@@ -218,7 +218,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
       toast.warning(`${formatProductCode(p.code)} saved, but not selected`, why);
       return;
     }
-    onChange(justAdded.row, { productId: p.id, ...(row.pi ? {} : { rate: rateFor(p, supplierRates) }) });
+    onChange(justAdded.row, { productId: p.id, rate: rateFor(p, supplierRates) });
     toast.success('Product added', `${formatProductCode(p.code)} — ${p.name} is now on this line.`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [justAdded, products, supplierSegments, supplierProducts]);
@@ -383,7 +383,8 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                         placeholder="— Select product —"
                         onChange={(label) => {
                           const picked = products.find((p) => productLabel(p) === label);
-                          if (picked) onChange(index, { productId: picked.id, ...(row.pi ? {} : { rate: rateFor(picked, supplierRates) }) });
+                          // The rate follows the product: the supplier's purchase price, GST excluded.
+                          if (picked) onChange(index, { productId: picked.id, rate: rateFor(picked, supplierRates) });
                         }}
                       />
                       <button type="button" className="cpd-iconbtn" title="Edit this product in the product master"
