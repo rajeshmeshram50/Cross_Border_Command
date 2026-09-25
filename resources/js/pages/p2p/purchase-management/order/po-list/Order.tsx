@@ -571,9 +571,11 @@ const ICON_VAULT = (
 );
 
 // Cancelled POs are read-only: their action buttons render disabled.
-function ZohoCell({ synced, cancelled = false, unpaid = false, onSync, error }: {
+function ZohoCell({ synced, cancelled = false, unpaid = false, onSync, error, readOnly = false }: {
   synced: boolean; cancelled?: boolean; unpaid?: boolean;
   onSync?: () => void | Promise<void>; error?: string;
+  /** Shown inside the request view: the status, without the action. */
+  readOnly?: boolean;
 }) {
   /* The sync talks to Zoho — several calls, a few seconds — so the button spins
      until it comes back rather than looking like nothing happened. */
@@ -606,7 +608,7 @@ function ZohoCell({ synced, cancelled = false, unpaid = false, onSync, error }: 
       {/* The bill carries the payments, so the first payment has to exist before anything goes across.
           A cancelled PO still syncs: the same press also sends its vendor credit and refunds. */}
       {/* Clickable even when it can't go across: the press says why. */}
-      <button type="button" className={`ord-btn ord-btn--zoho${busy ? ' is-syncing' : ''}`}
+      {!readOnly && <button type="button" className={`ord-btn ord-btn--zoho${busy ? ' is-syncing' : ''}`}
         disabled={busy} onClick={() => void go()}
         title={busy ? 'Sending to Zoho Books…' : unpaid
           ? 'Record the first payment on this PO before syncing it to Zoho Books'
@@ -614,13 +616,15 @@ function ZohoCell({ synced, cancelled = false, unpaid = false, onSync, error }: 
             ? 'Send this PO, its bill, payments, vendor credit and refunds to Zoho Books'
             : 'Send this PO, its bill and payments to Zoho Books')}>
         {ICON_SYNC}<span>{busy ? 'Syncing…' : 'Zoho Sync'}</span>
-      </button>
+      </button>}
     </div>
   );
 }
 
-function InspectionCell({ required, done, cancelled = false, onOpen }: {
+function InspectionCell({ required, done, cancelled = false, onOpen, readOnly = false }: {
   required: boolean; done: boolean; cancelled?: boolean; onOpen: () => void;
+  /** Shown inside the request view: the status, without the action. */
+  readOnly?: boolean;
 }) {
   if (!required) {
     return (
@@ -634,15 +638,17 @@ function InspectionCell({ required, done, cancelled = false, onOpen }: {
       {done
         ? <span className="ord-status ord-status--ok"><span className="ord-status__dot" />Completed</span>
         : <span className="ord-status ord-status--bad"><span className="ord-status__dot" />Pending</span>}
-      <button type="button" className={`ord-btn ord-btn--insp${done ? ' is-done' : ''}`} disabled={cancelled} onClick={onOpen}>
-        {done ? ICON_TICK : ICON_EYE}
-        <span>{done ? 'Inspection Done' : 'Physical Inspection'}</span>
-      </button>
+      {!readOnly && (
+        <button type="button" className={`ord-btn ord-btn--insp${done ? ' is-done' : ''}`} disabled={cancelled} onClick={onOpen}>
+          {done ? ICON_TICK : ICON_EYE}
+          <span>{done ? 'Inspection Done' : 'Physical Inspection'}</span>
+        </button>
+      )}
     </div>
   );
 }
 
-function PaymentCell({ row, onManage }: { row: OrderRow; onManage: (row: OrderRow) => void }) {
+function PaymentCell({ row, onManage, readOnly = false }: { row: OrderRow; onManage: (row: OrderRow) => void; readOnly?: boolean }) {
   const pct = row.net > 0 ? Math.round((row.paid / row.net) * 100) : 0;
   const status: PaymentStatus = pct >= 100 ? 'full' : pct > 0 ? 'partial' : 'pending';
   const label = status === 'full' ? 'Payment Completed' : PAYMENT_LABEL[status];
@@ -683,19 +689,21 @@ function PaymentCell({ row, onManage }: { row: OrderRow; onManage: (row: OrderRo
         )}
       </div>
 
-      <button
-        type="button"
-        className={`ord-btn ord-btn--hist${done ? ' is-record' : ''}`}
-        disabled={!!row.cancelled}
-        onClick={() => onManage(row)}
-      >
-        {done ? ICON_EYE : ICON_HISTORY}
-        <span>{done ? 'View Request Details' : 'Manage Payment Requests'}</span>
+      {!readOnly && (
+        <button
+          type="button"
+          className={`ord-btn ord-btn--hist${done ? ' is-record' : ''}`}
+          disabled={!!row.cancelled}
+          onClick={() => onManage(row)}
+        >
+          {done ? ICON_EYE : ICON_HISTORY}
+          <span>{done ? 'View Request Details' : 'Manage Payment Requests'}</span>
 
-        {row.paymentRequests > 0 && (
-          <i className="ord-btn__count">{row.paymentRequests}</i>
-        )}
-      </button>
+          {row.paymentRequests > 0 && (
+            <i className="ord-btn__count">{row.paymentRequests}</i>
+          )}
+        </button>
+      )}
     </div>
   );
 }
@@ -943,10 +951,13 @@ function RiskBadge({ risk }: { risk: RiskLevel | null }) {
 
 // One PO as it appears on the list: a <tbody> spanning a row per mapped SPI.
 // Payment Request Management reuses it (without the Action column) for its status tabs.
-export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, onZoho, onTrack, onCancel, onVault, onRecover, showActions = true }: {
+export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, onZoho, onTrack, onCancel, onVault, onRecover, summary = false }: {
   row: OrderRow; sr: number; inspected: boolean;
   onInspect: (row: OrderRow) => void; onManage: (row: OrderRow) => void;
-  onEdit?: (row: OrderRow) => void; onZoho?: (row: OrderRow) => void; onTrack?: (row: OrderRow) => void; onCancel?: (row: OrderRow) => void; onVault?: (row: OrderRow) => void; onRecover?: (row: OrderRow) => void; showActions?: boolean;
+  onEdit?: (row: OrderRow) => void; onZoho?: (row: OrderRow) => void; onTrack?: (row: OrderRow) => void; onCancel?: (row: OrderRow) => void; onVault?: (row: OrderRow) => void; onRecover?: (row: OrderRow) => void;
+  /* The request view shows the order as it stands and nothing more: no actions,
+     and none of the cancellation columns, which are not on that screen. */
+  summary?: boolean;
 }) {
   const lines = row.invoices.length > 0 ? row.invoices : [null];
   const span = lines.length;
@@ -1034,15 +1045,15 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
 
             {isFirst && (
               <>
-                <PoCell span={span}><ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} unpaid={row.paid <= 0} error={row.zohoError} onSync={onZoho && (() => onZoho(row))} /></PoCell>
+                <PoCell span={span}><ZohoCell synced={row.zohoSynced} cancelled={row.cancelled} unpaid={row.paid <= 0} error={row.zohoError} onSync={onZoho && (() => onZoho(row))} readOnly={summary} /></PoCell>
                 <PoCell span={span}>
-                  <InspectionCell required={row.physicalInspection} done={inspected} cancelled={row.cancelled} onOpen={() => onInspect(row)} />
+                  <InspectionCell required={row.physicalInspection} done={inspected} cancelled={row.cancelled} onOpen={() => onInspect(row)} readOnly={summary} />
                 </PoCell>
-                <PoCell span={span}><PaymentCell row={row} onManage={onManage} /></PoCell>
-                <PoCell span={span}><AdrCell adr={row.adr} ccy={row.currency} /></PoCell>
-                <PoCell span={span}><RecoveryCell row={row} onRecover={onRecover} /></PoCell>
-                <PoCell span={span}><StatusBadge row={row} /></PoCell>
-                {showActions && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={viewOnlyReason(row)} onEdit={() => onEdit?.(row)} onCancel={onCancel && (() => onCancel(row))} onTrack={onTrack && (() => onTrack(row))} trackable={row.zohoStarted} onVault={onVault && (() => onVault(row))} recoverPending={recoverPendingOf(row)} onRecover={onRecover && (() => onRecover(row))} /></PoCell>}
+                <PoCell span={span}><PaymentCell row={row} onManage={onManage} readOnly={summary} /></PoCell>
+                {!summary && <PoCell span={span}><AdrCell adr={row.adr} ccy={row.currency} /></PoCell>}
+                {!summary && <PoCell span={span}><RecoveryCell row={row} onRecover={onRecover} /></PoCell>}
+                {!summary && <PoCell span={span}><StatusBadge row={row} /></PoCell>}
+                {!summary && <PoCell span={span}><ActionCell cancelled={row.cancelled} cancelReason={row.cancelReason} viewOnly={viewOnlyReason(row)} onEdit={() => onEdit?.(row)} onCancel={onCancel && (() => onCancel(row))} onTrack={onTrack && (() => onTrack(row))} trackable={row.zohoStarted} onVault={onVault && (() => onVault(row))} recoverPending={recoverPendingOf(row)} onRecover={onRecover && (() => onRecover(row))} /></PoCell>}
               </>
             )}
           </tr>

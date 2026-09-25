@@ -207,9 +207,13 @@ class PoRefundAdjustmentController extends Controller
 
         $this->inTransaction('update the refund adjustment', function () use ($adj, $user, $data, $file, $path) {
             $row = PoRefundAdjustment::whereKey($adj->id)->lockForUpdate()->first();
-            // Fully recovered: the refund is closed and opens read-only (CS-588).
+            /* Recoveries are booked against these figures, so the adjustment is
+               closed to edits from the first one onwards (CS-588). */
             if ($row->status === PoRefundAdjustment::STATUS_RECOVERED) {
                 $this->abort('Every rupee of this refund has been recovered — it can no longer be changed.');
+            }
+            if ((float) $row->recovered_amount > 0.001 || $row->recoveries()->exists()) {
+                $this->abort('A recovery has already been recorded against this refund — its figures can no longer be changed.');
             }
             $figures = $this->figures($data, (float) $row->paid_amount, (float) $row->recovered_amount);
             $amountsChanged = abs($figures['refund_amount'] - (float) $row->refund_amount) > 0.001
@@ -299,7 +303,7 @@ class PoRefundAdjustmentController extends Controller
         $path = $file?->store("p2p/refund-recoveries/{$adj->id}", 'public');
         $amount = round((float) $data['amount'], 2);
 
-        $saved = $this->inTransaction($existing ? 'update the recovery' : 'record the recovery', function () use ($adj, $existing, $user, $data, $amount, $file, $path) {
+        $saved = $this->inTransaction($existing ? 'update the recovery' : 'record the recovery', function () use ($adj, $existing, $user, $data, $amount, $ref, $file, $path) {
             $row = PoRefundAdjustment::whereKey($adj->id)->lockForUpdate()->first();
             $others = (float) $row->recoveries()->when($existing, fn ($q) => $q->where('id', '!=', $existing->id))->sum('amount');
             $room = round((float) $row->refund_amount - $others, 2);

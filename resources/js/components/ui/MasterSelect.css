@@ -315,3 +315,34 @@
     background: rgba(124,92,252,0.28);
     color: #e9d5ff;
   }
+
+  /* The foot of a client-paged list: how many of the total are on screen, and
+     the loader while the next ten come in. Also clickable, for a list too
+     short to scroll. */
+  .master-select-more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    width: 100%;
+    padding: 9px 12px;
+    border: none;
+    border-top: 1px solid var(--vz-border-color);
+    background: var(--vz-light);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--vz-secondary-color);
+    cursor: pointer;
+  }
+  .master-select-more:hover { color: var(--vz-primary); }
+  .master-select-more__ring {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    border: 2px solid var(--vz-border-color);
+    border-top-color: var(--vz-primary);
+    animation: master-select-spin 700ms linear infinite;
+  }
+
+  @keyframes master-select-spin { to { transform: rotate(360deg); } }

@@ -29,12 +29,18 @@ export type PaymentRelease = {
 export type LinkedRequest = PaymentRequestRow & { paid: number };
 
 export type TradeDoc = {
+  /** The PO document row, so the vault can fetch the file itself. */
+  id: number;
   code: string;
   name: string;
   generated: string;
   valid: string;
   status: 'signed' | 'sent' | 'pending';
   attachment: string;
+  /** No file on record yet — View and Download have nothing to open. */
+  hasFile: boolean;
+  signatureRequestId: number | null;
+  signatureIndex: number | null;
 };
 
 export type PaymentRequestDetail = {
@@ -178,8 +184,11 @@ export async function fetchPaymentRequestDetail(requestId: number): Promise<Paym
     },
     history,
     tradeDocs: (ok(docs) ?? []).map((x) => ({
-      code: x.code, name: x.name, generated: x.generated_on ?? '', valid: x.valid_up_to ?? '',
+      id: x.id, code: x.code, name: x.name, generated: x.generated_on ?? '', valid: x.valid_up_to ?? '',
       status: x.status, attachment: x.original_name ?? '',
+      hasFile: !!x.file_path,
+      signatureRequestId: x.signature_request_id ?? null,
+      signatureIndex: x.signature_index ?? null,
     })),
   };
 }

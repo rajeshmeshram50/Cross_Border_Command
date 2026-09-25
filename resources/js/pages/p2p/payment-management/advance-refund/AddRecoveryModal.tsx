@@ -24,6 +24,11 @@ type Props = {
 };
 
 const MAX_FILE = 10 * 1024 * 1024;
+const CAMERA = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" />
+  </svg>
+);
 const UPLOAD = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
@@ -45,17 +50,48 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const camRef = useRef<HTMLInputElement>(null);
+  const dropRef = useRef<HTMLButtonElement>(null);
+  /* Where the attachment panel sits. It is portalled to the body, so it is
+     placed from the drop zone's box and flips above when the foot is close. */
+  const [pickAt, setPickAt] = useState<{ top: number; left: number; width: number } | null>(null);
+  const openPicker = () => {
+    const r = dropRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const H = 158;
+    const below = r.bottom + 6 + H <= window.innerHeight - 12;
+    setPickAt({ top: below ? r.bottom + 6 : Math.max(12, r.top - H - 6), left: r.left, width: Math.min(320, Math.max(268, r.width)) });
+  };
+  useEffect(() => {
+    if (!pickAt) return;
+    const close = () => setPickAt(null);
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Element | null;
+      if (t?.closest?.('.arf-att') || (t && dropRef.current?.contains(t))) return;
+      close();
+    };
+    // A scroll anywhere would leave the panel behind, so it goes instead.
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    document.addEventListener('mousedown', onDown);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      document.removeEventListener('mousedown', onDown);
+    };
+  }, [pickAt]);
   // Where View / Download point: the file just picked, else the proof already saved.
   const localUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
   useEffect(() => () => { if (localUrl) URL.revokeObjectURL(localUrl); }, [localUrl]);
   const fileUrl = localUrl ?? initial?.fileUrl ?? null;
   const undoPick = () => { setFile(null); setFileName(initial?.file ?? ''); };
 
-  const pick = (f: File | null) => {
+  const pick = (f: File | null, cam = false) => {
     if (!f) return;
     if (f.size > MAX_FILE) { setError('Proof of payment must be 10 MB or smaller.'); return; }
-    if (!/\.(pdf|jpe?g|png|webp)$/i.test(f.name)) { setError('Proof of payment must be a PDF or an image (JPG, PNG, WEBP).'); return; }
-    setFile(f); setFileName(f.name); setError('');
+    // A camera capture arrives as a JPEG, sometimes with no name at all.
+    if (!cam && !/\.(pdf|jpe?g|png|webp)$/i.test(f.name)) { setError('Proof of payment must be a PDF or an image (JPG, PNG, WEBP).'); return; }
+    setFile(f); setFileName(f.name || `photo_${Date.now()}.jpg`); setError('');
   };
 
   const save = async () => {
@@ -143,16 +179,36 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
                   </span>
                 </div>
               ) : (
-                <label className="apay-drop" htmlFor="arf-add-file">
-                  <div className="apay-drop__ico">{UPLOAD}</div>
-                  <div className="apay-drop__txt">
-                    <div className="apay-drop__t">Click to upload proof of payment</div>
-                    <div className="apay-drop__s">PDF, JPG, PNG or WEBP · up to 10 MB</div>
-                  </div>
-                </label>
+                <>
+                  <button type="button" ref={dropRef} className="apay-drop" disabled={saving} onClick={openPicker}>
+                    <div className="apay-drop__ico">{UPLOAD}</div>
+                    <div className="apay-drop__txt">
+                      <div className="apay-drop__t">Click to upload proof of payment</div>
+                      <div className="apay-drop__s">PDF, JPG, PNG or WEBP · up to 10 MB</div>
+                    </div>
+                  </button>
+                  {/* A proof is as often shot on a phone as picked off a disk.
+                      Portalled, or the popup-body's own scroller clips it. */}
+                  {pickAt && createPortal(
+                    <div className="arf-att" role="menu" style={{ top: pickAt.top, left: pickAt.left, width: pickAt.width }}>
+                      <div className="arf-att__hd">Add attachment</div>
+                      <button type="button" className="arf-att__opt" role="menuitem" onClick={() => { setPickAt(null); fileRef.current?.click(); }}>
+                        <span className="arf-att__ico">{UPLOAD}</span>
+                        <span><b>Upload file</b><i>Choose from this device</i></span>
+                      </button>
+                      <button type="button" className="arf-att__opt" role="menuitem" onClick={() => { setPickAt(null); camRef.current?.click(); }}>
+                        <span className="arf-att__ico arf-att__ico--cam">{CAMERA}</span>
+                        <span><b>Take photo</b><i>Capture with the camera</i></span>
+                      </button>
+                    </div>,
+                    document.body,
+                  )}
+                </>
               )}
               <input id="arf-add-file" ref={fileRef} className="apay-file-in" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" disabled={saving}
                 onChange={(e) => { pick(e.target.files?.[0] ?? null); e.target.value = ''; }} />
+              <input ref={camRef} className="apay-file-in" type="file" accept="image/*" capture="environment" disabled={saving}
+                onChange={(e) => { pick(e.target.files?.[0] ?? null, true); e.target.value = ''; }} />
             </div>
           </div>
 

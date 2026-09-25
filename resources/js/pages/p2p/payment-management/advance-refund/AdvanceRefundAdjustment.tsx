@@ -40,6 +40,7 @@ function ProtoIco({ size = 15, sw, children }: { size?: number; sw: number; chil
 }
 const IcoReturn = () => <ProtoIco sw={2.2}><polyline points="9 14 4 9 9 4" /><path d="M20 20v-7a4 4 0 0 0-4-4H4" /></ProtoIco>;
 const IcoPen = () => <ProtoIco sw={2.2}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></ProtoIco>;
+const IcoEyeSq = () => <ProtoIco sw={2.2}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></ProtoIco>;
 const IcoVault = () => <ProtoIco size={12} sw={2.2}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M9 12l2 2 4-4" /></ProtoIco>;
 const IcoFile = () => <ProtoIco size={11} sw={2.6}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></ProtoIco>;
 const IcoAdd = () => <ProtoIco size={13} sw={2.8}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></ProtoIco>;
@@ -385,6 +386,8 @@ function RefundRow({ sr, refund, syncing, onEdit, onRecover, onVault, onSync }: 
 }) {
   // Synced once the vendor credit is in Zoho and every recovery is refunded there.
   const zohoSynced = refund.zohoStatus === 'synced' && refund.zohoPending === 0;
+  // Once money starts coming back the figures are fixed, so the action reads as View.
+  const settled = refund.status === 'recovered' || refund.recovered > 0 || refund.recoveriesCount > 0;
   const po = refund.poInfo;
   const fig = refundFigures(refund);
   const tds = po?.tds ?? 0;
@@ -481,8 +484,8 @@ function RefundRow({ sr, refund, syncing, onEdit, onRecover, onVault, onSync }: 
       </td>
       <td>
         <div className="arf-acts">
-          <Tooltip label="Edit Advance Receipt Refund Adjustment" themed>
-            <button type="button" className="ord-btn ord-btn--edit arf-btn-sq" onClick={onEdit} aria-label="Edit"><IcoPen /></button>
+          <Tooltip label={settled ? 'Recovery has started — opens to be read' : 'Edit Advance Receipt Refund Adjustment'} themed>
+            <button type="button" className="ord-btn ord-btn--edit arf-btn-sq" onClick={onEdit} aria-label={settled ? "View" : "Edit"}>{settled ? <IcoEyeSq /> : <IcoPen />}</button>
           </Tooltip>
           <Tooltip label="Evidence Vault — refund, PO and payment proofs" themed>
             <button type="button" className="ord-btn ord-btn--vault" onClick={onVault}><IcoVault /><span>Evidence Vault</span></button>

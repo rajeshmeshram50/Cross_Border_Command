@@ -117,9 +117,10 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
   const paid = edit?.paid ?? info?.paid ?? 0;
   const recovered = edit?.recovered ?? 0;
   const locked = !!edit?.amountsLocked;
-  /* Every rupee is back: the refund is closed and the form only opens to be
-     read — the server refuses the save too (CS-588). */
-  const settled = edit?.status === 'recovered';
+  /* Money has started coming back: the recoveries are booked against these
+     figures, so the adjustment is closed to edits and only opens to be read.
+     The server refuses the save too (CS-588). */
+  const settled = !!edit && (edit.status === 'recovered' || edit.recovered > 0 || edit.recoveriesCount > 0);
   const po = info?.po ?? '—';
   // Blank amount means "refund everything paid", as the placeholder shows.
   const amount = amtText.trim() === '' ? paid : Math.max(0, Math.round((parseFloat(amtText) || 0) * 100) / 100);
@@ -300,7 +301,11 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
           <Section icon={<IcoDocSm />} label="Refund" title="Advance Receipt Refund Adjustment Details"
             sub="Identity of this refund and the amount due back from the supplier" badge="Auto" open={open.refund} onToggle={() => toggle('refund')}>
             {settled ? (
-              <div className="arf-miss">Fully recovered — {money(recovered)} is back from the supplier, so this refund adjustment is closed and opens for reading only.</div>
+              <div className="arf-miss">
+                {edit?.status === 'recovered'
+                  ? `Fully recovered — ${money(recovered)} is back from the supplier, so this refund adjustment is closed and opens for reading only.`
+                  : `Recovery has started — ${money(recovered)} is already back against this refund, so its figures can no longer change. It opens for reading only.`}
+              </div>
             ) : locked && (
               <div className="arf-miss">The vendor credit is already in Zoho Books ({edit?.zohoNumber ?? 'synced'}) — the refund type and amounts can no longer change.</div>
             )}

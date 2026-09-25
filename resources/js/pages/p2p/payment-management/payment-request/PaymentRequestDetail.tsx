@@ -7,6 +7,7 @@ import { useAuth } from '../../../../contexts/AuthContext';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { formatDmy } from '../../../../utils/formatDmy';
+import { formatProductCode } from '../../../../utils/formatProductCode';
 import { ORDER_COLUMNS, OrderRowBody, type OrderRow } from '../../purchase-management/order/po-list/Order';
 import { Field } from '../../purchase-management/order/create-po/form-fields';
 import GstNoticeModal, { type GstNotice } from '../../purchase-management/order/create-po/GstNoticeModal';
@@ -111,6 +112,9 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
   const [sub, setSub] = useState<SubTab>('supplier');
   const [vaultOpen, setVaultOpen] = useState(false);
   const [decide, setDecide] = useState<{ mode: DecisionMode; request: PaymentRequestRow } | null>(null);
+  /* The request id just decided here: the detail is re-read after a decision,
+     and until it lands the buttons must already be closed (CS-433 / CS-434). */
+  const [justDecided, setJustDecided] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
 
   useEffect(() => {
@@ -144,6 +148,8 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
   };
   const onDecided = (r: PaymentRequestRow) => {
     setDecide(null);
+    // The re-read takes a moment; the buttons must close the instant it is decided.
+    setJustDecided(r.requestId);
     setVersion(v => v + 1);
     onChanged?.();
     const amt = moneyOf(r.currency);
@@ -179,7 +185,7 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
 
   const { row, doc, ledger, supplier, po } = detail;
   const money = moneyOf(row.currency);
-  const decided = row.status !== 'awaiting';
+  const decided = row.status !== 'awaiting' || justDecided === row.requestId;
   const decidedTip = decided
     ? `This request was already ${row.status === 'approved' ? 'approved' : 'declined'} — no further decision can be taken on it`
     : !canApprove ? NO_APPROVE_TIP : undefined;
@@ -964,7 +970,7 @@ function InspectionPanel({ detail }: { detail: Detail }) {
                   <td>
                     <div className="pins-prod__nm">{p.name}</div>
                     <div className="pins-prod__meta">
-                      <span className="pins-code">{p.code}</span>
+                      <span className="pins-code">{formatProductCode(p.code)}</span>
                       <span className="pins-kv">HSN <b>{p.hsn}</b></span>
                       <span className="pins-prod__dot" />
                       <span className="pins-kv">GST <b>{p.gst}%</b></span>
@@ -1029,7 +1035,10 @@ function InspectionPanel({ detail }: { detail: Detail }) {
 /* ══ Current Transaction Status / History ══
    The Purchase Order list's own row, Action column dropped — actions belong
    on the PO list, not here. */
-const TX_COLUMNS = ORDER_COLUMNS.filter(c => c.label !== 'Action');
+/* The request view shows the order as it stands: no Action, and none of the
+   cancellation columns, which belong to the Purchase Order list. */
+const TX_DROP = ['Action', 'Advance Receipt Refund Adjustment', 'Payment Recovery Status', 'PO Status'];
+const TX_COLUMNS = ORDER_COLUMNS.filter(c => !TX_DROP.includes(c.label));
 const TX_WIDTH = TX_COLUMNS.reduce((s, c) => s + c.width, 0);
 
 function OrderTable({ rows, onInspect, onManage }: { rows: OrderRow[]; onInspect: () => void; onManage: () => void }) {
@@ -1041,7 +1050,7 @@ function OrderTable({ rows, onInspect, onManage }: { rows: OrderRow[]; onInspect
           <tr>{TX_COLUMNS.map(c => <th key={c.label} className={c.groupEnd ? 'ord-table__group-end' : undefined}>{c.label}</th>)}</tr>
         </thead>
         {rows.map((r, i) => (
-          <OrderRowBody key={r.po} row={r} sr={i + 1} inspected={r.inspectionDone} onInspect={onInspect} onManage={onManage} showActions={false} />
+          <OrderRowBody key={r.po} row={r} sr={i + 1} inspected={r.inspectionDone} onInspect={onInspect} onManage={onManage} summary />
         ))}
       </table>
     </div>

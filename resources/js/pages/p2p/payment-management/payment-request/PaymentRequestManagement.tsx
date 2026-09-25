@@ -110,8 +110,8 @@ const fmtDate = (iso: string) => {
 };
 const fmtMoney = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 
-function IdCell({ doc }: { doc: DocRef | null }) {
-  if (!doc) return <span className="prm-dash">—</span>;
+function IdCell({ doc, none = '—' }: { doc: DocRef | null; none?: string }) {
+  if (!doc) return <span className="prm-dash">{none}</span>;
   return (
     <div className="ord-idcell">
       <span className="ord-idpill">{doc.id}</span>
@@ -328,7 +328,7 @@ export default function PaymentRequestManagement() {
 
                     <td>{row.shipment ? <IdCell doc={row.shipment} /> : <span className="prm-dash">—</span>}</td>
                     <td><IdCell doc={row.opportunity} /></td>
-                    <td className="ord-table__group-end"><IdCell doc={row.procurement} /></td>
+                    <td className="ord-table__group-end"><IdCell doc={row.procurement} none="NA" /></td>
 
                     <td>
                       <div className="ord-supplier">

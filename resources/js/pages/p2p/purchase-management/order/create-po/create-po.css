@@ -2505,3 +2505,19 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 [data-bs-theme="dark"] .cdocn-p { color: #94a3b8; }
 [data-bs-theme="dark"] .cdocn-chip { background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .28); color: #67e8f9; }
 [data-bs-theme="dark"] .cdocn-btn--ghost { background: #1e293b; border-color: rgba(148, 163, 184, .25); color: #cbd5e1; }
+
+/* While a picked supplier is being applied: the note says so, and the
+   spinner says it is still happening (CS-403). */
+.cpf-applying { display: inline-flex; align-items: center; gap: 6px; color: #0e7490; }
+.cpf-applying__ring {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid #cffafe;
+  border-top-color: #0891b2;
+  animation: cpf-applying-spin 700ms linear infinite;
+}
+@keyframes cpf-applying-spin { to { transform: rotate(360deg); } }
+[data-bs-theme="dark"] .cpf-applying { color: #67e8f9; }
+[data-bs-theme="dark"] .cpf-applying__ring { border-color: rgba(34, 211, 238, .25); border-top-color: #22d3ee; }
