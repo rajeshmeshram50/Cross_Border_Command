@@ -6,7 +6,7 @@ import { shortDesignation } from '../../../../../utils/positionHierarchy';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import type { OrderRow } from '../po-list/Order';
 import {
-  Box, HeroRefChips, PAYMENT_TYPES, PoSummaryCards, STAT_ICONS, Stat, rowBreakdown,
+  Box, HeroRefChips, PAYMENT_TYPES, PaymentWait, PoSummaryCards, STAT_ICONS, Stat, rowBreakdown,
   ICON_PENCIL, ICON_X, ccySymbol, moneyIn,
 } from './payment-shared';
 import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
@@ -70,11 +70,13 @@ export default function RaisePaymentRequestModal({
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => { cardRef.current?.focus(); }, []);
 
+  // Escape closes the form — but not while the request is being sent, or the
+  // card would go while its save is still in flight.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, busy]);
 
   const [type, setType] = useState('');
   const [pctText, setPctText] = useState('');
@@ -189,7 +191,12 @@ export default function RaisePaymentRequestModal({
 
   return createPortal(
     <div className="spi-mdl-backdrop">
-      <div className="spi-mdl mpr-card mpr-card--raise" role="dialog" aria-modal="true" aria-labelledby="rpr-title" tabIndex={-1} ref={cardRef}>
+      <div
+        className={`spi-mdl mpr-card mpr-card--raise${busy ? ' is-busy' : ''}`}
+        role="dialog" aria-modal="true" aria-labelledby="rpr-title" tabIndex={-1} ref={cardRef}
+        aria-busy={busy}
+      >
+        {busy && <PaymentWait title="Submitting payment request…" sub="Please wait, the request is being sent to the approver" />}
 
         <div className="mpr-hero">
           <div className="mpr-hero__icon">{ICON_SEND}</div>
@@ -200,7 +207,7 @@ export default function RaisePaymentRequestModal({
             <div className="mpr-hero__sub">Raise a payment request on this PO</div>
           </div>
           <HeroRefChips row={row} />
-          <button type="button" className="mpr-hero__close" onClick={onClose} aria-label="Close">{ICON_X}</button>
+          <button type="button" className="mpr-hero__close" onClick={onClose} aria-label="Close" disabled={busy}>{ICON_X}</button>
         </div>
 
         <div className="mpr-bd">
@@ -229,6 +236,7 @@ export default function RaisePaymentRequestModal({
                   placeholder="Select type…"
                   options={TYPE_OPTIONS}
                   onChange={pickType}
+                  disabled={busy}
                 />
               </div>
 
@@ -245,6 +253,7 @@ export default function RaisePaymentRequestModal({
                     placeholder="0"
                     value={pctText}
                     onChange={(e) => fromPct(e.target.value)}
+                    disabled={busy}
                   />
                   <span className="rpr-amtwrap__cur">%</span>
                 </div>
@@ -264,6 +273,7 @@ export default function RaisePaymentRequestModal({
                     placeholder="0"
                     value={amtText}
                     onChange={(e) => fromAmt(e.target.value)}
+                    disabled={busy}
                   />
                 </div>
                 {overBudget && (
@@ -281,6 +291,7 @@ export default function RaisePaymentRequestModal({
                   loading={loadingApprovers}
                   options={approverOptions}
                   onChange={setApprover}
+                  disabled={busy}
                 />
               </div>
             </div>
@@ -301,6 +312,7 @@ export default function RaisePaymentRequestModal({
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="Explain why this payment should be released…"
+                disabled={busy}
               />
             </div>
           </Box>
@@ -323,9 +335,9 @@ export default function RaisePaymentRequestModal({
             </span>
           </div>
           <div className="spi-mdl-foot-btns">
-            <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
+            <button type="button" className="spi-mdl-cancel" onClick={onClose} disabled={busy}>Cancel</button>
             <button type="button" className="spi-mdl-confirm mpr-raise" onClick={submit} disabled={busy}>
-              {busy ? 'Submitting…' : 'Submit Payment Request'}
+              {busy ? <><span className="mpr-btnspin" aria-hidden="true" />Submitting…</> : 'Submit Payment Request'}
             </button>
           </div>
         </div>

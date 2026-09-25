@@ -2,6 +2,7 @@
    mapped into the shape the page renders. Requests are raised on POs; SPI requests come later. */
 import { poPaymentApi, type PayRequestListMeta, type PayRequestListRow, type PayRequestTab } from '../../purchase-management/order/api/po-api';
 import { categoryKeyOf } from '../../purchase-management/order/po-list/Order';
+import { ccySymbol } from '../../../../utils/currency';
 
 export type RequestStatus = 'awaiting' | 'approved' | 'declined';
 export type PaymentType = string;
@@ -41,6 +42,10 @@ export type PaymentRequestRow = {
   supplierTag: SupplierTag;
   totalAmount: number;
   requestedAmount: number;
+  /** The PO's currency: every amount on this request prints in it. */
+  currency: string;
+  /** An import — no GST applies to it, and the GST checks are not run. */
+  international: boolean;
   /** Null until the request is decided. */
   approvedAmount: number | null;
   /** Free line under the approved amount: "released in full", "₹20,700 due". */
@@ -77,7 +82,7 @@ const initials = (name: string | null) =>
   (name ?? '').split(/\s+/).filter(Boolean).map((s) => s[0]).join('').slice(0, 2).toUpperCase() || '?';
 const party = (p: { name: string | null; role: string | null }): PartyRef =>
   ({ code: initials(p.name), name: p.name ?? '—', role: p.role ?? undefined });
-const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+const inr = (n: number, ccy = 'INR') => `${ccySymbol(ccy)}${n.toLocaleString('en-IN')}`;
 
 /** One API row → the row the page renders. */
 export function toRequestRow(r: PayRequestListRow): PaymentRequestRow {
@@ -85,7 +90,7 @@ export function toRequestRow(r: PayRequestListRow): PaymentRequestRow {
   const by = party(r.requested_to);
   const note = status === 'awaiting' ? null
     : status === 'declined' ? 'declined'
-      : (r.due ?? 0) > 0 ? `${inr(r.due ?? 0)} due` : 'released in full';
+      : (r.due ?? 0) > 0 ? `${inr(r.due ?? 0, r.currency_code)} due` : 'released in full';
   return {
     id: r.id, poId: r.purchase_order_id, vendorId: r.vendor_id,
     requestId: r.code, requestDate: r.requested_at ?? '', status,
@@ -98,6 +103,8 @@ export function toRequestRow(r: PayRequestListRow): PaymentRequestRow {
     supplier: r.supplier_name ?? '—', supplierCode: r.supplier_code,
     supplierTag: categoryKeyOf(r.supplier_category) ?? 'regular',
     totalAmount: r.po_total, requestedAmount: r.requested_amount,
+    currency: r.currency_code || 'INR',
+    international: r.document_type === 'international',
     approvedAmount: r.status === 'approved' ? r.approved_amount : null,
     approvedNote: note,
     paymentType: r.payment_type,
