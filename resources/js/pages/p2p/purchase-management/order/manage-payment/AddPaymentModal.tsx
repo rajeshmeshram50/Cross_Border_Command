@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import type { ReleasePayment } from './MakePoPaymentModal';
 import { Chip, ICON_X, ccySymbol, moneyIn } from './payment-shared';
@@ -226,8 +227,9 @@ export default function AddPaymentModal({
 
             <div className="apay-f">
               <label htmlFor="apay-date">UTR / Cheque Date</label>
-              <input id="apay-date" className={`apay-in${invalid('date')}`} type="date" value={date} disabled={saving}
-                aria-invalid={!!fieldErr.date} onChange={(e) => { setDate(e.target.value); clearErrors(); }} />
+              {/* The app's own calendar, not the browser's — popupClassName lifts it above the dialog. */}
+              <MasterDatePicker value={date} onChange={(v) => { setDate(v); clearErrors(); }} disabled={saving}
+                invalid={!!fieldErr.date} placeholder="Select date" popupClassName="apay-cal" />
               <FieldError f="date" />
             </div>
 

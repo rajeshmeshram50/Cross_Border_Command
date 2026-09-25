@@ -104,6 +104,8 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
   const [loading, setLoading] = useState(true);
   // Key of the save in flight ("v:12", "f:12", "sign", …) — its control shows busy.
   const [busy, setBusy] = useState<string | null>(null);
+  /** A sign-off or a withdrawal is in flight — the whole dialog waits on it. */
+  const deciding = busy === 'sign' || busy === 'withdraw';
   const [note, setNote] = useState('');
   // Sign-off files stay in the browser until the sign-off sends them.
   const [noteFiles, setNoteFiles] = useState<{ file: File; proof: ProofFile }[]>([]);
@@ -279,7 +281,15 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
         </Suspense>
       )}
 
-      <div className="spi-mdl pins-card" role="dialog" aria-modal="true" aria-labelledby="pins-title" tabIndex={-1} ref={cardRef}>
+      <div className={`spi-mdl pins-card${deciding ? ' is-saving' : ''}`} role="dialog" aria-modal="true"
+        aria-labelledby="pins-title" aria-busy={deciding} tabIndex={-1} ref={cardRef}>
+        {deciding && (
+          <div className="pins-wait" role="status" aria-live="polite">
+            <span className="pins-wait__ring" />
+            <span className="pins-wait__t">{busy === 'sign' ? 'Submitting the inspection…' : 'Withdrawing the sign-off…'}</span>
+            <span className="pins-wait__s">Please wait, this is being recorded</span>
+          </div>
+        )}
 
         <div className="pins-hero">
           <div className="pins-hero__row">
@@ -296,7 +306,7 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
                 <div className="pins-hero__sub">Business Reference · Generated {today}</div>
               </div>
             </div>
-            <button type="button" className="pins-hero__close" onClick={onClose} aria-label="Close">{ICON_X}</button>
+            <button type="button" className="pins-hero__close" disabled={deciding} onClick={onClose} aria-label="Close">{ICON_X}</button>
           </div>
           <div className="pins-hero__cards">
             {cards.map((c) => (
@@ -358,7 +368,7 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
                       <td className="pins-desc">
                         <span className="pins-desc__txt">{l.description || '—'}</span>
                         {l.product_id && (
-                          <button type="button" className="pins-desc__more" onClick={() => setViewId(l.product_id)}>… Read more</button>
+                          <button type="button" className="pins-desc__more" disabled={deciding} onClick={() => setViewId(l.product_id)}>… Read more</button>
                         )}
                       </td>
                       <td className="pins-td-c"><span className="pins-qty">{l.quantity}{l.uom ? ` ${l.uom}` : ''}</span></td>
@@ -373,7 +383,7 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
                               <button
                                 type="button"
                                 key={v.k}
-                                disabled={busy === `v:${id}`}
+                                disabled={busy === `v:${id}` || deciding}
                                 className={`pins-seg__b pins-seg__b--${v.k}${l.verdict === v.k ? ' is-on' : ''}`}
                                 onClick={() => { if (l.verdict !== v.k) void setVerdict(id, v.k); }}
                               >
@@ -393,13 +403,13 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
                             <div className="pins-attach__row">
                               <label className={`pins-btn${full ? ' is-disabled' : ''}`} htmlFor={`pins-up-${id}`}
                                 title={full ? `Up to ${MAX_PROOF} files — remove one to add another` : 'Upload photos or videos'}>{ICON_UP}<span>Upload</span></label>
-                              <button type="button" className="pins-btn pins-btn--cam" disabled={busy === `f:${id}` || full}
+                              <button type="button" className="pins-btn pins-btn--cam" disabled={busy === `f:${id}` || full || deciding}
                                 onClick={() => setCamFor(id)} title={full ? `Up to ${MAX_PROOF} files — remove one to add another` : 'Take photos with the camera'}>{ICON_CAM}<span>Camera</span></button>
                               <span className={`pins-files${n ? ' is-on' : ''}${full ? ' is-full' : ''}`}>
                                 {busy === `f:${id}` ? 'Saving…' : `${n}/${MAX_PROOF} files`}
                               </span>
                             </div>
-                            <input id={`pins-up-${id}`} className="pins-file-in" type="file" multiple disabled={busy === `f:${id}` || full}
+                            <input id={`pins-up-${id}`} className="pins-file-in" type="file" multiple disabled={busy === `f:${id}` || full || deciding}
                               accept="image/*,video/*,application/pdf" onChange={(e) => addFiles(id, e)} />
                             <ProofList
                               files={files}
@@ -470,13 +480,13 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
                     <div className="pins-notebox__bar">
                       <label className={`pins-btn pins-btn--solid${noteFull ? ' is-disabled' : ''}`} htmlFor="pins-up-note"
                         title={noteFull ? `Up to ${MAX_PROOF} files — remove one to add another` : 'Attach photos, videos or documents'}>{ICON_UP}<span>Upload</span></label>
-                      <button type="button" className="pins-btn pins-btn--solid" disabled={noteFull} onClick={() => setCamFor(NOTE)}
+                      <button type="button" className="pins-btn pins-btn--solid" disabled={noteFull || deciding} onClick={() => setCamFor(NOTE)}
                         title={noteFull ? `Up to ${MAX_PROOF} files — remove one to add another` : 'Take photos with the camera'}>{ICON_CAM}<span>Camera</span></button>
                       <span className={`pins-files${noteFiles.length ? ' is-on' : ''}${noteFull ? ' is-full' : ''}`}>
                         {noteFiles.length}/{MAX_PROOF} files
                       </span>
                     </div>
-                    <input id="pins-up-note" className="pins-file-in" type="file" multiple disabled={noteFull}
+                    <input id="pins-up-note" className="pins-file-in" type="file" multiple disabled={noteFull || deciding}
                       accept="image/*,video/*,application/pdf" onChange={(e) => addFiles(NOTE, e)} />
                   </div>
                 </div>
@@ -489,18 +499,18 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
           <div className="spi-mdl-foot-btns">
             {signed ? (
               <>
-                <button type="button" className="spi-mdl-cancel" disabled={busy === 'withdraw'} onClick={withdraw}>
+                <button type="button" className="spi-mdl-cancel" disabled={deciding} onClick={withdraw}>
                   {busy === 'withdraw' ? 'Withdrawing…' : 'Withdraw sign-off'}
                 </button>
                 <button type="button" className="spi-mdl-confirm" onClick={continueToPayment}>Continue to payment request</button>
               </>
             ) : (
               <>
-                <button type="button" className="spi-mdl-cancel" onClick={onClose}>Close</button>
+                <button type="button" className="spi-mdl-cancel" disabled={deciding} onClick={onClose}>Close</button>
                 <button
                   type="button"
                   className="spi-mdl-confirm"
-                  disabled={!allMarked || busy === 'sign'}
+                  disabled={!allMarked || deciding}
                   title={allMarked ? 'Record the inspection sign-off' : 'Mark every line Correct, Damaged or Mismatched before signing off'}
                   onClick={submit}
                 >

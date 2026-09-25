@@ -76,7 +76,8 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
   };
 
   const remove = async (id: number, amount: number) => {
-    if (!refund) return;
+    if (!refund || busy) return;
+    setBusy(`del-${id}`);
     const ok = await confirm({
       title: 'Delete recovered payment?',
       message: `${money(amount)} will be removed from ${refund.no} and counted as outstanding again. This cannot be undone.`,
@@ -84,8 +85,7 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
       cancelLabel: 'Keep It',
       tone: 'danger',
     });
-    if (!ok) return;
-    setBusy(`del-${id}`);
+    if (!ok) { setBusy(null); return; }
     try {
       const res = await refundApi.deleteRecovery(refund.id, id);
       applied(toRefund(res.refund));
@@ -228,12 +228,20 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
                           {ICON_SYNC}<span>{busy === `zoho-${r.id}` ? 'Syncing…' : 'Zoho Sync'}</span>
                         </button>
                       )}
-                      <button type="button" className="cpay-act cpay-act--edit" disabled={r.zohoStatus === 'synced'}
-                        title={r.zohoStatus === 'synced' ? 'Refunded in Zoho Books — this entry can no longer be changed' : 'Edit recovered payment'}
-                        onClick={() => setEditing(r.id)}><IcoPencil /></button>
-                      <button type="button" className="cpay-act cpay-act--del" disabled={r.zohoStatus === 'synced' || busy === `del-${r.id}`}
-                        title={r.zohoStatus === 'synced' ? 'Refunded in Zoho Books — this entry can no longer be deleted' : 'Delete recovered payment'}
-                        onClick={() => void remove(r.id, r.amount)}><IcoTrash /></button>
+                      {/* Synced to Zoho, or the refund fully recovered — either way
+                          the entry is a record now, so it opens to be read (CS-566). */}
+                      <button type="button" className="cpay-act cpay-act--edit" disabled={r.zohoStatus === 'synced' || done}
+                        title={r.zohoStatus === 'synced' ? 'Refunded in Zoho Books — this entry can no longer be changed'
+                          : done ? 'Fully recovered — this entry can no longer be changed' : 'Edit recovered payment'}
+                        onClick={() => setEditing(r.id)}>{r.zohoStatus === 'synced' || done ? <IcoEye /> : <IcoPencil />}</button>
+                      <button type="button" className={`cpay-act cpay-act--del${busy === `del-${r.id}` ? ' is-busy' : ''}`}
+                        disabled={r.zohoStatus === 'synced' || done || busy !== null}
+                        title={r.zohoStatus === 'synced' ? 'Refunded in Zoho Books — this entry can no longer be deleted'
+                          : done ? 'Fully recovered — this entry can no longer be deleted'
+                            : busy === `del-${r.id}` ? 'Deleting…' : 'Delete recovered payment'}
+                        onClick={() => void remove(r.id, r.amount)}>
+                        {busy === `del-${r.id}` ? <span className="cpay-act__ring" aria-hidden /> : <IcoTrash />}
+                      </button>
                     </span>
                   </span>
                 </div>

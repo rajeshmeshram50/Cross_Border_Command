@@ -5,7 +5,7 @@ import { categoryLabel } from '../../purchase-management/order/create-po/supplie
 import type { OrderRow } from '../../purchase-management/order/po-list/Order';
 import { toOrderRow } from '../../purchase-management/order/po-list/Order';
 import type { Supplier } from './payment-request-suppliers';
-import type { InspectionProduct } from '../../purchase-management/order/physical-inspection/inspection-shared';
+import type { InspectionProduct, ProofFile } from '../../purchase-management/order/physical-inspection/inspection-shared';
 import {
   PoApiError, poApi, poDocumentApi, poInspectionApi, poLookupApi, poPaymentApi,
   type PoPayRequest, type SupplierDetail,
@@ -24,6 +24,17 @@ export type PaymentRelease = {
   /** UTR for a transfer, instrument number for a cheque. */
   ref: string;
   date: string;
+  /** The proof filed with the release; absent when none was attached. */
+  proofName: string;
+  proofUrl: string | null;
+};
+
+/** One inspected line as it stands on the record. */
+export type InspectionMark = {
+  code: string;
+  verdict: 'correct' | 'damaged' | 'mismatched' | null;
+  remark: string;
+  files: ProofFile[];
 };
 
 export type LinkedRequest = PaymentRequestRow & { paid: number };
@@ -58,7 +69,7 @@ export type PaymentRequestDetail = {
   payments: PaymentRelease[];
   /** The order behind the request; null for an SPI raised without a PO. */
   po: OrderRow | null;
-  inspection: { required: boolean; completed: boolean; products: InspectionProduct[] };
+  inspection: { required: boolean; completed: boolean; products: InspectionProduct[]; marks: InspectionMark[] };
   /** Other orders with this supplier, most recent first. */
   history: OrderRow[];
   tradeDocs: TradeDoc[];
@@ -157,6 +168,19 @@ export async function fetchPaymentRequestDetail(requestId: number): Promise<Paym
     gst: l.gst_pct, price: 0, uom: l.uom ?? '', uomShort: l.uom ?? '', segment: '—', condition: '—',
     packaging: '—', brand: '—', desc: l.description ?? '',
   }));
+  /* What was actually marked, per line. The request view reports the inspection;
+     it never took it, so the verdict and its proofs are read from the record
+     rather than assumed. */
+  const marks: InspectionMark[] = (inspection?.lines ?? []).map((l) => ({
+    code: l.product_code ?? '—',
+    verdict: l.verdict,
+    remark: l.remark ?? '',
+    files: (l.proof_files ?? []).map((f) => ({
+      index: f.index, name: f.name, size: f.size, url: f.url,
+      kind: f.mime?.startsWith('image/') ? 'image' as const : f.mime?.startsWith('video/') ? 'video' as const : 'file' as const,
+      thumb: f.mime?.startsWith('image/') ? f.url : undefined,
+    })),
+  }));
 
   return {
     row,
@@ -174,6 +198,7 @@ export async function fetchPaymentRequestDetail(requestId: number): Promise<Paym
       return {
         requestId: q?.code ?? '—', requestDate: q?.requested_at ?? '', doc: doc.id, docDate: doc.date,
         amount: p.amount, bank: p.bank_name ?? '—', mode: '—', ref: p.utr_cheque_number ?? '—', date: p.utr_cheque_date ?? '',
+        proofName: p.proof_name ?? '', proofUrl: p.proof_url ?? null,
       };
     }),
     po: po ? toOrderRow(po) : null,
@@ -181,6 +206,7 @@ export async function fetchPaymentRequestDetail(requestId: number): Promise<Paym
       required: needsInspection,
       completed: d.request.inspection_status === 'completed',
       products,
+      marks,
     },
     history,
     tradeDocs: (ok(docs) ?? []).map((x) => ({

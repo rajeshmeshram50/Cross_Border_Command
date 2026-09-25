@@ -1261,3 +1261,36 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Signing off or withdrawing takes a round trip: the dialog waits behind this
+   rather than staying open to further clicks (CS-417). */
+.pins-card.is-saving { position: relative; }
+.pins-wait {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, .84);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  cursor: progress;
+}
+.pins-wait__ring {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid #cffafe;
+  border-top-color: #0891b2;
+  animation: pins-wait-spin 800ms linear infinite;
+}
+@keyframes pins-wait-spin { to { transform: rotate(360deg); } }
+.pins-wait__t { font-size: 13px; font-weight: 800; letter-spacing: -.2px; color: #0f2b38; }
+.pins-wait__s { font-size: 11px; font-weight: 500; color: #64748b; }
+[data-bs-theme="dark"] .pins-wait { background: rgba(15, 23, 42, .86); }
+[data-bs-theme="dark"] .pins-wait__t { color: #e2e8f0; }
+[data-bs-theme="dark"] .pins-wait__s { color: #94a3b8; }

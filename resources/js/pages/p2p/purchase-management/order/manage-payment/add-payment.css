@@ -497,6 +497,8 @@
   cursor: not-allowed;
 }
 
+/* The calendar is portalled to the body, so it needs to clear the dialog. */
+.master-datepicker-popup.apay-cal { z-index: 100010 !important; }
 /* A refused field says so where it is: a red edge on the input and the reason
    under it. The single banner named neither the field nor the value, so the
    user had to guess which box the refusal was about (CS-425). */
