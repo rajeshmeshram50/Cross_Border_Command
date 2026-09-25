@@ -11,6 +11,7 @@ import Tooltip from '../../../components/ui/Tooltip';
 import ClmTradeDocumentDraftModal from './ClmTradeDocumentDraftModal';
 import { saveApiBlob } from '../../../utils/downloadFile';
 import SearchClear from '../../../components/ui/SearchClear';
+import useDismissPopover from '../shared/useDismissPopover';
 
 /* Central CLM → Trade Documents Master (two tabs: List + Library). */
 
@@ -271,27 +272,8 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
   // All-parties popover — opened from the +N badge in the APPLICABLE PARTY column.
   // Same viewport clamp as the segment popover above (QA #4).
   const [partyOpen, setPartyOpen] = useState<{ id: number; names: string[]; x: number; y: number; flipUp: boolean; maxH: number } | null>(null);
-  // These popovers are portalled with fixed positioning off the badge's rect, so
-  // a page/table scroll leaves them behind (they drift out of the table and look
-  // mispositioned). Close them on any scroll (capture:true catches ancestor +
-  // table scrolls) or resize — same behaviour as the master dropdowns.
-  useEffect(() => {
-    if (!segOpen && !partyOpen) return;
-    const close = () => { setSegOpen(null); setPartyOpen(null); };
-    // Close on PAGE/table scroll, but not when scrolling inside the popover itself
-    // (that scroll used to close it, making a long list unscrollable).
-    const onScroll = (e: Event) => {
-      const t = e.target as Element | null;
-      if (t && typeof t.closest === 'function' && t.closest('.clm-pop')) return;
-      close();
-    };
-    window.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', close);
-    return () => {
-      window.removeEventListener('scroll', onScroll, true);
-      window.removeEventListener('resize', close);
-    };
-  }, [segOpen, partyOpen]);
+  // Scroll / resize / Escape / tab switch — see useDismissPopover.
+  useDismissPopover(!!(segOpen || partyOpen), () => { setSegOpen(null); setPartyOpen(null); });
 
   /* Download a library row as PDF (full page-shell: branded header + content
    * + footer) or DOCX. The list exposes only the PDF preview. Errors arrive

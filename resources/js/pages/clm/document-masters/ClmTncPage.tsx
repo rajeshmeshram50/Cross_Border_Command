@@ -11,6 +11,7 @@ import ClmTncWizardModal from './ClmTncWizardModal';
 import Tooltip from '../../../components/ui/Tooltip';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import SearchClear from '../../../components/ui/SearchClear';
+import useDismissPopover from '../shared/useDismissPopover';
 
 /* Central CLM → Terms & Conditions Master. Three tabs: the document categories,
    the segment-wise T&C matched by a product's segment, and one global T&C per
@@ -341,24 +342,8 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
    * last rows has almost no room below it, and the panel used to open downwards
    * regardless and get cut off by the bottom of the screen (QA #4). */
   const [segPop, setSegPop] = useState<{ id: number; names: string[]; x: number; y: number; flipUp: boolean; maxH: number } | null>(null);
-  // Close the fixed-positioned badge popover on scroll/resize so it can't
-  // drift out of the table (capture:true catches ancestor + table scrolls).
-  useEffect(() => {
-    if (!segPop) return;
-    const close = () => setSegPop(null);
-    /* A scroll INSIDE the popover must not close it.
-       capture:true sees the popover's own scroll event too, so opening a long
-       segment list and reaching for the wheel dismissed it instantly — the list
-       was scrollable but unreachable (QA #4). Only page/table scrolls close it. */
-    const onScroll = (e: Event) => {
-      const t = e.target as Element | null;
-      if (t && typeof t.closest === 'function' && t.closest('.clm-pop')) return;
-      close();
-    };
-    window.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', close);
-    return () => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', close); };
-  }, [segPop]);
+  // Scroll / resize / Escape / tab switch — see useDismissPopover.
+  useDismissPopover(!!segPop, () => setSegPop(null));
   // Regulatory-status filter dropdown (All / Highly / Less).
   const [statusFilter, setStatusFilter] = useState<'all' | 'highly' | 'less'>('all');
 

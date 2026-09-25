@@ -411,6 +411,16 @@ export default function PaymentRequestManagement() {
    where the values will be, instead of the line "Loading payment requests…".
    Same bars (.spi-sk-bar) and the same column widths the PO list uses, so the
    two lists wait in the same way. */
+/* Takes the ACTIVE tab's columns, not the full COLUMNS list.
+   The width came from a bare `TABLE_WIDTH`, which is a module-level const over
+   in the PO list (Order.tsx) and does not exist here — so this component threw
+   ReferenceError the moment it rendered, and since it renders on every first
+   load of the page, the error boundary replaced the whole screen. Widths now
+   come from this module's own tableWidth() helper, which the real table two
+   hundred lines up already uses.
+   Passing the columns in also settles a smaller mismatch: the Awaiting tab
+   drops the "Approved Amount" column, so the skeleton was laying out a column
+   the table it becomes would not have. */
 function PrmListSkeleton({ columns }: { columns: Column[] }) {
   return (
     <div className="ord-table-scroll">

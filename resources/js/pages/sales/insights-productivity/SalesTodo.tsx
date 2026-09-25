@@ -1434,12 +1434,20 @@ export default function SalesTodo() {
                   </div>
                   <div className="td-form-row">
                     <Field label="Status">
+                      {/* "Done" only while EDITING. A reminder created as Done
+                          is a contradiction — nothing was ever chased — and it
+                          lands straight in the Completed tab, out of sight of
+                          the person who just filed it. Closing one is what the
+                          row's own Done button is for; an existing reminder
+                          keeps both so an edit can still correct its status. */}
                       <MasterSelect
                         value={form.status || 'In Progress'}
-                        options={[
-                          { value: 'In Progress', label: 'In Progress' },
-                          { value: 'Done',        label: 'Done' },
-                        ]}
+                        options={form.editId
+                          ? [
+                              { value: 'In Progress', label: 'In Progress' },
+                              { value: 'Done',        label: 'Done' },
+                            ]
+                          : [{ value: 'In Progress', label: 'In Progress' }]}
                         onChange={v => setForm(p => ({ ...p, status: v as Reminder['status'] }))}
                       />
                     </Field>

@@ -3953,9 +3953,17 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       uan_number:          trimOrNull(s4.uan_number),
       pan_number:          s4.pan_number.trim() ? s4.pan_number.trim().toUpperCase() : null,
       tax_regime:          trimOrNull(s4.tax_regime),
-      // The "PF Type" dropdown (Statutory / Standard) is held in pf_deduction
-      // and saved to the pf_type column the payroll engine reads.
-      pf_type:             s4.pf_deduction ? s4.pf_deduction.toLowerCase() : null,
+      /* PF Type is deliberately NOT sent from here. (QA #214)
+       *
+       * The dropdown on this stage is a READ-ONLY mirror of the Stage 1 value
+       * (see the s1.pf_type effect above), and s4.pf_deduction is never empty
+       * — it falls back to 'Statutory'. So this key used to post a non-null
+       * pf_type on EVERY Stage 4 save, including for employees whose PF had
+       * just been switched OFF in Stage 1 or in Revise Salary, which nulls it.
+       * Saving bank details then silently re-stamped pf_type='statutory' and
+       * the two sections disagreed about the PF configuration again.
+       *
+       * Stage 1 and Revise Salary own this column; a mirror only displays. */
       esi_applicable:      trimOrNull(s4.esi_applicable),
       gratuity_nominee_name: trimOrNull(s4.gratuity_nominee_name),
       agreed_ctc_lpa:      s4.agreed_ctc_lpa === '' ? null : Number(s4.agreed_ctc_lpa),

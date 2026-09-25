@@ -11,6 +11,7 @@ import Tooltip from '../../../components/ui/Tooltip';
 import { saveApiBlob } from '../../../utils/downloadFile';
 import ClmAgreementWizardModal from './ClmAgreementWizardModal';
 import SearchClear from '../../../components/ui/SearchClear';
+import useDismissPopover from '../shared/useDismissPopover';
 
 /* Central CLM → Agreements Master (two tabs: Types + Library). */
 
@@ -252,24 +253,8 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
   const [segOpen, setSegOpen] = useState<{ id: number; names: string[]; x: number; y: number; flipUp: boolean; maxH: number } | null>(null);
   // Same viewport clamp as the segment popover above (QA #4).
   const [partyOpen, setPartyOpen] = useState<{ id: number; names: string[]; x: number; y: number; flipUp: boolean; maxH: number } | null>(null);
-  // Close the fixed-positioned badge popovers on scroll/resize so they can't
-  // drift out of the table (capture:true catches ancestor + table scrolls).
-  useEffect(() => {
-    if (!segOpen && !partyOpen) return;
-    const close = () => { setSegOpen(null); setPartyOpen(null); };
-    /* A scroll INSIDE the popover must not close it.
-       capture:true sees the popover's own scroll event too, so opening a long
-       segment list and reaching for the wheel dismissed it instantly — the list
-       was scrollable but unreachable (QA #4). Only page/table scrolls close it. */
-    const onScroll = (e: Event) => {
-      const t = e.target as Element | null;
-      if (t && typeof t.closest === 'function' && t.closest('.clm-pop')) return;
-      close();
-    };
-    window.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', close);
-    return () => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', close); };
-  }, [segOpen, partyOpen]);
+  // Scroll / resize / Escape / tab switch — see useDismissPopover.
+  useDismissPopover(!!(segOpen || partyOpen), () => { setSegOpen(null); setPartyOpen(null); });
   // Row whose PDF is currently downloading — drives the per-row spinner.
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   // Open "Download as Doc / PDF" menu (anchored to the row's download button).

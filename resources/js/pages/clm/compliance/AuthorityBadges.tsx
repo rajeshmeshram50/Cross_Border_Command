@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import Tooltip from '../../../components/ui/Tooltip';
+import useDismissPopover from '../shared/useDismissPopover';
 
 /**
  * Renders a comma-joined (or array) authority list as "First +N": the first
@@ -26,28 +27,8 @@ export default function AuthorityBadges({ value, variant = 'teal' }: { value?: s
 
   const [pop, setPop] = useState<{ x: number; y: number; flipUp: boolean } | null>(null);
 
-  // Close the popover on scroll / resize / Escape so it never strands away
-  // from its badge as the table scrolls.
-  useEffect(() => {
-    if (!pop) return;
-    // Close when the PAGE/table scrolls, but NOT when the user scrolls inside the
-    // popover itself (that scroll used to close it, so its list was unscrollable).
-    const onScroll = (e: Event) => {
-      const t = e.target as Element | null;
-      if (t && typeof t.closest === 'function' && t.closest('.clm-pop')) return;
-      setPop(null);
-    };
-    const close = () => setPop(null);
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPop(null); };
-    document.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', close);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('scroll', onScroll, true);
-      window.removeEventListener('resize', close);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [pop]);
+  // Scroll / resize / Escape / tab switch — see useDismissPopover.
+  useDismissPopover(!!pop, () => setPop(null));
 
   if (list.length === 0) return <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>;
 

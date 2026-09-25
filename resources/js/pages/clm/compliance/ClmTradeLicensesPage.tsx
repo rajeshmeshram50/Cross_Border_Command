@@ -18,6 +18,7 @@ import { MasterMultiSelect } from '../../../components/ui/MasterMultiSelect';
 import { ClmSkeletonRows, SimpleDescModal, useScrollLock } from '../shared/clmCommon';
 import SearchClear from '../../../components/ui/SearchClear';
 import { lazyPage } from '../../../utils/lazyPage';
+import useDismissPopover from '../shared/useDismissPopover';
 
 /* Central CLM → Trade Licences Master. 3-card faithful port. */
 
@@ -60,21 +61,8 @@ export default function ClmTradeLicensesPage() {
   // flipUp/maxH keep the popover inside the viewport — same clamp as the CLM
   // document-master lists (QA #4).
   const [authPop, setAuthPop] = useState<{ id: number; names: string[]; x: number; y: number; flipUp: boolean; maxH: number } | null>(null);
-  // Close the fixed-positioned authorities popover on scroll/resize so it can't
-  // drift away from its badge (capture:true catches ancestor + table scrolls).
-  useEffect(() => {
-    if (!authPop) return;
-    const close = () => setAuthPop(null);
-    // A scroll inside the popover must not close it, or a long list is unscrollable.
-    const onScroll = (e: Event) => {
-      const t = e.target as Element | null;
-      if (t && typeof t.closest === 'function' && t.closest('.clm-pop')) return;
-      close();
-    };
-    window.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', close);
-    return () => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', close); };
-  }, [authPop]);
+  // Scroll / resize / Escape / tab switch — see useDismissPopover.
+  useDismissPopover(!!authPop, () => setAuthPop(null));
 
   const reload = () => {
     setLoading(true);
