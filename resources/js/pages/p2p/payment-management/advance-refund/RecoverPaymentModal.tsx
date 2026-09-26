@@ -76,6 +76,9 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
       setEditing(null);
       return true;
     } catch (e) {
+      /* A refused field belongs on that field in the form — the popup marks it
+         red and says why. Everything else is a toast, as before. */
+      if (e instanceof PoApiError && e.status === 422) throw e;
       toast.error('Could not save the recovered payment', errText(e));
       return false;
     }

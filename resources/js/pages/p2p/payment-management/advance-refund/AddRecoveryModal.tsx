@@ -19,6 +19,12 @@ import '../../purchase-management/order/manage-payment/add-payment.css';
    picker, which is what "Take photo" used to do here. */
 const CameraCaptureModal = lazy(() => import('../../purchase-management/order/physical-inspection/CameraCaptureModal'));
 
+/** The fields a message can land on, and the server's name for each. */
+type FieldKey = 'amount' | 'date' | 'reference' | 'proof';
+const FIELD_OF: Record<string, FieldKey> = {
+  amount: 'amount', recovered_date: 'date', reference_no: 'reference', proof: 'proof',
+};
+
 type Props = {
   refund: RefundAdjustment;
   /** Amount still owed, not counting the entry being edited. */
@@ -71,6 +77,14 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
   const [showAll, setShowAll] = useState(false);
   const hidden = showAll ? 0 : Math.max(0, proofs.length - SHOW_FIRST);
   const [error, setError] = useState('');
+  /* Which field a message belongs to, so the form can point at it. One banner
+     ("Already used on another recovered payment.") left the user hunting for
+     the field that was refused (CS-567). */
+  const [fieldErr, setFieldErr] = useState<Partial<Record<FieldKey, string>>>({});
+  const fail = (field: FieldKey, message: string) => { setFieldErr({ [field]: message }); setError(message); };
+  const clearErrors = () => { setFieldErr({}); setError(''); };
+  const invalid = (f: FieldKey) => (fieldErr[f] ? ' is-invalid' : '');
+  const FieldError = ({ f }: { f: FieldKey }) => (fieldErr[f] ? <span className="apay-fielderr">{fieldErr[f]}</span> : null);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [camOpen, setCamOpen] = useState(false);
@@ -112,26 +126,27 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
 
   const pick = (f: File | null, cam = false) => {
     if (!f) return;
-    if (f.size > MAX_FILE) { setError('Proof of payment must be 10 MB or smaller.'); return; }
+    if (f.size > MAX_FILE) { fail('proof', 'Proof of payment must be 10 MB or smaller.'); return; }
     // A camera capture arrives as a JPEG, sometimes with no name at all.
-    if (!cam && !/\.(pdf|jpe?g|png|webp)$/i.test(f.name)) { setError('Proof of payment must be a PDF or an image (JPG, PNG, WEBP).'); return; }
+    if (!cam && !/\.(pdf|jpe?g|png|webp)$/i.test(f.name)) { fail('proof', 'Proof of payment must be a PDF or an image (JPG, PNG, WEBP).'); return; }
     const url = URL.createObjectURL(f);
     madeUrls.current.push(url);
     setProofs((cur) => (cur.length >= MAX_PROOFS ? cur : [...cur, { key: `new-${Date.now()}-${cur.length}`, name: f.name || `photo_${Date.now()}.jpg`, url, file: f }]));
-    setError('');
+    clearErrors();
   };
-  const drop = (key: string) => { setProofs((cur) => cur.filter((p) => p.key !== key)); setError(''); };
+  const drop = (key: string) => { setProofs((cur) => cur.filter((p) => p.key !== key)); clearErrors(); };
 
   const save = async () => {
+    clearErrors();
     const amt = Math.round((parseFloat(amount.replace(/[,\s₹]/g, '')) || 0) * 100) / 100;
-    if (amt <= 0) { setError('Enter the recovered amount.'); return; }
-    if (amt < 1) { setError('The recovered amount must be at least ₹1.'); return; }
-    if (amt > room + 0.001) { setError(`Only ${money(room)} is still outstanding on this refund.`); return; }
-    if (!date) { setError('Pick the refunded date.'); return; }
-    if (date < refund.date) { setError(`The refunded date cannot be before the refund was raised (${fmtDate(refund.date)}).`); return; }
-    if (date > todayIso()) { setError('The refunded date cannot be in the future.'); return; }
+    if (amt <= 0) { fail('amount', 'Enter the recovered amount.'); return; }
+    if (amt < 1) { fail('amount', 'The recovered amount must be at least ₹1.'); return; }
+    if (amt > room + 0.001) { fail('amount', `Only ${money(room)} is still outstanding on this refund.`); return; }
+    if (!date) { fail('date', 'Pick the refunded date.'); return; }
+    if (date < refund.date) { fail('date', `The refunded date cannot be before the refund was raised (${fmtDate(refund.date)}).`); return; }
+    if (date > todayIso()) { fail('date', 'The refunded date cannot be in the future.'); return; }
     const ref = reference.trim();
-    if (ref.length > 64) { setError('Reference number can be at most 64 characters.'); return; }
+    if (ref.length > 64) { fail('reference', 'Reference number can be at most 64 characters.'); return; }
     setSaving(true);
     try {
       await onSave({
@@ -142,6 +157,17 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
            so it is safer to leave them all in place. */
         keep: initial?.proofs?.length ? proofs.filter((p) => p.path).map((p) => p.path as string) : undefined,
       });
+    } catch (e) {
+      /* The server answers with the field it refused and why; show it on that
+         field rather than as one more line of prose. */
+      const errs = (e as { fieldErrors?: Record<string, string[]> })?.fieldErrors ?? {};
+      const marks: Partial<Record<FieldKey, string>> = {};
+      for (const [key, list] of Object.entries(errs)) {
+        const f = FIELD_OF[key];
+        if (f && list?.[0]) marks[f] = list[0];
+      }
+      setFieldErr(marks);
+      setError((e as { message?: string })?.message || Object.values(marks)[0] || 'The recovered payment could not be saved.');
     } finally {
       setSaving(false);
     }
@@ -190,21 +216,24 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
               <label htmlFor="arf-add-amt">Recovered Amount</label>
               <div className="apay-inwrap">
                 <span className="apay-prefix">₹</span>
-                <input id="arf-add-amt" ref={amountRef} className="apay-in" inputMode="decimal" placeholder="0.00" maxLength={16}
+                <input id="arf-add-amt" ref={amountRef} className={`apay-in${invalid('amount')}`} inputMode="decimal" placeholder="0.00" maxLength={16}
                   disabled={saving}
-                  value={amount} onChange={(e) => { setAmount(e.target.value.replace(/[^\d.,]/g, '')); setError(''); }} />
+                  value={amount} onChange={(e) => { setAmount(e.target.value.replace(/[^\d.,]/g, '')); clearErrors(); }} />
               </div>
+              <FieldError f="amount" />
             </div>
             <div className="apay-f">
               <label htmlFor="arf-add-date">Refunded Date</label>
               {/* The app's own calendar; the refund's own window bounds it. */}
-              <MasterDatePicker value={date} onChange={(v) => { setDate(v); setError(''); }} disabled={saving}
+              <MasterDatePicker value={date} onChange={(v) => { setDate(v); clearErrors(); }} disabled={saving}
                 minDate={refund.date} maxDate={todayIso()} placeholder="Select date" popupClassName="apay-cal" />
+              <FieldError f="date" />
             </div>
             <div className="apay-f apay-f--full">
               <label htmlFor="arf-add-ref">Reference No. (Cheque / UTR)</label>
-              <input id="arf-add-ref" className="apay-in" placeholder="Enter cheque / UTR number" maxLength={64} disabled={saving}
-                value={reference} onChange={(e) => setReference(e.target.value)} />
+              <input id="arf-add-ref" className={`apay-in${invalid('reference')}`} placeholder="Enter cheque / UTR number" maxLength={64} disabled={saving}
+                value={reference} onChange={(e) => { setReference(e.target.value); clearErrors(); }} />
+              <FieldError f="reference" />
             </div>
             <div className="apay-f apay-f--full">
               <label htmlFor="arf-add-file">Proof of Payment</label>
@@ -270,9 +299,10 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
                   const picked = Array.from(e.target.files ?? []);
                   const room = MAX_PROOFS - proofs.length;
                   picked.slice(0, room).forEach((f) => pick(f));
-                  if (picked.length > room) setError(`A recovered payment can carry up to ${MAX_PROOFS} proofs.`);
+                  if (picked.length > room) fail('proof', `A recovered payment can carry up to ${MAX_PROOFS} proofs.`);
                   e.target.value = '';
                 }} />
+              <FieldError f="proof" />
             </div>
           </div>
 
