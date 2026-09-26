@@ -737,6 +737,12 @@
 .cpay-acts .arf-sync svg { width:12px; height:12px; }
 
 /* ── Dark mode ─────────────────────────────────────────────────────────── */
+/* The list restates the prototype's pill colours, which are light ones, and that
+   restatement also won in dark mode: near-white pills with pale cyan text on
+   them, unreadable (CS-584/585/586). Each one gets its dark counterpart. */
+[data-bs-theme="dark"] .arf-table .ord-idpill { color:#67e8f9; background:rgba(34,211,238,.12); border-color:rgba(34,211,238,.38); }
+[data-bs-theme="dark"] .arf-table .ord-idcell__date { color:#8aa5b2; }
+[data-bs-theme="dark"] .arf-table .arf-nr__why { color:#fcd34d; background:rgba(245,158,11,.16); border-color:rgba(245,158,11,.38); }
 [data-bs-theme="dark"] .arf-chip { color:#fcd34d; background:rgba(245,158,11,.14); border-color:rgba(245,158,11,.35); }
 [data-bs-theme="dark"] .arf-nr__none { color:#64748b; }
 [data-bs-theme="dark"] .arf-form .spi-dt-field:has(input:not([readonly]), .spi-dt-file, .master-select-wrap) > .spi-dt-field-lbl { color:#67e8f9; }
