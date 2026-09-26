@@ -394,17 +394,23 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
                  the wrapper it generates inside our host element renders on a
                  light canvas, so the dark pill sat in a white rounded box on
                  the dark card.
-                 We can't style Google's markup directly (it owns everything
-                 inside the host), so the host clears the canvas instead:
-                 color-scheme stops the UA painting a light backdrop for the
-                 button's frame, and the wrapper is made transparent so the
-                 login card shows through.
-                 :not([role="button"]) is the important part — the button
+                 That box is the browser, not Google: the button lives in a
+                 cross-origin iframe whose document is light-scheme, and when
+                 an iframe's color-scheme differs from its embedding element's
+                 the browser paints an opaque canvas (white) behind it. Dark
+                 mode puts color-scheme: dark on the page, so the iframe
+                 inherited dark and mismatched. Pinning the host — and so the
+                 iframe — to light makes the two agree, and the frame stays
+                 transparent over the dark card. (color-scheme: dark here was
+                 the earlier attempt, and is exactly what kept the box white.)
+                 The wrappers are also made transparent in case Google paints
+                 them. :not([role="button"]) is the important part — the button
                  itself, and the white circle behind the G inside it, are
                  Google's own branding and must keep their fills. This only
                  ever clears the container around it. */
-              [data-bs-theme="dark"] .cbc-login-card .cbc-google-btn {
-                color-scheme: dark;
+              [data-bs-theme="dark"] .cbc-login-card .cbc-google-btn,
+              [data-bs-theme="dark"] .cbc-login-card .cbc-google-btn iframe {
+                color-scheme: light !important;
                 background: transparent !important;
               }
               [data-bs-theme="dark"] .cbc-login-card .cbc-google-btn > div:not([role="button"]),
