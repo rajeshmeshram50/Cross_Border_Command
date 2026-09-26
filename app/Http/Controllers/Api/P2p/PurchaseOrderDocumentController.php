@@ -106,6 +106,13 @@ class PurchaseOrderDocumentController extends Controller
     public function index(int $po): JsonResponse
     {
         [$order] = $this->find($po);
+        /* CS-414: the libraries are read again on every open, so a document added
+           to the segment master after this PO was raised still reaches it. Purely
+           additive — what is already here keeps its file, signature and Necessary
+           flag, and a new row arrives Not necessary, so it gates nothing. */
+        if (!$order->isCancelled()) {
+            $this->svc->ensureDefaultDocuments($order, (int) auth()->id());
+        }
         return $this->ok($this->listShaped($order));
     }
 

@@ -8447,10 +8447,15 @@ function Stage5Policies({ emp, onProgress }: {
           </div>
         )}
 
+        {/* Literal greys here, theme variables on the Signed Documents empty
+            state right below it — so after dark this panel stayed a white card
+            while its twin turned with the page (bug #139). Same tokens as the
+            twin now, which is also what keeps the two reading as one
+            component. */}
         {!loading && templates.length === 0 && (
-          <div style={{ padding: 22, textAlign: 'center', borderRadius: 10, background: '#f9fafb', border: '1px dashed #e5e7eb' }}>
+          <div style={{ padding: 22, textAlign: 'center', borderRadius: 10, background: 'var(--vz-light, #f9fafb)', border: '1px dashed var(--vz-border-color, #e5e7eb)' }}>
             <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 8, color: '#9ca3af' }} />
-            <div style={{ fontSize: 13, color: '#6b7280' }}>
+            <div style={{ fontSize: 13, color: 'var(--vz-secondary-color, #6b7280)' }}>
               No matching policy / agreement templates for this employee&rsquo;s department &amp; role.
             </div>
           </div>

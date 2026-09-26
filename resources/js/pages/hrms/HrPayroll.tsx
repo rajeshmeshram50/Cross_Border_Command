@@ -2533,11 +2533,12 @@ export default function HrPayroll() {
           wrapping Card is gone: DataTable brings its own card chrome. */}
       {/* Joined after this run was generated: named here, but kept out of every
           payroll tab until payroll is re-run for the cycle. (#30) */}
+      {/* Cream paper with dark-amber ink — the one panel on this page that
+          stayed light when the app went dark (bug #38). The colours moved to
+          .pay-joiners-note in recruitment.css so the dark theme can restate
+          them; an inline style cannot be overridden by a theme rule. */}
       {tab === 'processing' && pendingJoiners.length > 0 && (
-        <div
-          className="d-flex align-items-start gap-2 mb-3"
-          style={{ padding: '10px 14px', borderRadius: 10, fontSize: 12.5, fontWeight: 600, background: '#fff8e6', border: '1px solid #fde68a', color: '#92400e' }}
-        >
+        <div className="d-flex align-items-start gap-2 mb-3 pay-joiners-note">
           <i className="ri-user-add-line" style={{ fontSize: 15, marginTop: 1 }} />
           <span>
             {pendingJoiners.length} employee{pendingJoiners.length === 1 ? '' : 's'} joined after this payroll was generated and {pendingJoiners.length === 1 ? 'is' : 'are'} not included — re-run payroll to add them:{' '}

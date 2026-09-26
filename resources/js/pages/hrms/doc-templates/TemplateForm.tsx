@@ -178,6 +178,32 @@ export default function TemplateFormPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [bootstrapping, setBootstrapping] = useState(!!editingId);
 
+  /* Each step is a different form in the same frame, and the frame did not
+     move between them: filling Setup to the bottom and pressing Next opened
+     Lifecycle & Signing already scrolled past its own first field, so the
+     screen looked unchanged apart from the footer and the required "HR
+     Lifecycle Event" was off the top of the viewport. (bug #19)
+
+     The page root is scrolled to, rather than window.scrollTo(0,0), because
+     this form has lived inside two different scrollers — the page and, on
+     lg+, a height-capped shell — and scrollIntoView finds whichever one is
+     actually scrolling. `block: 'start'` lands on the header card, so the
+     step rail is the first thing read after the move.
+
+     Skipped on the first render: arriving with `location.state.step` set (the
+     list's "continue editing" route) should not yank a page the browser has
+     already positioned. */
+  const pageRef = useRef<HTMLDivElement | null>(null);
+  const firstStepRender = useRef(true);
+  useEffect(() => {
+    if (firstStepRender.current) { firstStepRender.current = false; return; }
+    const el = pageRef.current;
+    if (!el) return;
+    const reduced = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+  }, [step]);
+
   // Step 1
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -766,7 +792,7 @@ export default function TemplateFormPage() {
   }
 
   return (
-    <div className="rec-page tpl-form-page">
+    <div className="rec-page tpl-form-page" ref={pageRef}>
       <TplFormDarkStyles />
       {/* Header bar — replaces the modal's gradient strip */}
       <Card className="mb-3" style={{ borderRadius: 14, overflow: 'hidden' }}>
@@ -912,19 +938,13 @@ export default function TemplateFormPage() {
             the step tabs and the signer rows all stayed live, so a value could
             be changed after the payload had been built and the user would be
             looking at a form that no longer matched what was being written. */}
+        {/* The scrim and its pill are classed, not inline-styled, for the same
+            reason .tpl-btn-ghost is (CBC #46): an inline declaration cannot be
+            reached by the dark-theme rules below, so a white veil over a white
+            card stayed white over the dark one. */}
         {saving && (
-          <div style={{
-            position: 'absolute', inset: 0, zIndex: 20,
-            background: 'rgba(255,255,255,.55)', backdropFilter: 'blur(1px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'wait',
-          }}>
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 9,
-              padding: '9px 16px', borderRadius: 10, background: '#fff',
-              border: '1px solid #e5e7eb', boxShadow: '0 6px 20px rgba(16,24,40,.10)',
-              fontSize: 12.5, fontWeight: 700, color: '#4338ca',
-            }}>
+          <div className="tpl-saving-veil">
+            <div className="tpl-saving-pill">
               <Spin /> Saving…
             </div>
           </div>
@@ -1744,6 +1764,39 @@ function TplFormDarkStyles() {
       }
       [data-bs-theme="dark"] .tpl-form-page .tpl-upload-veil .tpl-veil-sub {
         color: rgba(255,255,255,0.62) !important;
+      }
+
+      /* Save-in-flight scrim. Light: a white wash that fades the form behind
+         the pill. Dark: the same gesture built the other way round — the wash
+         darkens instead of lightening, and the pill becomes the card surface,
+         because a white chip on a white haze was the only light object left on
+         the page while a save was running (bug #18). */
+      .tpl-form-page .tpl-saving-veil {
+        position: absolute; inset: 0; z-index: 20;
+        display: flex; align-items: center; justify-content: center;
+        cursor: wait;
+        background: rgba(255,255,255,.55);
+        backdrop-filter: blur(1px);
+      }
+      .tpl-form-page .tpl-saving-pill {
+        display: inline-flex; align-items: center; gap: 9px;
+        padding: 9px 16px; border-radius: 10px;
+        font-size: 12.5px; font-weight: 700;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 6px 20px rgba(16,24,40,.10);
+        color: #4338ca;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-saving-veil,
+      [data-layout-mode="dark"] .tpl-form-page .tpl-saving-veil {
+        background: rgba(17,24,39,0.62) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-saving-pill,
+      [data-layout-mode="dark"] .tpl-form-page .tpl-saving-pill {
+        background: var(--vz-card-bg) !important;
+        border-color: var(--vz-border-color) !important;
+        box-shadow: 0 6px 20px rgba(0,0,0,.45) !important;
+        color: #c4b5fd !important;
       }
 
       [data-bs-theme="dark"] .tpl-form-page .tpl-form-footer {

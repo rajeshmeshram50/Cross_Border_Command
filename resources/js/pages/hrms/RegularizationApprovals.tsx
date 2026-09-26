@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Card, CardBody, Modal, ModalBody } from 'reactstrap';
+import { Card, CardBody, Input, Modal, ModalBody } from 'reactstrap';
 import Swal from 'sweetalert2';
 import { useToast } from '../../contexts/ToastContext';
 import { Shimmer } from '../../components/ui/Shimmer';
 import BusyOverlay from '../../components/ui/BusyOverlay';
 import WorklistPager from '../../components/ui/WorklistPager';
+import SearchClear from '../../components/ui/SearchClear';
 import { regularizationApi, type ApiRegularization, type ApiRegularizationApprover, type RegularizationStatus } from './regularizationApi';
 import { to12h, punchPair12h } from '../../utils/timeFormat';
 
@@ -84,6 +85,28 @@ const fmtDate = (iso: string) => {
   // "14 July 2026" — so the format no longer varies with the browser locale.
   return isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
 };
+
+/** Everything a row shows, flattened into one lowercase haystack.
+ *
+ *  The search box reads the RENDERED text, not the raw record: the table
+ *  prints "29 August 2026", "Adjust log" and "06:00 PM-06:31 PM", so typing
+ *  any of those has to find the row. Matching the raw fields instead would
+ *  mean "August" found nothing (the record holds 2026-08-29) and "Adjust log"
+ *  found nothing (the record holds mode 'adjust') — a search box that misses
+ *  what is on screen is worse than none. */
+const searchHaystack = (r: ApiRegularization) => [
+  empName(r),
+  r.employee?.emp_code,
+  r.employee?.department?.name,
+  fmtDate(r.regularization_date),
+  r.regularization_date,
+  r.mode === 'exempt' ? 'Exempt day' : 'Adjust log',
+  r.type,
+  to12h(r.original_display),
+  ...(r.punches ?? []).map(p => punchPair12h(p.in, p.out)),
+  r.reason,
+  r.status,
+].filter(Boolean).join(' ').toLowerCase();
 
 /** How many punch chips show before the rest collapse behind "+N more". */
 const PUNCH_PREVIEW = 3;
@@ -237,6 +260,7 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
   const [open, setOpen]       = useState(true);
   const [page, setPage]       = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [search, setSearch]   = useState('');
 
   // Always fetch the FULL set (every status) once, then filter client-side.
   // Fetching only the active tab meant we couldn't show accurate per-tab
@@ -253,18 +277,30 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
   // `load` is a stable useCallback([]), so refreshKey is what actually re-runs
   // this — the parent bumps it when a request is raised from the day panel.
   useEffect(() => { load(); }, [load, refreshKey]);
-  // Reset to the first page whenever the status filter changes.
-  useEffect(() => { setPage(1); }, [status]);
+  // Reset to the first page whenever the status filter or the search changes —
+  // otherwise narrowing to three matches while sitting on page 3 shows an
+  // empty table over a "1-0 of 3" footer.
+  useEffect(() => { setPage(1); }, [status, search]);
+
+  /* The search narrows the set the tabs count FROM, not just the rows on
+     screen. Counting the unsearched set would put "Approved 28" above a table
+     showing two matches — the header contradicting the body, which is the same
+     trap the employee list hit (QA #173). Empty search leaves every count
+     exactly as it was. */
+  const needle = search.trim().toLowerCase();
+  const searched = needle
+    ? rows.filter(r => searchHaystack(r).includes(needle))
+    : rows;
 
   // Per-tab counts derived from the full set, so every tab shows how many
   // requests it holds (the badge lives on the tabs, not the section title).
   const counts: Record<string, number> = {
-    Pending:  rows.filter(r => r.status === 'Pending').length,
-    Approved: rows.filter(r => r.status === 'Approved').length,
-    Rejected: rows.filter(r => r.status === 'Rejected').length,
-    All:      rows.length,
+    Pending:  searched.filter(r => r.status === 'Pending').length,
+    Approved: searched.filter(r => r.status === 'Approved').length,
+    Rejected: searched.filter(r => r.status === 'Rejected').length,
+    All:      searched.length,
   };
-  const filtered = status === 'All' ? rows : rows.filter(r => r.status === status);
+  const filtered = status === 'All' ? searched : searched.filter(r => r.status === status);
 
   // Client-side pagination so the table gets the standard footer (record count
   // + pager) like the rest of the app (CBC #37).
@@ -319,7 +355,22 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
             <div className="att-logs-headbar-sub">Approve or reject attendance correction requests</div>
           </div>
         </div>
-        <div className="d-flex align-items-center gap-2">
+        <div className="d-flex align-items-center gap-2 flex-wrap justify-content-end">
+          {/* Same search-box shell the Attendance employee list uses, so the
+              two on this page are one control with one behaviour. */}
+          <div className="rec-req-search search-box reg-req-search">
+            <Input
+              autoComplete="off"
+              type="text"
+              className="form-control form-control-sm"
+              placeholder="Search employee, date, type, reason…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              aria-label="Search regularization requests"
+            />
+            <SearchClear show={search} onClear={() => setSearch('')} />
+            <i className="ri-search-line search-icon" />
+          </div>
           <div className="att-logs-ranges att-seg-toggle" role="group">
             {STATUS_FILTERS.map(f => (
               <button
@@ -394,7 +445,9 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
                   {paged.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="text-center text-muted ep-fs-13 py-4">
-                        No {status === 'All' ? '' : status.toLowerCase()} regularization requests.
+                        {needle
+                          ? <>No requests match “{search.trim()}”.</>
+                          : <>No {status === 'All' ? '' : status.toLowerCase()} regularization requests.</>}
                       </td>
                     </tr>
                   ) : paged.map(r => {

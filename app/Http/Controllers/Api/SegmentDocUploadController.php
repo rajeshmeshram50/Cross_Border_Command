@@ -939,8 +939,7 @@ class SegmentDocUploadController extends Controller
         $docs = DB::table('p2p_purchase_order_documents')
             ->whereIn('purchase_order_id', $pos->pluck('id'))
             ->whereNull('deleted_at')
-            // Stage 04 paperwork only: the PO document itself is not case-to-case.
-            ->where('doc_kind', '!=', 'purchase_order')
+            // The PO document is counted too, so a signed PO shows as evidence on its own row.
             ->orderBy('id')
             ->get()
             ->groupBy('purchase_order_id');
@@ -2500,12 +2499,8 @@ class SegmentDocUploadController extends Controller
      */
     private function resolveDocType(Model $owner, string $type): string
     {
-        $addr = $owner->primaryAddress ?? null;
-        if (!$addr) return 'international';
-        $name = in_array($type, ['supplier', 'vendor'], true)
-            ? optional($addr->country)->name          // VendorAddress.country_id → Countries
-            : $addr->country;                          // Customer/Consignee: name string
-        return trim((string) $name) === 'India' ? 'domestic' : 'international';
+        // Shared with the PO submit gate, which blocks on the same paperwork.
+        return app(\App\Services\SegmentDocScope::class)->docType($owner, $type);
     }
 
     /**
@@ -2550,21 +2545,8 @@ class SegmentDocUploadController extends Controller
 
     private function resolveSegmentIds(Model $owner, string $type, int $cid): array
     {
-        if (in_array($type, ['supplier', 'vendor'], true)) {
-            // Vendors can carry MULTIPLE segments (vendor_segments pivot) since
-            // the Supplier form's multi-select. Union them so the vault counts
-            // the docs for every selected segment; fall back to the legacy
-            // scalar segment_id when the pivot is empty.
-            $ids = $owner->segments()->pluck('clm_segments.id')->map(fn($x) => (int) $x)->unique()->values()->all();
-            if (!empty($ids)) return $ids;
-            return $owner->segment_id ? [(int) $owner->segment_id] : [];
-        }
-        if ($type === 'product') {
-            return $owner->segment_id ? [(int) $owner->segment_id] : [];
-        }
-        // Customer / consignee: their own segment ids. Matching by name pulled in
-        // every segment sharing it (Less AND Highly Regulated).
-        return \App\Support\SegmentGuard::idsOf($owner);
+        // Shared with the PO submit gate, which blocks on the same paperwork.
+        return app(\App\Services\SegmentDocScope::class)->segmentIds($owner, $type);
     }
 
     /**

@@ -683,7 +683,7 @@ class PurchaseOrderController extends Controller
                 $attrs += ['status' => PurchaseOrder::STATUS_SUBMITTED, 'submitted_at' => now(), 'submitted_by' => $user->id, 'current_step' => 4];
             }
             $po->update($attrs);
-            if ($submit) $this->ensureDefaultDocuments($po, $user->id);
+            if ($submit) $this->svc->ensureDefaultDocuments($po, $user->id);
         });
         // dompdf takes seconds, so the PO PDF renders in the background; Step 04 polls for it.
         if ($submit) \App\Jobs\P2p\GeneratePoDocumentPdf::dispatch($po->id, $user->id)->afterCommit();
@@ -707,11 +707,31 @@ class PurchaseOrderController extends Controller
     {
         if (!$po->vendor_id) return [];
 
+        $vendor = \App\Models\Vendor::with(['primaryAddress.country', 'segments'])->find($po->vendor_id);
+        if (!$vendor) return [];
+
+        /* Only what this supplier's own segment rules ask for, on the Domestic or
+           International side its address puts it on. Without this the gate blocked
+           on any expired upload the supplier ever had — including documents no rule
+           selects, which the Evidence Vault never lists, leaving nothing to renew. */
+        $codes = app(\App\Services\SegmentDocScope::class)
+            ->applicableCodes($vendor, 'vendor', (int) $po->client_id);
+        $scoped = array_filter([
+            'kyc' => $codes['kyc'] ?? [],
+            'dd'  => $codes['dd']  ?? [],
+            'tl'  => $codes['tl']  ?? [],
+        ]);
+        if (empty($scoped)) return [];
+
         return DB::table('segment_doc_uploads')
             ->where('uploadable_type', \App\Models\Vendor::class)
             ->where('uploadable_id', $po->vendor_id)
             ->where('client_id', $po->client_id)
-            ->whereIn('category', ['kyc', 'dd', 'tl'])
+            ->where(function ($w) use ($scoped) {
+                foreach ($scoped as $cat => $list) {
+                    $w->orWhere(fn ($q) => $q->where('category', $cat)->whereIn('doc_code', $list));
+                }
+            })
             ->whereNotNull('expiry_date')
             ->whereDate('expiry_date', '<', now()->toDateString())
             ->orderBy('expiry_date')
@@ -785,61 +805,6 @@ class PurchaseOrderController extends Controller
                 'status'  => $r->status,
             ])->all(),
         ];
-    }
-
-    /**
-     * Stage 04's documents, created once on submission: the Purchase Order
-     * itself, then every trade document and agreement the CLM libraries hold
-     * for the PO's product segments (see PurchaseOrderService::segmentDocuments).
-     * Re-submitting adds only what is missing — a row already there, with its
-     * file or signature, is never touched.
-     */
-    private function ensureDefaultDocuments(PurchaseOrder $po, int $userId): void
-    {
-        $rows = array_merge(
-            [['source_type' => null, 'source_id' => null, 'name' => 'Purchase Order', 'sub' => null,
-                'kind' => 'purchase_order', 'required' => true]],
-            array_map(fn ($d) => [
-                'source_type' => $d['source_type'],
-                'source_id'   => $d['source_id'],
-                'name'        => $d['name'],
-                'sub'         => $d['sub'] ?: null,
-                'kind'        => $d['source_type'] === 'agreement' ? 'agreement' : 'other',
-                /* Only the Purchase Order is required outright. Whether a trade
-                   document or an agreement has to be signed for THIS order is
-                   decided on Stage 04 (Necessary / Not necessary) — the
-                   library's regulated flag no longer settles it in advance. */
-                'required'    => false,
-            ], $this->svc->segmentDocuments($po)),
-        );
-
-        foreach ($rows as $row) {
-            $exists = $row['source_type'] === null
-                ? $po->documents()->where('doc_kind', 'purchase_order')->exists()
-                : $po->documents()->where('source_type', $row['source_type'])->where('source_id', $row['source_id'])->exists();
-            if ($exists) continue;
-
-            PurchaseOrderDocument::create([
-                'client_id'         => $po->client_id,
-                'branch_id'         => $po->branch_id,
-                'purchase_order_id' => $po->id,
-                'code'              => $this->svc->nextDocCode((int) $po->client_id),
-                'name'              => $row['name'],
-                'doc_sub'           => $row['sub'],
-                'doc_kind'          => $row['kind'],
-                'source_type'       => $row['source_type'],
-                'source_id'         => $row['source_id'],
-                'is_required'       => $row['required'] ? 'yes' : 'no',
-                /* CS-414: a document starts Not necessary and is promoted once
-                   someone has read it — the list opens answered, not with a
-                   column of questions. Only the PO itself starts necessary. */
-                'needed'            => $row['required'] ? 'yes' : 'no',
-                'generated_on'      => now()->toDateString(),
-                'status'            => PurchaseOrderDocument::STATUS_PENDING,
-                'created_by'        => $userId,
-                'updated_by'        => $userId,
-            ]);
-        }
     }
 
     /* ══════════════════════════ CANCEL / DELETE ══════════════════════════ */
