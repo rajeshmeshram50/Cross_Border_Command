@@ -292,10 +292,21 @@ class PoRefundAdjustmentController extends Controller
                 ->where('client_id', $adj->client_id)
                 ->whereRaw('UPPER(TRIM(reference_no)) = ?', [$ref])
                 ->when($existing, fn ($q) => $q->where('id', '!=', $existing->id))
-                ->exists();
+                ->first(['id', 'refund_adjustment_id', 'purchase_order_id', 'amount', 'recovered_date']);
             if ($dup) {
-                return $this->fail('This cheque / UTR number is already used on another recovered payment.', 422,
-                    ['reference_no' => ['Already used on another recovered payment.']]);
+                /* Name the recovery holding it, and on which refund — "already
+                   used on another recovered payment" left the user hunting for
+                   which one (CS-567). */
+                $onAdj = PoRefundAdjustment::withoutGlobalScope('tenant')->whereKey($dup->refund_adjustment_id)->value('code');
+                $onPo  = PurchaseOrder::withoutGlobalScope('tenant')->whereKey($dup->purchase_order_id)->value('code');
+                $where = trim(($onAdj ?: '') . ($onPo ? ($onAdj ? ' · ' : '') . $onPo : ''));
+                $msg = 'Cheque / UTR number ' . $ref . ' is already recorded'
+                    . ($where !== '' ? ' on ' . $where : ' on another recovered payment')
+                    . ' for ₹' . number_format((float) $dup->amount, 2)
+                    . ($dup->recovered_date ? ' on ' . \Carbon\Carbon::parse($dup->recovered_date)->format('d-M-Y') : '')
+                    . '. Enter the reference from this payment instead.';
+
+                return $this->fail($msg, 422, ['reference_no' => [$msg]]);
             }
         }
 
