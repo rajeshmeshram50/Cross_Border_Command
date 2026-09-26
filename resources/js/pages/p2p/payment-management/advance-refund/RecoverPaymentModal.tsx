@@ -93,17 +93,20 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
       confirmLabel: 'Delete',
       cancelLabel: 'Keep It',
       tone: 'danger',
+      // The popup holds until the entry is gone, rather than closing on the press.
+      busyLabel: 'Deleting…',
+      onConfirm: async () => {
+        try {
+          const res = await refundApi.deleteRecovery(refund.id, id);
+          applied(toRefund(res.refund));
+          toast.success('Recovered payment deleted');
+        } catch (e) {
+          toast.error('Could not delete the recovered payment', errText(e));
+        }
+      },
     });
-    if (!ok) { setBusy(null); return; }
-    try {
-      const res = await refundApi.deleteRecovery(refund.id, id);
-      applied(toRefund(res.refund));
-      toast.success('Recovered payment deleted');
-    } catch (e) {
-      toast.error('Could not delete the recovered payment', errText(e));
-    } finally {
-      setBusy(null);
-    }
+    void ok;
+    setBusy(null);
   };
 
   // Pushes the vendor credit first if it is not in Zoho yet, then this refund.

@@ -14,6 +14,12 @@ interface ConfirmOptions {
   /** Icon name from remixicon (without the `ri-` prefix). When omitted we
    *  pick a sensible default for the tone. */
   icon?: string;
+  /* The work the confirm button starts. Given one, the dialog stays open and
+     spins on that button until it settles, so a delete is never "gone" on
+     screen while the row is still being removed on the server. */
+  onConfirm?: () => unknown | Promise<unknown>;
+  /** Shown on the confirm button while onConfirm runs. Default: "Working…". */
+  busyLabel?: string;
 }
 
 type ConfirmFn = (opts: ConfirmOptions) => Promise<boolean>;
@@ -44,12 +50,17 @@ const TONE_STYLES: Record<ConfirmTone, { iconBg: string; iconBorder: string; ico
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [open, setOpen]   = useState(false);
   const [opts, setOpts]   = useState<ConfirmOptions>({ message: '' });
+  const [busy, setBusy]   = useState(false);
+  const optsRef = useRef<ConfirmOptions>({ message: '' });
+  optsRef.current = opts;
   // Hold the pending resolver so confirm() can resolve once the user
   // clicks Confirm or Cancel (or hits Escape).
   const resolveRef = useRef<((v: boolean) => void) | null>(null);
 
   const confirm = useCallback<ConfirmFn>((options) => {
     setOpts(options);
+    optsRef.current = options;
+    setBusy(false);
     setOpen(true);
     return new Promise<boolean>(res => { resolveRef.current = res; });
   }, []);
@@ -57,7 +68,19 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   const finish = (v: boolean) => {
     resolveRef.current?.(v);
     resolveRef.current = null;
+    setBusy(false);
     setOpen(false);
+  };
+
+  /* With an onConfirm, the press runs it first. The dialog is locked while it
+     runs — no second press, no dismiss — and closes once it settles; a failure
+     closes too, because the caller reports it in its own words. */
+  const press = async () => {
+    if (busy) return;
+    if (!optsRef.current.onConfirm) { finish(true); return; }
+    setBusy(true);
+    try { await optsRef.current.onConfirm(); } catch { /* the caller says what went wrong */ }
+    finish(true);
   };
 
   // Scroll lock — lock BOTH <html> and <body> while the confirm dialog is
@@ -153,10 +176,15 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
               color: #fff;
               box-shadow: ${palette.confirmShadow}, inset 0 1px 0 rgba(255,255,255,0.22);
             }
-            .cfm-btn-confirm:hover {
+            .cfm-btn-confirm:hover:not(:disabled) {
               transform: translateY(-1px);
               filter: brightness(1.04);
             }
+            /* While the work runs: nothing to press, and the button says so. */
+            .cfm-btn:disabled { cursor: default; opacity: .75; }
+            .cfm-close:disabled { opacity: .4; cursor: default; }
+            @keyframes cfm-spin { to { transform: rotate(360deg) } }
+            .cfm-spin { animation: cfm-spin .9s linear infinite; }
             [data-bs-theme="dark"] .cfm-popup,
             [data-layout-mode="dark"] .cfm-popup {
               background: #1f2937;
@@ -177,9 +205,9 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             [data-bs-theme="dark"] .cfm-btn-cancel:hover,
             [data-layout-mode="dark"] .cfm-btn-cancel:hover { background: rgba(255,255,255,0.1); }
           `}</style>
-          <div className="cfm-overlay" onClick={e => { if (e.target === e.currentTarget) finish(false); }}>
-            <div className="cfm-popup" role="alertdialog" aria-modal="true" onClick={e => e.stopPropagation()}>
-              <button type="button" className="cfm-close" onClick={() => finish(false)} aria-label="Close">
+          <div className="cfm-overlay" onClick={e => { if (!busy && e.target === e.currentTarget) finish(false); }}>
+            <div className="cfm-popup" role="alertdialog" aria-modal="true" aria-busy={busy} onClick={e => e.stopPropagation()}>
+              <button type="button" className="cfm-close" onClick={() => finish(false)} aria-label="Close" disabled={busy}>
                 <X size={13} />
               </button>
               <div className="cfm-body">
@@ -194,11 +222,12 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                 <p className="cfm-message">{opts.message}</p>
               </div>
               <div className="cfm-actions">
-                <button type="button" className="cfm-btn cfm-btn-cancel" onClick={() => finish(false)}>
+                <button type="button" className="cfm-btn cfm-btn-cancel" onClick={() => finish(false)} disabled={busy}>
                   {cancelLabel}
                 </button>
-                <button type="button" className="cfm-btn cfm-btn-confirm" onClick={() => finish(true)} autoFocus>
-                  {confirmLabel}
+                <button type="button" className="cfm-btn cfm-btn-confirm" onClick={press} autoFocus disabled={busy}>
+                  {busy && <Loader2 size={14} className="cfm-spin" />}
+                  {busy ? (opts.busyLabel ?? 'Working…') : confirmLabel}
                 </button>
               </div>
             </div>
