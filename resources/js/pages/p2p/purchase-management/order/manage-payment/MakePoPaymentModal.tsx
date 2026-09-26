@@ -48,7 +48,8 @@ export type MakePoPaymentProps = {
   /** Resolve true once saved, so the form closes; false keeps it open. */
   onRecord: (p: ReleasePayment) => Promise<boolean> | void;
   onUpdate: (index: number, p: ReleasePayment) => Promise<boolean> | void;
-  onDelete: (index: number) => void;
+  /** Awaited by the confirm popup, which spins until the row is gone. */
+  onDelete: (index: number) => void | Promise<void>;
   /** Posts that one payment to the Zoho bill. */
   onZohoSync: (index: number) => Promise<void> | void;
   onOpenTds: () => void;
@@ -126,8 +127,12 @@ export default function MakePoPaymentModal({
       tone: 'danger',
       confirmLabel: 'Delete Payment',
       cancelLabel: 'Keep It',
+      // The popup holds until the row is actually gone, rather than closing on
+      // the press and leaving the list to catch up.
+      busyLabel: 'Deleting…',
+      onConfirm: () => onDelete(index),
     });
-    if (ok) onDelete(index);
+    void ok;
   };
 
   const cardRef = useRef<HTMLDivElement>(null);

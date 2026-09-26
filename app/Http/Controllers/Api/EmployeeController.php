@@ -1086,12 +1086,19 @@ class EmployeeController extends Controller
         // One pass over the table. Five separate COUNT queries would each
         // re-scan it, and this endpoint is on the critical path of every page
         // load for the list.
+        //
+        // Onboarding Completed / New Joiners are gated on {$enabled} for the
+        // same reason Active is: someone who has left (or whose row is soft
+        // deleted) is not part of the working roster, so counting their
+        // finished onboarding made the card read 18 over a roster of 15 — the
+        // extra three were the Disabled tab's rows, every one of them
+        // "Completed". Total/Disabled stay roster-wide on purpose.
         $row = $q->selectRaw("
             COUNT(*)                                                              AS total,
             SUM(CASE WHEN {$enabled} THEN 1 ELSE 0 END)                           AS active,
             SUM(CASE WHEN {$enabled} THEN 0 ELSE 1 END)                           AS disabled,
-            SUM(CASE WHEN {$stage} >= 6 THEN 1 ELSE 0 END)                        AS onboarding_completed,
-            SUM(CASE WHEN {$stage} < 6 AND ({$stage} > 0 OR {$step} > 0)
+            SUM(CASE WHEN {$enabled} AND {$stage} >= 6 THEN 1 ELSE 0 END)        AS onboarding_completed,
+            SUM(CASE WHEN {$enabled} AND {$stage} < 6 AND ({$stage} > 0 OR {$step} > 0)
                      THEN 1 ELSE 0 END)                                           AS new_joiners
         ")->first();
 
