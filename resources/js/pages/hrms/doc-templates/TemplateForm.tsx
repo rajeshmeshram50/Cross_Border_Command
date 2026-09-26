@@ -178,6 +178,31 @@ export default function TemplateFormPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [bootstrapping, setBootstrapping] = useState(!!editingId);
 
+  /* Each step is a different form in the same frame, and the frame did not
+     move between them: filling Setup to the bottom and pressing Next opened
+     Lifecycle & Signing already scrolled past its own first field, so the
+     screen looked unchanged apart from the footer and the required "HR
+     Lifecycle Event" was off the top of the viewport. (bug #19)
+
+     The page root is scrolled to, rather than window.scrollTo(0,0), because
+     this form has lived inside two different scrollers — the page and, on
+     lg+, a height-capped shell — and scrollIntoView finds whichever one is
+     actually scrolling. `block: 'start'` lands on the header card, so the
+     step rail is the first thing read after the move.
+
+     Skipped on the first render: arriving with `location.state.step` set (the
+     list's "continue editing" route) should not yank a page the browser has
+     already positioned. */
+  const pageRef = useRef<HTMLDivElement | null>(null);
+  const firstStepRender = useRef(true);
+  useEffect(() => {
+    if (firstStepRender.current) { firstStepRender.current = false; return; }
+    const el = pageRef.current;
+    if (!el) return;
+    const reduced = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+  }, [step]);
 
   // Step 1
   const [name, setName] = useState('');
@@ -767,7 +792,7 @@ export default function TemplateFormPage() {
   }
 
   return (
-    <div className="rec-page tpl-form-page">
+    <div className="rec-page tpl-form-page" ref={pageRef}>
       <TplFormDarkStyles />
       {/* Header bar — replaces the modal's gradient strip */}
       <Card className="mb-3" style={{ borderRadius: 14, overflow: 'hidden' }}>
