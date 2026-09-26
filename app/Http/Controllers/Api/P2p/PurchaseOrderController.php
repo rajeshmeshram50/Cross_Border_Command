@@ -707,11 +707,31 @@ class PurchaseOrderController extends Controller
     {
         if (!$po->vendor_id) return [];
 
+        $vendor = \App\Models\Vendor::with(['primaryAddress.country', 'segments'])->find($po->vendor_id);
+        if (!$vendor) return [];
+
+        /* Only what this supplier's own segment rules ask for, on the Domestic or
+           International side its address puts it on. Without this the gate blocked
+           on any expired upload the supplier ever had — including documents no rule
+           selects, which the Evidence Vault never lists, leaving nothing to renew. */
+        $codes = app(\App\Services\SegmentDocScope::class)
+            ->applicableCodes($vendor, 'vendor', (int) $po->client_id);
+        $scoped = array_filter([
+            'kyc' => $codes['kyc'] ?? [],
+            'dd'  => $codes['dd']  ?? [],
+            'tl'  => $codes['tl']  ?? [],
+        ]);
+        if (empty($scoped)) return [];
+
         return DB::table('segment_doc_uploads')
             ->where('uploadable_type', \App\Models\Vendor::class)
             ->where('uploadable_id', $po->vendor_id)
             ->where('client_id', $po->client_id)
-            ->whereIn('category', ['kyc', 'dd', 'tl'])
+            ->where(function ($w) use ($scoped) {
+                foreach ($scoped as $cat => $list) {
+                    $w->orWhere(fn ($q) => $q->where('category', $cat)->whereIn('doc_code', $list));
+                }
+            })
             ->whereNotNull('expiry_date')
             ->whereDate('expiry_date', '<', now()->toDateString())
             ->orderBy('expiry_date')
