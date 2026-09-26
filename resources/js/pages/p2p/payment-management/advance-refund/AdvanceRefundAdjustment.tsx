@@ -253,7 +253,7 @@ export default function AdvanceRefundAdjustment() {
           <div className="spi-search ui-search-abs">
             <IcoSearch />
             <input autoComplete="off" aria-label="Search refund adjustments" value={q} maxLength={100}
-              placeholder="Search refund no., purchase order, supplier…"
+              placeholder="Search refund no., PO, shipment / opportunity / procurement ID, type, supplier…"
               onChange={(e) => { setQ(e.target.value); setPage(1); }} />
             <SearchClear show={q} onClear={() => { setQ(''); setPage(1); }} />
           </div>
@@ -269,7 +269,8 @@ export default function AdvanceRefundAdjustment() {
                 <th>SHIPMENT ID</th>
                 <th>OPPORTUNITY ID</th>
                 <th>PROCUREMENT ID</th>
-                <th>REFUND TYPE</th>
+                {/* The prototype's own column name for this list (CS-584/585/586). */}
+                <th>CREDIT NOTE TYPE</th>
                 <th>TOTAL PO AMOUNT (GRAND TOTAL)</th>
                 <th>TDS DEDUCTED</th>
                 <th>NET PAYABLE AMOUNT</th>

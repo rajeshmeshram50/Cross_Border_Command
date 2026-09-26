@@ -69,11 +69,24 @@ class PoRefundAdjustmentController extends Controller
 
         $base = PoRefundAdjustment::query();
         if ($s = trim((string) $request->query('search'))) {
-            $base->where(fn ($w) => $w->where('code', 'ilike', "%{$s}%")
-                ->orWhere('supplier_ref_no', 'ilike', "%{$s}%")
-                ->orWhereHas('purchaseOrder', fn ($p) => $p->where('code', 'ilike', "%{$s}%"))
-                ->orWhereHas('vendor', fn ($v) => $v->where('vendor_code', 'ilike', "%{$s}%")
-                    ->orWhere('company_name', 'ilike', "%{$s}%")->orWhere('legal_name', 'ilike', "%{$s}%")));
+            $like = "%{$s}%";
+            /* Everything the list prints is searchable, the chain IDs included:
+               they sit on the purchase order (procurement) or one join away
+               (shipment, opportunity), so a tester typing SHP-… or OPP-… found
+               nothing (CS-587). */
+            $base->where(fn ($w) => $w->where('code', 'ilike', $like)
+                ->orWhere('supplier_ref_no', 'ilike', $like)
+                ->orWhere('refund_type', 'ilike', $like)
+                ->orWhereHas('purchaseOrder', fn ($p) => $p
+                    ->where('code', 'ilike', $like)
+                    ->orWhere('procurement_request_code', 'ilike', $like)
+                    ->orWhereIn('shipment_order_id', fn ($q) => $q->from('shipment_orders')
+                        ->where('shipment_code', 'ilike', $like)->select('id'))
+                    ->orWhereIn('proforma_invoice_id', fn ($q) => $q->from('proforma_invoices')
+                        ->where(fn ($i) => $i->where('code', 'ilike', $like)->orWhere('opp_code', 'ilike', $like))
+                        ->select('id')))
+                ->orWhereHas('vendor', fn ($v) => $v->where('vendor_code', 'ilike', $like)
+                    ->orWhere('company_name', 'ilike', $like)->orWhere('legal_name', 'ilike', $like)));
         }
 
         $counts = (clone $base)->toBase()->selectRaw(implode(', ', array_map(
