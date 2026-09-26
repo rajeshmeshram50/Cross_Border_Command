@@ -591,7 +591,9 @@ function SupplierPanel({ supplier: s, vendorId, international, onSupplierChanged
                 {filingAge !== null && <span className="cpf-gst__age">{filingAge.toFixed(1)} mo ago</span>}
               </span>
             </span>
-            {gst.action && <button type="button" className={`cpf-gst__btn cpf-gst__btn--${gst.tone}`} onClick={openNotice}>{gst.action}</button>}
+            {/* Read-only here: this view reports the supplier's GST position, it
+                does not act on it. Sending a PO for senior approval belongs to
+                the PO itself, not to a payment request raised against it. */}
           </div>
           <div className="spi-dt-grid4">
             <RO label="SCRUTINY DATE" value={formatDmy(s.scrutiny)} />
@@ -700,6 +702,32 @@ function IdCell({ id, date, extra }: { id: string; date: string; extra?: ReactNo
   );
 }
 
+/* A long table stays inside its own box: the first rows stand, the rest come on
+   the scroll, under the header that is already sticky. Measured rather than a
+   fixed height — a row grows with a wrapped supplier name or an extra chip. */
+function RowWindow({ rows, count, className = '', children }: { rows: number; count: number; className?: string; children: ReactNode }) {
+  const box = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = box.current;
+    const table = el?.querySelector('table');
+    if (!el || !table) return;
+    const apply = () => {
+      // The transaction table renders one tbody per row; the others, one tbody of rows.
+      const bodies = Array.from(table.tBodies);
+      const list = (bodies.length > 1 ? bodies : Array.from(bodies[0]?.rows ?? [])) as HTMLElement[];
+      const want = list.length <= rows ? ''
+        : `${Math.ceil((table.tHead?.getBoundingClientRect().height ?? 0)
+          + list[rows - 1].getBoundingClientRect().bottom - list[0].getBoundingClientRect().top)}px`;
+      if (el.style.maxHeight !== want) el.style.maxHeight = want;
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    for (const n of Array.from(table.tBodies)) ro.observe(n);
+    return () => ro.disconnect();
+  }, [rows, count]);
+  return <div ref={box} className={`ord-table-scroll prd-rowwin ${className}`.trim()}>{children}</div>;
+}
+
 function Panel({ title, count, sub, children }: { title: string; count: number; sub: string; children: ReactNode }) {
   return (
     <div className="prd-panel">
@@ -734,7 +762,7 @@ function LinkedPanel({ detail, canApprove, onDecide }: {
       <StatCards detail={detail} />
       {peek && <LinkedRequestPopup request={peek} doc={doc} onClose={() => setPeek(null)} />}
       <Panel title="All Payment Requests" count={linked.length} sub="Currently open request first, then in the order they were raised">
-        <div className="ord-table-scroll">
+        <RowWindow rows={3} count={linked.length}>
           <table className="ord-table prd-table" style={{ minWidth: LINKED_WIDTH }}>
             <colgroup>{LINKED_COLS.map(([c, w]) => <col key={c} style={{ width: w }} />)}</colgroup>
             <thead><tr>{LINKED_COLS.map(([c]) => <th key={c}>{c}</th>)}</tr></thead>
@@ -776,7 +804,7 @@ function LinkedPanel({ detail, canApprove, onDecide }: {
               })}
             </tbody>
           </table>
-        </div>
+        </RowWindow>
       </Panel>
     </div>
   );
@@ -1045,9 +1073,13 @@ const TX_DROP = ['Action', 'Advance Receipt Refund Adjustment', 'Payment Recover
 const TX_COLUMNS = ORDER_COLUMNS.filter(c => !TX_DROP.includes(c.label));
 const TX_WIDTH = TX_COLUMNS.reduce((s, c) => s + c.width, 0);
 
-function OrderTable({ rows, onInspect, onManage }: { rows: OrderRow[]; onInspect: () => void; onManage: () => void }) {
+function OrderTable({ rows, onInspect, onManage, window: win = 0 }: {
+  rows: OrderRow[]; onInspect: () => void; onManage: () => void;
+  /** Rows to show before the rest go on the scroll; 0 shows them all. */
+  window?: number;
+}) {
   return (
-    <div className="ord-table-scroll prd-txscroll">
+    <RowWindow rows={win || rows.length} count={rows.length} className="prd-txscroll">
       <table className="ord-table" style={{ width: TX_WIDTH }}>
         <colgroup>{TX_COLUMNS.map(c => <col key={c.label} style={{ width: c.width }} />)}</colgroup>
         <thead>
@@ -1057,7 +1089,7 @@ function OrderTable({ rows, onInspect, onManage }: { rows: OrderRow[]; onInspect
           <OrderRowBody key={r.po} row={r} sr={i + 1} inspected={r.inspectionDone} onInspect={onInspect} onManage={onManage} summary />
         ))}
       </table>
-    </div>
+    </RowWindow>
   );
 }
 
@@ -1092,7 +1124,9 @@ function HistoryPanel({ detail, onSoon }: { detail: Detail; onSoon: (what: strin
           {rows.length} earlier purchase order{rows.length === 1 ? '' : 's'} raised on {detail.row.supplier} · one order is one transaction
         </span>
       </div>
-      <OrderTable rows={rows} onInspect={() => onSoon('Physical Inspection')} onManage={() => onSoon('Payment Requests')} />
+      {/* Four earlier orders stand; the rest scroll inside the table, so the page
+          itself does not grow with the supplier's history. */}
+      <OrderTable rows={rows} window={4} onInspect={() => onSoon('Physical Inspection')} onManage={() => onSoon('Payment Requests')} />
     </div>
   );
 }
