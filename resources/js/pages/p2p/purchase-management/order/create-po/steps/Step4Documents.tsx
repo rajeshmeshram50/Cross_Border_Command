@@ -85,6 +85,11 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   // Key of the action in flight ("sign", "email", "dl:12", …) — its button shows busy.
   const [busy, setBusy] = useState<string | null>(null);
   const [tracking, setTracking] = useState<PoDocument | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  // Ticks made in the last moment, waiting to go out as one Necessary call.
+  const pendingNeeds = useRef(new Map<number, boolean>());
+  const needsTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (needsTimer.current) window.clearTimeout(needsTimer.current); }, []);
   /* The CLM library documents handed to the signature modal — trade documents
      by library id, agreements alongside them in the same envelope. */
   const [signing, setSigning] = useState<{
@@ -142,6 +147,32 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [poId, awaitingSign]);
+
+  /* The tick and the answer are one thing, so a Necessary row comes up ticked
+     and an unticked row reads Not necessary. Rows already out for signature
+     are settled — they carry the locked chip instead of a tick. */
+  useEffect(() => {
+    setSelected(docs.filter((d) => isNeeded(d) && !isSettled(d)).map((d) => d.id));
+  }, [docs]);
+
+  /* Eight rows are the window, the rest come on the scroll. Measured rather than
+     a fixed height: a row grows with zoom and with a name that wraps. */
+  useEffect(() => {
+    const box = listRef.current;
+    const table = box?.querySelector('table');
+    if (!box || !table) return;
+    const apply = () => {
+      const rows = Array.from(table.tBodies[0]?.rows ?? []);
+      if (rows.length <= 8) { box.style.maxHeight = ''; return; }
+      const head = table.tHead?.getBoundingClientRect().height ?? 0;
+      const body = rows[7].getBoundingClientRect().bottom - rows[0].getBoundingClientRect().top;
+      box.style.maxHeight = `${Math.ceil(head + body)}px`;
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(table);
+    return () => ro.disconnect();
+  }, [docs]);
 
   const run = async (key: string, task: () => Promise<void>) => {
     if (busy) return;
@@ -257,7 +288,8 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
         // Agreements ride in the SAME envelope as the trade documents, so the
         // supplier gets one email for the whole set (the Case-to-Case pattern).
         agreements: lib.filter((d) => libraryOf(d) === 'agreement')
-          .map((d) => ({ id: d.source_id as number, name: d.name, code: d.code, sub: d.doc_sub ?? undefined })),
+          // The library's own code, as the trade documents beside them show.
+          .map((d) => ({ id: d.source_id as number, name: d.name, code: d.master_code ?? d.code, sub: d.doc_sub ?? undefined })),
       });
       return;
     }
@@ -295,9 +327,34 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   // Rows already out for signature / signed cannot be ticked, so "all" means the rest.
   const selectable = docs.filter((d) => !isSettled(d));
   const allSelected = selectable.length > 0 && selectable.every((d) => selected.includes(d.id));
-  const toggleAll = () => setSelected(allSelected ? [] : selectable.map((d) => d.id));
-  const toggleOne = (id: number) =>
+  /* The tick IS the answer: ticking a row marks it Necessary, and answering No
+     takes the tick off again (see setNeeds). Untick on its own only drops the
+     row from the selection — it does not decide anything.
+     Quick ticks ride together: one request for the whole burst, and no toast,
+     because the tick itself is the feedback. */
+  const queueNeeds = (ids: number[], needed: boolean) => {
+    for (const id of ids) pendingNeeds.current.set(id, needed);
+    if (needsTimer.current) window.clearTimeout(needsTimer.current);
+    needsTimer.current = window.setTimeout(() => {
+      const batch = [...pendingNeeds.current].map(([id, needed]) => ({ id, needed }));
+      pendingNeeds.current.clear();
+      needsTimer.current = null;
+      if (!batch.length || !poId) return;
+      poDocumentApi.setNeeds(poId, batch).then(setDocs).catch(fail);
+    }, 220);
+  };
+  const toggleAll = () => {
+    const move = selectable.filter((d) => !isMandatory(d) && d.needed === (allSelected ? 'yes' : 'no'));
+    setSelected(allSelected ? selectable.filter(isMandatory).map((d) => d.id) : selectable.map((d) => d.id));
+    if (move.length) queueNeeds(move.map((d) => d.id), !allSelected);
+  };
+  const toggleOne = (id: number) => {
+    const doc = docs.find((d) => d.id === id);
+    const ticking = !selected.includes(id);
     setSelected((all) => (all.includes(id) ? all.filter((c) => c !== id) : [...all, id]));
+    // The Purchase Order always stays Necessary; its tick only picks it for sending.
+    if (doc && !isMandatory(doc) && doc.needed !== (ticking ? 'yes' : 'no')) queueNeeds([id], ticking);
+  };
 
   const vaultTarget = draft.supplier ? vaultTargetOf(draft.supplier) : null;
 
@@ -421,7 +478,8 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
         </div>
 
         <div className="spi-dt-sec-body cpd-body">
-          <div className="cpd-scroll">
+          {/* Eight rows stand, the rest come on the scroll. */}
+          <div ref={listRef} className={`cpd-scroll ${docs.length > 8 ? 'cdoc-scrollcap' : ''}`}>
             {/* Not the --pd compact variant: that one is tuned for the product
                 grid's 15 columns. The documents table is roomier in the Figma. */}
             <table className="cpd-tbl cdoc-tbl">
@@ -456,7 +514,13 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                           title={isSettled(doc) ? 'Already sent for signature — nothing more to do on this row' : undefined} />
                       </td>
                       <td>{i + 1}</td>
-                      <td><span className="cpd-code">{doc.code}</span></td>
+                      {/* The CLM master's own code is what the libraries call this
+                          document; our row code stands in for the Purchase Order. */}
+                      <td>
+                        <Tooltip label={doc.master_code ? `CLM master ${doc.master_code} · this PO's copy is ${doc.code}` : `This PO's document ${doc.code}`} themed>
+                          <span className="cpd-code">{doc.master_code ?? doc.code}</span>
+                        </Tooltip>
+                      </td>
                       <td className="cpd-td-left">
                         <div className="cpd-prod__nm">{doc.name}</div>
                         {/* Under the name: which library the row belongs to, then

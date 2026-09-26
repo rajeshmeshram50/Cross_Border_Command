@@ -22,6 +22,10 @@
 
 .scnv-doc { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 11px; background: linear-gradient(180deg, #fbfdfe, #f6fafc); border: 1px solid #eef5f8; }
 .scnv-doc + .scnv-doc { margin-top: 8px; }
+/* The four-document window: padding keeps the scrollbar off the cards. */
+.scnv-list { overflow-y: auto; scrollbar-width: thin; scrollbar-color: #bfe3ec transparent; }
+.scnv-list::-webkit-scrollbar { width: 6px; }
+.scnv-list::-webkit-scrollbar-thumb { background: #bfe3ec; border-radius: 99px; }
 .scnv-doc:hover { border-color: #cfe9f0; background: #f7fdfe; }
 .scnv-doc__ico { width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 7.5px; font-weight: 800; letter-spacing: .06em; color: #fff; }
 .scnv-doc__ico.is-pdf { background: linear-gradient(135deg, #fb7185, #e11d48); box-shadow: 0 3px 8px -3px rgba(225, 29, 72, .6); }

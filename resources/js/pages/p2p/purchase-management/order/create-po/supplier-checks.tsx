@@ -199,10 +199,28 @@ const LEGAL_GROUPS: { name: string; sub: string; parts: [string, string][] }[] =
 const pctOf = (done: number, total: number) => (total ? Math.round((done / total) * 100) : 0);
 const toneOf = (pct: number): LegalSection['tone'] => (pct === 100 ? 'ok' : pct >= 60 ? 'warn' : 'bad');
 
+type VaultRow = { id?: unknown; status?: unknown };
+type VaultDeal = { docs?: VaultRow[]; agreements?: VaultRow[] };
+
+/* Every case-to-case document this supplier carries, across all their deals —
+   not the PO being raised. A shipment row already holds the union of its POs'
+   paperwork, so only the top level is read; ids dedupe the rest. */
+function dealDocs(vault: Record<string, unknown> | null): VaultRow[] {
+  const deals = (key: string) => (Array.isArray(vault?.[key]) ? (vault![key] as VaultDeal[]) : []);
+  const seen = new Map<unknown, VaultRow>();
+  for (const d of [...deals('vendor_with_shipment'), ...deals('vendor_without_shipment')]) {
+    for (const r of [...(d.docs ?? []), ...(d.agreements ?? [])]) seen.set(r.id ?? r, r);
+  }
+  return [...seen.values()];
+}
+
 export function legalFromVault(vault: Record<string, unknown> | null): LegalView {
   const rows = (key: string) => (Array.isArray(vault?.[key]) ? (vault![key] as { status?: unknown }[]) : []);
+  const ctc = dealDocs(vault);
   const sections = LEGAL_GROUPS.map((g) => {
-    const docs = g.parts.flatMap(([, key]) => rows(key));
+    const docs = g.parts.some(([, key]) => key === 'trade_documents')
+      ? [...g.parts.flatMap(([, key]) => rows(key)), ...ctc]
+      : g.parts.flatMap(([, key]) => rows(key));
     const done = docs.filter((d) => DONE_STATUSES.includes(String(d.status ?? '').toLowerCase())).length;
     const pct = pctOf(done, docs.length);
     return { name: g.name, sub: g.sub, parts: g.parts.map(([label]) => label), done, total: docs.length, pct, tone: toneOf(pct) };
@@ -228,4 +246,34 @@ export function vaultTargetOf(sup: {
     segment: sup.segments?.[0], segments: sup.segments, country: sup.country ?? '', type: sup.type ?? '',
     contact: sup.contact ?? '', contactCity: sup.city ?? '', email: sup.email ?? '',
   };
+}
+
+/* ══ Case to case: what an earlier PO of this supplier still owes ══ */
+
+export type PendingCtcDoc = { po: string; name: string; code: string; status: string };
+
+type CtcPo = { po_id?: number; po_code?: string; po_status?: string; docs?: VaultRow[]; agreements?: VaultRow[]; pos?: CtcPo[] };
+
+/**
+ * Necessary Stage 04 paperwork still unsigned on this supplier's OTHER submitted
+ * purchase orders — the same rule the server applies on submit. The PO being
+ * raised is left out: its own documents are not created until it is submitted,
+ * and editing it must never be blocked by its own pending rows.
+ */
+export function pendingCaseToCase(vault: Record<string, unknown> | null, currentPoId?: number | null): PendingCtcDoc[] {
+  const deals = (key: string) => (Array.isArray(vault?.[key]) ? (vault![key] as CtcPo[]) : []);
+  const out: PendingCtcDoc[] = [];
+  const seen = new Set<unknown>();
+  const read = (po: CtcPo) => {
+    if (po.po_status !== 'submitted' || !po.po_id || po.po_id === currentPoId) return;
+    for (const d of [...(po.docs ?? []), ...(po.agreements ?? [])] as (VaultRow & { name?: string; doc_code?: string; reference?: string })[]) {
+      if (String(d.status ?? '') === 'Signed' || seen.has(d.id)) continue;
+      seen.add(d.id);
+      out.push({ po: po.po_code ?? '—', name: d.name ?? '—', code: d.doc_code ?? d.reference ?? '', status: String(d.status ?? 'Pending') });
+    }
+  };
+  // A shipment row groups its POs; the other tab is already one row per PO.
+  for (const row of deals('vendor_with_shipment')) (row.pos ?? []).forEach(read);
+  for (const row of deals('vendor_without_shipment')) read(row);
+  return out;
 }

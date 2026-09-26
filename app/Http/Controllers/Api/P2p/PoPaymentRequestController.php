@@ -72,6 +72,11 @@ class PoPaymentRequestController extends Controller
     {
         if ($po->isCancelled()) return $this->fail('This PO is cancelled — no payment requests or payments can be made on it.');
         if ($po->status !== PurchaseOrder::STATUS_SUBMITTED) return $this->fail('Submit the PO before managing its payments.');
+        /* Money moves only after the paperwork is out: the supplier has to have
+           been sent the PO for signature before anything is requested or paid. */
+        if (!$po->signingStarted()) {
+            return $this->fail('Send this PO for signature first — payments are managed only once the documents are out to the supplier.');
+        }
         return null;
     }
 

@@ -251,6 +251,14 @@ class ZohoBooksService
         $addr  = $vendor->relationLoaded('primaryAddress') ? $vendor->primaryAddress : $vendor->primaryAddress()->first();
         $zaddr = $this->buildVendorAddress($addr);
 
+        /* An international supplier is registered abroad: gst_number carries its
+           TIN, not a GSTIN, and Zoho rejects anything but a 15-character GSTIN in
+           gst_no. So overseas suppliers go over with no gst_no at all and the
+           treatment Zoho keeps for them; the TIN rides in the contact notes. */
+        $overseas = $this->isOverseasVendor($addr);
+        $tin = $overseas ? trim((string) ($vendor->gst_number ?? '')) : '';
+        if ($overseas) $gstin = null;
+
         // Already in Zoho — but the cached contact may have been DELETED or marked
         // INACTIVE in Zoho, which makes the PO/Bill create fail with "The Contact
         // is not accessible…". Verify it first: reactivate if inactive, reuse if
@@ -274,10 +282,20 @@ class ZohoBooksService
                     }
                 }
                 // Keep its billing/shipping address in sync (best-effort, hash-gated).
-                if ($zaddr) {
-                    $upd = ['billing_address' => $zaddr, 'shipping_address' => $zaddr];
+                if ($zaddr || $overseas) {
+                    $upd = $zaddr ? ['billing_address' => $zaddr, 'shipping_address' => $zaddr] : [];
+                    /* A contact created before this rule carries business_gst / a
+                       TIN in gst_no; put it right rather than leave it failing. */
+                    if ($overseas && mb_strtolower((string) ($contact['gst_treatment'] ?? '')) !== 'overseas') {
+                        $upd['gst_treatment'] = 'overseas';
+                        $upd['gst_no'] = '';
+                    }
+                    if ($overseas && $tin !== '' && !str_contains((string) ($contact['notes'] ?? ''), $tin)) {
+                        $upd['notes'] = trim(((string) ($contact['notes'] ?? '')) . "
+TIN: " . $tin);
+                    }
                     $vk = 'zoho_vendor_addr:' . $vendor->id;
-                    if (Cache::get($vk) !== md5(json_encode($upd))) {
+                    if ($upd && Cache::get($vk) !== md5(json_encode($upd))) {
                         try {
                             $this->put('contacts/' . $id, $upd);
                             Cache::forever($vk, md5(json_encode($upd)));
@@ -324,10 +342,14 @@ class ZohoBooksService
             'contact_name'  => $name,
             'company_name'  => $vendor->company_name ?: $name,
             'contact_type'  => 'vendor',
-            'gst_treatment' => $gstin ? 'business_gst' : 'business_none',
+            'gst_treatment' => $overseas ? 'overseas' : ($gstin ? 'business_gst' : 'business_none'),
         ];
         if ($gstin) $body['gst_no'] = $gstin;
-        $poc = self::placeOfContact($gstin ? substr($gstin, 0, 2) : $stateCode);
+        // The TIN has no field of its own in the India edition, so it is written
+        // where it can still be read off the contact.
+        if ($overseas && $tin !== '') $body['notes'] = 'TIN: ' . $tin;
+        // Place of contact is an Indian state; an overseas supplier has none.
+        $poc = $overseas ? null : self::placeOfContact($gstin ? substr($gstin, 0, 2) : $stateCode);
         if ($poc) $body['place_of_contact'] = $poc;
         $persons = $this->buildVendorContactPersons($vendor, $name, $email);
         if ($persons) $body['contact_persons'] = $persons;
@@ -392,6 +414,18 @@ class ZohoBooksService
      * country resolved to their names (Zoho stores names, not ids). Null when
      * there's no usable street line.
      */
+    /**
+     * Registered outside India — the same rule the supplier list's Domestic /
+     * International tabs use: a country on the primary address that is not India.
+     * No country on record reads as domestic, so nothing changes for old rows.
+     */
+    private function isOverseasVendor($addr): bool
+    {
+        if (!$addr || !$addr->country_id) return false;
+        $country = \Illuminate\Support\Facades\DB::table('master_countries')->where('id', $addr->country_id)->value('name');
+        return $country !== null && mb_strtolower(trim((string) $country)) !== 'india';
+    }
+
     private function buildVendorAddress($addr): ?array
     {
         if (!$addr) return null;

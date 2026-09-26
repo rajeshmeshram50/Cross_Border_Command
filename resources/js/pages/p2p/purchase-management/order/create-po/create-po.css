@@ -1683,6 +1683,12 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 
 /* Documents table sizing, to the prototype's own .cptd-tbl spec — roomier
    cells than the product grid, and the action column reads left. */
+/* Eight document rows are the window; the rest scroll under a header that
+   stays. The height itself is measured in Step4Documents. */
+.cdoc-scrollcap { overflow-y: auto; }
+/* The whole row sticks, so the header keeps ONE gradient instead of one per cell. */
+.cdoc-scrollcap .cdoc-tbl thead tr { position: sticky; top: 0; z-index: 2; background: linear-gradient(110deg, #0e7490 0%, #0891b2 50%, #06b6d4 100%); }
+
 .cdoc-tbl { min-width: 1080px; }
 .cdoc-tbl thead th { padding: 10px 12px; letter-spacing: .04em; }
 .cdoc-tbl tbody td { padding: 10px 12px; }

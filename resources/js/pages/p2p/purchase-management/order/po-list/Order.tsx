@@ -649,6 +649,7 @@ function InspectionCell({ required, done, cancelled = false, onOpen, readOnly = 
 }
 
 function PaymentCell({ row, onManage, readOnly = false }: { row: OrderRow; onManage: (row: OrderRow) => void; readOnly?: boolean }) {
+  const toast = useToast();
   const pct = row.net > 0 ? Math.round((row.paid / row.net) * 100) : 0;
   const status: PaymentStatus = pct >= 100 ? 'full' : pct > 0 ? 'partial' : 'pending';
   const label = status === 'full' ? 'Payment Completed' : PAYMENT_LABEL[status];
@@ -689,12 +690,21 @@ function PaymentCell({ row, onManage, readOnly = false }: { row: OrderRow; onMan
         )}
       </div>
 
+      {/* Payments wait for the paperwork: the button keeps its name, and says
+          why it will not open until the PO has gone out for signature. */}
       {!readOnly && (
         <button
           type="button"
           className={`ord-btn ord-btn--hist${done ? ' is-record' : ''}`}
           disabled={!!row.cancelled}
-          onClick={() => onManage(row)}
+          onClick={() => {
+            if (!row.signingStarted) {
+              toast.warning('PO not sent for signature',
+                `Send ${row.po} to the supplier from Stage 04 — payment requests open once the documents are out.`);
+              return;
+            }
+            onManage(row);
+          }}
         >
           {done ? ICON_EYE : ICON_HISTORY}
           <span>{done ? 'View Request Details' : 'Manage Payment Requests'}</span>

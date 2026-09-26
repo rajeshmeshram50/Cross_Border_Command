@@ -546,6 +546,15 @@
 [data-bs-theme="dark"] .ptv-ft { background: #0f1827; border-top-color: #1f2d42; }
 [data-bs-theme="dark"] .ptv-close { background: #111a2b; color: #cbd5e1; box-shadow: inset 0 0 0 1.5px #1f2d42; }
 
+/* Detail shimmer (while a request loads) — shapes only; bars are the shared .spi-sk-bar.
+   Toned to the screen it stands in for: a wash of the panel's own teal rather
+   than solid blocks, and translucent white inside the dark header, which is
+   what the PO wizard's skeleton reads like. */
+.prd-root[aria-busy="true"] .spi-sk-bar { background: rgba(8, 145, 178, .12); }
+.prd-root[aria-busy="true"] .prd-head .spi-sk-bar { background: rgba(255, 255, 255, .14); }
+.prd-root[aria-busy="true"] .spi-sk-bar::after { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .45), transparent); }
+[data-bs-theme="dark"] .prd-root[aria-busy="true"] .spi-sk-bar { background: rgba(34, 211, 238, .10); }
+[data-bs-theme="dark"] .prd-root[aria-busy="true"] .prd-head .spi-sk-bar { background: rgba(255, 255, 255, .08); }
 /* Detail shimmer (while a request loads) — shapes only; bars are the shared .spi-sk-bar. */
 .prd-sk-ico { width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0; }
 .prd-sk-title { display: flex; flex-direction: column; gap: 8px; }
@@ -563,3 +572,10 @@
 a.prd-fbtn { text-decoration: none; }
 /* No proof filed with the release: a dash, not an icon over an invented name. */
 .prd-table .prd-dash { font-weight: 800; color: #a9bfca; }
+
+/* The row window: the table scrolls inside its own box, and the header of
+   .ord-table is already sticky, so it stays put while the rows move. */
+.prd-rowwin { overflow-y: auto; scrollbar-width: thin; scrollbar-color: #bfe3ec transparent; }
+.prd-rowwin::-webkit-scrollbar { width: 7px; height: 7px; }
+.prd-rowwin::-webkit-scrollbar-thumb { background: #bfe3ec; border-radius: 99px; }
+[data-bs-theme="dark"] .prd-rowwin::-webkit-scrollbar-thumb { background: rgba(34,211,238,.28); }
