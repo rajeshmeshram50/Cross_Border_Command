@@ -132,7 +132,7 @@ class MasterController extends Controller
            `master_hsn_codes.gst_rate_id` is deliberately LEFT IN THE DATABASE
            holding its historic values; it is simply no longer written, read or
            offered. Nothing references it now, so the stored values are inert. */
-        'hsn_codes' => ['fields' => [['n' => 'hsn_code', 't' => 'text', 'r' => true, 'pattern' => '/^[0-9]{4,10}$/', 'patternMessage' => 'HSN/SAC code must be 4 to 10 digits.'], ['n' => 'description', 't' => 'textarea', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['hsn_code']],
+        'hsn_codes' => ['fields' => [['n' => 'hsn_code', 't' => 'text', 'r' => true, 'pattern' => '/^[0-9]{4,8}$/', 'patternMessage' => 'HSN/SAC code must be 4 to 8 digits.'], ['n' => 'description', 't' => 'textarea', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['hsn_code']],
         'gst_percentage' => ['fields' => [['n' => 'percentage', 't' => 'number', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['percentage']],
         // `uEach` — currency name and code each independently unique.
         'currencies' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'symbol', 't' => 'text', 'r' => true], ['n' => 'exchange_rate', 't' => 'number'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['name', 'code']],

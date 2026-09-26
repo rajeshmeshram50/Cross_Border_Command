@@ -702,14 +702,14 @@ const C: Record<string, MasterConfig> = {
   hsn_codes: {
     key: 'hsn_codes', slug: 'hsn_codes', title: 'HSN Codes', titleSingular: 'HSN Code',
     icon: 'ri-file-code-line', iconColor: 'danger', iconBg: 'danger',
-    desc: '4–10 digit numeric commodity codes for GST & customs filings',
+    desc: '4–8 digit numeric commodity codes for GST & customs filings',
     cat: 'Trade & Commercial',
     fields: [
       // HSN / SAC are strictly NUMERIC — 4, 6, or 8 digit codes per Indian
-      // GST notification. Backend validates ^[0-9]{4,10}$; the client mirrors
+      // GST notification. Backend validates ^[0-9]{4,8}$; the client mirrors
       // it via the hsn_code validator in MasterPage and strips non-digits as
       // the user types so a paste of "0802-1200" auto-corrects to "08021200".
-      { n: 'hsn_code', l: 'HSN / SAC Code', t: 'text', r: true, p: 'e.g. 08021200', maxLen: 10 } as any,
+      { n: 'hsn_code', l: 'HSN / SAC Code', t: 'text', r: true, p: 'e.g. 08021200', maxLen: 8 } as any,
       { n: 'description', l: 'Description', t: 'textarea', r: true, p: 'Product/commodity description', full: true },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
@@ -722,7 +722,7 @@ const C: Record<string, MasterConfig> = {
       { id: 3, hsn_code: '12074000', description: 'Sesame Seeds', status: 'Active' },
     ],
     wtd: [
-      { icon: 'ri-file-code-line', title: 'Enter HSN / SAC Code', desc: '4–10 digit numeric code (e.g. 08021200)' },
+      { icon: 'ri-file-code-line', title: 'Enter HSN / SAC Code', desc: '4–8 digit numeric code (e.g. 08021200)' },
       { icon: 'ri-file-list-3-line', title: 'Mandatory On B2B Invoices', desc: 'HSN needed for GST filing & customs' },
       { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Code available for products' },
     ],
