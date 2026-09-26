@@ -63,7 +63,12 @@ export async function toProofFiles(list: FileList | File[] | null): Promise<Proo
   return Promise.all(files.map(async (f): Promise<ProofFile> => {
     const isImg = /^image\//.test(f.type);
     const isVid = /^video\//.test(f.type);
-    const url = isImg ? URL.createObjectURL(f) : '';
+    /* Every picked file gets a link to itself, not only the pictures. A PDF was
+       left with no url at all, so View and Download on a file just attached
+       both refused it — "Preview unavailable", "Download unavailable" — until
+       the inspection had been submitted and the file came back from the server
+       (CS-567). The thumbnail is still an image-only affair. */
+    const url = URL.createObjectURL(f);
     const thumb = isImg ? await makeThumb(f) : '';
     return { name: f.name, size: f.size, kind: isVid ? 'video' : isImg ? 'image' : 'file', url, thumb };
   }));

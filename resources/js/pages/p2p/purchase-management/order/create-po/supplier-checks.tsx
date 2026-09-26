@@ -49,16 +49,27 @@ const has = (value: string, word: string) => value.toLowerCase().includes(word);
 
 export function riskTier(risk: string | null | undefined): 'high' | 'medium' | 'low' | null {
   const r = risk ?? '';
-  if (has(r, 'high')) return 'high';
-  if (has(r, 'medium')) return 'medium';
-  if (has(r, 'low')) return 'low';
+  /* The tenant names its own risk levels in the master. "Critical" and
+     "Severe" are read as the top tier — they were understood by nothing, so a
+     Critical supplier counted as unrated: no mandatory inspection, and its
+     risk level printed as a dash. */
+  if (has(r, 'high') || has(r, 'critical') || has(r, 'severe')) return 'high';
+  if (has(r, 'medium') || has(r, 'moderate')) return 'medium';
+  if (has(r, 'low') || has(r, 'minimal')) return 'low';
   return null;
 }
 
-/** "High" → "High Risk"; empty when the master has no rating. */
+/** "High" → "High Risk". A name the tiers do not know is printed as it stands. */
 export function riskLabel(risk: string | null | undefined): string {
-  const tier = riskTier(risk);
-  return tier ? `${tier[0].toUpperCase()}${tier.slice(1)} Risk` : '';
+  const raw = (risk ?? '').trim();
+  if (!raw) return '';
+  // Already reads as a rating ("High Risk", "Critical") — leave the master's own words alone.
+  if (/risk/i.test(raw)) return raw;
+  const tier = riskTier(raw);
+  if (!tier) return raw;
+  // "Critical" stays "Critical Risk", not "High Risk": the tier decides the
+  // rules, the master decides the wording.
+  return `${raw[0].toUpperCase()}${raw.slice(1)} Risk`;
 }
 
 /** Supplier category as the supplier master shows it (stored as star / general / high_risk / blacklisted). */
@@ -75,7 +86,12 @@ export function categoryLabel(category: string | null | undefined): string {
  *  physical inspection on by default (it can still be switched off). */
 export function isRiskMandatory(s: { risk: string; category: string }): boolean {
   const tier = riskTier(s.risk);
-  return (tier === 'high' || tier === 'medium') && (has(s.category, 'high') || has(s.category, 'blacklist'));
+  /* A High Risk rating is enough on its own — goods from such a supplier are
+     inspected before the GRN, whatever their category says. It used to need a
+     risky CATEGORY as well, so a High Risk supplier filed under "General" left
+     Physical Inspection Required sitting on No. */
+  if (tier === 'high') return true;
+  return tier === 'medium' && (has(s.category, 'high') || has(s.category, 'blacklist'));
 }
 
 export const RISK_GUIDELINES = [

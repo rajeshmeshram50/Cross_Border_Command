@@ -217,6 +217,47 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row.id]);
   useEffect(() => { load(); }, [load]);
+
+  /* A decision is taken by somebody else, on another screen. This one read its
+     figures once, when it opened, so a request approved in the meantime went on
+     saying "Awaiting Approval" until the page was reloaded (CS-423).
+     While anything is with an approver the figures are re-read every 20s, and
+     at once whenever this tab or window is looked at again. Nothing is pending
+     — nothing to poll, so a settled PO costs nothing. */
+  const list = useMemo(() => (data?.requests ?? []).map(toRow), [data]);
+  const awaiting = list.some((r) => r.status === 'pending');
+  useEffect(() => {
+    if (!awaiting) return;
+    const tick = () => { if (!document.hidden) void load(); };
+    const id = window.setInterval(tick, 20000);
+    const onWake = () => { if (!document.hidden) void load(); };
+    document.addEventListener('visibilitychange', onWake);
+    window.addEventListener('focus', onWake);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onWake);
+      window.removeEventListener('focus', onWake);
+    };
+  }, [awaiting, load]);
+
+  /* Say what changed when it changes, rather than leaving the user to notice a
+     badge has turned green. */
+  const lastStatus = useRef<Record<string, string>>({});
+  useEffect(() => {
+    const seen = lastStatus.current;
+    for (const r of list) {
+      const was = seen[r.id];
+      if (was === 'pending' && r.status !== 'pending') {
+        if (r.status === 'approved') {
+          toast.success(`${r.id} approved`, r.approved ? `${money(r.approved)} is ready to pay.` : 'It can now be paid.');
+        } else {
+          toast.warning(`${r.id} declined`, 'Nothing can be paid against it.');
+        }
+      }
+      seen[r.id] = r.status;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list]);
   // Opened straight on "raise": wait for the PO figures, then apply the TDS-first rule.
   const autoRaise = useRef(startWithRaise);
   useEffect(() => {
@@ -227,7 +268,6 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
 
   const po = data?.po;
   const sum = data?.requests_summary;
-  const list = useMemo(() => (data?.requests ?? []).map(toRow), [data]);
   const tds = po?.tds_amount ?? 0;
 
   // The PO's figures as stored on the server; the child popups read them from this row.
@@ -255,7 +295,18 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
   const pctPaid = po?.paid_pct ?? 0;
 
   const canPay = f.approvedUnpaid > 0 && !row.cancelled;
+  /* Nothing left to ask for: the PO is cancelled, it is paid in full, or every
+     rupee of it is already sitting in a request. The balance being 0 is the
+     same thing said in the cards above. */
   const canRequest = !!po && f.openToRequest > 0 && !row.cancelled && !f.complete;
+  /* The button stays on the footer either way and says why it cannot be used —
+     it used to disappear, which read as a missing feature rather than as
+     "there is nothing left to request" (CS-563). */
+  const whyNoRequest = !po ? 'Loading this PO…'
+    : row.cancelled ? 'This PO is cancelled — no further payment requests can be raised.'
+      : f.complete ? 'This PO is paid in full — nothing is left to request.'
+        : f.openToRequest <= 0 ? 'Nothing is open to request — the whole balance is already requested, approved or paid.'
+          : undefined;
 
   // TDS: one per PO, fixed once the first payment is recorded.
   const openTds = () => { if (po) setTdsOpen(true); };
@@ -560,12 +611,15 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
           )}
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose}>Close</button>
-            {canRequest && (
-              <button type="button" className="spi-mdl-confirm mpr-raise" onClick={openRaise}
-                title={needsTds ? 'Deduct the TDS on this PO first' : undefined}>
-                Raise New Request
-              </button>
-            )}
+            <button
+              type="button"
+              className="spi-mdl-confirm mpr-raise"
+              disabled={!canRequest}
+              title={whyNoRequest ?? (needsTds ? 'Deduct the TDS on this PO first' : undefined)}
+              onClick={openRaise}
+            >
+              Raise New Request
+            </button>
           </div>
         </div>
 
