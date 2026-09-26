@@ -10144,6 +10144,26 @@
   margin-bottom: 10px;
   border-bottom: 1px solid var(--vz-border-color);
 }
+/* Search box in the Regularization Requests header.
+   Borrows the .rec-req-search shell so it behaves like the search on the
+   Attendance list above it, then re-tints the accent: that one is purple, and
+   this card is the teal table — a purple focus ring inside it read as a
+   control borrowed from another screen. Width is bounded so the status tabs
+   keep their place instead of being pushed onto a second line on a laptop. */
+.reg-req-search { position: relative; width: 240px; max-width: 100%; }
+.reg-req-search .form-control { height: 32px; }
+.reg-req-search .search-icon { color: #0d9488; }
+.reg-req-search .form-control:focus {
+  border-color: #14b8a6;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.85), 0 0 0 3px rgba(13,148,136,0.16);
+}
+[data-bs-theme="dark"] .reg-req-search .search-icon { color: #2dd4bf; }
+@media (max-width: 575.98px) {
+  /* Below the tabs rather than beside them — at this width the two side by
+     side leave the input about eighty pixels wide. */
+  .reg-req-search { width: 100%; order: 3; }
+}
+
 .att-logs-headbar-icon {
   display: inline-flex; align-items: center; justify-content: center;
   width: 32px; height: 32px;
