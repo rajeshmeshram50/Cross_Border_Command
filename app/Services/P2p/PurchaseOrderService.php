@@ -79,6 +79,72 @@ class PurchaseOrderService
     /* ══════════════════ Stage 04 · documents from the CLM libraries ══════════════════ */
 
     /**
+     * Materialise Stage 04's rows: the Purchase Order itself, then every trade
+     * document and agreement the CLM libraries currently hold for this PO's
+     * segments.
+     *
+     * Additive and safe to re-run — a row already there keeps its file, its
+     * signature and its Necessary flag. Stage 03 calls it on submit and Stage 04
+     * calls it on every read, so a document added to the segment master after the
+     * PO was raised still reaches the PO (CS-414). Anything new arrives Not
+     * necessary, so it never retroactively gates this PO or the supplier's others.
+     */
+    public function ensureDefaultDocuments(PurchaseOrder $po, int $userId): void
+    {
+        $rows = array_merge(
+            [['source_type' => null, 'source_id' => null, 'name' => 'Purchase Order', 'sub' => null,
+                'kind' => 'purchase_order', 'required' => true]],
+            array_map(fn ($d) => [
+                'source_type' => $d['source_type'],
+                'source_id'   => $d['source_id'],
+                'name'        => $d['name'],
+                'sub'         => $d['sub'] ?: null,
+                'kind'        => $d['source_type'] === 'agreement' ? 'agreement' : 'other',
+                /* Only the Purchase Order is required outright. Whether a trade
+                   document or an agreement has to be signed for THIS order is
+                   decided on Stage 04 (Necessary / Not necessary) — the
+                   library's regulated flag no longer settles it in advance. */
+                'required'    => false,
+            ], $this->segmentDocuments($po)),
+        );
+
+        // One query for what the PO already carries, so a Stage 04 read costs the
+        // same whether the libraries grew or not.
+        $have = $po->documents()->get(['doc_kind', 'source_type', 'source_id']);
+        $seen = [];
+        foreach ($have as $d) {
+            $seen[$d->source_type === null ? 'po' : $d->source_type . ':' . $d->source_id] = true;
+        }
+
+        foreach ($rows as $row) {
+            $key = $row['source_type'] === null ? 'po' : $row['source_type'] . ':' . $row['source_id'];
+            if (isset($seen[$key])) continue;
+            $seen[$key] = true;
+
+            PurchaseOrderDocument::create([
+                'client_id'         => $po->client_id,
+                'branch_id'         => $po->branch_id,
+                'purchase_order_id' => $po->id,
+                'code'              => $this->nextDocCode((int) $po->client_id),
+                'name'              => $row['name'],
+                'doc_sub'           => $row['sub'],
+                'doc_kind'          => $row['kind'],
+                'source_type'       => $row['source_type'],
+                'source_id'         => $row['source_id'],
+                'is_required'       => $row['required'] ? 'yes' : 'no',
+                /* CS-414: a document starts Not necessary and is promoted once
+                   someone has read it — the list opens answered, not with a
+                   column of questions. Only the PO itself starts necessary. */
+                'needed'            => $row['required'] ? 'yes' : 'no',
+                'generated_on'      => now()->toDateString(),
+                'status'            => PurchaseOrderDocument::STATUS_PENDING,
+                'created_by'        => $userId,
+                'updated_by'        => $userId,
+            ]);
+        }
+    }
+
+    /**
      * The trade documents and agreements this PO has to carry.
      *
      * Segments come from the PO's own products — what is being bought decides
