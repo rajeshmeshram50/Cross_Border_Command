@@ -14107,6 +14107,32 @@
   color: #6ee7b7;
 }
 
+/* The "joined after this run" note.
+   Amber on cream in the light theme. In dark mode the same cream panel was the
+   only light rectangle left on the page, bright enough to pull the eye off the
+   table it sits above — so the tone is rebuilt there out of a translucent amber
+   wash on the card, which is how every other amber signal on this page (the
+   IN PROGRESS pills, the Pending Review card) reads against the dark. */
+.pay-joiners-note {
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  background: #fff8e6;
+  border: 1px solid #fde68a;
+  color: #92400e;
+}
+[data-bs-theme="dark"] .pay-joiners-note {
+  background: rgba(247, 184, 75, 0.10);
+  border-color: rgba(247, 184, 75, 0.30);
+  color: #f7c886;
+}
+/* The employee names are the actionable part of the sentence, so they keep a
+   step more contrast than the prose around them in both themes. */
+[data-bs-theme="dark"] .pay-joiners-note b,
+[data-bs-theme="dark"] .pay-joiners-note span > span { color: #ffd9a0; }
+[data-bs-theme="dark"] .pay-joiners-note i { color: #f7b84b; }
+
 /* ── Payroll page shell (#22) ──────────────────────────────────────────────
    The complaint was that the Payroll Processing card scrolled away with the
    page, taking its search box, the Department / Status pickers and the table
