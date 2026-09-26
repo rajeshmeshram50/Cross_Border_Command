@@ -20,10 +20,15 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class P2pFileController extends Controller
 {
-    /** Storage prefix → the row that owns it, so only stored files can be read. */
+    /**
+     * Storage prefix → the row that owns it, so only stored files can be read.
+     * The fourth entry, where a table has one, is a JSON list of every file on the
+     * row ([{ path, name }]) — its first file is also in the plain path column, the
+     * rest live only in the list.
+     */
     private const OWNERS = [
         'p2p/po-payments/'        => ['p2p_po_payments', 'proof_path', 'proof_name'],
-        'p2p/refund-recoveries/'  => ['p2p_po_refund_recoveries', 'proof_path', 'proof_name'],
+        'p2p/refund-recoveries/'  => ['p2p_po_refund_recoveries', 'proof_path', 'proof_name', 'proof_files'],
         'p2p/refund-adjustments/' => ['p2p_po_refund_adjustments', 'attachment_path', 'attachment_name'],
         'p2p/po-documents/'       => ['p2p_purchase_order_documents', 'file_path', 'original_name'],
     ];
@@ -51,7 +56,24 @@ class P2pFileController extends Controller
         if ($path === '' || str_contains($path, '..') || !$owner) abort(404, 'File not found.');
 
         [$table, $pathCol, $nameCol] = $owner;
+        $listCol = $owner[3] ?? null;
+        $name = null;
         $row = DB::table($table)->where($pathCol, $path)->first();
+        if (!$row && $listCol) {
+            // A second, third … file on the row: only the JSON list knows it. The
+            // LIKE narrows the rows on the file name alone — the stored JSON escapes
+            // its slashes, so the full path would never match — and the decoded list
+            // decides the real match.
+            foreach (DB::table($table)->whereRaw("{$listCol}::text LIKE ?", ['%' . basename($path) . '%'])->get() as $cand) {
+                foreach (json_decode((string) $cand->{$listCol}, true) ?: [] as $f) {
+                    if (is_array($f) && ($f['path'] ?? null) === $path) {
+                        $row = $cand;
+                        $name = $f['name'] ?? null;
+                        break 2;
+                    }
+                }
+            }
+        }
         if (!$row) abort(404, 'File not found.');
 
         // Tenant scope — a file is only ever served to its own client.
@@ -60,6 +82,6 @@ class P2pFileController extends Controller
         }
         if (!Storage::disk('public')->exists($path)) abort(404, 'File is missing on storage.');
 
-        return Storage::disk('public')->download($path, $row->{$nameCol} ?: basename($path));
+        return Storage::disk('public')->download($path, $name ?: ($row->{$nameCol} ?: basename($path)));
     }
 }

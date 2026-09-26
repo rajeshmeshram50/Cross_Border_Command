@@ -277,6 +277,12 @@ class PoRefundAdjustmentController extends Controller
             'recovered_date' => 'required|date|before_or_equal:today|after_or_equal:' . $adj->refund_date->toDateString(),
             'reference_no'   => 'nullable|string|max:64',
             'proof'          => 'nullable|' . self::PROOF_RULE,
+            // More than one proof at a time — a bank advice AND a photo of the cheque.
+            'proofs'         => 'nullable|array|max:10',
+            'proofs.*'       => self::PROOF_RULE,
+            // Paths of already-stored proofs the form still shows; absent means keep them all.
+            'keep'           => 'nullable|array',
+            'keep.*'         => 'string',
         ], [
             'amount.required'                => 'Enter the recovered amount.',
             'amount.min'                     => 'The recovered amount must be at least ₹1.',
@@ -284,6 +290,9 @@ class PoRefundAdjustmentController extends Controller
             'recovered_date.after_or_equal'  => 'Refunded date cannot be before the refund adjustment date.',
             'proof.max'                      => 'Proof of payment must be 10 MB or smaller.',
             'proof.mimes'                    => 'Proof of payment must be a PDF or image file.',
+            'proofs.max'                     => 'A recovered payment can carry up to 10 proofs.',
+            'proofs.*.max'                   => 'Each proof of payment must be 10 MB or smaller.',
+            'proofs.*.mimes'                 => 'Every proof of payment must be a PDF or image file.',
         ]);
 
         $ref = !empty($data['reference_no']) ? mb_strtoupper(trim($data['reference_no'])) : null;
@@ -299,11 +308,26 @@ class PoRefundAdjustmentController extends Controller
             }
         }
 
-        $file = $request->file('proof');
-        $path = $file?->store("p2p/refund-recoveries/{$adj->id}", 'public');
+        /* Everything this recovery should end up holding: the stored proofs the
+           form still shows, plus whatever was attached this time. A recovery used
+           to keep one proof only, so adding a photo threw away the uploaded file
+           (CS-567). */
+        $stored = [];
+        foreach (array_filter(array_merge([$request->file('proof')], $request->file('proofs') ?? [])) as $f) {
+            $p = $f->store("p2p/refund-recoveries/{$adj->id}", 'public');
+            $stored[] = ['path' => $p, 'name' => $f->getClientOriginalName(), 'mime' => $f->getClientMimeType(), 'size' => $f->getSize()];
+        }
+        $kept = $dropped = [];
+        if ($existing) {
+            $have = $this->recoveryProofs($existing);
+            $keep = $request->has('keep') ? (array) $request->input('keep', []) : array_column($have, 'path');
+            $kept = array_values(array_filter($have, fn ($f) => in_array($f['path'], $keep, true)));
+            $dropped = array_diff(array_column($have, 'path'), array_column($kept, 'path'));
+        }
+        $proofs = array_slice(array_merge($kept, $stored), 0, 10);
         $amount = round((float) $data['amount'], 2);
 
-        $saved = $this->inTransaction($existing ? 'update the recovery' : 'record the recovery', function () use ($adj, $existing, $user, $data, $amount, $ref, $file, $path) {
+        $saved = $this->inTransaction($existing ? 'update the recovery' : 'record the recovery', function () use ($adj, $existing, $user, $data, $amount, $ref, $proofs) {
             $row = PoRefundAdjustment::whereKey($adj->id)->lockForUpdate()->first();
             $others = (float) $row->recoveries()->when($existing, fn ($q) => $q->where('id', '!=', $existing->id))->sum('amount');
             $room = round((float) $row->refund_amount - $others, 2);
@@ -315,7 +339,15 @@ class PoRefundAdjustmentController extends Controller
                 'reference_no' => $ref,
                 'updated_by' => $user->id,
             ];
-            if ($path) $attrs += ['proof_path' => $path, 'proof_name' => $file->getClientOriginalName()];
+            /* The whole set lives in proof_files; the two old columns keep pointing
+               at the first proof, which is what the download endpoint and the Zoho
+               sync already read. */
+            $first = $proofs[0] ?? null;
+            $attrs += [
+                'proof_files' => $proofs ?: null,
+                'proof_path'  => $first['path'] ?? null,
+                'proof_name'  => $first['name'] ?? null,
+            ];
             $rec = $existing
                 ? tap($existing)->update($attrs)
                 : PoRefundRecovery::create($attrs + [
@@ -324,7 +356,10 @@ class PoRefundAdjustmentController extends Controller
                 ]);
             $this->refreshTotals($row);
             return $rec;
-        }, [$path]);
+        }, array_column($stored, 'path'));
+
+        // A proof the user took off the form is no longer reachable, so its file goes too.
+        foreach ($dropped as $path) Storage::disk('public')->delete($path);
 
         return $this->ok($this->detail($adj->fresh()), $existing ? 200 : 201);
     }
@@ -344,6 +379,26 @@ class PoRefundAdjustmentController extends Controller
             $this->refreshTotals($locked);
         });
         return $this->ok($this->detail($adj->fresh()));
+    }
+
+    /**
+     * Every proof on a recovery: the `proof_files` list when the row has one, else
+     * the single legacy `proof_path` read as a one-entry list, so rows saved before
+     * the column existed behave exactly the same.
+     *
+     * @return array<int, array{path: string, name: string, mime: ?string, size: ?int}>
+     */
+    private function recoveryProofs(PoRefundRecovery $r): array
+    {
+        $files = array_values(array_filter(
+            is_array($r->proof_files) ? $r->proof_files : [],
+            fn ($f) => is_array($f) && !empty($f['path']),
+        ));
+        if ($files) return $files;
+
+        return $r->proof_path
+            ? [['path' => $r->proof_path, 'name' => $r->proof_name ?: basename($r->proof_path), 'mime' => null, 'size' => null]]
+            : [];
     }
 
     /** A refund already in Zoho Books cannot be pulled back, so the row is frozen here. */
@@ -613,6 +668,8 @@ class PoRefundAdjustmentController extends Controller
                 'id' => $r->id, 'amount' => (float) $r->amount, 'recovered_date' => $r->recovered_date?->toDateString(),
                 'reference_no' => $r->reference_no,
                 'proof_name' => $r->proof_name, 'proof_url' => $r->proof_path ? file_url($r->proof_path) : null,
+                // Every proof on this recovery, in the order they were attached.
+                'proofs' => array_map(fn ($f) => $f + ['url' => file_url($f['path'])], $this->recoveryProofs($r)),
                 'zoho_sync_status' => $r->zoho_sync_status, 'zoho_error' => $r->zoho_error,
                 'zoho_synced_at' => $r->zoho_synced_at?->toIso8601String(),
             ])->all(),

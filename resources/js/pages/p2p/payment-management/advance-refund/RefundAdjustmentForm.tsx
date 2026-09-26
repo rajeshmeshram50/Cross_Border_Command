@@ -336,15 +336,18 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
                 {/* Browse or shoot it on the spot, and open what is attached (CS-588). */}
                 <div className={`spi-dt-file is-clickable${invalid.attachment ? ' is-invalid' : ''}`} role="button" tabIndex={0} onClick={() => fileRef.current?.click()}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current?.click(); } }}>
-                  <span className="spi-dt-file-txt"><IcoPaperclip /> {attachment || 'Choose file… (PDF / image, max 2 MB)'}</span>
+                  <span className="spi-dt-file-txt">
+                    <IcoPaperclip />
+                    <span className="arf-fname" title={attachment || undefined}>{attachment || 'Choose file… (PDF / image, max 2 MB)'}</span>
+                  </span>
                   <span className="arf-fileacts" onClick={(e) => e.stopPropagation()}>
                     {attUrl && (
                       <>
                         <Tooltip label="Open this attachment">
-                          <a className="spi-dt-file-btn arf-fbtn" href={attUrl} target="_blank" rel="noopener noreferrer" aria-label="View attachment"><IcoEye size={13} /> View</a>
+                          <a className="spi-dt-file-btn arf-fbtn arf-fbtn--ico" href={attUrl} target="_blank" rel="noopener noreferrer" aria-label="View attachment"><IcoEye size={13} /></a>
                         </Tooltip>
                         <Tooltip label="Download this attachment">
-                          <button type="button" className="spi-dt-file-btn arf-fbtn" aria-label="Download attachment"
+                          <button type="button" className="spi-dt-file-btn arf-fbtn arf-fbtn--ico" aria-label="Download attachment"
                             onClick={() => void downloadFile(attUrl, attachment || 'refund-attachment')}><IcoDownload size={13} /></button>
                         </Tooltip>
                       </>

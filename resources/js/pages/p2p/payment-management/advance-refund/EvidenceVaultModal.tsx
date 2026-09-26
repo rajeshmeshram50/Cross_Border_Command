@@ -74,10 +74,14 @@ export default function EvidenceVaultModal({ refundId, onClose }: { refundId: nu
       key: `pay-${p.id}`, name: p.proof_name ?? 'Payment proof', url: p.proof_url ?? undefined, tag: 'release' as const,
       meta: `Paid · ${money(p.amount)}${p.date ? ` · ${fmtDate(p.date)}` : ''}${p.utr ? ` · ${p.utr}` : ''}`,
     })),
-    ...(refund?.recoveries ?? []).filter((r) => r.fileUrl).map((r) => ({
-      key: `rec-${r.id}`, name: r.file ?? 'Refund proof', url: r.fileUrl, tag: 'refund' as const,
-      meta: `Refunded · ${money(r.amount)} · ${fmtDate(r.date)}${r.reference ? ` · ${r.reference}` : ''}`,
-    })),
+    // A recovery can carry several proofs, and the vault holds every one of them.
+    ...(refund?.recoveries ?? []).flatMap((r) => {
+      const files = r.proofs?.length ? r.proofs : r.file && r.fileUrl ? [{ path: r.fileUrl, name: r.file, url: r.fileUrl }] : [];
+      return files.map((f, i) => ({
+        key: `rec-${r.id}-${i}`, name: f.name || 'Refund proof', url: f.url, tag: 'refund' as const,
+        meta: `Refunded · ${money(r.amount)} · ${fmtDate(r.date)}${r.reference ? ` · ${r.reference}` : ''}`,
+      }));
+    }),
   ];
 
   return createPortal(

@@ -954,6 +954,33 @@
 [data-bs-theme="dark"] .arf-proof__name { color: #e2f3f8; }
 [data-bs-theme="dark"] .arf-proof__btn { background: transparent; border-color: rgba(34, 211, 238, .3); color: #67e8f9; }
 [data-bs-theme="dark"] .arf-proof__btn--del { border-color: rgba(248, 113, 113, .35); color: #fca5a5; }
+/* Several proofs on one recovery stack inside the table cell. */
+.arf-rec-cols .cpay-files { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.arf-rec-cols .cpay-files .cpay-file { width: 100%; }
+
+/* Several proofs belong to one recovered payment (CS-567). They sit beside each
+   other as chips rather than stacking down the popup, with the overflow behind a
+   +N, so the form is the same height whether there is one proof or ten. */
+.arf-proofs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.arf-proofs .arf-proof { width: auto; max-width: 100%; gap: 8px; padding: 6px 8px 6px 10px; border-radius: 10px; }
+.arf-proofs .arf-proof__name { flex: 0 1 auto; max-width: 190px; }
+.arf-proofs .arf-proof__acts { gap: 4px; }
+/* Icon-only actions: the names are on the tooltips, and three chips still fit a row. */
+.arf-proofs .arf-proof__btn { width: 28px; height: 28px; padding: 0; justify-content: center; border-radius: 7px; }
+.arf-proofs .arf-proof__btn svg { width: 14px; height: 14px; }
+
+.arf-proof-more,
+.arf-proof-add { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 40px; padding: 0 14px; border: 1px dashed #9dd9e8; border-radius: 10px; background: #fbfeff; color: #0e7490; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.arf-proof-more { border-style: solid; border-color: #b9e4ef; background: #fff; }
+.arf-proof-more:hover,
+.arf-proof-add:hover:not(:disabled) { background: #ecfbff; border-color: #0891b2; }
+.arf-proof-add:disabled { opacity: .55; cursor: not-allowed; }
+.arf-proof-add__ico { display: inline-flex; width: 15px; height: 15px; }
+.arf-proof-add__ico svg { width: 15px; height: 15px; }
+[data-bs-theme="dark"] .arf-proof-more,
+[data-bs-theme="dark"] .arf-proof-add { background: rgba(8, 145, 178, .06); border-color: rgba(34, 211, 238, .28); color: #67e8f9; }
+[data-bs-theme="dark"] .arf-proof-more:hover,
+[data-bs-theme="dark"] .arf-proof-add:hover:not(:disabled) { background: rgba(8, 145, 178, .14); border-color: rgba(34, 211, 238, .5); }
 
 /* Attachment row actions: View / Download / Camera / Browse sit together and
    never steal the row's own click, which opens the file picker (CS-588). */
@@ -970,30 +997,6 @@
    sits under the drop zone the way the prototype's does. */
 .arf-addrec .apay-drop { width: 100%; border: none; font: inherit; text-align: left; cursor: pointer; }
 .arf-addrec .apay-drop:disabled { opacity: .6; cursor: not-allowed; }
-.arf-att {
-  position: fixed; z-index: 3200; padding: 8px;
-  border-radius: 12px; background: #fff; border: 1px solid #e2e8f0;
-  box-shadow: 0 18px 40px -12px rgba(15, 23, 42, .28);
-}
-.arf-att__hd { padding: 4px 8px 8px; font-size: 9.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #94a3b8; }
-.arf-att__opt {
-  display: flex; align-items: center; gap: 11px; width: 100%; padding: 9px 8px;
-  border: none; border-radius: 9px; background: transparent; text-align: left; cursor: pointer;
-}
-.arf-att__opt + .arf-att__opt { border-top: 1px solid #f1f5f9; border-radius: 0 0 9px 9px; }
-.arf-att__opt:hover { background: #f1f9fc; }
-.arf-att__opt b { display: block; font-size: 12.5px; font-weight: 700; color: #0f2b38; }
-.arf-att__opt i { display: block; font-size: 10.5px; font-style: normal; color: #7d97a6; }
-.arf-att__ico {
-  display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0;
-  border-radius: 9px; background: linear-gradient(135deg, #22b8d6, #0e7490); color: #fff;
-}
-.arf-att__ico svg { width: 16px; height: 16px; }
-.arf-att__ico--cam { background: linear-gradient(135deg, #8b5cf6, #6d28d9); }
-[data-bs-theme="dark"] .arf-att { background: #0f1827; border-color: #1f2d42; }
-[data-bs-theme="dark"] .arf-att__opt:hover { background: rgba(34, 211, 238, .1); }
-[data-bs-theme="dark"] .arf-att__opt b { color: #e2e8f0; }
-[data-bs-theme="dark"] .arf-att__opt + .arf-att__opt { border-top-color: #1f2d42; }
 
 /* Deleting one recovery: the row's own button spins, and every action on the
    list is closed until it lands, so a second press cannot reach a gone row. */
@@ -1007,3 +1010,28 @@
 }
 @keyframes cpay-act-spin { to { transform: rotate(360deg); } }
 .cpay-act.is-busy { cursor: progress; }
+
+/* Attachment row: the file name gets one line and an ellipsis, so a long one
+   ("Development Optimization Guidelines_.pdf") stops wrapping onto three lines
+   and pushing View / Download / Camera / Browse out of the box. The full name
+   is on hover. */
+.arf-form .spi-dt-file-txt { min-width: 0; }
+.arf-form .spi-dt-file-txt > svg { flex-shrink: 0; }
+
+.arf-form .arf-fname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* View and Download carry only their icon now — square, the same height as the
+   Camera button beside them. */
+.arf-form .arf-fbtn--ico {
+  padding: 7px;
+  width: 30px;
+  justify-content: center;
+}
+
+[data-bs-theme="dark"] .arf-form .arf-fname { color: inherit; }

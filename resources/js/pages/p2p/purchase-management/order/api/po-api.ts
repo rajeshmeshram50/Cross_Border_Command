@@ -752,6 +752,8 @@ export type RefundPo = {
 export type RefundRecoveryRow = {
   id: number; amount: number; recovered_date: string | null; reference_no: string | null;
   proof_name: string | null; proof_url: string | null;
+  /** Every proof on the recovery — a bank advice and a photo of the cheque can both be here. */
+  proofs?: { path: string; name: string; url: string; mime?: string | null; size?: number | null }[];
   zoho_sync_status: 'synced' | 'failed' | null; zoho_error: string | null; zoho_synced_at: string | null;
 };
 export type RefundRow = {
@@ -783,7 +785,13 @@ export type RefundBody = {
   purchase_order_id?: number; supplier_ref_no?: string; attachment?: File | null;
   refund_type: string; reason: string; refund_amount: number; retained_type?: string; retained_remark?: string;
 };
-export type RecoveryBody = { amount: number; recovered_date: string; reference_no?: string; proof?: File | null };
+export type RecoveryBody = {
+  amount: number; recovered_date: string; reference_no?: string;
+  /** Files attached this time — a recovery can carry up to 10 proofs. */
+  proofs?: File[];
+  /** Stored proofs the form still shows; on an edit, anything left out is dropped. */
+  keep?: string[];
+};
 
 const refundForm = (b: RefundBody) => {
   const f = new FormData();
@@ -802,7 +810,10 @@ const recoveryForm = (b: RecoveryBody) => {
   f.append('amount', String(b.amount));
   f.append('recovered_date', b.recovered_date);
   if (b.reference_no) f.append('reference_no', b.reference_no);
-  if (b.proof) f.append('proof', b.proof);
+  (b.proofs ?? []).forEach((p) => f.append('proofs[]', p));
+  /* Always sent on an edit, so removing every proof really removes them. An
+     empty keep list goes as one blank entry — no stored path can match it. */
+  if (b.keep) b.keep.length ? b.keep.forEach((p) => f.append('keep[]', p)) : f.append('keep[]', '');
   return f;
 };
 const withZoho = (b: unknown) => {

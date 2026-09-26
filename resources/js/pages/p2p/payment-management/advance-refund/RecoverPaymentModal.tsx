@@ -13,7 +13,7 @@ import { PoApiError, refundApi, type RecoveryBody } from '../../purchase-managem
 import { IcoCheck, IcoDocSm, IcoDownload, IcoEye, IcoPencil, IcoPlus, IcoRefund, IcoTrash } from '../../icons';
 import { FitTip } from '../../purchase-management/order/create-po/form-fields';
 import AddRecoveryModal from './AddRecoveryModal';
-import { refundFigures, toRefund, type RefundAdjustment } from './refund-data';
+import { refundFigures, toRefund, type RefundAdjustment, type RefundRecovery } from './refund-data';
 import { useEscapeClose } from './useEscapeClose';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
 import '../../purchase-management/order/manage-payment/manage-payment-requests.css';
@@ -28,6 +28,12 @@ type Props = {
 };
 
 const errText = (e: unknown) => (e instanceof PoApiError ? e.firstError : 'Please try again.');
+
+/** Every proof on a recovery; a row saved before the list existed reports only the one. */
+const proofsOf = (r: RefundRecovery) =>
+  r.proofs?.length
+    ? r.proofs.map((p) => ({ key: p.path, name: p.name, url: p.url }))
+    : r.file && r.fileUrl ? [{ key: r.fileUrl, name: r.file, url: r.fileUrl }] : [];
 
 const ICON_SYNC = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -204,16 +210,22 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
                     <FitTip label={r.reference || '—'}><span className="cpay-utr">{r.reference || '—'}</span></FitTip>
                   </span>
                   <span data-l="Proof Of Payment">
-                    {r.file ? (
-                      <span className="cpay-file">
-                        <span className="cpay-file__ico"><IcoDocSm /></span>
-                        <span className="cpay-file__name" title={r.file}>{r.file}</span>
-                        <span className="cpay-file__sep" />
-                        <span className="cpay-fbtns">
-                          <button type="button" className="cpay-fbtn cpay-fbtn--view" title="View proof of payment" onClick={() => openFile(r.fileUrl)}><IcoEye /></button>
-                          <button type="button" className="cpay-fbtn cpay-fbtn--dl" title="Download proof of payment"
-                            disabled={!r.fileUrl} onClick={() => void downloadFile(r.fileUrl, r.file)}><IcoDownload /></button>
-                        </span>
+                    {/* A recovery can carry several proofs; each one is listed with
+                        its own View and Download (CS-567). */}
+                    {proofsOf(r).length ? (
+                      <span className="cpay-files">
+                        {proofsOf(r).map((f) => (
+                          <span className="cpay-file" key={f.key}>
+                            <span className="cpay-file__ico"><IcoDocSm /></span>
+                            <span className="cpay-file__name" title={f.name}>{f.name}</span>
+                            <span className="cpay-file__sep" />
+                            <span className="cpay-fbtns">
+                              <button type="button" className="cpay-fbtn cpay-fbtn--view" title="View proof of payment" onClick={() => openFile(f.url)}><IcoEye /></button>
+                              <button type="button" className="cpay-fbtn cpay-fbtn--dl" title="Download proof of payment"
+                                onClick={() => void downloadFile(f.url, f.name)}><IcoDownload /></button>
+                            </span>
+                          </span>
+                        ))}
                       </span>
                     ) : <span className="cpay-noproof">Not attached</span>}
                   </span>

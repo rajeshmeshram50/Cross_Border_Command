@@ -32,6 +32,8 @@ export type PaymentRelease = {
 /** One inspected line as it stands on the record. */
 export type InspectionMark = {
   code: string;
+  /** The PO line these proofs belong to — the file endpoint is keyed on it. */
+  itemId: number | null;
   verdict: 'correct' | 'damaged' | 'mismatched' | null;
   remark: string;
   files: ProofFile[];
@@ -173,6 +175,7 @@ export async function fetchPaymentRequestDetail(requestId: number): Promise<Paym
      rather than assumed. */
   const marks: InspectionMark[] = (inspection?.lines ?? []).map((l) => ({
     code: l.product_code ?? '—',
+    itemId: l.purchase_order_item_id ?? null,
     verdict: l.verdict,
     remark: l.remark ?? '',
     files: (l.proof_files ?? []).map((f) => ({

@@ -20,7 +20,7 @@ import {
   LEGAL_PARAMS, RISK_GUIDELINES, isRiskMandatory, legalSections, legalTotals, toRiskSubject, type Supplier,
 } from './payment-request-suppliers';
 import {
-  ProofChip, VERDICTS, downloadFile, openFile,
+  ProofChip, VERDICTS, downloadFile, openFile, saveBlob,
   type InspectionLine, type InspectionProduct, type ProofFile, type Verdict,
 } from '../../purchase-management/order/physical-inspection/inspection-shared';
 import InspectionAttachmentsModal from '../../purchase-management/order/physical-inspection/InspectionAttachmentsModal';
@@ -54,6 +54,12 @@ import '../../purchase-management/order/manage-payment/manage-payment-requests.c
 import './payment-request-detail.css';
 import './payment-request-decision.css';
 import { ccySymbol } from '../../../../utils/currency';
+import { poInspectionApi } from '../../purchase-management/order/api/po-api';
+
+/* An earlier order of this supplier opens the same two screens the PO list
+   opens. They used to answer "coming soon" (CS-417). */
+const PhysicalInspectionModal = lazy(() => import('../../purchase-management/order/physical-inspection/PhysicalInspectionModal'));
+const ManagePaymentRequestsModal = lazy(() => import('../../purchase-management/order/manage-payment/ManagePaymentRequestsModal'));
 
 type TxTab = 'current' | 'history';
 type SubTab = 'supplier' | 'linked' | 'summary' | 'physical' | 'status';
@@ -118,6 +124,9 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
      and until it lands the buttons must already be closed (CS-433 / CS-434). */
   const [justDecided, setJustDecided] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
+  /* An earlier order opened from the history table. */
+  const [histInspect, setHistInspect] = useState<OrderRow | null>(null);
+  const [histManage, setHistManage] = useState<OrderRow | null>(null);
 
   useEffect(() => {
     setDetail(undefined);
@@ -170,7 +179,6 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail?.row.status]);
 
-  const soon = (what: string) => toast.info(what, 'Logic coming soon');
   // Only a request still awaiting approval can be decided.
   const openDecision = (mode: DecisionMode, request: PaymentRequestRow) => {
     if (request.status !== 'awaiting') {
@@ -242,6 +250,23 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
 
   return createPortal(
     <div className="prd-root">
+      {/* An earlier order opened from the history table — the same two screens
+          the PO list opens, instead of a "coming soon" (CS-417). */}
+      {histInspect && (
+        <Suspense fallback={null}>
+          <PhysicalInspectionModal
+            row={histInspect}
+            onClose={() => setHistInspect(null)}
+            onChanged={() => setVersion(v => v + 1)}
+            onContinueToPayment={() => { const r = histInspect; setHistInspect(null); setHistManage(r); }}
+          />
+        </Suspense>
+      )}
+      {histManage && (
+        <Suspense fallback={null}>
+          <ManagePaymentRequestsModal row={histManage} onClose={() => { setHistManage(null); setVersion(v => v + 1); }} />
+        </Suspense>
+      )}
       <div className="prd-shell">
 
         <div className="prd-head">
@@ -360,7 +385,7 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
           </div>
 
           {tx === 'history' ? (
-            <HistoryPanel detail={detail} onSoon={soon} />
+            <HistoryPanel detail={detail} onInspect={setHistInspect} onManage={setHistManage} />
           ) : sub === 'supplier' ? (
             <SupplierPanel supplier={supplier} vendorId={detail.row.vendorId} international={row.international}
               onSupplierChanged={() => setVersion(v => v + 1)} />
@@ -947,7 +972,23 @@ function InspectionPanel({ detail }: { detail: Detail }) {
     return { verdict: (m?.verdict ?? null) as Verdict | null, files: m?.files ?? [] } as InspectionLine;
   };
   const viewFile = (f: ProofFile) => { if (!openFile(f)) toast.info('Preview', `${f.name} — logic coming soon`); };
-  const dlFile = (f: ProofFile) => { if (!downloadFile(f)) toast.info('Download', `${f.name} — logic coming soon`); };
+  /* A stored proof is fetched through our own API and saved from there. Linking
+     straight at the file only opens it once the disk is remote: on the server
+     the proofs sit on Azure Blob, a different origin, where the browser drops
+     the `download` hint and a fetch is refused by CORS (CS-567). */
+  const dlFile = async (f: ProofFile, itemId: number | null) => {
+    const poId = detail.row.poId;
+    if (f.index === undefined || !poId) {
+      if (!downloadFile(f)) toast.info('Download unavailable', f.name);
+      return;
+    }
+    try {
+      const blob = await poInspectionApi.proofFile(poId, itemId, f.index);
+      saveBlob(blob, f.name);
+    } catch {
+      toast.error('Could not download the proof', f.name);
+    }
+  };
 
   return (
     <div className="prd-secwrap">
@@ -957,7 +998,7 @@ function InspectionPanel({ detail }: { detail: Detail }) {
           productCode={attFor.code}
           files={lineOf(attFor.code).files}
           onView={ix => viewFile(lineOf(attFor.code).files[ix])}
-          onDownload={ix => dlFile(lineOf(attFor.code).files[ix])}
+          onDownload={ix => void dlFile(lineOf(attFor.code).files[ix], markOf(attFor.code)?.itemId ?? null)}
           onClose={() => setAttFor(null)}
         />
       )}
@@ -1014,7 +1055,7 @@ function InspectionPanel({ detail }: { detail: Detail }) {
                   <td className="pins-td-proof">
                     {n > 0 ? (
                       <div className="pins-prooflist">
-                        <ProofChip file={line.files[0]} onView={() => viewFile(line.files[0])} onDownload={() => dlFile(line.files[0])} />
+                        <ProofChip file={line.files[0]} onView={() => viewFile(line.files[0])} onDownload={() => void dlFile(line.files[0], markOf(p.code)?.itemId ?? null)} />
                         {n > 1 && (
                           <button type="button" className="pins-more" onClick={() => setAttFor(p)}>
                             <span className="pins-more__n">+{n - 1}</span>
@@ -1045,7 +1086,9 @@ const TX_DROP = ['Action', 'Advance Receipt Refund Adjustment', 'Payment Recover
 const TX_COLUMNS = ORDER_COLUMNS.filter(c => !TX_DROP.includes(c.label));
 const TX_WIDTH = TX_COLUMNS.reduce((s, c) => s + c.width, 0);
 
-function OrderTable({ rows, onInspect, onManage }: { rows: OrderRow[]; onInspect: () => void; onManage: () => void }) {
+function OrderTable({ rows, onInspect, onManage }: {
+  rows: OrderRow[]; onInspect: (row: OrderRow) => void; onManage: (row: OrderRow) => void;
+}) {
   return (
     <div className="ord-table-scroll prd-txscroll">
       <table className="ord-table" style={{ width: TX_WIDTH }}>
@@ -1054,14 +1097,14 @@ function OrderTable({ rows, onInspect, onManage }: { rows: OrderRow[]; onInspect
           <tr>{TX_COLUMNS.map(c => <th key={c.label} className={c.groupEnd ? 'ord-table__group-end' : undefined}>{c.label}</th>)}</tr>
         </thead>
         {rows.map((r, i) => (
-          <OrderRowBody key={r.po} row={r} sr={i + 1} inspected={r.inspectionDone} onInspect={onInspect} onManage={onManage} summary />
+          <OrderRowBody key={r.po} row={r} sr={i + 1} inspected={r.inspectionDone} onInspect={() => onInspect(r)} onManage={() => onManage(r)} summary />
         ))}
       </table>
     </div>
   );
 }
 
-function StatusPanel({ po, onInspect, onManage }: { po: OrderRow | null; onInspect: () => void; onManage: () => void }) {
+function StatusPanel({ po, onInspect, onManage }: { po: OrderRow | null; onInspect: (row: OrderRow) => void; onManage: (row: OrderRow) => void }) {
   if (!po) {
     return <Empty ico={IcoClock} title="No purchase order behind this request"
       sub="This supplier invoice was raised on its own, so there is no purchase order row to show here." />;
@@ -1078,7 +1121,9 @@ function StatusPanel({ po, onInspect, onManage }: { po: OrderRow | null; onInspe
 }
 
 // One purchase order is one transaction: every other order with this supplier.
-function HistoryPanel({ detail, onSoon }: { detail: Detail; onSoon: (what: string) => void }) {
+function HistoryPanel({ detail, onInspect, onManage }: {
+  detail: Detail; onInspect: (row: OrderRow) => void; onManage: (row: OrderRow) => void;
+}) {
   const rows = detail.history;
   if (!rows.length) {
     return <Empty ico={IcoHistory} title={`No earlier transactions with ${detail.row.supplier}`}
@@ -1092,7 +1137,7 @@ function HistoryPanel({ detail, onSoon }: { detail: Detail; onSoon: (what: strin
           {rows.length} earlier purchase order{rows.length === 1 ? '' : 's'} raised on {detail.row.supplier} · one order is one transaction
         </span>
       </div>
-      <OrderTable rows={rows} onInspect={() => onSoon('Physical Inspection')} onManage={() => onSoon('Payment Requests')} />
+      <OrderTable rows={rows} onInspect={onInspect} onManage={onManage} />
     </div>
   );
 }

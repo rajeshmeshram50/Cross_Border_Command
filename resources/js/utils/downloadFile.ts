@@ -25,6 +25,12 @@ export async function downloadFile(rawUrl: string | null | undefined, filename =
   if (!rawUrl) return;
   const name = filename || nameFromUrl(rawUrl);
 
+  /* A file the user has only just picked is held in memory behind a `blob:`
+     (or `data:`) URL. It is already same-origin, so the anchor saves it — while
+     the normalising below would turn it into `<origin>/blob:http://…`, fail the
+     fetch and fall through to window.open, which merely OPENS the file. */
+  if (/^(blob|data):/i.test(rawUrl)) { saveUrl(rawUrl, name); return; }
+
   // Our own uploads (Azure on prod) → stream through the backend.
   const proxy = /segment_doc_uploads\//i.test(rawUrl) ? '/segment-uploads/download'
     : /\/p2p\/(po-payments|refund-recoveries|refund-adjustments|po-documents)\//i.test(rawUrl) ? '/p2p/files/download'
@@ -128,13 +134,18 @@ export async function assertApiBlob(
 /** Trigger a browser save for an in-memory Blob via a same-origin blob: URL. */
 function saveBlob(blob: Blob, name: string): void {
   const objUrl = URL.createObjectURL(blob);
+  saveUrl(objUrl, name);
+  setTimeout(() => URL.revokeObjectURL(objUrl), 1500);
+}
+
+/** Save what a same-origin URL points at. The caller owns the URL's lifetime. */
+function saveUrl(url: string, name: string): void {
   const a = document.createElement('a');
-  a.href = objUrl;
+  a.href = url;
   a.download = name;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(objUrl), 1500);
 }
 
 function nameFromUrl(u: string): string {

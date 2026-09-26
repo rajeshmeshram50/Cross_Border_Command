@@ -1556,3 +1556,31 @@
   color: #fbbf24;
   border: 1px solid rgba(245, 158, 11, .3);
 }
+
+/* "Add attachment" menu — upload a file or take the photo here. Shared by the
+   refund screens and Add New Payment, and portalled to the body, so it lives
+   here rather than in one page's stylesheet. */
+.arf-att {
+  position: fixed; z-index: 3200; padding: 8px;
+  border-radius: 12px; background: #fff; border: 1px solid #e2e8f0;
+  box-shadow: 0 18px 40px -12px rgba(15, 23, 42, .28);
+}
+.arf-att__hd { padding: 4px 8px 8px; font-size: 9.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #94a3b8; }
+.arf-att__opt {
+  display: flex; align-items: center; gap: 11px; width: 100%; padding: 9px 8px;
+  border: none; border-radius: 9px; background: transparent; text-align: left; cursor: pointer;
+}
+.arf-att__opt + .arf-att__opt { border-top: 1px solid #f1f5f9; border-radius: 0 0 9px 9px; }
+.arf-att__opt:hover { background: #f1f9fc; }
+.arf-att__opt b { display: block; font-size: 12.5px; font-weight: 700; color: #0f2b38; }
+.arf-att__opt i { display: block; font-size: 10.5px; font-style: normal; color: #7d97a6; }
+.arf-att__ico {
+  display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0;
+  border-radius: 9px; background: linear-gradient(135deg, #22b8d6, #0e7490); color: #fff;
+}
+.arf-att__ico svg { width: 16px; height: 16px; }
+.arf-att__ico--cam { background: linear-gradient(135deg, #8b5cf6, #6d28d9); }
+[data-bs-theme="dark"] .arf-att { background: #0f1827; border-color: #1f2d42; }
+[data-bs-theme="dark"] .arf-att__opt:hover { background: rgba(34, 211, 238, .1); }
+[data-bs-theme="dark"] .arf-att__opt b { color: #e2e8f0; }
+[data-bs-theme="dark"] .arf-att__opt + .arf-att__opt { border-top-color: #1f2d42; }

@@ -16,13 +16,15 @@ class PoRefundRecovery extends Model
 
     protected $fillable = [
         'client_id', 'branch_id', 'refund_adjustment_id', 'purchase_order_id',
-        'amount', 'recovered_date', 'reference_no', 'proof_path', 'proof_name',
+        'amount', 'recovered_date', 'reference_no', 'proof_path', 'proof_name', 'proof_files',
         'zoho_refund_id', 'zoho_sync_status', 'zoho_synced_at', 'zoho_error',
         'created_by', 'updated_by',
     ];
 
     protected $casts = [
         'amount'         => 'decimal:2',
+        // Every proof on this recovery: [{ path, name, mime, size }].
+        'proof_files'    => 'array',
         'recovered_date' => 'date',
         'zoho_synced_at' => 'datetime',
     ];

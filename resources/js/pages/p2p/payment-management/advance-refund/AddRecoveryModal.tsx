@@ -1,13 +1,13 @@
 // Add / edit one recovered payment against a refund adjustment. Reuses the
 // Order module's Add New Payment popup body (apay-*) under the Manage Payment
 // Requests hero header (mpr-hero).
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { downloadFile } from '../../../../utils/downloadFile';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import { createPortal } from 'react-dom';
 import { Chip, ICON_X, fmtDate, money, shortDate } from '../../purchase-management/order/manage-payment/payment-shared';
 import type { RecoveryBody } from '../../purchase-management/order/api/po-api';
-import { IcoSave, IcoWallet, IcoWarn } from '../../icons';
+import { IcoDownload, IcoEye, IcoSave, IcoTrash, IcoWallet, IcoWarn } from '../../icons';
 import { todayIso, type RefundAdjustment, type RefundRecovery } from './refund-data';
 import { useEscapeClose } from './useEscapeClose';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
@@ -30,6 +30,21 @@ type Props = {
 };
 
 const MAX_FILE = 10 * 1024 * 1024;
+/** The server keeps up to ten proofs on one recovered payment. */
+const MAX_PROOFS = 10;
+/** Chips shown before the rest fold behind a +N. */
+const SHOW_FIRST = 2;
+
+/* One attachment on the form: either already stored (it has a `path`) or just
+   picked (it has a `file`). Both are listed the same way, so a bank advice and a
+   photo of the cheque sit side by side instead of replacing each other. */
+type Proof = { key: string; name: string; url: string; file?: File; path?: string };
+
+/** The proofs a recovery already holds. A row saved before the list existed only reports the one. */
+function storedProofs(rec?: RefundRecovery): Proof[] {
+  if (rec?.proofs?.length) return rec.proofs.map((p) => ({ key: p.path, name: p.name, url: p.url, path: p.path }));
+  return rec?.file && rec.fileUrl ? [{ key: rec.fileUrl, name: rec.file, url: rec.fileUrl }] : [];
+}
 const CAMERA = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
     <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" />
@@ -51,8 +66,10 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
   const [amount, setAmount] = useState(initial ? String(initial.amount) : '');
   const [date, setDate] = useState(initial?.date || todayIso());
   const [reference, setReference] = useState(initial?.reference ?? '');
-  const [fileName, setFileName] = useState(initial?.file ?? '');
-  const [file, setFile] = useState<File | null>(null);
+  const [proofs, setProofs] = useState<Proof[]>(() => storedProofs(initial));
+  // Beyond the first few the chips fold behind a +N, so the popup keeps its size.
+  const [showAll, setShowAll] = useState(false);
+  const hidden = showAll ? 0 : Math.max(0, proofs.length - SHOW_FIRST);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -89,19 +106,21 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
       document.removeEventListener('mousedown', onDown);
     };
   }, [pickAt]);
-  // Where View / Download point: the file just picked, else the proof already saved.
-  const localUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
-  useEffect(() => () => { if (localUrl) URL.revokeObjectURL(localUrl); }, [localUrl]);
-  const fileUrl = localUrl ?? initial?.fileUrl ?? null;
-  const undoPick = () => { setFile(null); setFileName(initial?.file ?? ''); };
+  // Every blob URL made here is released when the popup goes.
+  const madeUrls = useRef<string[]>([]);
+  useEffect(() => () => { madeUrls.current.forEach((u) => URL.revokeObjectURL(u)); }, []);
 
   const pick = (f: File | null, cam = false) => {
     if (!f) return;
     if (f.size > MAX_FILE) { setError('Proof of payment must be 10 MB or smaller.'); return; }
     // A camera capture arrives as a JPEG, sometimes with no name at all.
     if (!cam && !/\.(pdf|jpe?g|png|webp)$/i.test(f.name)) { setError('Proof of payment must be a PDF or an image (JPG, PNG, WEBP).'); return; }
-    setFile(f); setFileName(f.name || `photo_${Date.now()}.jpg`); setError('');
+    const url = URL.createObjectURL(f);
+    madeUrls.current.push(url);
+    setProofs((cur) => (cur.length >= MAX_PROOFS ? cur : [...cur, { key: `new-${Date.now()}-${cur.length}`, name: f.name || `photo_${Date.now()}.jpg`, url, file: f }]));
+    setError('');
   };
+  const drop = (key: string) => { setProofs((cur) => cur.filter((p) => p.key !== key)); setError(''); };
 
   const save = async () => {
     const amt = Math.round((parseFloat(amount.replace(/[,\s₹]/g, '')) || 0) * 100) / 100;
@@ -115,7 +134,14 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
     if (ref.length > 64) { setError('Reference number can be at most 64 characters.'); return; }
     setSaving(true);
     try {
-      await onSave({ amount: amt, recovered_date: date, reference_no: ref || undefined, proof: file });
+      await onSave({
+        amount: amt, recovered_date: date, reference_no: ref || undefined,
+        proofs: proofs.filter((p) => p.file).map((p) => p.file as File),
+        /* Only an edit sends the keep list, and only when the stored proofs came
+           with their paths — without them the server cannot tell which survive,
+           so it is safer to leave them all in place. */
+        keep: initial?.proofs?.length ? proofs.filter((p) => p.path).map((p) => p.path as string) : undefined,
+      });
     } finally {
       setSaving(false);
     }
@@ -129,8 +155,8 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
             title="Take a photo of the proof"
             subject="Recovery proof"
             namePrefix="recovery-proof"
-            max={1}
-            onAttach={(shots) => { if (shots[0]) pick(shots[0], true); }}
+            max={Math.max(1, MAX_PROOFS - proofs.length)}
+            onAttach={(shots) => shots.forEach((s) => pick(s, true))}
             onClose={() => setCamOpen(false)}
           />
         </Suspense>
@@ -140,7 +166,7 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
           <div className="apay-wait" role="status" aria-live="polite">
             <span className="apay-wait__ring" />
             <span className="apay-wait__t">{initial ? 'Updating recovered payment…' : 'Recording recovered payment…'}</span>
-            <span className="apay-wait__s">Please wait, the proof is being uploaded</span>
+            <span className="apay-wait__s">Please wait, {proofs.length > 1 ? 'the proofs are' : 'the proof is'} being uploaded</span>
           </div>
         )}
         <div className="mpr-hero">
@@ -182,34 +208,46 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
             </div>
             <div className="apay-f apay-f--full">
               <label htmlFor="arf-add-file">Proof of Payment</label>
-              {/* Once a file is there it shows as a row with its actions, like the product attachment. */}
-              {fileName ? (
-                <div className="arf-proof">
-                  <span className="arf-proof__ico" aria-hidden>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                  </span>
-                  <span className="arf-proof__name" title={fileName}>{fileName}</span>
-                  <span className="arf-proof__acts">
-                    {fileUrl && (
-                      <>
-                        <a className="arf-proof__btn" href={fileUrl} target="_blank" rel="noopener noreferrer" title="View this proof">View</a>
-                        <button type="button" className="arf-proof__btn" onClick={() => void downloadFile(fileUrl, fileName)} title="Download this proof">Download</button>
-                      </>
-                    )}
-                    <button type="button" className="arf-proof__btn" disabled={saving} onClick={(e) => openPicker(e.currentTarget)} title="Replace this proof — upload a file or take a photo">Reupload</button>
-                    {file && <button type="button" className="arf-proof__btn arf-proof__btn--del" disabled={saving} onClick={undoPick} title="Remove the file you just picked">Remove</button>}
-                  </span>
+              {/* Several proofs belong to one payment (CS-567), so they sit beside
+                  each other as chips: the popup keeps its height however many
+                  there are, and the rest open from the +N chip. */}
+              {proofs.length ? (
+                <div className="arf-proofs">
+                  {(showAll ? proofs : proofs.slice(0, SHOW_FIRST)).map((p) => (
+                    <span className="arf-proof" key={p.key}>
+                      <span className="arf-proof__ico" aria-hidden>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                      </span>
+                      <span className="arf-proof__name" title={p.name}>{p.name}</span>
+                      <span className="arf-proof__acts">
+                        <a className="arf-proof__btn" href={p.url} target="_blank" rel="noopener noreferrer" title={`View ${p.name}`} aria-label={`View ${p.name}`}><IcoEye /></a>
+                        <button type="button" className="arf-proof__btn" onClick={() => void downloadFile(p.url, p.name)} title={`Download ${p.name}`} aria-label={`Download ${p.name}`}><IcoDownload /></button>
+                        <button type="button" className="arf-proof__btn arf-proof__btn--del" disabled={saving} onClick={() => drop(p.key)}
+                          title={p.path ? `Remove ${p.name} from the payment` : `Remove ${p.name}`} aria-label={`Remove ${p.name}`}><IcoTrash /></button>
+                      </span>
+                    </span>
+                  ))}
+                  {hidden > 0 && (
+                    <button type="button" className="arf-proof-more" onClick={() => setShowAll(true)} title={`Show the other ${hidden} ${hidden === 1 ? 'proof' : 'proofs'}`}>+{hidden}</button>
+                  )}
+                  {showAll && proofs.length > SHOW_FIRST && (
+                    <button type="button" className="arf-proof-more" onClick={() => setShowAll(false)} title="Show fewer">Less</button>
+                  )}
+                  {proofs.length < MAX_PROOFS && (
+                    <button type="button" ref={dropRef} className="arf-proof-add" disabled={saving} onClick={(e) => openPicker(e.currentTarget)}
+                      title="Attach another proof — upload a file or take a photo">
+                      <span className="arf-proof-add__ico">{UPLOAD}</span> Add proof
+                    </button>
+                  )}
                 </div>
               ) : (
-                <>
-                  <button type="button" ref={dropRef} className="apay-drop" disabled={saving} onClick={(e) => openPicker(e.currentTarget)}>
-                    <div className="apay-drop__ico">{UPLOAD}</div>
-                    <div className="apay-drop__txt">
-                      <div className="apay-drop__t">Click to upload proof of payment</div>
-                      <div className="apay-drop__s">PDF, JPG, PNG or WEBP · up to 10 MB</div>
-                    </div>
-                  </button>
-                </>
+                <button type="button" ref={dropRef} className="apay-drop" disabled={saving} onClick={(e) => openPicker(e.currentTarget)}>
+                  <div className="apay-drop__ico">{UPLOAD}</div>
+                  <div className="apay-drop__txt">
+                    <div className="apay-drop__t">Click to upload proof of payment</div>
+                    <div className="apay-drop__s">PDF, JPG, PNG or WEBP · up to 10 MB each · add more than one</div>
+                  </div>
+                </button>
               )}
               {/* A proof is as often shot on a phone as picked off a disk.
                   Portalled, or the popup-body's own scroller clips it. */}
@@ -227,8 +265,14 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
                 </div>,
                 document.body,
               )}
-              <input id="arf-add-file" ref={fileRef} className="apay-file-in" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" disabled={saving}
-                onChange={(e) => { pick(e.target.files?.[0] ?? null); e.target.value = ''; }} />
+              <input id="arf-add-file" ref={fileRef} className="apay-file-in" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" disabled={saving}
+                onChange={(e) => {
+                  const picked = Array.from(e.target.files ?? []);
+                  const room = MAX_PROOFS - proofs.length;
+                  picked.slice(0, room).forEach((f) => pick(f));
+                  if (picked.length > room) setError(`A recovered payment can carry up to ${MAX_PROOFS} proofs.`);
+                  e.target.value = '';
+                }} />
             </div>
           </div>
 

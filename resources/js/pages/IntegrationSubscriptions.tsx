@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Modal, ModalBody } from 'reactstrap';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 
 /**
  * Third-party subscription / integration expiry tracker (super-admin).
@@ -41,6 +42,7 @@ const EMPTY = {
 
 export default function IntegrationSubscriptions() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [rows, setRows] = useState<Sub[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
@@ -106,7 +108,16 @@ export default function IntegrationSubscriptions() {
   };
 
   const remove = async (s: Sub) => {
-    if (!window.confirm(`Delete "${s.name}"? This stops its renewal reminders.`)) return;
+    /* The app's own dialog, not the browser's: a native confirm names the site
+       instead of the app and cannot be styled or read as part of the screen. */
+    const ok = await confirm({
+      title: 'Delete this subscription?',
+      message: `"${s.name}" will be removed and its renewal reminders will stop. This cannot be undone.`,
+      tone: 'danger',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Keep It',
+    });
+    if (!ok) return;
     setBusyId(s.id);
     try {
       await api.delete(`/integration-subscriptions/${s.id}`);

@@ -3,6 +3,9 @@
 import type { BadgeVariant } from '../../../../components/ui/Badge';
 import type { RefundDetail, RefundPo, RefundRow, RefundStatus } from '../../purchase-management/order/api/po-api';
 
+/** One proof stored on a recovered payment. `path` identifies it on a save. */
+export type RecoveryProof = { path: string; name: string; url: string };
+
 export type RefundRecovery = {
   id: number;
   amount: number;
@@ -11,6 +14,8 @@ export type RefundRecovery = {
   reference?: string;
   file?: string;
   fileUrl?: string;
+  /** Every proof attached to this recovery, first one first. */
+  proofs: RecoveryProof[];
   zohoStatus: 'synced' | 'failed' | null;
   zohoError: string | null;
 };
@@ -99,7 +104,10 @@ export function toRefund(r: RefundRow | RefundDetail): RefundAdjustment {
     recovered: r.recovered_amount, balance: r.balance_amount, status: r.status, recoveriesCount: r.recoveries_count,
     recoveries: (d.recoveries ?? []).map((x) => ({
       id: x.id, amount: x.amount, date: x.recovered_date ?? '', reference: x.reference_no ?? undefined,
-      file: x.proof_name ?? undefined, fileUrl: x.proof_url ?? undefined, zohoStatus: x.zoho_sync_status, zohoError: x.zoho_error,
+      file: x.proof_name ?? undefined, fileUrl: x.proof_url ?? undefined,
+      // A row saved before several proofs were allowed only has the single one.
+      proofs: (x.proofs ?? []).map((p) => ({ path: p.path, name: p.name, url: p.url })),
+      zohoStatus: x.zoho_sync_status, zohoError: x.zoho_error,
     })),
     zohoStatus: r.zoho_sync_status, zohoError: r.zoho_error, zohoNumber: r.zoho_vendorcredit_number,
     zohoPending: r.zoho_pending_recoveries ?? 0,
