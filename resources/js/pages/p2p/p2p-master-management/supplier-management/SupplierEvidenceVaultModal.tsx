@@ -11,6 +11,7 @@ import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } from '../../../../utils/vaultSignatureRows';
 import { downloadFile } from '../../../../utils/downloadFile';
 import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
+import { poDocumentApi } from '../../purchase-management/order/api/po-api';
 
 import { SegmentRefUploadPopup } from './AddVendorModal';
 import { SigningTrackerModal } from '../../../sales/opportunity-pipeline/SigningTrackerModal';
@@ -37,6 +38,9 @@ export interface VaultDoc {
   id: number;
 
   db_id?: number | null;
+  /** A Stage 04 row: the purchase order it belongs to and its id on that PO. */
+  po_id?: number | null;
+  po_doc_id?: number | null;
 
   party?: string | null;
 
@@ -99,11 +103,37 @@ export interface VaultData {
 }
 
 type DealCount = { d: number; t: number };
-export interface DealRatios { kyc: DealCount; dd: DealCount; tl: DealCount; td: DealCount }
+export interface DealRatios { kyc: DealCount; dd: DealCount; tl: DealCount; td: DealCount; agr?: DealCount }
+/** One purchase order inside a shipment (or procurement) row. */
+export interface DealPoRow {
+  po_id: number;
+  po_code: string;
+  /** The PO's own procurement reference; null when it was raised without one. */
+  procurement_id?: string | null;
+  po_date?: string | null;
+  po_status?: string;
+  po_total?: number;
+  currency?: string | null;
+  ratios?: DealRatios;
+  docs?: VaultDoc[];
+  agreements?: VaultDoc[];
+}
+
 export interface VendorDealRow {
   sr: number;
   shipment_id?: string;
-  procurement_id?: string;
+  procurement_id?: string | null;
+  /* Without a shipment there is nothing to group by, so the row IS the purchase
+     order and carries its own id, date and paperwork. */
+  po_code?: string;
+  po_date?: string | null;
+  po_status?: string;
+  po_total?: number;
+  currency?: string | null;
+  /* A shipment can carry several purchase orders. The row opens its PO list,
+     and each PO opens its own Stage 04 paperwork. */
+  pos?: DealPoRow[];
+  po_count?: number;
   customer?: string;
   consignee?: string;
   supplier: string;
@@ -266,6 +296,13 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   const [signatureRows, setSignatureRows] = useState<SigReqRow[]>([]);
 
   const [sendDocIds, setSendDocIds] = useState<number[] | null>(null);
+  /* Stage 04 rows in the same envelope. The CLM request knows nothing about a
+     purchase order, so each one is told which request carried it — otherwise
+     the PO would still read "not sent". */
+  const [sendPoRows, setSendPoRows] = useState<{ po: number; doc: number }[]>([]);
+  const poRowsOf = (docs: VaultDoc[]) => docs
+    .filter(d => d.po_id && d.po_doc_id)
+    .map(d => ({ po: d.po_id as number, doc: d.po_doc_id as number }));
 
   const [sendKind, setSendKind] = useState<'trade' | 'agreement'>('trade');
 
@@ -489,7 +526,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
       const withoutDeals = vault.vendor_without_shipment ?? [];
       if (withoutDeals.length === 0) withoutShip.file('(no procurements).txt', 'No procurement-based deals for this supplier.');
       for (const deal of withoutDeals) {
-        const f = withoutShip.folder(sanitize(deal.procurement_id || `deal-${deal.sr}`))!;
+        const f = withoutShip.folder(sanitize(deal.po_code || deal.procurement_id || `deal-${deal.sr}`))!;
         await addDocs(f, [...(deal.docs ?? []), ...(deal.agreements ?? [])]);
       }
 
@@ -766,9 +803,12 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
             <div className="cev-section-right">
               {group === 'case-to-case' && tab === 'trade-documents' ? (() => {
                 const dr = shipmentIdMode === 'with' ? (vault.vendor_with_shipment ?? []) : (vault.vendor_without_shipment ?? []);
-                const cmpl = dr.filter(r => (r.ratios?.td?.t ?? 0) > 0 && r.ratios?.td?.d === r.ratios?.td?.t).length;
-                const part = dr.filter(r => (r.ratios?.td?.d ?? 0) > 0 && (r.ratios?.td?.d ?? 0) < (r.ratios?.td?.t ?? 0)).length;
-                const pend = dr.filter(r => (r.ratios?.td?.d ?? 0) === 0).length;
+                // Trade documents and agreements together are the transaction's paperwork.
+                const done = (r: VendorDealRow) => (r.ratios?.td?.d ?? 0) + (r.ratios?.agr?.d ?? 0);
+                const all  = (r: VendorDealRow) => (r.ratios?.td?.t ?? 0) + (r.ratios?.agr?.t ?? 0);
+                const cmpl = dr.filter(r => all(r) > 0 && done(r) === all(r)).length;
+                const part = dr.filter(r => done(r) > 0 && done(r) < all(r)).length;
+                const pend = dr.filter(r => done(r) === 0).length;
                 const spill = (txt: string, bg: string, fg: string, bd: string, dot: string) => (
                   <span className="cev-deal-spill" style={{ background: bg, color: fg, border: `1px solid ${bd}` }}><span className="cev-deal-dot" style={{ background: dot }} />{txt}</span>
                 );
@@ -776,10 +816,13 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                   {cmpl > 0 && spill(`Complete ${cmpl}`, 'linear-gradient(135deg,#ecfdf5,#d1fae5)', '#059669', '#6ee7b7', '#10b981')}
                   {part > 0 && spill(`Partial ${part}`, 'linear-gradient(135deg,#fffbeb,#fef3c7)', '#d97706', '#fcd34d', '#f59e0b')}
                   {pend > 0 && spill(`Pending ${pend}`, 'linear-gradient(135deg,#fef2f2,#fee2e2)', '#dc2626', '#fca5a5', '#ef4444')}
-                  <span className="cev-sec-pill cev-sec-pill-docs">{dr.length} {shipmentIdMode === 'with' ? 'Shipments' : 'Procurements'}</span>
+                  <span className="cev-sec-pill cev-sec-pill-docs">{dr.length} purchase order{dr.length === 1 ? '' : 's'}</span>
                 </>);
               })() : group === 'case-to-case' && tab === 'shipment-agreements' ? (
-                <span className="cev-sec-pill cev-sec-pill-docs">{(shipmentIdMode === 'with' ? (vault.vendor_with_shipment ?? []) : (vault.vendor_without_shipment ?? [])).length} {shipmentIdMode === 'with' ? 'Shipments' : 'Procurements'}</span>
+                (() => {
+                  const n = (shipmentIdMode === 'with' ? (vault.vendor_with_shipment ?? []) : (vault.vendor_without_shipment ?? [])).length;
+                  return <span className="cev-sec-pill cev-sec-pill-docs">{n} purchase order{n === 1 ? '' : 's'}</span>;
+                })()
               ) : tab === 'shipment-agreements' ? (
                 <span className="cev-sec-pill cev-sec-pill-docs">{vault.total_shipments} Shipments</span>
               ) : (
@@ -799,11 +842,11 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
             ? <VendorDealTable key={`${shipmentIdMode}-${tab}`} mode={shipmentIdMode} docKind="both"
                                rows={shipmentIdMode === 'with' ? (vault.vendor_with_shipment ?? []) : (vault.vendor_without_shipment ?? [])}
                                ownerId={supplier?.db_id ?? null} onReload={reloadVault}
-                               onSendTradeDoc={(d, category) => { if (d.db_id) { setSendKind(category === 'agreement' ? 'agreement' : 'trade'); setSendDocIds([d.db_id]); } }} onRemindTradeDoc={handleRemind} />
+                               onSendTradeDoc={(d, category) => { if (d.db_id) { setSendKind(category === 'agreement' ? 'agreement' : 'trade'); setSendPoRows(poRowsOf([d])); setSendDocIds([d.db_id]); } }} onRemindTradeDoc={handleRemind} />
             : tab === 'shipment-agreements'
               ? <ShipmentTable rows={vault.shipment_agreements} />
               : <DocsTable rows={docsForTab} tab={tab} ownerType="supplier" ownerId={supplier?.db_id ?? null} onReload={reloadVault}
-                           onSendTradeDoc={(d) => { if (d.db_id) { setSendKind('trade'); setSendDocIds([d.db_id]); } }}
+                           onSendTradeDoc={(d) => { if (d.db_id) { setSendKind('trade'); setSendPoRows(poRowsOf([d])); setSendDocIds([d.db_id]); } }}
                            onRemindTradeDoc={handleRemind} />}
         </div>
         </div>)}
@@ -849,8 +892,23 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
         multiBox
         sendAsAgreement={sendKind === 'agreement'}
         preselectedDocIds={sendDocIds ?? undefined}
-        onClose={() => setSendDocIds(null)}
-        onSent={() => { setSendDocIds(null); void reloadSignatures(); }}
+        onClose={() => { setSendDocIds(null); setSendPoRows([]); }}
+        onSent={(_ids, signatureRequestId) => {
+          const rows = sendPoRows;
+          setSendDocIds(null);
+          setSendPoRows([]);
+          const tell = async () => {
+            if (signatureRequestId && rows.length) {
+              const byPo = new Map<number, number[]>();
+              for (const r of rows) byPo.set(r.po, [...(byPo.get(r.po) ?? []), r.doc]);
+              await Promise.all([...byPo].map(([po, ids]) =>
+                poDocumentApi.markSent(po, ids, signatureRequestId).catch(() => undefined)));
+            }
+            await reloadSignatures();
+            await reloadVault();
+          };
+          void tell();
+        }}
       />
 
       {overview && (() => {
@@ -879,7 +937,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           ...(vault.vendor_with_shipment ?? []),
           ...(vault.vendor_without_shipment ?? []),
         ]).map((r, i) => {
-          const code = dealCode(r.shipment_id) || dealCode(r.procurement_id);
+          const code = dealCode(r.shipment_id) || dealCode(r.po_code) || dealCode(r.procurement_id);
           return {
             key:   code || `deal-${r.sr ?? i}`,
             code,
@@ -921,6 +979,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           const ids = rows.map(r => r.doc.db_id).filter((n): n is number => !!n);
           if (!ids.length) return;
           setSendKind(rows[0].cat === 'agreement' ? 'agreement' : 'trade');
+          setSendPoRows(poRowsOf(rows.map(r => r.doc)));
           setSendDocIds(ids);
         };
 
@@ -1825,6 +1884,13 @@ function DealAvatar({ name, grad, tag }: { name: string; grad: string; tag?: str
   );
 }
 
+/** 22-Sep-2026 — the PO's own date, under its id. */
+const dealDmy = (iso?: string | null) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
 function DealIdPill({ text }: { text: string }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 9.5, fontWeight: 700, padding: '4px 9px', borderRadius: 20, border: '1.5px solid #a5f3fc', background: '#ecfeff', color: '#0e7490', whiteSpace: 'nowrap' }}>
@@ -1851,6 +1917,115 @@ function dealDocState(d: VaultDoc): { label: string; c: [string, string, string,
    transaction's list mixes trade documents and agreements. The tag is what
    Send / Remind key off — a shared `category` prop would send an agreement
    into the trade-document library. */
+/* A shipment's purchase orders. The shipment row opens this; each PO here opens
+   its own Stage 04 documents, so a shipment carrying several POs stays legible. */
+function DealPoSubTable({ pos, docKind, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc }: {
+  pos: DealPoRow[];
+  docKind: 'trade' | 'agreement' | 'both';
+  ownerId: number | null;
+  onReload: () => Promise<void> | void;
+  onSendTradeDoc?: (doc: VaultDoc, category: 'td' | 'agreement') => void;
+  onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
+}) {
+  const toast = useToast();
+  const countOf = (r: DealPoRow) => (r.docs ?? []).length + (r.agreements ?? []).length;
+  const [open, setOpen] = useState<number | null>(pos.length === 1 && countOf(pos[0]) > 0 ? 0 : null);
+  /* A PO with nothing marked has nothing to open — the press says why rather
+     than sliding out an empty table. */
+  const toggle = (i: number, po: DealPoRow) => {
+    if (countOf(po) === 0) {
+      toast.info(`${po.po_code} has no documents`, 'Nothing was marked necessary or unnecessary on this PO in Stage 04.');
+      return;
+    }
+    setOpen(open === i ? null : i);
+  };
+  if (pos.length === 0) {
+    return (
+      <div style={{ padding: 22, textAlign: 'center', fontSize: 12, color: 'var(--dl-muted)' }}>
+        No purchase order on this transaction yet.
+      </div>
+    );
+  }
+  const money = (n?: number, ccy?: string | null) =>
+    n == null ? '—' : `${ccy && ccy !== 'INR' ? ccy + ' ' : '₹'}${Math.round(n).toLocaleString('en-IN')}`;
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <thead>
+        <tr style={{ background: 'linear-gradient(110deg,#0c4a6e,#0891b2)' }}>
+          <th style={{ ...DEAL_SUB_TH, paddingLeft: 26, width: 36 }} />
+          <th style={{ ...DEAL_SUB_TH, textAlign: 'left' }}>Procurement ID</th>
+          <th style={{ ...DEAL_SUB_TH, textAlign: 'left' }}>PO ID</th>
+          <th style={{ ...DEAL_SUB_TH, textAlign: 'left' }}>PO Date</th>
+          <th style={{ ...DEAL_SUB_TH, textAlign: 'left' }}>Status</th>
+          <th style={{ ...DEAL_SUB_TH, textAlign: 'center' }}>PO Value</th>
+          <th style={{ ...DEAL_SUB_TH, textAlign: 'center' }}>Trade Docs</th>
+          <th style={{ ...DEAL_SUB_TH, textAlign: 'center', paddingRight: 20 }}>Agreements</th>
+        </tr>
+      </thead>
+      <tbody>
+        {pos.map((po, i) => {
+          const isOpen = open === i;
+          const nDocs = (po.docs ?? []).length;
+          const nAgr = (po.agreements ?? []).length;
+          return (
+            <Fragment key={po.po_code}>
+              <tr style={{ background: isOpen ? 'var(--dl-hover)' : 'transparent', borderBottom: '1px solid var(--dl-border)', cursor: 'pointer' }}
+                  onClick={() => toggle(i, po)}>
+                <td style={{ padding: '10px 8px 10px 26px', width: 36 }}>
+                  <span style={{ fontSize: 8, color: nDocs + nAgr ? '#0e7490' : 'var(--dl-muted)', userSelect: 'none' }}>
+                    {nDocs + nAgr === 0 ? '–' : isOpen ? '▼' : '▶'}
+                  </span>
+                </td>
+                <td style={{ padding: '10px 8px' }}>
+                  {po.procurement_id
+                    ? <DealIdPill text={po.procurement_id} />
+                    : <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--dl-muted)' }}>N/A</span>}
+                </td>
+                <td style={{ padding: '10px 8px' }}><DealIdPill text={po.po_code} /></td>
+                <td style={{ padding: '10px 8px', fontSize: 11, fontWeight: 700, color: 'var(--dl-text)' }}>{dealDmy(po.po_date) || '—'}</td>
+                <td style={{ padding: '10px 8px' }}><DealPoStatus status={po.po_status} /></td>
+                <td style={{ padding: '10px 8px', textAlign: 'center', fontSize: 11, fontWeight: 800, color: 'var(--dl-text)' }}>{money(po.po_total, po.currency)}</td>
+                <td style={{ padding: '10px 8px', textAlign: 'center' }}>{dealFrac({ d: (po.docs ?? []).filter(d => d.status === 'Signed').length, t: nDocs })}</td>
+                <td style={{ padding: '10px 20px 10px 8px', textAlign: 'center' }}>{dealFrac({ d: (po.agreements ?? []).filter(d => d.status === 'Signed').length, t: nAgr })}</td>
+              </tr>
+              {isOpen && (
+                <tr>
+                  <td colSpan={8} style={{ padding: 0, background: 'var(--dl-panel)', borderBottom: '1.5px solid var(--dl-line)' }}>
+                    <DealDocsSubTable
+                      rows={[
+                        ...(docKind === 'agreement' ? [] : (po.docs ?? []).map(d => ({ doc: d, category: 'td' as const }))),
+                        ...(docKind === 'trade' ? [] : (po.agreements ?? []).map(d => ({ doc: d, category: 'agreement' as const }))),
+                      ]}
+                      ownerId={ownerId}
+                      onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc}
+                      emptyLabel={docKind === 'agreement' ? `No agreements marked necessary on ${po.po_code}.`
+                                : docKind === 'trade' ? `No trade documents marked necessary on ${po.po_code}.`
+                                : `Nothing marked necessary on ${po.po_code} in Stage 04 yet.`}
+                    />
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+/** The PO's own state, as the PO list words it. */
+function DealPoStatus({ status }: { status?: string }) {
+  const s = (status ?? '').toLowerCase();
+  const tone = s === 'cancelled' ? { bg: '#fee2e2', fg: '#b91c1c', bd: '#fca5a5' }
+    : s === 'submitted' ? { bg: '#dcfce7', fg: '#15803d', bd: '#86efac' }
+      : { bg: '#fef3c7', fg: '#b45309', bd: '#fcd34d' };
+  const text = s ? s.replace(/^./, c => c.toUpperCase()) : '—';
+  return (
+    <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 9.5, fontWeight: 800,
+      letterSpacing: '.03em', background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}` }}>{text}</span>
+  );
+}
+
 function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, emptyLabel = 'No trade documents or agreements on record.' }: {
   rows: { doc: VaultDoc; category: 'td' | 'agreement' }[];
   ownerId: number | null;
@@ -1860,10 +2035,32 @@ function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTra
 
   emptyLabel?: string;
 }) {
+  /* Five documents are the window; the rest come on the scroll. Measured, so a
+     wrapped document name does not cut the fifth row in half. */
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const box = boxRef.current;
+    const table = box?.querySelector('table');
+    if (!box || !table) return;
+    const apply = () => {
+      const trs = Array.from(table.tBodies[0]?.rows ?? []);
+      if (trs.length <= 5) { box.style.maxHeight = ''; return; }
+      const head = table.tHead?.getBoundingClientRect().height ?? 0;
+      const body = trs[4].getBoundingClientRect().bottom - trs[0].getBoundingClientRect().top;
+      box.style.maxHeight = `${Math.ceil(head + body)}px`;
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(table);
+    return () => ro.disconnect();
+  }, [rows]);
+
   return (
+    <div ref={boxRef} style={{ overflowY: 'auto' }}>
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead>
-        <tr style={{ background: 'linear-gradient(110deg,#083344,#0e7490)' }}>
+        {/* One row, one gradient — and it stays put while the documents scroll. */}
+        <tr style={{ background: 'linear-gradient(110deg,#083344,#0e7490)', position: 'sticky', top: 0, zIndex: 2 }}>
           <th style={{ ...DEAL_SUB_TH, width: 32, textAlign: 'center' }}>#</th>
           <th style={{ ...DEAL_SUB_TH, textAlign: 'left' }}>Document Name</th>
           <th style={{ ...DEAL_SUB_TH, textAlign: 'center' }}>Required</th>
@@ -1906,6 +2103,7 @@ function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTra
         })}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -1923,8 +2121,19 @@ function VendorDealTable({ mode, rows, ownerId, onReload, onSendTradeDoc, onRemi
   docKind?: 'trade' | 'agreement' | 'both';
 }) {
   const [open, setOpen] = useState<number | null>(null);
+  const toast = useToast();
 
-  const span = (mode === 'with' ? 9 : 7) + 1;
+  const span = mode === 'with' ? 12 : 11;
+  /* On the other-transactions tab the row IS the PO, so a PO with nothing marked
+     in Stage 04 says so instead of opening an empty panel. */
+  const docCount = (r: VendorDealRow) => (r.docs ?? []).length + (r.agreements ?? []).length;
+  const press = (i: number, r: VendorDealRow) => {
+    if (mode === 'without' && docCount(r) === 0) {
+      toast.info(`${r.po_code ?? 'This PO'} has no documents`, 'Nothing was marked necessary or unnecessary on this PO in Stage 04.');
+      return;
+    }
+    setOpen(open === i ? null : i);
+  };
   return (
     <div className="cev-deal" style={{ margin: 0, border: '1.5px solid var(--dl-line)', borderRadius: 8, overflow: 'hidden' }}>
       <div style={{ overflowX: 'auto' }}>
@@ -1934,54 +2143,83 @@ function VendorDealTable({ mode, rows, ownerId, onReload, onSendTradeDoc, onRemi
               <th style={{ ...DEAL_TH, paddingLeft: 14, width: 40 }} />
               <th style={{ ...DEAL_TH, textAlign: 'left' }}>SR</th>
               <th style={{ ...DEAL_TH, textAlign: 'left' }}>{mode === 'with' ? 'Shipment ID' : 'Procurement ID'}</th>
+              {mode === 'with'
+                ? <th style={DEAL_THC}>Purchase Orders</th>
+                : <><th style={{ ...DEAL_TH, textAlign: 'left' }}>PO ID</th><th style={{ ...DEAL_TH, textAlign: 'left' }}>PO Date</th></>}
               {mode === 'with' && <th style={{ ...DEAL_TH, textAlign: 'left' }}>Customer</th>}
               {mode === 'with' && <th style={{ ...DEAL_TH, textAlign: 'left' }}>Consignee</th>}
               <th style={{ ...DEAL_TH, textAlign: 'left' }}>Supplier</th>
               <th style={DEAL_THC}>KYC</th>
               <th style={DEAL_THC}>Due Dil.</th>
               <th style={DEAL_THC}>Trade Lic.</th>
-              <th style={{ ...DEAL_THC, paddingRight: 14 }}>Trade Docs</th>
+              <th style={DEAL_THC}>Trade Docs</th>
+              <th style={{ ...DEAL_THC, paddingRight: 14 }}>Agreements</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr><td colSpan={span} style={{ padding: 34, textAlign: 'center', color: 'var(--dl-muted)', fontSize: 12, background: 'var(--dl-panel)' }}>
-                {mode === 'with' ? 'No shipments for this supplier yet.' : 'No procurements for this supplier yet.'}
+                {mode === 'with' ? 'No purchase orders against a shipment for this supplier yet.' : 'No other purchase orders for this supplier yet.'}
               </td></tr>
             ) : rows.map((r, idx) => {
               const bg = idx % 2 === 0 ? 'var(--dl-row)' : 'var(--dl-zebra)';
               const isOpen = open === idx;
               return (
-                <Fragment key={`${r.sr}-${r.shipment_id ?? r.procurement_id}`}>
+                <Fragment key={`${r.sr}-${r.shipment_id ?? r.po_code ?? r.procurement_id}`}>
                   <tr style={{ background: isOpen ? 'var(--dl-hover)' : bg, borderBottom: '1.5px solid var(--dl-border)', cursor: 'pointer' }}
-                      onClick={() => setOpen(isOpen ? null : idx)}
+                      onClick={() => press(idx, r)}
                       onMouseEnter={(e) => { if (!isOpen) e.currentTarget.style.background = 'var(--dl-hover)'; }}
                       onMouseLeave={(e) => { if (!isOpen) e.currentTarget.style.background = bg; }}>
                     <td style={{ padding: '13px 8px 13px 14px', verticalAlign: 'middle', width: 40 }}>
                       <span style={{ fontSize: 9, color: '#0e7490', userSelect: 'none' }}>{isOpen ? '▼' : '▶'}</span>
                     </td>
                     <td style={{ padding: '13px 8px', verticalAlign: 'middle', fontSize: 11, fontWeight: 700, color: '#0e7490' }}>{r.sr}</td>
-                    <td style={{ padding: '13px 8px', verticalAlign: 'middle' }}><DealIdPill text={r.shipment_id ?? r.procurement_id ?? '—'} /></td>
+                    <td style={{ padding: '13px 8px', verticalAlign: 'middle' }}>
+                      {mode === 'with'
+                        ? <DealIdPill text={r.shipment_id ?? '—'} />
+                        : (r.procurement_id
+                          ? <DealIdPill text={r.procurement_id} />
+                          : <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--dl-muted)' }}>N/A</span>)}
+                    </td>
+                    {mode === 'with' ? (
+                      <td style={{ padding: '13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: '#0e7490' }}>{r.po_count ?? (r.pos ?? []).length}</span>
+                      </td>
+                    ) : (
+                      <>
+                        <td style={{ padding: '13px 8px', verticalAlign: 'middle' }}><DealIdPill text={r.po_code ?? '—'} /></td>
+                        <td style={{ padding: '13px 8px', verticalAlign: 'middle', fontSize: 11, fontWeight: 700, color: 'var(--dl-text)' }}>
+                          {dealDmy(r.po_date) || '—'}
+                          {r.po_status ? <span style={{ marginLeft: 8 }}><DealPoStatus status={r.po_status} /></span> : null}
+                        </td>
+                      </>
+                    )}
                     {mode === 'with' && <td style={{ padding: '13px 8px', verticalAlign: 'middle' }}><DealAvatar name={r.customer || '—'} grad={DEAL_AV_GRADS[idx % DEAL_AV_GRADS.length]} /></td>}
                     {mode === 'with' && <td style={{ padding: '13px 8px', verticalAlign: 'middle' }}>{r.consignee ? <DealAvatar name={r.consignee} grad="linear-gradient(135deg,#059669,#10b981)" tag="Consignee" /> : <span style={{ fontSize: 10, color: 'var(--dl-muted)' }}>—</span>}</td>}
                     <td style={{ padding: '13px 8px', verticalAlign: 'middle' }}><DealAvatar name={r.supplier} grad="linear-gradient(135deg,#0891b2,#06b6d4)" /></td>
                     <td style={{ padding: '13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>{dealFrac(r.ratios?.kyc)}</td>
                     <td style={{ padding: '13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>{dealFrac(r.ratios?.dd)}</td>
                     <td style={{ padding: '13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>{dealFrac(r.ratios?.tl)}</td>
-                    <td style={{ padding: '13px 14px 13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>{dealFrac(r.ratios?.td)}</td>
+                    <td style={{ padding: '13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>{dealFrac(r.ratios?.td)}</td>
+                    <td style={{ padding: '13px 14px 13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>{dealFrac(r.ratios?.agr)}</td>
                   </tr>
                   {isOpen && (
                     <tr>
                       <td colSpan={span} style={{ padding: 0, background: 'var(--dl-panel)', borderTop: '1.5px solid var(--dl-line)', borderBottom: '1.5px solid var(--dl-line)' }}>
 
-                        <DealDocsSubTable rows={[
-                                            ...(docKind === 'agreement' ? [] : (r.docs ?? []).map(d => ({ doc: d, category: 'td' as const }))),
-                                            ...(docKind === 'trade'     ? [] : (r.agreements ?? []).map(d => ({ doc: d, category: 'agreement' as const }))),
-                                          ]} ownerId={ownerId}
-                                          onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc}
-                                          emptyLabel={docKind === 'agreement' ? 'No agreements on record.'
-                                                    : docKind === 'trade'     ? 'No trade documents on record.'
-                                                    : 'No trade documents or agreements on record.'} />
+                        {mode === 'with' ? (
+                          <DealPoSubTable pos={r.pos ?? []} docKind={docKind} ownerId={ownerId}
+                                          onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} />
+                        ) : (
+                          <DealDocsSubTable
+                            rows={[
+                              ...(docKind === 'agreement' ? [] : (r.docs ?? []).map(d => ({ doc: d, category: 'td' as const }))),
+                              ...(docKind === 'trade' ? [] : (r.agreements ?? []).map(d => ({ doc: d, category: 'agreement' as const }))),
+                            ]}
+                            ownerId={ownerId}
+                            onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc}
+                            emptyLabel={`Nothing marked necessary on ${r.po_code ?? 'this PO'} in Stage 04 yet.`} />
+                        )}
                       </td>
                     </tr>
                   )}
@@ -2069,7 +2307,7 @@ function sectionSub(tab: TabKey): string {
     case 'company-dd':       return 'Business registration, tax, compliance & identity documents';
     case 'owner-kyc':        return 'Director identity, address proof & personal compliance documents';
     case 'trade-licenses':   return 'Export, import & product-specific trade authorization licenses';
-    case 'trade-documents':  return 'Shipment-wise supplier trade documents & purchase agreements';
+    case 'trade-documents':  return 'Stage 04 trade documents and agreements, per purchase order';
     case 'shipment-agreements': return 'Per-shipment compliance matrix grouped by customer-supplier link';
   }
 }

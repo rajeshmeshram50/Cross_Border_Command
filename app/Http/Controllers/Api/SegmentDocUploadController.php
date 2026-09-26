@@ -842,8 +842,11 @@ class SegmentDocUploadController extends Controller
             $agreementsCount = count($agreements);
         }
 
-        // Supplier Case-to-Case deals — split the vendor's procurements by
-        // whether their lead carries a shipment (With / Without Shipment ID).
+        /* Supplier Case-to-Case — one row per PURCHASE ORDER, split by whether
+           the PO carries a shipment. The PO is the case: its Stage 04 documents
+           are what the row opens, and one shipment can hold several POs.
+           buildVendorDeals still answers for the standard-document ratios, and
+           it is the whole list only for a supplier with no PO yet. */
         $vendorDeals = in_array($type, ['supplier', 'vendor'], true) && $cid
             ? $this->buildVendorDeals($owner, $cid, $company_dd, $owner_kyc, $trade_licenses, $trade_documents)
             : ['with_shipment' => [], 'without_shipment' => [], 'ratios' => null];
@@ -921,7 +924,8 @@ class SegmentDocUploadController extends Controller
             ->where('vendor_id', $owner->id)
             ->whereNull('deleted_at')
             ->orderByDesc('id')
-            ->get(['id', 'code', 'po_date', 'shipment_order_id', 'proforma_invoice_id', 'status']);
+            ->get(['id', 'code', 'po_date', 'shipment_order_id', 'proforma_invoice_id', 'status',
+                'procurement_request_code', 'document_type', 'grand_total', 'currency_code']);
         if ($pos->isEmpty()) return null;
 
         // The shipment code and the customer live on the shipment order and the PI.
@@ -944,15 +948,14 @@ class SegmentDocUploadController extends Controller
         $supplierName = (string) ($owner->company_name ?? '');
         $with = [];
         $without = [];
-        $srWith = 0;
-        $srWithout = 0;
 
         foreach ($pos as $po) {
             $rows = ($docs[$po->id] ?? collect())
-                // "Necessary" is what Stage 04 marked as needed.
-                ->filter(fn ($d) => ($d->needed ?? 'no') === 'yes' || ($d->is_required ?? 'no') === 'yes')
+                /* Only what Stage 04 marked Necessary. is_required is not read here:
+                   older rows carry it by default, which listed a Purchase Agreement
+                   nobody ever asked for. */
+                ->filter(fn ($d) => ($d->needed ?? 'no') === 'yes')
                 ->values();
-            if ($rows->isEmpty()) continue;
 
             $shaped = $rows->map(fn ($d) => $this->shapePoDoc($d))->all();
             $agr = array_values(array_filter($shaped, fn ($r) => $r['is_agreement']));
@@ -961,32 +964,74 @@ class SegmentDocUploadController extends Controller
                 'd' => count(array_filter($set, fn ($r) => $r['status'] === 'Signed')),
                 't' => count($set),
             ];
-            $base = [
+            $poRow = [
                 'po_id'      => (int) $po->id,
                 'po_code'    => $po->code,
-                'supplier'   => $supplierName,
-                'ratios'     => array_merge($ratios, ['td' => $ratio($td)]),
+                // Shown beside the PO id; a PO raised without one reads as N/A.
+                'procurement_id' => $po->procurement_request_code ?: null,
+                'po_date'    => $po->po_date,
+                'po_status'  => $po->status,
+                'po_total'   => (float) $po->grand_total,
+                'currency'   => $po->currency_code,
                 'docs'       => $td,
                 'agreements' => $agr,
+                // Trade documents and agreements are counted apart, as the table shows them.
+                'ratios'     => array_merge($ratios, ['td' => $ratio($td), 'agr' => $ratio($agr)]),
             ];
 
+            /* One row per SHIPMENT, holding its purchase orders — a shipment can
+               carry several, and each PO opens its own Stage 04 paperwork. A PO
+               with no shipment groups under its procurement instead. */
             $shipCode = $po->shipment_order_id ? ($ships[$po->shipment_order_id] ?? null) : null;
             if ($shipCode) {
-                $with[] = $base + [
-                    'sr'          => ++$srWith,
+                $key = 'S:' . $shipCode;
+                $with[$key] ??= [
                     'shipment_id' => $shipCode,
                     'customer'    => $pis[$po->proforma_invoice_id]->customer_name ?? '—',
                     'consignee'   => '—',
+                    'supplier'    => $supplierName,
+                    'pos'         => [],
                 ];
+                $with[$key]['pos'][] = $poRow;
             } else {
-                $without[] = $base + [
-                    'sr'             => ++$srWithout,
-                    'procurement_id' => $po->code,
+                $without[] = $poRow + [
+                    'procurement_id' => $po->procurement_request_code ?: null,
+                    'supplier'       => $supplierName,
                 ];
             }
         }
 
-        return ($with || $without) ? ['with_shipment' => $with, 'without_shipment' => $without] : null;
+        /* Each group also carries the union of its POs' documents, so the export,
+           the signature picker and the status tallies keep reading one list. */
+        $finish = function (array $groups) use ($ratios): array {
+            $out = [];
+            $sr = 0;
+            foreach ($groups as $g) {
+                $docs = array_merge(...array_map(fn ($r) => $r['docs'], $g['pos'])) ?: [];
+                $agrs = array_merge(...array_map(fn ($r) => $r['agreements'], $g['pos'])) ?: [];
+                $signed = fn (array $set) => count(array_filter($set, fn ($r) => $r['status'] === 'Signed'));
+                $out[] = $g + [
+                    'sr'         => ++$sr,
+                    'po_count'   => count($g['pos']),
+                    'docs'       => $docs,
+                    'agreements' => $agrs,
+                    'ratios'     => array_merge($ratios, [
+                        'td'  => ['d' => $signed($docs), 't' => count($docs)],
+                        'agr' => ['d' => $signed($agrs), 't' => count($agrs)],
+                    ]),
+                ];
+            }
+            return $out;
+        };
+
+        // Only the shipment side is grouped; the other is already one row per PO.
+        $numbered = [];
+        $sr = 0;
+        foreach ($without as $row) $numbered[] = $row + ['sr' => ++$sr];
+
+        return ($with || $numbered)
+            ? ['with_shipment' => $finish($with), 'without_shipment' => $numbered]
+            : null;
     }
 
     /** One Stage 04 document as the vault renders it. */
@@ -1001,9 +1046,14 @@ class SegmentDocUploadController extends Controller
         };
         $sub = mb_strtolower((string) ($d->doc_sub ?? '') . ' ' . (string) ($d->doc_kind ?? '') . ' ' . (string) ($d->name ?? ''));
 
+        // The CLM library row behind it — what a signature envelope is built from.
+        $lib = in_array((string) ($d->source_type ?? ''), ['trade', 'agreement'], true) ? (int) $d->source_id : null;
+
         return [
             'id'                   => (int) $d->id,
-            'db_id'                => null,                       // not a library row: no Send-for-Signature from here
+            'db_id'                => $lib,                       // the library row: it can be sent for signature from here
+            'po_id'                => (int) $d->purchase_order_id,
+            'po_doc_id'            => (int) $d->id,
             'party'                => 'Vendor',
             'signature_request_id' => $d->signature_request_id ? (int) $d->signature_request_id : null,
             'sig_state'            => $d->status,

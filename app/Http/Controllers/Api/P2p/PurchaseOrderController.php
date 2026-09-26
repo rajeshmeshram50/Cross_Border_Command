@@ -761,7 +761,8 @@ class PurchaseOrderController extends Controller
             ->whereNull('d.deleted_at')
             // Stage 04 paperwork only; the PO document itself is not case-to-case.
             ->where('d.doc_kind', '!=', 'purchase_order')
-            ->where(fn ($w) => $w->where('d.needed', 'yes')->orWhere('d.is_required', 'yes'))
+            // Necessary is what Stage 04 marked; is_required is a default older rows carry.
+            ->where('d.needed', 'yes')
             ->where(fn ($w) => $w->whereNull('d.status')->orWhere('d.status', '!=', 'signed'))
             ->orderBy('prev.id')
             ->limit(20)

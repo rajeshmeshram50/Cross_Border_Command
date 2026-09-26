@@ -43,7 +43,7 @@ class PurchaseOrderDocumentController extends Controller
         return [$po, $doc];
     }
 
-    private function shape(PurchaseOrderDocument $d, ?ClmSignatureRequest $sig = null): array
+    private function shape(PurchaseOrderDocument $d, ?ClmSignatureRequest $sig = null, ?string $masterCode = null): array
     {
         $ids = $sig && is_array($sig->trade_doc_ids) ? array_map('intval', $sig->trade_doc_ids) : [];
         // A request raised through the CLM flow lists LIBRARY ids; one raised
@@ -53,11 +53,31 @@ class PurchaseOrderDocumentController extends Controller
             : (int) $d->source_id;
         $pos = array_search($mine, $ids, true);
         return $d->toArray() + [
+            // The CLM library's own code, which is how the masters name this document.
+            'master_code'      => $masterCode ?? $this->masterCodes(collect([$d]))[$d->id] ?? null,
             'file_url'         => $d->file_path ? file_url($d->file_path) : null,
             // For the signing tracker: /clm/signature-requests/{id}, signed file at {index}
             'signature_status' => $sig?->status,
             'signature_index'  => $pos === false ? null : $pos,
         ];
+    }
+
+    /**
+     * The CLM master code behind each row, keyed by document id. Two queries for
+     * the whole list — the row itself only stores which library row it came from.
+     */
+    private function masterCodes($docs): array
+    {
+        $out = [];
+        foreach (['trade' => 'clm_trade_doc_library', 'agreement' => 'clm_agreement_library'] as $type => $table) {
+            $ids = $docs->where('source_type', $type)->pluck('source_id')->filter()->unique()->values();
+            if ($ids->isEmpty()) continue;
+            $codes = DB::table($table)->whereIn('id', $ids)->pluck('code', 'id');
+            foreach ($docs->where('source_type', $type) as $d) {
+                if ($code = $codes[$d->source_id] ?? null) $out[$d->id] = $code;
+            }
+        }
+        return $out;
     }
 
     /** Documents of the PO with their signature requests, statuses synced first. */
@@ -68,7 +88,8 @@ class PurchaseOrderDocumentController extends Controller
         $this->docs->syncSignatures($order->documents()->get());
         $docs = $order->documents()->orderBy('id')->get();
         $sigs = ClmSignatureRequest::whereIn('id', $docs->pluck('signature_request_id')->filter()->unique())->get()->keyBy('id');
-        return $docs->map(fn ($d) => $this->shape($d, $d->signature_request_id ? $sigs->get($d->signature_request_id) : null))->all();
+        $master = $this->masterCodes($docs);
+        return $docs->map(fn ($d) => $this->shape($d, $d->signature_request_id ? $sigs->get($d->signature_request_id) : null, $master[$d->id] ?? null))->all();
     }
 
     /** The selected documents of a PO; each must have a file. */

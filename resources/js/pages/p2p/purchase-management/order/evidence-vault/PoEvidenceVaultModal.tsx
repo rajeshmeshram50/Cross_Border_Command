@@ -2,7 +2,7 @@
 // order, grouped the way it is looked for — the order, its invoices, the signed
 // paperwork, money paid out and money recovered. Only real files are listed;
 // a section with nothing on file says so instead of showing placeholders.
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { useToast } from '../../../../../contexts/ToastContext';
@@ -14,6 +14,28 @@ import '../cancel-po/cancel-po.css';
 import './evidence-vault.css';
 
 export type VaultPo = { id: number; po: string; supplier: string; poDate: string };
+
+/* Four documents are the window of a section; the rest come on the scroll. The
+   height is measured, so a wrapped file name never cuts the fourth in half. */
+function DocList({ count, children }: { count: number; children: ReactNode }) {
+  const box = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const apply = () => {
+      const rows = Array.from(el.children) as HTMLElement[];
+      // Setting maxHeight resizes the box, so only the rows are watched.
+      const want = rows.length <= 4 ? ''
+        : `${Math.ceil(rows[3].getBoundingClientRect().bottom - rows[0].getBoundingClientRect().top)}px`;
+      if (el.style.maxHeight !== want) el.style.maxHeight = want;
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    for (const row of Array.from(el.children)) ro.observe(row);
+    return () => ro.disconnect();
+  }, [count]);
+  return <div ref={box} className="scnv-list">{children}</div>;
+}
 
 /** Characters of the supplier name the header keeps; the rest is a tooltip. */
 const SUPPLIER_MAX = 30;
@@ -185,7 +207,7 @@ export default function PoEvidenceVaultModal({ po, onClose }: { po: VaultPo; onC
       </div>
       {docs === null
         ? <div className="scnv-none">Loading…</div>
-        : files.length ? files.map(doc) : <div className="scnv-none">{empty}</div>}
+        : files.length ? <DocList count={files.length}>{files.map(doc)}</DocList> : <div className="scnv-none">{empty}</div>}
     </div>
   ));
 

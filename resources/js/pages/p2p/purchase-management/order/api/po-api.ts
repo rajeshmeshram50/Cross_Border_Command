@@ -130,6 +130,8 @@ export type PoDocument = {
   source_type: 'trade' | 'agreement' | null; source_id: number | null;
   /** The library's own sub-title: document type / agreement type. */
   doc_sub: string | null;
+  /** The CLM library's code (TDL-006, A-007…) — null for the Purchase Order itself. */
+  master_code: string | null;
   is_required: YesNo; generated_on: string | null; valid_up_to: string | null;
   /** This PO's own answer. null = nobody decided yet, which is not the same as 'no'. */
   needed: YesNo | null;

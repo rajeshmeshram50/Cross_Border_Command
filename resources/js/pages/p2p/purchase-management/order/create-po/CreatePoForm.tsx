@@ -11,7 +11,7 @@ import Step3Terms from './steps/Step3Terms';
 import Step4Documents from './steps/Step4Documents';
 import { draftFromDetail, itemsBody, rowFromPi, stage1Body, usePoDraft } from './po-draft';
 import { gstCheck } from './gst-check';
-import { legalFromVault, vaultTargetOf } from './supplier-checks';
+import { legalFromVault, pendingCaseToCase, vaultTargetOf } from './supplier-checks';
 import SupplierDocsNoticeModal, { type SupplierDocsNotice } from './SupplierDocsNoticeModal';
 import { usePoLookups, type PoLookups } from './use-po-lookups';
 import { FitTip } from './form-fields';
@@ -244,6 +244,10 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   /* The supplier's one-time paperwork (Company DD, Owner KYC, Trade Licenses),
      read from its Evidence Vault. Incomplete stops the submit on Step 03. */
   const standardDocs = draft.legal?.sections?.[0] ?? null;
+  /* Case to case: what this supplier's OTHER submitted orders still owe. This
+     PO is left out — its own Stage 04 rows never block it, on a first submit
+     or on an edit. */
+  const ctcPending = pendingCaseToCase(draft.vault ?? null, poId ?? null);
   const vaultTarget = draft.supplier ? vaultTargetOf(draft.supplier) : null;
   const [docsNotice, setDocsNotice] = useState<SupplierDocsNotice | null>(null);
   const [vaultOpen, setVaultOpen] = useState(false);
@@ -276,6 +280,9 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
      reachable before the submit is pressed and while a senior GST approval is
      still pending. */
   const docsPending = stage === 2 && !viewOnly && !!standardDocs && standardDocs.done < standardDocs.total && !!vaultTarget?.db_id;
+  /* And the same footer route for the case-to-case paperwork of earlier orders:
+     the count is there before the submit is pressed, not only after it fails. */
+  const ctcFooter = stage === 2 && !viewOnly && ctcPending.length > 0 && !!vaultTarget?.db_id;
   // Only an overdue return can be approved past; a stale scrutiny always blocks.
   const approval = gst.notice?.tone === 'warn' ? detail?.gst_approval ?? null : null;
   const gstCleared = !gst.notice || approval?.status === 'approved';
@@ -450,6 +457,18 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
         supplier: draft.supplier?.legalName || draft.supplier?.name || '',
         code: draft.supplier?.code ?? '',
         section: standardDocs,
+      });
+      return;
+    }
+    /* And the same stop for the paperwork already out on this supplier: an
+       earlier order's necessary documents have to be signed before another one
+       is placed. The server refuses it too — this only says so first. */
+    if (isSubmit && ctcPending.length) {
+      setDocsNotice({
+        target: vaultTarget as SupplierDocsNotice['target'],
+        supplier: draft.supplier?.legalName || draft.supplier?.name || '',
+        code: draft.supplier?.code ?? '',
+        pending: ctcPending,
       });
       return;
     }
@@ -647,6 +666,22 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
               <button type="button" className="spi-dt-btn-ghost cpf-foot-docs" onClick={() => setVaultOpen(true)} disabled={saving}>
                 <IcoShield /> Evidence Vault
                 <span className="cpf-foot-docs__n">{standardDocs!.total - standardDocs!.done} pending</span>
+              </button>
+            )}
+            {/* Not shown beside the standard one: that is the stop that comes
+                first, and two "pending" chips at once read as one number split
+                in half. */}
+            {!docsPending && ctcFooter && (
+              <button type="button" className="spi-dt-btn-ghost cpf-foot-docs" disabled={saving}
+                      title="Documents of this supplier's earlier purchase orders are still unsigned"
+                      onClick={() => setDocsNotice({
+                        target: vaultTarget as SupplierDocsNotice['target'],
+                        supplier: draft.supplier?.legalName || draft.supplier?.name || '',
+                        code: draft.supplier?.code ?? '',
+                        pending: ctcPending,
+                      })}>
+                <IcoShield /> Case to Case
+                <span className="cpf-foot-docs__n">{ctcPending.length} unsigned</span>
               </button>
             )}
             {showGstAction && (
