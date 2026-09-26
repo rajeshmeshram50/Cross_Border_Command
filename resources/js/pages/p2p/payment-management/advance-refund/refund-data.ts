@@ -79,6 +79,14 @@ export const TYPE_VARIANT: Record<string, BadgeVariant> = {
 
 export const typeLabel = (t: string) => t;
 
+/**
+ * Money has started coming back, so the adjustment is closed to edits and only
+ * opens to be read. The list, the row and the form all read it from here, and
+ * the server refuses the save on the same rule (CS-588).
+ */
+export const isSettled = (r: RefundAdjustment) =>
+  r.status === 'recovered' || r.recovered > 0 || r.recoveriesCount > 0;
+
 const DOC_LABEL: Record<string, string> = { domestic: 'Domestic', international: 'International' };
 
 export function toPoInfo(p: RefundPo): RefundPoInfo {

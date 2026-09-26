@@ -18,7 +18,7 @@ import {
   IcoShield, IcoUser, IcoX,
 } from '../../icons';
 import EvidenceVaultModal from './EvidenceVaultModal';
-import { REFUND_TYPES, RETAIN_REASONS, toPoInfo, toRefund, todayIso, type RefundAdjustment, type RefundPoInfo } from './refund-data';
+import { REFUND_TYPES, RETAIN_REASONS, isSettled, toPoInfo, toRefund, todayIso, type RefundAdjustment, type RefundPoInfo } from './refund-data';
 import { useEscapeClose } from './useEscapeClose';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './advance-refund.css';
@@ -33,6 +33,9 @@ type Props = {
   poId?: number;
   /** An existing adjustment to edit. */
   editId?: number;
+  /** What the list already knows: this one is settled, so the footer reads right
+      while the row is still loading rather than changing under the user. */
+  settledHint?: boolean;
   onSaved: (r: RefundAdjustment, zoho: ZohoOutcome) => void;
   /** Back to the PO picker (create) or close (edit). */
   onCancel: () => void;
@@ -56,7 +59,7 @@ const FIELD_OF: Record<string, string> = {
   refund_type: 'type', reason: 'reason', refund_amount: 'amount', retained_type: 'retainedType', retained_remark: 'retainedRemark', attachment: 'attachment',
 };
 
-export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, onClose }: Props) {
+export default function RefundAdjustmentForm({ poId, editId, settledHint, onSaved, onCancel, onClose }: Props) {
   // Freeze the page behind, but keep the form's own scroller working.
   useScrollLock(true, '.spi-dt-overlay');
   const toast = useToast();
@@ -124,8 +127,10 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
   const locked = !!edit?.amountsLocked;
   /* Money has started coming back: the recoveries are booked against these
      figures, so the adjustment is closed to edits and only opens to be read.
-     The server refuses the save too (CS-588). */
-  const settled = !!edit && (edit.status === 'recovered' || edit.recovered > 0 || edit.recoveriesCount > 0);
+     The server refuses the save too (CS-588). While the row is still loading the
+     list's own answer stands in, so the footer never changes label under the
+     user (CS-589). */
+  const settled = loading ? !!settledHint : (!!edit && isSettled(edit));
   const po = info?.po ?? '—';
   // Blank amount means "refund everything paid", as the placeholder shows.
   const amount = amtText.trim() === '' ? paid : Math.max(0, Math.round((parseFloat(amtText) || 0) * 100) / 100);
@@ -234,7 +239,7 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
               <div className="spi-dt-head-ico"><IcoDocSm /><span className="spi-dt-head-dot" /></div>
               <div>
                 <div className="spi-dt-head-title">Advance Receipt Refund Adjustment (Supplier Tax Invoice Not Generated)</div>
-                <div className="spi-dt-head-sub">{edit ? 'Editing' : 'Draft'} · against {po}</div>
+                <div className="spi-dt-head-sub">{editId ? 'Editing' : 'Draft'} · against {po}</div>
               </div>
             </div>
             <div className="spi-dt-pills">
@@ -430,7 +435,10 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
             {/* Nothing to save on a settled refund — the footer only leaves. */}
             <button type="button" className="spi-dt-btn-next" disabled={loading || saving}
               onClick={() => (settled ? onClose() : void submit())}>
-              {settled ? 'Close' : saving ? 'Saving…' : edit ? 'Update Refund Adjustment' : 'Submit Refund Adjustment — Cancel PO'} <IcoChevronR />
+              {/* From `editId`, not the row it loads: while the shimmer was up the
+                  button read "Submit … — Cancel PO" and swapped to "Update …" the
+                  moment the data landed (CS-589). */}
+              {settled ? 'Close' : saving ? 'Saving…' : editId ? 'Update Refund Adjustment' : 'Submit Refund Adjustment — Cancel PO'} <IcoChevronR />
             </button>
           </div>
         </div>

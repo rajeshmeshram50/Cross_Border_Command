@@ -36,20 +36,17 @@ type Props = {
 };
 
 const MAX_FILE = 10 * 1024 * 1024;
-/** The server keeps up to ten proofs on one recovered payment. */
-const MAX_PROOFS = 10;
-/** Chips shown before the rest fold behind a +N. */
-const SHOW_FIRST = 2;
 
-/* One attachment on the form: either already stored (it has a `path`) or just
-   picked (it has a `file`). Both are listed the same way, so a bank advice and a
-   photo of the cheque sit side by side instead of replacing each other. */
+/* The one attachment on the form: either already stored (it has a `path`) or
+   just picked (it has a `file`). A recovered payment carries a single proof, so
+   attaching another replaces this one. */
 type Proof = { key: string; name: string; url: string; file?: File; path?: string };
 
-/** The proofs a recovery already holds. A row saved before the list existed only reports the one. */
-function storedProofs(rec?: RefundRecovery): Proof[] {
-  if (rec?.proofs?.length) return rec.proofs.map((p) => ({ key: p.path, name: p.name, url: p.url, path: p.path }));
-  return rec?.file && rec.fileUrl ? [{ key: rec.fileUrl, name: rec.file, url: rec.fileUrl }] : [];
+/** The proof a recovery already holds, from the list it reports or the single legacy field. */
+function storedProof(rec?: RefundRecovery): Proof | null {
+  const first = rec?.proofs?.[0];
+  if (first) return { key: first.path, name: first.name, url: first.url, path: first.path };
+  return rec?.file && rec.fileUrl ? { key: rec.fileUrl, name: rec.file, url: rec.fileUrl } : null;
 }
 const CAMERA = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
@@ -72,10 +69,7 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
   const [amount, setAmount] = useState(initial ? String(initial.amount) : '');
   const [date, setDate] = useState(initial?.date || todayIso());
   const [reference, setReference] = useState(initial?.reference ?? '');
-  const [proofs, setProofs] = useState<Proof[]>(() => storedProofs(initial));
-  // Beyond the first few the chips fold behind a +N, so the popup keeps its size.
-  const [showAll, setShowAll] = useState(false);
-  const hidden = showAll ? 0 : Math.max(0, proofs.length - SHOW_FIRST);
+  const [proof, setProof] = useState<Proof | null>(() => storedProof(initial));
   const [error, setError] = useState('');
   /* Which field a message belongs to, so the form can point at it. One banner
      ("Already used on another recovered payment.") left the user hunting for
@@ -131,10 +125,11 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
     if (!cam && !/\.(pdf|jpe?g|png|webp)$/i.test(f.name)) { fail('proof', 'Proof of payment must be a PDF or an image (JPG, PNG, WEBP).'); return; }
     const url = URL.createObjectURL(f);
     madeUrls.current.push(url);
-    setProofs((cur) => (cur.length >= MAX_PROOFS ? cur : [...cur, { key: `new-${Date.now()}-${cur.length}`, name: f.name || `photo_${Date.now()}.jpg`, url, file: f }]));
+    // One proof per recovered payment: whatever is attached now takes its place.
+    setProof({ key: `new-${Date.now()}`, name: f.name || `photo_${Date.now()}.jpg`, url, file: f });
     clearErrors();
   };
-  const drop = (key: string) => { setProofs((cur) => cur.filter((p) => p.key !== key)); clearErrors(); };
+  const drop = () => { setProof(null); clearErrors(); };
 
   const save = async () => {
     clearErrors();
@@ -151,11 +146,11 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
     try {
       await onSave({
         amount: amt, recovered_date: date, reference_no: ref || undefined,
-        proofs: proofs.filter((p) => p.file).map((p) => p.file as File),
-        /* Only an edit sends the keep list, and only when the stored proofs came
-           with their paths — without them the server cannot tell which survive,
-           so it is safer to leave them all in place. */
-        keep: initial?.proofs?.length ? proofs.filter((p) => p.path).map((p) => p.path as string) : undefined,
+        proofs: proof?.file ? [proof.file] : [],
+        /* Only an edit sends the keep list, and only when the stored proof came
+           with its path — without it the server cannot tell what to keep, so it
+           is safer to leave what is there in place. */
+        keep: initial?.proofs?.length ? (proof?.path ? [proof.path] : []) : undefined,
       });
     } catch (e) {
       /* The server answers with the field it refused and why; show it on that
@@ -181,8 +176,8 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
             title="Take a photo of the proof"
             subject="Recovery proof"
             namePrefix="recovery-proof"
-            max={Math.max(1, MAX_PROOFS - proofs.length)}
-            onAttach={(shots) => shots.forEach((s) => pick(s, true))}
+            max={1}
+            onAttach={(shots) => { if (shots[0]) pick(shots[0], true); }}
             onClose={() => setCamOpen(false)}
           />
         </Suspense>
@@ -192,7 +187,7 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
           <div className="apay-wait" role="status" aria-live="polite">
             <span className="apay-wait__ring" />
             <span className="apay-wait__t">{initial ? 'Updating recovered payment…' : 'Recording recovered payment…'}</span>
-            <span className="apay-wait__s">Please wait, {proofs.length > 1 ? 'the proofs are' : 'the proof is'} being uploaded</span>
+            <span className="apay-wait__s">Please wait, the proof is being uploaded</span>
           </div>
         )}
         <div className="mpr-hero">
@@ -237,44 +232,31 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
             </div>
             <div className="apay-f apay-f--full">
               <label htmlFor="arf-add-file">Proof of Payment</label>
-              {/* Several proofs belong to one payment (CS-567), so they sit beside
-                  each other as chips: the popup keeps its height however many
-                  there are, and the rest open from the +N chip. */}
-              {proofs.length ? (
+              {/* One proof per recovered payment: it shows as a chip with its own
+                  actions, and Replace swaps it for another file or photo. */}
+              {proof ? (
                 <div className="arf-proofs">
-                  {(showAll ? proofs : proofs.slice(0, SHOW_FIRST)).map((p) => (
-                    <span className="arf-proof" key={p.key}>
-                      <span className="arf-proof__ico" aria-hidden>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                      </span>
-                      <span className="arf-proof__name" title={p.name}>{p.name}</span>
-                      <span className="arf-proof__acts">
-                        <a className="arf-proof__btn" href={p.url} target="_blank" rel="noopener noreferrer" title={`View ${p.name}`} aria-label={`View ${p.name}`}><IcoEye /></a>
-                        <button type="button" className="arf-proof__btn" onClick={() => void downloadFile(p.url, p.name)} title={`Download ${p.name}`} aria-label={`Download ${p.name}`}><IcoDownload /></button>
-                        <button type="button" className="arf-proof__btn arf-proof__btn--del" disabled={saving} onClick={() => drop(p.key)}
-                          title={p.path ? `Remove ${p.name} from the payment` : `Remove ${p.name}`} aria-label={`Remove ${p.name}`}><IcoTrash /></button>
-                      </span>
+                  <span className="arf-proof">
+                    <span className="arf-proof__ico" aria-hidden>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                     </span>
-                  ))}
-                  {hidden > 0 && (
-                    <button type="button" className="arf-proof-more" onClick={() => setShowAll(true)} title={`Show the other ${hidden} ${hidden === 1 ? 'proof' : 'proofs'}`}>+{hidden}</button>
-                  )}
-                  {showAll && proofs.length > SHOW_FIRST && (
-                    <button type="button" className="arf-proof-more" onClick={() => setShowAll(false)} title="Show fewer">Less</button>
-                  )}
-                  {proofs.length < MAX_PROOFS && (
-                    <button type="button" ref={dropRef} className="arf-proof-add" disabled={saving} onClick={(e) => openPicker(e.currentTarget)}
-                      title="Attach another proof — upload a file or take a photo">
-                      <span className="arf-proof-add__ico">{UPLOAD}</span> Add proof
-                    </button>
-                  )}
+                    <span className="arf-proof__name" title={proof.name}>{proof.name}</span>
+                    <span className="arf-proof__acts">
+                      <a className="arf-proof__btn" href={proof.url} target="_blank" rel="noopener noreferrer" title={`View ${proof.name}`} aria-label={`View ${proof.name}`}><IcoEye /></a>
+                      <button type="button" className="arf-proof__btn" onClick={() => void downloadFile(proof.url, proof.name)} title={`Download ${proof.name}`} aria-label={`Download ${proof.name}`}><IcoDownload /></button>
+                      <button type="button" ref={dropRef} className="arf-proof__btn" disabled={saving} onClick={(e) => openPicker(e.currentTarget)}
+                        title="Replace this proof — upload a file or take a photo" aria-label="Replace this proof">{UPLOAD}</button>
+                      <button type="button" className="arf-proof__btn arf-proof__btn--del" disabled={saving} onClick={drop}
+                        title={proof.path ? 'Remove this proof from the payment' : 'Remove the file you just picked'} aria-label="Remove this proof"><IcoTrash /></button>
+                    </span>
+                  </span>
                 </div>
               ) : (
                 <button type="button" ref={dropRef} className="apay-drop" disabled={saving} onClick={(e) => openPicker(e.currentTarget)}>
                   <div className="apay-drop__ico">{UPLOAD}</div>
                   <div className="apay-drop__txt">
                     <div className="apay-drop__t">Click to upload proof of payment</div>
-                    <div className="apay-drop__s">PDF, JPG, PNG or WEBP · up to 10 MB each · add more than one</div>
+                    <div className="apay-drop__s">PDF, JPG, PNG or WEBP · up to 10 MB</div>
                   </div>
                 </button>
               )}
@@ -294,14 +276,8 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
                 </div>,
                 document.body,
               )}
-              <input id="arf-add-file" ref={fileRef} className="apay-file-in" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" disabled={saving}
-                onChange={(e) => {
-                  const picked = Array.from(e.target.files ?? []);
-                  const room = MAX_PROOFS - proofs.length;
-                  picked.slice(0, room).forEach((f) => pick(f));
-                  if (picked.length > room) fail('proof', `A recovered payment can carry up to ${MAX_PROOFS} proofs.`);
-                  e.target.value = '';
-                }} />
+              <input id="arf-add-file" ref={fileRef} className="apay-file-in" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" disabled={saving}
+                onChange={(e) => { pick(e.target.files?.[0] ?? null); e.target.value = ''; }} />
               <FieldError f="proof" />
             </div>
           </div>

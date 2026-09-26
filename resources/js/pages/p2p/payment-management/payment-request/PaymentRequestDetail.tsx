@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import Badge, { type BadgeVariant } from '../../../../components/ui/Badge';
 import { useAuth } from '../../../../contexts/AuthContext';
 import { useToast } from '../../../../contexts/ToastContext';
+import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { formatDmy } from '../../../../utils/formatDmy';
 // Named apart from the inspection helper of the same name imported below.
@@ -20,7 +21,7 @@ import {
   LEGAL_PARAMS, RISK_GUIDELINES, isRiskMandatory, legalSections, legalTotals, toRiskSubject, type Supplier,
 } from './payment-request-suppliers';
 import {
-  ProofChip, VERDICTS, downloadFile, openFile, saveBlob,
+  InspectionDescription, ProofChip, VERDICTS, downloadFile, openFile, saveBlob,
   type InspectionLine, type InspectionProduct, type ProofFile, type Verdict,
 } from '../../purchase-management/order/physical-inspection/inspection-shared';
 import InspectionAttachmentsModal from '../../purchase-management/order/physical-inspection/InspectionAttachmentsModal';
@@ -37,6 +38,7 @@ import {
   fetchPaymentRequestDetail, type LinkedRequest, type PaymentRequestDetail as Detail,
 } from './paymentRequestDetailData';
 import TxnVaultModal from './TxnVaultModal';
+import { PoApiError, poPaymentApi } from '../../purchase-management/order/api/po-api';
 import api from '../../../../api';
 import type { SupplierVaultTarget } from '../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 // The supplier's own vault (KYC, DD, licences) — loaded only when opened.
@@ -390,7 +392,7 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
             <SupplierPanel supplier={supplier} vendorId={detail.row.vendorId} international={row.international}
               onSupplierChanged={() => setVersion(v => v + 1)} />
           ) : sub === 'linked' ? (
-            <LinkedPanel detail={detail} canApprove={canApprove} onDecide={openDecision} />
+            <LinkedPanel detail={detail} canApprove={canApprove} onDecide={openDecision} onDecided={() => setVersion(v => v + 1)} />
           ) : sub === 'summary' ? (
             <SummaryPanel detail={detail} />
           ) : sub === 'physical' ? (
@@ -769,37 +771,114 @@ function Panel({ title, count, sub, children }: { title: string; count: number; 
 /* ══ Linked Payment Requests ══ every request on the same document, the open one pinned first. */
 // The action well is fixed: three labelled buttons never shrink.
 const LINKED_COLS: [string, number][] = [
-  ['Sr No', 52], ['Payment Request ID', 124], ['Request Raised Against', 132], ['Payment Type', 118], ['Payment %', 76],
+  ['', 40], ['Sr No', 52], ['Payment Request ID', 124], ['Request Raised Against', 132], ['Payment Type', 118], ['Payment %', 76],
   ['Requested Payment Amount', 118], ['Requested By', 150], ['Requested To', 140], ['Request Approval Status', 148],
   ['Approved Amount', 104], ['Paid Amount', 96], ['Action', 410],
 ];
 const LINKED_WIDTH = LINKED_COLS.reduce((s, [, w]) => s + w, 0);
 
-function LinkedPanel({ detail, canApprove, onDecide }: {
+function LinkedPanel({ detail, canApprove, onDecide, onDecided }: {
   detail: Detail; canApprove: boolean;
   onDecide: (mode: DecisionMode, request: PaymentRequestRow) => void;
+  /** Something was decided here — the page reloads itself. */
+  onDecided: () => void;
 }) {
   const { linked, doc, row: current } = detail;
   const money = moneyOf(current.currency);
+  const toast = useToast();
+  const confirm = useConfirm();
   const [peek, setPeek] = useState<LinkedRequest | null>(null);
+
+  /* Approving several linked requests at once (CS-436): the ones awaiting a
+     decision from this user. The rest are not tickable — the server refuses
+     anyone else's request anyway. */
+  const [picked, setPicked] = useState<number[]>([]);
+  const [approving, setApproving] = useState(false);
+  const pickable = linked.filter(r => canApprove && r.canDecide && r.status === 'awaiting');
+  const pickedRows = pickable.filter(r => picked.includes(r.id));
+  const allPicked = pickable.length > 0 && pickedRows.length === pickable.length;
+  const togglePick = (id: number) => setPicked(cur => (cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id]));
+
+  const approvePicked = async () => {
+    if (!pickedRows.length || approving) return;
+    const ok = await confirm({
+      title: `Approve ${pickedRows.length} payment request${pickedRows.length === 1 ? '' : 's'}?`,
+      message: `${pickedRows.map(r => r.requestId).join(', ')} — each one is approved for the full amount requested. To approve part of an amount, decide that request on its own.`,
+      confirmLabel: 'Approve',
+      tone: 'teal',
+      icon: 'check-double-line',
+    });
+    if (!ok) return;
+    setApproving(true);
+    try {
+      const res = await poPaymentApi.decideMany({ ids: pickedRows.map(r => r.id), decision: 'approved' });
+      setPicked([]);
+      onDecided();
+      if (res.failed.length) {
+        toast.warning(res.message || 'Some requests could not be approved',
+          res.failed.map(f => `${f.code ?? f.id}: ${f.message}`).join(' · '));
+      } else {
+        toast.success('Payment requests approved', res.message);
+      }
+    } catch (e) {
+      toast.error('Could not approve the selected requests', e instanceof PoApiError ? e.firstError : 'Please try again.');
+    } finally {
+      setApproving(false);
+    }
+  };
+
   return (
     <div className="prd-secwrap">
       <StatCards detail={detail} />
       {peek && <LinkedRequestPopup request={peek} doc={doc} onClose={() => setPeek(null)} />}
       <Panel title="All Payment Requests" count={linked.length} sub="Currently open request first, then in the order they were raised">
+        {pickedRows.length > 0 && (
+          <div className="prm-bulkbar" role="status">
+            <span className="prm-bulkbar__n">{pickedRows.length}</span>
+            <span className="prm-bulkbar__t">
+              request{pickedRows.length === 1 ? '' : 's'} selected — approving releases the full amount requested on each
+            </span>
+            <button type="button" className="prm-bulkbar__clear" disabled={approving} onClick={() => setPicked([])}>Clear</button>
+            <button type="button" className="prm-bulkbar__ok" disabled={approving} onClick={() => void approvePicked()}>
+              {approving ? <span className="prm-bulkbar__ring" aria-hidden /> : <IcoCheck size={13} stroke={2.6} />}
+              {approving ? 'Approving…' : `Approve ${pickedRows.length} request${pickedRows.length === 1 ? '' : 's'}`}
+            </button>
+          </div>
+        )}
         <RowWindow rows={3} count={linked.length}>
           <table className="ord-table prd-table" style={{ minWidth: LINKED_WIDTH }}>
-            <colgroup>{LINKED_COLS.map(([c, w]) => <col key={c} style={{ width: w }} />)}</colgroup>
-            <thead><tr>{LINKED_COLS.map(([c]) => <th key={c}>{c}</th>)}</tr></thead>
+            <colgroup>{LINKED_COLS.map(([c, w], i) => <col key={c || `pick-${i}`} style={{ width: w }} />)}</colgroup>
+            <thead>
+              <tr>
+                <th className="prm-pickcell">
+                  <input type="checkbox" className="prm-pick" aria-label="Select every request you can approve"
+                    title={pickable.length ? 'Select every request here you can approve' : 'No request here is yours to approve'}
+                    disabled={!pickable.length || approving}
+                    checked={allPicked}
+                    ref={el => { if (el) el.indeterminate = pickedRows.length > 0 && !allPicked; }}
+                    onChange={() => setPicked(allPicked ? [] : pickable.map(r => r.id))} />
+                </th>
+                {LINKED_COLS.slice(1).map(([c]) => <th key={c}>{c}</th>)}
+              </tr>
+            </thead>
             <tbody>
               {linked.map((r, i) => {
                 const isCurrent = r.requestId === current.requestId;
-                // Decisions are taken on the open request only; other rows show them greyed.
-                const canDecide = isCurrent && r.status === 'awaiting' && canApprove;
-                const lockTip = !isCurrent ? 'Open this request to decide it'
-                  : r.status !== 'awaiting' ? `Already ${r.status === 'approved' ? 'approved' : 'declined'}` : canApprove ? undefined : NO_APPROVE_TIP;
+                // Any request sent to this user can be decided from here (CS-436).
+                const canDecide = r.status === 'awaiting' && canApprove && r.canDecide;
+                const lockTip = r.status !== 'awaiting' ? `Already ${r.status === 'approved' ? 'approved' : 'declined'}`
+                  : !canApprove ? NO_APPROVE_TIP
+                    : !r.canDecide ? 'This request was sent to someone else' : undefined;
                 return (
-                  <tr key={r.requestId} className={`is-first is-last${isCurrent ? ' is-current' : ''}${r.flag === 'physical-inspection' ? ' is-physreq' : ''}${r.status === 'declined' ? ' is-closed' : ''}`}>
+                  <tr key={r.requestId} className={`is-first is-last${isCurrent ? ' is-current' : ''}${r.flag === 'physical-inspection' ? ' is-physreq' : ''}${r.status === 'declined' ? ' is-closed' : ''}${picked.includes(r.id) ? ' is-picked' : ''}`}>
+                    <td className="prm-pickcell">
+                      <input type="checkbox" className="prm-pick"
+                        aria-label={`Select ${r.requestId}`}
+                        title={canDecide ? `Select ${r.requestId} to approve` : lockTip}
+                        disabled={!canDecide || approving}
+                        checked={picked.includes(r.id)}
+                        onChange={() => togglePick(r.id)} />
+                    </td>
                     <td><span className="prd-sr">{i + 1}</span></td>
                     <td><IdCell id={r.requestId} date={r.requestDate} extra={isCurrent ? <span className="prd-now">Currently open</span> : null} /></td>
                     <td><IdCell id={doc.id} date={doc.date} /></td>
@@ -1073,8 +1152,7 @@ function InspectionPanel({ detail }: { detail: Detail }) {
                     </div>
                   </td>
                   <td className="pins-desc">
-                    <span className="pins-desc__txt">{p.desc}</span>
-                    <button type="button" className="pins-desc__more" onClick={() => setViewFor(p)}>… Read more</button>
+                    <InspectionDescription text={p.desc} onOpen={() => setViewFor(p)} />
                   </td>
                   <td className="pins-td-c"><span className="pins-qty">{p.qty}</span></td>
                   <td className="pins-td-c">

@@ -964,29 +964,15 @@
 .arf-rec-cols .cpay-files { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .arf-rec-cols .cpay-files .cpay-file { width: 100%; }
 
-/* Several proofs belong to one recovered payment (CS-567). They sit beside each
-   other as chips rather than stacking down the popup, with the overflow behind a
-   +N, so the form is the same height whether there is one proof or ten. */
+/* The proof on a recovered payment: a chip sized to its own name, with the
+   actions as icons beside it (view, download, replace, remove). */
 .arf-proofs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .arf-proofs .arf-proof { width: auto; max-width: 100%; gap: 8px; padding: 6px 8px 6px 10px; border-radius: 10px; }
-.arf-proofs .arf-proof__name { flex: 0 1 auto; max-width: 190px; }
+.arf-proofs .arf-proof__name { flex: 0 1 auto; max-width: 320px; }
 .arf-proofs .arf-proof__acts { gap: 4px; }
-/* Icon-only actions: the names are on the tooltips, and three chips still fit a row. */
+/* Icon-only actions: their names live on the tooltips. */
 .arf-proofs .arf-proof__btn { width: 28px; height: 28px; padding: 0; justify-content: center; border-radius: 7px; }
 .arf-proofs .arf-proof__btn svg { width: 14px; height: 14px; }
-
-.arf-proof-more,
-.arf-proof-add { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 40px; padding: 0 14px; border: 1px dashed #9dd9e8; border-radius: 10px; background: #fbfeff; color: #0e7490; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
-.arf-proof-more { border-style: solid; border-color: #b9e4ef; background: #fff; }
-.arf-proof-more:hover,
-.arf-proof-add:hover:not(:disabled) { background: #ecfbff; border-color: #0891b2; }
-.arf-proof-add:disabled { opacity: .55; cursor: not-allowed; }
-.arf-proof-add__ico { display: inline-flex; width: 15px; height: 15px; }
-.arf-proof-add__ico svg { width: 15px; height: 15px; }
-[data-bs-theme="dark"] .arf-proof-more,
-[data-bs-theme="dark"] .arf-proof-add { background: rgba(8, 145, 178, .06); border-color: rgba(34, 211, 238, .28); color: #67e8f9; }
-[data-bs-theme="dark"] .arf-proof-more:hover,
-[data-bs-theme="dark"] .arf-proof-add:hover:not(:disabled) { background: rgba(8, 145, 178, .14); border-color: rgba(34, 211, 238, .5); }
 
 /* Attachment row actions: View / Download / Camera / Browse sit together and
    never steal the row's own click, which opens the file picker (CS-588). */

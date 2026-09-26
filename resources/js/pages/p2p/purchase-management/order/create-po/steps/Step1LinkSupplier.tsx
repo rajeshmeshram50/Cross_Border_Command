@@ -150,13 +150,23 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
 
   const { state: gst, scrutinyAge, filingAge } = gstCheck(draft);
 
-  // A high-risk supplier switches inspection on when picked; the user can still turn it off.
+  /* Changing the supplier decides inspection afresh: on for a high-risk one, off
+     for everybody else — the user turns it back on where an order needs it. The
+     switch only ever came on before, so the first high-risk supplier left
+     inspection on for every supplier picked after it. */
   const mandatory = sup ? isRiskMandatory({ risk: v(sup.risk), category: v(sup.category) }) : false;
   const pickedSupRef = useRef(sup?.id ?? null);
   useEffect(() => {
     if (pickedSupRef.current === (sup?.id ?? null)) return;   // a reopened PO keeps its saved choice
     pickedSupRef.current = sup?.id ?? null;
-    if (mandatory && !draft.physInsp) set({ physInsp: true });
+    if (mandatory === draft.physInsp) return;                 // already where this supplier wants it
+    set({ physInsp: mandatory });
+    toast.info(
+      mandatory ? 'Physical Inspection set to Yes' : 'Physical Inspection reset to No',
+      mandatory
+        ? `${sup?.name ?? 'This supplier'} is high risk — the goods are inspected before release. You can still switch it off.`
+        : `${sup?.name ?? 'This supplier'} is not high risk — switch it on yourself if this order still needs an inspection.`,
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sup?.id, mandatory]);
 
@@ -253,8 +263,10 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
             <EditSelect value={draft.paymentType} options={PAYMENT_TYPES} onChange={(x) => set({ paymentType: x })} invalid={!!err.paymentType} />
           </Field>
           <Field label="Physical Inspection Required">
-            {/* On by default for a high-risk supplier, but the user may switch it off. */}
-            <button type="button" className={`spi-dt-toggle ${draft.physInsp ? 'cpf-toggle-req' : ''}`} onClick={() => set({ physInsp: !draft.physInsp })}>
+            {/* On by default for a high-risk supplier; the user decides otherwise,
+                and picking another supplier sets it from that supplier again. */}
+            <button type="button" className={`spi-dt-toggle ${draft.physInsp ? 'cpf-toggle-req' : ''}`}
+              onClick={() => set({ physInsp: !draft.physInsp })}>
               <span className={`spi-dt-toggle-sw ${draft.physInsp ? 'on' : ''}`}><span className="spi-dt-toggle-knob" /></span>
               <span className="spi-dt-toggle-txt">{draft.physInsp ? 'Yes' : 'No'}</span>
               <span className={`cpf-req ${draft.physInsp ? '' : 'cpf-req--off'}`}>{draft.physInsp ? 'Required' : 'Not required'}</span>

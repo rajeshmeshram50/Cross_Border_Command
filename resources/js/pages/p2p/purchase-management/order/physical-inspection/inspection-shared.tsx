@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 export type Verdict = 'correct' | 'damaged' | 'mismatched';
 
@@ -119,6 +119,43 @@ export function ProofChip({ file, onView, onDownload, onRemove }: {
         <button type="button" className="pins-chip__x" title="Remove" onClick={onRemove}>{ICON_X}</button>
       )}
     </div>
+  );
+}
+
+/**
+ * The description cell of an inspection table: clipped to three lines, with
+ * "Read more" opening the product's own view rather than unfolding the cell.
+ *
+ * It ends the last line of the text — a short description keeps it right after
+ * the last word, and only a genuinely clipped one pins it to the third line,
+ * where a fade hands it the space. Anchored to the text, never to the cell: on a
+ * tall row (several proof chips beside it) a cell-anchored button dropped onto a
+ * line of its own underneath.
+ */
+export function InspectionDescription({ text, onOpen, disabled }: {
+  text: string; onOpen?: () => void; disabled?: boolean;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [clamped, setClamped] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const check = () => setClamped(el.scrollHeight > el.clientHeight + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [text]);
+
+  return (
+    <span ref={ref} className={`pins-desc__clip${clamped ? ' is-clamped' : ''}`}>
+      {text}
+      {onOpen && (
+        <button type="button" className="pins-desc__more" disabled={disabled} onClick={onOpen} title="Open the product details">
+          {clamped ? '… Read more' : 'Read more'}
+        </button>
+      )}
+    </span>
   );
 }
 

@@ -470,15 +470,74 @@ class PoPaymentRequestController extends Controller
             'note.required_if'            => 'Give a reason for declining.',
         ]);
 
-        if ((int) $row->requested_to !== (int) $user->id) return $this->fail('Only the person this request was sent to can decide it.', 403);
-        if ($row->status !== PoPaymentRequest::STATUS_PENDING) return $this->fail('This request is already ' . ($row->status === 'rejected' ? 'declined' : 'approved') . '.');
-        $po = PurchaseOrder::withoutGlobalScope('tenant')->find($row->purchase_order_id);
-        if (!$po || $po->isCancelled()) return $this->fail('This PO was cancelled — there is nothing to decide.');
+        $refusal = $this->recordDecision($row, $user, $data['decision'], $data['approved_amount'] ?? null, $data['note'] ?? null);
+        if ($refusal) return $this->fail($refusal['message'], $refusal['status'], $refusal['errors']);
+
+        return $this->show($request, $req);
+    }
+
+    /**
+     * PUT /p2p/orders/payment-requests/decisions — decide several requests at once.
+     *
+     * Each one goes through the very same rules as the single decision, on its own,
+     * so one refusal never holds up the rest: the answer names what was decided and
+     * what was not, and why (CS-429 / CS-436).
+     */
+    public function decideMany(Request $request): JsonResponse
+    {
+        $user = $this->tenantUser($request);
+        $data = $request->validate([
+            'ids'      => 'required|array|min:1|max:50',
+            'ids.*'    => 'integer',
+            'decision' => ['required', Rule::in([PoPaymentRequest::STATUS_APPROVED, PoPaymentRequest::STATUS_REJECTED])],
+            // Approving a batch approves each request in full; a part-approval is
+            // an amount of its own, so it stays a single-request decision.
+            'note'     => ['required_if:decision,rejected', 'nullable', 'string', $request->input('decision') === PoPaymentRequest::STATUS_REJECTED ? 'max:300' : 'max:400'],
+        ], [
+            'ids.required'     => 'Select at least one payment request.',
+            'note.required_if' => 'Give a reason for declining.',
+        ]);
 
         $approve = $data['decision'] === PoPaymentRequest::STATUS_APPROVED;
-        $approved = $approve ? round((float) $data['approved_amount'], 2) : null;
+        $done = $failed = [];
+        foreach (array_values(array_unique($data['ids'])) as $id) {
+            $seen = $this->scopedRequests($user)->where('r.id', $id)->select('r.id')->first();
+            $row  = $seen ? PoPaymentRequest::withoutGlobalScope('tenant')->find($id) : null;
+            if (!$row) { $failed[] = ['id' => $id, 'code' => null, 'message' => 'Payment request not found.']; continue; }
+
+            $refusal = $this->recordDecision($row, $user, $data['decision'], $approve ? (float) $row->requested_amount : null, $data['note'] ?? null);
+            if ($refusal) $failed[] = ['id' => $id, 'code' => $row->code, 'message' => $refusal['message']];
+            else $done[] = ['id' => $id, 'code' => $row->code, 'amount' => $approve ? (float) $row->requested_amount : null];
+        }
+
+        $word = $approve ? 'approved' : 'declined';
+        $message = $done
+            ? count($done) . ' payment request' . (count($done) === 1 ? '' : 's') . ' ' . $word
+                . ($failed ? ', ' . count($failed) . ' could not be.' : '.')
+            : 'No payment request could be ' . $word . '.';
+
+        return $this->ok(['decided' => $done, 'failed' => $failed], 200, ['message' => $message]);
+    }
+
+    /**
+     * Approve (in full or in part) or decline one request, with every rule that
+     * guards it. Returns null when it was recorded, or why it was refused.
+     *
+     * @return array{message: string, status: int, errors: array}|null
+     */
+    private function recordDecision(PoPaymentRequest $row, $user, string $decision, ?float $amount, ?string $note): ?array
+    {
+        $no = fn (string $m, int $s = 422, array $e = []) => ['message' => $m, 'status' => $s, 'errors' => $e];
+
+        if ((int) $row->requested_to !== (int) $user->id) return $no('Only the person this request was sent to can decide it.', 403);
+        if ($row->status !== PoPaymentRequest::STATUS_PENDING) return $no('This request is already ' . ($row->status === 'rejected' ? 'declined' : 'approved') . '.');
+        $po = PurchaseOrder::withoutGlobalScope('tenant')->find($row->purchase_order_id);
+        if (!$po || $po->isCancelled()) return $no('This PO was cancelled — there is nothing to decide.');
+
+        $approve = $decision === PoPaymentRequest::STATUS_APPROVED;
+        $approved = $approve ? round((float) $amount, 2) : null;
         if ($approve && $approved > (float) $row->requested_amount + 0.001) {
-            return $this->fail('You can approve at most the requested ' . number_format((float) $row->requested_amount, 2) . '.', 422,
+            return $no('You can approve at most the requested ' . number_format((float) $row->requested_amount, 2) . '.', 422,
                 ['approved_amount' => ['Cannot be more than the requested amount.']]);
         }
         // Headroom: net payable less what other approved requests on the PO already hold (or have paid).
@@ -488,15 +547,15 @@ class PoPaymentRequestController extends Controller
                 ->selectRaw('COALESCE(SUM(GREATEST(approved_amount, paid_amount)), 0) AS s')->value('s');
             $open = round((float) $po->grand_total - (float) $po->tds_amount - $held, 2);
             if ($approved > $open + 0.001) {
-                return $this->fail('Only ' . number_format(max(0, $open), 2) . ' is still open to approve on this PO.', 422,
+                return $no('Only ' . number_format(max(0, $open), 2) . ' is still open to approve on this PO.', 422,
                     ['approved_amount' => ['Cannot be more than the amount open to request.']]);
             }
         }
 
         $this->inTransaction('record the decision', fn () => $row->update([
-            'status'          => $data['decision'],
+            'status'          => $decision,
             'approved_amount' => $approved,
-            'decision_note'   => isset($data['note']) ? trim($data['note']) : null,
+            'decision_note'   => $note !== null ? trim($note) : null,
             'decided_at'      => now(),
         ]));
 
@@ -505,11 +564,11 @@ class PoPaymentRequestController extends Controller
             'subject'    => "{$row->code} " . ($approve ? 'approved' : 'declined'),
             'message'    => $approve
                 ? "{$user->name} approved " . number_format($approved, 2) . " on {$po->code} — ready to pay."
-                : "{$user->name} declined {$row->code} on {$po->code}: " . trim($data['note']),
+                : "{$user->name} declined {$row->code} on {$po->code}: " . trim((string) $note),
             'action_url' => '/p2p/order',
         ]);
 
-        return $this->show($request, $req);
+        return null;
     }
 
     /* ══════════════════════════ HELPERS ══════════════════════════ */
@@ -645,7 +704,12 @@ class PoPaymentRequestController extends Controller
     private function shapeRequest(PoPaymentRequest $r, array $names): array
     {
         $approved = $r->approved_amount !== null ? (float) $r->approved_amount : null;
+        $me = auth()->id();
         return [
+            /* Whether the person reading this may decide THIS request — the linked
+               list used to offer its buttons on the open request alone, so the
+               others could only be decided by opening each one (CS-436). */
+            'can_decide' => $r->status === PoPaymentRequest::STATUS_PENDING && $me !== null && (int) $r->requested_to === (int) $me,
             'id' => $r->id, 'code' => $r->code, 'payment_type' => $r->payment_type,
             'percentage' => $r->percentage !== null ? (float) $r->percentage : null,
             'requested_amount' => (float) $r->requested_amount, 'reason' => $r->reason,

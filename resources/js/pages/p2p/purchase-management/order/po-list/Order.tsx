@@ -691,29 +691,42 @@ function PaymentCell({ row, onManage, readOnly = false }: { row: OrderRow; onMan
       </div>
 
       {/* Payments wait for the paperwork: the button keeps its name, and says
-          why it will not open until the PO has gone out for signature. */}
-      {!readOnly && (
-        <button
-          type="button"
-          className={`ord-btn ord-btn--hist${done ? ' is-record' : ''}`}
-          disabled={!!row.cancelled}
-          onClick={() => {
-            if (!row.signingStarted) {
-              toast.warning('PO not sent for signature',
-                `Send ${row.po} to the supplier from Stage 04 — payment requests open once the documents are out.`);
-              return;
-            }
-            onManage(row);
-          }}
-        >
-          {done ? ICON_EYE : ICON_HISTORY}
-          <span>{done ? 'View Request Details' : 'Manage Payment Requests'}</span>
+          why it will not open until the PO has gone out for signature.
 
-          {row.paymentRequests > 0 && (
-            <i className="ord-btn__count">{row.paymentRequests}</i>
-          )}
-        </button>
-      )}
+          Nothing more can be raised on a PO that is paid in full or cancelled —
+          but what happened on it is still a record, so the button turns into
+          View Request Details rather than going dead. Only a PO cancelled before
+          anything was requested or paid has nothing behind it (CS-593). */}
+      {!readOnly && (() => {
+        const history = row.paymentRequests > 0 || row.paid > 0;
+        const viewOnly = done || !!row.cancelled;
+        const nothing = !!row.cancelled && !history;
+        return (
+          <button
+            type="button"
+            className={`ord-btn ord-btn--hist${viewOnly ? ' is-record' : ''}`}
+            disabled={nothing}
+            title={nothing ? 'This PO was cancelled before any payment request was raised.'
+              : row.cancelled ? 'This PO is cancelled — its payment requests open to be read.' : undefined}
+            onClick={() => {
+              // A record opens whatever the paperwork did; only a live PO waits for it.
+              if (!viewOnly && !row.signingStarted) {
+                toast.warning('PO not sent for signature',
+                  `Send ${row.po} to the supplier from Stage 04 — payment requests open once the documents are out.`);
+                return;
+              }
+              onManage(row);
+            }}
+          >
+            {viewOnly ? ICON_EYE : ICON_HISTORY}
+            <span>{viewOnly ? 'View Request Details' : 'Manage Payment Requests'}</span>
+
+            {row.paymentRequests > 0 && (
+              <i className="ord-btn__count">{row.paymentRequests}</i>
+            )}
+          </button>
+        );
+      })()}
     </div>
   );
 }

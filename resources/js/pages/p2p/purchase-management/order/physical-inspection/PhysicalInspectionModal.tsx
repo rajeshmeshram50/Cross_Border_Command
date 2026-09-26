@@ -12,7 +12,7 @@ import type { OrderRow } from '../po-list/Order';
 import { initials, money } from '../manage-payment/payment-shared';
 import { PoApiError, poInspectionApi, type InspectionFile, type InspectionSummary } from '../api/po-api';
 import {
-  ProofChip, VERDICTS, downloadFile, openFile, saveBlob, toProofFiles,
+  InspectionDescription, ProofChip, VERDICTS, downloadFile, openFile, saveBlob, toProofFiles,
   type ProofFile, type Verdict,
 } from './inspection-shared';
 import InspectionAttachmentsModal from './InspectionAttachmentsModal';
@@ -377,10 +377,8 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged, onCon
                         </div>
                       </td>
                       <td className="pins-desc">
-                        <span className="pins-desc__txt">{l.description || '—'}</span>
-                        {l.product_id && (
-                          <button type="button" className="pins-desc__more" disabled={deciding} onClick={() => setViewId(l.product_id)}>… Read more</button>
-                        )}
+                        <InspectionDescription text={l.description || '—'} disabled={deciding}
+                          onOpen={l.product_id ? () => setViewId(l.product_id) : undefined} />
                       </td>
                       <td className="pins-td-c"><span className="pins-qty">{l.quantity}{l.uom ? ` ${l.uom}` : ''}</span></td>
                       <td className="pins-td-c">
