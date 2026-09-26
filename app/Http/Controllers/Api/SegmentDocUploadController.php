@@ -939,8 +939,7 @@ class SegmentDocUploadController extends Controller
         $docs = DB::table('p2p_purchase_order_documents')
             ->whereIn('purchase_order_id', $pos->pluck('id'))
             ->whereNull('deleted_at')
-            // Stage 04 paperwork only: the PO document itself is not case-to-case.
-            ->where('doc_kind', '!=', 'purchase_order')
+            // The PO document is counted too, so a signed PO shows as evidence on its own row.
             ->orderBy('id')
             ->get()
             ->groupBy('purchase_order_id');
