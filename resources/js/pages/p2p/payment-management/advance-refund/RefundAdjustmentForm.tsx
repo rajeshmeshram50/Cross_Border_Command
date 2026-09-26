@@ -2,7 +2,7 @@
 // after the PO is picked (or straight away when editing). Reuses the shared P2P
 // wizard shell (spi-dt-*) and its Field / EditSelect / HeadPill pieces.
 // Raising it cancels the PO; the vendor credit then goes to Zoho Books.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { downloadFile } from '../../../../utils/downloadFile';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
@@ -22,6 +22,11 @@ import { REFUND_TYPES, RETAIN_REASONS, toPoInfo, toRefund, todayIso, type Refund
 import { useEscapeClose } from './useEscapeClose';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
 import './advance-refund.css';
+
+/* The live camera. A hidden <input type="file" capture="environment">
+   only opens a camera on a phone; on a desktop the attribute is ignored and
+   the ordinary file picker appears, which is what "Camera" used to do. */
+const CameraCaptureModal = lazy(() => import('../../purchase-management/order/physical-inspection/CameraCaptureModal'));
 
 type Props = {
   /** The PO a new adjustment is raised against. */
@@ -74,7 +79,7 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
   const [open, setOpen] = useState({ po: true, sup: true, refund: true });
   const [vault, setVault] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const camRef = useRef<HTMLInputElement>(null);
+  const [camOpen, setCamOpen] = useState(false);
 
   // The PO (new) or the adjustment (edit), then the supplier from the master.
   useEffect(() => {
@@ -196,6 +201,18 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
 
   return createPortal(
     <div className="spi-dt-overlay arf-form">
+      {camOpen && (
+        <Suspense fallback={null}>
+          <CameraCaptureModal
+            title="Take a photo of the reference"
+            subject={edit?.no ? `Refund reference · ${edit.no}` : 'Refund reference'}
+            namePrefix="refund-reference"
+            max={1}
+            onAttach={(shots) => { if (shots[0]) pickFile(shots[0], true); }}
+            onClose={() => setCamOpen(false)}
+          />
+        </Suspense>
+      )}
       <div className="spi-dt">
         <div className="spi-dt-topcard">
           <div className="spi-dt-head">
@@ -334,14 +351,12 @@ export default function RefundAdjustmentForm({ poId, editId, onSaved, onCancel, 
                     )}
                     <Tooltip label="Take a photo of the reference">
                       <button type="button" className="spi-dt-file-btn arf-fbtn" disabled={settled} aria-label="Take a photo"
-                        onClick={() => camRef.current?.click()}><IcoCamera size={13} /> Camera</button>
+                        onClick={() => setCamOpen(true)}><IcoCamera size={13} /> Camera</button>
                     </Tooltip>
                     <button type="button" className="spi-dt-file-btn" disabled={settled} onClick={() => fileRef.current?.click()}>Browse</button>
                   </span>
                   <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" hidden
                     onChange={(e) => { pickFile(e.target.files?.[0] ?? null); e.target.value = ''; }} />
-                  <input ref={camRef} type="file" accept="image/*" capture="environment" hidden
-                    onChange={(e) => { pickFile(e.target.files?.[0] ?? null, true); e.target.value = ''; }} />
                 </div>
               </Field>
               <Field label="ADVANCE REFUND TYPE" req>

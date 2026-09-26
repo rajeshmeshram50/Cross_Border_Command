@@ -842,12 +842,13 @@ function MasterPageInner({
         errs[f.n] = 'Invalid CIN — must be 21 characters';
       } else if (f.n === 'ifsc_code' && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(raw.toUpperCase())) {
         errs[f.n] = 'Invalid IFSC — must be 11 characters (e.g. HDFC0000350)';
-      } else if (f.n === 'hsn_code' && !/^[0-9]{4,10}$/.test(raw)) {
+      } else if (f.n === 'hsn_code' && !/^[0-9]{4,8}$/.test(raw)) {
         /* HSN / SAC are strictly numeric per Indian GST notification —
-         * 4, 6, or 8 (occasionally 10) digit codes. Mirrors the backend
-         * rule (^[0-9]{4,10}$) so the user sees an instant inline error
-         * instead of a server-side 422 round-trip. */
-        errs[f.n] = 'Invalid HSN / SAC — 4 to 10 digit numeric code';
+         * 4, 6, or 8 digit codes. Capped at 8 because Zoho Books refuses
+         * anything longer, so a 10-digit code saved here only failed later,
+         * at PO sync. Mirrors the backend rule (^[0-9]{4,8}$) so the user
+         * sees an instant inline error instead of a server-side 422. */
+        errs[f.n] = 'Invalid HSN / SAC — 4 to 8 digit numeric code';
       } else if (cfg.slug === 'hsn_codes' && f.n === 'description') {
         /* HSN/SAC commodity descriptions are short product names like
          * "Almonds — Shelled" or "Sesame Seeds, Whole". Allow letters,
@@ -4054,7 +4055,7 @@ export function renderField(
       'pincode', 'postal_code', 'zip',
     ]);
     const shouldAutoCap = f.t === 'text' && !isAutogen && !SKIP_AUTOCAP_FIELDS.has(f.n);
-    /* Numeric-only text fields — HSN/SAC codes are 4–10 digit numeric per
+    /* Numeric-only text fields — HSN/SAC codes are 4–8 digit numeric per
      * Indian GST notification, so strip anything non-numeric as the user
      * types / pastes. The validateForm pattern catches anything that slips
      * through (e.g. programmatic value setters); this just gives instant

@@ -1,7 +1,7 @@
 // Add / edit one recovered payment against a refund adjustment. Reuses the
 // Order module's Add New Payment popup body (apay-*) under the Manage Payment
 // Requests hero header (mpr-hero).
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { downloadFile } from '../../../../utils/downloadFile';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import { createPortal } from 'react-dom';
@@ -13,6 +13,11 @@ import { useEscapeClose } from './useEscapeClose';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
 import '../../purchase-management/order/manage-payment/manage-payment-requests.css';
 import '../../purchase-management/order/manage-payment/add-payment.css';
+
+/* The live camera. A hidden <input type="file" capture="environment">
+   only opens a camera on a phone; a desktop ignores it and shows the file
+   picker, which is what "Take photo" used to do here. */
+const CameraCaptureModal = lazy(() => import('../../purchase-management/order/physical-inspection/CameraCaptureModal'));
 
 type Props = {
   refund: RefundAdjustment;
@@ -51,7 +56,7 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const camRef = useRef<HTMLInputElement>(null);
+  const [camOpen, setCamOpen] = useState(false);
   const dropRef = useRef<HTMLButtonElement>(null);
   /* Where the attachment panel sits. It is portalled to the body, so it is
      placed from the drop zone's box and flips above when the foot is close. */
@@ -118,6 +123,18 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
 
   return createPortal(
     <div className="spi-mdl-backdrop">
+      {camOpen && (
+        <Suspense fallback={null}>
+          <CameraCaptureModal
+            title="Take a photo of the proof"
+            subject="Recovery proof"
+            namePrefix="recovery-proof"
+            max={1}
+            onAttach={(shots) => { if (shots[0]) pick(shots[0], true); }}
+            onClose={() => setCamOpen(false)}
+          />
+        </Suspense>
+      )}
       <div className={`apay-card arf-addrec${saving ? ' is-saving' : ''}`} role="dialog" aria-modal="true" aria-labelledby="arf-add-title" tabIndex={-1} aria-busy={saving}>
         {saving && (
           <div className="apay-wait" role="status" aria-live="polite">
@@ -203,7 +220,7 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
                     <span className="arf-att__ico">{UPLOAD}</span>
                     <span><b>Upload file</b><i>Choose from this device</i></span>
                   </button>
-                  <button type="button" className="arf-att__opt" role="menuitem" onClick={() => { setPickAt(null); camRef.current?.click(); }}>
+                  <button type="button" className="arf-att__opt" role="menuitem" onClick={() => { setPickAt(null); setCamOpen(true); }}>
                     <span className="arf-att__ico arf-att__ico--cam">{CAMERA}</span>
                     <span><b>Take photo</b><i>Capture with the camera</i></span>
                   </button>
@@ -212,8 +229,6 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
               )}
               <input id="arf-add-file" ref={fileRef} className="apay-file-in" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" disabled={saving}
                 onChange={(e) => { pick(e.target.files?.[0] ?? null); e.target.value = ''; }} />
-              <input ref={camRef} className="apay-file-in" type="file" accept="image/*" capture="environment" disabled={saving}
-                onChange={(e) => { pick(e.target.files?.[0] ?? null, true); e.target.value = ''; }} />
             </div>
           </div>
 

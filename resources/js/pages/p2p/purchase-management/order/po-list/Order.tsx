@@ -1244,6 +1244,9 @@ export default function Order() {
   const comingSoon = (what: string) => () => toast.info('Feature coming soon', `${what} will be available shortly.`);
   // Payments run on a submitted PO; a draft has no final value to pay against yet.
   const [manageRow, setManageRow] = useState<OrderRow | null>(null);
+  /* Opened from the inspection's "Continue to payment request": the payments
+     screen comes up already on the raise form. */
+  const [raiseFor, setRaiseFor] = useState<OrderRow | null>(null);
   const onManage = (row: OrderRow) => {
     if (!row.id) return;
     if (row.draft) { toast.info('Submit the PO first', `${row.po} is still a draft — submit it before managing payments.`); return; }
@@ -1423,6 +1426,14 @@ export default function Order() {
         </Suspense>
       )}
 
+      {/* The same screen, opened from the inspection sign-off, already on the
+          form that raises a request. */}
+      {raiseFor && (
+        <Suspense fallback={null}>
+          <ManagePaymentRequestsModal row={raiseFor} startWithRaise onClose={() => { setRaiseFor(null); loadRows(); }} />
+        </Suspense>
+      )}
+
       {vaultRow?.id && (
         <Suspense fallback={null}>
           <PoEvidenceVaultModal
@@ -1458,7 +1469,14 @@ export default function Order() {
 
       {inspectRow && (
         <Suspense fallback={null}>
-          <PhysicalInspectionModal row={inspectRow} onClose={() => setInspectRow(null)} onChanged={loadRows} />
+          <PhysicalInspectionModal
+            row={inspectRow}
+            onClose={() => setInspectRow(null)}
+            onChanged={loadRows}
+            /* Sign-off done: close the inspection and open this PO's payment
+               requests, on the raise form (CS-417). */
+            onContinueToPayment={() => { const r = inspectRow; setInspectRow(null); setRaiseFor(r); }}
+          />
         </Suspense>
       )}
 

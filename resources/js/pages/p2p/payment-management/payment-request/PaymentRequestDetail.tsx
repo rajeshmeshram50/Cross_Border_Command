@@ -1,6 +1,6 @@
 // Payment Request Management → View Request. Opens full screen over the list,
 // so Back returns to the queue with its tab, search and page untouched.
-import { Suspense, lazy, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Badge, { type BadgeVariant } from '../../../../components/ui/Badge';
 import { useAuth } from '../../../../contexts/AuthContext';
@@ -138,6 +138,37 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onBack]);
+
+  /* The approver decides on their own screen; this one read the request once,
+     when it opened, so it went on saying "Awaiting Approval" until the page was
+     reloaded (CS-423). While the request is with an approver it is re-read every
+     20s, and at once when this tab or window is looked at again. */
+  const awaiting = detail?.row.status === 'awaiting';
+  useEffect(() => {
+    if (!awaiting) return;
+    const reread = () => { if (!document.hidden) setVersion(v => v + 1); };
+    const id = window.setInterval(reread, 20000);
+    document.addEventListener('visibilitychange', reread);
+    window.addEventListener('focus', reread);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', reread);
+      window.removeEventListener('focus', reread);
+    };
+  }, [awaiting]);
+
+  /* Somebody else's decision lands quietly otherwise — say what happened. */
+  const lastStatus = useRef<string | null>(null);
+  useEffect(() => {
+    const now = detail?.row.status ?? null;
+    const was = lastStatus.current;
+    lastStatus.current = now;
+    if (!now || was !== 'awaiting' || now === 'awaiting') return;
+    if (justDecided === detail?.row.requestId) return;   // this screen said it already
+    if (now === 'approved') toast.success(`${detail?.row.requestId} approved`, 'Payment can now be released.');
+    else toast.warning(`${detail?.row.requestId} declined`, 'Nothing can be paid against it.');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.row.status]);
 
   const soon = (what: string) => toast.info(what, 'Logic coming soon');
   // Only a request still awaiting approval can be decided.

@@ -28,6 +28,8 @@ export type PhysicalInspectionProps = {
   onClose: () => void;
   /** The inspection status changed (signed off / withdrawn) — refresh the list. */
   onChanged?: () => void;
+  /** Take the user on to raising a payment request for this PO. */
+  onContinueToPayment?: () => void;
 };
 
 const NOTE = -1;
@@ -91,7 +93,7 @@ function ProofList({ files, onView, onDownload, onRemove, onMore, emptyText }: {
   );
 }
 
-export default function PhysicalInspectionModal({ row, onClose, onChanged }: PhysicalInspectionProps) {
+export default function PhysicalInspectionModal({ row, onClose, onChanged, onContinueToPayment }: PhysicalInspectionProps) {
   useScrollLock(true, '.pins-card');
   const toast = useToast();
   const { user } = useAuth();
@@ -233,7 +235,16 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged }: Phy
     return s;
   });
 
-  const continueToPayment = () => toast.info('Feature coming soon', 'Payment requests will be available shortly.');
+  /* Signed off — the next thing anyone does on this PO is ask for the money.
+     This used to answer "coming soon" (CS-417); it now closes the inspection
+     and opens Manage Payment Requests on its raise form. */
+  const continueToPayment = () => {
+    if (!onContinueToPayment) {
+      toast.info('Payment requests', 'Open Manage Payment Requests on this PO to raise one.');
+      return;
+    }
+    onContinueToPayment();
+  };
 
   const total = sum?.grand_total ?? row.total;
   const cards: { lbl: string; val: string; sub?: string; cls?: string }[] = [
