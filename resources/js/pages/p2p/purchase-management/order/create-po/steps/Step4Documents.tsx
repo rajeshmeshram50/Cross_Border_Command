@@ -100,6 +100,11 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   /* Our own files (the Purchase Order PDF, anything uploaded here) — they have
      no library row, so they go through this module's own send. */
   const [rawSigning, setRawSigning] = useState<PoDocument[] | null>(null);
+  /** What a row is called wherever it is listed: the Purchase Order by its PO
+   *  number, the rest by their own code. A supplier holding several orders can
+   *  only tell them apart by that number. */
+  const signCode = (d: PoDocument) =>
+    d.doc_kind === 'purchase_order' ? (ctx.detail?.code ?? d.code) : d.code;
 
   const fail = (e: unknown) => {
     if (e instanceof PoApiError) toast.error(`${e.action} failed`, e.firstError);
@@ -425,12 +430,15 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
             }}
             rawPdfContext={{
               docId: rawSigning[0].id,
-              code: rawSigning[0].code,
+              /* The Purchase Order is named by its PO number here too: the panel
+                 lists what is going out, and a supplier with several orders can
+                 only tell them apart by that. */
+              code: signCode(rawSigning[0]),
               title: rawSigning[0].name,
               previewUrl: `/p2p/orders/${poId}/documents/${rawSigning[0].id}/download`,
               docs: rawSigning.map((d) => ({
                 docId: d.id,
-                code: d.code,
+                code: signCode(d),
                 title: d.name,
                 previewUrl: `/p2p/orders/${poId}/documents/${d.id}/download`,
               })),
@@ -514,11 +522,20 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                           title={isSettled(doc) ? 'Already sent for signature — nothing more to do on this row' : undefined} />
                       </td>
                       <td>{i + 1}</td>
-                      {/* The CLM master's own code is what the libraries call this
-                          document; our row code stands in for the Purchase Order. */}
+                      {/* A library row is known by its CLM master code. The Purchase
+                          Order is known by its PO number — that is what anyone
+                          looking for it has in hand, not the row's own doc code. */}
                       <td>
-                        <Tooltip label={doc.master_code ? `CLM master ${doc.master_code} · this PO's copy is ${doc.code}` : `This PO's document ${doc.code}`} themed>
-                          <span className="cpd-code">{doc.master_code ?? doc.code}</span>
+                        <Tooltip
+                          label={doc.doc_kind === 'purchase_order'
+                            ? `Purchase order ${ctx.detail?.code ?? ''} · this row is ${doc.code}`
+                            : doc.master_code ? `CLM master ${doc.master_code} · this PO's copy is ${doc.code}` : `This PO's document ${doc.code}`}
+                          themed>
+                          <span className="cpd-code">
+                            {doc.doc_kind === 'purchase_order'
+                              ? (ctx.detail?.code ?? doc.code)
+                              : (doc.master_code ?? doc.code)}
+                          </span>
                         </Tooltip>
                       </td>
                       <td className="cpd-td-left">
@@ -529,7 +546,9 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                           <span className={`cdoc-kind${isAgreement(doc) ? ' cdoc-kind--agr' : ''}`}>
                             {isAgreement(doc) ? 'Agreement' : 'Trade Document'}
                           </span>
-                          {doc.doc_kind === 'purchase_order' ? (ctx.detail?.code ?? '') : doc.doc_sub}
+                          {/* The PO number moved up to the code column, so the row's
+                              own document code is kept here rather than lost. */}
+                          {doc.doc_kind === 'purchase_order' ? doc.code : doc.doc_sub}
                         </div>
                       </td>
                       <td>
