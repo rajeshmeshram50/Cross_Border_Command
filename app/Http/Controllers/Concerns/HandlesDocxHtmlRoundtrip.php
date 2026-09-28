@@ -150,6 +150,27 @@ trait HandlesDocxHtmlRoundtrip
      * <p>/<b>/<i>/<u> tags. Mirrors the HRMS template helper so a Word
      * round-trip preserves text + basic formatting + paragraph breaks.
      */
+    /**
+     * A document's length as the EDITORS count it: characters of text, with the
+     * markup left out.
+     *
+     * The render limit used to be measured on the HTML, so formatting spent it
+     * — raising a selection's font size wraps every run it touches in a span
+     * and its style, and the count climbed without a character being written
+     * (CS-18). Block ends become newlines first, which is how the editor's own
+     * text separates them, so the server refuses at the same figure the screen
+     * showed rather than one the user never saw.
+     */
+    protected function htmlTextLength(?string $html): int
+    {
+        $html = (string) $html;
+        if ($html === '') return 0;
+        $spaced = preg_replace('#<br\s*/?>#i', "\n", $html);
+        $spaced = preg_replace('#</(p|div|h[1-6]|li|tr|blockquote|pre)>#i', "\n", (string) $spaced);
+        $text = html_entity_decode(strip_tags((string) $spaced), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        return mb_strlen(trim($text));
+    }
+
     protected function docxToHtml(string $absPath): string
     {
         // 1) Parse word/document.xml DIRECTLY. This is the only lossless path:

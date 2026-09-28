@@ -16,7 +16,7 @@ import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
 } from '../../hrms/doc-templates/HeaderFooterPanel';
-import { useCtcEditor, CtcEditorContent, CtcToolbar, CTC_EDITOR_CSS, DEFAULT_MARGINS, SHEET_W, type CtcMargins, type CtcEditor } from '../operations/CtcRichEditor';
+import { useCtcEditor, CtcEditorContent, CtcToolbar, CTC_EDITOR_CSS, DEFAULT_MARGINS, SHEET_W, contentTextLength, htmlTextLength, type CtcMargins, type CtcEditor } from '../operations/CtcRichEditor';
 import CtcLivePreview from '../operations/CtcLivePreview';
 import { useOpsTheme } from '../operations/useOpsTheme';
 import type { Editor } from '@tiptap/react';
@@ -418,10 +418,10 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
        *
        * The editor is deliberately left untouched on rejection — seeding it and
        * then complaining would leave unusable content the user has to undo. */
-      if (html && html.length > RENDER_MAX_CHARS) {
+      if (html && htmlTextLength(html) > RENDER_MAX_CHARS) {
         toast.error(
           'Document too long',
-          `${file.name} converts to ${html.length.toLocaleString()} characters — the limit is ${RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller agreements, or shorten it before uploading.`,
+          `${file.name} carries ${htmlTextLength(html).toLocaleString()} characters — the limit is ${RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller agreements, or shorten it before uploading.`,
         );
         return;
       }
@@ -434,12 +434,12 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
            converted HTML measured above lands roughly a fifth longer — an
            agreement imported "within the limit" then refused the next letter
            typed (CS-17). Over the cap, the previous draft goes back. */
-        const seeded = agr.editor?.getHTML() ?? html;
-        if (seeded.length > RENDER_MAX_CHARS) {
+        const seeded = agr.editor ? contentTextLength(agr.editor) : htmlTextLength(html);
+        if (seeded > RENDER_MAX_CHARS) {
           agr.setHTML(beforeImport);
           toast.error(
             'Document too long',
-            `${file.name} comes to ${seeded.length.toLocaleString()} characters in the editor — the limit is ${RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller agreements, or shorten it before uploading.`,
+            `${file.name} comes to ${seeded.toLocaleString()} characters — the limit is ${RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller agreements, or shorten it before uploading.`,
           );
           return;
         }
@@ -948,7 +948,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
               <AgrEditor
                 editor={agr.editor}
                 busy={editorBusy}
-                contentLength={(content ?? '').length}
+                contentLength={htmlTextLength(content ?? '')}
                 content={content ?? ''}
                 fontSize={fontSize}
                 setFontSizeState={setFontSizeState}
@@ -2238,7 +2238,7 @@ function CharCounter({ length }: { length: number }) {
   const color = length > RENDER_MAX_CHARS ? '#e11d48' : pct > 0.8 ? '#d97706' : '#5e7888';
   const over = length > RENDER_MAX_CHARS;
   return (
-    <Tooltip label={over ? 'Over the 1,000,000-character limit — the PDF/Word download will be blocked until you shorten it.' : `${RENDER_MAX_CHARS.toLocaleString()} character limit (~1 MB) for PDF/Word export`}>
+    <Tooltip label={over ? 'Over the 1,000,000-character limit — the PDF/Word download will be blocked until you shorten it.' : `${RENDER_MAX_CHARS.toLocaleString()} character limit for the PDF / Word export. Formatting does not count towards it.`}>
       <span style={{ fontSize: 11, fontWeight: 700, color, whiteSpace: 'nowrap' }}>
         {length.toLocaleString()} / {RENDER_MAX_CHARS.toLocaleString()}{over ? ' ⚠' : ''}
       </span>

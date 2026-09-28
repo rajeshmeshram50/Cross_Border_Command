@@ -1168,34 +1168,54 @@ type ContentLimitOptions = {
   onExceed?: (attempted: number, max: number) => void;
 };
 
-/* How much a paste will actually ADD to the document.
+/**
+ * The document's length as the WRITER counts it: characters of text, with the
+ * markup left out.
  *
- * `clipboardData.getData('text/html')` is not the content — it is the content
- * inside a transport envelope the browser builds, and the envelope is discarded
- * the moment ProseMirror parses it. Chrome prepends a <meta charset>, wraps the
- * selection in <html><body> with StartFragment/EndFragment comments, and — when
- * the copy came from another ProseMirror editor, which is exactly the
- * Agreement-to-Trade-Document case — stamps a data-pm-slice attribute on the
- * wrapper.
+ * The limit used to be measured on the HTML, which meant formatting spent it.
+ * Selecting a paragraph and raising its font size added a span and its style to
+ * every run it touched, so the counter climbed without a character being typed
+ * — and a document could be refused the next letter because of how it looked,
+ * not what it said. Text is the only measure a writer can act on: shorten the
+ * document and the number goes down, restyle it and it does not move.
+ */
+export const contentTextLength = (editor: Editor | null | undefined): number =>
+  editor ? (editor.getText({ blockSeparator: '\n' }) ?? '').length : 0;
+
+/* How much a paste will actually ADD to the document — again as text.
  *
- * Measuring the raw string counted all of that. So the same content reported
- * one length in the editor it was copied from and a larger one on arrival, and
- * a document at the ceiling could be refused over characters that were never
- * going to be stored. Stripping the envelope first makes the number describe
- * the document rather than the clipboard.
+ * `clipboardData.getData('text/html')` is not the content either; it is the
+ * content inside a transport envelope the browser builds. Chrome prepends a
+ * <meta charset>, wraps the selection in <html><body> with StartFragment /
+ * EndFragment comments, and — when the copy came from another ProseMirror
+ * editor, which is exactly the Agreement-to-Trade-Document case — stamps a
+ * data-pm-slice attribute on the wrapper. None of it survives the parse.
  *
- * Deliberately string-level, not a DOMParser pass: this runs on a payload up to
- * a megabyte during a paste, and building a second document to measure the
- * first would cost more than the guard saves. */
-export const pastedLength = (raw: string): number => {
-  if (!raw) return 0;
-  return raw
-    .replace(/<\/?(?:html|body|head)(?:\s[^>]*)?>/gi, '')  // transport wrapper
-    .replace(/<meta[^>]*>/gi, '')                          // Chrome's charset tag
-    .replace(/<!--\s*(?:Start|End)Fragment\s*-->/gi, '')   // Chrome's fragment marks
-    .replace(/\sdata-pm-slice="[^"]*"/gi, '')              // ProseMirror slice info
-    .trim()
-    .length;
+ * Reading the text out of the payload drops the envelope and the markup in one
+ * step, so the figure the guard adds is the figure the counter will show. */
+export const pastedLength = (raw: string): number => htmlTextLength(raw);
+
+/**
+ * The same count, taken from an HTML string rather than a live editor — for
+ * content on its way in (a Word import) or already stored (a saved draft).
+ *
+ * Block ends become newlines first so the figure lines up with the editor's own
+ * text, which separates blocks the same way; without that the two measures
+ * would drift apart by one character per paragraph and the counter and the
+ * guard would disagree again.
+ */
+export const htmlTextLength = (html: string): number => {
+  if (!html) return 0;
+  // Plain text is already the answer.
+  if (!/<[a-z!/]/i.test(html)) return html.trim().length;
+  const spaced = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|h[1-6]|li|tr|blockquote|pre)>/gi, '\n');
+  try {
+    return (new DOMParser().parseFromString(spaced, 'text/html').body.textContent ?? '').trim().length;
+  } catch {
+    return spaced.replace(/<[^>]*>/g, '').trim().length;
+  }
 };
 
 /* Show a link's target on hover.
@@ -1276,16 +1296,15 @@ const ContentLimit = Extension.create<ContentLimitOptions>({
   addOptions() {
     return { max: CONTENT_MAX_CHARS, onExceed: undefined };
   },
-  /* The document's HTML length, cached.
-     getHTML() serialises the whole document, so it cannot be called on every
-     keystroke of a million-character draft. It is already called once per
-     update by the editors' own onChange, so the number is taken from there and
-     reused — the guard costs nothing per key. */
+  /* The document's TEXT length, cached.
+     Reading the text walks the whole document, so it cannot be done on every
+     keystroke of a million-character draft; it is measured once per update and
+     the guard reuses the number, which costs nothing per key. */
   addStorage() {
-    return { htmlLen: 0, lastWarn: 0 };
+    return { textLen: 0, lastWarn: 0 };
   },
-  onCreate() { this.storage.htmlLen = this.editor.getHTML()?.length ?? 0; },
-  onUpdate() { this.storage.htmlLen = this.editor.getHTML()?.length ?? 0; },
+  onCreate() { this.storage.textLen = contentTextLength(this.editor); },
+  onUpdate() { this.storage.textLen = contentTextLength(this.editor); },
   addProseMirrorPlugins() {
     const { max, onExceed } = this.options;
     const editor = this.editor;
@@ -1301,11 +1320,10 @@ const ContentLimit = Extension.create<ContentLimitOptions>({
       onExceed?.(attempted, max);
     };
 
-    /* True = block. Measured against getHTML() so the number matches the
-       counter on screen, not a different idea of "length" that would reject at
-       a figure the user never saw. */
+    /* True = block. Measured the same way the counter on screen is, so nothing
+       is ever rejected at a figure the user never saw. */
     const wouldOverflow = (incoming: number): boolean => {
-      const attempted = (editor.getHTML()?.length ?? 0) + incoming;
+      const attempted = contentTextLength(editor) + incoming;
       if (attempted <= max) return false;
       warn(attempted);
       return true;
@@ -1324,9 +1342,9 @@ const ContentLimit = Extension.create<ContentLimitOptions>({
        measurement decides when to refuse one. getHTML() runs only on the
        keystroke that would cross the line, not on every key. */
     const atCeiling = (incoming: number): boolean => {
-      if (storage.htmlLen + incoming <= max) return false;
-      storage.htmlLen = editor.getHTML()?.length ?? 0;
-      const attempted = storage.htmlLen + incoming;
+      if (storage.textLen + incoming <= max) return false;
+      storage.textLen = contentTextLength(editor);
+      const attempted = storage.textLen + incoming;
       if (attempted <= max) return false;
       warn(attempted);
       return true;
@@ -1520,8 +1538,8 @@ export function useCtcEditor(opts: {
          told the document changed, so it is set here too. */
       const seeded = editor.getHTML() || repaired || '<p></p>';
       lastSyncedRef.current = seeded;
-      const limit = (editor.storage as unknown as Record<string, { htmlLen?: number }>).contentLimit;
-      if (limit) limit.htmlLen = seeded.length;
+      const limit = (editor.storage as unknown as Record<string, { textLen?: number }>).contentLimit;
+      if (limit) limit.textLen = contentTextLength(editor);
       onChange(seeded);
     },
   };

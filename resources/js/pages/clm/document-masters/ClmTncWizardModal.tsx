@@ -16,7 +16,7 @@ import Tooltip from '../../../components/ui/Tooltip';
 import { SimpleNameModal } from '../shared/clmCommon';
 import { deriveShortCode } from './ClmTncPage';
 import ClmClauseInsertPanel from './ClmClauseInsertPanel';
-import { ctcExtensions, CtcToolbar, CTC_EDITOR_CSS, TNC_FONT_FAMILIES } from '../operations/CtcRichEditor';
+import { ctcExtensions, CtcToolbar, CTC_EDITOR_CSS, TNC_FONT_FAMILIES, contentTextLength, htmlTextLength } from '../operations/CtcRichEditor';
 
 /* Same 1,000,000-character ceiling the other CLM editors carry. A T&C is
    inserted into an agreement, so it is the AGREEMENT's PDF that dies past
@@ -729,7 +729,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                    INSERTED, not replaced, so the existing content counts
                    towards the total — a clause pasted into an already
                    long T&C has to be measured against what is there. */
-                const total = (editor.getHTML()?.length ?? 0) + html.length;
+                const total = contentTextLength(editor) + htmlTextLength(html);
                 if (total > TNC_MAX_CHARS) {
                   toast.error(
                     'Document too long',

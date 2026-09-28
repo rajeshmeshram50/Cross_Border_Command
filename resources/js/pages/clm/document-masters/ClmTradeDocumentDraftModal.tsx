@@ -13,7 +13,7 @@ import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
 } from '../../hrms/doc-templates/HeaderFooterPanel';
-import { useCtcEditor, CtcEditorContent, CtcToolbar, CTC_EDITOR_CSS, DEFAULT_MARGINS, SHEET_W, type CtcMargins, type CtcEditor } from '../operations/CtcRichEditor';
+import { useCtcEditor, CtcEditorContent, CtcToolbar, CTC_EDITOR_CSS, DEFAULT_MARGINS, SHEET_W, contentTextLength, htmlTextLength, type CtcMargins, type CtcEditor } from '../operations/CtcRichEditor';
 import CtcLivePreview from '../operations/CtcLivePreview';
 import { useOpsTheme } from '../operations/useOpsTheme';
 
@@ -435,23 +435,20 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
    * Seed converted Word HTML into the editor, then check the size it actually
    * became — and put the old document back if it is over the ceiling.
    *
-   * The converted HTML and the editor's own are not the same length: TipTap
-   * re-serialises everything it parses, so a file that converts to 919,000
-   * characters can sit in the editor at 1,131,908. Checking only the server's
-   * figure let such a file import "within the limit" and then refuse the next
-   * letter typed (CS-17). The measurement that decides is the one the editor
-   * reports, and if it is over, the import is rolled back rather than left as
-   * content that cannot be edited.
+   * Measured as text, the same as the counter and the typing guard: an import
+   * that reported one figure and was then refused the next letter typed is
+   * exactly what CS-17 was. Over the ceiling, the import is rolled back rather
+   * than left as content that cannot be edited.
    */
   const seedChecked = (html: string, fileName: string): boolean => {
     const before = ted.editor?.getHTML() ?? content ?? '';
     ted.setHTML(html);
-    const seeded = ted.editor?.getHTML() ?? html;
-    if (seeded.length > TDW_RENDER_MAX_CHARS) {
+    const seeded = contentTextLength(ted.editor);
+    if (seeded > TDW_RENDER_MAX_CHARS) {
       ted.setHTML(before);
       toast.error(
         'Document too long',
-        `${fileName} comes to ${seeded.length.toLocaleString()} characters in the editor — the limit is ${TDW_RENDER_MAX_CHARS.toLocaleString()}. `
+        `${fileName} comes to ${seeded.toLocaleString()} characters — the limit is ${TDW_RENDER_MAX_CHARS.toLocaleString()}. `
         + 'Split it into smaller documents, or shorten it before uploading.',
       );
       return false;
@@ -487,10 +484,11 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
            Rejected BEFORE setHTML: seeding and then complaining would leave
            unusable content the user has to undo by hand. Same order the CTC and
            Agreement editors already use. */
-        if (html.length > TDW_RENDER_MAX_CHARS) {
+        const incoming = htmlTextLength(html);
+        if (incoming > TDW_RENDER_MAX_CHARS) {
           toast.error(
             'Document too long',
-            `${file.name} converts to ${html.length.toLocaleString()} characters — the limit is ${TDW_RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller documents, or shorten it before uploading.`,
+            `${file.name} carries ${incoming.toLocaleString()} characters — the limit is ${TDW_RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller documents, or shorten it before uploading.`,
           );
           return;
         }
@@ -508,10 +506,11 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
          returns the converted HTML, so the length has to be checked here too —
          otherwise a long document is blocked when the draft is new and waved
          through the moment it has been saved once. */
-      if (row?.content && String(row.content).length > TDW_RENDER_MAX_CHARS) {
+      const stored = htmlTextLength(String(row?.content ?? ''));
+      if (stored > TDW_RENDER_MAX_CHARS) {
         toast.error(
           'Document too long',
-          `${file.name} converts to ${String(row.content).length.toLocaleString()} characters — the limit is ${TDW_RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller documents, or shorten it before uploading.`,
+          `${file.name} carries ${stored.toLocaleString()} characters — the limit is ${TDW_RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller documents, or shorten it before uploading.`,
         );
         return;
       }
@@ -541,10 +540,10 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setRegulatory(existing.regulatory ?? 'less');
       setSegments((existing.segment ?? '').split(',').map(s => s.trim()).filter(Boolean));
       setContent(existing.content ?? '');   // useCtcEditor seeds the editor from this
-      // Length as STORED. The save guard compares against this so a document
-      // that was already over the limit can still be opened and shortened —
-      // see persistDraft.
-      loadedLen.current = (existing.content ?? '').length;
+      // Length as STORED, in characters of text. The save guard compares
+      // against this so a document that was already over the limit can still
+      // be opened and shortened — see persistDraft.
+      loadedLen.current = htmlTextLength(existing.content ?? '');
       // Layer the saved zone config over the branded defaults. Rows that
       // pre-date these columns hit the spread with null and keep the
       // logged-in user's branch branding as their starting point.
@@ -581,13 +580,10 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
    * save guard compares against are both taken from it, so the number on
    * screen is the number that decides — the same before and after Full Page,
    * and honest from the moment the draft opens. */
-  /* The writer's own count: the text with its markup taken off, so restyling a
-     selection leaves it exactly where it was. Memoised — the document can be a
-     megabyte and this runs on every keystroke otherwise. */
-  const textLength = useMemo(
-    () => (content ?? '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&[a-z]+;/gi, ' ').length,
-    [content],
-  );
+  /* The writer's own count, and the one the limit is measured against, taken
+     the same way here and in the editor's guard. Memoised — the document can
+     be a megabyte and this would otherwise run on every keystroke. */
+  const textLength = useMemo(() => htmlTextLength(content ?? ''), [content]);
 
   const syncedToEditor = useRef(false);
   useEffect(() => {
@@ -599,7 +595,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     if (!html || html === '<p></p>') return;
     syncedToEditor.current = true;
     if (html === content) return;
-    loadedLen.current = html.length;
+    loadedLen.current = htmlTextLength(html);
     setContent(html);
   }, [ted.editor, content]);
 
@@ -679,13 +675,14 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
        here means the user is told while the editor is still in front of them,
        with a count they can act on rather than a rejected save. */
     const html = ted.editor?.getHTML() ?? content ?? '';
-    if (html.length > TDW_RENDER_MAX_CHARS) {
+    const len = ted.editor ? contentTextLength(ted.editor) : htmlTextLength(html);
+    if (len > TDW_RENDER_MAX_CHARS) {
       // Refuse only if this save makes it LONGER. A document already past the
       // ceiling has to stay savable or it can never be brought back under it.
-      if (html.length > loadedLen.current) {
+      if (len > loadedLen.current) {
         toast.error(
           'Too long to save',
-          `This document is ${html.length.toLocaleString()} characters — the limit is ${TDW_RENDER_MAX_CHARS.toLocaleString()}. `
+          `This document is ${len.toLocaleString()} characters — the limit is ${TDW_RENDER_MAX_CHARS.toLocaleString()}. `
           + 'Past it the PDF and Word exports stop working. Shorten it, or split it into smaller documents.',
         );
         return false;
@@ -693,7 +690,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       // Over, but not growing — let it save and say what is still owed.
       toast.warning(
         'Over the content limit',
-        `This document is ${html.length.toLocaleString()} characters — the limit is ${TDW_RENDER_MAX_CHARS.toLocaleString()}. `
+        `This document is ${len.toLocaleString()} characters — the limit is ${TDW_RENDER_MAX_CHARS.toLocaleString()}. `
         + 'It has been saved, but the PDF and Word exports stay blocked until it is shortened.',
       );
     }
@@ -1240,7 +1237,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                 </div>
                 <div className="tdw-editor-foot" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span className="tdw-editor-foot-hint">ℹ Placeholders auto-fill on document generation</span>
-                  <TdwCharCounter length={(content ?? '').length} textLength={textLength} />
+                  <TdwCharCounter textLength={textLength} />
                 </div>
               </div>
               ); return fullPage ? createPortal(editorShell, document.body) : editorShell; })()}
@@ -1893,35 +1890,25 @@ const TDW_RENDER_MAX_CHARS = 1000000;
  * that whole-tree re-render was the editor lag (QA #40). `baseLength` seeds the
  * count from freshly-loaded content; `remountKey` (the full-page flag) makes the
  * listener re-attach when the editor element is re-created by the portal. */
-/* What the writer typed, and what the renderer has to carry (QA #14).
+/* One number, and it is the writer's own (QA #14, CS-18).
  *
- * The limit is on the DOCUMENT, not on the writing: it exists because the PDF
- * and Word exports give out around a megabyte of HTML, and every bit of
- * formatting is part of that HTML. Changing a selection's font size wraps it
- * in <span style="font-size:…"> — real characters, so a single number called
- * "characters" jumped without a word being typed and read like a bug.
- *
- * Two readings instead. The text count is the writer's own and never moves
- * when something is restyled; the size beside it is what the limit is actually
- * measured against, and it is the one that turns amber and red. */
-function TdwCharCounter({ length, textLength }: { length: number; textLength: number }) {
-  const pct = length / TDW_RENDER_MAX_CHARS;
-  const over = length > TDW_RENDER_MAX_CHARS;
+ * This used to show the size of the HTML beside the text count, because the
+ * limit was measured on the HTML — so raising a selection's font size, which
+ * wraps it in <span style="font-size:…">, moved the figure that decides
+ * without a word being typed. Formatting a document is not writing it, so the
+ * count is the text and nothing else: shorten the document and it falls,
+ * restyle it and it does not move. Same reading as the CTC editor. */
+function TdwCharCounter({ textLength }: { textLength: number }) {
+  const pct = textLength / TDW_RENDER_MAX_CHARS;
+  const over = textLength > TDW_RENDER_MAX_CHARS;
   const color = over ? '#e11d48' : pct > 0.8 ? '#d97706' : '#5e7888';
-  /* 1,000,000 characters of HTML is the ~1 MB the renderers choke at. Small
-     drafts are shown in bytes rather than rounding down to a flat "0 KB". */
-  const asSize = (n: number) => (n >= 1000000 ? `${(n / 1000000).toFixed(2)} MB`
-    : n >= 10000 ? `${Math.round(n / 1000)} KB`
-      : n >= 1000 ? `${(n / 1000).toFixed(1)} KB` : `${n} B`);
   return (
     <span
       title={over
-        ? `This document is ${length.toLocaleString()} characters of HTML — over the 1,000,000 (~1 MB) the PDF and Word exports can carry. They stay blocked until it is shortened.`
-        : `${textLength.toLocaleString()} characters of text. The limit is on document size — text plus its formatting — because that is what the PDF and Word exports carry: ${length.toLocaleString()} of 1,000,000 characters (~1 MB).`}
+        ? `This document is ${textLength.toLocaleString()} characters — over the ${TDW_RENDER_MAX_CHARS.toLocaleString()} the PDF and Word exports can carry. They stay blocked until it is shortened.`
+        : `${TDW_RENDER_MAX_CHARS.toLocaleString()} character limit for the PDF / Word export. Formatting does not count towards it.`}
       style={{ fontSize: 11, fontWeight: 700, color, whiteSpace: 'nowrap' }}>
-      <span style={{ color: '#5e7888' }}>{textLength.toLocaleString()} chars</span>
-      {' · '}
-      {asSize(length)} / 1 MB{over ? ' ⚠' : ''}
+      {textLength.toLocaleString()} / {TDW_RENDER_MAX_CHARS.toLocaleString()}{over ? ' ⚠' : ''}
     </span>
   );
 }

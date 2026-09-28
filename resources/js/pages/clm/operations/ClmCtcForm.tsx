@@ -11,7 +11,7 @@ import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../../master/m
 import ClmInsertPlaceholderModal from '../document-masters/ClmInsertPlaceholderModal';
 import ClmClauseInsertPanel from '../document-masters/ClmClauseInsertPanel';
 import HeaderFooterPanel, { DEFAULT_HEADER, DEFAULT_FOOTER, type HeaderConfig, type FooterConfig } from '../../hrms/doc-templates/HeaderFooterPanel';
-import { useCtcEditor, CtcToolbar, CtcEditorContent, CTC_EDITOR_CSS, waitForPagination, DEFAULT_MARGINS, SHEET_W, type CtcMargins } from './CtcRichEditor';
+import { useCtcEditor, CtcToolbar, CtcEditorContent, CTC_EDITOR_CSS, waitForPagination, DEFAULT_MARGINS, SHEET_W, contentTextLength, htmlTextLength, type CtcMargins } from './CtcRichEditor';
 import CtcLivePreview from './CtcLivePreview';
 import { ctcSignatureLabel, pad2, type CtcContract } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
@@ -42,7 +42,11 @@ const LIVE_REVIEW_MAX_CHARS = 120000;
 
 /* Live counter against the render limit. Amber near the cap, red past it — the
    point is that the draft stops being generatable long before anyone clicks
-   Download, and silence until then is what makes that feel like a bug. */
+   Download, and silence until then is what makes that feel like a bug.
+
+   Counted as TEXT: the limit used to be measured on the HTML, so raising a
+   selection's font size spent it — the number climbed without a word being
+   typed (CS-18). */
 function CtcCharCounter({ length, dark }: { length: number; dark: boolean }) {
   const over = length > CTC_RENDER_MAX_CHARS;
   const color = over ? '#e11d48' : length / CTC_RENDER_MAX_CHARS > 0.8 ? '#d97706' : (dark ? '#8b93a7' : '#5e7888');
@@ -50,7 +54,7 @@ function CtcCharCounter({ length, dark }: { length: number; dark: boolean }) {
     <span
       title={over
         ? 'Over the 1,000,000-character limit — the PDF/Word download will be blocked until you shorten it.'
-        : `${CTC_RENDER_MAX_CHARS.toLocaleString()} character limit (~1 MB) for PDF/Word export`}
+        : `${CTC_RENDER_MAX_CHARS.toLocaleString()} character limit for the PDF / Word export. Formatting does not count towards it.`}
       style={{ fontSize: 8, fontWeight: 700, color, whiteSpace: 'nowrap', letterSpacing: '.03em' }}>
       {length.toLocaleString()} / {CTC_RENDER_MAX_CHARS.toLocaleString()}{over ? ' ⚠' : ''}
     </span>
@@ -936,10 +940,11 @@ function Stage1(p: {
          — and it is the character count, not the file size, that the PDF and
          Word renderers actually choke on. Reject here rather than let it into
          the editor and fail at download time. */
-      if (html.length > CTC_RENDER_MAX_CHARS) {
+      const incoming = htmlTextLength(html);
+      if (incoming > CTC_RENDER_MAX_CHARS) {
         toast.error(
           'Document too long',
-          `${file.name} converts to ${html.length.toLocaleString()} characters — the limit is ${CTC_RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller agreements, or shorten it before uploading.`,
+          `${file.name} carries ${incoming.toLocaleString()} characters — the limit is ${CTC_RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller agreements, or shorten it before uploading.`,
         );
         return;
       }
@@ -962,12 +967,12 @@ function Stage1(p: {
          — and a file that imported "within the limit" could refuse the next
          letter typed (CS-17). Over the ceiling, the previous draft goes back:
          content nobody can edit is worse than no import. */
-      const seeded = ctcEd.editor?.getHTML() ?? houseFontHtml;
-      if (seeded.length > CTC_RENDER_MAX_CHARS) {
+      const seeded = ctcEd.editor ? contentTextLength(ctcEd.editor) : htmlTextLength(houseFontHtml);
+      if (seeded > CTC_RENDER_MAX_CHARS) {
         ctcEd.setHTML(beforeImport);
         toast.error(
           'Document too long',
-          `${file.name} comes to ${seeded.length.toLocaleString()} characters in the editor — the limit is ${CTC_RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller agreements, or shorten it before uploading.`,
+          `${file.name} comes to ${seeded.toLocaleString()} characters — the limit is ${CTC_RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller agreements, or shorten it before uploading.`,
         );
         return;
       }
@@ -1499,7 +1504,7 @@ function Stage1(p: {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', background: t.dark ? 'rgba(255,255,255,.02)' : '#FAFBFF', borderTop: `1px solid ${t.dark ? 'rgba(124,58,237,.18)' : '#F1EEFF'}`, flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg><span style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#A78BFA', fontWeight: 500, fontStyle: 'italic' }}>Placeholders auto-fill on agreement generation</span></div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <CtcCharCounter length={(p.draft ?? '').length} dark={t.dark} />
+                    <CtcCharCounter length={htmlTextLength(p.draft ?? '')} dark={t.dark} />
                     <span style={{ fontSize: 8, fontWeight: 700, color: t.dark ? '#a78bfa' : '#C4B5FD', letterSpacing: '.05em' }}>{'{{PLACEHOLDER}}'}</span>
                   </div>
                 </div>

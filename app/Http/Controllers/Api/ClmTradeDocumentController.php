@@ -375,7 +375,7 @@ class ClmTradeDocumentController extends Controller
 
         // Measured against what is already stored, so an over-limit document
         // can still be saved while it is being cut back down.
-        if ($over = $this->contentOverLimit($data, mb_strlen((string) $row->content))) return $over;
+        if ($over = $this->contentOverLimit($data, $this->htmlTextLength($row->content))) return $over;
 
         // Never let a save replace a document that has text with an empty one — that is how a
         // blank editor silently wiped drafts. Clearing on purpose needs `clear_content: true`.
@@ -486,7 +486,7 @@ class ClmTradeDocumentController extends Controller
      * request exhausts memory/time and crashes with a 500. Above it we return a
      * clean "too large" message instead of letting the process die.
      */
-    private const RENDER_MAX_CHARS = 1000000;   // 1,000,000 chars (~1 MB of HTML)
+    private const RENDER_MAX_CHARS = 1000000;   // 1,000,000 characters of TEXT; formatting does not count (CS-18)
 
     /**
      * Refuse to STORE content past the render ceiling.
@@ -499,8 +499,10 @@ class ClmTradeDocumentController extends Controller
      * already stored, and the only way forward is to cut it down.
      *
      * Returns a 422 response to return from the caller, or null to continue.
-     * mb_strlen matches the measure the render guards use, so anything that
-     * saves is by definition something that can still be exported.
+     * Counted as TEXT (htmlTextLength), the same measure the editors show, so
+     * a save is never refused at a figure the screen never displayed — and
+     * restyling a document, which changes only its markup, cannot push it over
+     * (CS-18).
      *
      * What is refused is GROWTH past the ceiling, not the state of being past
      * it. Rows saved before this guard existed are already over, and on those
@@ -513,14 +515,14 @@ class ClmTradeDocumentController extends Controller
     {
         if (!array_key_exists('content', $data) || $data['content'] === null) return null;
 
-        $len = mb_strlen((string) $data['content']);
+        $len = $this->htmlTextLength($data['content']);
         if ($len <= self::RENDER_MAX_CHARS) return null;
         if ($len <= $storedLen) return null;   // already over, and not growing
 
         return response()->json([
             'status'  => false,
             'message' => 'This document is ' . number_format($len) . ' characters. The limit is '
-                . number_format(self::RENDER_MAX_CHARS) . ' characters (~1 MB) — past it the PDF '
+                . number_format(self::RENDER_MAX_CHARS) . ' characters — past it the PDF '
                 . 'and Word exports stop working. Shorten it, or split it into smaller documents.',
             'errors'  => ['content' => ['Over the ' . number_format(self::RENDER_MAX_CHARS) . '-character limit.']],
         ], 422);
@@ -563,12 +565,12 @@ class ClmTradeDocumentController extends Controller
 
         // Guard oversized content: past this, PhpWord crashes the request (500).
         // Return a clean message the UI can show instead.
-        if (($len = mb_strlen((string) $row->content)) > self::RENDER_MAX_CHARS) {
+        if (($len = $this->htmlTextLength($row->content)) > self::RENDER_MAX_CHARS) {
             return response()->json([
                 'status'  => false,
                 'message' => 'This trade document is too large to generate as a Word file — '
                     . number_format(round($len / 1024 / 1024, 2), 2) . ' MB (' . number_format($len) . ' characters). '
-                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters (~1 MB). Please shorten or split it.',
+                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters of text. Please shorten or split it.',
             ], 422);
         }
 
@@ -679,12 +681,12 @@ class ClmTradeDocumentController extends Controller
         @set_time_limit(300);
 
         // Guard oversized content: past this, dompdf crashes the request (500).
-        if (($len = mb_strlen((string) $row->content)) > self::RENDER_MAX_CHARS) {
+        if (($len = $this->htmlTextLength($row->content)) > self::RENDER_MAX_CHARS) {
             return response()->json([
                 'status'  => false,
                 'message' => 'This trade document is too large to generate as a PDF — '
                     . number_format(round($len / 1024 / 1024, 2), 2) . ' MB (' . number_format($len) . ' characters). '
-                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters (~1 MB). Please shorten or split it.',
+                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters of text. Please shorten or split it.',
             ], 422);
         }
 
@@ -772,7 +774,7 @@ class ClmTradeDocumentController extends Controller
 
         /* Same guard the download carries. dompdf does not fail gracefully on a
            document past this size, it takes the request down with it. */
-        if (($len = mb_strlen($html)) > self::RENDER_MAX_CHARS) {
+        if (($len = $this->htmlTextLength($html)) > self::RENDER_MAX_CHARS) {
             return response()->json([
                 'status'  => false,
                 'message' => 'This draft is too large to preview — '
@@ -966,13 +968,13 @@ class ClmTradeDocumentController extends Controller
 
         // Reject a document whose text is over the render cap: it could never be
         // downloaded as PDF/Word afterwards. Drop the stored file and tell the user.
-        if (($len = mb_strlen((string) $html)) > self::RENDER_MAX_CHARS) {
+        if (($len = $this->htmlTextLength($html)) > self::RENDER_MAX_CHARS) {
             Storage::disk('public')->delete($path);
             return response()->json([
                 'status'  => false,
                 'message' => 'This document is too large — '
                     . number_format(round($len / 1024 / 1024, 2), 2) . ' MB (' . number_format($len) . ' characters). '
-                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters (~1 MB). Please upload a smaller file or split it.',
+                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters of text. Please upload a smaller file or split it.',
             ], 422);
         }
 
@@ -1029,10 +1031,10 @@ class ClmTradeDocumentController extends Controller
                it, and a file exported from the Trade Document library came
                straight back as "Import failed". The renderers give out at the
                million, which is where the refusal belongs. */
-            if (($len = mb_strlen((string) $html)) > self::RENDER_MAX_CHARS) {
+            if (($len = $this->htmlTextLength($html)) > self::RENDER_MAX_CHARS) {
                 return response()->json(['status' => false, 'message' => 'This document converts to '
                     . number_format($len) . ' characters. The limit is ' . number_format(self::RENDER_MAX_CHARS)
-                    . ' characters (~1 MB) — past it the PDF and Word exports stop working. '
+                    . ' characters of text — past it the PDF and Word exports stop working. '
                     . 'Please shorten it, or split it into smaller documents.'], 422);
             }
         } catch (\Throwable $e) {
