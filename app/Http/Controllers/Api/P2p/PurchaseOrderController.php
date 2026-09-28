@@ -418,6 +418,20 @@ class PurchaseOrderController extends Controller
            its first transaction and refuses every later one in another. Caught
            here so the mismatch is said before the PO is built, not at sync. */
         $currency = $data['document_type'] === 'international' ? ($data['currency_code'] ?? null) : 'INR';
+
+        /* A currency Zoho Books has not enabled cannot reach it at all: the PO
+           posts in the org's base currency with no word said, which is how an
+           SGD order came to sit in the books as rupees. Refused here rather than
+           discovered in the ledger. An empty list means Zoho is unreachable —
+           not a reason to stop someone raising a PO. */
+        $enabled = app(\App\Services\ZohoBooksService::class)->enabledCurrencies();
+        if ($currency && $enabled && !in_array(strtoupper($currency), $enabled, true)) {
+            return $this->fail('Currency not in Zoho Books', 422, ['errors' => ['currency_code' => [
+                strtoupper($currency) . ' is not one of the currencies enabled in Zoho Books, so this order could never'
+                . ' reach it. Add it under Settings → Currencies in Zoho, or choose one of: ' . implode(', ', $enabled) . '.',
+            ]]]);
+        }
+
         $clash = $this->currency()
             ->conflict((int) $user->client_id, (int) $vendor->id, $currency, $exceptPoId);
         if ($clash) {

@@ -1306,6 +1306,12 @@ class PurchaseOrderController extends Controller
             ->forUser($user, $request->integer('branch_id') ?: null)
             ->findOrFail($id);
 
+        /* The currency list is cached for an hour, which is exactly wrong for
+           someone who has just added one in Zoho and come back to try again. */
+        if ($request->boolean('refresh_currencies')) {
+            app(\App\Services\ZohoBooksService::class)->forgetCurrencyCache();
+        }
+
         $a = $v->primaryAddress;
         // Newest scrutiny is the current GST status. The relation carries a
         // baked-in orderBy('id') ASC, so a `latest('id')` in the eager-load
@@ -1351,6 +1357,20 @@ class PurchaseOrderController extends Controller
             'mapped_product_ids' => app(\App\Services\P2p\PurchaseOrderService::class)->vendorProductIds((int) $v->id),
             // What this supplier charges per mapped product — a PO line takes it over the master price.
             'product_rates' => app(\App\Services\P2p\PurchaseOrderService::class)->vendorProductRates((int) $v->id),
+            /* What Zoho Books shows for this supplier, so Stage 01 answers the
+               currency as the supplier is picked rather than refusing the form
+               once it is filled. `settled` means a transaction of ours put it
+               there — only then is no other currency possible. Null = not in the
+               books yet, everything still open. */
+            'zohoCurrency' => app(\App\Services\P2p\VendorCurrencyGuard::class)
+                ->currencyInZoho((int) $v->client_id, (int) $v->id),
+            'zohoCurrencySettled' => app(\App\Services\P2p\VendorCurrencyGuard::class)
+                ->settledCurrency((int) $v->client_id, (int) $v->id) !== null,
+            /* The currencies Zoho Books actually has enabled. A PO in any other
+               cannot reach the books — SGD was offered here for months, was not
+               enabled there, and its orders posted as rupees without a word.
+               Empty when Zoho is unreachable, and the form falls back to ours. */
+            'zohoCurrencies' => app(\App\Services\ZohoBooksService::class)->enabledCurrencies(),
         ]]);
     }
 
