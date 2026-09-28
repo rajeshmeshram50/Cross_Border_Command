@@ -260,11 +260,13 @@ class PoZohoService
                     'updated_by'            => $userId ?? $po->updated_by,
                 ])->save();
 
-                /* The supplier's currency is in the books now, so it is final —
-                   Zoho will not let a contact's currency change once it carries
-                   transactions. */
+                /* This currency is in the books now, so it is what every later
+                   order on this supplier has to use — Zoho will not let a
+                   contact's currency change once it carries transactions. */
                 if ($po->vendor_id) {
-                    app(VendorCurrencyGuard::class)->markSynced((int) $po->client_id, (int) $po->vendor_id);
+                    app(VendorCurrencyGuard::class)->rememberZohoCurrency(
+                        (int) $po->client_id, (int) $po->vendor_id, (string) ($po->currency_code ?: 'INR'),
+                    );
                 }
             } catch (\Throwable $e) {
                 if ($createdBill) $this->quietly(fn () => $this->books->deleteBill($createdBill), 'bill delete');

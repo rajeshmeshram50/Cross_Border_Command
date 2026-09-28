@@ -8,7 +8,7 @@ import { downloadFile } from '../../../../utils/downloadFile';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
-import { Box, Chip, ICON_X, STAT_ICONS, Stat, money, shortDate } from '../../purchase-management/order/manage-payment/payment-shared';
+import { Box, Chip, ICON_X, STAT_ICONS, Stat, moneyIn, shortDate } from '../../purchase-management/order/manage-payment/payment-shared';
 import { PoApiError, refundApi, type RecoveryBody } from '../../purchase-management/order/api/po-api';
 import { IcoCheck, IcoDocSm, IcoDownload, IcoEye, IcoPencil, IcoPlus, IcoRefund, IcoTrash } from '../../icons';
 import { FitTip } from '../../purchase-management/order/create-po/form-fields';
@@ -47,6 +47,9 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
   const confirm = useConfirm();
   const [refund, setRefund] = useState<RefundAdjustment | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  /* Every figure here is money on the purchase order, so it is read in the
+     order's currency — a USD order was showing its refund in rupees (CS-409). */
+  const money = moneyIn(refund?.poInfo?.currency ?? 'INR');
 
   // null = form closed, -1 = adding, otherwise the recovery id being edited.
   const [editing, setEditing] = useState<number | null>(null);

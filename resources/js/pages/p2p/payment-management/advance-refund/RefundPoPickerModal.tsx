@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import SearchClear from '../../../../components/ui/SearchClear';
 import { useDebouncedValue } from '../../../../hooks/useDebouncedValue';
-import { money, fmtDate } from '../../purchase-management/order/manage-payment/payment-shared';
+import { moneyIn, fmtDate } from '../../purchase-management/order/manage-payment/payment-shared';
 import { refundApi, type RefundEligiblePo } from '../../purchase-management/order/api/po-api';
 import { IcoCheck, IcoChevron, IcoChevronR, IcoSearch, IcoX } from '../../icons';
 import { useEscapeClose } from './useEscapeClose';
@@ -92,7 +92,7 @@ function PoLine({ row, stacked }: { row: RefundEligiblePo; stacked?: boolean }) 
         {stacked && <span className="ord-idcell__date">{fmtDate(row.po_date ?? '')}</span>}
       </span>
       <span className="arf-pick-sup">{row.supplier_name ?? '—'}</span>
-      <span className="arf-pick-paid">{money(row.paid_amount)} <small>paid</small></span>
+      <span className="arf-pick-paid">{moneyIn(row.currency_code ?? 'INR')(row.paid_amount)} <small>paid</small></span>
     </span>
   );
 }

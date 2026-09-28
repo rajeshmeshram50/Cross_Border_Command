@@ -9,7 +9,7 @@ import WorklistPager from '../../../../components/ui/WorklistPager';
 import SearchClear from '../../../../components/ui/SearchClear';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useDebouncedValue } from '../../../../hooks/useDebouncedValue';
-import { money, fmtDate, shortDate } from '../../purchase-management/order/manage-payment/payment-shared';
+import { moneyIn, fmtDate, shortDate } from '../../purchase-management/order/manage-payment/payment-shared';
 import {
   IcoDoc, IcoRefund, IcoSearch, IcoChevron,
   IcoLink, IcoLines, IcoCard, IcoHistory, IcoAlert,
@@ -407,6 +407,8 @@ function RefundRow({ sr, refund, syncing, onEdit, onRecover, onVault, onSync, on
   // Once money starts coming back the figures are fixed, so the action reads as View.
   const settled = isSettled(refund);
   const po = refund.poInfo;
+  // Each row is money on ITS purchase order, so it reads in that order's currency.
+  const money = moneyIn(po?.currency ?? 'INR');
   const fig = refundFigures(refund);
   const tds = po?.tds ?? 0;
   const cancelled = !!po?.cancelled;

@@ -856,6 +856,14 @@ class SegmentDocUploadController extends Controller
             if ($poDeals) {
                 $vendorDeals['with_shipment']    = $poDeals['with_shipment'];
                 $vendorDeals['without_shipment'] = $poDeals['without_shipment'];
+            } else {
+                /* No purchase order means no case: this section is per deal, and
+                   a supplier with nothing ordered was listing every document its
+                   segments define as "not sent for signature · action needed"
+                   (CS-409). What a segment requires belongs to the DCP; what a
+                   deal requires appears once there is a deal. */
+                $vendorDeals['with_shipment']    = [];
+                $vendorDeals['without_shipment'] = [];
             }
         }
 

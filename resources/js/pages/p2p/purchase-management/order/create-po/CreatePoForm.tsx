@@ -22,6 +22,7 @@ import {
 import type { PoDraft, PoLineRow } from './po-draft';
 import type { SupplierDetail } from '../api/po-api';
 import GstNoticeModal, { type GstNotice } from './GstNoticeModal';
+import CurrencyNoticeModal, { type CurrencyNotice } from './CurrencyNoticeModal';
 // The supplier master's wizard, opened on its GST Scrutiny tab when scrutiny is missing or stale.
 const AddVendorModal = lazy(() => import('../../../p2p-master-management/supplier-management/AddVendorModal'));
 /* Also opened from the Step 03 footer, so the missing paperwork can be filled
@@ -151,7 +152,11 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     void vault.then((v) => set({ vault: v, legal: legalFromVault(v) }));
     try {
       const supplier = await poLookupApi.supplier(vendorId);
-      set({ vendorId, supplier });
+      /* A supplier whose currency Zoho already holds answers the field here,
+         rather than leaving the user to guess it and the server to refuse. INR
+         is skipped: an international PO may not use it. */
+      const zohoCcy = (supplier.zohoCurrency ?? '').toUpperCase();
+      set({ vendorId, supplier, ...(zohoCcy && zohoCcy !== 'INR' ? { currency: zohoCcy } : {}) });
       return supplier;
     } catch (e) {
       fail(e);
@@ -245,6 +250,8 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   // beside "Submit PO & Next" on Step 03 — only when the check calls for one.
   const gst = gstCheck(draft);
   const [gstNotice, setGstNotice] = useState<GstNotice | null>(null);
+  // Raised when the server refuses a currency Zoho Books has not enabled.
+  const [ccyNotice, setCcyNotice] = useState<CurrencyNotice | null>(null);
   /* The supplier's one-time paperwork (Company DD, Owner KYC, Trade Licenses),
      read from its Evidence Vault. Incomplete stops the submit on Step 03. */
   const standardDocs = draft.legal?.sections?.[0] ?? null;
@@ -376,10 +383,17 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
       const mapped = err instanceof PoApiError ? stage1FromServer(err.fieldErrors) : {};
       if (!Object.keys(mapped).length) throw err;
       setServerErrors(mapped);
-      /* A supplier trades in one currency (Zoho Books pins its contact to one),
-         and on a domestic PO the currency field is not even on screen — so this
-         one is said out loud rather than only highlighted. */
+      /* A currency Zoho Books has not enabled gets the notice, not a toast: it is
+         fixed in Zoho and then retried, the same shape as the GST block. */
       const clash = err instanceof PoApiError ? err.fieldErrors.currency_code?.[0] : undefined;
+      if (clash && /not .*enabled in Zoho Books/i.test(clash)) {
+        setCcyNotice({
+          currency: draft.currency.toUpperCase(),
+          enabled: draft.supplier?.zohoCurrencies ?? [],
+          supplier: draft.supplier?.name ?? null,
+        });
+        return false;
+      }
       if (clash) {
         toast.error('Supplier currency mismatch', clash);
         scrollToFirstError();
@@ -743,6 +757,19 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
       {gstNotice && (
         <GstNoticeModal notice={gstNotice} onClose={() => setGstNotice(null)} poId={poId} approval={approval} onSent={reloadApproval}
           onOpenScrutiny={draft.vendorId ? () => setScrutinyFor(draft.vendorId) : undefined} />
+      )}
+      {ccyNotice && (
+        <CurrencyNoticeModal notice={ccyNotice} onClose={() => setCcyNotice(null)}
+          /* Zoho caches its currency list for an hour, so a currency added just
+             now is read fresh before the save is tried again. */
+          onRetry={async () => {
+            setCcyNotice(null);
+            if (draft.vendorId) {
+              const fresh = await poLookupApi.supplier(draft.vendorId, true).catch(() => null);
+              if (fresh) set({ supplier: fresh });
+            }
+            void saveStage1();
+          }} />
       )}
       {docsNotice && (
         <SupplierDocsNoticeModal notice={docsNotice} onClose={() => setDocsNotice(null)} onVaultChange={refreshVault} />
