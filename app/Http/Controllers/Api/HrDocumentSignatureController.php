@@ -364,6 +364,15 @@ class HrDocumentSignatureController extends Controller
                 'created_by'     => $user?->id,
             ]);
             $row->load(self::WITH);
+
+            /* The bell, not just the Inbox. The run already lands in the
+               signer's Inbox (inbox() reads it live), but nothing told the
+               bell, so the drawer never showed a document waiting on them —
+               only a manual Reminder ever wrote a row (CBC #11). Sequential
+               asks the first signer; parallel asks everyone at once. */
+            $askNow = $this->isParallel($row) ? $resolved : array_slice($resolved, 0, 1);
+            $this->notifySignersOfTurn($row, array_column($askNow, 'user_id'), $user?->name);
+
             return response()->json($row, 201);
         });
     }
@@ -486,6 +495,8 @@ class HrDocumentSignatureController extends Controller
                 } else {
                     $row->current_index = $next;
                     $row->status = 'In Progress';
+                    // It is now the next signer's turn — tell their bell.
+                    $this->notifySignersOfTurn($row, [$signers[$next]['user_id'] ?? null], $user?->name);
                 }
             }
 
@@ -693,6 +704,59 @@ class HrDocumentSignatureController extends Controller
             'message' => 'Reminder sent — the signer will see it in their Inbox.',
             'signer'  => $signerName,
         ]);
+    }
+
+    /**
+     * Bell notification telling each signer the document is now waiting on
+     * them. Written after the surrounding transaction commits: on Postgres a
+     * failed insert inside it would abort the whole send, and a rolled-back
+     * send must not leave a notification behind. A failed insert is logged,
+     * never surfaced — the Inbox still carries the document either way.
+     */
+    private function notifySignersOfTurn(HrDocumentSignature $row, array $userIds, ?string $senderName): void
+    {
+        $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds))));
+        if (!$userIds) return;
+
+        $signers = collect($row->signers ?? []);
+        $tplName = $row->template?->name ?: 'a document';
+        $docCode = $row->code ?: ('doc-' . $row->id);
+        $sender  = $senderName ?: 'HR';
+        $subject = $row->employee?->display_name
+            ?: trim(($row->employee?->first_name ?? '') . ' ' . ($row->employee?->last_name ?? ''));
+
+        DB::afterCommit(function () use ($row, $userIds, $signers, $tplName, $docCode, $sender, $subject) {
+            foreach ($userIds as $uid) {
+                $action = $signers->firstWhere('user_id', $uid)['action'] ?? 'Sign';
+                try {
+                    DB::table('notifications')->insert([
+                        'id'              => (string) Str::uuid(),
+                        'type'            => 'App\\Notifications\\HrSignatureRequest',
+                        'notifiable_type' => User::class,
+                        'notifiable_id'   => $uid,
+                        'data'            => json_encode([
+                            'kind'          => 'hr_signature_request',
+                            'document_id'   => $row->id,
+                            'code'          => $docCode,
+                            'template'      => $tplName,
+                            'action'        => $action,
+                            'sender_name'   => $sender,
+                            'employee_name' => $subject ?: null,
+                            'message'       => "{$tplName} — waiting for you to {$action}"
+                                . ($subject ? " ({$subject})" : ''),
+                            'url'           => '/inbox',
+                        ]),
+                        'read_at'         => null,
+                        'created_at'      => now(),
+                        'updated_at'      => now(),
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::warning('[hr-document-signatures] signer notification insert failed', [
+                        'id' => $row->id, 'user' => $uid, 'err' => $e->getMessage(),
+                    ]);
+                }
+            }
+        });
     }
 
     /* ───── SIGNED OUTPUT (download + email) ───── */

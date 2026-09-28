@@ -254,10 +254,6 @@ export default function IdimsHeader() {
   const [logoDarkMissing, setLogoDarkMissing] = useState(false);
   useEffect(() => { setLogoDarkMissing(false); }, [rawLogo]);
   const showDarkLogo = theme === 'dark' && !!darkLogoSrc && !logoDarkMissing;
-  // The bundled fallback logo (no tenant upload) is already transparent with
-  // light colours that read fine on the dark nav, so it needs no pill. Only an
-  // uploaded logo that lacks a -dark variant falls back to the soft pill.
-  const logoNeedsPill = theme === 'dark' && !showDarkLogo && !!rawLogo;
 
   /* ── Profile photo ── */
   const rawPhoto = user?.user_profile_photo || user?.employee_profile_photo
@@ -734,7 +730,7 @@ export default function IdimsHeader() {
           the nav bar + dropdown stack above it). Click to close. */}
       {openDD && <div className="idims-dd-backdrop" onClick={() => setOpenDD(null)} />}
       <nav className="idims-nav">
-        <div className={`idims-logo ${logoNeedsPill ? 'idims-logo-pill' : ''}`} onClick={() => go('/dashboard')}>
+        <div className="idims-logo" onClick={() => go('/dashboard')}>
           <img className="idims-logo-full" src={showDarkLogo ? darkLogoSrc! : logoSrc} alt="logo"
             onError={() => { if (showDarkLogo) setLogoDarkMissing(true); }} />
         </div>
@@ -1165,11 +1161,8 @@ const IDIMS_CSS = `
 .idims-logo { display: flex; align-items: center; flex-shrink: 0; cursor: pointer; border-radius: 12px; transition: background .2s ease, box-shadow .2s ease, padding .2s ease; }
 .idims-logo-full { height: 52px; width: auto; display: block; object-fit: contain; filter: drop-shadow(0 2px 5px rgba(120,53,15,.18)); transition: transform .18s ease; }
 .idims-logo:hover .idims-logo-full { transform: scale(1.03); }
-/* Dark mode — preferred path: a recoloured "-dark" logo variant blends straight
-   into the nav with no box (see darkLogoSrc). Fallback for tenants without a
-   dark variant: a soft translucent white pill so the original logo stays legible
-   and keeps its colours. Light mode is untouched. */
-.idims-logo-pill { background: #fff; padding: 4px 10px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.28), inset 0 0 0 1px rgba(255,255,255,.55); }
+/* Dark mode: a recoloured "-dark" logo variant is used when one exists (see
+   darkLogoSrc); otherwise the original logo sits directly on the nav, no box. */
 .idims-dark .idims-logo-full { filter: none; }
 .idims-divider { width: 1px; height: 56px; background: #E4E7EF; flex-shrink: 0; margin: 0 12px 0 10px; }
 .idims-nav-stack { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; }
@@ -1598,7 +1591,6 @@ const IDIMS_CSS = `
   .idims-divider { display: none; }
   .idims-logo { order: 0; }
   .idims-logo-full { height: 38px; }
-  .idims-logo-pill { padding: 5px 11px; }
   .idims-nav-stack { gap: 8px; }
   .idims-row-top { border-bottom: none; padding: 0; gap: 8px 10px; flex-wrap: wrap; align-items: center; }
   .idims-row-bottom { display: none; }
@@ -1642,7 +1634,6 @@ const IDIMS_CSS = `
 }
 @media (max-width: 380px) {
   .idims-logo-full { height: 28px; }
-  .idims-logo-pill { padding: 4px 9px; }
   .idims-action-btn { width: 28px; height: 28px; }
   .idims-action-btn svg { width: 15px; height: 15px; }
   .idims-profile-icon { width: 30px; height: 30px; }
