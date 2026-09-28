@@ -242,7 +242,11 @@ class DebitNoteController extends Controller
             $partyState = \App\Services\ZohoBooksService::normStateCode($stateCode);
             $interState = $partyState !== null && $partyState !== \App\Services\ZohoBooksService::normStateCode($orgState);
 
-            $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, $stateCode);
+            // A debit note has no currency of its own; it follows the invoice it credits.
+            $dnCurrency = $dn->supplier_purchase_invoice_id
+                ? DB::table('supplier_purchase_invoices')->where('id', $dn->supplier_purchase_invoice_id)->value('currency')
+                : null;
+            $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, $stateCode, $dnCurrency);
 
             // A vendor credit must be raised AGAINST a bill (this org's GST rule —
             // Zoho rejects a standalone credit with "Select the associated bill

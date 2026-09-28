@@ -10,6 +10,7 @@ use App\Models\P2p\PurchaseOrder;
 use App\Models\P2p\PurchaseOrderDocument;
 use App\Models\P2p\PurchaseOrderItem;
 use App\Services\P2p\PurchaseOrderService;
+use App\Services\P2p\VendorCurrencyGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -301,7 +302,7 @@ class PurchaseOrderController extends Controller
         if ($resolved instanceof JsonResponse) return $resolved;
 
         $po = $this->inTransaction('create the PO', function () use ($user, $data, $resolved) {
-            return PurchaseOrder::create($this->stage1Attributes($data, $resolved) + [
+            $po = PurchaseOrder::create($this->stage1Attributes($data, $resolved) + [
                 'client_id'    => $user->client_id,
                 'branch_id'    => $user->branch_id,
                 'code'         => $this->svc->nextPoCode((int) $user->client_id),
@@ -311,6 +312,9 @@ class PurchaseOrderController extends Controller
                 'created_by'   => $user->id,
                 'updated_by'   => $user->id,
             ]);
+            $this->rememberCurrency($po);
+
+            return $po;
         });
 
         return $this->ok($this->shapeDetail($po->fresh()), 201);
@@ -348,15 +352,39 @@ class PurchaseOrderController extends Controller
             }
             if ($attrs['physical_inspection'] === $po->physical_inspection) unset($attrs['inspection_status']);
             $taxChanged = $po->tax_mode !== $attrs['tax_mode'] || $po->document_type !== $attrs['document_type'];
+            // The old supplier keeps its currency only if another order still holds it.
+            $wasVendor = (int) $po->vendor_id;
             $po->update($attrs);
             if ($taxChanged) $this->retaxItems($po);
+            if ($vendorChanged) $this->currency()->forget((int) $po->client_id, $wasVendor, (int) $po->id);
+            $this->rememberCurrency($po);
         });
 
         return $this->ok($this->shapeDetail($po->fresh()));
     }
 
+    private function currency(): VendorCurrencyGuard
+    {
+        return app(VendorCurrencyGuard::class);
+    }
+
+    /** Record this PO's currency against its supplier (see VendorCurrencyGuard). */
+    private function rememberCurrency(PurchaseOrder $po): void
+    {
+        if (!$po->vendor_id) return;
+
+        $this->currency()->remember(
+            (int) $po->client_id,
+            $po->branch_id !== null ? (int) $po->branch_id : null,
+            (int) $po->vendor_id,
+            (int) $po->id,
+            $po->code,
+            $po->currency_code,
+        );
+    }
+
     /** Validates shipment and supplier against the tenant; returns what Stage 01 derives. */
-    private function resolveStage1(array $data, $user): array|JsonResponse
+    private function resolveStage1(array $data, $user, ?int $exceptPoId = null): array|JsonResponse
     {
         $ship = null;
         if (!empty($data['shipment_order_id'])) {
@@ -384,6 +412,16 @@ class PurchaseOrderController extends Controller
             return $this->fail('Document type does not match the supplier', 422, ['errors' => ['document_type' => [
                 "This is " . ($origin === 'international' ? 'an international' : 'a domestic') . " supplier — the document type must be " . ($origin === 'international' ? 'International.' : 'Domestic.'),
             ]]]);
+        }
+
+        /* One currency per supplier: Zoho Books pins a contact to the currency of
+           its first transaction and refuses every later one in another. Caught
+           here so the mismatch is said before the PO is built, not at sync. */
+        $currency = $data['document_type'] === 'international' ? ($data['currency_code'] ?? null) : 'INR';
+        $clash = $this->currency()
+            ->conflict((int) $user->client_id, (int) $vendor->id, $currency, $exceptPoId);
+        if ($clash) {
+            return $this->fail('Supplier currency mismatch', 422, ['errors' => ['currency_code' => [$clash]]]);
         }
 
         $home = $this->svc->homeStateCode($user->branch_id);
@@ -824,6 +862,8 @@ class PurchaseOrderController extends Controller
             $po->update(['status' => PurchaseOrder::STATUS_CANCELLED, 'cancelled_at' => now(),
                 'cancelled_by' => $user->id, 'cancel_reason' => $data['reason'], 'updated_by' => $user->id,
                 'cancel_stage' => PurchaseOrder::CANCEL_CLOSED, 'cancel_closed_at' => now()]);
+            // A cancelled order no longer speaks for the supplier's currency.
+            $this->currency()->forget((int) $po->client_id, (int) $po->vendor_id, (int) $po->id);
         });
         return $this->ok($this->shapeDetail($po->fresh()));
     }
@@ -909,6 +949,7 @@ class PurchaseOrderController extends Controller
         $this->inTransaction('delete the PO', function () use ($po, $user) {
             $this->svc->releaseAll($po, 'deleted', $user->id);
             $po->update(['updated_by' => $user->id]);
+            $this->currency()->forget((int) $po->client_id, (int) $po->vendor_id, (int) $po->id);
             $po->delete();
         });
         return $this->ok(['id' => $id, 'deleted' => true]);

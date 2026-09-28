@@ -8,6 +8,7 @@ use App\Models\P2p\PoRefundAdjustment;
 use App\Models\P2p\PoRefundRecovery;
 use App\Models\P2p\PurchaseOrder;
 use App\Models\Vendor;
+use App\Services\P2p\VendorCurrencyGuard;
 use App\Services\ZohoBooksService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -258,6 +259,13 @@ class PoZohoService
                     'zoho_error'            => null,
                     'updated_by'            => $userId ?? $po->updated_by,
                 ])->save();
+
+                /* The supplier's currency is in the books now, so it is final —
+                   Zoho will not let a contact's currency change once it carries
+                   transactions. */
+                if ($po->vendor_id) {
+                    app(VendorCurrencyGuard::class)->markSynced((int) $po->client_id, (int) $po->vendor_id);
+                }
             } catch (\Throwable $e) {
                 if ($createdBill) $this->quietly(fn () => $this->books->deleteBill($createdBill), 'bill delete');
                 if ($createdPo) $this->quietly(fn () => $this->books->deletePurchaseOrder($createdPo), 'PO delete');
@@ -537,7 +545,7 @@ class PoZohoService
         $ccyId = $this->books->resolveCurrencyId($po->currency_code);
 
         return [
-            'vendor_id'     => $this->books->findOrCreateVendorId($vendor, $gstin, $stateCode),
+            'vendor_id'     => $this->books->findOrCreateVendorId($vendor, $gstin, $stateCode, $po->currency_code),
             'registered'    => (bool) $gstin,
             'inter_state'   => $party !== null && $party !== ZohoBooksService::normStateCode($orgState),
             'currency_id'   => $ccyId,

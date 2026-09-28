@@ -318,7 +318,7 @@ class PurchaseOrderController extends Controller
                 $partyState = \App\Services\ZohoBooksService::normStateCode($stateCode);
                 $interState = $partyState !== null && $partyState !== \App\Services\ZohoBooksService::normStateCode($orgState);
 
-                $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, $stateCode);
+                $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, $stateCode, $po->currency_code ?? null);
 
                 // 1) Create the Zoho PURCHASE ORDER once (skip if a prior sync made it
                 //    and only the bill is missing — mid-flow recovery).
@@ -491,7 +491,7 @@ class PurchaseOrderController extends Controller
             $vendor = Vendor::with('primaryAddress')->findOrFail($po->vendor_id);
             $gstin  = ($vendor->gst_number ?: null)
                 ?: (DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null);
-            $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, optional($vendor->primaryAddress)->state_code);
+            $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, optional($vendor->primaryAddress)->state_code, $po->currency_code ?? null);
             $bill = $books->getBill((string) $po->zoho_bill_id);
             $created = [];
             $pay  = $this->postPoPaymentsToBill($po, $books, $zohoVendorId, (string) $po->zoho_bill_id, (float) ($bill['balance'] ?? 0), $created, $onlyPaymentId);
