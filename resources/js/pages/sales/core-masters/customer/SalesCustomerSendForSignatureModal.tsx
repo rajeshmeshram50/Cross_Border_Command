@@ -194,7 +194,14 @@ interface Props {
    *  the PO rides as one extra document in the SAME Zoho request. Shown as an
    *  extra row in the preview rail (positionable like any doc); on send its
    *  coords go under document_settings['po'] and `purchase_order_id` is posted. */
-  bundlePo?: { id: number; code: string; name: string; previewUrl: string } | null;
+  bundlePo?: {
+    id: number; code: string; name: string; previewUrl: string;
+    /** Which record `id` is. 'legacy' (the default) posts purchase_order_id and
+     *  the server re-renders that PO. 'p2p' posts p2p_po_document_id — a Stage 04
+     *  document row whose PDF already exists, so the server attaches it. The two
+     *  purchase-order tables share ids, so this cannot be inferred. */
+    kind?: 'legacy' | 'p2p';
+  } | null;
   /** Agreements to carry in the SAME envelope as the preselected trade
    *  documents. The Case-to-Case panel can tick a trade document and an
    *  agreement together; that selection used to be sent as two envelopes (trade
@@ -1178,7 +1185,11 @@ export default function SalesCustomerSendForSignatureModal({
               ...(tdIdsPicked.length   ? { trade_doc_ids: tdIdsPicked } : {}),
               ...(agrKeysPicked.length ? { agreement_ids: agrKeysPicked.map(agrIdOf) } : {}),
             }),
-        ...(bundlingPo ? { purchase_order_id: bundlePo!.id } : {}),
+        ...(bundlingPo
+          ? (bundlePo!.kind === 'p2p'
+            ? { p2p_po_document_id: bundlePo!.id }
+            : { purchase_order_id: bundlePo!.id })
+          : {}),
         party_id: customer.db_id,
         model_name: modelName,
         // Lead scope (Sales-Matrix Trade Documents popup) — omitted for the
@@ -1403,6 +1414,32 @@ export default function SalesCustomerSendForSignatureModal({
   const goPage = (delta: number) => {
     setViewPage(p => Math.max(0, Math.min(pageCount - 1, p + delta)));
   };
+
+  /* Each document in the envelope has its own pages, so the page being viewed
+   * belongs to the document being viewed. It used to survive the switch: paging
+   * through a long trade document and then opening a short one read "Page 10 of
+   * 4", and a signature box saved from there carried a page the document does
+   * not have. Land on the page this document's box already sits on, else its
+   * first. */
+  useEffect(() => {
+    if (!activeDocId) return;
+    setViewPage(Math.max(0, activeSettings?.page ?? 0));
+    // activeSettings is derived per document; following it here would fight the drag.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDocId]);
+
+  /* A document that renders shorter than the one before must not leave the view
+   * past its end — the page count arrives after the render, so clamp on it too.
+   *
+   * The stored box page is clamped with it. The Page input only clamped what it
+   * DISPLAYED, so a box left pointing past the end would have gone to Zoho with
+   * a page_no the document has not got, and the field could not be placed. */
+  useEffect(() => {
+    const last = Math.max(0, pageCount - 1);
+    setViewPage(p => Math.min(p, last));
+    if (activeDocId && (activeSettings?.page ?? 0) > last) updateActiveSettings({ page: last });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageCount, activeDocId]);
 
   /* ── Drag-to-position the signature box on the live PDF preview.
    * The preview wrapper is sized to A4 aspect ratio (595×842), so the

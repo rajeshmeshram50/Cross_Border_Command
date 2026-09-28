@@ -1890,6 +1890,17 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 .cdoc-btn--signed:not(:disabled):hover {
   box-shadow: 0 5px 13px -3px rgba(22, 163, 74, .5), inset 0 1px 0 rgba(255, 255, 255, .22);
 }
+/* Resend — the warm red-orange the Sales Matrix gives a declined document, so
+   "this came back unsigned" reads the same in both places. */
+.cdoc-btn--resend {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, .20), rgba(255, 255, 255, 0) 54%),
+    linear-gradient(135deg, #f97316, #dc2626);
+  box-shadow: 0 3px 9px -3px rgba(220, 38, 38, .42), inset 0 1px 0 rgba(255, 255, 255, .18);
+}
+.cdoc-btn--resend:not(:disabled):hover {
+  box-shadow: 0 5px 13px -3px rgba(220, 38, 38, .5), inset 0 1px 0 rgba(255, 255, 255, .22);
+}
 /* A row action that doesn't apply yet stays in place, greyed — so the column
    lines up and you can see what the row will offer once it's signed. */
 .cdoc-btn:disabled,
