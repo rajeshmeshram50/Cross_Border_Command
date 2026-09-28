@@ -3472,6 +3472,7 @@
   max-height: none;
   flex: 1 1 auto;
   overflow-y: auto;
+  overflow-x: auto;
 }
 
 .sev-ov .cev-ov-table {
@@ -3852,10 +3853,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* A row out for signature carries three pills; they wrap rather than
-     push the table past its width. */
-  flex-wrap: wrap;
-  gap: 6px 6px;
+  /* The three pills stay on one line; the table scrolls sideways instead
+     of wrapping them, which reads as a broken row. */
+  flex-wrap: nowrap;
+  gap: 6px;
 }
 
 .sev-ov .sev-ov-act {
@@ -4584,4 +4585,23 @@
 
 [data-bs-theme="dark"] .cev-ov-reup:hover:not(:disabled) {
   background: rgba(8, 145, 178, .30) !important;
+}
+
+/* Case to Case carries the widest action set in the vault (Resend, Remind,
+   Track). Below this width the table scrolls rather than wrapping a row. */
+.sev-ov .cev-ov-table.sev-ov-c2c {
+  min-width: 720px;
+}
+
+/* The reference under a document name — the PO number on a purchase order. */
+.sev-ov .sev-ov-name-sub {
+  margin-top: 2px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: #5e94a1;
+}
+
+[data-bs-theme="dark"] .sev-ov .sev-ov-name-sub {
+  color: #7dd3e8;
 }

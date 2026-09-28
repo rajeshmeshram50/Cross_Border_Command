@@ -1171,6 +1171,8 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                         const canRemind = !!d.signature_request_id && isOutForSign(d);
                         const canTrack  = !!d.signature_request_id;
                         const sendLabel = d.signature_request_id ? 'Resend' : 'Send';
+                        const rowName   = d.name || '';
+                        const rowSub    = isPoRow(d) ? (d.po_code || d.doc_code || '') : (d.doc_code || '');
                         return (
                           <tr key={r.key}>
                             <td>
@@ -1183,8 +1185,13 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                               />
                             </td>
                             <td className="cev-ov-num">{i + 1}</td>
-                            <Tooltip label={d.name} disabled={(d.name || '').length <= 40}>
-                              <td className="cev-ov-name">{(d.name || '').length > 40 ? (d.name || '').slice(0, 40) + '…' : d.name}</td>
+                            {/* A shipment can carry several purchase orders, and each
+                                one's PO reads "Purchase Order" — the number tells them apart. */}
+                            <Tooltip label={rowName} disabled={rowName.length <= 40}>
+                              <td className="cev-ov-name">
+                                {rowName.length > 40 ? rowName.slice(0, 40) + '…' : rowName}
+                                {rowSub && <div className="sev-ov-name-sub">{rowSub}</div>}
+                              </td>
                             </Tooltip>
                             <td><OvStatusPill s={evEffectiveStatus(d)} /></td>
                             <td>
