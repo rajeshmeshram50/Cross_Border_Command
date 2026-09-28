@@ -511,6 +511,18 @@
   letter-spacing:.1px;
 }
 .arf-table .ord-btn--vault svg { width:14px; height:14px; }
+/* PO Timeline sits beside the vault, so it takes the same metrics — only the
+   fill differs, which is what tells the two apart. */
+.arf-table .ord-btn--track {
+  gap:6px;
+  padding:0 13px;
+  border-radius:11px;
+  font-size:10.5px;
+  font-weight:700;
+  letter-spacing:.1px;
+  white-space:nowrap;
+}
+.arf-table .ord-btn--track svg { width:14px; height:14px; }
 
 /* Why the supplier keeps part of the money: an amber pill with a dot, like the
    prototype's (8px/800, fully rounded), not a square chip. */
@@ -558,8 +570,10 @@
 
 /* The prototype pins every column and lets the table scroll sideways, rather
    than stretching columns to the viewport. These are its own widths, measured
-   at 1920 (36 … 178, 2092 in total). */
-.arf-table { table-layout:fixed; width:2092px; min-width:2092px; }
+   at 1920 (36 … 178, 2092 in total), with Action widened to 310 for the third
+   button (PO Timeline) — a fixed layout cannot grow a cell, so without the
+   extra width its buttons spilled over the column beside it. */
+.arf-table { table-layout:fixed; width:2224px; min-width:2224px; }
 .arf-table thead th { max-width:none; }
 .arf-table thead th:nth-child(1)  { width:36px;  min-width:36px; }
 .arf-table thead th:nth-child(2)  { width:126px; min-width:126px; }
@@ -577,7 +591,7 @@
 .arf-table thead th:nth-child(14) { width:150px; min-width:150px; } /* Zoho Sync */
 .arf-table thead th:nth-child(15) { width:258px; min-width:258px; } /* Payment Recovery Status */
 .arf-table thead th:nth-child(16) { width:150px; min-width:150px; } /* PO Cancellation Status */
-.arf-table thead th:nth-child(17) { width:178px; min-width:178px; } /* Action */
+.arf-table thead th:nth-child(17) { width:310px; min-width:310px; } /* Action */
 
 /* Money owed back to us (TDS held, amount to be refunded). */
 .arf-amt--due { color:#dc2626; }
@@ -639,8 +653,11 @@
 /* Refund number chip inside the recovery cell. */
 .arf-refchip { align-self:center; font-family:'Geist Mono',ui-monospace,monospace; }
 
-/* Action column: square icon button beside the labelled one. */
-.arf-acts { display:flex; align-items:center; justify-content:center; gap:6px; }
+/* Action column: a square icon button beside the two labelled ones. They stay
+   on one line at their own width — the cell is pinned, so a shrinking button
+   would squash its label instead of letting the table scroll. */
+.arf-acts { display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:nowrap; }
+.arf-acts > * { flex:0 0 auto; }
 .arf-btn-sq { width:40px; padding:0; }
 .arf-btn-sq svg { width:14px; height:14px; }
 
