@@ -1678,7 +1678,10 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 
   const isTradeDoc   = (category === 'td' || category === 'agreement') && !!ownerId && !!doc.db_id;
   const canSend   = !viewOnly && isTradeDoc && !!onSendTradeDoc && !isSigned && !isInProgress;
-  const canRemind = isTradeDoc && !!onRemindTradeDoc && isInProgress && !!doc.signature_request_id;
+  /* A reminder acts on the signature REQUEST, not on a library row — so it does
+     not need `isTradeDoc`. Requiring it meant the Purchase Order, which has no
+     library id, sat out for signature with no way to chase it from here. */
+  const canRemind = !!onRemindTradeDoc && isInProgress && !!doc.signature_request_id;
 
   const remind = async () => {
     if (!onRemindTradeDoc) return;

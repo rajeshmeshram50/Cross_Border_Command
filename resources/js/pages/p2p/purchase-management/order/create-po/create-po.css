@@ -1901,6 +1901,17 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 .cdoc-btn--resend:not(:disabled):hover {
   box-shadow: 0 5px 13px -3px rgba(220, 38, 38, .5), inset 0 1px 0 rgba(255, 255, 255, .22);
 }
+/* Reminder — the amber the Evidence Vault gives its own reminder button, so
+   "still waiting on the supplier" reads the same in both places. */
+.cdoc-btn--remind {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, .20), rgba(255, 255, 255, 0) 54%),
+    linear-gradient(135deg, #b45309, #f59e0b);
+  box-shadow: 0 3px 9px -3px rgba(245, 158, 11, .42), inset 0 1px 0 rgba(255, 255, 255, .18);
+}
+.cdoc-btn--remind:not(:disabled):hover {
+  box-shadow: 0 5px 13px -3px rgba(245, 158, 11, .5), inset 0 1px 0 rgba(255, 255, 255, .22);
+}
 /* A row action that doesn't apply yet stays in place, greyed — so the column
    lines up and you can see what the row will offer once it's signed. */
 .cdoc-btn:disabled,

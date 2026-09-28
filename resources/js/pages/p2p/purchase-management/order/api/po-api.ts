@@ -458,6 +458,10 @@ export const poSignatureApi = {
   /** Zoho Sign's completion certificate. */
   certificate: (sigId: number) =>
     call('PO signing certificate', () => api.get(`/clm/signature-requests/${sigId}/certificate`, { responseType: 'blob' }), (b) => b as Blob),
+
+  /** Nudge the signer of a request still out for signature. */
+  remind: (sigId: number) =>
+    call('PO signing reminder', () => api.post(`/clm/signature-requests/${sigId}/remind`), (d) => d),
 };
 
 /* ══════════════════════════ Physical inspection ══════════════════════════ */

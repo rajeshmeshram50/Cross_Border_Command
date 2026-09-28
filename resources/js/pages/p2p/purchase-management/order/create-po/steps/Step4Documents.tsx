@@ -18,7 +18,7 @@ import { FitTip } from '../form-fields';
 import Tooltip from '../../../../../../components/ui/Tooltip';
 import { useToast } from '../../../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../../../contexts/ConfirmContext';
-import { IcoCertificate, IcoChevron, IcoDownload, IcoEye, IcoFolder, IcoHistory, IcoMail, IcoSend, IcoShield } from '../../shared/icons';
+import { IcoBell, IcoCertificate, IcoChevron, IcoDownload, IcoEye, IcoFolder, IcoHistory, IcoMail, IcoSend, IcoShield } from '../../shared/icons';
 
 const SupplierEvidenceVaultModal = lazy(() => import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 const warmVault = () => { void import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'); };
@@ -269,6 +269,15 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   const downloadCertificate = (doc: PoDocument) => run(`cert:${doc.id}`, async () => {
     if (doc.signature_request_id == null) return;
     saveBlob(await poSignatureApi.certificate(doc.signature_request_id), `Certificate_${doc.code.replace(/\//g, '_')}.pdf`);
+  });
+
+  /* A document out for signature had nowhere to chase it from — the Evidence
+     Vault offers a reminder, this list did not, so the only way to nudge a
+     supplier was to leave the PO. Same endpoint the vault uses. */
+  const remind = (doc: PoDocument) => run(`rem:${doc.id}`, async () => {
+    if (doc.signature_request_id == null) return;
+    await poSignatureApi.remind(doc.signature_request_id);
+    toast.success('Reminder sent', `${supplierName} has been reminded to sign ${doc.name}.`);
   });
 
   const chosen = docs.filter((d) => selected.includes(d.id));
@@ -653,6 +662,15 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                               title={`${statusLabel(doc).text.split(' · ')[0]} — send it for signature again`}
                               onClick={() => resendOne(doc)}>
                               <IcoSend size={13} /> Resend for Sign
+                            </button>
+                          )}
+                          {/* Out for signature and nothing back yet — chase it. */}
+                          {doc.status === 'sent' && doc.signature_request_id != null && (
+                            <button type="button" className="cdoc-btn cdoc-btn--remind"
+                              disabled={busy === `rem:${doc.id}`}
+                              title={`Remind ${supplierName} to sign ${doc.name}`}
+                              onClick={() => remind(doc)}>
+                              <IcoBell size={13} /> {busy === `rem:${doc.id}` ? 'Sending…' : 'Send Reminder'}
                             </button>
                           )}
                           {/* Where this document sits in the Zoho Sign journey. */}
