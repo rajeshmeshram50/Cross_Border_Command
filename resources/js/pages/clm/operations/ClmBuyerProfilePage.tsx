@@ -10,6 +10,7 @@ import { useScrollLock } from '../../../hooks/useScrollLock';
 import { ShimmerTableRows } from '../../../components/ui/Shimmer';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import { PER_PAGE, useAutoFitRows } from '../shared/clmShared';
+import useDismissPopover from '../shared/useDismissPopover';
 import SearchClear from '../../../components/ui/SearchClear';
 
 /*
@@ -785,23 +786,17 @@ export default function ClmBuyerProfilePage() {
   // Segment "+N" popover — lists all segments for a row when the count badge
   // is clicked (mirrors the DCP authorities badge popover).
   const [segOpen, setSegOpen] = useState<{ key: string; names: string[]; x: number; y: number; flipUp: boolean } | null>(null);
-  // Close the fixed-positioned segment popover on scroll/resize so it can't
-  // drift away from its badge (capture:true catches ancestor + table scrolls).
-  useEffect(() => {
-    if (!segOpen) return;
-    // Close on ancestor/table/page scroll so the fixed popover can't drift from
-    // its badge — BUT ignore scrolls that originate INSIDE the popover's own
-    // list (its overflowY:auto). With capture:true a bare handler fired on the
-    // popover's inner scroll too, closing it the instant the user tried to
-    // scroll the segment list ("not scrolling").
-    const close = (e: Event) => {
-      if (e.type === 'scroll' && e.target instanceof Element && e.target.closest('.seg-pop')) return;
-      setSegOpen(null);
-    };
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
-    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
-  }, [segOpen]);
+  /* Dismiss rules, shared with every other "+N" popover (see useDismissPopover):
+     a scroll outside the popover's own list, a resize, Escape, the browser tab
+     being hidden, the window losing focus — and any change to the view under it.
+     This page carried only the scroll/resize half, so a popover opened on the
+     buyer list stayed up over the consignee list after a tab switch, pinned to
+     coordinates that no longer meant anything (CS-24, same as CS-31 / CS-35).
+     `watch` therefore lists everything that redraws the table beneath it. */
+  useDismissPopover(!!segOpen, () => setSegOpen(null), {
+    inside: '.seg-pop',
+    watch: `${clmTab}|${bpaTab}|${buyerScope}|${consScope}|${cardFilter}|${buyerPage}|${consPage}|${buyerSearch}|${consSearch}`,
+  });
   // "Consignees for this buyer" popup — opened from the CONSIGNEES count cell.
   const [consListBuyer, setConsListBuyer] = useState<BuyerRow | null>(null);
   // "Customer for this consignee" popup — opened from the CUSTOMER ID cell in

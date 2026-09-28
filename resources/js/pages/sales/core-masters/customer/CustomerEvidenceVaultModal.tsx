@@ -10,7 +10,7 @@ import { CLM_CSS } from '../../../clm/shared/clmShared';
 import { useToast } from '../../../../contexts/ToastContext';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
-import { signatureRequestsToVaultDocs, mergeTradeDocuments, overlayShipmentSigStatus, type SigReqRow } from '../../../../utils/vaultSignatureRows';
+import { signatureRequestsToVaultDocs, mergeTradeDocuments, overlayShipmentSigStatus, syncDealSignatures, type SigReqRow } from '../../../../utils/vaultSignatureRows';
 import { downloadFile, saveApiBlob } from '../../../../utils/downloadFile';
 import { ActionLockProvider, useActionLock } from '../../../../hooks/useActionLock';
 import SalesCustomerSendForSignatureModal, {
@@ -299,6 +299,69 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
       .then(r => { setSignatureRows(Array.isArray(r.data?.data) ? (r.data.data as SigReqRow[]) : []); })
       .catch(() => {});
   }, [customer?.db_id]);
+
+  /* The deals' own signatures (CS-21).
+   *
+   * The refresh above covers requests addressed to THIS customer. A
+   * per-transaction row can carry one that was sent to the other side of the
+   * same deal — an agreement the consignee signs — and nothing on this screen
+   * ever asked Zoho about those, so the row sat at "Pending" while the Signing
+   * Tracker, which asks directly, showed it completed.
+   *
+   * Scoped by lead, so whoever the request was addressed to is included, and
+   * only for deals that still have something open. When one comes back signed
+   * the vault is reloaded, which brings the signed date and the signed file
+   * with it rather than moving the status on its own. */
+  const dealSigSynced = useRef('');
+  useEffect(() => {
+    const deals = (vaultLive?.shipment_agreements ?? []) as VaultShipmentRow[];
+    if (!open || !customer?.db_id || deals.length === 0) return;
+
+    const openIds: number[] = [];
+    const leadIds: number[] = [];
+    for (const d of deals) {
+      const docs = [
+        ...(d.trade_docs_buyer ?? []), ...(d.trade_docs_consignee ?? []),
+        ...(d.agreements_buyer ?? []), ...(d.agreements_consignee ?? []),
+      ] as VaultShipmentDoc[];
+      /* Same id rule the overlay uses: a per-deal row may carry only the
+         legacy `sig_req_id`, and a row whose request is still open shows
+         "Pending" with no sig_state at all — which is the very row this is
+         here to ask about. */
+      const waiting = docs
+        .map(x => Number((x as any).signature_request_id ?? (x as any).sig_req_id ?? 0))
+        .filter((sid, i) => {
+          if (!(sid > 0)) return false;
+          const st = String((docs[i] as any).sig_state ?? '').toLowerCase();
+          if (st) return st === 'inprogress';
+          return String(docs[i].status ?? '').toLowerCase() === 'pending';
+        });
+      if (waiting.length === 0) continue;
+      leadIds.push(Number(d.id));
+      waiting.forEach(sid => openIds.push(sid));
+    }
+    // One pass per set of open requests — not on every re-render of the vault.
+    const key = `${customer.db_id}:${openIds.sort((a, b) => a - b).join(',')}`;
+    if (openIds.length === 0 || dealSigSynced.current === key) return;
+    dealSigSynced.current = key;
+
+    let cancelled = false;
+    void syncDealSignatures(
+      (leadId) => api.get('/clm/signature-requests', { params: { lead_id: leadId, sync: 1 } })
+        .then(r => (Array.isArray(r.data?.data) ? (r.data.data as SigReqRow[]) : [])),
+      leadIds,
+      openIds,
+    ).then(({ rows, settled }) => {
+      if (cancelled || rows.length === 0) return;
+      setSignatureRows(cur => {
+        const byId = new Map(cur.map(r => [Number(r.id), r]));
+        rows.forEach(r => byId.set(Number(r.id), r));
+        return Array.from(byId.values());
+      });
+      if (settled) void reloadVault();
+    });
+    return () => { cancelled = true; };
+  }, [open, customer?.db_id, vaultLive, reloadVault]);
 
   const handleRemind = useCallback(async (doc: VaultDoc) => {
     if (!doc.signature_request_id) return;
