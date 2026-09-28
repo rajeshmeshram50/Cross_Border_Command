@@ -964,7 +964,7 @@ class SegmentDocUploadController extends Controller
                 ->filter(fn ($d) => ($d->needed ?? 'no') === 'yes')
                 ->values();
 
-            $shaped = $rows->map(fn ($d) => $this->shapePoDoc($d))->all();
+            $shaped = $rows->map(fn ($d) => $this->shapePoDoc($d, $po->code))->all();
             $agr = array_values(array_filter($shaped, fn ($r) => $r['is_agreement']));
             $td  = array_values(array_filter($shaped, fn ($r) => !$r['is_agreement']));
             $ratio = fn (array $set) => [
@@ -1042,7 +1042,7 @@ class SegmentDocUploadController extends Controller
     }
 
     /** One Stage 04 document as the vault renders it. */
-    private function shapePoDoc($d): array
+    private function shapePoDoc($d, ?string $poCode = null): array
     {
         $status = match ((string) $d->status) {
             'signed'    => 'Signed',
@@ -1060,6 +1060,8 @@ class SegmentDocUploadController extends Controller
             'id'                   => (int) $d->id,
             'db_id'                => $lib,                       // the library row: it can be sent for signature from here
             'po_id'                => (int) $d->purchase_order_id,
+            // The PO number: what names the Purchase Order in a signature envelope.
+            'po_code'              => $poCode,
             'po_doc_id'            => (int) $d->id,
             'party'                => 'Vendor',
             'signature_request_id' => $d->signature_request_id ? (int) $d->signature_request_id : null,
@@ -1076,6 +1078,10 @@ class SegmentDocUploadController extends Controller
             'requirement'          => 'M',
             'certificate_url'      => null,
             'is_agreement'         => str_contains($sub, 'agreement'),
+            /* The Purchase Order is counted in this vault, but it is not
+               case-to-case paperwork — the gate on raising the next PO has to
+               tell them apart, and only this says which row it is. */
+            'doc_kind'             => (string) ($d->doc_kind ?? ''),
         ];
     }
 

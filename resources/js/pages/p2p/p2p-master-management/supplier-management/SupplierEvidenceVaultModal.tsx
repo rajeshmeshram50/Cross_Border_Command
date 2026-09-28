@@ -42,6 +42,10 @@ export interface VaultDoc {
   /** A Stage 04 row: the purchase order it belongs to and its id on that PO. */
   po_id?: number | null;
   po_doc_id?: number | null;
+  /** The PO number — what names the Purchase Order in a signature envelope. */
+  po_code?: string | null;
+  /** 'purchase_order' marks the PO itself -- it has no CLM library row. */
+  doc_kind?: string | null;
 
   party?: string | null;
 
@@ -199,6 +203,7 @@ const VAULT_GLYPHS: Record<string, ReactNode> = {
   tag:            <><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></>,
   clock:          <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>,
   send:           <><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></>,
+  bell:           <><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></>,
 };
 
 function Glyph({ d, size, sw = 2.2 }: { d: ReactNode; size: number; sw?: number }) {
@@ -306,6 +311,10 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     .map(d => ({ po: d.po_id as number, doc: d.po_doc_id as number }));
 
   const [sendKind, setSendKind] = useState<'trade' | 'agreement'>('trade');
+  /* The Purchase Order has no library row, so it cannot ride the CLM send the
+     others use — it goes out through the PO module's own endpoint (CS-414). */
+  const [sendRawPo, setSendRawPo] = useState<{ poId: number; docs: VaultDoc[] } | null>(null);
+  const isPoRow = (d: VaultDoc) => d.doc_kind === 'purchase_order' && !!d.po_id && !!d.po_doc_id;
 
   useEffect(() => {
     if (!open) return;
@@ -913,6 +922,44 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
         }}
       />
 
+      {/* The Purchase Order has no library row: it goes out through the PO
+          module's own endpoint, the same call Stage 04 makes. */}
+      {sendRawPo && supplier?.db_id && (
+        <SalesCustomerSendForSignatureModal
+          open
+          boxSize={{ width: 240, height: 55 }}
+          modelName="Vendor"
+          multiBox
+          customer={{
+            id:      supplier.id,
+            db_id:   supplier.db_id,
+            company: supplier.company,
+            contact: supplier.contact,
+            email:   supplier.email,
+          }}
+          rawPdfContext={{
+            docId:      sendRawPo.docs[0].po_doc_id as number,
+            code:       sendRawPo.docs[0].po_code || sendRawPo.docs[0].doc_code || '',
+            title:      sendRawPo.docs[0].name,
+            previewUrl: `/p2p/orders/${sendRawPo.poId}/documents/${sendRawPo.docs[0].po_doc_id}/download`,
+            docs: sendRawPo.docs.map(d => ({
+              docId:      d.po_doc_id as number,
+              code:       d.po_code || d.doc_code || '',
+              title:      d.name,
+              previewUrl: `/p2p/orders/${sendRawPo.poId}/documents/${d.po_doc_id}/download`,
+            })),
+            sendUrl:      `/p2p/orders/${sendRawPo.poId}/documents/sign`,
+            extraPayload: { document_ids: sendRawPo.docs.map(d => d.po_doc_id) },
+          }}
+          onClose={() => setSendRawPo(null)}
+          onSent={() => {
+            setSendRawPo(null);
+            setOvPicked([]);
+            void (async () => { await reloadSignatures(); await reloadVault(); })();
+          }}
+        />
+      )}
+
       {overview && (() => {
         const isStd = overview === 'standard';
         type OvCat = 'dd' | 'kyc' | 'tl' | 'td' | 'agreement';
@@ -972,12 +1019,22 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
            Both cases keep the button visible but disabled with the reason on
            its tooltip, rather than silently dropping rows from the send. */
         const picked    = keyed.filter(r => ovPicked.includes(r.key));
+        const pickedPo  = picked.filter(r => isPoRow(r.doc));
         const pickedIds = picked.map(r => r.doc.db_id).filter((n): n is number => !!n);
         const oneKind   = new Set(picked.map(r => r.cat)).size === 1;
-        const canBulk   = !viewOnly && picked.length > 0 && pickedIds.length === picked.length && oneKind;
-        const sendable  = keyed.filter(r => !viewOnly && !!r.doc.db_id);
+        /* Purchase Orders go out through their own endpoint, so they cannot
+           share an envelope with library rows, nor span two POs. */
+        const poBulk    = pickedPo.length === picked.length
+          && new Set(pickedPo.map(r => r.doc.po_id)).size === 1;
+        const canBulk   = !viewOnly && picked.length > 0
+          && (poBulk || (pickedPo.length === 0 && pickedIds.length === picked.length && oneKind));
+        const sendable  = keyed.filter(r => !viewOnly && (!!r.doc.db_id || isPoRow(r.doc)));
 
         const sendDocs = (rows: OvRow[]) => {
+          if (rows.length && rows.every(r => isPoRow(r.doc))) {
+            setSendRawPo({ poId: rows[0].doc.po_id as number, docs: rows.map(r => r.doc) });
+            return;
+          }
           const ids = rows.map(r => r.doc.db_id).filter((n): n is number => !!n);
           if (!ids.length) return;
           setSendKind(rows[0].cat === 'agreement' ? 'agreement' : 'trade');
@@ -1061,8 +1118,12 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                         <tr><td colSpan={5} className="cev-ov-empty">No trade documents or agreements on this deal yet.</td></tr>
                       ) : keyed.map((r, i) => {
                         const d = r.doc;
-                        const canSend  = !viewOnly && !!d.db_id;
+                        const canSend  = !viewOnly && (!!d.db_id || isPoRow(d));
                         const canTrack = !!d.signature_request_id;
+                        /* Out for signature and nothing back yet — chase it.
+                           The PO reports its own state, never the CLM one. */
+                        const canRemind = !!d.signature_request_id
+                          && (isPoRow(d) ? d.sig_state === 'sent' : d.sig_state === 'inprogress');
                         return (
                           <tr key={r.key}>
                             <td>
@@ -1086,6 +1147,13 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                                     <Glyph d={VAULT_GLYPHS.send} size={11} /> Resend
                                   </button>
                                 </Tooltip>
+                                {canRemind && (
+                                  <Tooltip label="Remind the signer to sign this document">
+                                    <button type="button" className="sev-ov-act sev-ov-act-remind" onClick={() => void handleRemind(d)}>
+                                      <Glyph d={VAULT_GLYPHS.bell} size={11} /> Remind
+                                    </button>
+                                  </Tooltip>
+                                )}
                                 <Tooltip label={canTrack ? 'Signing activity tracker' : 'Nothing has been sent for signature yet'}>
                                   <button
                                     type="button"
