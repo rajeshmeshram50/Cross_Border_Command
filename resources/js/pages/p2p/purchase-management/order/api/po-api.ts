@@ -307,6 +307,8 @@ export type SupplierDetail = {
   zohoCurrency?: string | null;
   /** A transaction of ours put that currency there, so no other one is possible. */
   zohoCurrencySettled?: boolean;
+  /** The order that settled it, so a refusal can name which one did. */
+  zohoCurrencyPo?: string | null;
   /** The currencies Zoho Books has enabled; a PO in any other cannot reach it.
    *  Empty when Zoho is unreachable, and the form falls back to the master list. */
   zohoCurrencies?: string[];
