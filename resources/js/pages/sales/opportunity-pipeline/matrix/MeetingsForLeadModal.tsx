@@ -34,6 +34,20 @@ function toIsoDate(input: string | undefined | null): string | undefined {
   const d = new Date(s);
   return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : undefined;
 }
+/* Current wall-clock time as "HH:MM" — floors the time pickers so a meeting
+ * scheduled for TODAY can't start or end in the past (same rule as SalesTodo). */
+const hmNow = () => {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+/* Add `mins` minutes to "HH:MM", clamped to 23:59 so it never wraps past midnight. */
+const addHm = (hm: string, mins: number): string => {
+  const [h, m] = hm.split(':').map(Number);
+  const total = Math.min(h * 60 + m + mins, 23 * 60 + 59);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+};
+const toMin = (hm: string) => { const [h, m] = hm.split(':').map(Number); return h * 60 + m; };
+
 function toDisplayDate(input: string | undefined | null): string {
   const iso = toIsoDate(input);
   if (!iso) return '—';
@@ -65,7 +79,13 @@ export default function MeetingsForLeadModal({
   const [venue, setVenue]         = useState('');
   const [date, setDate]           = useState('');
   // Meetings can only be scheduled for today or a future date — block past days.
-  const today = new Date().toISOString().slice(0, 10);
+  // Local date, not toISOString() — that is the UTC day, which in IST is still
+  // yesterday until 05:30 and would let a past date through.
+  const today = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+  const isToday = date === today;
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime]     = useState('');
   const [agenda, setAgenda]       = useState('');
@@ -144,7 +164,12 @@ export default function MeetingsForLeadModal({
     // Backstop for the picker's minDate — a meeting can't be scheduled in the past.
     else if (date < today) e.date = 'Meeting date cannot be in the past.';
     if (!startTime) e.startTime = 'Start Time is required.';
+    // Backstop for the picker's minTime — the clock may have moved on since the
+    // time was picked, or the date changed to today after it.
+    else if (isToday && toMin(startTime) < toMin(hmNow())) e.startTime = 'Start time cannot be in the past.';
     if (!endTime)   e.endTime = 'End Time is required.';
+    // Minimum meeting length 15 min, mirroring the Productivity Tracker form.
+    else if (startTime && toMin(endTime) - toMin(startTime) < 15) e.endTime = 'Meeting must be at least 15 minutes long (End ≥ Start + 15 min).';
 
     const agendaRaw = agenda.trim();
     if (!agendaRaw) e.agenda = 'Meeting Agenda is required.';
@@ -335,17 +360,21 @@ export default function MeetingsForLeadModal({
           <div className="mfl-grid mfl-grid-3">
             <div className="mfl-fld">
               <label className="mfl-lbl">MEETING DATE <span className="mfl-req">*</span></label>
-              <MasterDatePicker value={date} onChange={(v) => { setDate(v); clearErr('date'); }} minDate={today} placeholder="dd-mm-yyyy" invalid={!!errors.date} />
+              <MasterDatePicker value={date} onChange={(v) => { setDate(v); clearErr('date'); clearErr('startTime'); clearErr('endTime'); }} minDate={today} placeholder="dd-mm-yyyy" invalid={!!errors.date} />
               {errors.date && <div className="mfl-err">{errors.date}</div>}
             </div>
             <div className="mfl-fld">
               <label className="mfl-lbl">START TIME <span className="mfl-req">*</span></label>
-              <MasterTimePicker value={startTime} onChange={(v) => { setStartTime(v); clearErr('startTime'); }} placeholder="--:--" invalid={!!errors.startTime} />
+              <MasterTimePicker value={startTime} onChange={(v) => { setStartTime(v); clearErr('startTime'); clearErr('endTime'); }} placeholder="--:--" invalid={!!errors.startTime}
+                // Today → past slots are disabled; can't start before now.
+                minTime={isToday ? hmNow() : undefined} />
               {errors.startTime && <div className="mfl-err">{errors.startTime}</div>}
             </div>
             <div className="mfl-fld">
               <label className="mfl-lbl">END TIME <span className="mfl-req">*</span></label>
-              <MasterTimePicker value={endTime} onChange={(v) => { setEndTime(v); clearErr('endTime'); }} placeholder="--:--" invalid={!!errors.endTime} showNow={false} />
+              <MasterTimePicker value={endTime} onChange={(v) => { setEndTime(v); clearErr('endTime'); }} placeholder="--:--" invalid={!!errors.endTime} showNow={false}
+                // End ≥ Start + 15 min, and ≥ now when the meeting is today.
+                minTime={[startTime ? addHm(startTime, 15) : '', isToday ? hmNow() : ''].filter(Boolean).sort().pop() || undefined} />
               {errors.endTime && <div className="mfl-err">{errors.endTime}</div>}
             </div>
           </div>

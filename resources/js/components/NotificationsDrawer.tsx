@@ -122,19 +122,27 @@ export default function NotificationsDrawer({ open, onClose, onCountChange }: {
       >
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <h5 className="text-[19px] font-bold text-text leading-tight">Notifications</h5>
-          <div className="flex items-center gap-3">
-            {/* The unread filter as a switch, where it is looked for. */}
-            <label className="flex items-center gap-2 cursor-pointer select-none" title="Only show unread">
-              <span className="text-[11.5px] text-muted">Only show unread</span>
+          <div className="flex items-center gap-4">
+            {/* The unread filter as a switch, where it is looked for. The track
+                must be block-level: as an inline span its width was ignored, so
+                only the knob showed and it drifted over the close icon. */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={tab === 'unread'}
+              onClick={() => setTab(tab === 'unread' ? 'all' : 'unread')}
+              className="flex items-center gap-2 cursor-pointer select-none bg-transparent border-0 p-0"
+              title="Only show unread"
+            >
+              <span className="text-[11.5px] text-muted whitespace-nowrap">Only show unread</span>
               {/* An explicit off colour: the border token is nearly the panel's
                   own white, which left the switch looking like an empty outline. */}
               <span
-                onClick={() => setTab(tab === 'unread' ? 'all' : 'unread')}
-                className={`relative w-[34px] h-[18px] rounded-full transition-colors ${tab === 'unread' ? 'bg-primary' : 'bg-slate-300 dark:bg-slate-600'}`}
+                className={`relative block flex-shrink-0 w-[34px] h-[18px] rounded-full transition-colors ${tab === 'unread' ? 'bg-primary' : 'bg-slate-300 dark:bg-slate-600'}`}
               >
                 <span className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow transition-all ${tab === 'unread' ? 'left-[18px]' : 'left-[2px]'}`} />
               </span>
-            </label>
+            </button>
             <button
               type="button"
               onClick={onClose}
@@ -220,18 +228,19 @@ function groupByDay(items: InAppNotification[]): [string, InAppNotification[]][]
 /* Where a notification came from. The notification class is the reliable
    marker — each module writes its own rows — so the list can say "P2P · PO
    approval" or "HR · Leave" instead of leaving every line looking alike. */
-function sourceOf(type: string): { module: string; what: string; icon: string; bg: string; fg: string } {
+function sourceOf(type: string): { module: string; what: string; icon: string; cls: string } {
   switch ((type || '').split('\\').pop()) {
     case 'PoGstApproval':
-      return { module: 'P2P', what: 'PO approval', icon: 'ri-file-shield-2-line', bg: '#cffafe', fg: '#0e7490' };
+      return { module: 'P2P', what: 'PO approval', icon: 'ri-file-shield-2-line', cls: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300' };
     case 'PoPaymentRequest':
-      return { module: 'P2P', what: 'Payment request', icon: 'ri-wallet-3-line', bg: '#d1fae5', fg: '#047857' };
+      return { module: 'P2P', what: 'Payment request', icon: 'ri-wallet-3-line', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' };
     case 'LeaveRequestNotification':
-      return { module: 'HR', what: 'Leave request', icon: 'ri-calendar-check-line', bg: '#ede9fe', fg: '#5a3fd1' };
+      return { module: 'HR', what: 'Leave request', icon: 'ri-calendar-check-line', cls: 'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300' };
+    case 'HrSignatureRequest':
     case 'HrSignatureReminder':
-      return { module: 'HR', what: 'Signature', icon: 'ri-quill-pen-line', bg: '#fef3c7', fg: '#b45309' };
+      return { module: 'HR', what: 'Signature', icon: 'ri-quill-pen-line', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' };
     default:
-      return { module: 'Update', what: '', icon: 'ri-notification-3-line', bg: '#eef2f6', fg: '#374151' };
+      return { module: 'Update', what: '', icon: 'ri-notification-3-line', cls: 'bg-slate-100 text-slate-700 dark:bg-slate-500/20 dark:text-slate-300' };
   }
 }
 
@@ -248,18 +257,19 @@ function NotificationRow({ item, onClick }: { item: InAppNotification; onClick: 
       case 'approved': return { label: 'Approved', cls: 'text-emerald-700 dark:text-emerald-400' };
       case 'rejected': return { label: 'Rejected', cls: 'text-red-700 dark:text-red-400' };
       case 'cancelled': return { label: 'Cancelled', cls: 'text-muted' };
+      case 'hr_signature_request': return { label: 'Waiting on you', cls: 'text-amber-700 dark:text-amber-400' };
       case 'hr_signature_reminder': return { label: 'Signature needed', cls: 'text-amber-700 dark:text-amber-400' };
       default: return { label: '', cls: 'text-muted' };
     }
   })();
-  const meta = { icon: src.icon, bg: src.bg, fg: src.fg, label: state.label || src.what };
+  const meta = { icon: src.icon, cls: src.cls, label: state.label || src.what };
 
   const summary = item.data?.subject
     ?? item.data?.message
     ?? (item.data?.template ? `${item.data.action ?? 'Sign'}: ${item.data.template}` : 'New notification');
 
   const sentence = (() => {
-    if (kind === 'hr_signature_reminder') {
+    if (kind === 'hr_signature_reminder' || kind === 'hr_signature_request') {
       return [item.data?.code, item.data?.sender_name ? `from ${item.data.sender_name}` : null].filter(Boolean).join(' · ');
     }
     const { from_date: from, to_date: to, days } = item.data ?? {};
@@ -294,7 +304,7 @@ function NotificationRow({ item, onClick }: { item: InAppNotification; onClick: 
       onClick={onClick}
       className="w-full flex items-start gap-3 px-5 py-3 text-left hover:bg-surface-2 transition-colors cursor-pointer"
     >
-      <span className="rounded-full flex-shrink-0 flex items-center justify-center" style={{ width: 32, height: 32, background: meta.bg, color: meta.fg }}>
+      <span className={`rounded-full flex-shrink-0 flex items-center justify-center ${meta.cls}`} style={{ width: 32, height: 32 }}>
         <i className={meta.icon} style={{ fontSize: 15 }} />
       </span>
       <div className="min-w-0 flex-grow">
@@ -302,8 +312,7 @@ function NotificationRow({ item, onClick }: { item: InAppNotification; onClick: 
             approval and a payment request all read alike otherwise. */}
         <div className="flex items-center gap-2 flex-wrap">
           <span
-            className="text-[9.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
-            style={{ background: src.bg, color: src.fg }}
+            className={`text-[9.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${src.cls}`}
           >
             {src.module}{src.what ? ` · ${src.what}` : ''}
           </span>

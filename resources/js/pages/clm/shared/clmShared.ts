@@ -508,6 +508,16 @@ export const CLM_CSS = `
 [data-bs-theme="dark"] .clm-pop { background: #0f172a; border-color: rgba(6,182,212,.35); box-shadow: 0 16px 40px rgba(0,0,0,.5); }
 [data-bs-theme="dark"] .clm-pop-title { color: #5eead4; }
 [data-bs-theme="dark"] .clm-pop-row-alt { background: rgba(255,255,255,.04); }
+/* Violet variant — the purple Customer form. Colours live here, not inline, so
+   the striped rows and the pills follow dark mode instead of staying white. */
+.clm-pop-violet { border-color: #ddd6fe; }
+.clm-pop-violet .clm-pop-title { color: #7c3aed; }
+.clm-pop-violet .clm-pop-row-alt { background: #f5f3ff; }
+.clm-pop-pill-violet { display: inline-block; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; font-weight: 500; letter-spacing: .05em; color: #6d28d9; background: linear-gradient(135deg, rgba(124,58,237,.10), rgba(124,58,237,.06)); padding: 4px 9px; border-radius: 7px; border: 1px solid rgba(124,58,237,.25); white-space: normal; word-break: break-word; }
+[data-bs-theme="dark"] .clm-pop-violet { border-color: rgba(139,92,246,.45); }
+[data-bs-theme="dark"] .clm-pop-violet .clm-pop-title { color: #c4b5fd; }
+[data-bs-theme="dark"] .clm-pop-violet .clm-pop-row-alt { background: rgba(139,92,246,.10); }
+[data-bs-theme="dark"] .clm-pop-pill-violet { color: #ddd6fe; background: rgba(139,92,246,.18); border-color: rgba(139,92,246,.40); }
 
 /* Badges */
 .clm-badge {

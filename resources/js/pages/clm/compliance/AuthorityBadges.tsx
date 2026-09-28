@@ -21,9 +21,10 @@ export default function AuthorityBadges({ value, variant = 'teal' }: { value?: s
   const badgeClass = v ? 'clm-badge clm-badge-violet' : 'clm-badge clm-badge-teal';
   const chipBg = v ? 'linear-gradient(135deg, #8b5cf6, #7c3aed, #6d28d9)' : 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)';
   const chipShadow = v ? '0 2px 8px rgba(124,58,237,.4)' : '0 2px 8px rgba(8,145,178,.4)';
-  const codePillStyle: React.CSSProperties = v
-    ? { display: 'inline-block', fontFamily: "'Geist Mono', ui-monospace, monospace", fontSize: 11, fontWeight: 500, letterSpacing: '.05em', color: '#6d28d9', background: 'linear-gradient(135deg, rgba(124,58,237,.10), rgba(124,58,237,.06))', padding: '4px 9px', borderRadius: 7, border: '1px solid rgba(124,58,237,.25)', whiteSpace: 'normal', wordBreak: 'break-word' }
-    : { whiteSpace: 'normal', wordBreak: 'break-word' };
+  // Popover colours come from clmShared.ts classes (not inline) so both
+  // variants follow dark mode.
+  const popClass = v ? 'clm-pop clm-pop-violet' : 'clm-pop';
+  const pillClass = v ? 'clm-pop-pill-violet' : 'clm-code-pill';
 
   const [pop, setPop] = useState<{ x: number; y: number; flipUp: boolean } | null>(null);
 
@@ -71,19 +72,18 @@ export default function AuthorityBadges({ value, variant = 'teal' }: { value?: s
         <>
           <div onClick={() => setPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 100000 }} />
           <div
-            className="clm-pop"
+            className={popClass}
             style={{
               position: 'fixed', left: Math.min(pop.x, window.innerWidth - 340),
               top: pop.flipUp ? undefined : pop.y,
               bottom: pop.flipUp ? (window.innerHeight - pop.y) : undefined,
               zIndex: 100001, width: 320, maxHeight: 280, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', borderRadius: 12, padding: 8,
-              ...(v ? { border: '1.5px solid #ddd6fe' } : {}),
             }}
           >
-            <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px', ...(v ? { color: '#7c3aed' } : {}) }}>Issuing Authorities ({list.length})</div>
+            <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px', }}>Issuing Authorities ({list.length})</div>
             {list.map((name, i) => (
-              <div key={i} className={!v && i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8, ...(v && i % 2 ? { background: '#f5f3ff' } : {}) }}>
-                <span className={v ? undefined : 'clm-code-pill'} style={codePillStyle}>{name}</span>
+              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
+                <span className={pillClass} style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{name}</span>
               </div>
             ))}
           </div>

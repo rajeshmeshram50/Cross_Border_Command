@@ -612,7 +612,7 @@ export default function SalesTodo() {
    * and the popup stayed open behind the success toast. */
   const resetAndClose = () => { setModalOpen(false); setForm({}); setFormErrors([]); setMtgErr({}); };
 
-  /* User-initiated dismissal — the backdrop, the X, and Cancel. Refuses while
+  /* User-initiated dismissal — the X and Cancel. Refuses while
    * a save is in flight so an in-progress request can't be abandoned half-way,
    * leaving the list disagreeing with what actually reached the server. */
   const close = () => { if (savingRef.current) return; resetAndClose(); };
@@ -1369,7 +1369,8 @@ export default function SalesTodo() {
 
       {/* ── Add / Edit Modal ── */}
       {modalOpen && (
-        <div className="td-overlay" onMouseDown={close}>
+
+        <div className="td-overlay">
           <div className="td-modal" onMouseDown={e => e.stopPropagation()}>
             <div className="td-modal-header">
               <div className="td-modal-header-left">

@@ -313,7 +313,10 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
                   locked={currencyLock}
                   onLockedClick={(v) => (!currencySettled && v === 'INR')
                     ? toast.warning('INR not allowed', 'An international PO is raised in the supplier currency, not INR.')
-                    : toast.warning('Supplier currency is settled', `This supplier is already in Zoho Books in ${zohoCurrency}. A contact's currency cannot change once it carries transactions.`)} />
+                    : toast.warning(
+                      `This supplier is on ${zohoCurrency}`,
+                      `${zohoCurrency} is already used on ${sup?.zohoCurrencyPo ? `${sup.zohoCurrencyPo}, another purchase order` : 'another purchase order'} against this supplier, so its currency can no longer be changed — Zoho Books holds one currency per supplier.`,
+                    )} />
               </Field>
               <Field label="Exchange Rate" req error={err.exchangeRate}>
                 <input className={`spi-dt-inp${inv('exchangeRate')}`} inputMode="decimal" placeholder="e.g. 83.25" value={draft.exchangeRate}

@@ -1366,6 +1366,9 @@ class PurchaseOrderController extends Controller
                 ->currencyInZoho((int) $v->client_id, (int) $v->id),
             'zohoCurrencySettled' => app(\App\Services\P2p\VendorCurrencyGuard::class)
                 ->settledCurrency((int) $v->client_id, (int) $v->id) !== null,
+            // The order that settled it, so the form can say which one did.
+            'zohoCurrencyPo' => app(\App\Services\P2p\VendorCurrencyGuard::class)
+                ->settledByPo((int) $v->client_id, (int) $v->id),
             /* The currencies Zoho Books actually has enabled. A PO in any other
                cannot reach the books — SGD was offered here for months, was not
                enabled there, and its orders posted as rupees without a word.

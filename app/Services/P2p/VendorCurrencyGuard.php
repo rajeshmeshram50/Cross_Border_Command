@@ -76,6 +76,14 @@ class VendorCurrencyGuard
         return $lock && $lock->isSynced() ? strtoupper(trim((string) $lock->currency_code)) : null;
     }
 
+    /** The order that put that currency in the books, so a refusal can name it. */
+    public function settledByPo(int $clientId, int $vendorId): ?string
+    {
+        $lock = $this->lockFor($clientId, $vendorId);
+
+        return $lock && $lock->isSynced() ? (($lock->po_codes[0] ?? null) ?: null) : null;
+    }
+
     /**
      * The currency Zoho Books shows for this supplier, settled or not — what the
      * form offers as the supplier is picked. Null = not in the books yet.
