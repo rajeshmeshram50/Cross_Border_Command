@@ -886,12 +886,14 @@ function LinkedRequestPopup({ request: r, doc, onClose }: {
             {ro('Approved Amount', r.approvedAmount !== null ? money(r.approvedAmount) : '—', 'is-amt')}
             {ro('Paid Amount', r.paid > 0 ? money(r.paid) : '—', 'is-amt')}
           </div>
-          {r.decision?.note && (
-            <div className="prd-dec__field">
-              <label>{r.status === 'declined' ? 'Rejection Reason' : 'Approval Remark'}</label>
-              <div className="prd-dec__ro prd-peek__note">{r.decision.note}</div>
+          {/* Always shown: on a full-screen popup an absent remark is worth
+              stating, and it is what fills the height under the fields. */}
+          <div className="prd-dec__field prd-peek__notefield">
+            <label>{r.status === 'declined' ? 'Rejection Reason' : 'Approval Remark'}</label>
+            <div className={`prd-dec__ro prd-peek__note${r.decision?.note ? '' : ' is-empty'}`}>
+              {r.decision?.note || (r.status === 'awaiting' ? 'Not decided yet.' : 'No remark was recorded with this decision.')}
             </div>
-          )}
+          </div>
         </div>
         <div className="spi-mdl-foot">
           <div className="spi-mdl-foot-btns"><button type="button" className="spi-mdl-cancel" onClick={onClose}>Close</button></div>
