@@ -124,12 +124,14 @@ class PoRefundAdjustmentController extends Controller
             $q->where(fn ($w) => $w->where('code', 'ilike', "%{$s}%")
                 ->orWhereHas('vendor', fn ($v) => $v->where('company_name', 'ilike', "%{$s}%")->orWhere('legal_name', 'ilike', "%{$s}%")));
         }
-        $rows = $q->orderByDesc('id')->limit(50)->get(['id', 'code', 'po_date', 'vendor_id', 'paid_amount']);
+        $rows = $q->orderByDesc('id')->limit(50)->get(['id', 'code', 'po_date', 'vendor_id', 'paid_amount', 'currency_code']);
         return $this->ok($rows->map(fn ($po) => [
             'id' => $po->id, 'code' => $po->code, 'po_date' => $po->po_date?->toDateString(),
             'supplier_name' => $po->vendor ? ($po->vendor->legal_name ?: $po->vendor->company_name) : null,
             'supplier_code' => $po->vendor?->vendor_code,
             'paid_amount' => (float) $po->paid_amount,
+            // The amount paid is in the order's currency, so the picker says which.
+            'currency_code' => $po->currency_code ?: 'INR',
         ])->all());
     }
 
@@ -581,6 +583,9 @@ class PoRefundAdjustmentController extends Controller
             'supplier_code' => $po->vendor?->vendor_code,
             'supplier_name' => $po->vendor ? ($po->vendor->legal_name ?: $po->vendor->company_name) : null,
             'zoho_bill_number' => $po->zoho_bill_number,
+            // A refund is money coming back on THIS order, so it is read in the
+            // order's own currency — not the rupees every refund screen assumed.
+            'currency_code' => $po->currency_code ?: 'INR',
         ] + ($refs[$po->id] ?? []);
     }
 

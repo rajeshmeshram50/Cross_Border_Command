@@ -28,6 +28,8 @@ export type RefundPoInfo = {
   shipment: string | null; shipmentDate: string; opportunity: string | null; opportunityDate: string; procurement: string | null;
   supplier: string; supplierCode: string; vendorId: number | null;
   cancelled: boolean; cancelReason: string; cancelStage: 'initiated' | 'closed' | null; zohoBill: string | null;
+  /** The PO's currency. Every figure on a refund is money on THAT order. */
+  currency: string;
 };
 
 export type RefundAdjustment = {
@@ -99,6 +101,7 @@ export function toPoInfo(p: RefundPo): RefundPoInfo {
     procurement: p.procurement_code,
     supplier: p.supplier_name ?? '—', supplierCode: p.supplier_code ?? '—', vendorId: p.vendor_id,
     cancelled: p.status === 'cancelled', cancelReason: p.cancel_reason ?? '', cancelStage: p.cancel_stage, zohoBill: p.zoho_bill_number,
+    currency: (p.currency_code || 'INR').toUpperCase(),
   };
 }
 

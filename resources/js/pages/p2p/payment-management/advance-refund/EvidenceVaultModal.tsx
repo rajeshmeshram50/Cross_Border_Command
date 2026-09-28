@@ -8,7 +8,7 @@ import { downloadFile } from '../../../../utils/downloadFile';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { useToast } from '../../../../contexts/ToastContext';
 import { IcoX } from '../../icons';
-import { fmtDate, money } from '../../purchase-management/order/manage-payment/payment-shared';
+import { fmtDate, moneyIn } from '../../purchase-management/order/manage-payment/payment-shared';
 import { PoApiError, refundApi } from '../../purchase-management/order/api/po-api';
 import { toRefund, type RefundAdjustment } from './refund-data';
 import { useEscapeClose } from './useEscapeClose';
@@ -58,6 +58,8 @@ export default function EvidenceVaultModal({ refundId, onClose }: { refundId: nu
   }, [refundId, toast, onClose]);
 
   const po = refund?.poInfo;
+  // The refund's figures are money on its purchase order, in that currency.
+  const money = moneyIn(po?.currency ?? 'INR');
   const poFiles: VaultFile[] = (refund?.documents ?? []).map((d) => ({
     key: `doc-${d.id}`, name: d.name, url: d.url ?? undefined, meta: [d.status, d.date ? fmtDate(d.date) : null].filter(Boolean).join(' · '),
   }));
