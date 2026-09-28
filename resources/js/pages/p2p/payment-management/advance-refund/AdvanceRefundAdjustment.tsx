@@ -480,7 +480,9 @@ function RefundRow({ sr, refund, syncing, onEdit, onRecover, onVault, onSync, on
               <span className="ord-progress__due"><span className="ord-progress__mdot" />{money(fig.pending)} pending</span>
             </div>
           </div>
-          <span className="arf-chip arf-refchip"><IcoFile />{refund.no}</span>
+          {/* The refund number reads with the recovery, not against it: amber
+              while money is still owed, green once it is all back (CS-584/586). */}
+          <span className={`arf-chip arf-refchip${done ? ' is-done' : ''}`}><IcoFile />{refund.no}</span>
           {/* Same dark button in both states, as in the prototype — only the
               label says whether anything is still owed. */}
           <button type="button" className="ord-btn ord-btn--hist" onClick={onRecover}>

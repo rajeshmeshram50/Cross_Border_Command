@@ -51,6 +51,8 @@ export type StepCtx = {
   /** Saves Step 02's lines and charges without leaving the step. */
   saveLines: () => Promise<void>;
   saving: boolean;
+  /** That save in particular, so only its own button spins (CS-409). */
+  savingLines: boolean;
   /** Re-read the supplier's vault after documents are uploaded from it. */
   refreshVault: () => void;
   /** Re-read the supplier after it is edited — its mapped products drive Stage 02. */
@@ -118,6 +120,8 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   const [saving, setSaving] = useState(false);
   // Save & Next in flight — the step shows the form shimmer until the next one opens.
   const [advancing, setAdvancing] = useState(false);
+  // Step 02's own Save is running, as against the footer's Save & Next.
+  const [savingLines, setSavingLines] = useState(false);
   // Read by the Esc handler, which is bound once and would see a stale `saving`.
   const savingRef = useRef(false);
   savingRef.current = saving;
@@ -497,16 +501,21 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     }
   };
 
-  // Step 02's own Save button: bank the lines without moving on.
+  /* Step 02's own Save button: bank the lines without moving on.
+     `savingLines` says WHICH save is running, so the footer's Save & Next stays
+     as it is instead of spinning along with a button the user did not press
+     (CS-409). The form is still locked meanwhile — that part is shared. */
   const saveLines = async () => {
     if (saving) return;
     setSaving(true);
+    setSavingLines(true);
     try {
       if (await saveStage2()) toast.success('Product details saved', `${itemsBody(draft).lines.length} line(s) on this PO.`);
     } catch (e) {
       fail(e);
     } finally {
       setSaving(false);
+      setSavingLines(false);
     }
   };
 
@@ -531,7 +540,9 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     else onChangeLink();
   };
   const backLabel = stage > 0 ? 'Back' : poId ? 'Back to List' : 'Change Link';
-  const nextLabel = viewOnly ? (isLast ? 'Close' : 'Next') : saving ? 'Saving…' : isLast && isEdit ? 'Update Purchase Order' : NEXT_LABEL[stage];
+  // The footer spins for its own save only — Step 02's Save has its own button.
+  const footerSaving = saving && !savingLines;
+  const nextLabel = viewOnly ? (isLast ? 'Close' : 'Next') : footerSaving ? 'Saving…' : isLast && isEdit ? 'Update Purchase Order' : NEXT_LABEL[stage];
 
   const code = detail?.code ?? nextCode;
   const refs = {
@@ -540,7 +551,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     pi: link.shipment?.pi_number ?? detail?.pi_code ?? null,
     procurement: detail?.procurement_request_code ?? null,
   };
-  const ctx: StepCtx = { lookups, taxMode: draft.docType === 'International' ? 'export' : (detail?.tax_mode ?? 'intra'), piCode: refs.pi, detail, saveLines, saving, refreshVault, reloadSupplier: loadSupplier, reloadSupplierList: lookups.reloadSuppliers, reloadDetail: () => { void reloadApproval(); }, savedLines, piHolders, viewOnly,
+  const ctx: StepCtx = { lookups, taxMode: draft.docType === 'International' ? 'export' : (detail?.tax_mode ?? 'intra'), piCode: refs.pi, detail, saveLines, saving, savingLines, refreshVault, reloadSupplier: loadSupplier, reloadSupplierList: lookups.reloadSuppliers, reloadDetail: () => { void reloadApproval(); }, savedLines, piHolders, viewOnly,
     errors: shown[0] ? { ...serverErrors, ...validateStage1(draft) } : serverErrors,
     ...(() => {
       if (!shown[1]) return { lineErrors: serverLineErrors };
@@ -716,9 +727,9 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
               title={awaitingApproval ? `Waiting for ${detail?.gst_approval?.requested_to_name ?? 'the senior'} to approve — the PO cannot be submitted yet.`
                 : supplierLoading ? 'Applying the supplier — one moment.' : undefined}
             >
-              {saving ? <CpfSpinner /> : isSubmit && <IcoCheck />}
+              {footerSaving ? <CpfSpinner /> : isSubmit && <IcoCheck />}
               {nextLabel}
-              {saving ? null : <IcoChevronR />}
+              {footerSaving ? null : <IcoChevronR />}
             </button>
           </div>
         </div>

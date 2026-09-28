@@ -58,10 +58,19 @@ class PurchaseOrderService
         return $this->nextCode($clientId, 'PO', PurchaseOrder::withoutGlobalScope('tenant')->withTrashed(), false);
     }
 
-    /** Next PRQ/<FY>/<SEQ> payment request code, one sequence per client. Call inside a transaction. */
+    /**
+     * Next PRQ-### payment request code, one running sequence per client. Call
+     * inside a transaction.
+     *
+     * Plain PRQ-001, not PRQ/<FY>/<SEQ> like the documents around it: a payment
+     * request is referred to by number in conversation, and the financial year
+     * added length without telling anyone anything the request date does not.
+     * The sequence therefore runs on and never restarts, or April would hand out
+     * a PRQ-001 that already exists.
+     */
     public function nextPaymentRequestCode(int $clientId): string
     {
-        return $this->nextCode($clientId, 'PRQ', PoPaymentRequest::withoutGlobalScope('tenant'));
+        return $this->nextSerialCode($clientId, 'PRQ', PoPaymentRequest::withoutGlobalScope('tenant'));
     }
 
     /** Next ADR/<FY>/<SEQ> (advance refund adjustment), one sequence per client. */
@@ -263,6 +272,26 @@ class PurchaseOrderService
             }
         }
         return sprintf('%s/%s/%03d', $prefix, $fy, $max + 1);
+    }
+
+    /**
+     * A running <PREFIX>-### number, one sequence per client and no financial
+     * year in it. Codes in the older <PREFIX>/<FY>/<SEQ> shape are ignored when
+     * the next number is read, so both can sit in the same table while the old
+     * rows keep the number they were issued under.
+     */
+    private function nextSerialCode(int $clientId, string $prefix, Builder $query, bool $allocate = true): string
+    {
+        // Allocation locks the client row so two saves never take the same number.
+        if ($allocate) DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
+
+        $max = 0;
+        foreach ($query->where('client_id', $clientId)->where('code', 'like', "{$prefix}-%")->pluck('code') as $code) {
+            if (preg_match('#^' . preg_quote($prefix, '#') . '-(\d+)$#', (string) $code, $m)) {
+                $max = max($max, (int) $m[1]);
+            }
+        }
+        return sprintf('%s-%03d', $prefix, $max + 1);
     }
 
     /** The PI behind a shipment: its direct link, else the PI on the same opportunity. */

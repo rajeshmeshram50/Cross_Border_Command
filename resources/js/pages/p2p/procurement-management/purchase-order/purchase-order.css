@@ -661,7 +661,8 @@
 .pom .cpd-chg-f label{font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5b7585;}
 .pom .cpd-chg-inwrap{position:relative;display:flex;align-items:center;}
 .pom .cpd-chg-cur{position:absolute;left:11px;font-size:12px;font-weight:700;color:#7c97a8;pointer-events:none;}
-.pom .cpd-chg-in{font-family:inherit;font-size:12.5px;font-weight:700;color:#0f172a;padding:9px 12px 9px 24px;border:1.5px solid #e6eef3;border-radius:9px;background:#f9fdfe;width:100%;box-sizing:border-box;text-align:right;-moz-appearance:textfield;transition:border-color .15s,box-shadow .15s,background .15s;}
+/* The amount reads from the ₹, not from the far edge of the box (CS-409). */
+.pom .cpd-chg-in{font-family:inherit;font-size:12.5px;font-weight:700;color:#0f172a;padding:9px 12px 9px 27px;border:1.5px solid #e6eef3;border-radius:9px;background:#f9fdfe;width:100%;box-sizing:border-box;text-align:left;-moz-appearance:textfield;transition:border-color .15s,box-shadow .15s,background .15s;}
 .pom .cpd-chg-in::-webkit-outer-spin-button,.pom .cpd-chg-in::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
 .pom .cpd-chg-in:focus{outline:none;border-color:#22d3ee;background:#fff;box-shadow:0 0 0 4px rgba(34,211,238,.12);}
 .pom .cpd-totbox{border:1.5px solid #cdeaf1;border-radius:12px;overflow:hidden;background:linear-gradient(180deg,#f7fdff,#edf8fb);}

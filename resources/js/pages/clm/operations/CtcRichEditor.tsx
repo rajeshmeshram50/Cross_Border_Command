@@ -1311,9 +1311,21 @@ const ContentLimit = Extension.create<ContentLimitOptions>({
       return true;
     };
 
-    /* At or past the ceiling, nothing more goes in. Uses the CACHED length —
-       see addStorage. */
+    /* At or past the ceiling, nothing more goes in.
+
+       The cached length is trusted only while it says there is room: a cache is
+       a promise about a document that has since been replaced, and content set
+       through setHTML lands with emitUpdate:false, so onUpdate never corrects
+       it. A big draft followed by a small import therefore left the ceiling
+       armed against a document that was nowhere near it — "the uploaded doc is
+       within the limit but will not accept another letter" (CS-17).
+
+       So: the cheap check decides when to let a keystroke through, and the real
+       measurement decides when to refuse one. getHTML() runs only on the
+       keystroke that would cross the line, not on every key. */
     const atCeiling = (incoming: number): boolean => {
+      if (storage.htmlLen + incoming <= max) return false;
+      storage.htmlLen = editor.getHTML()?.length ?? 0;
       const attempted = storage.htmlLen + incoming;
       if (attempted <= max) return false;
       warn(attempted);
@@ -1493,6 +1505,11 @@ export function useCtcEditor(opts: {
       const repaired = repairBrokenLinkHrefs(html);
       lastSyncedRef.current = repaired;
       editor.commands.setContent(repaired || '<p></p>', { emitUpdate: false });
+      /* emitUpdate:false means the limit guard's cached length is not told the
+         document changed, so it would go on measuring the one before this —
+         an import after a large draft could not be typed in (CS-17). */
+      const limit = (editor.storage as unknown as Record<string, { htmlLen?: number }>).contentLimit;
+      if (limit) limit.htmlLen = (repaired || '<p></p>').length;
       onChange(repaired);
     },
   };
@@ -2676,7 +2693,11 @@ export const CTC_EDITOR_CSS = `
 /* A cluster of related controls. nowrap is the load-bearing part: the bar
    wraps, the group inside it does not, so a row break always falls on a
    divider instead of through the middle of the alignment buttons. */
-.ctcte-grp { display: flex; align-items: center; gap: 3px; flex-wrap: nowrap; flex-shrink: 0; }
+/* Every group is one 28px line tall, whatever it holds. Without that the groups
+   measured 26, 28 and 34px and, centred against each other, their controls sat
+   at four different heights on the same row — the "icons misaligned, some
+   spaced out, some squashed" the toolbar was reported for. */
+.ctcte-grp { display: flex; align-items: center; gap: 3px; flex-wrap: nowrap; flex-shrink: 0; height: 28px; }
 /* An empty group can be left behind when a divider lands at either end. */
 .ctcte-grp:empty { display: none; }
 /* A divider that ends up first or last on a wrapped row is a line against
@@ -3088,7 +3109,10 @@ export const CTC_EDITOR_CSS = `
 .ctcte-pop-portal { position: static !important; top: auto !important; left: auto !important; right: auto !important; margin: 0 !important; }
 .ctcte-pgbtn:hover { background: #EDE9FE; border-color: #C4B5FD; }
 [data-bs-theme="dark"] .ctcte-pgbtn { background: rgba(124,58,237,.18); border-color: rgba(124,58,237,.45); color: #C4B5FD; }
-.ctcte-div { width: 1px; height: 18px; background: #E5E1F3; margin: 0 3px; }
+/* The rule sits on the same 28px line as the groups, with the visible stroke
+   centred inside it — so a divider never rides above or below its neighbours. */
+.ctcte-div { width: 1px; height: 28px; background: transparent; margin: 0 3px; display: flex; align-items: center; }
+.ctcte-div::before { content: ''; display: block; width: 1px; height: 18px; background: #E5E1F3; }
 /* Colour + highlight. The native colour input is laid OVER its swatch so the
    whole button opens the picker instead of sitting beside it as a second
    target. */
@@ -3196,8 +3220,18 @@ export const CTC_EDITOR_CSS = `
 .ctcte-content .ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: #A78BFA; pointer-events: none; float: left; height: 0; }
 
 [data-bs-theme="dark"] .ctcte-toolbar { background: rgba(255,255,255,.03); border-bottom-color: rgba(124,58,237,.2); }
-[data-bs-theme="dark"] .ctcte-sel { background: rgba(255,255,255,.05); border-color: rgba(124,58,237,.3); color: #c4b5fd; }
-[data-bs-theme="dark"] .ctcte-div { background: rgba(124,58,237,.3); }
+/* A native select paints its OPEN list from its own background-color, and a
+   translucent white composites to near-white — so Paragraph / font / Size
+   dropped open as a white panel with pale lavender text on it, unreadable in
+   dark mode. An opaque surface, options coloured in their own right, and
+   color-scheme so the browser draws the popup's chrome dark too. */
+[data-bs-theme="dark"] .ctcte-sel { background: #241a3d; border-color: rgba(124,58,237,.45); color: #ddd2ff; color-scheme: dark; }
+[data-bs-theme="dark"] .ctcte-sel option { background: #241a3d; color: #ddd2ff; }
+[data-bs-theme="dark"] .ctcte-sel:hover { border-color: rgba(167,139,250,.65); }
+[data-bs-theme="dark"] .ctcte-sel:focus { outline: none; border-color: #a78bfa; }
+/* The stroke moved to ::before, so the dark colour goes there too. */
+[data-bs-theme="dark"] .ctcte-div { background: transparent; }
+[data-bs-theme="dark"] .ctcte-div::before { background: rgba(124,58,237,.3); }
 [data-bs-theme="dark"] .ctcte-btn { color: #c4b5fd; }
 [data-bs-theme="dark"] .ctcte-btn:hover { background: rgba(124,58,237,.18); }
 [data-bs-theme="dark"] .ctcte-content .ProseMirror { color: #e8eaed; }

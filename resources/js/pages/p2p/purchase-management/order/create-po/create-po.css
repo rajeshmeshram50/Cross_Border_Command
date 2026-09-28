@@ -1161,7 +1161,11 @@
   font-weight: 700;
   /* The prototype's box is 36px tall; the form's 1.45 line-height made ours 39. */
   line-height: 1.2;
-  text-align: right;
+  /* The amount reads from the ₹, not from the far edge of the box: right-aligned,
+     the symbol sat alone on the left with the figure a field-width away, which
+     read as two unrelated things rather than one price (CS-409). */
+  text-align: left;
+  padding-left: 27px;
   color: #0f172a;
   outline: none;
 }

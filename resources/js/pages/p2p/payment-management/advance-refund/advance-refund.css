@@ -652,6 +652,9 @@
 
 /* Refund number chip inside the recovery cell. */
 .arf-refchip { align-self:center; font-family:'Geist Mono',ui-monospace,monospace; }
+/* Fully recovered: the chip turns green with the status above it, instead of
+   sitting there amber as if something were still outstanding. */
+.arf-refchip.is-done { color:#047857; background:#ecfdf5; border-color:#a7f3d0; }
 
 /* Action column: a square icon button beside the two labelled ones. They stay
    on one line at their own width — the cell is pinned, so a shrinking button
@@ -761,6 +764,7 @@
 [data-bs-theme="dark"] .arf-table .ord-idcell__date { color:#8aa5b2; }
 [data-bs-theme="dark"] .arf-table .arf-nr__why { color:#fcd34d; background:rgba(245,158,11,.16); border-color:rgba(245,158,11,.38); }
 [data-bs-theme="dark"] .arf-chip { color:#fcd34d; background:rgba(245,158,11,.14); border-color:rgba(245,158,11,.35); }
+[data-bs-theme="dark"] .arf-refchip.is-done { color:#6ee7b7; background:rgba(16,185,129,.14); border-color:rgba(16,185,129,.38); }
 [data-bs-theme="dark"] .arf-nr__none { color:#64748b; }
 [data-bs-theme="dark"] .arf-form .spi-dt-field:has(input:not([readonly]), .spi-dt-file, .master-select-wrap) > .spi-dt-field-lbl { color:#67e8f9; }
 [data-bs-theme="dark"] .arf-form .spi-dt-inp:not([readonly]):not(.is-invalid),

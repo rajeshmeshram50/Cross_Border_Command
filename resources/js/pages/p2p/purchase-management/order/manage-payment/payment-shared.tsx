@@ -36,11 +36,15 @@ export const initials = (name: string) => {
   return ((p[0] || '?').charAt(0) + (p[1] || '').charAt(0)).toUpperCase();
 };
 
-// Same four the server accepts (PoPaymentRequest::PAYMENT_TYPES).
+/* What a new payment request may be raised as.
+
+   "Final Payment" is gone from the list (CS-41): Balance Payment already names
+   the last release, and offering both invited two words for one thing. The
+   server still accepts it (PoPaymentRequest::PAYMENT_TYPES), so requests raised
+   as Final Payment before this keep their own label and stay editable. */
 export const PAYMENT_TYPES = [
   'Advance Payment',
   'Partial Payment',
-  'Final Payment',
   'Balance Payment',
 ];
 

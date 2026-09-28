@@ -1662,11 +1662,15 @@ const TNW_CSS = `
 .tnw-editor-area { position: relative; flex: 1; min-height: 0; overflow-y: auto; }
 /* Teal scrollbar on the draft, matching the other CLM editors — without it the
    area scrolls with no visible affordance and reads as clipped content. */
-.tnw-editor-area { scrollbar-gutter: stable; }
-.tnw-editor-area::-webkit-scrollbar { width: 10px; }
-.tnw-editor-area::-webkit-scrollbar-track { background: transparent; }
-.tnw-editor-area::-webkit-scrollbar-thumb { background: rgba(8,145,178,.28); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
-.tnw-editor-area::-webkit-scrollbar-thumb:hover { background: rgba(8,145,178,.48); background-clip: content-box; }
+/* The bar has to be SEEN, not merely present: a 6px thumb at .28 alpha on a
+   transparent track read as no scrollbar at all, and a draft that runs past the
+   frame looked cut off rather than scrollable. A track of its own, a wider
+   thumb and a solid teal give it an edge to grab. */
+.tnw-editor-area { scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: #0891b2 #e2f5fa; }
+.tnw-editor-area::-webkit-scrollbar { width: 12px; }
+.tnw-editor-area::-webkit-scrollbar-track { background: #e2f5fa; border-left: 1px solid rgba(8,145,178,.18); }
+.tnw-editor-area::-webkit-scrollbar-thumb { background: #38bdd8; border-radius: 8px; border: 3px solid #e2f5fa; background-clip: content-box; min-height: 40px; }
+.tnw-editor-area::-webkit-scrollbar-thumb:hover { background: #0891b2; background-clip: content-box; }
 .tnw-editor, .tnw-editor .ProseMirror {
   min-height: 240px;
   padding: 18px 22px;
@@ -1890,6 +1894,21 @@ const TNW_CSS = `
   gap: 12px; flex-wrap: wrap;
 }
 .tnw-editor-foot-hint { color: #0e7490; opacity: .85; }
+
+/* On a laptop screen the draft was left a five-line slit with the sixth line
+   sliced off by the frame — the "content not visible properly" in the report.
+   The modal cannot grow past the viewport, so the chrome around the draft gives
+   its padding back instead: at 1280x720 that turns 173px of draft into ~250. */
+@media (max-height: 840px) {
+  .tnw-head { padding: 12px 22px; }
+  .tnw-body { padding: 14px 18px; }
+  .tnw-step-body { gap: 12px; }
+  .tnw-editor-head { padding: 8px 14px; }
+  .tnw-editor-foot { padding: 6px 14px; }
+  .tnw-foot { padding: 12px 18px; }
+  /* A draft this short is unusable; below it the frame is better scrolled. */
+  .tnw-editor-area { min-height: 180px; }
+}
 .tnw-editor-foot-tag {
   background: #fff; border: 1px solid #67e8f9;
   padding: 3px 9px; border-radius: 6px;
@@ -1963,9 +1982,18 @@ const TNW_CSS = `
 [data-bs-theme="dark"] .tnw-editor-shell { background: #0f172a; border-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .tnw-toolbar { background: rgba(8,145,178,.06); border-bottom-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .tnw-toolbar-sel, [data-bs-theme="dark"] .tnw-toolbar-btn { background: #1e293b; border-color: rgba(6,182,212,.22); color: #cbd5e1; }
+/* The open list of a native select follows the element's own colours, so its
+   options are stated too and the browser is told to draw the popup dark. */
+[data-bs-theme="dark"] .tnw-toolbar-sel { color-scheme: dark; }
+[data-bs-theme="dark"] .tnw-toolbar-sel option { background: #1e293b; color: #cbd5e1; }
 [data-bs-theme="dark"] .tnw-toolbar-btn:hover { background: rgba(8,145,178,.14); color: #67e8f9; border-color: rgba(103,232,249,.45); }
 [data-bs-theme="dark"] .tnw-toolbar-sep { background: rgba(255,255,255,.10); }
 [data-bs-theme="dark"] .tnw-editor, [data-bs-theme="dark"] .tnw-editor .ProseMirror { background: #0f172a; color: #e2e8f0; }
+/* The same visible bar in dark mode — the light track would glow on it. */
+[data-bs-theme="dark"] .tnw-editor-area { scrollbar-color: #22d3ee rgba(8,145,178,.16); }
+[data-bs-theme="dark"] .tnw-editor-area::-webkit-scrollbar-track { background: rgba(8,145,178,.16); border-left-color: rgba(34,211,238,.24); }
+[data-bs-theme="dark"] .tnw-editor-area::-webkit-scrollbar-thumb { background: #22d3ee; border-color: transparent; }
+[data-bs-theme="dark"] .tnw-editor-area::-webkit-scrollbar-thumb:hover { background: #67e8f9; }
 [data-bs-theme="dark"] .tnw-editor .ProseMirror h1, [data-bs-theme="dark"] .tnw-editor .ProseMirror h2, [data-bs-theme="dark"] .tnw-editor .ProseMirror h3 { color: #cffafe; }
 [data-bs-theme="dark"] .tnw-editor .ProseMirror blockquote { border-left-color: rgba(103,232,249,.55); color: #cbd5e1; }
 [data-bs-theme="dark"] .tnw-editor .ProseMirror code { background: rgba(8,145,178,.20); color: #cffafe; }
