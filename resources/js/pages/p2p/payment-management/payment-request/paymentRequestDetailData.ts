@@ -121,7 +121,9 @@ function linkedRow(q: PoPayRequest, row: PaymentRequestRow): LinkedRequest {
     paymentType: q.payment_type, requestedBy: by, requestedTo: to,
     percentOfTotal: q.percentage ?? 0,
     decline: status === 'declined' ? { on: q.decided_at ?? '', by: to, reason: q.decision_note ?? '' } : null,
-    canDecide: row.canDecide && q.id === row.id,
+    // Every linked request answers for itself, so any of them sent to this user
+    // can be decided from the list instead of being opened first (CS-436).
+    canDecide: q.id === row.id ? row.canDecide : (q.can_decide ?? false),
     paid: q.paid_amount,
   };
 }

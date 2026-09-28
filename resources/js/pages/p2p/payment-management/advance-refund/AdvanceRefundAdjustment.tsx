@@ -19,7 +19,7 @@ import RefundPoPickerModal from './RefundPoPickerModal';
 import RefundAdjustmentForm from './RefundAdjustmentForm';
 import RecoverPaymentModal from './RecoverPaymentModal';
 import EvidenceVaultModal from './EvidenceVaultModal';
-import { TYPE_VARIANT, refundFigures, toRefund, typeLabel, type RefundAdjustment } from './refund-data';
+import { TYPE_VARIANT, isSettled, refundFigures, toRefund, typeLabel, type RefundAdjustment } from './refund-data';
 import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
 import '../../purchase-management/order/po-list/order.css';
 import './advance-refund.css';
@@ -89,7 +89,9 @@ export default function AdvanceRefundAdjustment() {
   const [guideOpen, setGuideOpen] = useState(false);
   // Create: picker first, then the form for the chosen PO. Edit: the form straight away.
   const [picking, setPicking] = useState(false);
-  const [form, setForm] = useState<{ poId?: number; editId?: number } | null>(null);
+  // `settled` travels with the edit: the form's footer then reads right from its
+  // first frame instead of settling once the row arrives (CS-589).
+  const [form, setForm] = useState<{ poId?: number; editId?: number; settled?: boolean } | null>(null);
   const [recoveringId, setRecoveringId] = useState<number | null>(null);
   const [vaultId, setVaultId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -292,7 +294,7 @@ export default function AdvanceRefundAdjustment() {
                 </td></tr>
               ) : rows.map((r, i) => (
                 <RefundRow key={r.id} sr={start + i + 1} refund={r} syncing={syncingId === r.id}
-                  onEdit={() => setForm({ editId: r.id })} onRecover={() => setRecoveringId(r.id)} onVault={() => setVaultId(r.id)}
+                  onEdit={() => setForm({ editId: r.id, settled: isSettled(r) })} onRecover={() => setRecoveringId(r.id)} onVault={() => setVaultId(r.id)}
                   onSync={() => void syncZoho(r)} />
               ))}
             </tbody>
@@ -313,6 +315,7 @@ export default function AdvanceRefundAdjustment() {
         <RefundAdjustmentForm
           poId={form.poId}
           editId={form.editId}
+          settledHint={form.settled}
           onSaved={(saved, zoho) => onSaved(saved, zoho, !form.editId)}
           onCancel={() => { const creating = !form.editId; setForm(null); if (creating) setPicking(true); }}
           onClose={() => setForm(null)}
@@ -388,7 +391,7 @@ function RefundRow({ sr, refund, syncing, onEdit, onRecover, onVault, onSync }: 
   // Synced once the vendor credit is in Zoho and every recovery is refunded there.
   const zohoSynced = refund.zohoStatus === 'synced' && refund.zohoPending === 0;
   // Once money starts coming back the figures are fixed, so the action reads as View.
-  const settled = refund.status === 'recovered' || refund.recovered > 0 || refund.recoveriesCount > 0;
+  const settled = isSettled(refund);
   const po = refund.poInfo;
   const fig = refundFigures(refund);
   const tds = po?.tds ?? 0;

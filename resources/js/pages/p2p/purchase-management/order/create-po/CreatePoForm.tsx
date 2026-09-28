@@ -372,6 +372,15 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
       const mapped = err instanceof PoApiError ? stage1FromServer(err.fieldErrors) : {};
       if (!Object.keys(mapped).length) throw err;
       setServerErrors(mapped);
+      /* A supplier trades in one currency (Zoho Books pins its contact to one),
+         and on a domestic PO the currency field is not even on screen — so this
+         one is said out loud rather than only highlighted. */
+      const clash = err instanceof PoApiError ? err.fieldErrors.currency_code?.[0] : undefined;
+      if (clash) {
+        toast.error('Supplier currency mismatch', clash);
+        scrollToFirstError();
+        return false;
+      }
       return blockWith(Object.keys(mapped).length, Object.keys(mapped).length === 1 ? 'field' : 'fields');
     }
     setPoId(d.id);

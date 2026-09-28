@@ -21,6 +21,7 @@ import { downloadFile, saveApiBlob } from '../../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import SalesCustomerSendForSignatureModal from '../customer/SalesCustomerSendForSignatureModal';
 import { SigningTrackerModal } from '../../opportunity-pipeline/SigningTrackerModal';
+import { ActionLockProvider, useActionLock } from '../../../../hooks/useActionLock';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Consignee Evidence Vault — read-only compliance archive
@@ -763,6 +764,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   }
 
   return createPortal(
+    <ActionLockProvider>
     <div className="cev-overlay sev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget && !uploading) onClose(); }}>
       {/* CLM_CSS carries .clm-badge / .clm-pop — what AuthorityBadges and its
           +N popover in the Issuing Authority column are drawn with. */}
@@ -1602,7 +1604,8 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           document.body
         );
       })()}
-    </div>,
+    </div>
+    </ActionLockProvider>,
     document.body
   );
 }
@@ -1828,7 +1831,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                               e.preventDefault();
                               if (busy) return;
                               setChipBusy(key);
-                              try { await downloadFile(d.attachment_url, d.attachment); }
+                              try { await downloadFile(d.attachment_url, d.attachment ?? ''); }
                               finally { setChipBusy(null); }
                             }}
                           >
@@ -1889,11 +1892,21 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   sameAsCustomer?: boolean;
 }) {
   const toast = useToast();
+  const lock = useActionLock();
   const [busy, setBusy] = useState(false);
   const [reminding, setReminding] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [viewing, setViewing] = useState(false);
   const [trackerOpen, setTrackerOpen] = useState(false);
+  /* CS-567: one action at a time across the whole vault. Every button disables
+     itself whenever the lock is held by anything other than itself, so a second
+     click — on this row or any other — cannot start a second action. */
+  const rowKey = `row:${category}:${doc.id}`;
+  const viewKey = `${rowKey}:view`;
+  const certKey = `${rowKey}:cert`;
+  const viewing = lock.active === viewKey;
+  const viewBlocked = lock.blocked(viewKey);
+  const certBlocked = lock.blocked(certKey);
+  const otherRunning = lock.blocked(rowKey);
   const canViewOrDownload = !!doc.attachment_url;
   /* Not offered when the consignee IS the customer: its bucket stays empty
      by design and the API refuses the write, so an enabled button here was
@@ -1917,7 +1930,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   const remind = async () => {
     if (!onRemindTradeDoc) return;
     setReminding(true);
-    try { await onRemindTradeDoc(doc); } finally { setReminding(false); }
+    try { await lock.run(rowKey, () => onRemindTradeDoc(doc)); } finally { setReminding(false); }
   };
 
   // Blob download so it works on the deployed server too (a plain <a download>
@@ -1925,7 +1938,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   const download = async () => {
     if (downloading || !doc.attachment_url) return;
     setDownloading(true);
-    try { await downloadFile(doc.attachment_url, doc.attachment); }
+    try { await lock.run(`${rowKey}:get`, () => downloadFile(doc.attachment_url, doc.attachment ?? '')); }
     finally { setDownloading(false); }
   };
 
@@ -1942,21 +1955,23 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
     setBusy(true);
     onBusyChange?.(true);   // lock the vault (no tab switch / close) while uploading
     try {
-      const fd = new FormData();
-      fd.append('category', category);
-      fd.append('doc_code', doc.doc_code);
-      fd.append('doc_name', doc.name || doc.doc_code);
-      if (f) fd.append('attachment', f);
-      // Both left out when not given — the endpoint's rules are nullable and an
-      // empty string would fail their `date` check.
-      if (issueDate) fd.append('issue_date', issueDate);
-      if (expiryDate) fd.append('expiry_date', expiryDate);
-      await api.post(`/segment-uploads/${ownerType}/${ownerId}`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+      await lock.run(rowKey, async () => {
+        const fd = new FormData();
+        fd.append('category', category);
+        fd.append('doc_code', doc.doc_code!);
+        fd.append('doc_name', doc.name || doc.doc_code!);
+        if (f) fd.append('attachment', f);
+        // Both left out when not given — the endpoint's rules are nullable and an
+        // empty string would fail their `date` check.
+        if (issueDate) fd.append('issue_date', issueDate);
+        if (expiryDate) fd.append('expiry_date', expiryDate);
+        await api.post(`/segment-uploads/${ownerType}/${ownerId}`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        setReupOpen(false);
+        await onReload();
+        toast.success(f ? 'Document uploaded' : 'Dates saved', f ? `${f.name} has been attached.` : 'The issue and expiry dates were updated.');
       });
-      setReupOpen(false);
-      await onReload();
-      toast.success(f ? 'Document uploaded' : 'Dates saved', f ? `${f.name} has been attached.` : 'The issue and expiry dates were updated.');
     } catch (e: any) {
       toast.error('Upload failed', e?.response?.data?.message || 'The file could not be uploaded. Please try again.');
     } finally {
@@ -1981,10 +1996,11 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
         />
       )}
       {canSend && (
-        <Tooltip label="Send for signature">
+        <Tooltip label={otherRunning ? 'Another action is still running' : 'Send for signature'}>
           <button
             type="button"
             onClick={() => onSendTradeDoc!(doc)}
+            disabled={otherRunning}
             className="cev-row-act cev-row-act-send"
             aria-label="Send for signature"
             style={{
@@ -1999,18 +2015,18 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
         </Tooltip>
       )}
       {canRemind && (
-        <Tooltip label={reminding ? 'Sending reminder…' : 'Send signing reminder'}>
+        <Tooltip label={reminding ? 'Sending reminder…' : otherRunning ? 'Another action is still running' : 'Send signing reminder'}>
           <button
             type="button"
             onClick={remind}
-            disabled={reminding}
+            disabled={reminding || otherRunning}
             className="cev-row-act cev-row-act-remind"
             aria-label="Send reminder"
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               width: 28, height: 28, borderRadius: 6,
               background: '#fef3c7', color: '#b45309', border: '1px solid #fcd34d',
-              cursor: reminding ? 'wait' : 'pointer', opacity: reminding ? 0.7 : 1,
+              cursor: reminding ? 'wait' : otherRunning ? 'not-allowed' : 'pointer', opacity: (reminding || otherRunning) ? 0.7 : 1,
             }}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
@@ -2018,17 +2034,18 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
         </Tooltip>
       )}
       {canTrack && (
-        <Tooltip label="Signing activity tracker">
+        <Tooltip label={otherRunning ? 'Another action is still running' : 'Signing activity tracker'}>
           <button
             type="button"
             onClick={() => setTrackerOpen(true)}
+            disabled={otherRunning}
             className="cev-row-act cev-row-act-track"
             aria-label="Signing activity tracker"
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               width: 28, height: 28, borderRadius: 6,
               background: '#cffafe', color: '#0e7490', border: '1px solid #67e8f9',
-              cursor: 'pointer',
+              cursor: otherRunning ? 'not-allowed' : 'pointer', opacity: otherRunning ? 0.5 : 1,
             }}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
@@ -2042,14 +2059,16 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           onClose={() => setTrackerOpen(false)}
         />
       )}
-      <Tooltip label={canViewOrDownload ? `View ${doc.attachment}` : 'No attachment yet'}>
+      <Tooltip label={!canViewOrDownload ? 'No attachment yet' : viewBlocked ? 'Another document is still opening' : `View ${doc.attachment}`}>
         <a
-          href={canViewOrDownload ? doc.attachment_url! : undefined}
-          target={canViewOrDownload ? '_blank' : undefined}
+          href={canViewOrDownload && !viewBlocked ? doc.attachment_url! : undefined}
+          target={canViewOrDownload && !viewBlocked ? '_blank' : undefined}
           rel="noreferrer"
-          aria-disabled={!canViewOrDownload}
-          className={`cev-row-act cev-row-act-view sev-row-act-txt ${!canViewOrDownload ? 'is-disabled' : ''}`}
-          onClick={e => { if (!canViewOrDownload) { e.preventDefault(); return; } setViewing(true); window.setTimeout(() => setViewing(false), 1200); }}
+          aria-disabled={!canViewOrDownload || viewBlocked}
+          className={`cev-row-act cev-row-act-view sev-row-act-txt ${(!canViewOrDownload || viewBlocked) ? 'is-disabled' : ''}`}
+          /* The browser opens the tab; the lock is held briefly so a second
+             click elsewhere cannot open a document at the same time. */
+          onClick={e => { if (!canViewOrDownload || viewBlocked) { e.preventDefault(); return; } lock.hold(viewKey); }}
           aria-label="View"
         >
           {viewing
@@ -2058,12 +2077,12 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           <span>View</span>
         </a>
       </Tooltip>
-      <Tooltip label={canViewOrDownload ? (downloading ? 'Downloading…' : `Download ${doc.attachment}`) : 'No attachment yet'}>
+      <Tooltip label={!canViewOrDownload ? 'No attachment yet' : downloading ? 'Downloading…' : otherRunning ? 'Another action is still running' : `Download ${doc.attachment}`}>
         <button
           type="button"
-          aria-disabled={!canViewOrDownload || downloading}
-          onClick={() => { if (canViewOrDownload) void download(); }}
-          className={`cev-row-act cev-row-act-download ${!canViewOrDownload ? 'is-disabled' : ''}`}
+          aria-disabled={!canViewOrDownload || downloading || otherRunning}
+          onClick={() => { if (canViewOrDownload && !otherRunning) void download(); }}
+          className={`cev-row-act cev-row-act-download ${(!canViewOrDownload || otherRunning) ? 'is-disabled' : ''}`}
           aria-label="Download"
         >
           {downloading
@@ -2076,16 +2095,16 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           flow (Send / Reminder / signed-file View), not manual file
           attachment. Standard tabs (KYC / DD / Trade Licenses) keep it. */}
       {category !== 'td' && (
-      <Tooltip label={canReupload
+      <Tooltip label={otherRunning ? 'Another action is still running' : canReupload
         ? (busy ? 'Uploading…' : (doc.attachment ? 'Re-upload (replace file)' : 'Upload'))
         : sameAsCustomer
           ? 'Same as Customer — upload this on the linked customer instead'
           : 'Save the record first'}>
         <button
           type="button"
-          aria-disabled={!canReupload || busy}
-          onClick={() => { if (canReupload && !busy) setReupOpen(true); }}
-          className={`cev-row-act cev-row-act-upload sev-row-act-txt ${(!canReupload || busy) ? 'is-disabled' : ''}`}
+          aria-disabled={!canReupload || busy || otherRunning}
+          onClick={() => { if (canReupload && !busy && !otherRunning) setReupOpen(true); }}
+          className={`cev-row-act cev-row-act-upload sev-row-act-txt ${(!canReupload || busy || otherRunning) ? 'is-disabled' : ''}`}
           aria-label={doc.attachment ? 'Re-upload' : 'Upload'}
         >
           {busy
@@ -2101,11 +2120,13 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           from a completed Zoho Sign request. Mirrors the faCertificate
           action in New_IDIMS_6.0's Stage3Tab2DocumentationArchive. */}
       {doc.certificate_url && (
-        <Tooltip label="Certificate of Completion">
+        <Tooltip label={certBlocked ? 'Another document is still opening' : 'Certificate of Completion'}>
           <a
-            href={doc.certificate_url}
-            target="_blank"
+            href={certBlocked ? undefined : doc.certificate_url}
+            target={certBlocked ? undefined : '_blank'}
             rel="noreferrer"
+            aria-disabled={certBlocked}
+            onClick={e => { if (certBlocked) { e.preventDefault(); return; } lock.hold(certKey); }}
             className="cev-row-act cev-row-act-cert"
             aria-label="Certificate of Completion"
             style={{
@@ -2113,7 +2134,8 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
               width: 28, height: 28, borderRadius: 6,
               background: '#cffafe', color: '#0e7490',
               border: '1px solid #67e8f9',
-              cursor: 'pointer', textDecoration: 'none',
+              cursor: certBlocked ? 'not-allowed' : 'pointer', textDecoration: 'none',
+              opacity: certBlocked ? 0.5 : 1,
             }}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">

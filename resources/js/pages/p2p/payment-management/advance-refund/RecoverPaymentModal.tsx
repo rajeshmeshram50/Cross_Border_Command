@@ -165,9 +165,12 @@ export default function RecoverPaymentModal({ refundId, onChanged, onClose }: Pr
             <Chip label="Supplier" value={po?.supplier ?? '—'} meta={po?.supplierCode} mod="mpr-hero__chip--sup" />
             <Chip label="PO Number" value={refund.po} meta={po?.poDate ? shortDate(po.poDate) : undefined} />
             <Chip label="Advance Receipt Refund Adjustment" value={refund.no} meta={shortDate(refund.date)} />
-            <Chip label="Shipment ID" value={po?.shipment || '—'} />
-            <Chip label="Opportunity ID" value={po?.opportunity ?? '—'} />
-            <Chip label="Procurement ID" value={po?.procurement ?? '—'} />
+            {/* A PO raised without a shipment, opportunity or procurement reads
+                "N/A" — the same wording the payment request detail uses, not a
+                dash that looks like the value failed to load (CS-591). */}
+            <Chip label="Shipment ID" value={po?.shipment || 'N/A'} />
+            <Chip label="Opportunity ID" value={po?.opportunity || 'N/A'} />
+            <Chip label="Procurement ID" value={po?.procurement || 'N/A'} />
           </div>
           <button type="button" className="mpr-hero__close" onClick={onClose} aria-label="Close">{ICON_X}</button>
         </div>

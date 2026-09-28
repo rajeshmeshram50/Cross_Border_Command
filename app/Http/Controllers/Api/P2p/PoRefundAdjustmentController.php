@@ -290,8 +290,8 @@ class PoRefundAdjustmentController extends Controller
             'recovered_date' => 'required|date|before_or_equal:today|after_or_equal:' . $adj->refund_date->toDateString(),
             'reference_no'   => 'nullable|string|max:64',
             'proof'          => 'nullable|' . self::PROOF_RULE,
-            // More than one proof at a time — a bank advice AND a photo of the cheque.
-            'proofs'         => 'nullable|array|max:10',
+            // A recovered payment carries one proof; a new one takes its place.
+            'proofs'         => 'nullable|array|max:1',
             'proofs.*'       => self::PROOF_RULE,
             // Paths of already-stored proofs the form still shows; absent means keep them all.
             'keep'           => 'nullable|array',
@@ -303,9 +303,9 @@ class PoRefundAdjustmentController extends Controller
             'recovered_date.after_or_equal'  => 'Refunded date cannot be before the refund adjustment date.',
             'proof.max'                      => 'Proof of payment must be 10 MB or smaller.',
             'proof.mimes'                    => 'Proof of payment must be a PDF or image file.',
-            'proofs.max'                     => 'A recovered payment can carry up to 10 proofs.',
-            'proofs.*.max'                   => 'Each proof of payment must be 10 MB or smaller.',
-            'proofs.*.mimes'                 => 'Every proof of payment must be a PDF or image file.',
+            'proofs.max'                     => 'A recovered payment can carry one proof of payment.',
+            'proofs.*.max'                   => 'Proof of payment must be 10 MB or smaller.',
+            'proofs.*.mimes'                 => 'Proof of payment must be a PDF or image file.',
         ]);
 
         $ref = !empty($data['reference_no']) ? mb_strtoupper(trim($data['reference_no'])) : null;
@@ -332,10 +332,10 @@ class PoRefundAdjustmentController extends Controller
             }
         }
 
-        /* Everything this recovery should end up holding: the stored proofs the
-           form still shows, plus whatever was attached this time. A recovery used
-           to keep one proof only, so adding a photo threw away the uploaded file
-           (CS-567). */
+        /* What this recovery ends up holding: the stored proof the form still
+           shows, plus whatever was attached this time. A recovered payment keeps
+           one proof, so a new one takes the old one's place; the list shape is
+           what `proof_files` stores and what the download endpoint reads. */
         $stored = [];
         foreach (array_filter(array_merge([$request->file('proof')], $request->file('proofs') ?? [])) as $f) {
             $p = $f->store("p2p/refund-recoveries/{$adj->id}", 'public');
@@ -348,7 +348,9 @@ class PoRefundAdjustmentController extends Controller
             $kept = array_values(array_filter($have, fn ($f) => in_array($f['path'], $keep, true)));
             $dropped = array_diff(array_column($have, 'path'), array_column($kept, 'path'));
         }
-        $proofs = array_slice(array_merge($kept, $stored), 0, 10);
+        // A file sent now replaces what was there; the dropped one is deleted below.
+        $proofs = $stored ?: $kept;
+        if ($stored && $kept) $dropped = array_merge((array) $dropped, array_column($kept, 'path'));
         $amount = round((float) $data['amount'], 2);
 
         $saved = $this->inTransaction($existing ? 'update the recovery' : 'record the recovery', function () use ($adj, $existing, $user, $data, $amount, $ref, $proofs) {

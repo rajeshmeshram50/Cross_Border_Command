@@ -440,6 +440,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         $pay = \App\Http\Controllers\Api\P2p\PoPaymentRequestController::class;
         Route::get   ('/payment-requests',                              [$pay, 'index']);
         Route::get   ('/payment-requests/{req}',                        [$pay, 'show'])->whereNumber('req');
+        Route::put   ('/payment-requests/decisions',                    [$pay, 'decideMany']);
         Route::put   ('/payment-requests/{req}/decision',               [$pay, 'decide'])->whereNumber('req');
         Route::get   ('/{po}/payment-requests',                         [$pay, 'forPo'])->whereNumber('po');
         Route::post  ('/{po}/payment-requests',                         [$pay, 'store'])->whereNumber('po');

@@ -637,6 +637,8 @@ export type PoPayRequest = {
   requested_by: PayPerson; requested_to: PayPerson; requested_at: string | null;
   status: PayRequestStatus; approved_amount: number | null; decision_note: string | null; decided_at: string | null;
   paid_amount: number; due: number | null;
+  /** This request is awaiting and was sent to the reader, so they may decide it. */
+  can_decide?: boolean;
 };
 
 export type PoPaymentsPayload = { po: PoPaymentPosition; requests_summary: PoRequestsSummary; requests: PoPayRequest[] };
@@ -664,6 +666,11 @@ export type PayRequestListRow = {
   po_total: number; po_net: number; po_paid: number; po_balance: number;
   supplier_code: string | null; supplier_name: string | null; supplier_category: string | null;
   requested_by: PayPerson; requested_to: PayPerson; can_decide: boolean;
+};
+/** The answer to a batch decision: what was recorded, and what was refused and why. */
+export type BulkDecision = {
+  decided: { id: number; code: string | null; amount: number | null }[];
+  failed: { id: number; code: string | null; message: string }[];
 };
 export type PayRequestTab = 'all' | 'awaiting' | 'approved' | 'declined';
 export type PayRequestListMeta = { total: number; page: number; per_page: number; last_page: number; counts: Record<PayRequestTab, number> };
@@ -738,6 +745,13 @@ export const poPaymentApi = {
   /** Approve (full or part) or decline, by the person the request was sent to. */
   decide: (requestId: number, body: { decision: 'approved' | 'rejected'; approved_amount?: number; note?: string }) =>
     call('Payment request decision', () => api.put(`/p2p/orders/payment-requests/${requestId}/decision`, body), dataOf<PayRequestDetail>),
+
+  /** Decide several at once; each is approved in full, and each answers for itself. */
+  decideMany: (body: { ids: number[]; decision: 'approved' | 'rejected'; note?: string }) =>
+    call('Payment request decisions', () => api.put('/p2p/orders/payment-requests/decisions', body), (b) => {
+      const body = b as { data?: BulkDecision; message?: string } | null;
+      return { ...(body?.data ?? { decided: [], failed: [] }), message: body?.message ?? '' };
+    }),
 };
 
 /* ══════════════════════════ Advance Receipt Refund Adjustment ══════════════════════════ */

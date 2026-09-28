@@ -241,7 +241,7 @@ class ZohoBooksService
      * on first sync and caching the id back onto the vendor row so we never
      * search/create twice.
      */
-    public function findOrCreateVendorId(Vendor $vendor, ?string $gstin = null, ?string $stateCode = null): string
+    public function findOrCreateVendorId(Vendor $vendor, ?string $gstin = null, ?string $stateCode = null, ?string $currencyCode = null): string
     {
         $name = trim((string) ($vendor->company_name ?: $vendor->legal_name));
         if ($name === '') {
@@ -273,6 +273,11 @@ class ZohoBooksService
             }
 
             if ($contact) {
+                /* Zoho pins a contact to one currency and refuses a transaction in
+                   any other. A contact built before we sent one is in the org base
+                   currency, so put it right while it still can be — the field locks
+                   as soon as the contact carries a transaction. */
+                $this->alignContactCurrency($contact, $id, $currencyCode, $vendor->id);
                 // Reactivate a contact that was marked inactive in Zoho.
                 if (mb_strtolower((string) ($contact['status'] ?? 'active')) === 'inactive') {
                     try {
@@ -328,6 +333,13 @@ TIN: " . $tin);
 
         if ($existing) {
             $vendor->forceFill(['zoho_contact_id' => (string) $existing])->saveQuietly();
+            // A contact matched by name carries whatever currency it was built with.
+            try {
+                $found = $this->get('contacts/' . rawurlencode((string) $existing))['contact'] ?? null;
+                if ($found) $this->alignContactCurrency($found, (string) $existing, $currencyCode, $vendor->id);
+            } catch (\Throwable $e) {
+                Log::warning('Zoho vendor contact currency check failed', ['vendor' => $vendor->id, 'err' => $e->getMessage()]);
+            }
             return (string) $existing;
         }
 
@@ -345,6 +357,10 @@ TIN: " . $tin);
             'gst_treatment' => $overseas ? 'overseas' : ($gstin ? 'business_gst' : 'business_none'),
         ];
         if ($gstin) $body['gst_no'] = $gstin;
+        /* The supplier's trading currency, set while the contact is being made —
+           the only moment Zoho lets it be chosen freely. Omitted for the base
+           currency, which Zoho assigns anyway. */
+        if ($ccyId = $this->resolveCurrencyId($currencyCode)) $body['currency_id'] = $ccyId;
         // The TIN has no field of its own in the India edition, so it is written
         // where it can still be read off the contact.
         if ($overseas && $tin !== '') $body['notes'] = 'TIN: ' . $tin;
@@ -775,21 +791,72 @@ TIN: " . $tin);
         }
     }
 
-    /** Map an ISO currency code (e.g. USD) to the org's Zoho currency id. */
-    public function resolveCurrencyId(?string $code): ?string
+    /**
+     * Bring an existing Zoho contact onto the currency the supplier trades in.
+     *
+     * Zoho allows the change only while the contact carries no transaction; once
+     * it does, the currency is settled and this throws with what the books hold,
+     * rather than letting the sync fail later on Zoho's own wording.
+     */
+    private function alignContactCurrency(array $contact, string $contactId, ?string $wanted, $vendorId): void
     {
-        $code = strtoupper(trim((string) $code));
-        if ($code === '' || $code === 'INR') return null; // INR = org base, omit.
+        $wanted = strtoupper(trim((string) $wanted));
+        if ($wanted === '') return;
 
-        $map = Cache::remember('zoho_books_ccy_map:' . $this->orgId, now()->addMinutes(60), function () {
+        $have = strtoupper(trim((string) ($contact['currency_code'] ?? '')));
+        if ($have === '' || $have === $wanted) return;
+
+        /* Resolved outside the try: a currency the org has not enabled is its own
+           problem, and saying "this contact already has transactions" about it
+           would send whoever reads it to the wrong place. */
+        $wantedId = $this->resolveCurrencyId($wanted) ?? ($this->currencyMap()['INR'] ?? null);
+
+        try {
+            $this->put('contacts/' . rawurlencode($contactId), ['currency_id' => $wantedId]);
+            Log::info('Zoho vendor contact currency corrected', ['vendor' => $vendorId, 'from' => $have, 'to' => $wanted]);
+        } catch (\Throwable $e) {
+            throw new RuntimeException(
+                "This supplier is registered in Zoho Books in {$have} and already has transactions, so a {$wanted} "
+                . 'order cannot be posted against it. Raise the order in ' . $have . ', or give the supplier a '
+                . "separate {$wanted} contact in Zoho Books."
+            );
+        }
+    }
+
+    /** The ISO codes this Zoho org actually has enabled, code => currency_id. */
+    public function currencyMap(): array
+    {
+        return Cache::remember('zoho_books_ccy_map:' . $this->orgId, now()->addMinutes(60), function () {
             $out = [];
             foreach (($this->get('settings/currencies')['currencies'] ?? []) as $c) {
                 $out[strtoupper((string) ($c['currency_code'] ?? ''))] = (string) ($c['currency_id'] ?? '');
             }
             return $out;
         });
+    }
 
-        return $map[$code] ?? null;
+    /**
+     * Map an ISO currency code (e.g. USD) to the org's Zoho currency id. Null
+     * means the base currency, which Zoho wants omitted.
+     *
+     * A code the org has NOT enabled throws, because returning null for it too
+     * made the caller omit currency_id and exchange_rate and post the amount as
+     * INR — SGD 700 was recorded in the books as ₹700, and the sync called it a
+     * success. An unknown currency has to stop the sync, not quietly change it.
+     */
+    public function resolveCurrencyId(?string $code): ?string
+    {
+        $code = strtoupper(trim((string) $code));
+        if ($code === '' || $code === 'INR') return null; // INR = org base, omit.
+
+        $map = $this->currencyMap();
+        if (!isset($map[$code]) || $map[$code] === '') {
+            throw new RuntimeException(
+                "{$code} is not one of the currencies enabled in Zoho Books. Add it under Settings → Currencies, then sync again."
+            );
+        }
+
+        return $map[$code];
     }
 
     /** Public: GST numeric state code ("08") → Zoho 2-letter place of supply

@@ -10,6 +10,7 @@ use App\Models\P2p\PurchaseOrder;
 use App\Models\P2p\PurchaseOrderDocument;
 use App\Models\P2p\PurchaseOrderItem;
 use App\Services\P2p\PurchaseOrderService;
+use App\Services\P2p\VendorCurrencyGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -301,7 +302,7 @@ class PurchaseOrderController extends Controller
         if ($resolved instanceof JsonResponse) return $resolved;
 
         $po = $this->inTransaction('create the PO', function () use ($user, $data, $resolved) {
-            return PurchaseOrder::create($this->stage1Attributes($data, $resolved) + [
+            $po = PurchaseOrder::create($this->stage1Attributes($data, $resolved) + [
                 'client_id'    => $user->client_id,
                 'branch_id'    => $user->branch_id,
                 'code'         => $this->svc->nextPoCode((int) $user->client_id),
@@ -311,6 +312,9 @@ class PurchaseOrderController extends Controller
                 'created_by'   => $user->id,
                 'updated_by'   => $user->id,
             ]);
+            $this->rememberCurrency($po);
+
+            return $po;
         });
 
         return $this->ok($this->shapeDetail($po->fresh()), 201);
@@ -348,15 +352,39 @@ class PurchaseOrderController extends Controller
             }
             if ($attrs['physical_inspection'] === $po->physical_inspection) unset($attrs['inspection_status']);
             $taxChanged = $po->tax_mode !== $attrs['tax_mode'] || $po->document_type !== $attrs['document_type'];
+            // The old supplier keeps its currency only if another order still holds it.
+            $wasVendor = (int) $po->vendor_id;
             $po->update($attrs);
             if ($taxChanged) $this->retaxItems($po);
+            if ($vendorChanged) $this->currency()->forget((int) $po->client_id, $wasVendor, (int) $po->id);
+            $this->rememberCurrency($po);
         });
 
         return $this->ok($this->shapeDetail($po->fresh()));
     }
 
+    private function currency(): VendorCurrencyGuard
+    {
+        return app(VendorCurrencyGuard::class);
+    }
+
+    /** Record this PO's currency against its supplier (see VendorCurrencyGuard). */
+    private function rememberCurrency(PurchaseOrder $po): void
+    {
+        if (!$po->vendor_id) return;
+
+        $this->currency()->remember(
+            (int) $po->client_id,
+            $po->branch_id !== null ? (int) $po->branch_id : null,
+            (int) $po->vendor_id,
+            (int) $po->id,
+            $po->code,
+            $po->currency_code,
+        );
+    }
+
     /** Validates shipment and supplier against the tenant; returns what Stage 01 derives. */
-    private function resolveStage1(array $data, $user): array|JsonResponse
+    private function resolveStage1(array $data, $user, ?int $exceptPoId = null): array|JsonResponse
     {
         $ship = null;
         if (!empty($data['shipment_order_id'])) {
@@ -384,6 +412,16 @@ class PurchaseOrderController extends Controller
             return $this->fail('Document type does not match the supplier', 422, ['errors' => ['document_type' => [
                 "This is " . ($origin === 'international' ? 'an international' : 'a domestic') . " supplier — the document type must be " . ($origin === 'international' ? 'International.' : 'Domestic.'),
             ]]]);
+        }
+
+        /* One currency per supplier: Zoho Books pins a contact to the currency of
+           its first transaction and refuses every later one in another. Caught
+           here so the mismatch is said before the PO is built, not at sync. */
+        $currency = $data['document_type'] === 'international' ? ($data['currency_code'] ?? null) : 'INR';
+        $clash = $this->currency()
+            ->conflict((int) $user->client_id, (int) $vendor->id, $currency, $exceptPoId);
+        if ($clash) {
+            return $this->fail('Supplier currency mismatch', 422, ['errors' => ['currency_code' => [$clash]]]);
         }
 
         $home = $this->svc->homeStateCode($user->branch_id);
@@ -683,7 +721,7 @@ class PurchaseOrderController extends Controller
                 $attrs += ['status' => PurchaseOrder::STATUS_SUBMITTED, 'submitted_at' => now(), 'submitted_by' => $user->id, 'current_step' => 4];
             }
             $po->update($attrs);
-            if ($submit) $this->ensureDefaultDocuments($po, $user->id);
+            if ($submit) $this->svc->ensureDefaultDocuments($po, $user->id);
         });
         // dompdf takes seconds, so the PO PDF renders in the background; Step 04 polls for it.
         if ($submit) \App\Jobs\P2p\GeneratePoDocumentPdf::dispatch($po->id, $user->id)->afterCommit();
@@ -707,11 +745,31 @@ class PurchaseOrderController extends Controller
     {
         if (!$po->vendor_id) return [];
 
+        $vendor = \App\Models\Vendor::with(['primaryAddress.country', 'segments'])->find($po->vendor_id);
+        if (!$vendor) return [];
+
+        /* Only what this supplier's own segment rules ask for, on the Domestic or
+           International side its address puts it on. Without this the gate blocked
+           on any expired upload the supplier ever had — including documents no rule
+           selects, which the Evidence Vault never lists, leaving nothing to renew. */
+        $codes = app(\App\Services\SegmentDocScope::class)
+            ->applicableCodes($vendor, 'vendor', (int) $po->client_id);
+        $scoped = array_filter([
+            'kyc' => $codes['kyc'] ?? [],
+            'dd'  => $codes['dd']  ?? [],
+            'tl'  => $codes['tl']  ?? [],
+        ]);
+        if (empty($scoped)) return [];
+
         return DB::table('segment_doc_uploads')
             ->where('uploadable_type', \App\Models\Vendor::class)
             ->where('uploadable_id', $po->vendor_id)
             ->where('client_id', $po->client_id)
-            ->whereIn('category', ['kyc', 'dd', 'tl'])
+            ->where(function ($w) use ($scoped) {
+                foreach ($scoped as $cat => $list) {
+                    $w->orWhere(fn ($q) => $q->where('category', $cat)->whereIn('doc_code', $list));
+                }
+            })
             ->whereNotNull('expiry_date')
             ->whereDate('expiry_date', '<', now()->toDateString())
             ->orderBy('expiry_date')
@@ -787,61 +845,6 @@ class PurchaseOrderController extends Controller
         ];
     }
 
-    /**
-     * Stage 04's documents, created once on submission: the Purchase Order
-     * itself, then every trade document and agreement the CLM libraries hold
-     * for the PO's product segments (see PurchaseOrderService::segmentDocuments).
-     * Re-submitting adds only what is missing — a row already there, with its
-     * file or signature, is never touched.
-     */
-    private function ensureDefaultDocuments(PurchaseOrder $po, int $userId): void
-    {
-        $rows = array_merge(
-            [['source_type' => null, 'source_id' => null, 'name' => 'Purchase Order', 'sub' => null,
-                'kind' => 'purchase_order', 'required' => true]],
-            array_map(fn ($d) => [
-                'source_type' => $d['source_type'],
-                'source_id'   => $d['source_id'],
-                'name'        => $d['name'],
-                'sub'         => $d['sub'] ?: null,
-                'kind'        => $d['source_type'] === 'agreement' ? 'agreement' : 'other',
-                /* Only the Purchase Order is required outright. Whether a trade
-                   document or an agreement has to be signed for THIS order is
-                   decided on Stage 04 (Necessary / Not necessary) — the
-                   library's regulated flag no longer settles it in advance. */
-                'required'    => false,
-            ], $this->svc->segmentDocuments($po)),
-        );
-
-        foreach ($rows as $row) {
-            $exists = $row['source_type'] === null
-                ? $po->documents()->where('doc_kind', 'purchase_order')->exists()
-                : $po->documents()->where('source_type', $row['source_type'])->where('source_id', $row['source_id'])->exists();
-            if ($exists) continue;
-
-            PurchaseOrderDocument::create([
-                'client_id'         => $po->client_id,
-                'branch_id'         => $po->branch_id,
-                'purchase_order_id' => $po->id,
-                'code'              => $this->svc->nextDocCode((int) $po->client_id),
-                'name'              => $row['name'],
-                'doc_sub'           => $row['sub'],
-                'doc_kind'          => $row['kind'],
-                'source_type'       => $row['source_type'],
-                'source_id'         => $row['source_id'],
-                'is_required'       => $row['required'] ? 'yes' : 'no',
-                /* CS-414: a document starts Not necessary and is promoted once
-                   someone has read it — the list opens answered, not with a
-                   column of questions. Only the PO itself starts necessary. */
-                'needed'            => $row['required'] ? 'yes' : 'no',
-                'generated_on'      => now()->toDateString(),
-                'status'            => PurchaseOrderDocument::STATUS_PENDING,
-                'created_by'        => $userId,
-                'updated_by'        => $userId,
-            ]);
-        }
-    }
-
     /* ══════════════════════════ CANCEL / DELETE ══════════════════════════ */
 
     /** POST /p2p/orders/{id}/cancel — releases every line's quantity back to the PI. */
@@ -859,6 +862,8 @@ class PurchaseOrderController extends Controller
             $po->update(['status' => PurchaseOrder::STATUS_CANCELLED, 'cancelled_at' => now(),
                 'cancelled_by' => $user->id, 'cancel_reason' => $data['reason'], 'updated_by' => $user->id,
                 'cancel_stage' => PurchaseOrder::CANCEL_CLOSED, 'cancel_closed_at' => now()]);
+            // A cancelled order no longer speaks for the supplier's currency.
+            $this->currency()->forget((int) $po->client_id, (int) $po->vendor_id, (int) $po->id);
         });
         return $this->ok($this->shapeDetail($po->fresh()));
     }
@@ -944,6 +949,7 @@ class PurchaseOrderController extends Controller
         $this->inTransaction('delete the PO', function () use ($po, $user) {
             $this->svc->releaseAll($po, 'deleted', $user->id);
             $po->update(['updated_by' => $user->id]);
+            $this->currency()->forget((int) $po->client_id, (int) $po->vendor_id, (int) $po->id);
             $po->delete();
         });
         return $this->ok(['id' => $id, 'deleted' => true]);
