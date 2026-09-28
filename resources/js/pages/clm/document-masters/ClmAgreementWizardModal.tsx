@@ -427,7 +427,22 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
       }
       if (html) {
         // setHTML re-seeds the TipTap document AND updates `content`.
+        const beforeImport = agr.editor?.getHTML() ?? content ?? '';
         agr.setHTML(html);
+        /* Third gate: the length the EDITOR ended up with. TipTap rewrites what
+           it parses (<b> → <strong>, #1F3A5F → rgb(31, 58, 95)), so the
+           converted HTML measured above lands roughly a fifth longer — an
+           agreement imported "within the limit" then refused the next letter
+           typed (CS-17). Over the cap, the previous draft goes back. */
+        const seeded = agr.editor?.getHTML() ?? html;
+        if (seeded.length > RENDER_MAX_CHARS) {
+          agr.setHTML(beforeImport);
+          toast.error(
+            'Document too long',
+            `${file.name} comes to ${seeded.length.toLocaleString()} characters in the editor — the limit is ${RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller agreements, or shorten it before uploading.`,
+          );
+          return;
+        }
       }
       toast.success('Uploaded', file.name);
     } catch (e: any) {

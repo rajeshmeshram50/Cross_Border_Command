@@ -1503,14 +1503,26 @@ export function useCtcEditor(opts: {
     setHTML: (html: string) => {
       if (!editor) return;
       const repaired = repairBrokenLinkHrefs(html);
-      lastSyncedRef.current = repaired;
       editor.commands.setContent(repaired || '<p></p>', { emitUpdate: false });
-      /* emitUpdate:false means the limit guard's cached length is not told the
-         document changed, so it would go on measuring the one before this —
-         an import after a large draft could not be typed in (CS-17). */
+      /* What goes out is what the EDITOR now holds, not the string that was
+         handed in.
+
+         TipTap re-writes whatever it parses — <b> becomes <strong>,
+         color:#1F3A5F becomes color: rgb(31, 58, 95) — so a Word import lands
+         roughly a fifth longer than the HTML the server converted. Publishing
+         the incoming string left the counter, the save guard and the typing
+         guard reading two different documents: a file imported at 919,000
+         characters sat in the editor at 1,131,908, so the screen said "919 KB
+         of 1 MB" and the very next letter was refused as over the limit
+         (CS-17). One measurement, taken from the editor itself.
+
+         emitUpdate:false also means the limit guard's cached length is never
+         told the document changed, so it is set here too. */
+      const seeded = editor.getHTML() || repaired || '<p></p>';
+      lastSyncedRef.current = seeded;
       const limit = (editor.storage as unknown as Record<string, { htmlLen?: number }>).contentLimit;
-      if (limit) limit.htmlLen = (repaired || '<p></p>').length;
-      onChange(repaired);
+      if (limit) limit.htmlLen = seeded.length;
+      onChange(seeded);
     },
   };
 }
@@ -2922,14 +2934,29 @@ export const CTC_EDITOR_CSS = `
 /* A nested level is a block again, or the sub-list would run on inside its
    parent's sentence. */
 .ctcte-content .ProseMirror ol[data-legal] li > ol { display: block; }
-.ctcte-content .ProseMirror .column-resize-handle {
+/* Table-editing mechanics — NOT scoped to .ctcte-content.
+
+   These style elements TipTap itself puts in the document: the column-resize
+   handle it inserts into whichever cell the pointer is near, and the wash on
+   cells being dragged across. Every editor built on ctcExtensions gets them,
+   and two of those surfaces are not .ctcte-content — the T&C wizard
+   (.tnw-editor) and the HR template editor (.tpl-editor-surface). There the
+   handle arrived as a plain unstyled <div> INSIDE the cell, so it took up
+   space: the row grew, the whole document below it moved down, and it all
+   sprang back when the pointer moved on. Hovering the content made it jump
+   between 2143px and 2216px — the "flickering / flipping" report.
+
+   position:relative on the cell is what makes the absolutely-positioned handle
+   sit on the cell's edge instead of anchoring to a distant ancestor, so it
+   belongs with them. */
+.ProseMirror .column-resize-handle {
   position: absolute; right: -2px; top: 0; bottom: 0; width: 4px;
   background: #7C3AED; pointer-events: none; z-index: 20;
 }
-.ctcte-content .ProseMirror.resize-cursor { cursor: col-resize; }
-.ctcte-content .ProseMirror th, .ctcte-content .ProseMirror td { position: relative; }
+.ProseMirror.resize-cursor { cursor: col-resize; }
+.ProseMirror th, .ProseMirror td { position: relative; }
 /* The selected-cell wash TipTap toggles while dragging across cells. */
-.ctcte-content .ProseMirror .selectedCell::after {
+.ProseMirror .selectedCell::after {
   content: ''; position: absolute; inset: 0; pointer-events: none;
   background: rgba(124,58,237,.14);
 }

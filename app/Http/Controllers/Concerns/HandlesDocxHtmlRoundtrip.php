@@ -285,8 +285,22 @@ trait HandlesDocxHtmlRoundtrip
         }
     }
 
-    /** Convert a single <w:r> run to HTML (text + <br>/<tab>, with b/i/u + colour). */
-    private function xmlRunToHtml(\DOMElement $r, \DOMXPath $xp): string
+    /**
+     * A run's TEXT and its FORMATTING, kept apart.
+     *
+     * Word breaks a sentence into a new <w:r> wherever anything about it
+     * changes — a spell-check mark, a field, a language tag — so "{{supplier.
+     * company}}" arrives as three runs that look identical. Wrapping each one
+     * separately cost ~40 characters of markup per fragment and was most of the
+     * reason a 70,000-character Word file landed in the editor as several
+     * hundred thousand characters of HTML, against a 1,000,000 ceiling (CS-18).
+     *
+     * Returning the pieces lets xmlParaToHtml glue neighbours that share a
+     * signature and wrap the lot once. Returns null for a run with no text.
+     *
+     * @return array{sig: string, text: string, fmt: array}|null
+     */
+    private function xmlRunParts(\DOMElement $r, \DOMXPath $xp): ?array
     {
         $b  = $xp->query('w:rPr/w:b', $r)->length > 0;
         $i  = $xp->query('w:rPr/w:i', $r)->length > 0;
@@ -296,6 +310,7 @@ trait HandlesDocxHtmlRoundtrip
         // (it sits on a coloured cell fill; without this it comes back black).
         $colorN = $xp->query('w:rPr/w:color', $r);
         $color  = $colorN->length ? $colorN->item(0)->getAttributeNS(self::W_NS, 'val') : '';
+        if ($color === 'auto' || !preg_match('/^[0-9A-Fa-f]{6}$/', (string) $color)) $color = '';
 
         $out = '';
         foreach ($r->childNodes as $c) {
@@ -303,14 +318,28 @@ trait HandlesDocxHtmlRoundtrip
             elseif ($c->localName === 'br')   $out .= '<br>';
             elseif ($c->localName === 'tab')  $out .= ' &nbsp;&nbsp; ';
         }
-        if ($out === '') return '';
-        if ($b) $out = "<b>{$out}</b>";
-        if ($i) $out = "<i>{$out}</i>";
-        if ($u) $out = "<u>{$out}</u>";
-        if ($color !== '' && $color !== 'auto' && preg_match('/^[0-9A-Fa-f]{6}$/', $color)) {
-            $out = '<span style="color:#' . $color . '">' . $out . '</span>';
-        }
-        return $out;
+        if ($out === '') return null;
+
+        $fmt = ['b' => $b, 'i' => $i, 'u' => $u, 'color' => $color];
+        return ['sig' => ($b ? 'b' : '') . ($i ? 'i' : '') . ($u ? 'u' : '') . '|' . $color, 'text' => $out, 'fmt' => $fmt];
+    }
+
+    /** Wrap already-escaped run text in its b/i/u/colour tags — once per group. */
+    private function wrapRunText(string $text, array $fmt): string
+    {
+        if ($text === '') return '';
+        if ($fmt['b']) $text = "<b>{$text}</b>";
+        if ($fmt['i']) $text = "<i>{$text}</i>";
+        if ($fmt['u']) $text = "<u>{$text}</u>";
+        if ($fmt['color'] !== '') $text = '<span style="color:#' . $fmt['color'] . '">' . $text . '</span>';
+        return $text;
+    }
+
+    /** Convert a single <w:r> run to HTML (text + <br>/<tab>, with b/i/u + colour). */
+    private function xmlRunToHtml(\DOMElement $r, \DOMXPath $xp): string
+    {
+        $p = $this->xmlRunParts($r, $xp);
+        return $p ? $this->wrapRunText($p['text'], $p['fmt']) : '';
     }
 
     /** Convert a <w:p> paragraph to <p>/<hN>, honouring style, alignment, breaks. */
@@ -327,19 +356,40 @@ trait HandlesDocxHtmlRoundtrip
             if (in_array($j, ['center', 'right', 'both'], true)) $align = $j === 'both' ? 'justify' : $j;
         }
 
-        $inner = '';
+        /* Runs are gathered, not written straight out: consecutive ones with the
+           same formatting are joined and wrapped once. See xmlRunParts — this is
+           what keeps an imported Word document close to its own size instead of
+           several times it. */
+        $inner   = '';
+        $pending = null;                       // ['sig' => …, 'text' => …, 'fmt' => …]
+        $flush   = function () use (&$inner, &$pending) {
+            if ($pending === null) return;
+            $inner  .= $this->wrapRunText($pending['text'], $pending['fmt']);
+            $pending = null;
+        };
+        $take = function (\DOMElement $r) use ($xp, &$pending, $flush) {
+            $part = $this->xmlRunParts($r, $xp);
+            if ($part === null) return;        // empty run — no break in the group
+            if ($pending !== null && $pending['sig'] === $part['sig']) {
+                $pending['text'] .= $part['text'];
+                return;
+            }
+            $flush();
+            $pending = $part;
+        };
         foreach ($p->childNodes as $c) {
             // PhpWord-written docs put <w:br/> / <w:t> directly under <w:p>;
             // real Word docs wrap them in <w:r>. Handle both.
-            if ($c->localName === 'r')             $inner .= $this->xmlRunToHtml($c, $xp);
-            elseif ($c->localName === 'br')        $inner .= '<br>';
-            elseif ($c->localName === 't')         $inner .= htmlspecialchars($c->textContent, ENT_QUOTES);
+            if ($c->localName === 'r')             $take($c);
+            elseif ($c->localName === 'br')        { $flush(); $inner .= '<br>'; }
+            elseif ($c->localName === 't')         { $flush(); $inner .= htmlspecialchars($c->textContent, ENT_QUOTES); }
             elseif ($c->localName === 'hyperlink') {
                 foreach ($c->childNodes as $hc) {
-                    if ($hc->localName === 'r') $inner .= $this->xmlRunToHtml($hc, $xp);
+                    if ($hc->localName === 'r') $take($hc);
                 }
             }
         }
+        $flush();
         if (trim(strip_tags($inner)) === '' && strpos($inner, '<br') === false) return '';
 
         $styleAttr = $align !== '' ? ' style="text-align:' . $align . '"' : '';
@@ -426,8 +476,16 @@ trait HandlesDocxHtmlRoundtrip
                 // Bordered table → inline slate border on every cell (the exact
                 // colour is lost in the DOCX, so match the editor's default).
                 if ($tblBordered) $styleBits[] = 'border:1px solid #cbd5e1';
-                $styleBits[] = 'padding:6px 8px';   // match the editor's cell padding
-                $styleBits[] = 'vertical-align:top';
+                /* Cell padding and alignment are NOT written per cell.
+                   They were the same 34 characters on every <td>, which on a
+                   table-heavy import came to 378,000 of a 1,325,917-character
+                   document — more than a quarter of a 1,000,000-character
+                   budget spent saying the same thing 10,800 times, and enough
+                   to put a document over the ceiling on its markup alone
+                   (CS-18). The editor surface and the PDF templates carry the
+                   identical rule in CSS, so nothing about the rendering
+                   changes; documents imported before this keep their inline
+                   copies, which say exactly what the stylesheet says. */
                 $styleAttr = $styleBits ? ' style="' . implode(';', $styleBits) . '"' : '';
                 $ci = '';
                 foreach ($xp->query('w:p', $tc) as $p) $ci .= $this->xmlParaToHtml($p, $xp);

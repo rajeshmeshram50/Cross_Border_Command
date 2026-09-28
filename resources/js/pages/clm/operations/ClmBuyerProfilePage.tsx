@@ -198,15 +198,38 @@ function useDynamicPerPage(
 
       const avail = window.innerHeight - top - footerH - gap;
       const rows = Math.floor(avail / rowH);
-      setPerPage(Number.isFinite(rows) ? Math.max(min, rows) : BP_PER_PAGE);
+      const next = Number.isFinite(rows) ? Math.max(min, rows) : BP_PER_PAGE;
+      setPerPage((prev) => (prev === next ? prev : next));
     };
-    calc();
-    const t = window.setTimeout(calc, 80); // re-measure after layout settles
-    window.addEventListener('resize', calc);
-    return () => { window.clearTimeout(t); window.removeEventListener('resize', calc); };
+    return settle(calc);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   return perPage;
+}
+
+/* Measure now, then again as the page settles.
+ *
+ * One pass at mount plus one at 80ms was not enough: the strips above the card
+ * (the guide box, the analytics snapshot, which arrives with its data) change
+ * height after that, the card keeps the height computed for the old layout, and
+ * a band of dead page is left between the pager and the footer. Re-measuring on
+ * a short schedule costs nothing — every caller only sets state when the number
+ * actually changes — and it catches whatever settles late.
+ *
+ * Returns the cleanup for useEffect. */
+function settle(calc: () => void): () => void {
+  calc();
+  const raf = requestAnimationFrame(calc);
+  const timers = [120, 350, 800, 1600].map((ms) => window.setTimeout(calc, ms));
+  let debounce: number | undefined;
+  const onResize = () => { window.clearTimeout(debounce); debounce = window.setTimeout(calc, 150); };
+  window.addEventListener('resize', onResize);
+  return () => {
+    cancelAnimationFrame(raf);
+    timers.forEach(window.clearTimeout);
+    window.clearTimeout(debounce);
+    window.removeEventListener('resize', onResize);
+  };
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -223,12 +246,10 @@ function useFillHeight(
       const el = ref.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      setH(Math.max(min, Math.round(window.innerHeight - top - gap)));
+      const next = Math.max(min, Math.round(window.innerHeight - top - gap));
+      setH((prev) => (prev === next ? prev : next));
     };
-    calc();
-    const t = window.setTimeout(calc, 80);
-    window.addEventListener('resize', calc);
-    return () => { window.clearTimeout(t); window.removeEventListener('resize', calc); };
+    return settle(calc);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   return h;

@@ -954,7 +954,23 @@ function Stage1(p: {
 
       // Replace the whole document via the ProseMirror model — no innerHTML,
       // no ghost caret, no manual scroll reset (TipTap handles all of that).
+      const beforeImport = ctcEd.editor?.getHTML() ?? p.draft ?? '';
       ctcEd.setHTML(houseFontHtml);
+      /* Third gate, on the document the editor actually ended up with. TipTap
+         re-serialises what it parses (<b> → <strong>, #1F3A5F → rgb(31, 58,
+         95)), so the converted HTML checked above lands roughly a fifth longer
+         — and a file that imported "within the limit" could refuse the next
+         letter typed (CS-17). Over the ceiling, the previous draft goes back:
+         content nobody can edit is worse than no import. */
+      const seeded = ctcEd.editor?.getHTML() ?? houseFontHtml;
+      if (seeded.length > CTC_RENDER_MAX_CHARS) {
+        ctcEd.setHTML(beforeImport);
+        toast.error(
+          'Document too long',
+          `${file.name} comes to ${seeded.length.toLocaleString()} characters in the editor — the limit is ${CTC_RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller agreements, or shorten it before uploading.`,
+        );
+        return;
+      }
       /* Reset the EDITOR's scroller, found from the editor itself.
          This used to walk up from docxRef — the hidden file input, which lives
          in the editor's header, above the editor's own scroll area. So the

@@ -431,6 +431,34 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setDl(null);
     }
   };
+  /**
+   * Seed converted Word HTML into the editor, then check the size it actually
+   * became — and put the old document back if it is over the ceiling.
+   *
+   * The converted HTML and the editor's own are not the same length: TipTap
+   * re-serialises everything it parses, so a file that converts to 919,000
+   * characters can sit in the editor at 1,131,908. Checking only the server's
+   * figure let such a file import "within the limit" and then refuse the next
+   * letter typed (CS-17). The measurement that decides is the one the editor
+   * reports, and if it is over, the import is rolled back rather than left as
+   * content that cannot be edited.
+   */
+  const seedChecked = (html: string, fileName: string): boolean => {
+    const before = ted.editor?.getHTML() ?? content ?? '';
+    ted.setHTML(html);
+    const seeded = ted.editor?.getHTML() ?? html;
+    if (seeded.length > TDW_RENDER_MAX_CHARS) {
+      ted.setHTML(before);
+      toast.error(
+        'Document too long',
+        `${fileName} comes to ${seeded.length.toLocaleString()} characters in the editor — the limit is ${TDW_RENDER_MAX_CHARS.toLocaleString()}. `
+        + 'Split it into smaller documents, or shorten it before uploading.',
+      );
+      return false;
+    }
+    return true;
+  };
+
   const uploadDocx = async (file: File) => {
     if (docxUploading) return;               // ignore repeat clicks mid-upload
     setDocxUploading(true);
@@ -466,7 +494,9 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
           );
           return;
         }
-        ted.setHTML(html);   // re-seeds the TipTap document AND updates `content`
+        // re-seeds the TipTap document AND updates `content` (rolled back if
+        // the editor's own copy turns out to be over the ceiling)
+        if (!seedChecked(html, file.name)) return;
         toast.success('Imported', `${file.name} loaded into the editor.`);
         return;
       }
@@ -485,9 +515,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
         );
         return;
       }
-      if (row?.content) {
-        ted.setHTML(row.content);
-      }
+      if (row?.content && !seedChecked(String(row.content), file.name)) return;
       toast.success('Uploaded', file.name);
     } catch (e: any) {
       toast.error('Upload failed', e?.response?.data?.message ?? 'Please try again.');

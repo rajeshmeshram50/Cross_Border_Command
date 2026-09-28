@@ -697,6 +697,18 @@
       margin-bottom: 25px;
     }
 
+    /* Cell padding for the document body's tables. The DOCX → HTML converter
+       used to stamp "padding:6px 8px;vertical-align:top" on every cell — on a
+       table-heavy import that was over a quarter of the whole document, and of
+       the 1,000,000-character budget it has to fit in. Said once here; a cell
+       from an older import still carries its own inline copy, which sets
+       exactly the same values. */
+    .content-wrapper td,
+    .content-wrapper th {
+      padding: 6px 8px;
+      vertical-align: top;
+    }
+
     .first-page-fix {
       page-break-before: avoid;
       page-break-after: avoid;

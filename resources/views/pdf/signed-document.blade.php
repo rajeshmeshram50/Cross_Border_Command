@@ -91,6 +91,10 @@
   .body p { margin: 0 0 8px 0; }
   .body h1, .body h2, .body h3 { margin: 14px 0 8px; }
   .body table { width: 100%; border-collapse: collapse; }
+  /* Cell padding for imported Word tables. The DOCX → HTML converter used to
+     stamp this on every single cell; it says it once here instead, and a cell
+     that still carries its own inline copy is saying the same thing. */
+  .body td, .body th { padding: 6px 8px; vertical-align: top; }
   .body img { max-width: 100%; }
   /* Explicit break emitted by the editor's Page Break button. The div is
      zero-height and invisible in print; only the instruction matters. Matched

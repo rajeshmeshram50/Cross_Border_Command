@@ -524,6 +524,11 @@ export default function TemplateEditor({
           .tpl-editor-surface { cursor: text; }
           .tpl-editor-surface .ProseMirror { outline: none; min-height: 100%; height: 100%; font-size: 14px; line-height: 1.6; }
           .tpl-editor-surface .ProseMirror p { margin: 0 0 8px 0; }
+          /* Cell padding for tables imported from Word. The DOCX → HTML
+             converter used to stamp it on every cell; it is stated once here,
+             as it now is in the PDF template. */
+          .tpl-editor-surface .ProseMirror td,
+          .tpl-editor-surface .ProseMirror th { padding: 6px 8px; vertical-align: top; }
           /* Page break — invisible in the output, a labelled dashed rule here so
              the author can see where the next page starts. */
           .tpl-editor-surface .ProseMirror div.page-break {

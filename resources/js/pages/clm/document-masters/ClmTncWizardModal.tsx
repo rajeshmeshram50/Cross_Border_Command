@@ -1681,7 +1681,23 @@ const TNW_CSS = `
 .tnw-editor .ProseMirror { padding: 0; min-height: 240px; }
 .tnw-editor .ProseMirror:focus { outline: none; }
 .tnw-editor .ProseMirror p { margin: 0 0 .6em 0; }
+/* Cell padding for tables that came in from Word. The converter used to write
+   it onto every cell; it is said once here, as it is in the page-view editor
+   and the PDF templates. */
+.tnw-editor .ProseMirror td, .tnw-editor .ProseMirror th { padding: 6px 8px; vertical-align: top; }
 .tnw-editor .ProseMirror p:last-child { margin-bottom: 0; }
+/* Inside a table cell the same reset is matched on the last PARAGRAPH, not the
+   last child.
+
+   Moving the pointer near a column edge makes the table plugin append its
+   resize handle to every cell in that column. The paragraph then stops being
+   :last-child, its .6em bottom margin comes back, and all nine rows grow 8px
+   at once — the document jumped between 2143px and 2216px as the pointer
+   moved, which is the flickering the content was reported for. :last-of-type
+   only looks at paragraphs, so a widget dropped in beside them changes
+   nothing. */
+.tnw-editor .ProseMirror td > p:last-of-type,
+.tnw-editor .ProseMirror th > p:last-of-type { margin-bottom: 0; }
 .tnw-editor .ProseMirror h1, .tnw-editor .ProseMirror h2, .tnw-editor .ProseMirror h3 { color: #0c4a6e; font-weight: 800; margin: .4em 0 .4em; line-height: 1.25; }
 .tnw-editor .ProseMirror h1 { font-size: 22px; }
 .tnw-editor .ProseMirror h2 { font-size: 18px; }

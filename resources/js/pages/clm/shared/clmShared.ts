@@ -1758,6 +1758,13 @@ export function useAutoFitRows(
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
+    /* And again as the page settles. Mount plus one frame missed the strips
+       above the card that change height later — the guide box, and the
+       analytics snapshot that arrives with its data — so the card kept the
+       height computed for the old layout and left a band of dead page between
+       the pager and the footer. Both setters below ignore an unchanged value,
+       so a repeat measure that finds nothing new costs a comparison. */
+    const settle = [120, 350, 800, 1600].map((ms) => window.setTimeout(recompute, ms));
     /* Mount and SETTLED resizes only. Not a ResizeObserver on the page root:
        the "What We Are Doing Here" box animates its height on expand/collapse,
        which fired this every animation frame and visibly disturbed the layout.
@@ -1766,7 +1773,12 @@ export function useAutoFitRows(
     let t: number | undefined;
     const onResize = () => { window.clearTimeout(t); t = window.setTimeout(recompute, 180); };
     window.addEventListener('resize', onResize);
-    return () => { window.removeEventListener('resize', onResize); window.clearTimeout(t); cancelAnimationFrame(raf); };
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.clearTimeout(t);
+      settle.forEach(window.clearTimeout);
+      cancelAnimationFrame(raf);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   return fillH;
