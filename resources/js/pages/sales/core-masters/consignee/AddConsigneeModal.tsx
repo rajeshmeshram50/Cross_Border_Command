@@ -2521,7 +2521,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 </div>
               </div>
               {!linkedHidden && (
-                <>
+                /* Own capped scroll: this panel sits above .acm-wiz-body, so
+                   opened at full height it squeezed the form below to a sliver
+                   with nothing to scroll. */
+                <div className="acg-linked-scroll">
                   <div className="acg-hs-mirror">
                     {/* Shows the details of whichever customer chip is active
                         (primary by default) — one customer at a time. */}
@@ -2580,7 +2583,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                       </div>
                     );
                   })()}
-                </>
+                </div>
               )}
             </div>
           )}
@@ -7456,6 +7459,14 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
    inline stat tiles (Stage 2). Tight row spacing keeps the panel
    compact even with 18+ fields. */
 .acg-hs-mirror { padding: 10px 16px 12px; }
+.acg-linked-scroll {
+  max-height: 30vh; overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: #6ee7b7 transparent;
+}
+.acg-linked-scroll::-webkit-scrollbar { width: 8px; }
+.acg-linked-scroll::-webkit-scrollbar-thumb { background: #6ee7b7; border-radius: 99px; }
+[data-bs-theme="dark"] .acg-linked-scroll { scrollbar-color: #047857 transparent; }
+[data-bs-theme="dark"] .acg-linked-scroll::-webkit-scrollbar-thumb { background: #047857; }
 .acg-hs-mirror + .acg-hs-mirror { padding-top: 4px; }
 .acg-hs-grid {
   display: grid;
@@ -8123,6 +8134,10 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 1px 2px rgba(15,42,35,.04);
+  /* Same as .acm-kyc-card: without this the flex-column body squashed the
+     card to fit (overflow:hidden then clipped it), so .acm-wiz-body never
+     overflowed and the Contact Person tab had no scrollbar. */
+  flex-shrink: 0;
 }
 .acm-loc-head {
   background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
