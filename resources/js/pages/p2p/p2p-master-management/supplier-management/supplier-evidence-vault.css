@@ -817,6 +817,11 @@
   font-weight: 800;
   color: #0a2630;
   letter-spacing: -.01em;
+  /* The overview button never wraps, so the heading yields instead of
+     pushing the card past its width. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cev-group.is-active .cev-group-title {
@@ -828,6 +833,9 @@
   font-weight: 600;
   letter-spacing: .06em;
   color: #5e94a1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cev-group.is-active .cev-group-sub {
@@ -3843,7 +3851,11 @@
 .sev-ov .sev-ov-acts {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  /* A row out for signature carries three pills; they wrap rather than
+     push the table past its width. */
+  flex-wrap: wrap;
+  gap: 6px 6px;
 }
 
 .sev-ov .sev-ov-act {
