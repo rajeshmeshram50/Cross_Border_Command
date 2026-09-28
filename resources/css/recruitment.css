@@ -6207,6 +6207,37 @@
   margin-top: 2px;
 }
 [data-bs-theme="dark"] .ep-signer-name { color: #ffffff; }
+/* Why a signer refused.
+   The reason is required when rejecting and has always been stored on the
+   signer slot, but no screen drew it — a document came back marked Rejected
+   and the only way to learn why was the audit log (bugs #15 / #140). Lives
+   with .ep-signer rather than on one page because the same stepper is what
+   Onboarding, Exit Management and the Evidence Vault all render.
+   Held to two lines, full text on the title, since the reason may run to the
+   500 characters the API allows and this column is narrow. */
+.ep-signer-note {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 3px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.45;
+  white-space: normal;
+  background: rgba(239, 68, 68, 0.10);
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  color: #b91c1c;
+}
+.ep-signer-note i { margin-right: 4px; opacity: 0.85; }
+[data-bs-theme="dark"] .ep-signer-note {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.32);
+}
+/* The stepper lays signers out in a row; a wrapped reason needs the name
+   column to stop centring its contents against a single line. */
+.ep-signer:has(.ep-signer-note) { align-items: flex-start; }
+.ep-signer-rejected-at { display: block; font-size: 10px; font-weight: 600; color: #ef4444; margin-top: 1px; }
 .ep-signer-state {
   font-size: 9.5px;
   color: #9ca3af;
@@ -7472,6 +7503,23 @@
 }
 [data-bs-theme="dark"] .ev-doc-name { color: #ffffff; }
 [data-bs-theme="dark"] .ev-doc-sub { color: rgba(255,255,255,0.62); }
+/* Refusal line on a vault row — one line, ellipsised, full text on hover, so
+   a 500-character reason cannot set the height of the row it belongs to. */
+.ev-doc-reject {
+  margin-top: 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #b91c1c;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ev-doc-reject i { flex-shrink: 0; opacity: 0.9; }
+[data-bs-theme="dark"] .ev-doc-reject { color: #fca5a5; }
 
 /* Category mini tag (Identity / Address / Education …) */
 .ev-doc-cat {

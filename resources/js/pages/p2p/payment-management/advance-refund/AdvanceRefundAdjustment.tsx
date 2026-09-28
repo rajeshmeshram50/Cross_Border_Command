@@ -1,7 +1,7 @@
 // P2P → Advance Receipt Refund Adjustment. Raised when a PO with money released is
 // cancelled; recoveries are logged against it until nothing is outstanding. Uses the
 // shared SPI/Order list shell (spi-*, ord-*); data from refundApi (po-api.ts).
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Badge from '../../../../components/ui/Badge';
 import Tooltip from '../../../../components/ui/Tooltip';
@@ -24,6 +24,9 @@ import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-in
 import '../../purchase-management/order/po-list/order.css';
 import './advance-refund.css';
 
+// The PO list's own timeline, reused here — a refund is the tail of that chain.
+const ZohoTrackerModal = lazy(() => import('../../purchase-management/order/po-list/ZohoTrackerModal'));
+
 /* Each refund type carries its own colour, so the pill gets a modifier built
    from the type itself and advance-refund.css holds the pairs. */
 const pillSlug = (type: string) => type.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -42,6 +45,8 @@ const IcoReturn = () => <ProtoIco sw={2.2}><polyline points="9 14 4 9 9 4" /><pa
 const IcoPen = () => <ProtoIco sw={2.2}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></ProtoIco>;
 const IcoEyeSq = () => <ProtoIco sw={2.2}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></ProtoIco>;
 const IcoVault = () => <ProtoIco size={12} sw={2.2}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M9 12l2 2 4-4" /></ProtoIco>;
+// Same mark the PO list uses for its timeline, so the two read as one action.
+const IcoTrack = () => <ProtoIco size={12} sw={2.4}><circle cx="5" cy="6" r="2.4" /><circle cx="5" cy="18" r="2.4" /><path d="M5 8.4v7.2" /><path d="M9.5 6H20" /><path d="M9.5 18H20" /></ProtoIco>;
 const IcoFile = () => <ProtoIco size={11} sw={2.6}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></ProtoIco>;
 const IcoAdd = () => <ProtoIco size={13} sw={2.8}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></ProtoIco>;
 
@@ -94,6 +99,8 @@ export default function AdvanceRefundAdjustment() {
   const [form, setForm] = useState<{ poId?: number; editId?: number; settled?: boolean } | null>(null);
   const [recoveringId, setRecoveringId] = useState<number | null>(null);
   const [vaultId, setVaultId] = useState<number | null>(null);
+  // PO Timeline, opened per row: the refund's own PO id and code drive it.
+  const [trackPo, setTrackPo] = useState<{ id: number; code: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
@@ -295,7 +302,8 @@ export default function AdvanceRefundAdjustment() {
               ) : rows.map((r, i) => (
                 <RefundRow key={r.id} sr={start + i + 1} refund={r} syncing={syncingId === r.id}
                   onEdit={() => setForm({ editId: r.id, settled: isSettled(r) })} onRecover={() => setRecoveringId(r.id)} onVault={() => setVaultId(r.id)}
-                  onSync={() => void syncZoho(r)} />
+                  onSync={() => void syncZoho(r)}
+                  onTrack={() => r.poInfo?.id && setTrackPo({ id: r.poInfo.id, code: r.po })} />
               ))}
             </tbody>
           </table>
@@ -322,6 +330,11 @@ export default function AdvanceRefundAdjustment() {
         />
       )}
       {vaultId && <EvidenceVaultModal refundId={vaultId} onClose={() => setVaultId(null)} />}
+      {trackPo && (
+        <Suspense fallback={null}>
+          <ZohoTrackerModal poId={trackPo.id} poCode={trackPo.code} onClose={() => setTrackPo(null)} />
+        </Suspense>
+      )}
       {recoveringId && (
         <RecoverPaymentModal refundId={recoveringId} onChanged={reload} onClose={() => setRecoveringId(null)} />
       )}
@@ -385,8 +398,9 @@ function IdCell({ id, date, children }: { id?: string | null; date?: string | nu
 
 const RECOVERY_LABEL = { full: 'Fully Recovered', partial: 'Partially Recovered', pending: 'Recovery Not Started' } as const;
 
-function RefundRow({ sr, refund, syncing, onEdit, onRecover, onVault, onSync }: {
+function RefundRow({ sr, refund, syncing, onEdit, onRecover, onVault, onSync, onTrack }: {
   sr: number; refund: RefundAdjustment; syncing: boolean; onEdit: () => void; onRecover: () => void; onVault: () => void; onSync: () => void;
+  onTrack: () => void;
 }) {
   // Synced once the vendor credit is in Zoho and every recovery is refunded there.
   const zohoSynced = refund.zohoStatus === 'synced' && refund.zohoPending === 0;
@@ -493,6 +507,15 @@ function RefundRow({ sr, refund, syncing, onEdit, onRecover, onVault, onSync }: 
           </Tooltip>
           <Tooltip label="Evidence Vault — refund, PO and payment proofs" themed>
             <button type="button" className="ord-btn ord-btn--vault" onClick={onVault}><IcoVault /><span>Evidence Vault</span></button>
+          </Tooltip>
+          {/* The same timeline the PO list opens — a refund is the tail of that
+              chain (vendor credit, then each recovery), so it is read from here too. */}
+          <Tooltip label={po?.id
+            ? 'PO Timeline — how far this PO and its refund have gone across to Zoho Books'
+            : 'No purchase order on this refund yet'} themed>
+            <button type="button" className="ord-btn ord-btn--track" disabled={!po?.id} onClick={onTrack}>
+              <IcoTrack /><span>PO Timeline</span>
+            </button>
           </Tooltip>
         </div>
       </td>

@@ -374,7 +374,7 @@ class SupplierPurchaseInvoiceController extends Controller
             $partyState = \App\Services\ZohoBooksService::normStateCode($stateCode);
             $interState = $partyState !== null && $partyState !== \App\Services\ZohoBooksService::normStateCode($orgState);
 
-            $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, $stateCode);
+            $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, $stateCode, $spi->currency ?? null);
             $bill   = $books->createBill($this->buildZohoBillPayload($spi, $books, $zohoVendorId, (bool) $gstin, $interState));
             $billId = (string) $bill['bill_id'];
             $createdBillId = $billId; // created THIS run → reversible on failure
@@ -526,7 +526,7 @@ class SupplierPurchaseInvoiceController extends Controller
             $vendor = Vendor::with('primaryAddress')->findOrFail($spi->vendor_id);
             $gstin  = ($vendor->gst_number ?: null)
                 ?: (DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null);
-            $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, optional($vendor->primaryAddress)->state_code);
+            $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, optional($vendor->primaryAddress)->state_code, $spi->currency ?? null);
             $bill = $books->getBill((string) $spi->zoho_bill_id);
             $created = [];
             $pay  = $this->pushPaymentsToZoho($spi, $books, $zohoVendorId, (string) $spi->zoho_bill_id, (float) ($bill['balance'] ?? 0), $created, $onlyPaymentId);

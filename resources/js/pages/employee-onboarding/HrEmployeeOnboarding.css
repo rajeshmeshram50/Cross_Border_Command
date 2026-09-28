@@ -1286,6 +1286,13 @@
         .onb-pol-gen-btn { padding: 6px 13px; border-radius: 8px; font-size: 11.5px; font-weight: 600; color: #fff; border: none; background: linear-gradient(135deg,#0ab39c,#0a8a72); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 3px 8px rgba(10,138,114,0.24); }
         .onb-pol-gen-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba(10,138,114,0.32); }
         .onb-pol-doc-help { font-size: 10.5px; color: var(--vz-secondary-color); margin: 8px 0 0; padding-left: 43px; display: flex; align-items: center; gap: 5px; }
+        /* A rejection reads as a warning, not as the grey hint the other
+           three states share, and it can run to 500 characters — so it wraps
+           and aligns to the top of its icon instead of centring one long line
+           against it. */
+        .onb-pol-doc-help.is-rejected { color: #ef4444; font-weight: 600; align-items: flex-start; }
+        .onb-pol-doc-help.is-rejected i { margin-top: 1px; flex-shrink: 0; }
+        .onb-pol-doc-help.is-rejected strong { font-weight: 700; }
 
         /* ── Stage 3 — Provisioning ── */
         .onb-prov-progress { background: #dceefe; border: 1px solid #b6d6fb; border-radius: 12px; padding: 12px 16px; margin-bottom: 14px; display: flex; align-items: flex-start; gap: 12px; }
