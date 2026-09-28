@@ -8271,6 +8271,10 @@ function Stage5Policies({ emp, onProgress }: {
     /* Drawn-signature PNG captured when that signer acted. Present on runs
        signed through the in-app pad; older runs may only carry a typed name. */
     signature_url?: string | null;
+    /* What the signer typed when they acted. On a rejection this is the
+       REASON, which reject() requires (max 500 chars) and writes here — the
+       only place it is kept besides the audit log. */
+    note?: string | null;
   };
   type SignatureRun = {
     id: number; code: string | null;
@@ -8697,6 +8701,7 @@ function Stage5Policies({ emp, onProgress }: {
                                   : (i === run.current_index ? 'Awaiting' : 'Pending'),
                             active: i === run.current_index && (run.status === 'Pending' || run.status === 'In Progress'),
                             at:     s.acted_at,
+                            note:   s.note ?? null,
                           }))
                         : signers.map((s, i) => ({
                             name:   s.role_name || s.designation_name || `Signer ${i + 1}`,
@@ -8704,6 +8709,7 @@ function Stage5Policies({ emp, onProgress }: {
                             state:  'Pending' as string,
                             active: i === 0,
                             at:     null as string | null,
+                            note:   null as string | null,
                           }))
                       ).map((sg, i) => (
                         <div key={i} className={`ep-signer${sg.active ? ' is-active' : ''}`}>
@@ -8721,6 +8727,32 @@ function Stage5Policies({ emp, onProgress }: {
                                 Signed · {fmtSignedAt(sg.at)}
                               </span>
                             )}
+                            {/* A rejection is the one outcome that asks the
+                                sender to DO something, and the reason for it
+                                was reaching the browser already — reject()
+                                requires it and stores it on the signer — but
+                                nothing drew it, so the document came back
+                                marked Rejected with no way to learn why
+                                short of the audit log. (bug #15) */}
+                            {sg.state === 'Rejected' && (
+                              <>
+                                <span className="ep-signer-rejected-at">
+                                  Rejected{sg.at ? ` · ${fmtSignedAt(sg.at)}` : ''}
+                                </span>
+                                {sg.note && (
+                                  <span
+                                    className="ep-signer-note"
+                                    /* Full reason on hover as well as in place:
+                                       it is capped at 500 characters server-side,
+                                       which is longer than this column is wide. */
+                                    title={sg.note}
+                                  >
+                                    <i className="ri-chat-quote-line" />
+                                    {sg.note}
+                                  </span>
+                                )}
+                              </>
+                            )}
                           </span>
                           <span className="ep-signer-state">{sg.state}</span>
                         </div>
@@ -8736,16 +8768,28 @@ function Stage5Policies({ emp, onProgress }: {
                 )
               )}
 
-              {!isExpanded && (
-                <p className="onb-pol-doc-help">
-                  <i className="ri-information-line" />
-                  {runActive
-                    ? 'Sent — waiting on the signers. Expand to see who\'s next.'
-                    : run?.status === 'Completed'
-                    ? 'All signers have signed. ✓'
-                    : 'Click Send to start the signing workflow and notify the signers.'}
-                </p>
-              )}
+              {/* Collapsed, a rejected run used to fall through to "Click Send
+                  to start the signing workflow" — inviting the sender to start
+                  something that had already come back refused, and saying
+                  nothing about why. It now names the rejecter and their reason
+                  without expanding the row. */}
+              {!isExpanded && (() => {
+                const rejected = run?.status === 'Rejected'
+                  ? run.signers.find(sg => sg.status === 'Rejected') ?? null
+                  : null;
+                return (
+                  <p className={`onb-pol-doc-help${rejected ? ' is-rejected' : ''}`}>
+                    <i className={rejected ? 'ri-close-circle-line' : 'ri-information-line'} />
+                    {rejected
+                      ? <>Rejected by <strong>{rejected.name || rejected.role_name || 'a signer'}</strong>{rejected.note ? <> — {rejected.note}</> : <> (no reason given).</>}</>
+                      : runActive
+                      ? "Sent — waiting on the signers. Expand to see who's next."
+                      : run?.status === 'Completed'
+                      ? 'All signers have signed. ✓'
+                      : 'Click Send to start the signing workflow and notify the signers.'}
+                  </p>
+                );
+              })()}
             </div>
           );
         })}

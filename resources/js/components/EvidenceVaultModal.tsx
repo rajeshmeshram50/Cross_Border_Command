@@ -78,6 +78,9 @@ type VaultRun = {
   trigger_keyword?: string | null;
   trigger_point_name?: string | null;
   template?: { name?: string | null; doc_type?: string | null; code?: string | null } | null;
+  /* Only read for a refusal: the reason a signer gave is stored here and was
+     never surfaced anywhere, so a Rejected pill was the whole story (#140). */
+  signers?: { name?: string | null; role_name?: string | null; status?: string; note?: string | null }[];
 };
 
 export default function EvidenceVaultModal({ employee, onClose, extraChips = [], initialTab = 'employee' }: {
@@ -500,6 +503,9 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                   need doing. */}
               {promoRows.map(({ tpl: t, run }) => {
                 const locked = promoLocked(run);
+                const rejectedBy = run?.status === 'Rejected'
+                  ? (run.signers ?? []).find(sg => sg.status === 'Rejected') ?? null
+                  : null;
                 const status = run?.status === 'Rejected'  ? { label: 'Rejected',      cls: 'pending'  }
                              : run?.status === 'Cancelled' ? { label: 'Cancelled',     cls: 'not-sent' }
                              : locked                      ? { label: 'Awaiting Sign', cls: 'sent'     }
@@ -520,6 +526,16 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                     <div className="ev-doc-sub">
                       {['Document', t.code, run ? `Run #${run.id}` : null, t.docx_original_name].filter(Boolean).join(' • ')}
                     </div>
+                    {/* The refusal and its reason, under the meta line — this
+                        row's whole purpose once a document comes back is to
+                        say what has to change before it is sent again. */}
+                    {rejectedBy && (
+                      <div className="ev-doc-reject" title={rejectedBy.note || undefined}>
+                        <i className="ri-close-circle-line" />
+                        Rejected by {rejectedBy.name || rejectedBy.role_name || 'a signer'}
+                        {rejectedBy.note ? ` — ${rejectedBy.note}` : ' (no reason given)'}
+                      </div>
+                    )}
                   </div>
                   <span className={`ev-doc-status ev-doc-status--${status.cls}`}>{status.label}</span>
                   {/* Same filled button the Download action uses on the signed

@@ -4613,6 +4613,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                         action: s.action,
                                         status: s.status === 'Done' ? 'Completed' : s.status === 'Rejected' ? 'Rejected' : run.status === 'Completed' ? 'Completed' : (String((run as any).template?.signing_mode || '').toLowerCase() === 'parallel' || i === run.current_index) ? 'Awaiting' : 'Pending',
                                         active: (String((run as any).template?.signing_mode || '').toLowerCase() === 'parallel' ? (s.status !== 'Done' && s.status !== 'Rejected') : i === run.current_index) && (run.status === 'Pending' || run.status === 'In Progress'),
+                                        // Carried so a refusal can say why — the
+                                        // type already declared it, nothing drew
+                                        // it (#140).
+                                        note: s.status === 'Rejected' ? s.note : null,
+                                        at: s.acted_at,
                                       }))
                                       : signers.map((s, i) => ({
                                         name: s.role_name || s.designation_name || `Signer ${i + 1}`,
@@ -4620,6 +4625,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                         action: s.action,
                                         status: 'Pending' as string,
                                         active: i === 0,
+                                        note: null as string | null,
+                                        at: null as string | null,
                                       }))
                                   ).map((sg, i) => (
                                     <div key={i} className={`ep-signer${sg.active ? ' is-active' : ''}`}>
@@ -4630,6 +4637,16 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                           <span style={{ marginLeft: 6, fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 500 }}>
                                             ({sg.action})
                                           </span>
+                                        )}
+                                        {sg.status === 'Rejected' && (
+                                          <>
+                                            <span className="ep-signer-rejected-at">Rejected</span>
+                                            {sg.note && (
+                                              <span className="ep-signer-note" title={sg.note}>
+                                                <i className="ri-chat-quote-line" />{sg.note}
+                                              </span>
+                                            )}
+                                          </>
                                         )}
                                       </span>
                                       <span className="ep-signer-state">{sg.status}</span>
