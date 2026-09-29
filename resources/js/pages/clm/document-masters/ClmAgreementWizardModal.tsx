@@ -16,7 +16,7 @@ import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
 } from '../../hrms/doc-templates/HeaderFooterPanel';
-import { useCtcEditor, CtcEditorContent, CtcToolbar, CTC_EDITOR_CSS, DEFAULT_MARGINS, SHEET_W, contentTextLength, htmlTextLength, type CtcMargins, type CtcEditor } from '../operations/CtcRichEditor';
+import { useCtcEditor, CtcEditorContent, CtcToolbar, CTC_EDITOR_CSS, DEFAULT_MARGINS, SHEET_W, contentTextLength, htmlTextLength, preCheckMax, type CtcMargins, type CtcEditor } from '../operations/CtcRichEditor';
 import CtcLivePreview from '../operations/CtcLivePreview';
 import { useOpsTheme } from '../operations/useOpsTheme';
 import type { Editor } from '@tiptap/react';
@@ -156,14 +156,30 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   // on a successful save. Download is blocked while dirty so the user never
   // downloads a stale (last-saved) version of edits they can still see.
   const [dirty, setDirty] = useState(false);
+  /* The count on screen comes from the editor's own guard, so the figure shown
+     and the figure that refuses the next letter cannot drift apart. Null until
+     the editor has parsed the draft; the stored HTML is measured until then. */
+  const [editorLen, setEditorLen] = useState<number | null>(null);
   const agr: CtcEditor = useCtcEditor({
     value: content,
-    onChange: (html) => { setContent(html); setDirty(true); },
+    onChange: (html, len) => { setContent(html); setEditorLen(len); setDirty(true); },
     onLimit: (attempted, max) => toast.error(
       'Content limit reached',
-      `That paste would take this agreement to ${attempted.toLocaleString()} characters — the limit is ${max.toLocaleString()}. Past it the PDF and Word exports stop working, so it was not added.`,
+      `That would take this agreement to ${attempted.toLocaleString()} characters — the limit is ${max.toLocaleString()}. Past it the PDF and Word exports stop working, so it was not added.`,
     ),
   });
+
+  /* A loaded draft never fires an update — TipTap seeds it with emitUpdate off
+     — so take the reading once the editor has parsed it. Without this the
+     counter would sit on the pre-editor fallback until the first keystroke,
+     which is the one moment it is allowed to disagree with the guard. */
+  useEffect(() => {
+    const ed = agr.editor;
+    if (!ed || editorLen !== null) return;
+    const html = ed.getHTML();
+    if (!html || html === '<p></p>') return;      // not parsed yet
+    setEditorLen(contentTextLength(ed));
+  }, [agr.editor, content, editorLen]);
   const [placeholderOpen, setPlaceholderOpen] = useState(false);
   const [clauseOpen, setClauseOpen]           = useState(false);
   /* Insert Table / Insert HR — same pattern Trade Doc uses. Caret is
@@ -418,7 +434,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
        *
        * The editor is deliberately left untouched on rejection — seeding it and
        * then complaining would leave unusable content the user has to undo. */
-      if (html && htmlTextLength(html) > RENDER_MAX_CHARS) {
+      if (html && htmlTextLength(html) > preCheckMax(RENDER_MAX_CHARS)) {
         toast.error(
           'Document too long',
           `${file.name} carries ${htmlTextLength(html).toLocaleString()} characters — the limit is ${RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller agreements, or shorten it before uploading.`,
@@ -948,7 +964,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
               <AgrEditor
                 editor={agr.editor}
                 busy={editorBusy}
-                contentLength={htmlTextLength(content ?? '')}
+                contentLength={editorLen ?? htmlTextLength(content ?? '')}
                 content={content ?? ''}
                 fontSize={fontSize}
                 setFontSizeState={setFontSizeState}

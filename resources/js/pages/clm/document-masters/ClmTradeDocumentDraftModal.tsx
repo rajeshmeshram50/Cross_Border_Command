@@ -13,7 +13,7 @@ import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
 } from '../../hrms/doc-templates/HeaderFooterPanel';
-import { useCtcEditor, CtcEditorContent, CtcToolbar, CTC_EDITOR_CSS, DEFAULT_MARGINS, SHEET_W, contentTextLength, htmlTextLength, type CtcMargins, type CtcEditor } from '../operations/CtcRichEditor';
+import { useCtcEditor, CtcEditorContent, CtcToolbar, CTC_EDITOR_CSS, DEFAULT_MARGINS, SHEET_W, contentTextLength, htmlTextLength, preCheckMax, type CtcMargins, type CtcEditor } from '../operations/CtcRichEditor';
 import CtcLivePreview from '../operations/CtcLivePreview';
 import { useOpsTheme } from '../operations/useOpsTheme';
 
@@ -196,12 +196,17 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   // the old contentEditable + document.execCommand that froze the tab when
   // formatting large (200-300 page) trade documents. HTML in / HTML out, so the
   // backend contract (content = HTML string) is unchanged.
+  /* The count on screen, taken from the editor's own guard (see useCtcEditor's
+     onChange). Before the editor has parsed the document — the moment between
+     opening a saved draft and TipTap reading it — the stored HTML is measured
+     instead, which is the only reading available then. */
+  const [editorLen, setEditorLen] = useState<number | null>(null);
   const ted: CtcEditor = useCtcEditor({
     value: content,
-    onChange: (html) => { setContent(html); setDirty(true); },
+    onChange: (html, len) => { setContent(html); setEditorLen(len); setDirty(true); },
     onLimit: (attempted, max) => toast.error(
       'Content limit reached',
-      `That paste would take this document to ${attempted.toLocaleString()} characters — the limit is ${max.toLocaleString()}. Past it the PDF and Word exports stop working, so it was not added.`,
+      `That would take this document to ${attempted.toLocaleString()} characters — the limit is ${max.toLocaleString()}. Past it the PDF and Word exports stop working, so it was not added.`,
     ),
   });
   const [fontSize, setFontSizeState] = useState('14');
@@ -485,7 +490,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
            unusable content the user has to undo by hand. Same order the CTC and
            Agreement editors already use. */
         const incoming = htmlTextLength(html);
-        if (incoming > TDW_RENDER_MAX_CHARS) {
+        if (incoming > preCheckMax(TDW_RENDER_MAX_CHARS)) {
           toast.error(
             'Document too long',
             `${file.name} carries ${incoming.toLocaleString()} characters — the limit is ${TDW_RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller documents, or shorten it before uploading.`,
@@ -507,7 +512,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
          otherwise a long document is blocked when the draft is new and waved
          through the moment it has been saved once. */
       const stored = htmlTextLength(String(row?.content ?? ''));
-      if (stored > TDW_RENDER_MAX_CHARS) {
+      if (stored > preCheckMax(TDW_RENDER_MAX_CHARS)) {
         toast.error(
           'Document too long',
           `${file.name} carries ${stored.toLocaleString()} characters — the limit is ${TDW_RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller documents, or shorten it before uploading.`,
@@ -544,6 +549,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       // against this so a document that was already over the limit can still
       // be opened and shortened — see persistDraft.
       loadedLen.current = htmlTextLength(existing.content ?? '');
+      setEditorLen(null);            // until the editor has parsed this draft
       // Layer the saved zone config over the branded defaults. Rows that
       // pre-date these columns hit the spread with null and keep the
       // logged-in user's branch branding as their starting point.
@@ -559,6 +565,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setSegments([]);
       setContent('');
       loadedLen.current = 0;                // new draft — nothing stored yet
+      setEditorLen(0);
       setHeaderConfig(brandedDefaults.header);
       setFooterConfig(brandedDefaults.footer);
     }
@@ -580,10 +587,11 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
    * save guard compares against are both taken from it, so the number on
    * screen is the number that decides — the same before and after Full Page,
    * and honest from the moment the draft opens. */
-  /* The writer's own count, and the one the limit is measured against, taken
-     the same way here and in the editor's guard. Memoised — the document can
-     be a megabyte and this would otherwise run on every keystroke. */
-  const textLength = useMemo(() => htmlTextLength(content ?? ''), [content]);
+  /* The writer's own count, and the one the limit is measured against — the
+     same number, because it comes from the guard itself. Memoised only for the
+     pre-editor fallback, which parses the stored HTML. */
+  const storedLength = useMemo(() => htmlTextLength(content ?? ''), [content]);
+  const textLength = editorLen ?? storedLength;
 
   const syncedToEditor = useRef(false);
   useEffect(() => {
@@ -594,8 +602,9 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     // Still empty means the editor has not parsed the document yet.
     if (!html || html === '<p></p>') return;
     syncedToEditor.current = true;
+    setEditorLen(contentTextLength(ed));
     if (html === content) return;
-    loadedLen.current = htmlTextLength(html);
+    loadedLen.current = contentTextLength(ed);
     setContent(html);
   }, [ted.editor, content]);
 

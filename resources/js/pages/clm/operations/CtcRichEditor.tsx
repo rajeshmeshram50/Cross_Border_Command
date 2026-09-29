@@ -1196,6 +1196,17 @@ export const contentTextLength = (editor: Editor | null | undefined): number =>
 export const pastedLength = (raw: string): number => htmlTextLength(raw);
 
 /**
+ * The ceiling for a CHEAP pre-check made on an HTML string.
+ *
+ * Reading a string and walking the editor's document are two ways of counting
+ * the same characters, and on a long import they differ slightly. A gate that
+ * runs before the document is even seeded must not be the thing that refuses a
+ * file the editor would have held — so it keeps a small margin, and the real
+ * decision is taken afterwards from the editor itself.
+ */
+export const preCheckMax = (max: number): number => Math.round(max * 1.02);
+
+/**
  * The same count, taken from an HTML string rather than a live editor — for
  * content on its way in (a Word import) or already stored (a saved draft).
  *
@@ -1290,6 +1301,24 @@ const SelectionShadow = Extension.create({
     ];
   },
 });
+
+/**
+ * Measure the document once and give that same number to BOTH the limit and
+ * the screen.
+ *
+ * Reading the guard's cache instead would depend on whether the extension's
+ * update handler runs before the editor's own — a difference of one keystroke,
+ * which is exactly the kind of small disagreement this is here to end. Taken
+ * fresh, written back to the cache, returned to the caller: one measurement,
+ * one number, no ordering to reason about.
+ */
+export const limitTextLen = (editor: Editor | null | undefined): number => {
+  if (!editor) return 0;
+  const len = contentTextLength(editor);
+  const store = (editor.storage as unknown as Record<string, { textLen?: number } | undefined>).contentLimit;
+  if (store) store.textLen = len;
+  return len;
+};
 
 const ContentLimit = Extension.create<ContentLimitOptions>({
   name: 'contentLimit',
@@ -1477,7 +1506,18 @@ export function ctcExtensions(opts?: {
 
 export function useCtcEditor(opts: {
   value: string;
-  onChange: (html: string) => void;
+  /**
+   * `textLen` is the document's length as the LIMIT counts it — the very
+   * number the typing guard compares against, handed out rather than
+   * recomputed.
+   *
+   * The counter used to measure the saved HTML while the guard measured the
+   * editor's own text. Two readings of the same document that agree on a short
+   * draft and drift apart on a long one: at 993,471 on screen the guard had
+   * already reached 1,000,000, so an upload that "fit" refused the next letter
+   * typed (CS-17 again, from the other side). One number now, taken once.
+   */
+  onChange: (html: string, textLen: number) => void;
   editable?: boolean;
   /** Raised when a paste or drop would cross CONTENT_MAX_CHARS. The editor
    *  blocks the input either way; this is how the screen says so. */
@@ -1497,7 +1537,7 @@ export function useCtcEditor(opts: {
       // Debounce the push to the parent so a long agreement doesn't re-render the
       // whole Stage tree on every keystroke; formatting itself stays instant.
       if (syncTimer.current) window.clearTimeout(syncTimer.current);
-      syncTimer.current = window.setTimeout(() => onChange(html), 250);
+      syncTimer.current = window.setTimeout(() => onChange(html, limitTextLen(editor)), 250);
     },
   });
 
@@ -1538,9 +1578,10 @@ export function useCtcEditor(opts: {
          told the document changed, so it is set here too. */
       const seeded = editor.getHTML() || repaired || '<p></p>';
       lastSyncedRef.current = seeded;
+      const len = contentTextLength(editor);
       const limit = (editor.storage as unknown as Record<string, { textLen?: number }>).contentLimit;
-      if (limit) limit.textLen = contentTextLength(editor);
-      onChange(seeded);
+      if (limit) limit.textLen = len;
+      onChange(seeded, len);
     },
   };
 }

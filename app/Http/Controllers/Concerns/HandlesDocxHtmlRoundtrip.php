@@ -161,6 +161,27 @@ trait HandlesDocxHtmlRoundtrip
      * text separates them, so the server refuses at the same figure the screen
      * showed rather than one the user never saw.
      */
+    /**
+     * The ceiling the SERVER enforces, which is not quite the one the screen
+     * shows.
+     *
+     * The editors count with the editor's own text walk; this counts by
+     * reading the stored HTML. Both answer "how many characters is this
+     * document", and on a long one they differ by a fraction of a percent —
+     * whitespace between blocks, an entity, a cell boundary. Held to the exact
+     * figure, the server would refuse a save the screen had just called
+     * acceptable, which is the same "within the limit but not accepted"
+     * complaint from the other end (CS-17).
+     *
+     * So the server keeps a small margin. It is a backstop against documents
+     * that are genuinely too big for the renderers, not a second opinion on
+     * the last thousand characters.
+     */
+    protected function renderLimitWithMargin(int $max): int
+    {
+        return (int) round($max * 1.02);
+    }
+
     protected function htmlTextLength(?string $html): int
     {
         $html = (string) $html;

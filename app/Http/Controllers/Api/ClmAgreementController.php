@@ -1073,7 +1073,7 @@ class ClmAgreementController extends Controller
 
         // Guard oversized content: past this, PhpWord crashes the request (500).
         // Return a clean message the UI can show instead.
-        if (($len = $this->htmlTextLength($row->content)) > self::RENDER_MAX_CHARS) {
+        if (($len = $this->htmlTextLength($row->content)) > $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) {
             return response()->json([
                 'status'  => false,
                 'message' => 'This agreement is too large to generate as a Word file — '
@@ -1145,7 +1145,7 @@ class ClmAgreementController extends Controller
 
         // Guard oversized content: past this, dompdf crashes the request (500).
         // Return a clean message the UI can show instead.
-        if (($len = $this->htmlTextLength($row->content)) > self::RENDER_MAX_CHARS) {
+        if (($len = $this->htmlTextLength($row->content)) > $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) {
             return response()->json([
                 'status'  => false,
                 'message' => 'This agreement is too large to generate as a PDF — '
@@ -1264,7 +1264,7 @@ class ClmAgreementController extends Controller
         // Reject a document whose text is over the render cap: it could never be
         // downloaded as PDF/Word afterwards. Drop the stored file and tell the
         // user, instead of leaving un-exportable content in the editor.
-        if (($len = $this->htmlTextLength($html)) > self::RENDER_MAX_CHARS) {
+        if (($len = $this->htmlTextLength($html)) > $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) {
             Storage::disk('public')->delete($path);
             return response()->json([
                 'status'  => false,
@@ -1324,7 +1324,7 @@ class ClmAgreementController extends Controller
 
         /* Same ceiling the download carries. dompdf does not fail gracefully
            past it — it takes the request down with it. */
-        if (($len = $this->htmlTextLength($html)) > self::RENDER_MAX_CHARS) {
+        if (($len = $this->htmlTextLength($html)) > $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) {
             return response()->json([
                 'status'  => false,
                 'message' => 'This draft is too large to preview — ' . number_format($len)

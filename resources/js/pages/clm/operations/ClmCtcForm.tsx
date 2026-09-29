@@ -11,7 +11,7 @@ import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../../master/m
 import ClmInsertPlaceholderModal from '../document-masters/ClmInsertPlaceholderModal';
 import ClmClauseInsertPanel from '../document-masters/ClmClauseInsertPanel';
 import HeaderFooterPanel, { DEFAULT_HEADER, DEFAULT_FOOTER, type HeaderConfig, type FooterConfig } from '../../hrms/doc-templates/HeaderFooterPanel';
-import { useCtcEditor, CtcToolbar, CtcEditorContent, CTC_EDITOR_CSS, waitForPagination, DEFAULT_MARGINS, SHEET_W, contentTextLength, htmlTextLength, type CtcMargins } from './CtcRichEditor';
+import { useCtcEditor, CtcToolbar, CtcEditorContent, CTC_EDITOR_CSS, waitForPagination, DEFAULT_MARGINS, SHEET_W, contentTextLength, htmlTextLength, preCheckMax, type CtcMargins } from './CtcRichEditor';
 import CtcLivePreview from './CtcLivePreview';
 import { ctcSignatureLabel, pad2, type CtcContract } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
@@ -888,15 +888,30 @@ function Stage1(p: {
   // machinery). The hook owns the ProseMirror document model, formatting-toolbar
   // commands, caret-safe insertion, and debounced sync back to the parent draft.
   const docxRef = useRef<HTMLInputElement | null>(null);
+  /* Same reading as the guard keeps (see useCtcEditor), so the number on the
+     footer is the number that decides. */
+  const [editorLen, setEditorLen] = useState<number | null>(null);
   const ctcEd = useCtcEditor({
     value: p.draft,
-    onChange: p.setDraft,
+    onChange: (html, len) => { p.setDraft(html); setEditorLen(len); },
     editable: !p.editLock,
     onLimit: (attempted, max) => toast.error(
       'Content limit reached',
-      `That paste would take this agreement to ${attempted.toLocaleString()} characters — the limit is ${max.toLocaleString()}. Past it the PDF and Word exports stop working, so it was not added.`,
+      `That would take this agreement to ${attempted.toLocaleString()} characters — the limit is ${max.toLocaleString()}. Past it the PDF and Word exports stop working, so it was not added.`,
     ),
   });
+
+  /* A loaded draft never fires an update — TipTap seeds it with emitUpdate off
+     — so take the reading once the editor has parsed it. Without this the
+     counter would sit on the pre-editor fallback until the first keystroke,
+     which is the one moment it is allowed to disagree with the guard. */
+  useEffect(() => {
+    const ed = ctcEd.editor;
+    if (!ed || editorLen !== null) return;
+    const html = ed.getHTML();
+    if (!html || html === '<p></p>') return;      // not parsed yet
+    setEditorLen(contentTextLength(ed));
+  }, [ctcEd.editor, p.draft, editorLen]);
   // Placeholder / clause side-panels call these; route them through the editor.
   const insertText = (text: string) => ctcEd.insertText(text);
   const insertHtml = (html: string) => ctcEd.insertHTML(html);
@@ -941,7 +956,7 @@ function Stage1(p: {
          Word renderers actually choke on. Reject here rather than let it into
          the editor and fail at download time. */
       const incoming = htmlTextLength(html);
-      if (incoming > CTC_RENDER_MAX_CHARS) {
+      if (incoming > preCheckMax(CTC_RENDER_MAX_CHARS)) {
         toast.error(
           'Document too long',
           `${file.name} carries ${incoming.toLocaleString()} characters — the limit is ${CTC_RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller agreements, or shorten it before uploading.`,
@@ -1504,7 +1519,7 @@ function Stage1(p: {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', background: t.dark ? 'rgba(255,255,255,.02)' : '#FAFBFF', borderTop: `1px solid ${t.dark ? 'rgba(124,58,237,.18)' : '#F1EEFF'}`, flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg><span style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#A78BFA', fontWeight: 500, fontStyle: 'italic' }}>Placeholders auto-fill on agreement generation</span></div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <CtcCharCounter length={htmlTextLength(p.draft ?? '')} dark={t.dark} />
+                    <CtcCharCounter length={editorLen ?? htmlTextLength(p.draft ?? '')} dark={t.dark} />
                     <span style={{ fontSize: 8, fontWeight: 700, color: t.dark ? '#a78bfa' : '#C4B5FD', letterSpacing: '.05em' }}>{'{{PLACEHOLDER}}'}</span>
                   </div>
                 </div>
