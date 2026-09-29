@@ -3084,7 +3084,41 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
        * failure below gets its own message that says what actually happened. */
       let successBody = '';
       const currentId = editingDbIdRef.current ?? editingDbId;
+      /* Has the revision already been posted below? See the ordering note. */
+      let breakupSaved = false;
       if (currentId) {
+        /* THE BREAKUP GOES FIRST, before the employee PUT. (#217)
+         *
+         * The PUT mirrors pf_eligible / esi_applicable onto every active and
+         * superseded structure (EmployeeController, "#90") and writes the new
+         * pf_type onto the employee. SalaryStructureController::store() then
+         * decides whether this POST is a real revision by comparing what was
+         * sent against the CURRENT structure and the CURRENT employee — both of
+         * which the PUT had just moved to the submitted values.
+         *
+         * So every PF change looked like a no-op to the one code path that
+         * creates versions: the flag did land (the mirror wrote it), but no new
+         * version was cut, Salary History stayed empty and Revise Salary went on
+         * showing v43. The change was applied and simultaneously unrecorded,
+         * which is exactly "the version in Revise Salary remains unchanged".
+         *
+         * Posting first leaves store() an untouched baseline to compare with, so
+         * a PF change cuts v44 and the PUT that follows sets the same values it
+         * already wrote back — idempotent, and the mirror then has nothing left
+         * to do.
+         *
+         * Only for an EXISTING employee. A create has no id to hang a structure
+         * off until the POST returns, so that path keeps the original order. */
+        try {
+          await persistBreakup(currentId);
+          breakupSaved = true;
+        } catch (bErr: any) {
+          const bMsg = bErr?.response?.data?.message || bErr?.message || 'The salary breakup could not be saved.';
+          // Nothing has been written yet — say so, rather than leaving the
+          // operator to guess which half of the save landed.
+          toast.error('Salary breakup not saved', `Nothing was saved: the salary breakup was rejected — ${String(bMsg)}`);
+          return;   // finally{} still clears `saving`
+        }
         await api.put(`/employees/${currentId}`, payload);
         successBody = `${eFirstName} ${eLastName}`.trim() + ' · marked complete.';
       } else {
@@ -3114,7 +3148,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
        * corrected instead of the operator discovering later that the employee
        * has no structure. No success toast is shown in this path — exactly one
        * message reaches the screen. (#208) */
-      if (finalEmpId) {
+      if (finalEmpId && !breakupSaved) {
         try {
           await persistBreakup(finalEmpId);
         } catch (bErr: any) {

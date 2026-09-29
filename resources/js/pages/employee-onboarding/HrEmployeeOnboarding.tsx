@@ -3660,12 +3660,19 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     // travels with the rest of the payload instead of being stripped.
     if (markComplete) payload.wizard_step_completed = 4;
     try {
-      await api.put(`/employees/${emp.dbId}`, payload);
       /* The breakup is a SEPARATE table, and only POST /salary-structures
          writes it — PUT /employees never has. Without this the CTC moved and
          the structure payroll actually reads stayed on the old salary, which is
-         the state this screen used to leave behind on every edit. */
+         the state this screen used to leave behind on every edit.
+
+         It runs BEFORE the PUT, same as the Employee form. (#217)
+         The PUT mirrors the PF/ESI flags onto the existing structures and
+         updates employee.pf_type, which is the very baseline
+         SalaryStructureController::store() compares against to decide whether a
+         POST is a real revision — so running it first made every PF change look
+         like a no-op and no new version was ever cut. */
       await persistObBreakup(emp.dbId);
+      await api.put(`/employees/${emp.dbId}`, payload);
       // `silent` (stage-to-stage navigation) skips the heavy parent reload
       // AND the toast: the PUT already persisted the data, and re-fetching the
       // whole /employees list on every Next-Stage click was the main cause of
