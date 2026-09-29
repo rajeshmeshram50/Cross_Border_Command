@@ -127,6 +127,30 @@ class PurchaseOrderController extends Controller
         'cancelclosed' => "status = 'cancelled' AND COALESCE(cancel_stage, 'closed') = 'closed'",
     ];
 
+    /* An order of magnitude typed into the rate used to pass every check here
+       and fail hours later inside Zoho Books, which converts to the base
+       currency and refuses the result with a message it never fills in
+       ("out of range value ... contact {0}"). A PO of 1,987 cars at
+       13,000,000,000 each reached 25,831,000,000,000 that way. These are
+       deliberately generous — they catch a slipped decimal, not a big deal. */
+    /* THE order ceiling, and it is a RUPEE one: Zoho converts a PO at its own
+       rate and posts the rupee figure to the ledger, so that is the only number
+       it judges. Evidence from this org: 20.88 trillion synced, 2,546 trillion
+       refused as "out of range" — Zoho's amount field is a 14-digit whole part,
+       the same shape as ours. 1 trillion keeps a 100x margin under that and is
+       still 5,000x any real order. What a PO may be in ITS OWN currency follows
+       from this and the exchange rate, rather than being fixed per currency. */
+    private const MAX_ZOHO_BASE = 1000000000000;  // 1 trillion rupees
+
+    /* A unit rate is judged in rupees too, for the same reason the order is:
+       a billion yen and a billion dollars are 150x apart. 10 billion rupees is
+       about 100 million dollars a unit — an aircraft, a ship, a whole plant. */
+    private const MAX_UNIT_RATE_BASE = 10000000000;  // 10 billion rupees per unit
+
+    /* Currency-agnostic, so they stay plain numbers. */
+    private const MAX_QUANTITY      = 10000000;   // 10 million units on a line
+    private const MAX_EXCHANGE_RATE = 10000;      // the column takes 8 digits; a typo here multiplies
+
     // Only what a list row shows (plus the ids its references are read through).
     private const LIST_COLUMNS = [
         'id', 'code', 'po_date', 'status', 'current_step', 'po_type', 'document_type', 'vendor_id', 'link_type',
@@ -262,7 +286,7 @@ class PurchaseOrderController extends Controller
             'physical_inspection'    => ['required', Rule::in(PurchaseOrder::YES_NO)],
             // An import is priced in the supplier's currency, never INR.
             'currency_code'          => [...explode('|', $intl), 'string', 'max:8', 'not_in:INR,inr'],
-            'exchange_rate'          => "{$intl}|numeric|gt:0",
+            'exchange_rate'          => "{$intl}|numeric|gt:0|max:" . self::MAX_EXCHANGE_RATE,
             'inco_term'              => [...explode('|', $intl), Rule::in(PurchaseOrder::INCO_TERMS)],
             'port_of_loading'        => "{$intl}|string|max:255",
             'port_of_discharge'      => "{$intl}|string|max:255",
@@ -337,6 +361,19 @@ class PurchaseOrderController extends Controller
             return $this->fail('This PO has gone to the senior for approval — the supplier and document type can no longer change.', 422,
                 ['errors' => ['vendor_id' => ['The supplier is fixed once the PO is sent for senior approval.']]]);
         }
+        /* The lines may already be saved, so a new rate can push an order that
+           was fine past what Zoho takes. Checked here, where the rate is typed. */
+        $newRate = (float) ($data['exchange_rate'] ?? 0);
+        if ($newRate > 0 && (float) $po->grand_total > 0
+            && (float) $po->grand_total * $newRate > self::MAX_ZOHO_BASE) {
+            return $this->fail(
+                'At that exchange rate this PO converts to ' . number_format((float) $po->grand_total * $newRate, 2)
+                . ' in base currency, which Zoho Books will refuse. The converted total cannot exceed '
+                . number_format(self::MAX_ZOHO_BASE) . '.',
+                422, ['errors' => ['exchange_rate' => ['Too high for this order — Zoho would refuse the converted total.']]]
+            );
+        }
+
         $resolved = $this->resolveStage1($data, $user);
         if ($resolved instanceof JsonResponse) return $resolved;
 
@@ -505,16 +542,29 @@ class PurchaseOrderController extends Controller
         // The stored balance and TDS rest on this value once money has been paid against it.
         if ((float) $po->paid_amount > 0) return $this->fail('Payments are already recorded on this PO — its product lines and charges can no longer change.');
 
+        /* Both ceilings are rupee ones, so what this PO may hold in ITS currency
+           is read back through its own rate. A domestic PO is already in rupees. */
+        $fx       = (float) ($po->exchange_rate ?: 0) ?: 1.0;
+        $maxRate  = self::MAX_UNIT_RATE_BASE / $fx;
+        $maxTotal = self::MAX_ZOHO_BASE / $fx;
+        $ccy      = $po->currency_code ?: 'INR';
+
         $data = $request->validate([
             'lines'               => 'required|array|min:1',
             'lines.*.pi_item_id'  => 'nullable|integer|distinct',
             'lines.*.product_id'  => 'nullable|integer|required_without:lines.*.pi_item_id',
-            'lines.*.quantity'    => 'required|numeric|gt:0',
-            'lines.*.rate'        => 'required|numeric|min:0',
+            'lines.*.quantity'    => 'required|numeric|gt:0|max:' . self::MAX_QUANTITY,
+            'lines.*.rate'        => 'required|numeric|min:0|max:' . $maxRate,
             'lines.*.description' => 'nullable|string',
-            'shipping_charges'    => 'nullable|numeric|min:0',
-            'packaging_charges'   => 'nullable|numeric|min:0',
-            'other_charges'       => 'nullable|numeric|min:0',
+            'shipping_charges'    => 'nullable|numeric|min:0|max:' . $maxTotal,
+            'packaging_charges'   => 'nullable|numeric|min:0|max:' . $maxTotal,
+            'other_charges'       => 'nullable|numeric|min:0|max:' . $maxTotal,
+        ], [
+            'lines.*.quantity.max'  => 'Quantity looks wrong — the most this PO takes on one line is ' . number_format(self::MAX_QUANTITY) . '.',
+            'lines.*.rate.max'      => "Rate looks wrong — the most this PO takes for one unit is {$ccy} " . number_format($maxRate, 2) . '.',
+            'shipping_charges.max'  => "Shipping charges look wrong — the most this PO takes is {$ccy} " . number_format($maxTotal, 2) . '.',
+            'packaging_charges.max' => "Packaging charges look wrong — the most this PO takes is {$ccy} " . number_format($maxTotal, 2) . '.',
+            'other_charges.max'     => "Other charges look wrong — the most this PO takes is {$ccy} " . number_format($maxTotal, 2) . '.',
         ]);
 
         $piItemIds = collect($data['lines'])->pluck('pi_item_id')->filter()->map(fn ($v) => (int) $v)->values()->all();
@@ -533,14 +583,17 @@ class PurchaseOrderController extends Controller
             }
         }
 
-        // Quantity may not exceed what is still pending on the PI line.
+        /* A PI line that is still open may be over-ordered — trade quantities
+           round to containers and minimum order sizes. Over-drawing takes the
+           line's pending to zero, which closes it to every later PO, so the
+           total across POs cannot compound: at most one PO draws over. */
         $orderedElsewhere = $this->svc->orderedByPiItem((int) $po->client_id, $piItemIds, $po->id);
         foreach ($data['lines'] as $i => $line) {
             if (empty($line['pi_item_id']) || isset($errors["lines.$i.pi_item_id"])) continue;
             $pi = $piItems->get((int) $line['pi_item_id']);
             $pending = max(0, (float) $pi->quantity - ($orderedElsewhere[(int) $pi->id] ?? 0));
-            if ((float) $line['quantity'] > $pending + 0.0005) {
-                $errors["lines.$i.quantity"] = ["Only {$pending} is still pending on this PI line."];
+            if ($pending <= 0.0005 && (float) $line['quantity'] > 0) {
+                $errors["lines.$i.quantity"] = ['This PI line is fully ordered — nothing is left to order against it.'];
             }
         }
 
@@ -586,6 +639,34 @@ class PurchaseOrderController extends Controller
                 $errors[$field] = ["Not mapped — this product is in {$seg}, and neither that segment nor the product is mapped to the supplier. Map one of them first."];
             }
         }
+        /* Each line can be within its own limits and the order still absurd, and
+           it is the TOTAL that Zoho converts and refuses. Checked here so the
+           mistake lands on the line that caused it, not on a sync hours later. */
+        $lineTotals = [];
+        foreach ($data['lines'] as $i => $line) {
+            $lineTotals[$i] = (float) $line['quantity'] * (float) $line['rate'];
+        }
+        $orderTotal = array_sum($lineTotals)
+            + (float) ($data['shipping_charges'] ?? 0)
+            + (float) ($data['packaging_charges'] ?? 0)
+            + (float) ($data['other_charges'] ?? 0);
+        /* The ceiling is a RUPEE one, because the rupee figure is the only one
+           Zoho judges: it converts at the PO's own rate and posts that to the
+           ledger. A cap in the PO's currency would mean something different for
+           every currency — AUD 10bn and USD 10bn are not the same order. */
+        $base = $orderTotal * $fx;   // $fx and $maxTotal come from the rules above
+        if ($base > self::MAX_ZOHO_BASE) {
+            arsort($lineTotals);
+            $worst   = (int) array_key_first($lineTotals);
+            $allowed = $maxTotal;    // the same ceiling said in their currency
+            $errors["lines.$worst.rate"] = [sprintf(
+                'This PO comes to %s in rupees, more than Zoho Books will accept. At an exchange rate of %s the most this PO can be is %s %s — check the rate on this line.',
+                number_format($base, 2),
+                rtrim(rtrim(number_format($fx, 6), '0'), '.'),
+                $ccy, number_format($allowed, 2)
+            )];
+        }
+
         if ($errors) throw ValidationException::withMessages($errors);
 
         $this->inTransaction('save the product lines', function () use ($po, $user, $data, $piItems, $products, $orderedElsewhere) {

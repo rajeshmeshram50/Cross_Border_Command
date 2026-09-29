@@ -410,7 +410,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   };
 
   /** Step 02 as it stands right now — the same check its own save runs. */
-  const checkLines = () => validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids);
+  const checkLines = () => validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids, draft.currency, draft.exchangeRate);
 
   /* Step 02 is not something a later step can leave behind: the stepper lets an
      already-saved PO jump straight to Step 03, which would submit a PO whose
@@ -457,6 +457,10 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     if (!gstCleared) { setGstNotice(gst.notice); return false; }
     const d = await poApi.saveTerms(poId as number, { terms: draft.terms, submit: 'yes' });
     setDetail(d);
+    /* Submitting is what puts the Purchase Order into the supplier's vault, so
+       the vault has to be re-read here — otherwise it opens without the PO that
+       was just submitted, and there is nothing to send for signature from it. */
+    refreshVault();
     toast.success(isEdit ? `${d.code} updated` : `${d.code} submitted`, 'Documents are ready on the next step.');
     return true;
   };
@@ -569,7 +573,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     errors: shown[0] ? { ...serverErrors, ...validateStage1(draft) } : serverErrors,
     ...(() => {
       if (!shown[1]) return { lineErrors: serverLineErrors };
-      const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids);
+      const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids, draft.currency, draft.exchangeRate);
       return { lineErrors: { ...serverLineErrors, ...v.rows }, linesGeneral: v.general };
     })(),
   };

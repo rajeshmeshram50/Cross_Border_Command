@@ -15,6 +15,7 @@ import { vaultTargetOf } from '../supplier-checks';
 import { PoApiError, poDocumentApi, poSignatureApi, type PoDocument } from '../../api/po-api';
 import { formatDmy } from '../../../../../../utils/formatDmy';
 import { FitTip } from '../form-fields';
+import { ShimmerTableRows } from '../../../../../../components/ui/Shimmer';
 import Tooltip from '../../../../../../components/ui/Tooltip';
 import { useToast } from '../../../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../../../contexts/ConfirmContext';
@@ -124,6 +125,8 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   // Load on open — the list also re-reads each sent document's signing status from Zoho.
   const reload = () => {
     if (!poId) { setLoading(false); return; }
+    // The list is redrawn in one go, never row by row as statuses land.
+    setLoading(true);
     poDocumentApi.list(poId).then(setDocs).catch(fail).finally(() => setLoading(false));
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -539,7 +542,7 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
               <thead>
                 <tr>
                   <th className="cdoc-check">
-                    <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={!selectable.length} aria-label="Select all documents" />
+                    <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={loading || !selectable.length} aria-label="Select all documents" />
                   </th>
                   <th>Sr. No</th>
                   <th>Document Code</th>
@@ -553,10 +556,15 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                 </tr>
               </thead>
               <tbody>
-                {docs.length === 0 && (
-                  <tr><td colSpan={10} className="cpd-empty">{loading ? 'Loading documents…' : 'Documents are created when the PO is submitted.'}</td></tr>
+                {/* Nothing of the list until all of it is here. The rows arrive in
+                    one response but their signing statuses are read on the way, so
+                    a list drawn early re-drew as they landed and the Purchase Order
+                    appeared to swap places with the trade documents (#138). */}
+                {loading && <ShimmerTableRows rows={6} cols={10} height={13} keyPrefix="cdoc" />}
+                {!loading && docs.length === 0 && (
+                  <tr><td colSpan={10} className="cpd-empty">Documents are created when the PO is submitted.</td></tr>
                 )}
-                {docs.map((doc, i) => {
+                {!loading && docs.map((doc, i) => {
                   const st = statusLabel(doc);
                   const hasSig = doc.signature_request_id != null;
                   return (
