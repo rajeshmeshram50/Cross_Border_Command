@@ -827,6 +827,12 @@ class PayrollController extends Controller
         // The issue list names employees and carries their pay — an employee
         // tier gets only their own. (#119)
         $selfOnly = $this->selfOnlyEmployeeId($request);
+        $eligibleEmployees = $this->payroll->eligibleEmployees($period);
+        if ($selfOnly !== null) {
+            $eligibleEmployees = $eligibleEmployees
+                ->filter(fn ($employee) => (int) $employee->id === $selfOnly)
+                ->values();
+        }
         if ($run) {
             $slips = Payslip::where('payroll_run_id', $run->id)
                 ->when($selfOnly !== null, fn ($q) => $q->where('employee_id', $selfOnly))
@@ -835,7 +841,7 @@ class PayrollController extends Controller
             // No run yet: dry-running the whole cycle would compute colleagues.
             $slips = collect();
         } else {
-            $slips = $this->payroll->eligibleEmployees($period)->map(function ($e) use ($period) {
+            $slips = $eligibleEmployees->map(function ($e) use ($period) {
                 $data = $this->payroll->computeForEmployee($e, $period);
                 return new Payslip($data + ['employee_id' => $e->id]);
             });
@@ -864,6 +870,7 @@ class PayrollController extends Controller
         return response()->json([
             'data' => [
                 'attendance_finalized' => (bool) $period->attendance_finalized,
+                'eligible_count' => $eligibleEmployees->count(),
                 'issues'         => $issues,
                 'blocked_amount' => round($blockedAmount, 2),
                 'at_risk_amount' => round($atRiskAmount, 2),

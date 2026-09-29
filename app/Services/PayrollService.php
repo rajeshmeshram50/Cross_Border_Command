@@ -1224,20 +1224,6 @@ class PayrollService
                 throw new RuntimeException('Payroll for this period is already approved/paid and cannot be regenerated.');
             }
 
-            $run = $existing ?: new PayrollRun([
-                'client_id'         => $period->client_id,
-                'branch_id'         => $period->branch_id,
-                'payroll_period_id' => $period->id,
-                'created_by'        => $ctx['user_id'] ?? null,
-            ]);
-            $run->status       = 'generated';
-            $run->generated_by = $ctx['user_id'] ?? null;
-            $run->generated_at = now();
-            $run->save();
-
-            // Wipe prior payslips for a clean regenerate (Rule 13).
-            Payslip::where('payroll_run_id', $run->id)->forceDelete();
-
             $employees = $this->eligibleEmployees($period);
 
             // Rule 13 (cross-level) — never let an employee be paid twice in the
@@ -1256,6 +1242,24 @@ class PayrollService
                     $employees = $employees->reject(fn($e) => in_array($e->id, $covered, true))->values();
                 }
             }
+
+            if ($employees->isEmpty()) {
+                throw new RuntimeException('Payroll cannot be processed because no payroll data is available for the selected month.');
+            }
+
+            $run = $existing ?: new PayrollRun([
+                'client_id'         => $period->client_id,
+                'branch_id'         => $period->branch_id,
+                'payroll_period_id' => $period->id,
+                'created_by'        => $ctx['user_id'] ?? null,
+            ]);
+            $run->status       = 'generated';
+            $run->generated_by = $ctx['user_id'] ?? null;
+            $run->generated_at = now();
+            $run->save();
+
+            // Wipe prior payslips for a clean regenerate (Rule 13).
+            Payslip::where('payroll_run_id', $run->id)->forceDelete();
 
             $nameCache = $this->masterNameCaches();
             // Batch the exit lookup ONCE for the whole run instead of querying
