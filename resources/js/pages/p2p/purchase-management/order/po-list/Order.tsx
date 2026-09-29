@@ -2,6 +2,7 @@
 import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import WorklistPager from '../../../../../components/ui/WorklistPager';
+import SearchClear from '../../../../../components/ui/SearchClear';
 import Badge, { type BadgeVariant } from '../../../../../components/ui/Badge';
 import CreatePoModal from '../create-po/CreatePoModal';
 import { FitTip } from '../create-po/form-fields';
@@ -1602,7 +1603,7 @@ export default function Order() {
             })}
           </div>
 
-          <div className="spi-search">
+          <div className="spi-search ui-search-abs">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -1618,6 +1619,8 @@ export default function Order() {
               value={search}
               onChange={(e) => changeSearch(e.target.value)}
             />
+            {/* Emptying it by hand left a filtered list reading as "no orders". */}
+            <SearchClear show={search} onClear={() => changeSearch('')} />
           </div>
 
         </div>

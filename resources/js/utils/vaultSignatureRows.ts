@@ -305,3 +305,70 @@ export function overlayShipmentSigStatus<T extends Record<string, any>>(shipment
     agreements_consignee: overlayArr(s.agreements_consignee),
   }));
 }
+
+/**
+ * Reconcile the signatures on a vault's DEALS with Zoho, and say what moved.
+ *
+ * The vault already refreshes the requests addressed to the party it belongs
+ * to (`party_id` + `model_name`). A per-transaction row, though, can carry a
+ * request that was sent to the OTHER side of the same deal — a customer's
+ * agreement signed by its consignee — and those were never in that scope. So
+ * the stored status stayed `inprogress`, the row read "Pending", and the only
+ * thing that corrected it was opening the Signing Tracker, which asks Zoho
+ * directly and writes the answer back. That is exactly the report: the track
+ * popup says completed while the row behind it still says pending (CS-21).
+ *
+ * Scoped by lead, which is the deal the row belongs to, so every party on it
+ * is covered whoever the request was addressed to. `sync=1` is the same
+ * polling mode the Sales Matrix trade-documents tab uses; the server refreshes
+ * each still-open request from Zoho, downloads a newly signed PDF and its
+ * certificate, and returns the rows as they now stand.
+ *
+ * Returns the refreshed rows, and whether any of them are no longer open —
+ * the caller reloads the vault on that, so the signed date and the signed-file
+ * link come back with it rather than the status alone changing.
+ */
+/* Which deals were asked about recently, so the same question is not put to
+   Zoho twice. Both vault modals can be mounted over one page, and each pass
+   costs a round trip per deal. */
+const recentSyncs = new Map<string, number>();
+const SYNC_GAP_MS = 15000;
+
+export async function syncDealSignatures(
+  get: (leadId: number) => Promise<SigReqRow[]>,
+  leadIds: number[],
+  openIds: number[],
+): Promise<{ rows: SigReqRow[]; settled: boolean }> {
+  const ids = Array.from(new Set(leadIds.filter((n) => Number.isFinite(n) && n > 0)));
+  // A vault can list a lot of deals; refreshing every one of them on open
+  // would be a Zoho round trip each. Only deals with something still open are
+  // worth asking about, and the caller passes those.
+  if (ids.length === 0) return { rows: [], settled: false };
+
+  const now = Date.now();
+  const key = ids.slice().sort((a, b) => a - b).join(',') + '|' + openIds.slice().sort((a, b) => a - b).join(',');
+  const last = recentSyncs.get(key) ?? 0;
+  if (now - last < SYNC_GAP_MS) return { rows: [], settled: false };
+  recentSyncs.set(key, now);
+  // Keep the map from growing over a long session.
+  for (const [k, at] of recentSyncs) if (now - at > SYNC_GAP_MS * 4) recentSyncs.delete(k);
+
+  const open = new Set(openIds.map(Number));
+  const out: SigReqRow[] = [];
+  const seen = new Set<number>();
+  let settled = false;
+
+  const results = await Promise.allSettled(ids.map((id) => get(id)));
+  for (const r of results) {
+    if (r.status !== 'fulfilled') continue;         // one deal failing must not lose the rest
+    for (const row of r.value) {
+      if (!row || row.id == null || seen.has(Number(row.id))) continue;
+      seen.add(Number(row.id));
+      out.push(row);
+      if (open.has(Number(row.id)) && String(row.status ?? '').toLowerCase() !== 'inprogress') {
+        settled = true;
+      }
+    }
+  }
+  return { rows: out, settled };
+}

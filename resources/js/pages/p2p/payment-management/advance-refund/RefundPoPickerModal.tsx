@@ -5,8 +5,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
+import SearchClear from '../../../../components/ui/SearchClear';
 import { useDebouncedValue } from '../../../../hooks/useDebouncedValue';
-import { money, fmtDate } from '../../purchase-management/order/manage-payment/payment-shared';
+import { moneyIn, fmtDate } from '../../purchase-management/order/manage-payment/payment-shared';
 import { refundApi, type RefundEligiblePo } from '../../purchase-management/order/api/po-api';
 import { IcoCheck, IcoChevron, IcoChevronR, IcoSearch, IcoX } from '../../icons';
 import { useEscapeClose } from './useEscapeClose';
@@ -91,7 +92,7 @@ function PoLine({ row, stacked }: { row: RefundEligiblePo; stacked?: boolean }) 
         {stacked && <span className="ord-idcell__date">{fmtDate(row.po_date ?? '')}</span>}
       </span>
       <span className="arf-pick-sup">{row.supplier_name ?? '—'}</span>
-      <span className="arf-pick-paid">{money(row.paid_amount)} <small>paid</small></span>
+      <span className="arf-pick-paid">{moneyIn(row.currency_code ?? 'INR')(row.paid_amount)} <small>paid</small></span>
     </span>
   );
 }
@@ -136,9 +137,12 @@ function PoSelect({ options, value, onChange, q, onQ, loading }: {
           and outside-click handlers can tell it apart. */}
       {open && createPortal(
         <div className="spi-mdl-dd-pop arf-pick-pop" style={{ left: pos.left, top: pos.top, width: pos.width }}>
-          <div className="arf-pick-search">
+          <div className="arf-pick-search ui-search-abs">
             <IcoSearch size={14} />
             <input autoFocus value={q} maxLength={100} onChange={(e) => onQ(e.target.value)} placeholder="Search PO number or supplier…" />
+            {/* The list of POs is short; emptying the box by hand to see it all
+                again was the only way back (CS-558). */}
+            <SearchClear show={q} onClear={() => onQ('')} />
           </div>
           <div className="arf-pick-list">
             {loading

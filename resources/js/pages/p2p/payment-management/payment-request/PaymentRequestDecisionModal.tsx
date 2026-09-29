@@ -39,6 +39,17 @@ const ICON_WALLET = <svg {...ic} width="14" height="14" strokeWidth={2.2}><rect 
 /** `url` is a blob link to the picked file, so the chip can open it (CS-433 / CS-434). */
 type Attached = { name: string; size: number; cam: boolean; url: string };
 
+/* What may be attached to a decision: a scan or a photo of it, nothing else.
+   A Word file was being taken here, and an approval's evidence has to be
+   something that reads the same to everyone who opens it later — a .docx
+   opens differently, or not at all, depending on the machine.
+   `accept` only filters the picker, and the picker can be set back to "All
+   files", so the same list is enforced on what comes back (CS-433). */
+const PROOF_ACCEPT = '.pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg';
+const PROOF_EXT = /\.(pdf|png|jpe?g)$/i;
+const PROOF_MIME = /^(application\/pdf|image\/(png|jpeg))$/i;
+const isProofFile = (f: File) => PROOF_EXT.test(f.name) || PROOF_MIME.test(f.type);
+
 const ROLE_LABEL: Record<string, string> = {
   super_admin: 'Super Admin', client_admin: 'Client Admin', branch_user: 'Branch User', employee: 'Employee',
 };
@@ -114,10 +125,19 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
     el.style.height = `${Math.min(96, Math.max(42, el.scrollHeight))}px`;
   };
   const addFiles = (e: ChangeEvent<HTMLInputElement>, cam: boolean) => {
-    const list = Array.from(e.target.files ?? []).map(f => ({
+    const picked = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    // Anything that is not a PDF or a photo is refused by name, so the user is
+    // told which file was dropped rather than finding it missing (CS-433).
+    const refused = picked.filter(f => !isProofFile(f));
+    const list = picked.filter(isProofFile).map(f => ({
       name: f.name || `photo_${Date.now()}.jpg`, size: f.size, cam, url: URL.createObjectURL(f),
     }));
-    e.target.value = '';
+    if (refused.length) {
+      setError(`Only PDF, PNG and JPG files can be attached — ${refused.map(f => f.name).join(', ')} was not added.`);
+    } else if (list.length) {
+      setError('');
+    }
     if (list.length) setFiles(cur => [...cur, ...list]);
   };
   /** Photos from the live camera arrive as real Files, same as picked ones. */
@@ -286,11 +306,11 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
                   onChange={e => { setNote(e.target.value); grow(e.target); if (e.target.value.trim()) setError(''); }}
                 />
                 <div className="prd-dec__remarkacts">
-                  <button type="button" className="prd-dec__rbtn" title="Attach a file" disabled={saving} onClick={() => fileRef.current?.click()}>{ICON_CLIP}<span>Upload</span></button>
+                  <button type="button" className="prd-dec__rbtn" title="Attach a PDF, PNG or JPG" disabled={saving} onClick={() => fileRef.current?.click()}>{ICON_CLIP}<span>Upload</span></button>
                   <button type="button" className="prd-dec__rbtn" title="Take a photo" disabled={saving} onClick={() => setCamOpen(true)}>{ICON_CAM}<span>Camera</span></button>
                 </div>
               </div>
-              <input ref={fileRef} type="file" multiple hidden onChange={e => addFiles(e, false)} />
+              <input ref={fileRef} type="file" accept={PROOF_ACCEPT} multiple hidden onChange={e => addFiles(e, false)} />
               {files.length > 0 && (
                 <div className="prd-dec__files">
                   {files.map((f, i) => (

@@ -5,7 +5,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { downloadFile } from '../../../../utils/downloadFile';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import { createPortal } from 'react-dom';
-import { Chip, ICON_X, fmtDate, money, shortDate } from '../../purchase-management/order/manage-payment/payment-shared';
+import { Chip, ICON_X, fmtDate, moneyIn, shortDate } from '../../purchase-management/order/manage-payment/payment-shared';
 import type { RecoveryBody } from '../../purchase-management/order/api/po-api';
 import { IcoDownload, IcoEye, IcoSave, IcoTrash, IcoWallet, IcoWarn } from '../../icons';
 import { todayIso, type RefundAdjustment, type RefundRecovery } from './refund-data';
@@ -66,6 +66,8 @@ export default function AddRecoveryModal({ refund, outstanding, initial, onSave,
 
   const room = Math.round((outstanding + (initial?.amount ?? 0)) * 100) / 100;
   const poDate = refund.poInfo?.poDate;
+  // Money on the purchase order, so read in the order's currency, not rupees.
+  const money = moneyIn(refund.poInfo?.currency ?? 'INR');
   const [amount, setAmount] = useState(initial ? String(initial.amount) : '');
   const [date, setDate] = useState(initial?.date || todayIso());
   const [reference, setReference] = useState(initial?.reference ?? '');

@@ -10,7 +10,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { Field, EditSelect } from '../../purchase-management/order/create-po/form-fields';
 import { HeadPill } from '../../purchase-management/order/create-po/CreatePoForm';
-import { money, shortDate } from '../../purchase-management/order/manage-payment/payment-shared';
+import { moneyIn, shortDate } from '../../purchase-management/order/manage-payment/payment-shared';
 import { PoApiError, poLookupApi, refundApi, type SupplierDetail, type ZohoOutcome } from '../../purchase-management/order/api/po-api';
 import { categoryLabel } from '../../purchase-management/order/create-po/supplier-checks';
 import {
@@ -122,6 +122,8 @@ export default function RefundAdjustmentForm({ poId, editId, settledHint, onSave
   // Esc closes the vault first when it is open (it registers its own handler).
   useEscapeClose(vault || saving ? () => {} : onClose);
 
+  // Every figure on this form is money on the purchase order, in its currency.
+  const money = moneyIn(info?.currency ?? edit?.poInfo?.currency ?? 'INR');
   const paid = edit?.paid ?? info?.paid ?? 0;
   const recovered = edit?.recovered ?? 0;
   const locked = !!edit?.amountsLocked;

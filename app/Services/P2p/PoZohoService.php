@@ -2,7 +2,10 @@
 
 namespace App\Services\P2p;
 
+use App\Jobs\AttachP2pPoDocumentToZoho;
+use App\Jobs\AttachPoPaymentProofToZoho;
 use App\Jobs\AttachRefundAdjustmentToZoho;
+use App\Jobs\AttachRefundRecoveryToZoho;
 use App\Models\P2p\PoPayment;
 use App\Models\P2p\PoRefundAdjustment;
 use App\Models\P2p\PoRefundRecovery;
@@ -260,11 +263,13 @@ class PoZohoService
                     'updated_by'            => $userId ?? $po->updated_by,
                 ])->save();
 
-                /* The supplier's currency is in the books now, so it is final —
-                   Zoho will not let a contact's currency change once it carries
-                   transactions. */
+                /* This currency is in the books now, so it is what every later
+                   order on this supplier has to use — Zoho will not let a
+                   contact's currency change once it carries transactions. */
                 if ($po->vendor_id) {
-                    app(VendorCurrencyGuard::class)->markSynced((int) $po->client_id, (int) $po->vendor_id);
+                    app(VendorCurrencyGuard::class)->rememberZohoCurrency(
+                        (int) $po->client_id, (int) $po->vendor_id, (string) ($po->currency_code ?: 'INR'),
+                    );
                 }
             } catch (\Throwable $e) {
                 if ($createdBill) $this->quietly(fn () => $this->books->deleteBill($createdBill), 'bill delete');
@@ -272,6 +277,11 @@ class PoZohoService
                 $po->forceFill(['zoho_status' => 'failed', 'zoho_error' => $e->getMessage()])->save();
                 throw new RuntimeException($this->clean($e));
             }
+
+            /* The Stage 04 PDF onto the Zoho PO and its bill. Queued and after
+               the commit: two uploads must not hold the sync, and a refused
+               file must not undo records that were created fine. */
+            AttachP2pPoDocumentToZoho::dispatch($po->id);
 
             // Payments are best-effort: the bill stays even if one fails, and the row shows why.
             $pay = ['pushed' => 0, 'applied' => 0.0];
@@ -334,6 +344,9 @@ class PoZohoService
                 'zoho_synced_at'      => now(),
                 'zoho_error'          => null,
             ])->saveQuietly();
+
+            // The proof the user uploaded goes onto the bill this payment settled.
+            if (!empty($p->proof_path)) AttachPoPaymentProofToZoho::dispatch($p->id);
 
             $remaining = round($remaining - $amt, 2);
             $result['pushed']++;
@@ -496,6 +509,9 @@ class PoZohoService
                     'zoho_synced_at'   => now(),
                     'zoho_error'       => null,
                 ])->save();
+                /* The refund's own proof onto the credit it came off: a Zoho
+                   refund is a sub-record and takes no attachment of its own. */
+                AttachRefundRecoveryToZoho::dispatch($rec->id);
             } catch (\Throwable $e) {
                 $rec->forceFill(['zoho_sync_status' => 'failed', 'zoho_error' => $this->clean($e)])->save();
                 throw new RuntimeException($this->clean($e));

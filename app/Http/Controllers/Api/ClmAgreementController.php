@@ -47,7 +47,7 @@ class ClmAgreementController extends Controller
      * request exhausts memory/time and crashes with a 500. Above it we return a
      * clean "too large" message instead of letting the process die.
      */
-    private const RENDER_MAX_CHARS = 1000000;   // 1,000,000 chars (~1 MB of HTML)
+    private const RENDER_MAX_CHARS = 1000000;   // 1,000,000 characters of TEXT; formatting does not count (CS-18)
 
     /* ── TYPES ── */
 
@@ -1073,12 +1073,12 @@ class ClmAgreementController extends Controller
 
         // Guard oversized content: past this, PhpWord crashes the request (500).
         // Return a clean message the UI can show instead.
-        if (($len = mb_strlen((string) $row->content)) > self::RENDER_MAX_CHARS) {
+        if (($len = $this->htmlTextLength($row->content)) > $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) {
             return response()->json([
                 'status'  => false,
                 'message' => 'This agreement is too large to generate as a Word file — '
                     . number_format(round($len / 1024 / 1024, 2), 2) . ' MB (' . number_format($len) . ' characters). '
-                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters (~1 MB). Please shorten or split it into smaller agreements.',
+                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters of text. Please shorten or split it into smaller agreements.',
             ], 422);
         }
 
@@ -1145,12 +1145,12 @@ class ClmAgreementController extends Controller
 
         // Guard oversized content: past this, dompdf crashes the request (500).
         // Return a clean message the UI can show instead.
-        if (($len = mb_strlen((string) $row->content)) > self::RENDER_MAX_CHARS) {
+        if (($len = $this->htmlTextLength($row->content)) > $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) {
             return response()->json([
                 'status'  => false,
                 'message' => 'This agreement is too large to generate as a PDF — '
                     . number_format(round($len / 1024 / 1024, 2), 2) . ' MB (' . number_format($len) . ' characters). '
-                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters (~1 MB). Please shorten or split it into smaller agreements.',
+                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters of text. Please shorten or split it into smaller agreements.',
             ], 422);
         }
 
@@ -1264,13 +1264,13 @@ class ClmAgreementController extends Controller
         // Reject a document whose text is over the render cap: it could never be
         // downloaded as PDF/Word afterwards. Drop the stored file and tell the
         // user, instead of leaving un-exportable content in the editor.
-        if (($len = mb_strlen((string) $html)) > self::RENDER_MAX_CHARS) {
+        if (($len = $this->htmlTextLength($html)) > $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) {
             Storage::disk('public')->delete($path);
             return response()->json([
                 'status'  => false,
                 'message' => 'This document is too large — '
                     . number_format(round($len / 1024 / 1024, 2), 2) . ' MB (' . number_format($len) . ' characters). '
-                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters (~1 MB). Please upload a smaller file or split it.',
+                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters of text. Please upload a smaller file or split it.',
             ], 422);
         }
 
@@ -1324,7 +1324,7 @@ class ClmAgreementController extends Controller
 
         /* Same ceiling the download carries. dompdf does not fail gracefully
            past it — it takes the request down with it. */
-        if (($len = mb_strlen($html)) > self::RENDER_MAX_CHARS) {
+        if (($len = $this->htmlTextLength($html)) > $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) {
             return response()->json([
                 'status'  => false,
                 'message' => 'This draft is too large to preview — ' . number_format($len)

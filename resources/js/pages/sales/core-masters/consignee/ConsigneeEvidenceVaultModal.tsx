@@ -16,7 +16,7 @@ import { saveAs } from 'file-saver';
 import api from '../../../../api';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { useToast } from '../../../../contexts/ToastContext';
-import { signatureRequestsToVaultDocs, mergeTradeDocuments, overlayShipmentSigStatus, type SigReqRow } from '../../../../utils/vaultSignatureRows';
+import { signatureRequestsToVaultDocs, mergeTradeDocuments, overlayShipmentSigStatus, syncDealSignatures, type SigReqRow } from '../../../../utils/vaultSignatureRows';
 import { downloadFile, saveApiBlob } from '../../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import SalesCustomerSendForSignatureModal from '../customer/SalesCustomerSendForSignatureModal';
@@ -397,6 +397,63 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
       .then(r => { setSignatureRows(Array.isArray(r.data?.data) ? (r.data.data as SigReqRow[]) : []); })
       .catch(() => { /* keep previous rows on transient failure */ });
   }, [consignee?.db_id]);
+
+  /* The deals' own signatures (CS-21) — the twin of the customer vault's pass.
+   *
+   * The refresh above covers requests addressed to THIS consignee; a
+   * per-transaction row can carry one sent to the customer on the same deal,
+   * and nothing here ever asked Zoho about those. So the row stayed "Pending"
+   * while the Signing Tracker, which asks directly, showed it completed.
+   * Scoped by lead, and only for deals with something still open. */
+  const dealSigSynced = useRef('');
+  useEffect(() => {
+    const deals = (vaultLive?.shipment_agreements ?? []) as VaultShipmentRow[];
+    if (!open || !consignee?.db_id || deals.length === 0) return;
+
+    const openIds: number[] = [];
+    const leadIds: number[] = [];
+    for (const d of deals) {
+      const docs = [
+        ...(d.trade_docs_buyer ?? []), ...(d.trade_docs_consignee ?? []),
+        ...(d.agreements_buyer ?? []), ...(d.agreements_consignee ?? []),
+      ] as VaultShipmentDoc[];
+      /* Same id rule the overlay uses: a per-deal row may carry only the
+         legacy `sig_req_id`, and a row whose request is still open shows
+         "Pending" with no sig_state at all — which is the very row this is
+         here to ask about. */
+      const waiting = docs
+        .map(x => Number((x as any).signature_request_id ?? (x as any).sig_req_id ?? 0))
+        .filter((sid, i) => {
+          if (!(sid > 0)) return false;
+          const st = String((docs[i] as any).sig_state ?? '').toLowerCase();
+          if (st) return st === 'inprogress';
+          return String(docs[i].status ?? '').toLowerCase() === 'pending';
+        });
+      if (waiting.length === 0) continue;
+      leadIds.push(Number(d.id));
+      waiting.forEach(sid => openIds.push(sid));
+    }
+    const key = `${consignee.db_id}:${openIds.sort((a, b) => a - b).join(',')}`;
+    if (openIds.length === 0 || dealSigSynced.current === key) return;
+    dealSigSynced.current = key;
+
+    let cancelled = false;
+    void syncDealSignatures(
+      (leadId) => api.get('/clm/signature-requests', { params: { lead_id: leadId, sync: 1 } })
+        .then(r => (Array.isArray(r.data?.data) ? (r.data.data as SigReqRow[]) : [])),
+      leadIds,
+      openIds,
+    ).then(({ rows, settled }) => {
+      if (cancelled || rows.length === 0) return;
+      setSignatureRows(cur => {
+        const byId = new Map(cur.map(r => [Number(r.id), r]));
+        rows.forEach(r => byId.set(Number(r.id), r));
+        return Array.from(byId.values());
+      });
+      if (settled) void reloadVault();
+    });
+    return () => { cancelled = true; };
+  }, [open, consignee?.db_id, vaultLive, reloadVault]);
 
   /* Send a Zoho reminder for an already-sent (in-progress) trade doc.
    * Returns a promise so the row button can show a busy state. */

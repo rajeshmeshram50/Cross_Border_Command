@@ -508,6 +508,16 @@ export const CLM_CSS = `
 [data-bs-theme="dark"] .clm-pop { background: #0f172a; border-color: rgba(6,182,212,.35); box-shadow: 0 16px 40px rgba(0,0,0,.5); }
 [data-bs-theme="dark"] .clm-pop-title { color: #5eead4; }
 [data-bs-theme="dark"] .clm-pop-row-alt { background: rgba(255,255,255,.04); }
+/* Violet variant — the purple Customer form. Colours live here, not inline, so
+   the striped rows and the pills follow dark mode instead of staying white. */
+.clm-pop-violet { border-color: #ddd6fe; }
+.clm-pop-violet .clm-pop-title { color: #7c3aed; }
+.clm-pop-violet .clm-pop-row-alt { background: #f5f3ff; }
+.clm-pop-pill-violet { display: inline-block; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; font-weight: 500; letter-spacing: .05em; color: #6d28d9; background: linear-gradient(135deg, rgba(124,58,237,.10), rgba(124,58,237,.06)); padding: 4px 9px; border-radius: 7px; border: 1px solid rgba(124,58,237,.25); white-space: normal; word-break: break-word; }
+[data-bs-theme="dark"] .clm-pop-violet { border-color: rgba(139,92,246,.45); }
+[data-bs-theme="dark"] .clm-pop-violet .clm-pop-title { color: #c4b5fd; }
+[data-bs-theme="dark"] .clm-pop-violet .clm-pop-row-alt { background: rgba(139,92,246,.10); }
+[data-bs-theme="dark"] .clm-pop-pill-violet { color: #ddd6fe; background: rgba(139,92,246,.18); border-color: rgba(139,92,246,.40); }
 
 /* Badges */
 .clm-badge {
@@ -1758,6 +1768,13 @@ export function useAutoFitRows(
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
+    /* And again as the page settles. Mount plus one frame missed the strips
+       above the card that change height later — the guide box, and the
+       analytics snapshot that arrives with its data — so the card kept the
+       height computed for the old layout and left a band of dead page between
+       the pager and the footer. Both setters below ignore an unchanged value,
+       so a repeat measure that finds nothing new costs a comparison. */
+    const settle = [120, 350, 800, 1600].map((ms) => window.setTimeout(recompute, ms));
     /* Mount and SETTLED resizes only. Not a ResizeObserver on the page root:
        the "What We Are Doing Here" box animates its height on expand/collapse,
        which fired this every animation frame and visibly disturbed the layout.
@@ -1766,7 +1783,12 @@ export function useAutoFitRows(
     let t: number | undefined;
     const onResize = () => { window.clearTimeout(t); t = window.setTimeout(recompute, 180); };
     window.addEventListener('resize', onResize);
-    return () => { window.removeEventListener('resize', onResize); window.clearTimeout(t); cancelAnimationFrame(raf); };
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.clearTimeout(t);
+      settle.forEach(window.clearTimeout);
+      cancelAnimationFrame(raf);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   return fillH;

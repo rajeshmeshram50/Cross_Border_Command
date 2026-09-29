@@ -3,9 +3,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useDebouncedValue } from '../../../../hooks/useDebouncedValue';
 import { useToast } from '../../../../contexts/ToastContext';
-import { useConfirm } from '../../../../contexts/ConfirmContext';
-import { PoApiError, poPaymentApi, type PayRequestListMeta } from '../../purchase-management/order/api/po-api';
+import { PoApiError, type PayRequestListMeta } from '../../purchase-management/order/api/po-api';
 import WorklistPager from '../../../../components/ui/WorklistPager';
+import SearchClear from '../../../../components/ui/SearchClear';
 import { useFitPageSize } from '../../../../hooks/useFitPageSize';
 import Badge, { type BadgeVariant } from '../../../../components/ui/Badge';
 import { IcoAlert, IcoArrowR, IcoCard, IcoStar, IcoChat, IcoCheck, IcoChevron, IcoCircleX, IcoClock, IcoEye, IcoFile, IcoList, IcoScales, IcoSearch, IcoSend } from '../../icons';
@@ -84,15 +84,11 @@ const COLUMNS: Column[] = [
   { label: 'Action', width: 212 },
 ];
 
-/* The Awaiting tab leads with a tick box, so several requests can be approved in
-   one go instead of opening each one (CS-429), and drops Approved Amount, which
-   nothing awaiting has yet. */
-const PICK_COL: Column = { label: '', width: 44 };
-
+/* The Awaiting tab drops Approved Amount, which nothing awaiting has yet. */
 const columnsFor = (tab: TabKey): Column[] => (tab !== 'awaiting'
   ? COLUMNS
-  : [PICK_COL, ...COLUMNS.filter(c => c.label !== 'Approved Amount')
-    .map(c => (c.label === 'Requested Payment Amount' ? { ...c, groupEnd: true } : c))]);
+  : COLUMNS.filter(c => c.label !== 'Approved Amount')
+    .map(c => (c.label === 'Requested Payment Amount' ? { ...c, groupEnd: true } : c)));
 
 const tableWidth = (cols: Column[]) => cols.reduce((sum, c) => sum + c.width, 0);
 // Eight rows a page, per CS-428.
@@ -157,7 +153,6 @@ function RaisedAgainst({ row }: { row: PaymentRequestRow }) {
 
 export default function PaymentRequestManagement() {
   const toast = useToast();
-  const confirm = useConfirm();
   const [rows, setRows] = useState<PaymentRequestRow[]>([]);
   const [meta, setMeta] = useState<PayRequestListMeta | null>(null);
   const [loading, setLoading] = useState(true);
@@ -203,52 +198,6 @@ export default function PaymentRequestManagement() {
 
   const start = (page - 1) * pageSize;
   const pageRows = rows;
-
-  /* ── Approving several at once (CS-429) ──────────────────────────────────
-     Only the Awaiting tab, and only rows this user may decide: the server
-     refuses anyone else's, so they are not offered a tick box. */
-  const [picked, setPicked] = useState<number[]>([]);
-  const [approving, setApproving] = useState(false);
-  const pickable = useMemo(
-    () => (tab === 'awaiting' ? pageRows.filter(r => r.canDecide && r.status === 'awaiting') : []),
-    [tab, pageRows],
-  );
-  const pickedRows = pickable.filter(r => picked.includes(r.id));
-  const allPicked = pickable.length > 0 && pickedRows.length === pickable.length;
-  // A tick belongs to the rows on screen; changing tab, page or search clears it.
-  useEffect(() => { setPicked([]); }, [tab, debouncedSearch, page, pageSize, shownKey]);
-  const togglePick = (id: number) => setPicked(cur => (cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id]));
-  const toggleAll = () => setPicked(allPicked ? [] : pickable.map(r => r.id));
-
-  const approvePicked = async () => {
-    const list = pickedRows;
-    if (!list.length || approving) return;
-    const ok = await confirm({
-      title: `Approve ${list.length} payment request${list.length === 1 ? '' : 's'}?`,
-      message: `${list.map(r => r.requestId).join(', ')} — each one is approved for the full amount requested. To approve part of an amount, open that request on its own.`,
-      confirmLabel: 'Approve',
-      tone: 'teal',
-      icon: 'check-double-line',
-    });
-    if (!ok) return;
-    setApproving(true);
-    try {
-      const res = await poPaymentApi.decideMany({ ids: list.map(r => r.id), decision: 'approved' });
-      setPicked([]);
-      refresh();
-      if (res.failed.length) {
-        // Each refusal has its own reason — the headroom left on the PO, usually.
-        toast.warning(res.message || 'Some requests could not be approved',
-          res.failed.map(f => `${f.code ?? f.id}: ${f.message}`).join(' · '));
-      } else {
-        toast.success('Payment requests approved', res.message);
-      }
-    } catch (e) {
-      toast.error('Could not approve the selected requests', e instanceof PoApiError ? e.firstError : 'Please try again.');
-    } finally {
-      setApproving(false);
-    }
-  };
 
   const toggleGuide = () => setGuideOpen(v => !v);
   const onGuideKey = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -327,7 +276,7 @@ export default function PaymentRequestManagement() {
             ))}
           </div>
 
-          <div className="spi-search">
+          <div className="spi-search ui-search-abs">
             <IcoSearch />
             <input
               type="text"
@@ -336,24 +285,11 @@ export default function PaymentRequestManagement() {
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
+            {/* Emptying the box by hand left a filtered table reading as "no
+                results" for as long as it took to select and delete. */}
+            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
         </div>
-
-        {/* What is ticked, and the one action on it. It only shows once something
-            is selected, so the list looks no different until then. */}
-        {pickedRows.length > 0 && (
-          <div className="prm-bulkbar" role="status">
-            <span className="prm-bulkbar__n">{pickedRows.length}</span>
-            <span className="prm-bulkbar__t">
-              request{pickedRows.length === 1 ? '' : 's'} selected — approving releases the full amount requested on each
-            </span>
-            <button type="button" className="prm-bulkbar__clear" disabled={approving} onClick={() => setPicked([])}>Clear</button>
-            <button type="button" className="prm-bulkbar__ok" disabled={approving} onClick={() => void approvePicked()}>
-              {approving ? <span className="prm-bulkbar__ring" aria-hidden /> : <IcoCheck size={13} stroke={2.6} />}
-              {approving ? 'Approving…' : `Approve ${pickedRows.length} request${pickedRows.length === 1 ? '' : 's'}`}
-            </button>
-          </div>
-        )}
 
         {loading && (!rows.length || shownKey !== queryKey) ? (
           <PrmListSkeleton columns={columns} />
@@ -370,36 +306,17 @@ export default function PaymentRequestManagement() {
               </colgroup>
               <thead>
                 <tr>
-                  {columns.map(c => (c === PICK_COL ? (
-                    <th key="pick" className="prm-pickcell">
-                      <input type="checkbox" className="prm-pick" aria-label="Select every request on this page"
-                        title={pickable.length ? 'Select every request on this page you can approve' : 'No request here is yours to approve'}
-                        disabled={!pickable.length || approving}
-                        checked={allPicked}
-                        ref={el => { if (el) el.indeterminate = pickedRows.length > 0 && !allPicked; }}
-                        onChange={toggleAll} />
-                    </th>
-                  ) : (
+                  {columns.map(c => (
                     <th key={c.label} className={c.groupEnd ? 'ord-table__group-end' : undefined}>{c.label}</th>
-                  )))}
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {pageRows.map((row, i) => (
                   <tr
                     key={row.id}
-                    className={`is-first is-last prm-row${row.flag === 'physical-inspection' ? ' is-physreq' : ''}${row.status === 'declined' ? ' is-closed' : ''}${picked.includes(row.id) ? ' is-picked' : ''}`}
+                    className={`is-first is-last prm-row${row.flag === 'physical-inspection' ? ' is-physreq' : ''}${row.status === 'declined' ? ' is-closed' : ''}`}
                   >
-                    {tab === 'awaiting' && (
-                      <td className="prm-pickcell">
-                        <input type="checkbox" className="prm-pick"
-                          aria-label={`Select ${row.requestId}`}
-                          title={row.canDecide ? `Select ${row.requestId} to approve` : 'This request was sent to someone else'}
-                          disabled={!row.canDecide || approving}
-                          checked={picked.includes(row.id)}
-                          onChange={() => togglePick(row.id)} />
-                      </td>
-                    )}
                     <td><span className="ord-srnum">{start + i + 1}</span></td>
 
                     <td>

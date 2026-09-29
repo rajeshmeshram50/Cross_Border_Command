@@ -22,6 +22,7 @@ import {
 import type { PoDraft, PoLineRow } from './po-draft';
 import type { SupplierDetail } from '../api/po-api';
 import GstNoticeModal, { type GstNotice } from './GstNoticeModal';
+import CurrencyNoticeModal, { type CurrencyNotice } from './CurrencyNoticeModal';
 // The supplier master's wizard, opened on its GST Scrutiny tab when scrutiny is missing or stale.
 const AddVendorModal = lazy(() => import('../../../p2p-master-management/supplier-management/AddVendorModal'));
 /* Also opened from the Step 03 footer, so the missing paperwork can be filled
@@ -51,6 +52,8 @@ export type StepCtx = {
   /** Saves Step 02's lines and charges without leaving the step. */
   saveLines: () => Promise<void>;
   saving: boolean;
+  /** That save in particular, so only its own button spins (CS-409). */
+  savingLines: boolean;
   /** Re-read the supplier's vault after documents are uploaded from it. */
   refreshVault: () => void;
   /** Re-read the supplier after it is edited — its mapped products drive Stage 02. */
@@ -118,6 +121,8 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   const [saving, setSaving] = useState(false);
   // Save & Next in flight — the step shows the form shimmer until the next one opens.
   const [advancing, setAdvancing] = useState(false);
+  // Step 02's own Save is running, as against the footer's Save & Next.
+  const [savingLines, setSavingLines] = useState(false);
   // Read by the Esc handler, which is bound once and would see a stale `saving`.
   const savingRef = useRef(false);
   savingRef.current = saving;
@@ -147,7 +152,11 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     void vault.then((v) => set({ vault: v, legal: legalFromVault(v) }));
     try {
       const supplier = await poLookupApi.supplier(vendorId);
-      set({ vendorId, supplier });
+      /* A supplier whose currency Zoho already holds answers the field here,
+         rather than leaving the user to guess it and the server to refuse. INR
+         is skipped: an international PO may not use it. */
+      const zohoCcy = (supplier.zohoCurrency ?? '').toUpperCase();
+      set({ vendorId, supplier, ...(zohoCcy && zohoCcy !== 'INR' ? { currency: zohoCcy } : {}) });
       return supplier;
     } catch (e) {
       fail(e);
@@ -241,6 +250,8 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   // beside "Submit PO & Next" on Step 03 — only when the check calls for one.
   const gst = gstCheck(draft);
   const [gstNotice, setGstNotice] = useState<GstNotice | null>(null);
+  // Raised when the server refuses a currency Zoho Books has not enabled.
+  const [ccyNotice, setCcyNotice] = useState<CurrencyNotice | null>(null);
   /* The supplier's one-time paperwork (Company DD, Owner KYC, Trade Licenses),
      read from its Evidence Vault. Incomplete stops the submit on Step 03. */
   const standardDocs = draft.legal?.sections?.[0] ?? null;
@@ -372,10 +383,17 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
       const mapped = err instanceof PoApiError ? stage1FromServer(err.fieldErrors) : {};
       if (!Object.keys(mapped).length) throw err;
       setServerErrors(mapped);
-      /* A supplier trades in one currency (Zoho Books pins its contact to one),
-         and on a domestic PO the currency field is not even on screen — so this
-         one is said out loud rather than only highlighted. */
+      /* A currency Zoho Books has not enabled gets the notice, not a toast: it is
+         fixed in Zoho and then retried, the same shape as the GST block. */
       const clash = err instanceof PoApiError ? err.fieldErrors.currency_code?.[0] : undefined;
+      if (clash && /not .*enabled in Zoho Books/i.test(clash)) {
+        setCcyNotice({
+          currency: draft.currency.toUpperCase(),
+          enabled: draft.supplier?.zohoCurrencies ?? [],
+          supplier: draft.supplier?.name ?? null,
+        });
+        return false;
+      }
       if (clash) {
         toast.error('Supplier currency mismatch', clash);
         scrollToFirstError();
@@ -392,7 +410,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   };
 
   /** Step 02 as it stands right now — the same check its own save runs. */
-  const checkLines = () => validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids);
+  const checkLines = () => validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids, draft.currency, draft.exchangeRate);
 
   /* Step 02 is not something a later step can leave behind: the stepper lets an
      already-saved PO jump straight to Step 03, which would submit a PO whose
@@ -439,6 +457,10 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     if (!gstCleared) { setGstNotice(gst.notice); return false; }
     const d = await poApi.saveTerms(poId as number, { terms: draft.terms, submit: 'yes' });
     setDetail(d);
+    /* Submitting is what puts the Purchase Order into the supplier's vault, so
+       the vault has to be re-read here — otherwise it opens without the PO that
+       was just submitted, and there is nothing to send for signature from it. */
+    refreshVault();
     toast.success(isEdit ? `${d.code} updated` : `${d.code} submitted`, 'Documents are ready on the next step.');
     return true;
   };
@@ -497,16 +519,21 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     }
   };
 
-  // Step 02's own Save button: bank the lines without moving on.
+  /* Step 02's own Save button: bank the lines without moving on.
+     `savingLines` says WHICH save is running, so the footer's Save & Next stays
+     as it is instead of spinning along with a button the user did not press
+     (CS-409). The form is still locked meanwhile — that part is shared. */
   const saveLines = async () => {
     if (saving) return;
     setSaving(true);
+    setSavingLines(true);
     try {
       if (await saveStage2()) toast.success('Product details saved', `${itemsBody(draft).lines.length} line(s) on this PO.`);
     } catch (e) {
       fail(e);
     } finally {
       setSaving(false);
+      setSavingLines(false);
     }
   };
 
@@ -531,7 +558,9 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     else onChangeLink();
   };
   const backLabel = stage > 0 ? 'Back' : poId ? 'Back to List' : 'Change Link';
-  const nextLabel = viewOnly ? (isLast ? 'Close' : 'Next') : saving ? 'Saving…' : isLast && isEdit ? 'Update Purchase Order' : NEXT_LABEL[stage];
+  // The footer spins for its own save only — Step 02's Save has its own button.
+  const footerSaving = saving && !savingLines;
+  const nextLabel = viewOnly ? (isLast ? 'Close' : 'Next') : footerSaving ? 'Saving…' : isLast && isEdit ? 'Update Purchase Order' : NEXT_LABEL[stage];
 
   const code = detail?.code ?? nextCode;
   const refs = {
@@ -540,11 +569,11 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     pi: link.shipment?.pi_number ?? detail?.pi_code ?? null,
     procurement: detail?.procurement_request_code ?? null,
   };
-  const ctx: StepCtx = { lookups, taxMode: draft.docType === 'International' ? 'export' : (detail?.tax_mode ?? 'intra'), piCode: refs.pi, detail, saveLines, saving, refreshVault, reloadSupplier: loadSupplier, reloadSupplierList: lookups.reloadSuppliers, reloadDetail: () => { void reloadApproval(); }, savedLines, piHolders, viewOnly,
+  const ctx: StepCtx = { lookups, taxMode: draft.docType === 'International' ? 'export' : (detail?.tax_mode ?? 'intra'), piCode: refs.pi, detail, saveLines, saving, savingLines, refreshVault, reloadSupplier: loadSupplier, reloadSupplierList: lookups.reloadSuppliers, reloadDetail: () => { void reloadApproval(); }, savedLines, piHolders, viewOnly,
     errors: shown[0] ? { ...serverErrors, ...validateStage1(draft) } : serverErrors,
     ...(() => {
       if (!shown[1]) return { lineErrors: serverLineErrors };
-      const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids);
+      const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids, draft.currency, draft.exchangeRate);
       return { lineErrors: { ...serverLineErrors, ...v.rows }, linesGeneral: v.general };
     })(),
   };
@@ -716,9 +745,9 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
               title={awaitingApproval ? `Waiting for ${detail?.gst_approval?.requested_to_name ?? 'the senior'} to approve — the PO cannot be submitted yet.`
                 : supplierLoading ? 'Applying the supplier — one moment.' : undefined}
             >
-              {saving ? <CpfSpinner /> : isSubmit && <IcoCheck />}
+              {footerSaving ? <CpfSpinner /> : isSubmit && <IcoCheck />}
               {nextLabel}
-              {saving ? null : <IcoChevronR />}
+              {footerSaving ? null : <IcoChevronR />}
             </button>
           </div>
         </div>
@@ -732,6 +761,19 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
       {gstNotice && (
         <GstNoticeModal notice={gstNotice} onClose={() => setGstNotice(null)} poId={poId} approval={approval} onSent={reloadApproval}
           onOpenScrutiny={draft.vendorId ? () => setScrutinyFor(draft.vendorId) : undefined} />
+      )}
+      {ccyNotice && (
+        <CurrencyNoticeModal notice={ccyNotice} onClose={() => setCcyNotice(null)}
+          /* Zoho caches its currency list for an hour, so a currency added just
+             now is read fresh before the save is tried again. */
+          onRetry={async () => {
+            setCcyNotice(null);
+            if (draft.vendorId) {
+              const fresh = await poLookupApi.supplier(draft.vendorId, true).catch(() => null);
+              if (fresh) set({ supplier: fresh });
+            }
+            void saveStage1();
+          }} />
       )}
       {docsNotice && (
         <SupplierDocsNoticeModal notice={docsNotice} onClose={() => setDocsNotice(null)} onVaultChange={refreshVault} />

@@ -146,9 +146,10 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
           gst={gst}
           charges={draft.charges}
           onChange={patchCharges}
+          /* Spins for its own save, not for the footer's (CS-409). */
           action={(
             <button type="button" className="spi-dt-btn-next" disabled={ctx.saving} onClick={() => { void ctx.saveLines(); }}>
-              {ctx.saving && <CpfSpinner />} {ctx.saving ? 'Saving…' : 'Save'}
+              {ctx.savingLines && <CpfSpinner />} {ctx.savingLines ? 'Saving…' : 'Save'}
             </button>
           )}
         />

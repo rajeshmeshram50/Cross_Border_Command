@@ -3,7 +3,10 @@
 namespace App\Services\P2p;
 
 use App\Models\VendorCurrencyLock;
+use App\Services\ZohoBooksService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * A supplier trades in one currency, because Zoho Books pins each contact to one
@@ -36,30 +39,122 @@ class VendorCurrencyGuard
     /**
      * Why this currency cannot be used on this supplier, or null when it can.
      *
-     * The PO being edited is discounted: a draft that is the only thing holding
-     * the currency, and has not reached Zoho Books, may still change it.
+     * Only a currency Zoho Books already holds can refuse one: until a supplier
+     * is in the books nothing is committed anywhere, so its first orders may be
+     * in any currency and the one that syncs first settles it. `$exceptPoId` is
+     * kept for callers; a currency Zoho holds refuses every order alike.
      */
     public function conflict(int $clientId, int $vendorId, ?string $currency, ?int $exceptPoId = null): ?string
     {
         $currency = strtoupper(trim((string) $currency));
         if ($currency === '') return null;
 
+        $locked = $this->settledCurrency($clientId, $vendorId);
+        if ($locked === null || $locked === $currency) return null;
+
         $lock = $this->lockFor($clientId, $vendorId);
-        if (!$lock) return null;
+        $by = ($lock?->po_codes[0] ?? null) ?: null;
 
-        $locked = strtoupper(trim((string) $lock->currency_code));
-        if ($locked === $currency) return null;
+        return "This supplier trades in {$locked} — a {$currency} purchase order cannot be raised on it."
+            . ($by ? " {$by} is already in Zoho Books," : ' It is already in Zoho Books,')
+            . " and a contact's currency cannot change once it carries transactions.";
+    }
 
-        // Nothing but this PO holds the currency, and it never reached the books.
-        $held = array_values(array_filter($lock->po_ids ?? [], fn ($id) => (int) $id !== (int) $exceptPoId));
-        if (!$held && !$lock->isSynced()) return null;
+    /**
+     * The currency a transaction of ours has already put in Zoho Books, or null.
+     * This one refuses: a contact carrying a transaction cannot change currency.
+     *
+     * Deliberately not the currency merely *shown* on a contact. Every contact
+     * made before we started sending one reads INR whether or not anyone chose
+     * it, and an international PO may not be in INR — so refusing on a reading
+     * would leave such a supplier with no usable currency at all.
+     */
+    public function settledCurrency(int $clientId, int $vendorId): ?string
+    {
+        $lock = $this->lockFor($clientId, $vendorId);
 
-        $by = ($lock->po_codes[0] ?? null) ?: 'its first order';
-        $set = $lock->isSynced()
-            ? " {$by} is already in Zoho Books, and a contact's currency cannot change once it carries transactions."
-            : " It was set by {$by}.";
+        return $lock && $lock->isSynced() ? strtoupper(trim((string) $lock->currency_code)) : null;
+    }
 
-        return "This supplier trades in {$locked} — a {$currency} purchase order cannot be raised on it." . $set;
+    /** The order that put that currency in the books, so a refusal can name it. */
+    public function settledByPo(int $clientId, int $vendorId): ?string
+    {
+        $lock = $this->lockFor($clientId, $vendorId);
+
+        return $lock && $lock->isSynced() ? (($lock->po_codes[0] ?? null) ?: null) : null;
+    }
+
+    /**
+     * The currency Zoho Books shows for this supplier, settled or not — what the
+     * form offers as the supplier is picked. Null = not in the books yet.
+     *
+     * Answered from our own row when there is one. A contact made by another
+     * module's sync (a supplier invoice, a debit note) leaves no row, so Zoho is
+     * asked once and the answer kept, rather than called on every save.
+     */
+    public function currencyInZoho(int $clientId, int $vendorId): ?string
+    {
+        $lock = $this->lockFor($clientId, $vendorId);
+        if ($lock) return strtoupper(trim((string) $lock->currency_code));
+
+        $contactId = DB::table('vendors')->where('id', $vendorId)->value('zoho_contact_id');
+        if (!$contactId) return null;
+
+        $key = 'vendor_zoho_ccy:' . $clientId . ':' . $vendorId;
+        $code = Cache::remember($key, now()->addMinutes(30), function () use ($contactId, $vendorId) {
+            try {
+                $books = app(ZohoBooksService::class);
+                if (!$books->isConfigured()) return '';
+
+                return strtoupper(trim((string) ($books->contactCurrency((string) $contactId) ?? '')));
+            } catch (\Throwable $e) {
+                /* Zoho unreachable, or the contact deleted there. Neither is a
+                   reason to refuse a purchase order — the sync will say so if it
+                   still matters, and findOrCreateVendorId heals a stale contact. */
+                Log::warning('Vendor currency: Zoho contact unreadable', ['vendor' => $vendorId, 'err' => $e->getMessage()]);
+                return '';
+            }
+        });
+
+        if ($code === '') return null;
+        /* Kept so the next Stage 01 answers from here instead of calling Zoho —
+           as a reading, not as settled. Only a transaction of ours settles it. */
+        $this->rememberZohoCurrency($clientId, $vendorId, $code, false);
+
+        return $code;
+    }
+
+    /**
+     * Record the currency Zoho Books holds for this supplier. `$settled` says a
+     * transaction of ours put it there, which is what makes it refuse later
+     * orders; a plain reading of the contact does not.
+     */
+    public function rememberZohoCurrency(int $clientId, int $vendorId, string $currency, bool $settled = true): void
+    {
+        $currency = strtoupper(trim($currency));
+        if ($currency === '') return;
+
+        // The row is the answer now, so the cached read must not outlive it.
+        Cache::forget('vendor_zoho_ccy:' . $clientId . ':' . $vendorId);
+
+        $lock = $this->lockFor($clientId, $vendorId);
+        if ($lock) {
+            // Settled once, settled for good — a later reading cannot undo it.
+            $attrs = ['currency_code' => $currency];
+            if ($settled) $attrs['zoho_synced'] = VendorCurrencyLock::SYNCED_YES;
+            $lock->forceFill($attrs)->save();
+            return;
+        }
+
+        VendorCurrencyLock::withoutGlobalScope('tenant')->create([
+            'client_id'     => $clientId,
+            'vendor_id'     => $vendorId,
+            'supplier_code' => DB::table('vendors')->where('id', $vendorId)->value('vendor_code'),
+            'po_ids'        => [],
+            'po_codes'      => [],
+            'currency_code' => $currency,
+            'zoho_synced'   => $settled ? VendorCurrencyLock::SYNCED_YES : VendorCurrencyLock::SYNCED_NO,
+        ]);
     }
 
     /**
@@ -112,15 +207,6 @@ class VendorCurrencyGuard
         $lock->po_ids = array_values($ids);
         $lock->po_codes = array_values(array_unique($codes));
         $lock->save();
-    }
-
-    /** This supplier's currency is now in Zoho Books, so it can no longer be undone. */
-    public function markSynced(int $clientId, int $vendorId): void
-    {
-        VendorCurrencyLock::withoutGlobalScope('tenant')
-            ->where('client_id', $clientId)
-            ->where('vendor_id', $vendorId)
-            ->update(['zoho_synced' => VendorCurrencyLock::SYNCED_YES, 'updated_at' => now()]);
     }
 
     /**

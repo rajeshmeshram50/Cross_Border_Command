@@ -15,10 +15,11 @@ import { vaultTargetOf } from '../supplier-checks';
 import { PoApiError, poDocumentApi, poSignatureApi, type PoDocument } from '../../api/po-api';
 import { formatDmy } from '../../../../../../utils/formatDmy';
 import { FitTip } from '../form-fields';
+import { ShimmerTableRows } from '../../../../../../components/ui/Shimmer';
 import Tooltip from '../../../../../../components/ui/Tooltip';
 import { useToast } from '../../../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../../../contexts/ConfirmContext';
-import { IcoCertificate, IcoChevron, IcoDownload, IcoEye, IcoFolder, IcoHistory, IcoMail, IcoSend, IcoShield } from '../../shared/icons';
+import { IcoBell, IcoCertificate, IcoChevron, IcoDownload, IcoEye, IcoFolder, IcoHistory, IcoMail, IcoSend, IcoShield } from '../../shared/icons';
 
 const SupplierEvidenceVaultModal = lazy(() => import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 const warmVault = () => { void import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'); };
@@ -54,14 +55,23 @@ const libraryOf = (doc: PoDocument): 'trade' | 'agreement' | null =>
 /* Why the signed-only actions are greyed out, shown on hover. */
 const NOT_SIGNED_YET = 'Available once the document is signed';
 
+/** The last request came back unsigned, so the row is free to go out again. */
+const needsResend = (doc: PoDocument) => {
+  if (doc.status === 'signed' || doc.status === 'sent') return false;
+  const sig = (doc.signature_status ?? '').toLowerCase();
+  return ['declined', 'rejected', 'recalled', 'expired'].includes(sig);
+};
+
 /** Status pill text — a request that came back declined / recalled says so. */
 function statusLabel(doc: PoDocument): { text: string; tone: 'signed' | 'pending' } {
   if (doc.status === 'signed') return { text: 'Signed', tone: 'signed' };
   if (doc.status === 'sent') return { text: 'Sent for Signature', tone: 'pending' };
   const sig = (doc.signature_status ?? '').toLowerCase();
-  if (['declined', 'rejected'].includes(sig)) return { text: 'Declined · Resend', tone: 'pending' };
-  if (sig === 'recalled') return { text: 'Recalled · Resend', tone: 'pending' };
-  if (sig === 'expired') return { text: 'Expired · Resend', tone: 'pending' };
+  /* The state alone. "· Resend" was here when the row had no Resend button of
+     its own; it has one now, so the pill was saying it twice. */
+  if (['declined', 'rejected'].includes(sig)) return { text: 'Declined', tone: 'pending' };
+  if (sig === 'recalled') return { text: 'Recalled', tone: 'pending' };
+  if (sig === 'expired') return { text: 'Expired', tone: 'pending' };
   return { text: 'Pending', tone: 'pending' };
 }
 
@@ -100,6 +110,14 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   /* Our own files (the Purchase Order PDF, anything uploaded here) — they have
      no library row, so they go through this module's own send. */
   const [rawSigning, setRawSigning] = useState<PoDocument[] | null>(null);
+  /* The Purchase Order riding along in a CLM envelope, when it was ticked
+     together with library rows. Its PDF is attached, not re-rendered. */
+  const [bundlePoDoc, setBundlePoDoc] = useState<PoDocument | null>(null);
+  /** What a row is called wherever it is listed: the Purchase Order by its PO
+   *  number, the rest by their own code. A supplier holding several orders can
+   *  only tell them apart by that number. */
+  const signCode = (d: PoDocument) =>
+    d.doc_kind === 'purchase_order' ? (ctx.detail?.code ?? d.code) : d.code;
 
   const fail = (e: unknown) => {
     if (e instanceof PoApiError) toast.error(`${e.action} failed`, e.firstError);
@@ -109,6 +127,8 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   // Load on open — the list also re-reads each sent document's signing status from Zoho.
   const reload = () => {
     if (!poId) { setLoading(false); return; }
+    // The list is redrawn in one go, never row by row as statuses land.
+    setLoading(true);
     poDocumentApi.list(poId).then(setDocs).catch(fail).finally(() => setLoading(false));
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -256,6 +276,15 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
     saveBlob(await poSignatureApi.certificate(doc.signature_request_id), `Certificate_${doc.code.replace(/\//g, '_')}.pdf`);
   });
 
+  /* A document out for signature had nowhere to chase it from — the Evidence
+     Vault offers a reminder, this list did not, so the only way to nudge a
+     supplier was to leave the PO. Same endpoint the vault uses. */
+  const remind = (doc: PoDocument) => run(`rem:${doc.id}`, async () => {
+    if (doc.signature_request_id == null) return;
+    await poSignatureApi.remind(doc.signature_request_id);
+    toast.success('Reminder sent', `${supplierName} has been reminded to sign ${doc.name}.`);
+  });
+
   const chosen = docs.filter((d) => selected.includes(d.id));
   // Email sends stored files; the Purchase Order's is rendered on demand.
   const noFile = chosen.filter((d) => !d.file_path && d.doc_kind !== 'purchase_order');
@@ -263,7 +292,11 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   const supplierName = draft.supplier?.name ?? 'the supplier';
   const supplierEmail = draft.supplier?.email ?? '';
 
-  const sendForSignature = () => {
+  /* `rows` lets a single row resend itself without waiting on the selection
+     state to settle; the footer passes nothing and the whole ticked set goes. */
+  const sendForSignature = (rows?: PoDocument[]) => {
+    const chosen = rows ?? docs.filter((d) => selected.includes(d.id));
+    const notPending = chosen.filter((d) => d.status !== 'pending');
     if (notPending.length) { toast.warning('Already sent', `${notPending.map((d) => d.name).join(', ')} is already sent or signed.`); return; }
     const unneeded = chosen.filter((d) => !isNeeded(d));
     if (unneeded.length) {
@@ -277,11 +310,16 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
 
     if (lib.length) {
       if (!vaultTarget?.db_id) { toast.error('Supplier required', 'Select a supplier before sending documents for signature.'); return; }
-      // Our own files cannot ride in a CLM envelope — that request is built
-      // from the library, not from an upload. Say so rather than dropping them.
-      if (own.length) {
-        toast.info('Sent separately', `${own.map((d) => d.name).join(', ')} is not a library document — send it on its own after this.`);
+      /* The Purchase Order rides in the SAME envelope: its PDF is already on
+         disk, so the send attaches it rather than rendering it, and the supplier
+         gets one email for the whole set. Anything else of ours has no library
+         row and nothing generated, so it still goes on its own. */
+      const poRow = own.find((d) => d.doc_kind === 'purchase_order');
+      const rest = own.filter((d) => d.doc_kind !== 'purchase_order');
+      if (rest.length) {
+        toast.info('Sent separately', `${rest.map((d) => d.name).join(', ')} is not a library document — send it on its own after this.`);
       }
+      setBundlePoDoc(poRow ?? null);
       setSigning({
         rows: lib,
         trade: lib.filter((d) => libraryOf(d) === 'trade').map((d) => d.source_id as number),
@@ -301,6 +339,13 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
     void run('sign', async () => {
       setRawSigning(await Promise.all(own.map(ensureFile)));
     });
+  };
+
+  /* Resend one row: select just it and run the same send, so a resend and a
+     first send are the one code path — no second way for them to diverge. */
+  const resendOne = (doc: PoDocument) => {
+    setSelected([doc.id]);
+    sendForSignature([doc]);
   };
 
   const sendEmail = () => {
@@ -388,10 +433,20 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
             customer={vaultTarget}
             preselectedDocIds={signing.trade}
             mixedAgreements={signing.agreements}
-            onClose={() => setSigning(null)}
+            /* The Purchase Order as one more document in this envelope. The
+               preview is the stored PDF, so it costs no render. */
+            bundlePo={bundlePoDoc && poId ? {
+              id: bundlePoDoc.id,
+              kind: 'p2p',
+              code: ctx.detail?.code ?? bundlePoDoc.code,
+              name: `Purchase Order · ${ctx.detail?.code ?? bundlePoDoc.code}`,
+              previewUrl: `/p2p/orders/${poId}/documents/${bundlePoDoc.id}/download`,
+            } : null}
+            onClose={() => { setSigning(null); setBundlePoDoc(null); }}
             onSent={(_ids, signatureRequestId) => {
-              const sent = signing.rows.map((d) => d.id);
+              const sent = [...signing.rows, ...(bundlePoDoc ? [bundlePoDoc] : [])].map((d) => d.id);
               setSigning(null);
+              setBundlePoDoc(null);
               setSelected((all) => all.filter((id) => !sent.includes(id)));
               /* Record which request went out for THESE rows. The CLM request
                  knows nothing about a purchase order, so without this the only
@@ -425,12 +480,15 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
             }}
             rawPdfContext={{
               docId: rawSigning[0].id,
-              code: rawSigning[0].code,
+              /* The Purchase Order is named by its PO number here too: the panel
+                 lists what is going out, and a supplier with several orders can
+                 only tell them apart by that. */
+              code: signCode(rawSigning[0]),
               title: rawSigning[0].name,
               previewUrl: `/p2p/orders/${poId}/documents/${rawSigning[0].id}/download`,
               docs: rawSigning.map((d) => ({
                 docId: d.id,
-                code: d.code,
+                code: signCode(d),
                 title: d.name,
                 previewUrl: `/p2p/orders/${poId}/documents/${d.id}/download`,
               })),
@@ -486,7 +544,7 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
               <thead>
                 <tr>
                   <th className="cdoc-check">
-                    <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={!selectable.length} aria-label="Select all documents" />
+                    <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={loading || !selectable.length} aria-label="Select all documents" />
                   </th>
                   <th>Sr. No</th>
                   <th>Document Code</th>
@@ -500,10 +558,15 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                 </tr>
               </thead>
               <tbody>
-                {docs.length === 0 && (
-                  <tr><td colSpan={10} className="cpd-empty">{loading ? 'Loading documents…' : 'Documents are created when the PO is submitted.'}</td></tr>
+                {/* Nothing of the list until all of it is here. The rows arrive in
+                    one response but their signing statuses are read on the way, so
+                    a list drawn early re-drew as they landed and the Purchase Order
+                    appeared to swap places with the trade documents (#138). */}
+                {loading && <ShimmerTableRows rows={6} cols={10} height={13} keyPrefix="cdoc" />}
+                {!loading && docs.length === 0 && (
+                  <tr><td colSpan={10} className="cpd-empty">Documents are created when the PO is submitted.</td></tr>
                 )}
-                {docs.map((doc, i) => {
+                {!loading && docs.map((doc, i) => {
                   const st = statusLabel(doc);
                   const hasSig = doc.signature_request_id != null;
                   return (
@@ -514,11 +577,20 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                           title={isSettled(doc) ? 'Already sent for signature — nothing more to do on this row' : undefined} />
                       </td>
                       <td>{i + 1}</td>
-                      {/* The CLM master's own code is what the libraries call this
-                          document; our row code stands in for the Purchase Order. */}
+                      {/* A library row is known by its CLM master code. The Purchase
+                          Order is known by its PO number — that is what anyone
+                          looking for it has in hand, not the row's own doc code. */}
                       <td>
-                        <Tooltip label={doc.master_code ? `CLM master ${doc.master_code} · this PO's copy is ${doc.code}` : `This PO's document ${doc.code}`} themed>
-                          <span className="cpd-code">{doc.master_code ?? doc.code}</span>
+                        <Tooltip
+                          label={doc.doc_kind === 'purchase_order'
+                            ? `Purchase order ${ctx.detail?.code ?? ''} · this row is ${doc.code}`
+                            : doc.master_code ? `CLM master ${doc.master_code} · this PO's copy is ${doc.code}` : `This PO's document ${doc.code}`}
+                          themed>
+                          <span className="cpd-code">
+                            {doc.doc_kind === 'purchase_order'
+                              ? (ctx.detail?.code ?? doc.code)
+                              : (doc.master_code ?? doc.code)}
+                          </span>
                         </Tooltip>
                       </td>
                       <td className="cpd-td-left">
@@ -529,15 +601,19 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                           <span className={`cdoc-kind${isAgreement(doc) ? ' cdoc-kind--agr' : ''}`}>
                             {isAgreement(doc) ? 'Agreement' : 'Trade Document'}
                           </span>
-                          {doc.doc_kind === 'purchase_order' ? (ctx.detail?.code ?? '') : doc.doc_sub}
+                          {/* The PO number moved up to the code column, so the row's
+                              own document code is kept here rather than lost. */}
+                          {doc.doc_kind === 'purchase_order' ? doc.code : doc.doc_sub}
                         </div>
                       </td>
                       <td>
                         {isMandatory(doc) || isSettled(doc) ? (
                           <Tooltip label={isMandatory(doc)
                             ? 'The Purchase Order always goes with the order — it cannot be marked not necessary'
-                            : 'Already sent for signature — it stays Necessary'} themed>
-                            <span className="cdoc-req">NECESSARY</span>
+                            : 'Already sent for signature — what it was marked no longer changes'} themed>
+                            {/* It said NECESSARY whatever the row held, so a document
+                                sent while Not necessary read as the opposite. */}
+                            <span className="cdoc-req">{isNeeded(doc) ? 'NECESSARY' : 'NOT NECESSARY'}</span>
                           </Tooltip>
                         ) : selected.includes(doc.id) ? (
                           /* Ticking a row is already the "I am dealing with this
@@ -587,6 +663,28 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                             title={isSigned(doc) ? undefined : NOT_SIGNED_YET} onClick={() => downloadSigned(doc)}>
                             <IcoDownload size={13} /> Download Signed Document
                           </button>
+                          {/* A request that came back declined, recalled or expired
+                              leaves the row pending again. Ticking it and using the
+                              footer worked, but nothing on the row said so — the
+                              Sales Matrix offers "Resend for Sign" in place, and
+                              this is the same thing (CS-414). */}
+                          {needsResend(doc) && (
+                            <button type="button" className="cdoc-btn cdoc-btn--resend"
+                              disabled={busy === 'sign'}
+                              title={`${statusLabel(doc).text} — send it for signature again`}
+                              onClick={() => resendOne(doc)}>
+                              <IcoSend size={13} /> Resend for Sign
+                            </button>
+                          )}
+                          {/* Out for signature and nothing back yet — chase it. */}
+                          {doc.status === 'sent' && doc.signature_request_id != null && (
+                            <button type="button" className="cdoc-btn cdoc-btn--remind"
+                              disabled={busy === `rem:${doc.id}`}
+                              title={`Remind ${supplierName} to sign ${doc.name}`}
+                              onClick={() => remind(doc)}>
+                              <IcoBell size={13} /> {busy === `rem:${doc.id}` ? 'Sending…' : 'Send Reminder'}
+                            </button>
+                          )}
                           {/* Where this document sits in the Zoho Sign journey. */}
                           <button type="button" className="cdoc-icobtn" disabled={!hasSig}
                             title={hasSig ? 'Signing Tracker' : 'Available once sent for signature'} aria-label="Signing Tracker"
@@ -629,7 +727,7 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
             <button type="button" className="cdoc-send cdoc-send--sign"
               disabled={!chosen.some(isNeeded) || busy === 'sign'}
               title={chosen.length && !chosen.some(isNeeded) ? 'Only necessary documents can be sent for signature — mark them Necessary first' : undefined}
-              onClick={sendForSignature}>
+              onClick={() => sendForSignature()}>
               <IcoSend size={13} /> {busy === 'sign' ? 'Preparing PO…' : 'Send Selected for Signature'}
             </button>
           </div>

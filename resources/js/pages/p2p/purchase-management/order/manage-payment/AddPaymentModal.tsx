@@ -168,9 +168,16 @@ export default function AddPaymentModal({
       document.removeEventListener('mousedown', onDown);
     };
   }, [pickAt]);
-  /** One proof, whether it was picked off the disk or shot here. */
+  /** One proof, whether it was picked off the disk or shot here.
+   *  The input's `accept` is only a hint to the file picker — a drag onto the
+   *  drop zone, or "All files" in the dialog, walked a .docx straight in
+   *  (CS-422). The type is checked here, where every route converges. */
   const takeProof = (f: File | null) => {
     if (!f) return;
+    if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) {
+      fail('proof', 'Proof of payment must be a PDF, JPG or PNG — Word and Excel files are not accepted.');
+      return;
+    }
     setUpload(f);
     setFile(f.name || `photo_${Date.now()}.jpg`);
     clearErrors();
@@ -186,9 +193,19 @@ export default function AddPaymentModal({
       fail('amount', `Only ${money(room)} is still approved and unreleased on this request.`);
       return;
     }
+    /* Money leaving the business is evidenced, not asserted: the reference and
+       the proof are what reconcile a release against the bank, so neither is
+       optional any more (CS-422). An edit that already carries a proof keeps it
+       — `shownFile` covers the stored one as well as a newly picked file. */
     const ref = utr.trim();
-    if (ref && !/^[A-Za-z0-9]{6,22}$/.test(ref)) { fail('utr', 'UTR / cheque number must be 6–22 letters or digits.'); return; }
+    if (!ref) { fail('utr', 'Enter the UTR / cheque number for this payment.'); return; }
+    if (!/^[A-Za-z0-9]{6,22}$/.test(ref)) { fail('utr', 'UTR / cheque number must be 6–22 letters or digits.'); return; }
     if (date && date > new Date().toISOString().slice(0, 10)) { fail('date', 'UTR / cheque date cannot be in the future.'); return; }
+    if (!shownFile) { fail('proof', 'Attach the proof of payment — a PDF, JPG or PNG.'); return; }
+    if (upload && !/\.(pdf|jpe?g|png)$/i.test(upload.name)) {
+      fail('proof', 'Proof of payment must be a PDF, JPG or PNG — Word and Excel files are not accepted.');
+      return;
+    }
     if (upload && upload.size > 10 * 1024 * 1024) { fail('proof', 'Proof of payment must be 10 MB or smaller.'); return; }
     setSaving(true);
     try {

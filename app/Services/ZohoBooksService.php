@@ -823,6 +823,44 @@ TIN: " . $tin);
         }
     }
 
+    /**
+     * The currency a Zoho contact is pinned to, or null when it cannot be read.
+     * Throws nothing of its own: a deleted or unreachable contact is not an
+     * answer, and the caller decides what to do with that.
+     */
+    public function contactCurrency(string $contactId): ?string
+    {
+        $contact = $this->get('contacts/' . rawurlencode($contactId))['contact'] ?? null;
+        $code = strtoupper(trim((string) ($contact['currency_code'] ?? '')));
+
+        return $code === '' ? null : $code;
+    }
+
+    /** Drop the cached currency list, so one just added in Zoho is seen at once. */
+    public function forgetCurrencyCache(): void
+    {
+        Cache::forget('zoho_books_ccy_map:' . $this->orgId);
+    }
+
+    /**
+     * The ISO codes this org has enabled, as a plain sorted list. Empty when
+     * Zoho cannot be reached — the caller falls back rather than offering none.
+     */
+    public function enabledCurrencies(): array
+    {
+        try {
+            if (!$this->isConfigured()) return [];
+            $codes = array_values(array_filter(array_keys($this->currencyMap())));
+            sort($codes);
+
+            return $codes;
+        } catch (\Throwable $e) {
+            Log::warning('Zoho Books: currency list unreadable', ['err' => $e->getMessage()]);
+
+            return [];
+        }
+    }
+
     /** The ISO codes this Zoho org actually has enabled, code => currency_id. */
     public function currencyMap(): array
     {

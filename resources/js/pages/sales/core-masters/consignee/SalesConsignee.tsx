@@ -34,6 +34,7 @@ const ConsigneeEvidenceVaultModal = lazyPage(() => import('./ConsigneeEvidenceVa
 import { readCustomerMasterBundle, writeCustomerMasterBundle } from '../customer/customerBundleCache';
 import SearchClear from '../../../../components/ui/SearchClear';
 import { lazyPage } from '../../../../utils/lazyPage';
+import useDismissPopover from '../../../../hooks/useDismissPopover';
 const RISK_COLORS: Record<string, { bg: string; color: string; dot: string }> = {
   'Low':    { bg:'rgba(34,197,94,0.12)',  color:'#16a34a', dot:'#10b981' },
   'Medium': { bg:'rgba(245,158,11,0.14)', color:'#d97706', dot:'#f59e0b' },
@@ -120,26 +121,10 @@ export default function SalesConsignee() {
   // Customer ID "+N" (the latter shows only the mapped customer IDs, not the
   // full Map-Customer popup — QA #22). `title` labels the popover header.
   const [segOpen, setSegOpen] = useState<{ id: string | number; names: string[]; x: number; y: number; title?: string } | null>(null);
-  // The segments popover is pinned to fixed x/y captured on click; a resize
-  // (maximize/minimize/zoom) or scroll makes those coords stale and the popover
-  // drifts away from its badge. Close it on either so it never shows stranded.
-  useEffect(() => {
-    if (!segOpen) return;
-    const close = () => setSegOpen(null);
-    // Close on a PAGE/table scroll (coords go stale), but NOT when the user is
-    // scrolling the long list INSIDE the popover itself.
-    const onScroll = (e: Event) => {
-      const t = e.target as HTMLElement | null;
-      if (t && typeof t.closest === 'function' && t.closest('.smcg-seg-pop')) return;
-      setSegOpen(null);
-    };
-    window.addEventListener('resize', close);
-    window.addEventListener('scroll', onScroll, true);
-    return () => {
-      window.removeEventListener('resize', close);
-      window.removeEventListener('scroll', onScroll, true);
-    };
-  }, [segOpen]);
+  /* Pinned to fixed x/y captured on click, so anything that moves the badge
+     underneath leaves it stranded: a scroll, a resize, Escape, or the list
+     changing under it (CS-31/35). Scrolling inside the popover is not a move. */
+  useDismissPopover(!!segOpen, () => setSegOpen(null), { inside: '.smcg-seg-pop', watch: q });
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<ConsigneeRow | null>(null);
   const [rows, setRows] = useState<ConsigneeRow[]>([]);

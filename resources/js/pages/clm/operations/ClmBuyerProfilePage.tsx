@@ -10,6 +10,7 @@ import { useScrollLock } from '../../../hooks/useScrollLock';
 import { ShimmerTableRows } from '../../../components/ui/Shimmer';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import { PER_PAGE, useAutoFitRows } from '../shared/clmShared';
+import useDismissPopover from '../shared/useDismissPopover';
 import SearchClear from '../../../components/ui/SearchClear';
 
 /*
@@ -198,15 +199,38 @@ function useDynamicPerPage(
 
       const avail = window.innerHeight - top - footerH - gap;
       const rows = Math.floor(avail / rowH);
-      setPerPage(Number.isFinite(rows) ? Math.max(min, rows) : BP_PER_PAGE);
+      const next = Number.isFinite(rows) ? Math.max(min, rows) : BP_PER_PAGE;
+      setPerPage((prev) => (prev === next ? prev : next));
     };
-    calc();
-    const t = window.setTimeout(calc, 80); // re-measure after layout settles
-    window.addEventListener('resize', calc);
-    return () => { window.clearTimeout(t); window.removeEventListener('resize', calc); };
+    return settle(calc);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   return perPage;
+}
+
+/* Measure now, then again as the page settles.
+ *
+ * One pass at mount plus one at 80ms was not enough: the strips above the card
+ * (the guide box, the analytics snapshot, which arrives with its data) change
+ * height after that, the card keeps the height computed for the old layout, and
+ * a band of dead page is left between the pager and the footer. Re-measuring on
+ * a short schedule costs nothing — every caller only sets state when the number
+ * actually changes — and it catches whatever settles late.
+ *
+ * Returns the cleanup for useEffect. */
+function settle(calc: () => void): () => void {
+  calc();
+  const raf = requestAnimationFrame(calc);
+  const timers = [120, 350, 800, 1600].map((ms) => window.setTimeout(calc, ms));
+  let debounce: number | undefined;
+  const onResize = () => { window.clearTimeout(debounce); debounce = window.setTimeout(calc, 150); };
+  window.addEventListener('resize', onResize);
+  return () => {
+    cancelAnimationFrame(raf);
+    timers.forEach(window.clearTimeout);
+    window.clearTimeout(debounce);
+    window.removeEventListener('resize', onResize);
+  };
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -223,12 +247,10 @@ function useFillHeight(
       const el = ref.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      setH(Math.max(min, Math.round(window.innerHeight - top - gap)));
+      const next = Math.max(min, Math.round(window.innerHeight - top - gap));
+      setH((prev) => (prev === next ? prev : next));
     };
-    calc();
-    const t = window.setTimeout(calc, 80);
-    window.addEventListener('resize', calc);
-    return () => { window.clearTimeout(t); window.removeEventListener('resize', calc); };
+    return settle(calc);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   return h;
@@ -764,23 +786,17 @@ export default function ClmBuyerProfilePage() {
   // Segment "+N" popover — lists all segments for a row when the count badge
   // is clicked (mirrors the DCP authorities badge popover).
   const [segOpen, setSegOpen] = useState<{ key: string; names: string[]; x: number; y: number; flipUp: boolean } | null>(null);
-  // Close the fixed-positioned segment popover on scroll/resize so it can't
-  // drift away from its badge (capture:true catches ancestor + table scrolls).
-  useEffect(() => {
-    if (!segOpen) return;
-    // Close on ancestor/table/page scroll so the fixed popover can't drift from
-    // its badge — BUT ignore scrolls that originate INSIDE the popover's own
-    // list (its overflowY:auto). With capture:true a bare handler fired on the
-    // popover's inner scroll too, closing it the instant the user tried to
-    // scroll the segment list ("not scrolling").
-    const close = (e: Event) => {
-      if (e.type === 'scroll' && e.target instanceof Element && e.target.closest('.seg-pop')) return;
-      setSegOpen(null);
-    };
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
-    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
-  }, [segOpen]);
+  /* Dismiss rules, shared with every other "+N" popover (see useDismissPopover):
+     a scroll outside the popover's own list, a resize, Escape, the browser tab
+     being hidden, the window losing focus — and any change to the view under it.
+     This page carried only the scroll/resize half, so a popover opened on the
+     buyer list stayed up over the consignee list after a tab switch, pinned to
+     coordinates that no longer meant anything (CS-24, same as CS-31 / CS-35).
+     `watch` therefore lists everything that redraws the table beneath it. */
+  useDismissPopover(!!segOpen, () => setSegOpen(null), {
+    inside: '.seg-pop',
+    watch: `${clmTab}|${bpaTab}|${buyerScope}|${consScope}|${cardFilter}|${buyerPage}|${consPage}|${buyerSearch}|${consSearch}`,
+  });
   // "Consignees for this buyer" popup — opened from the CONSIGNEES count cell.
   const [consListBuyer, setConsListBuyer] = useState<BuyerRow | null>(null);
   // "Customer for this consignee" popup — opened from the CUSTOMER ID cell in

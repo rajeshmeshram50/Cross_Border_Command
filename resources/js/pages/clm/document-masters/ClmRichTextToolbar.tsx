@@ -272,6 +272,10 @@ const RTB_CSS = `
 [data-bs-theme="dark"] .rtb-btn {
   background: var(--vz-card-bg); color: var(--vz-body-color); border-color: var(--vz-border-color);
 }
+/* The open list of a native select takes the element's own colours, so the
+   options carry them explicitly and the browser draws the popup dark. */
+[data-bs-theme="dark"] .rtb-sel { color-scheme: dark; }
+[data-bs-theme="dark"] .rtb-sel option { background: var(--vz-card-bg); color: var(--vz-body-color); }
 [data-bs-theme="dark"] .rtb-btn:hover { background: rgba(99,102,241,0.18); color: #c7d2fe; }
 [data-bs-theme="dark"] .rtb-sep { background: var(--vz-border-color); }
 `;

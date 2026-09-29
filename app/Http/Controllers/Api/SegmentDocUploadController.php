@@ -856,6 +856,14 @@ class SegmentDocUploadController extends Controller
             if ($poDeals) {
                 $vendorDeals['with_shipment']    = $poDeals['with_shipment'];
                 $vendorDeals['without_shipment'] = $poDeals['without_shipment'];
+            } else {
+                /* No purchase order means no case: this section is per deal, and
+                   a supplier with nothing ordered was listing every document its
+                   segments define as "not sent for signature · action needed"
+                   (CS-409). What a segment requires belongs to the DCP; what a
+                   deal requires appears once there is a deal. */
+                $vendorDeals['with_shipment']    = [];
+                $vendorDeals['without_shipment'] = [];
             }
         }
 
@@ -944,6 +952,14 @@ class SegmentDocUploadController extends Controller
             ->get()
             ->groupBy('purchase_order_id');
 
+        /* Where a document stands is decided by its signature request, not by the
+           row: a decline lands on the request, and Stage 04 re-reads it on every
+           open. This list did not, so a declined document went on reading
+           "Pending" here and offered to be sent rather than sent again. */
+        $sigStates = DB::table('clm_signature_requests')
+            ->whereIn('id', $docs->flatten(1)->pluck('signature_request_id')->filter()->unique()->all() ?: [0])
+            ->pluck('status', 'id');
+
         $supplierName = (string) ($owner->company_name ?? '');
         $with = [];
         $without = [];
@@ -956,7 +972,9 @@ class SegmentDocUploadController extends Controller
                 ->filter(fn ($d) => ($d->needed ?? 'no') === 'yes')
                 ->values();
 
-            $shaped = $rows->map(fn ($d) => $this->shapePoDoc($d))->all();
+            $shaped = $rows->map(fn ($d) => $this->shapePoDoc(
+                $d, $po->code, $d->signature_request_id ? ($sigStates[$d->signature_request_id] ?? null) : null,
+            ))->all();
             $agr = array_values(array_filter($shaped, fn ($r) => $r['is_agreement']));
             $td  = array_values(array_filter($shaped, fn ($r) => !$r['is_agreement']));
             $ratio = fn (array $set) => [
@@ -1034,12 +1052,24 @@ class SegmentDocUploadController extends Controller
     }
 
     /** One Stage 04 document as the vault renders it. */
-    private function shapePoDoc($d): array
+    private function shapePoDoc($d, ?string $poCode = null, ?string $sigState = null): array
     {
-        $status = match ((string) $d->status) {
+        /* The signature request is the authority on where a document stands —
+           a decline, a recall or an expiry is recorded there and never on the
+           row. Only a completed request beats what the row says about signing. */
+        $state = match ((string) $sigState) {
+            'declined'   => 'declined',
+            'recalled'   => 'recalled',
+            'expired'    => 'expired',
+            'completed'  => 'signed',
+            'inprogress' => 'sent',
+            default      => (string) $d->status,
+        };
+        $status = match ($state) {
             'signed'    => 'Signed',
             'sent'      => 'Pending',
             'declined'  => 'Declined',
+            'recalled'  => 'Recalled',
             'expired'   => 'Expired',
             default     => 'Pending',
         };
@@ -1052,10 +1082,12 @@ class SegmentDocUploadController extends Controller
             'id'                   => (int) $d->id,
             'db_id'                => $lib,                       // the library row: it can be sent for signature from here
             'po_id'                => (int) $d->purchase_order_id,
+            // The PO number: what names the Purchase Order in a signature envelope.
+            'po_code'              => $poCode,
             'po_doc_id'            => (int) $d->id,
             'party'                => 'Vendor',
             'signature_request_id' => $d->signature_request_id ? (int) $d->signature_request_id : null,
-            'sig_state'            => $d->status,
+            'sig_state'            => $state,
             'name'                 => $d->name ?: $d->code,
             'reference'            => $d->code,
             'authority'            => null,
@@ -1068,6 +1100,10 @@ class SegmentDocUploadController extends Controller
             'requirement'          => 'M',
             'certificate_url'      => null,
             'is_agreement'         => str_contains($sub, 'agreement'),
+            /* The Purchase Order is counted in this vault, but it is not
+               case-to-case paperwork — the gate on raising the next PO has to
+               tell them apart, and only this says which row it is. */
+            'doc_kind'             => (string) ($d->doc_kind ?? ''),
         ];
     }
 

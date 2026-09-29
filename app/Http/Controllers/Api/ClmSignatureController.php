@@ -214,6 +214,11 @@ class ClmSignatureController extends Controller
             // request. Its dragged signature box arrives in document_settings
             // under the reserved key "po".
             'purchase_order_id'         => 'nullable|integer',
+            /* The P2P module's Stage 04 Purchase Order row. Its PDF was rendered
+               at submit and is on disk, so it is attached rather than re-rendered
+               — and a DOCUMENT id cannot be confused with a legacy purchase order
+               the way `purchase_order_id` can (the two PO tables share ids). */
+            'p2p_po_document_id'        => 'nullable|integer',
         ]);
 
         $modelName = $data['model_name'] ?? 'Customer';
@@ -365,6 +370,34 @@ class ClmSignatureController extends Controller
                 }
             }
 
+            /* 1c. The P2P module's Purchase Order. Its PDF was rendered at submit
+               and is on disk, so it is attached as-is: no dompdf pass on a send
+               that already renders several documents, and the file the supplier
+               signs is byte-for-byte the one Stage 04 shows. Keyed 'po' as above,
+               so the dragged box resolves from document_settings['po'] either way. */
+            if (!$poDoc && !empty($data['p2p_po_document_id'])) {
+                $p2pDoc = \App\Models\P2p\PurchaseOrderDocument::withoutGlobalScope('tenant')
+                    ->where('client_id', $user->client_id)
+                    ->where('doc_kind', 'purchase_order')
+                    ->find($data['p2p_po_document_id']);
+                $disk = Storage::disk('public');
+
+                if ($p2pDoc && $p2pDoc->file_path && $disk->exists($p2pDoc->file_path)) {
+                    $poTmp = storage_path('app/temp/' . Str::uuid()->toString() . '.pdf');
+                    file_put_contents($poTmp, $disk->get($p2pDoc->file_path));
+                    $tempPaths[]    = $poTmp;
+                    $poCode         = $p2pDoc->purchaseOrder?->code ?: $p2pDoc->code;
+                    $localDocMeta[] = [
+                        'id'            => 'po',
+                        'document_name' => 'Purchase Order ' . $poCode,
+                    ];
+                } elseif ($p2pDoc) {
+                    /* The row exists but its PDF does not — say so rather than
+                       send an envelope quietly missing the purchase order. */
+                    throw new \RuntimeException('The purchase order PDF is not ready yet. Open Stage 04, wait for it to generate, then send again.');
+                }
+            }
+
             // 2. Build the Zoho request body — recipient actions + metadata.
             $expiryDays = min(90, max(1, (int) ($data['expiry_days'] ?? 30)));  // Zoho caps expiration_days at 2 digits
             $actions = [];
@@ -431,7 +464,21 @@ class ClmSignatureController extends Controller
             // cbc doc-id order MUST mirror $tempPaths order (CLM docs, then the
             // bundled PO under key 'po') so coords align to the right Zoho doc.
             $cbcDocIdsOrdered = $orderedDocs->map(fn($d) => $docKeyOf($d))->all();
-            if ($poDoc) $cbcDocIdsOrdered[] = 'po';
+            /* The purchase order counts here however it was attached.
+             *
+             * This asked for $poDoc alone — the Sales-side order. A Stage 04
+             * send bundles the P2P module's own PO instead ($p2pDoc), so the
+             * list came back one entry SHORT of the files actually uploaded:
+             * document_settings['po'] then had no document to attach itself to,
+             * Zoho was given no coordinates for the purchase order, and it fell
+             * back to its own default placement. The signature landed nowhere
+             * near the box that had been dragged for it, while the trade
+             * documents in the same envelope were placed correctly (CS-12).
+             *
+             * Both branches append the same 'po' key, in the same position as
+             * the file they pushed onto $tempPaths — which is what keeps every
+             * document's coordinates aligned to its own Zoho id. */
+            if (in_array('po', array_column($localDocMeta, 'id'), true)) $cbcDocIdsOrdered[] = 'po';
             $perDocCoords = $this->mapClientCoordsToZohoDocIds(
                 (array) ($data['document_settings'] ?? []),
                 $cbcDocIdsOrdered,
@@ -3065,6 +3112,13 @@ class ClmSignatureController extends Controller
         ?string $contentOverride = null,
         ?Lead $lead = null,
     ) {
+        /* dompdf is slow on a long body, and PHP's 60s default killed the modal's
+           preview mid-render (CS-414) — the request died inside dompdf's CSS
+           parser with nothing rendered. Raised per document, not per request, so
+           a bulk send of several documents gives each one the same room; every
+           other PDF path in the app already does this. */
+        @set_time_limit(180);
+
         // Content override takes precedence over the row's saved HTML —
         // used by the Send-for-Signature modal when the user pastes in
         // a table via Insert Table or otherwise edits the body inline.

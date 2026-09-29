@@ -349,12 +349,28 @@
 .prd-rowact:hover:not(:disabled) { filter: brightness(1.08); }
 .prd-rowact:disabled { cursor: default; filter: grayscale(.85); opacity: .45; box-shadow: none; }
 
-/* CS-436 read-only popup of one linked request. */
-.mpr-card.spi-mdl.prd-dec.prd-peek { width: min(1100px, 96vw); }
-@media (min-width: 1025px) and (max-width: 1640px) { .mpr-card.spi-mdl.prd-dec.prd-peek { width: min(1375px, calc(96vw / .8)); } }
+/* CS-436 read-only popup of one linked request.
+   Full screen (CS-432): it opened as a small card in the middle of a screen
+   that is itself a full-screen view, so the request being read sat in a box a
+   third of the height while the request it was opened from filled everything
+   behind it. Same footprint as .prd-root now — the backdrop's own 16px padding
+   is the inset — with the header and footer pinned and only the fields
+   scrolling. */
+.mpr-card.spi-mdl.prd-dec.prd-peek {
+  width: 100%; max-width: none;
+  height: 100%; max-height: none;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.prd-peek .mpr-hero, .prd-peek .spi-mdl-foot { flex-shrink: 0; }
+.prd-peek .prd-dec__bd { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
 .prd-peek__grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 @media (max-width: 900px) { .prd-peek__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.prd-peek__note { white-space: pre-wrap; min-height: 46px; }
+/* The remark is given room to be read at this size, but not the whole screen:
+   stretched to the full height an empty one was a grey field half the page
+   tall. It grows with its text and stops there. */
+.prd-peek__notefield { flex: 0 0 auto; display: flex; flex-direction: column; }
+.prd-peek__note { white-space: pre-wrap; min-height: 96px; max-height: 38vh; overflow-y: auto; }
+.prd-peek__note.is-empty { color: #8aa2ae; font-style: italic; }
 .prd-peek .prd-dec__bd { padding: 14px 18px; }
 /* No chip strip here to push it over, so the close sits at the right edge itself. */
 .prd-peek .mpr-hero__close { margin-left: auto; }

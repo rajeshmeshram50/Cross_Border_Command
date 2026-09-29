@@ -31,6 +31,8 @@ export type LineTotals = {
   withGst: number;
   /** PI quantity still open that this line doesn't cover. */
   missing: number;
+  /** Ordered over what the PI still had open; any excess closes the line. */
+  excess: number;
   gstPct: number | null;
   cgstPct: number;
   sgstPct: number;
@@ -67,6 +69,8 @@ export function computeLine(row: PoLineRow, products: ProductOpt[], taxMode: Tax
     gstAmt,
     withGst: round2(base + gstAmt),
     missing: row.pi ? Math.max(0, row.pi.pending_qty - row.qtyPo) : 0,
+    // Ordered over what the PI still had open — the line closes once this is set.
+    excess: row.pi ? Math.max(0, row.qtyPo - row.pi.pending_qty) : 0,
     gstPct,
     cgstPct: inter ? 0 : pct / 2,
     sgstPct: inter ? 0 : pct / 2,
@@ -227,10 +231,11 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
   const totals = lines.reduce(
     (sum, l, i) => ({
       piQty: sum.piQty + (shown[i].pi?.pending_qty ?? 0), poQty: sum.poQty + shown[i].qtyPo, miss: sum.miss + l.missing,
+      excess: sum.excess + l.excess,
       cgst: sum.cgst + l.cgstAmt, sgst: sum.sgst + l.sgstAmt, igst: sum.igst + l.igstAmt,
       base: sum.base + l.base, gst: sum.gst + l.gstAmt, withGst: sum.withGst + l.withGst,
     }),
-    { piQty: 0, poQty: 0, miss: 0, cgst: 0, sgst: 0, igst: 0, base: 0, gst: 0, withGst: 0 },
+    { piQty: 0, poQty: 0, miss: 0, excess: 0, cgst: 0, sgst: 0, igst: 0, base: 0, gst: 0, withGst: 0 },
   );
 
   return (
@@ -285,7 +290,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             <th rowSpan={2} className="cpd-stick cpd-stick--1">Sr. No</th>
             {withPi && <th rowSpan={2} className="cpd-stick cpd-stick--2 cpd-th-left">Product (PI)</th>}
             <th colSpan={2}>Purchase Order Entry</th>
-            <th colSpan={withPi ? 3 : 1}>{withPi ? 'Quantities' : 'Quantity'}</th>
+            <th colSpan={withPi ? 4 : 1}>{withPi ? 'Quantities' : 'Quantity'}</th>
             <th colSpan={1 + taxCols}>Rate &amp; Tax</th>
             <th colSpan={taxCols + 3}>Amounts</th>
           </tr>
@@ -295,6 +300,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             {withPi && <th>Qty (PI)</th>}
             <th className={`cpd-th-num ${readOnly ? '' : 'cpd-edh'}`}>{withPi ? 'Qty (PO)' : 'Qty'}</th>
             {withPi && <th>Missing Qty</th>}
+            {withPi && <th>Extra Qty</th>}
             <th className={`cpd-th-num ${readOnly ? '' : 'cpd-edh'}`}>Product Rate</th>
             {inter ? <th>{exportPo ? 'Tax (%)' : 'IGST (%)'}</th> : <><th>CGST (%)</th><th>SGST (%)</th></>}
             {inter
@@ -455,6 +461,18 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
                   {rowErr.qty && <div className="cpd-cell-msg">{rowErr.qty}</div>}
                 </td>
                 {withPi && <td className={line.missing > 0 ? 'cpd-miss' : ''}>{row.pi ? plain(line.missing) : '—'}</td>}
+                {/* Over what the PI still had open. Ordering over closes the line:
+                    nothing further can be raised against it on another PO. */}
+                {withPi && (
+                  <td
+                    className={line.excess > 0 ? 'cpd-excess' : ''}
+                    title={line.excess > 0
+                      ? `${plain(line.excess)} over the ${plain(row.pi?.pending_qty ?? 0)} still open on the PI — this closes the line to further POs`
+                      : undefined}
+                  >
+                    {row.pi ? (line.excess > 0 ? `+${plain(line.excess)}` : plain(0)) : '—'}
+                  </td>
+                )}
 
                 <td className={readOnly ? undefined : `${noProduct ? '' : 'cpd-ed'}${rowErr.rate ? ' cpd-cell-err' : ''}`}>
                   {readOnly ? <FitText text={money(row.rate)} /> : (
@@ -493,6 +511,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             {withPi && <td>{plain(totals.piQty)}</td>}
             <td><FitText text={plain(totals.poQty)} /></td>
             {withPi && <td>{plain(totals.miss)}</td>}
+            {withPi && <td className={totals.excess > 0 ? 'cpd-excess' : ''}>{totals.excess > 0 ? `+${plain(totals.excess)}` : plain(0)}</td>}
             <td colSpan={1 + taxCols} />
             {inter
               ? <td><FitText text={money(totals.igst)} /></td>

@@ -84,6 +84,30 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
 
   const isInternational = draft.docType === 'International';
   const sup = draft.supplier;
+  /* Zoho Books pins a contact to one currency for life, so a supplier already in
+     the books leaves only one option open. Said as the supplier is picked rather
+     than refused once the form is filled — the server still has the final word. */
+  const zohoCurrency = (sup?.zohoCurrency ?? '').toUpperCase();
+  /* The list stays ours. Zoho's is only checked against: a currency it has not
+     enabled posts there in the org's base currency without a word, which is how
+     SGD orders came to sit in the books as rupees — so it is said here, and the
+     save refuses it, rather than the list quietly hiding the option. */
+  const currencyOptions = lookups.currencies;
+  const zohoMissing = !!draft.currency
+    && (sup?.zohoCurrencies?.length ?? 0) > 0
+    && !sup!.zohoCurrencies!.some((c) => c.toUpperCase() === draft.currency.toUpperCase());
+  /* Only a currency a transaction of ours already put in Zoho leaves no choice.
+     A contact merely showing INR was made before we sent a currency at all, and
+     an international PO may not be in INR — locking to it would leave the field
+     with nothing usable, so it is offered and the sync settles the contact. */
+  const currencySettled = !!sup?.zohoCurrencySettled && !(zohoCurrency === 'INR' && isInternational);
+  const currencyLock = useMemo(() => {
+    if (!currencySettled) return INR_LOCK;
+    const reason = `This supplier trades in ${zohoCurrency}`;
+    return Object.fromEntries(
+      currencyOptions.filter((c) => c.toUpperCase() !== zohoCurrency).map((c) => [c, reason]),
+    );
+  }, [currencySettled, zohoCurrency, currencyOptions]);
   // Supplier and document type go together: a picked supplier fixes the document type.
   // The supplier stays changeable until the PO is sent for senior approval (pending or approved).
   const approval = ctx.detail?.gst_approval?.status;
@@ -278,9 +302,21 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
 
           {isInternational && (
             <>
-              <Field label="Currency" req error={err.currency}>
-                <EditSelect value={draft.currency} options={lookups.currencies} onChange={(x) => set({ currency: x })} invalid={!!err.currency}
-                  locked={INR_LOCK} onLockedClick={() => toast.warning('INR not allowed', 'An international PO is raised in the supplier currency, not INR.')} />
+              <Field label="Currency" req
+                error={err.currency || (zohoMissing
+                  ? `${draft.currency} is not enabled in Zoho Books — add it there (Settings → Currencies) before submitting, or pick another.`
+                  : undefined)}
+                hint={currencySettled
+                  ? `${sup?.code ?? 'This supplier'} trades in ${zohoCurrency} — Zoho Books holds one currency per supplier`
+                  : zohoCurrency ? `${sup?.code ?? 'This supplier'} shows ${zohoCurrency} in Zoho Books; the first order to sync settles it` : undefined}>
+                <EditSelect value={draft.currency} options={currencyOptions} onChange={(x) => set({ currency: x })} invalid={!!err.currency}
+                  locked={currencyLock}
+                  onLockedClick={(v) => (!currencySettled && v === 'INR')
+                    ? toast.warning('INR not allowed', 'An international PO is raised in the supplier currency, not INR.')
+                    : toast.warning(
+                      `This supplier is on ${zohoCurrency}`,
+                      `${zohoCurrency} is already used on ${sup?.zohoCurrencyPo ? `${sup.zohoCurrencyPo}, another purchase order` : 'another purchase order'} against this supplier, so its currency can no longer be changed — Zoho Books holds one currency per supplier.`,
+                    )} />
               </Field>
               <Field label="Exchange Rate" req error={err.exchangeRate}>
                 <input className={`spi-dt-inp${inv('exchangeRate')}`} inputMode="decimal" placeholder="e.g. 83.25" value={draft.exchangeRate}

@@ -9,6 +9,7 @@ import { type EditCustomer } from './AddCustomerModal';
 import { type CustomerLite } from './CustomerConsigneesModal';
 import { type CustomerVaultTarget } from './CustomerEvidenceVaultModal';
 import { ShimmerTable } from '../../../../components/ui/Shimmer';
+import useDismissPopover from '../../../../hooks/useDismissPopover';
 import AddCustomerModalShimmer from './AddCustomerModalShimmer';
 import { useIsClipped } from '../../../../components/ui/DataTable';
 import api from '../../../../api';
@@ -142,27 +143,11 @@ export default function SalesCustomers() {
   const [q, setQ] = useState('');
   const [wdhOpen, setWdhOpen] = useState(false);
   const [segOpen, setSegOpen] = useState<{ id: string | number; items: { name: string; status?: string | null }[]; x: number; y: number } | null>(null);
-  // The segments popover is pinned to fixed x/y captured on click; a resize
-  // (maximize/minimize/zoom) or scroll makes those coords stale and the popover
-  // drifts away from its badge. Close it on either so it never shows stranded —
-  // the user reopens it cleanly at the new position.
-  useEffect(() => {
-    if (!segOpen) return;
-    const close = () => setSegOpen(null);
-    // Close on a PAGE/table scroll (coords go stale), but NOT when the user is
-    // scrolling the long list INSIDE the popover itself.
-    const onScroll = (e: Event) => {
-      const t = e.target as HTMLElement | null;
-      if (t && typeof t.closest === 'function' && t.closest('.smc-seg-pop')) return;
-      setSegOpen(null);
-    };
-    window.addEventListener('resize', close);
-    window.addEventListener('scroll', onScroll, true);
-    return () => {
-      window.removeEventListener('resize', close);
-      window.removeEventListener('scroll', onScroll, true);
-    };
-  }, [segOpen]);
+  /* The segments popover is pinned to fixed x/y captured on click, so anything
+     that moves the badge underneath leaves it stranded: a scroll, a resize, or
+     switching tab — it used to stay open over the next tab's rows (CS-31/35).
+     Scrolling the long list inside it is not a move, and does not close it. */
+  useDismissPopover(!!segOpen, () => setSegOpen(null), { inside: '.smc-seg-pop', watch: tab });
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<EditCustomer | null>(null);
 

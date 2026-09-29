@@ -303,6 +303,15 @@ export type SupplierDetail = {
   addr: string | null; country: string | null; state: string | null; stateCode: string | null; city: string | null;
   contact: string | null; desig: string | null; phone: string | null; email: string | null;
   scrutiny: string | null; gstNo: string | null; gstStatus: string | null; filing: string | null; remarks: string | null;
+  /** What Zoho Books shows for this supplier; null = not in the books yet. */
+  zohoCurrency?: string | null;
+  /** A transaction of ours put that currency there, so no other one is possible. */
+  zohoCurrencySettled?: boolean;
+  /** The order that settled it, so a refusal can name which one did. */
+  zohoCurrencyPo?: string | null;
+  /** The currencies Zoho Books has enabled; a PO in any other cannot reach it.
+   *  Empty when Zoho is unreachable, and the form falls back to the master list. */
+  zohoCurrencies?: string[];
 };
 
 /* ══════════════════════════ Purchase order ══════════════════════════ */
@@ -449,6 +458,10 @@ export const poSignatureApi = {
   /** Zoho Sign's completion certificate. */
   certificate: (sigId: number) =>
     call('PO signing certificate', () => api.get(`/clm/signature-requests/${sigId}/certificate`, { responseType: 'blob' }), (b) => b as Blob),
+
+  /** Nudge the signer of a request still out for signature. */
+  remind: (sigId: number) =>
+    call('PO signing reminder', () => api.post(`/clm/signature-requests/${sigId}/remind`), (d) => d),
 };
 
 /* ══════════════════════════ Physical inspection ══════════════════════════ */
@@ -503,9 +516,13 @@ export const poLookupApi = {
   suppliers: () =>
     call('PO suppliers', () => api.get('/p2p/purchase-orders/suppliers'), dataOf<SupplierOption[]>),
 
-  /** Supplier detail for Stage 01 (existing endpoint). */
-  supplier: (vendorId: number) =>
-    call('PO supplier detail', () => api.get(`/p2p/purchase-orders/suppliers/${vendorId}`), dataOf<SupplierDetail>),
+  /** Supplier detail for Stage 01 (existing endpoint). `refreshCurrencies` drops
+   *  the server's hour-long cache of Zoho's currency list, for right after one
+   *  has been added there. */
+  supplier: (vendorId: number, refreshCurrencies = false) =>
+    call('PO supplier detail', () => api.get(`/p2p/purchase-orders/suppliers/${vendorId}`, {
+      params: refreshCurrencies ? { refresh_currencies: 1 } : undefined,
+    }), dataOf<SupplierDetail>),
 
   /** Supplier Evidence Vault — also drives the legal status panel. */
   supplierVault: (vendorId: number) =>
@@ -763,6 +780,8 @@ export type RefundPo = {
   paid_amount: number; balance_amount: number; status: PoStatus; cancel_stage: PoCancelStage | null; cancel_reason: string | null;
   procurement_code: string | null; vendor_id: number | null; supplier_code: string | null; supplier_name: string | null;
   zoho_bill_number: string | null;
+  /** The PO's own currency — a refund on it is money in that, not in rupees. */
+  currency_code?: string | null;
   shipment_code: string | null; shipment_date: string | null; opportunity_code: string | null; opportunity_date: string | null;
 };
 export type RefundRecoveryRow = {
@@ -793,7 +812,7 @@ export type RefundDetail = RefundRow & {
 };
 export type RefundTab = 'all' | 'pending' | 'recovered';
 export type RefundListMeta = { total: number; page: number; per_page: number; last_page: number; counts: Record<RefundTab, number> };
-export type RefundEligiblePo = { id: number; code: string; po_date: string | null; supplier_name: string | null; supplier_code: string | null; paid_amount: number };
+export type RefundEligiblePo = { id: number; code: string; po_date: string | null; supplier_name: string | null; supplier_code: string | null; paid_amount: number; currency_code?: string | null };
 /** Zoho after a save: a failure never undoes the save, it is only reported. */
 export type ZohoOutcome = { status: 'synced' | 'failed' | 'skipped'; message: string | null } | null;
 

@@ -266,7 +266,11 @@ export function pendingCaseToCase(vault: Record<string, unknown> | null, current
   const seen = new Set<unknown>();
   const read = (po: CtcPo) => {
     if (po.po_status !== 'submitted' || !po.po_id || po.po_id === currentPoId) return;
-    for (const d of [...(po.docs ?? []), ...(po.agreements ?? [])] as (VaultRow & { name?: string; doc_code?: string; reference?: string })[]) {
+    for (const d of [...(po.docs ?? []), ...(po.agreements ?? [])] as (VaultRow & { name?: string; doc_code?: string; reference?: string; doc_kind?: string })[]) {
+      /* The Purchase Order is listed in this vault but is not case-to-case
+         paperwork — the server's own check excludes it, and this has to match
+         or raising the next PO is blocked by the last one's own order. */
+      if (d.doc_kind === 'purchase_order') continue;
       if (String(d.status ?? '') === 'Signed' || seen.has(d.id)) continue;
       seen.add(d.id);
       out.push({ po: po.po_code ?? '—', name: d.name ?? '—', code: d.doc_code ?? d.reference ?? '', status: String(d.status ?? 'Pending') });

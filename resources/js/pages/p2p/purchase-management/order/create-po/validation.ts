@@ -74,8 +74,24 @@ export function piSegmentMismatch(product: ProductOpt | undefined, piSegment: st
   return `The PI line is in ${want} — pick a product from the same segment.`;
 }
 
-export function validateLines(lines: PoLineRow[], products: ProductOpt[], supplierSegments?: string[] | null, international = false, mappedProductIds?: number[] | null): { rows: LineErrors; general?: string } {
+/* Mirrors PurchaseOrderController. Both ceilings are RUPEE ones, because the
+   rupee figure is the only one Zoho judges — it converts at the PO's own rate
+   and posts that to the ledger. What a PO may hold in its own currency is read
+   back through its rate, so the same rule fits every currency. */
+export const MAX_ZOHO_BASE = 1_000_000_000_000;      // 1 trillion rupees, whole PO
+export const MAX_UNIT_RATE_BASE = 10_000_000_000;    // 10 billion rupees, one unit
+export const MAX_QUANTITY = 10_000_000;
+// Grouped the way the amounts beside it are: lakh-crore for INR, else thousands.
+const fmtIn = (ccy: string | null | undefined) => (n: number) =>
+  n.toLocaleString((ccy ?? 'INR').toUpperCase() === 'INR' ? 'en-IN' : 'en-US', { maximumFractionDigits: 2 });
+
+export function validateLines(lines: PoLineRow[], products: ProductOpt[], supplierSegments?: string[] | null, international = false, mappedProductIds?: number[] | null, currency?: string | null, exchangeRate?: string | number | null): { rows: LineErrors; general?: string } {
   const rows: LineErrors = {};
+  const fmt = fmtIn(currency);
+  /* A domestic PO is already in rupees, so it converts at 1. */
+  const fx = Number(exchangeRate) > 0 ? Number(exchangeRate) : 1;
+  const maxRate = MAX_UNIT_RATE_BASE / fx;
+  const maxTotal = MAX_ZOHO_BASE / fx;
   const set = (key: string, cell: 'product' | 'qty' | 'rate', msg: string) => { rows[key] = { ...rows[key], [cell]: msg }; };
   const byId = (id: number | null) => products.find((p) => p.id === id);
 
@@ -87,8 +103,18 @@ export function validateLines(lines: PoLineRow[], products: ProductOpt[], suppli
       continue;
     }
     if (!l.productId) set(l.key, 'product', l.pi ? 'Pick the product for this PI line.' : 'Pick a product, or remove the line.');
-    if (l.pi && l.qtyPo > l.pi.pending_qty) set(l.key, 'qty', `Only ${l.pi.pending_qty} is still pending on the PI.`);
+    /* An open PI line may be over-ordered; over-drawing closes it, so a line
+       already at zero takes nothing more (the server checks this too). */
+    if (l.pi && l.pi.pending_qty <= 0) set(l.key, 'qty', 'This PI line is fully ordered — nothing is left to order against it.');
     if (l.rate <= 0) set(l.key, 'rate', 'Enter a rate.');
+    /* A slipped decimal used to pass every check and fail inside Zoho Books
+       hours later, which converts to the base currency and refuses the
+       result. Caught on the cell that caused it (server mirrors these). */
+    else if (l.rate > maxRate) set(l.key, 'rate', `Rate looks wrong — the most for one unit is ${fmt(maxRate)}.`);
+    if (l.qtyPo > MAX_QUANTITY) set(l.key, 'qty', `Quantity looks wrong — the most on one line is ${fmt(MAX_QUANTITY)}.`);
+    else if (l.rate > 0 && l.qtyPo * l.rate > maxTotal) {
+      set(l.key, 'rate', `This line comes to ${fmt(l.qtyPo * l.rate)} — the whole PO cannot exceed ${fmt(maxTotal)}.`);
+    }
     if (!international && l.productId && gstOf(l, products) === null) set(l.key, 'product', 'No GST % on the product master — set it there first.');
     const chosen = byId(l.productId);
     const why = inactiveProduct(chosen)

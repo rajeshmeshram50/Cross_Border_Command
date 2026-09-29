@@ -967,6 +967,14 @@
 [data-bs-theme="dark"] .sup-fig .sl-flag--highrisk,
 [data-bs-theme="dark"] .sup-fig .sl-compliant--pending{background:rgba(245,158,11,.14);color:#fcd34d;border-color:rgba(245,158,11,.32);}
 [data-bs-theme="dark"] .sup-fig .sl-compliant--no{background:rgba(239,68,68,.14);color:#fca5a5;border-color:rgba(239,68,68,.32);}
+/* Supplier Category was left out of this pass, so its four near-white washes
+   stayed white on the dark table. Same tints as the badges beside it, keeping
+   each category's own hue: violet star, yellow general, amber risk, red
+   blacklisted — red still the only one that means business stops. */
+[data-bs-theme="dark"] .sup-fig .sl-cat--star{background:rgba(139,92,246,.14);color:#c4b5fd;border-color:rgba(139,92,246,.32);}
+[data-bs-theme="dark"] .sup-fig .sl-cat--general{background:rgba(234,179,8,.14);color:#fde047;border-color:rgba(234,179,8,.32);}
+[data-bs-theme="dark"] .sup-fig .sl-cat--risk{background:rgba(245,158,11,.14);color:#fcd34d;border-color:rgba(245,158,11,.32);}
+[data-bs-theme="dark"] .sup-fig .sl-cat--black{background:rgba(239,68,68,.14);color:#fca5a5;border-color:rgba(239,68,68,.32);}
 [data-bs-theme="dark"] .sup-fig .sl-prodcount--zero{background:rgba(148,163,184,.16);color:#94a3b8;border-color:rgba(148,163,184,.28);}
 [data-bs-theme="dark"] .sup-fig .sl-seg{color:#adb5bd;}
 [data-bs-theme="dark"] .sup-fig .sl-seg-more{background:rgba(124,58,237,.2);color:#c4b5fd;border-color:rgba(167,139,250,.3);}

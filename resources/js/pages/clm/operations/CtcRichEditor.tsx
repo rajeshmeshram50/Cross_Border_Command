@@ -1168,34 +1168,65 @@ type ContentLimitOptions = {
   onExceed?: (attempted: number, max: number) => void;
 };
 
-/* How much a paste will actually ADD to the document.
+/**
+ * The document's length as the WRITER counts it: characters of text, with the
+ * markup left out.
  *
- * `clipboardData.getData('text/html')` is not the content — it is the content
- * inside a transport envelope the browser builds, and the envelope is discarded
- * the moment ProseMirror parses it. Chrome prepends a <meta charset>, wraps the
- * selection in <html><body> with StartFragment/EndFragment comments, and — when
- * the copy came from another ProseMirror editor, which is exactly the
- * Agreement-to-Trade-Document case — stamps a data-pm-slice attribute on the
- * wrapper.
+ * The limit used to be measured on the HTML, which meant formatting spent it.
+ * Selecting a paragraph and raising its font size added a span and its style to
+ * every run it touched, so the counter climbed without a character being typed
+ * — and a document could be refused the next letter because of how it looked,
+ * not what it said. Text is the only measure a writer can act on: shorten the
+ * document and the number goes down, restyle it and it does not move.
+ */
+export const contentTextLength = (editor: Editor | null | undefined): number =>
+  editor ? (editor.getText({ blockSeparator: '\n' }) ?? '').length : 0;
+
+/* How much a paste will actually ADD to the document — again as text.
  *
- * Measuring the raw string counted all of that. So the same content reported
- * one length in the editor it was copied from and a larger one on arrival, and
- * a document at the ceiling could be refused over characters that were never
- * going to be stored. Stripping the envelope first makes the number describe
- * the document rather than the clipboard.
+ * `clipboardData.getData('text/html')` is not the content either; it is the
+ * content inside a transport envelope the browser builds. Chrome prepends a
+ * <meta charset>, wraps the selection in <html><body> with StartFragment /
+ * EndFragment comments, and — when the copy came from another ProseMirror
+ * editor, which is exactly the Agreement-to-Trade-Document case — stamps a
+ * data-pm-slice attribute on the wrapper. None of it survives the parse.
  *
- * Deliberately string-level, not a DOMParser pass: this runs on a payload up to
- * a megabyte during a paste, and building a second document to measure the
- * first would cost more than the guard saves. */
-export const pastedLength = (raw: string): number => {
-  if (!raw) return 0;
-  return raw
-    .replace(/<\/?(?:html|body|head)(?:\s[^>]*)?>/gi, '')  // transport wrapper
-    .replace(/<meta[^>]*>/gi, '')                          // Chrome's charset tag
-    .replace(/<!--\s*(?:Start|End)Fragment\s*-->/gi, '')   // Chrome's fragment marks
-    .replace(/\sdata-pm-slice="[^"]*"/gi, '')              // ProseMirror slice info
-    .trim()
-    .length;
+ * Reading the text out of the payload drops the envelope and the markup in one
+ * step, so the figure the guard adds is the figure the counter will show. */
+export const pastedLength = (raw: string): number => htmlTextLength(raw);
+
+/**
+ * The ceiling for a CHEAP pre-check made on an HTML string.
+ *
+ * Reading a string and walking the editor's document are two ways of counting
+ * the same characters, and on a long import they differ slightly. A gate that
+ * runs before the document is even seeded must not be the thing that refuses a
+ * file the editor would have held — so it keeps a small margin, and the real
+ * decision is taken afterwards from the editor itself.
+ */
+export const preCheckMax = (max: number): number => Math.round(max * 1.02);
+
+/**
+ * The same count, taken from an HTML string rather than a live editor — for
+ * content on its way in (a Word import) or already stored (a saved draft).
+ *
+ * Block ends become newlines first so the figure lines up with the editor's own
+ * text, which separates blocks the same way; without that the two measures
+ * would drift apart by one character per paragraph and the counter and the
+ * guard would disagree again.
+ */
+export const htmlTextLength = (html: string): number => {
+  if (!html) return 0;
+  // Plain text is already the answer.
+  if (!/<[a-z!/]/i.test(html)) return html.trim().length;
+  const spaced = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|h[1-6]|li|tr|blockquote|pre)>/gi, '\n');
+  try {
+    return (new DOMParser().parseFromString(spaced, 'text/html').body.textContent ?? '').trim().length;
+  } catch {
+    return spaced.replace(/<[^>]*>/g, '').trim().length;
+  }
 };
 
 /* Show a link's target on hover.
@@ -1271,21 +1302,38 @@ const SelectionShadow = Extension.create({
   },
 });
 
+/**
+ * Measure the document once and give that same number to BOTH the limit and
+ * the screen.
+ *
+ * Reading the guard's cache instead would depend on whether the extension's
+ * update handler runs before the editor's own — a difference of one keystroke,
+ * which is exactly the kind of small disagreement this is here to end. Taken
+ * fresh, written back to the cache, returned to the caller: one measurement,
+ * one number, no ordering to reason about.
+ */
+export const limitTextLen = (editor: Editor | null | undefined): number => {
+  if (!editor) return 0;
+  const len = contentTextLength(editor);
+  const store = (editor.storage as unknown as Record<string, { textLen?: number } | undefined>).contentLimit;
+  if (store) store.textLen = len;
+  return len;
+};
+
 const ContentLimit = Extension.create<ContentLimitOptions>({
   name: 'contentLimit',
   addOptions() {
     return { max: CONTENT_MAX_CHARS, onExceed: undefined };
   },
-  /* The document's HTML length, cached.
-     getHTML() serialises the whole document, so it cannot be called on every
-     keystroke of a million-character draft. It is already called once per
-     update by the editors' own onChange, so the number is taken from there and
-     reused — the guard costs nothing per key. */
+  /* The document's TEXT length, cached.
+     Reading the text walks the whole document, so it cannot be done on every
+     keystroke of a million-character draft; it is measured once per update and
+     the guard reuses the number, which costs nothing per key. */
   addStorage() {
-    return { htmlLen: 0, lastWarn: 0 };
+    return { textLen: 0, lastWarn: 0 };
   },
-  onCreate() { this.storage.htmlLen = this.editor.getHTML()?.length ?? 0; },
-  onUpdate() { this.storage.htmlLen = this.editor.getHTML()?.length ?? 0; },
+  onCreate() { this.storage.textLen = contentTextLength(this.editor); },
+  onUpdate() { this.storage.textLen = contentTextLength(this.editor); },
   addProseMirrorPlugins() {
     const { max, onExceed } = this.options;
     const editor = this.editor;
@@ -1301,20 +1349,31 @@ const ContentLimit = Extension.create<ContentLimitOptions>({
       onExceed?.(attempted, max);
     };
 
-    /* True = block. Measured against getHTML() so the number matches the
-       counter on screen, not a different idea of "length" that would reject at
-       a figure the user never saw. */
+    /* True = block. Measured the same way the counter on screen is, so nothing
+       is ever rejected at a figure the user never saw. */
     const wouldOverflow = (incoming: number): boolean => {
-      const attempted = (editor.getHTML()?.length ?? 0) + incoming;
+      const attempted = contentTextLength(editor) + incoming;
       if (attempted <= max) return false;
       warn(attempted);
       return true;
     };
 
-    /* At or past the ceiling, nothing more goes in. Uses the CACHED length —
-       see addStorage. */
+    /* At or past the ceiling, nothing more goes in.
+
+       The cached length is trusted only while it says there is room: a cache is
+       a promise about a document that has since been replaced, and content set
+       through setHTML lands with emitUpdate:false, so onUpdate never corrects
+       it. A big draft followed by a small import therefore left the ceiling
+       armed against a document that was nowhere near it — "the uploaded doc is
+       within the limit but will not accept another letter" (CS-17).
+
+       So: the cheap check decides when to let a keystroke through, and the real
+       measurement decides when to refuse one. getHTML() runs only on the
+       keystroke that would cross the line, not on every key. */
     const atCeiling = (incoming: number): boolean => {
-      const attempted = storage.htmlLen + incoming;
+      if (storage.textLen + incoming <= max) return false;
+      storage.textLen = contentTextLength(editor);
+      const attempted = storage.textLen + incoming;
       if (attempted <= max) return false;
       warn(attempted);
       return true;
@@ -1447,7 +1506,18 @@ export function ctcExtensions(opts?: {
 
 export function useCtcEditor(opts: {
   value: string;
-  onChange: (html: string) => void;
+  /**
+   * `textLen` is the document's length as the LIMIT counts it — the very
+   * number the typing guard compares against, handed out rather than
+   * recomputed.
+   *
+   * The counter used to measure the saved HTML while the guard measured the
+   * editor's own text. Two readings of the same document that agree on a short
+   * draft and drift apart on a long one: at 993,471 on screen the guard had
+   * already reached 1,000,000, so an upload that "fit" refused the next letter
+   * typed (CS-17 again, from the other side). One number now, taken once.
+   */
+  onChange: (html: string, textLen: number) => void;
   editable?: boolean;
   /** Raised when a paste or drop would cross CONTENT_MAX_CHARS. The editor
    *  blocks the input either way; this is how the screen says so. */
@@ -1467,7 +1537,7 @@ export function useCtcEditor(opts: {
       // Debounce the push to the parent so a long agreement doesn't re-render the
       // whole Stage tree on every keystroke; formatting itself stays instant.
       if (syncTimer.current) window.clearTimeout(syncTimer.current);
-      syncTimer.current = window.setTimeout(() => onChange(html), 250);
+      syncTimer.current = window.setTimeout(() => onChange(html, limitTextLen(editor)), 250);
     },
   });
 
@@ -1491,9 +1561,27 @@ export function useCtcEditor(opts: {
     setHTML: (html: string) => {
       if (!editor) return;
       const repaired = repairBrokenLinkHrefs(html);
-      lastSyncedRef.current = repaired;
       editor.commands.setContent(repaired || '<p></p>', { emitUpdate: false });
-      onChange(repaired);
+      /* What goes out is what the EDITOR now holds, not the string that was
+         handed in.
+
+         TipTap re-writes whatever it parses — <b> becomes <strong>,
+         color:#1F3A5F becomes color: rgb(31, 58, 95) — so a Word import lands
+         roughly a fifth longer than the HTML the server converted. Publishing
+         the incoming string left the counter, the save guard and the typing
+         guard reading two different documents: a file imported at 919,000
+         characters sat in the editor at 1,131,908, so the screen said "919 KB
+         of 1 MB" and the very next letter was refused as over the limit
+         (CS-17). One measurement, taken from the editor itself.
+
+         emitUpdate:false also means the limit guard's cached length is never
+         told the document changed, so it is set here too. */
+      const seeded = editor.getHTML() || repaired || '<p></p>';
+      lastSyncedRef.current = seeded;
+      const len = contentTextLength(editor);
+      const limit = (editor.storage as unknown as Record<string, { textLen?: number }>).contentLimit;
+      if (limit) limit.textLen = len;
+      onChange(seeded, len);
     },
   };
 }
@@ -2676,7 +2764,11 @@ export const CTC_EDITOR_CSS = `
 /* A cluster of related controls. nowrap is the load-bearing part: the bar
    wraps, the group inside it does not, so a row break always falls on a
    divider instead of through the middle of the alignment buttons. */
-.ctcte-grp { display: flex; align-items: center; gap: 3px; flex-wrap: nowrap; flex-shrink: 0; }
+/* Every group is one 28px line tall, whatever it holds. Without that the groups
+   measured 26, 28 and 34px and, centred against each other, their controls sat
+   at four different heights on the same row — the "icons misaligned, some
+   spaced out, some squashed" the toolbar was reported for. */
+.ctcte-grp { display: flex; align-items: center; gap: 3px; flex-wrap: nowrap; flex-shrink: 0; height: 28px; }
 /* An empty group can be left behind when a divider lands at either end. */
 .ctcte-grp:empty { display: none; }
 /* A divider that ends up first or last on a wrapped row is a line against
@@ -2901,14 +2993,29 @@ export const CTC_EDITOR_CSS = `
 /* A nested level is a block again, or the sub-list would run on inside its
    parent's sentence. */
 .ctcte-content .ProseMirror ol[data-legal] li > ol { display: block; }
-.ctcte-content .ProseMirror .column-resize-handle {
+/* Table-editing mechanics — NOT scoped to .ctcte-content.
+
+   These style elements TipTap itself puts in the document: the column-resize
+   handle it inserts into whichever cell the pointer is near, and the wash on
+   cells being dragged across. Every editor built on ctcExtensions gets them,
+   and two of those surfaces are not .ctcte-content — the T&C wizard
+   (.tnw-editor) and the HR template editor (.tpl-editor-surface). There the
+   handle arrived as a plain unstyled <div> INSIDE the cell, so it took up
+   space: the row grew, the whole document below it moved down, and it all
+   sprang back when the pointer moved on. Hovering the content made it jump
+   between 2143px and 2216px — the "flickering / flipping" report.
+
+   position:relative on the cell is what makes the absolutely-positioned handle
+   sit on the cell's edge instead of anchoring to a distant ancestor, so it
+   belongs with them. */
+.ProseMirror .column-resize-handle {
   position: absolute; right: -2px; top: 0; bottom: 0; width: 4px;
   background: #7C3AED; pointer-events: none; z-index: 20;
 }
-.ctcte-content .ProseMirror.resize-cursor { cursor: col-resize; }
-.ctcte-content .ProseMirror th, .ctcte-content .ProseMirror td { position: relative; }
+.ProseMirror.resize-cursor { cursor: col-resize; }
+.ProseMirror th, .ProseMirror td { position: relative; }
 /* The selected-cell wash TipTap toggles while dragging across cells. */
-.ctcte-content .ProseMirror .selectedCell::after {
+.ProseMirror .selectedCell::after {
   content: ''; position: absolute; inset: 0; pointer-events: none;
   background: rgba(124,58,237,.14);
 }
@@ -3088,7 +3195,10 @@ export const CTC_EDITOR_CSS = `
 .ctcte-pop-portal { position: static !important; top: auto !important; left: auto !important; right: auto !important; margin: 0 !important; }
 .ctcte-pgbtn:hover { background: #EDE9FE; border-color: #C4B5FD; }
 [data-bs-theme="dark"] .ctcte-pgbtn { background: rgba(124,58,237,.18); border-color: rgba(124,58,237,.45); color: #C4B5FD; }
-.ctcte-div { width: 1px; height: 18px; background: #E5E1F3; margin: 0 3px; }
+/* The rule sits on the same 28px line as the groups, with the visible stroke
+   centred inside it — so a divider never rides above or below its neighbours. */
+.ctcte-div { width: 1px; height: 28px; background: transparent; margin: 0 3px; display: flex; align-items: center; }
+.ctcte-div::before { content: ''; display: block; width: 1px; height: 18px; background: #E5E1F3; }
 /* Colour + highlight. The native colour input is laid OVER its swatch so the
    whole button opens the picker instead of sitting beside it as a second
    target. */
@@ -3196,8 +3306,18 @@ export const CTC_EDITOR_CSS = `
 .ctcte-content .ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: #A78BFA; pointer-events: none; float: left; height: 0; }
 
 [data-bs-theme="dark"] .ctcte-toolbar { background: rgba(255,255,255,.03); border-bottom-color: rgba(124,58,237,.2); }
-[data-bs-theme="dark"] .ctcte-sel { background: rgba(255,255,255,.05); border-color: rgba(124,58,237,.3); color: #c4b5fd; }
-[data-bs-theme="dark"] .ctcte-div { background: rgba(124,58,237,.3); }
+/* A native select paints its OPEN list from its own background-color, and a
+   translucent white composites to near-white — so Paragraph / font / Size
+   dropped open as a white panel with pale lavender text on it, unreadable in
+   dark mode. An opaque surface, options coloured in their own right, and
+   color-scheme so the browser draws the popup's chrome dark too. */
+[data-bs-theme="dark"] .ctcte-sel { background: #241a3d; border-color: rgba(124,58,237,.45); color: #ddd2ff; color-scheme: dark; }
+[data-bs-theme="dark"] .ctcte-sel option { background: #241a3d; color: #ddd2ff; }
+[data-bs-theme="dark"] .ctcte-sel:hover { border-color: rgba(167,139,250,.65); }
+[data-bs-theme="dark"] .ctcte-sel:focus { outline: none; border-color: #a78bfa; }
+/* The stroke moved to ::before, so the dark colour goes there too. */
+[data-bs-theme="dark"] .ctcte-div { background: transparent; }
+[data-bs-theme="dark"] .ctcte-div::before { background: rgba(124,58,237,.3); }
 [data-bs-theme="dark"] .ctcte-btn { color: #c4b5fd; }
 [data-bs-theme="dark"] .ctcte-btn:hover { background: rgba(124,58,237,.18); }
 [data-bs-theme="dark"] .ctcte-content .ProseMirror { color: #e8eaed; }
