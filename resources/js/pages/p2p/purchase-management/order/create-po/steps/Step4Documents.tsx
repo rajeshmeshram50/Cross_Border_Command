@@ -67,9 +67,11 @@ function statusLabel(doc: PoDocument): { text: string; tone: 'signed' | 'pending
   if (doc.status === 'signed') return { text: 'Signed', tone: 'signed' };
   if (doc.status === 'sent') return { text: 'Sent for Signature', tone: 'pending' };
   const sig = (doc.signature_status ?? '').toLowerCase();
-  if (['declined', 'rejected'].includes(sig)) return { text: 'Declined · Resend', tone: 'pending' };
-  if (sig === 'recalled') return { text: 'Recalled · Resend', tone: 'pending' };
-  if (sig === 'expired') return { text: 'Expired · Resend', tone: 'pending' };
+  /* The state alone. "· Resend" was here when the row had no Resend button of
+     its own; it has one now, so the pill was saying it twice. */
+  if (['declined', 'rejected'].includes(sig)) return { text: 'Declined', tone: 'pending' };
+  if (sig === 'recalled') return { text: 'Recalled', tone: 'pending' };
+  if (sig === 'expired') return { text: 'Expired', tone: 'pending' };
   return { text: 'Pending', tone: 'pending' };
 }
 
@@ -608,8 +610,10 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                         {isMandatory(doc) || isSettled(doc) ? (
                           <Tooltip label={isMandatory(doc)
                             ? 'The Purchase Order always goes with the order — it cannot be marked not necessary'
-                            : 'Already sent for signature — it stays Necessary'} themed>
-                            <span className="cdoc-req">NECESSARY</span>
+                            : 'Already sent for signature — what it was marked no longer changes'} themed>
+                            {/* It said NECESSARY whatever the row held, so a document
+                                sent while Not necessary read as the opposite. */}
+                            <span className="cdoc-req">{isNeeded(doc) ? 'NECESSARY' : 'NOT NECESSARY'}</span>
                           </Tooltip>
                         ) : selected.includes(doc.id) ? (
                           /* Ticking a row is already the "I am dealing with this
@@ -667,7 +671,7 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                           {needsResend(doc) && (
                             <button type="button" className="cdoc-btn cdoc-btn--resend"
                               disabled={busy === 'sign'}
-                              title={`${statusLabel(doc).text.split(' · ')[0]} — send it for signature again`}
+                              title={`${statusLabel(doc).text} — send it for signature again`}
                               onClick={() => resendOne(doc)}>
                               <IcoSend size={13} /> Resend for Sign
                             </button>

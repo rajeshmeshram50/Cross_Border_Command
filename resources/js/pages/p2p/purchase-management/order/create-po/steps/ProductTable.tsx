@@ -300,7 +300,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
             {withPi && <th>Qty (PI)</th>}
             <th className={`cpd-th-num ${readOnly ? '' : 'cpd-edh'}`}>{withPi ? 'Qty (PO)' : 'Qty'}</th>
             {withPi && <th>Missing Qty</th>}
-            {withPi && <th>Excess Qty</th>}
+            {withPi && <th>Extra Qty</th>}
             <th className={`cpd-th-num ${readOnly ? '' : 'cpd-edh'}`}>Product Rate</th>
             {inter ? <th>{exportPo ? 'Tax (%)' : 'IGST (%)'}</th> : <><th>CGST (%)</th><th>SGST (%)</th></>}
             {inter
