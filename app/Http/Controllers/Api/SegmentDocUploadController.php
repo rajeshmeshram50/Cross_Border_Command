@@ -952,6 +952,14 @@ class SegmentDocUploadController extends Controller
             ->get()
             ->groupBy('purchase_order_id');
 
+        /* Where a document stands is decided by its signature request, not by the
+           row: a decline lands on the request, and Stage 04 re-reads it on every
+           open. This list did not, so a declined document went on reading
+           "Pending" here and offered to be sent rather than sent again. */
+        $sigStates = DB::table('clm_signature_requests')
+            ->whereIn('id', $docs->flatten(1)->pluck('signature_request_id')->filter()->unique()->all() ?: [0])
+            ->pluck('status', 'id');
+
         $supplierName = (string) ($owner->company_name ?? '');
         $with = [];
         $without = [];
@@ -964,7 +972,9 @@ class SegmentDocUploadController extends Controller
                 ->filter(fn ($d) => ($d->needed ?? 'no') === 'yes')
                 ->values();
 
-            $shaped = $rows->map(fn ($d) => $this->shapePoDoc($d, $po->code))->all();
+            $shaped = $rows->map(fn ($d) => $this->shapePoDoc(
+                $d, $po->code, $d->signature_request_id ? ($sigStates[$d->signature_request_id] ?? null) : null,
+            ))->all();
             $agr = array_values(array_filter($shaped, fn ($r) => $r['is_agreement']));
             $td  = array_values(array_filter($shaped, fn ($r) => !$r['is_agreement']));
             $ratio = fn (array $set) => [
@@ -1042,12 +1052,24 @@ class SegmentDocUploadController extends Controller
     }
 
     /** One Stage 04 document as the vault renders it. */
-    private function shapePoDoc($d, ?string $poCode = null): array
+    private function shapePoDoc($d, ?string $poCode = null, ?string $sigState = null): array
     {
-        $status = match ((string) $d->status) {
+        /* The signature request is the authority on where a document stands —
+           a decline, a recall or an expiry is recorded there and never on the
+           row. Only a completed request beats what the row says about signing. */
+        $state = match ((string) $sigState) {
+            'declined'   => 'declined',
+            'recalled'   => 'recalled',
+            'expired'    => 'expired',
+            'completed'  => 'signed',
+            'inprogress' => 'sent',
+            default      => (string) $d->status,
+        };
+        $status = match ($state) {
             'signed'    => 'Signed',
             'sent'      => 'Pending',
             'declined'  => 'Declined',
+            'recalled'  => 'Recalled',
             'expired'   => 'Expired',
             default     => 'Pending',
         };
@@ -1065,7 +1087,7 @@ class SegmentDocUploadController extends Controller
             'po_doc_id'            => (int) $d->id,
             'party'                => 'Vendor',
             'signature_request_id' => $d->signature_request_id ? (int) $d->signature_request_id : null,
-            'sig_state'            => $d->status,
+            'sig_state'            => $state,
             'name'                 => $d->name ?: $d->code,
             'reference'            => $d->code,
             'authority'            => null,

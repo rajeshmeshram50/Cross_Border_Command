@@ -1224,20 +1224,6 @@ class PayrollService
                 throw new RuntimeException('Payroll for this period is already approved/paid and cannot be regenerated.');
             }
 
-            $run = $existing ?: new PayrollRun([
-                'client_id'         => $period->client_id,
-                'branch_id'         => $period->branch_id,
-                'payroll_period_id' => $period->id,
-                'created_by'        => $ctx['user_id'] ?? null,
-            ]);
-            $run->status       = 'generated';
-            $run->generated_by = $ctx['user_id'] ?? null;
-            $run->generated_at = now();
-            $run->save();
-
-            // Wipe prior payslips for a clean regenerate (Rule 13).
-            Payslip::where('payroll_run_id', $run->id)->forceDelete();
-
             $employees = $this->eligibleEmployees($period);
 
             // Rule 13 (cross-level) — never let an employee be paid twice in the
@@ -1256,6 +1242,24 @@ class PayrollService
                     $employees = $employees->reject(fn($e) => in_array($e->id, $covered, true))->values();
                 }
             }
+
+            if ($employees->isEmpty()) {
+                throw new RuntimeException('Payroll cannot be processed because no payroll data is available for the selected month.');
+            }
+
+            $run = $existing ?: new PayrollRun([
+                'client_id'         => $period->client_id,
+                'branch_id'         => $period->branch_id,
+                'payroll_period_id' => $period->id,
+                'created_by'        => $ctx['user_id'] ?? null,
+            ]);
+            $run->status       = 'generated';
+            $run->generated_by = $ctx['user_id'] ?? null;
+            $run->generated_at = now();
+            $run->save();
+
+            // Wipe prior payslips for a clean regenerate (Rule 13).
+            Payslip::where('payroll_run_id', $run->id)->forceDelete();
 
             $nameCache = $this->masterNameCaches();
             // Batch the exit lookup ONCE for the whole run instead of querying
@@ -3280,7 +3284,7 @@ class PayrollService
             ->where('employee_id', $employeeId)
             ->whereNull('deleted_at')
             ->whereBetween('attendance_date', [$start->toDateString(), $end->toDateString()])
-            ->get(['id', 'attendance_date', 'status', 'check_in_at', 'check_out_at']);
+            ->get(['id', 'attendance_date', 'status', 'check_in_at', 'check_out_at', 'shift_start']);
 
         /* Minutes actually worked per day, only fetched when the branch runs a
          * short-hours policy — otherwise this is a punch-table scan nobody
@@ -3319,7 +3323,14 @@ class PayrollService
             $arrivedLate = false;
             if ($hasIn && in_array(strtolower($status), ['present', 'half day'], true)) {
                 $localIn = Carbon::parse($r->check_in_at, 'UTC')->setTimezone(self::DISPLAY_TZ)->format('H:i');
-                $arrivedLate = $this->minutesBetween($shiftStart, $localIn) > 10;
+                /* The shift THIS day was worked under. Payroll used the one
+                 * window the employee is on now for the whole cycle, so a
+                 * reassignment mid-month re-scored the days before it and could
+                 * turn a clean month into late-mark LOP after the fact (BR-01
+                 * charges half a day per 3 late marks). Days recorded before the
+                 * stamp existed carry null and keep the old behaviour. (#216) */
+                $dayShift    = trim((string) ($r->shift_start ?? '')) ?: $shiftStart;
+                $arrivedLate = $this->minutesBetween($dayShift, $localIn) > 10;
             }
             // Promote Present → Late so the payslip's Late Marks column and the
             // Biometric Input table are not permanently zero (#34).

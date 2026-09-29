@@ -1418,6 +1418,10 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
   const [eEarnings, setEEarnings] = useState<SalBreakComp[]>([]);
   const [eDeductions, setEDeductions] = useState<SalBreakComp[]>([]);
   const [eEsiApplicable, setEEsiApplicable] = useState(false);
+  /* The employee record's own ESI flag, kept aside at load. The form otherwise
+     reads ESI only off the salary structure, so an employee who has no
+     structure yet had nowhere to read it from. (#36) */
+  const eEsiFromEmployeeRef = useRef(false);
   /* Both start UNCHECKED. PT defaulted to true, so every new employee arrived
      with a Professional Tax deduction row nobody had asked for — and it is not
      universal (it is state-levied, and several states do not charge it). */
@@ -1544,7 +1548,13 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
          decision the form should make silently, and PT is state-levied — some
          states do not charge it at all. Both were arriving pre-enabled, which
          put deduction rows on the payslip that nobody chose. */
-      setEEsiApplicable(false);
+      /* ESI follows the EMPLOYEE record when there is no structure to read.
+         Forcing it false meant merely opening Step 4 for a structure-less
+         employee and saving wrote esi_applicable=false over a flag onboarding
+         had set — a change nobody made, on a screen that had not been touched.
+         PT has no employee-level column, so it genuinely starts off: it is
+         state-levied and some states do not charge it at all. */
+      setEEsiApplicable(eEsiFromEmployeeRef.current);
       setEPtApplicable(false);
       breakupBaselineRef.current = null;
     };
@@ -1572,7 +1582,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
             setEPtApplicable(pt);
             // Same CTC-aware shape persistBreakup() compares against, so a
             // structure that is already in step is not re-posted. (#133)
-            breakupBaselineRef.current = `${breakupSignature(earn, ded, pf, esi, pt)}|${Math.round((Number(active.monthly_gross) || 0) * 12)}`;
+            breakupBaselineRef.current = `${breakupSignature(earn, ded, pf, esi, pt, ePfType)}|${Math.round((Number(active.monthly_gross) || 0) * 12)}`;
           } else {
             seedFresh();
           }
@@ -2041,7 +2051,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       .map((c, i) => ({ code: (c.code || `ded_${i + 1}`).trim(), label: c.label.trim(), amount: Number(c.amount) || 0 }));
 
     // CTC is part of the identity of this save — see hole 2 above.
-    const sig = `${breakupSignature(earn, ded, ePfEligible, eEsiApplicable, ePtApplicable)}|${salaryAnnual}`;
+    const sig = `${breakupSignature(earn, ded, ePfEligible, eEsiApplicable, ePtApplicable, ePfType)}|${salaryAnnual}`;
     if (breakupBaselineRef.current === sig) return;
 
     await api.post('/salary-structures', {
@@ -2059,7 +2069,11 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       annual_ctc: salaryAnnual > 0 ? salaryAnnual : undefined,
       // Keeps the structure's PF Type in step with the dropdown above it,
       // which until now reached the employee record only. (#127)
-      pf_type: ePfEligible ? ePfType.toLowerCase() : null,
+      /* Sent whether or not PF is on. Nulling it when PF was off meant a
+       * Standard basis did not survive an off/on round trip — it came back
+       * Statutory, quietly changing the deduction. Payroll only reads the
+       * column while PF is on, so carrying it is inert. (#36) */
+      pf_type: ePfType.toLowerCase(),
       esi_applicable: eEsiApplicable,
       pt_applicable: ePtApplicable,
     });
@@ -2427,9 +2441,15 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       if (raw.salary_effective_from) setESalaryFrom(String(raw.salary_effective_from).slice(0, 10));
       if (raw.bonus_in_annual !== undefined && raw.bonus_in_annual !== null) setEBonusInAnnual(!!raw.bonus_in_annual);
       if (raw.pf_eligible !== undefined && raw.pf_eligible !== null) setEPfEligible(!!raw.pf_eligible);
+      // Column is 'Yes'/'No'; the seed path below falls back to it. (#36)
+      eEsiFromEmployeeRef.current = raw.esi_applicable === true
+        || String((raw as any).esi_applicable ?? '').toLowerCase() === 'yes';
       setEPfType(String(raw.pf_type ?? '').toLowerCase() === 'standard' ? 'Standard' : 'Statutory');
       if (raw.detailed_breakup !== undefined && raw.detailed_breakup !== null) setEDetailedBreakup(!!raw.detailed_breakup);
     } else {
+      // No detail record to read the flag off — start clean rather than
+      // inheriting the last employee opened. (#36)
+      eEsiFromEmployeeRef.current = false;
       const parts = row.name.split(' ');
       setEFirstName(parts[0] || '');
       setELastName(parts.slice(1).join(' ') || '');
@@ -2801,7 +2821,8 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       salary_effective_from: eSalaryFrom || null,
       bonus_in_annual: !!eBonusInAnnual,
       pf_eligible: !!ePfEligible,
-      pf_type: ePfEligible ? ePfType.toLowerCase() : null,
+      // Kept through an off spell — see the structure payload above. (#36)
+      pf_type: ePfType.toLowerCase(),
       detailed_breakup: !!eDetailedBreakup,
 
       status: eStatus || 'Inactive',
@@ -3063,7 +3084,41 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
        * failure below gets its own message that says what actually happened. */
       let successBody = '';
       const currentId = editingDbIdRef.current ?? editingDbId;
+      /* Has the revision already been posted below? See the ordering note. */
+      let breakupSaved = false;
       if (currentId) {
+        /* THE BREAKUP GOES FIRST, before the employee PUT. (#217)
+         *
+         * The PUT mirrors pf_eligible / esi_applicable onto every active and
+         * superseded structure (EmployeeController, "#90") and writes the new
+         * pf_type onto the employee. SalaryStructureController::store() then
+         * decides whether this POST is a real revision by comparing what was
+         * sent against the CURRENT structure and the CURRENT employee — both of
+         * which the PUT had just moved to the submitted values.
+         *
+         * So every PF change looked like a no-op to the one code path that
+         * creates versions: the flag did land (the mirror wrote it), but no new
+         * version was cut, Salary History stayed empty and Revise Salary went on
+         * showing v43. The change was applied and simultaneously unrecorded,
+         * which is exactly "the version in Revise Salary remains unchanged".
+         *
+         * Posting first leaves store() an untouched baseline to compare with, so
+         * a PF change cuts v44 and the PUT that follows sets the same values it
+         * already wrote back — idempotent, and the mirror then has nothing left
+         * to do.
+         *
+         * Only for an EXISTING employee. A create has no id to hang a structure
+         * off until the POST returns, so that path keeps the original order. */
+        try {
+          await persistBreakup(currentId);
+          breakupSaved = true;
+        } catch (bErr: any) {
+          const bMsg = bErr?.response?.data?.message || bErr?.message || 'The salary breakup could not be saved.';
+          // Nothing has been written yet — say so, rather than leaving the
+          // operator to guess which half of the save landed.
+          toast.error('Salary breakup not saved', `Nothing was saved: the salary breakup was rejected — ${String(bMsg)}`);
+          return;   // finally{} still clears `saving`
+        }
         await api.put(`/employees/${currentId}`, payload);
         successBody = `${eFirstName} ${eLastName}`.trim() + ' · marked complete.';
       } else {
@@ -3093,7 +3148,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
        * corrected instead of the operator discovering later that the employee
        * has no structure. No success toast is shown in this path — exactly one
        * message reaches the screen. (#208) */
-      if (finalEmpId) {
+      if (finalEmpId && !breakupSaved) {
         try {
           await persistBreakup(finalEmpId);
         } catch (bErr: any) {
@@ -5390,14 +5445,19 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                         />
                       </button>
                       <span className="emp-payroll-banner-text" style={{ fontSize: 13, fontWeight: 600 }}>
-                        {/* Labelled "PF Applicable" on request. The flag behind
-                          it is `enable_payroll` and it gates the WHOLE
-                          Compensation step — CTC, effective date and the salary
-                          breakup as well as PF — so the note below carries that
-                          scope, because the label no longer does. There is also
-                          a separate "PF Applicable" dropdown inside this block;
-                          the two now read alike on one screen. */}
-                        PF Applicable for this Employee
+                        {/* This is `enable_payroll`, NOT `pf_eligible`.
+                          It was labelled "PF Applicable for this Employee",
+                          which is also the label of the dropdown a few rows
+                          below — two different columns, one name. Revise Salary
+                          is bound to the OTHER one and has no control for this,
+                          so turning this off left that modal showing PF ticked
+                          with a 1,800 deduction while payroll excluded the
+                          employee outright. Nobody could tell which screen was
+                          lying; both were right about different fields. (#36)
+                          The name now says what the switch does: it gates the
+                          whole Compensation step — CTC, effective date and the
+                          breakup as well as PF. */}
+                        Include this Employee in Payroll
                       </span>
                     </div>
                     {/* The -6px top margin pulled this note up into the banner
@@ -5405,7 +5465,10 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                         wrapped to a second line. The banner already carries
                         mb-3; this just sits under it. */}
                     <div className="emp-payroll-banner-note" style={{ fontSize: 11.5, margin: '0 0 12px 2px', lineHeight: 1.45 }}>
-                      Turning this off also removes <strong>CTC, salary effective date and the salary breakup</strong> for this employee, not just PF.
+                      Off, this employee is excluded from every payroll run — no payslip, and no PF, ESI
+                      or Professional Tax — and <strong>CTC, salary effective date and the salary breakup</strong>
+                      are hidden here. Their saved figures are kept, and Revise Salary will say they are off payroll.
+                      PF itself is switched separately, below.
                     </div>
                     <Row className="g-3">
                       <Col md={6}>

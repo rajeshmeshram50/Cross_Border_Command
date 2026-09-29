@@ -6229,14 +6229,29 @@
   border: 1px solid rgba(239, 68, 68, 0.22);
   color: #b91c1c;
 }
+/* Capped and centred as a block: the reason runs to 500 characters server-side,
+   and left unbounded in a single-signer row it would stretch the full panel
+   width and undo the centring above. (#141) */
+.ep-signer-note {
+  max-width: 260px;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: left;
+}
 .ep-signer-note i { margin-right: 4px; opacity: 0.85; }
 [data-bs-theme="dark"] .ep-signer-note {
   color: #fca5a5;
   border-color: rgba(239, 68, 68, 0.32);
 }
-/* The stepper lays signers out in a row; a wrapped reason needs the name
-   column to stop centring its contents against a single line. */
-.ep-signer:has(.ep-signer-note) { align-items: flex-start; }
+/* A wrapped reason must not drag the whole step to the left.
+   This read `align-items: flex-start`, meant to stop a two-line reason being
+   centred against a single-line name. But the step is a flex:1 column, so on a
+   run with ONE signer it spans the full panel width — and flex-start pinned the
+   numbered dot, the name and the reason to the far left of a very wide empty
+   row, which is what this ticket shows. Centring is restored for the column and
+   the reason is width-capped instead, so a wrapped line reads as a block under
+   the name rather than as a ragged edge. (#141) */
+.ep-signer:has(.ep-signer-note) { align-items: center; }
 .ep-signer-rejected-at { display: block; font-size: 10px; font-weight: 600; color: #ef4444; margin-top: 1px; }
 .ep-signer-state {
   font-size: 9.5px;

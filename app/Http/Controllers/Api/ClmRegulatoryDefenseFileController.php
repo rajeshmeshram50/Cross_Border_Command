@@ -126,7 +126,7 @@ class ClmRegulatoryDefenseFileController extends Controller
             $procs = [];        // [{proc, suppliers:[{name,code,id}], po}]
             $vendorSeen = [];   // dedupe vault targets across procurements
             $vault = [];
-            if (!empty($r['custId'])) $vault[] = ['key' => 'buyer', 'label' => 'Buyer', 'type' => 'customer', 'id' => (int) $r['custId']];
+            if (!empty($r['custId'])) $vault[] = ['key' => 'buyer', 'label' => 'Customer', 'type' => 'customer', 'id' => (int) $r['custId']];
             if (!empty($r['consId'])) $vault[] = ['key' => 'consignee', 'label' => 'Consignee', 'type' => 'consignee', 'id' => (int) $r['consId']];
 
             foreach ($procByLead[$lead] ?? [] as $procId) {

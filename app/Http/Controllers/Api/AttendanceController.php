@@ -329,6 +329,16 @@ class AttendanceController extends Controller
         $todayStr = self::todayLocal();
         $present  = 0; $late = 0; $missingBio = 0; $leaveDays = 0;
         foreach ($history as $row) {
+            /* Judge each day against the shift IT was worked under, not the one
+             * the employee is on today. One window for the whole month meant a
+             * reassignment re-scored every past day: move someone to a 21:00
+             * shift and their on-time mornings all became late, months after the
+             * fact. Rows written before the stamp existed fall back to the
+             * employee's current shift — the old answer, for the only rows where
+             * no better one was ever recorded. (#216) */
+            $row->setRelation('employee', $emp);
+            [$rowShiftStart] = $row->shiftWindow();
+            $rowShiftStart = $rowShiftStart ?: $shiftStart;
             $status = (string) ($row->status ?? '');
             $rowIso = \Carbon\Carbon::parse($row->attendance_date)->toDateString();
             if (strcasecmp($status, 'Present') === 0)  $present++;
@@ -352,7 +362,7 @@ class AttendanceController extends Controller
             $firstIn = $row->check_in_at;
             if ($firstIn && strcasecmp($status, 'Present') === 0) {
                 $localIn = $firstIn->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i');
-                if ($this->minutesBetween($shiftStart, $localIn) > 10) $late++;
+                if ($this->minutesBetween($rowShiftStart, $localIn) > 10) $late++;
             }
         }
 
@@ -1589,8 +1599,11 @@ class AttendanceController extends Controller
             // Auto-promote Present → Late based on the local first-in. 10-min
             // grace matches the heuristic used by the MTD late-marks loop.
             if (strcasecmp($stored, 'Present') === 0 && $row->check_in_at && $shiftStart) {
+                // The shift THIS day was worked under, not the employee's
+                // current one — see Attendance::shiftWindow(). (#216)
+                $dayShiftStart = $row->shiftWindow()[0] ?: $shiftStart;
                 $localIn = $row->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i');
-                $late = $this->minutesBetween($shiftStart, $localIn);
+                $late = $this->minutesBetween($dayShiftStart, $localIn);
                 if ($late > 10) return 'Late';
             }
             return $stored;
@@ -1784,8 +1797,11 @@ class AttendanceController extends Controller
                 // Applies to a worked rest day too — see resolveDayStatus():
                 // the late-mark KPI counts the STORED status, so promoting the
                 // display costs nothing and #90 asks for Late where it applies.
-                if (strcasecmp($status, 'Present') === 0 && $firstIn !== '—' && $shiftStart
-                    && $this->minutesBetween($shiftStart, $firstIn) > 10) {
+                // Per-row shift, so a reassignment cannot re-mark past days
+                // late. (#216)
+                $rowShift = $r->shiftWindow()[0] ?: $shiftStart;
+                if (strcasecmp($status, 'Present') === 0 && $firstIn !== '—' && $rowShift
+                    && $this->minutesBetween($rowShift, $firstIn) > 10) {
                     $status = 'Late';
                 }
                 // Missing checkout: a PAST day with a check-in but no check-out
@@ -1917,8 +1933,10 @@ class AttendanceController extends Controller
             }
 
             $lateMin = 0;
-            if ($firstIn !== '—' && $shiftStart) {
-                $lateMin = max(0, $this->minutesBetween($shiftStart, $firstIn));
+            // Same per-row shift the status promotion above uses. (#216)
+            $lateShift = ($r ? $r->shiftWindow()[0] : null) ?: $shiftStart;
+            if ($firstIn !== '—' && $lateShift) {
+                $lateMin = max(0, $this->minutesBetween($lateShift, $firstIn));
             }
 
             // Gross = the full first-in → last-out span (includes breaks);

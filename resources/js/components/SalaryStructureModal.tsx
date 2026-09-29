@@ -17,6 +17,9 @@ export interface SalaryEmployeeLite {
   pf_eligible?: boolean;
   pf_type?: string | null; // 'statutory' | 'standard'
   esi_applicable?: boolean;
+  /** The Compensation step's banner toggle. When false, payroll skips the
+   *  employee entirely — so nothing ticked below is actually deducted. */
+  enable_payroll?: boolean;
   annual_salary?: number | null;
   has_structure?: boolean;
   structure_id?: number | null;
@@ -157,8 +160,19 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
              save having failed. Falls back to the roster's copy, then to the
              joining date, so a structure without one still opens sensibly. */
           setEffectiveFrom(d.effective_from || employee.effective_from || employee.date_of_joining || todayISO());
-          setPfApplicable(!!d.pf_applicable || !!employee.pf_eligible);
-          setEsiApplicable(!!d.esi_applicable || !!employee.esi_applicable);
+          /* The STRUCTURE is what this modal is editing, so it is what the
+             boxes show. They were seeded `structure || employee`, an OR that
+             could only ever drift one way: whenever the two sources disagreed
+             the box read ON, and saving wrote that ON back to the employee. PF
+             switched off in Compensation therefore reappeared here as ticked,
+             and the next revision turned it back on for real — the exact
+             "changes in one section are not reflected in the other" this
+             ticket describes, with the modal resolving the disagreement
+             silently in favour of whichever source said yes.
+             The two are now kept in step by both save paths writing both
+             sides, so an OR has nothing left to rescue. (#36) */
+          setPfApplicable(!!d.pf_applicable);
+          setEsiApplicable(!!d.esi_applicable);
           /* Read the saved flag as it is. `d.pt_applicable !== false` treated a
              MISSING field as ticked, which is the state the ticket names — the
              box reads "Professional Tax applies" on the strength of a value the
@@ -779,6 +793,26 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                   fields instead of a control group of their own. */}
               <div className="ssm-field ssm-field--wide">
                 <label className="ssm-label">Statutory Components</label>
+                {/* Payroll gates the whole employee on `enable_payroll` before
+                    it looks at any of these, so with it off the ticks below are
+                    a statement of intent and nothing more — no PF, ESI or PT is
+                    deducted and no payslip is produced at all.
+                    Compensation labels that toggle "PF Applicable for this
+                    Employee", which is why this modal showing PF ✓ beside it
+                    read as the two screens contradicting each other. Saying so
+                    here is what reconciles them: both are right, and the
+                    employee is simply off payroll. (#36) */}
+                {employee.enable_payroll === false && (
+                  <div className="ssm-payroll-off">
+                    <i className="ri-error-warning-line" />
+                    <span>
+                      This employee is currently <strong>off payroll</strong> —
+                      the Compensation step&rsquo;s &ldquo;PF Applicable for this Employee&rdquo;
+                      toggle is off. Nothing selected here is deducted, and no payslip is
+                      generated, until it is switched back on.
+                    </span>
+                  </div>
+                )}
                 <div className="ssm-toggles">
                   {([
                     { on: pfApplicable,  set: setPfApplicable,  label: 'PF', meta: '12% of basic' },
@@ -1114,6 +1148,17 @@ export function SalaryModalStyles() {
       /* PF Type sits under the toggles it belongs to, narrow enough that it
          reads as a detail of the PF tick rather than a fourth component. */
       .ssm-pf-type { margin-top: 10px; max-width: 260px; }
+      /* Off-payroll notice — amber rather than red: nothing here is wrong, the
+         employee is simply excluded from the run. (#36) */
+      .ssm-payroll-off {
+        display: flex; gap: 8px; align-items: flex-start;
+        margin: 0 0 10px; padding: 8px 10px; border-radius: 6px;
+        font-size: 11.5px; line-height: 1.45;
+        background: rgba(247, 184, 75, 0.14);
+        border: 1px solid rgba(247, 184, 75, 0.45);
+        color: var(--vz-body-color);
+      }
+      .ssm-payroll-off i { font-size: 14px; line-height: 1.3; color: #d98c00; flex: 0 0 auto; }
       .ssm-pf-type .ssm-label { margin-bottom: 4px; }
       .ssm-toggle {
         display: flex; align-items: center; gap: 8px;

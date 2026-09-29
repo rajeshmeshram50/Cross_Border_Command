@@ -96,7 +96,7 @@ export default function ClmTradeDocumentsPage() {
         steps={[
           { n: '01', title: 'Create Document Name', desc: 'Add declaration and undertaking document names.', icon: ICO.doc },
           { n: '02', title: 'Create Draft Template', desc: 'Create reusable draft document content.',         icon: ICO.edit },
-          { n: '03', title: 'Set Applies To',        desc: 'Define buyer, consignee, and supplier applicability.', icon: ICO.users },
+          { n: '03', title: 'Set Applies To',        desc: 'Define customer, consignee, and supplier applicability.', icon: ICO.users },
           { n: '04', title: 'Insert Placeholders',   desc: 'Configure dynamic document placeholders.',        icon: ICO.zap },
           { n: '05', title: 'Enable Usage',          desc: 'Use trade docs across CLM workflows.',             icon: ICO.check },
         ]}

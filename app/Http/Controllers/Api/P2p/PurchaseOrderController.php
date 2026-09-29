@@ -98,7 +98,14 @@ class PurchaseOrderController extends Controller
             ->where('pi.proforma_invoice_id', $piId)
             ->where('po.client_id', $clientId)
             ->whereNull('po.deleted_at')
-            ->where('po.status', '!=', PurchaseOrder::STATUS_CANCELLED)
+            /* Named because they hold quantity, so this asks exactly what
+               orderedByPiItem asks: submitted, or a draft with a senior on it. */
+            ->where(fn ($q) => $q
+                ->where('po.status', PurchaseOrder::STATUS_SUBMITTED)
+                ->orWhereExists(fn ($s) => $s->selectRaw('1')
+                    ->from('p2p_po_gst_approvals as ga')
+                    ->whereColumn('ga.purchase_order_id', 'po.id')
+                    ->whereIn('ga.status', [PoGstApproval::STATUS_PENDING, PoGstApproval::STATUS_APPROVED])))
             ->when($excludePoId, fn ($q) => $q->where('po.id', '!=', $excludePoId))
             ->groupBy('po.id', 'po.code', 'po.status')
             ->selectRaw('po.id, po.code, po.status, COUNT(*) as lines, SUM(i.quantity) as qty')

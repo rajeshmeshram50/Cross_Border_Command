@@ -402,6 +402,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // Without these the modal fell back to Statutory / no ESI and wrote that back over the Employee form.
     pf_type: empDetail.pf_type ?? null,
     esi_applicable: empDetail.esi_applicable === true || String(empDetail.esi_applicable ?? '').toLowerCase() === 'yes',
+    /* Lets the modal say when the employee is off payroll entirely — otherwise
+       it shows PF ticked for someone no run will ever price. Null is the legacy
+       "never set" state and has always meant on. (#36) */
+    enable_payroll: (empDetail as any).enable_payroll == null ? true : !!(empDetail as any).enable_payroll,
     date_of_joining: empDetail.date_of_joining ? String(empDetail.date_of_joining).slice(0, 10) : null,
     annual_salary: empDetail.annual_salary != null ? Number(empDetail.annual_salary) : null,
     has_structure: !!salaryStruct,

@@ -963,7 +963,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
    * `${sub-tab}::${doc.code}` so codes don't collide across categories.
    * Value carries the File plus a blob URL for View/Download links —
    * the URL stays valid as long as the modal session lives. */
-  type SegRefUpload = { file: File | null; url: string; name: string };
+  type SegRefUpload = SegRefUploadEntry;
   const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
 
   /* Persist a segment-rule reference upload to the server. refKey
@@ -1022,7 +1022,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           }
           return {
             ...prev,
-            [refKey]: { file: null, url: row.attachment_url, name: row.attachment_name || file.name },
+            [refKey]: {
+              file: null, url: row.attachment_url, name: row.attachment_name || file.name,
+              issueDate: row.issue_date ?? null, expiryDate: row.expiry_date ?? null,
+            },
           };
         });
       }
@@ -1336,6 +1339,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
             file: null as unknown as File,
             url:  ref.attachment_url || '',
             name: ref.attachment_name || '',
+            issueDate:  ref.issue_date ?? null,
+            expiryDate: ref.expiry_date ?? null,
           };
         }
         if (Object.keys(hydrated).length > 0) setSegmentRefUploads(hydrated);
@@ -3661,6 +3666,34 @@ function SegmentRequiredBanner({ segmentName, label, rows }: {
  * by a blob URL the parent component holds onto. Delete revokes the
  * URL and drops the entry from the upload map, returning the cell to
  * its initial Upload state. */
+/* One segment-rule reference upload. The issued / expiry dates are the ones
+ * captured in the upload popup — the same pair the Evidence Vault shows. */
+type SegRefUploadEntry = {
+  file: File | null; url: string; name: string;
+  issueDate?: string | null; expiryDate?: string | null;
+};
+
+function SegRefIssueDate({ value }: { value?: string | null }) {
+  return value
+    ? <span className="acm-issue-date">{value}</span>
+    : <span className="acm-expiry-na">N/A</span>;
+}
+
+/* Same reading as the Evidence Vault's Expired At cell: past dates red, the
+ * next 30 days amber, anything later green, with the day count on hover. */
+function SegRefExpiryDate({ value }: { value?: string | null }) {
+  if (!value) return <span className="acm-expiry-na">N/A</span>;
+  const due = new Date(value);
+  const days = Number.isNaN(due.getTime()) ? null : Math.ceil((due.getTime() - Date.now()) / 86400000);
+  const cls = days === null ? 'acm-expiry-future'
+    : days < 0 ? 'acm-expiry-past'
+    : days <= 30 ? 'acm-expiry-soon'
+    : 'acm-expiry-future';
+  const chip = <span className={cls}>{value}</span>;
+  if (days === null) return chip;
+  return <Tooltip label={days < 0 ? `Expired ${Math.abs(days)} day(s) ago` : `Expires in ${days} day(s)`}>{chip}</Tooltip>;
+}
+
 function SegmentRefRowActions({ refKey, docName, docCode, authority, expiry, category, uploads, setUploads, persistUpload }: {
   refKey: string;
   docName: string;
@@ -3669,8 +3702,8 @@ function SegmentRefRowActions({ refKey, docName, docCode, authority, expiry, cat
   authority?: string | null;
   expiry?: string | null;
   category: 'kyc' | 'dd' | 'tl';
-  uploads: Record<string, { file: File | null; url: string; name: string }>;
-  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
+  uploads: Record<string, SegRefUploadEntry>;
+  setUploads: React.Dispatch<React.SetStateAction<Record<string, SegRefUploadEntry>>>;
   persistUpload: (refKey: string, file: File, docName: string, opts?: { issueDate?: string; expiryDate?: string }) => Promise<void> | void;
 }) {
   const toast = useToast();
@@ -3698,7 +3731,10 @@ function SegmentRefRowActions({ refKey, docName, docCode, authority, expiry, cat
       if (existing?.url && existing.url.startsWith('blob:')) {
         try { URL.revokeObjectURL(existing.url); } catch {}
       }
-      return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name } };
+      return { ...prev, [refKey]: {
+        file: f, url: URL.createObjectURL(f), name: f.name,
+        issueDate: opts?.issueDate ?? null, expiryDate: opts?.expiryDate ?? null,
+      } };
     });
     void persistUpload(refKey, f, docName, opts);
     return true;
@@ -3785,8 +3821,8 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
      *  Key is `${sub}::${doc.code}`; value carries the File + a blob URL
      *  used by the View / Download actions. Lifted to the parent so it
      *  survives sub-tab switches. */
-    segmentRefUploads: Record<string, { file: File | null; url: string; name: string }>;
-    setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
+    segmentRefUploads: Record<string, SegRefUploadEntry>;
+    setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, SegRefUploadEntry>>>;
     /** Fires the actual POST /segment-uploads/customer/{id} so the
      *  Evidence Vault sees the attachment. */
     persistSegmentRefUpload: (refKey: string, file: File, docName: string, opts?: { issueDate?: string; expiryDate?: string }) => Promise<void> | void;
@@ -3940,11 +3976,12 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                   ) : (
                     <>
                       <th>Sr No</th><th>Auto Code</th><th>Document Name</th>
-                      <th>Issuing Authority</th><th>Requirement</th><th>Actions</th>
+                      <th>Issuing Authority</th><th>Requirement</th>
+                      <th>Issued Date</th><th>Expired At</th><th>Actions</th>
                     </>
                   )}
                 </tr></thead>
-                <tbody><ShimmerTableRows rows={4} cols={isOwners ? 9 : 6} /></tbody>
+                <tbody><ShimmerTableRows rows={4} cols={isOwners ? 9 : 8} /></tbody>
               </table>
             ) : showSegmentRef ? (
               /* Segment-rule reference table — shared layout for
@@ -3957,14 +3994,16 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
               <table className="acm-table">
                 <thead><tr>
                   <th>Sr No</th><th>Auto Code</th><th>Document Name</th>
-                  <th>Issuing Authority</th><th>Requirement</th><th>Actions</th>
+                  <th>Issuing Authority</th><th>Requirement</th>
+                  <th>Issued Date</th><th>Expired At</th><th>Actions</th>
                 </tr></thead>
                 <tbody>
                   {totalRows === 0 ? (
-                    <tr className="acm-empty-row"><td colSpan={6}>No reference documents match your search.</td></tr>
+                    <tr className="acm-empty-row"><td colSpan={8}>No reference documents match your search.</td></tr>
                   ) : legacySlice.map((dl, i) => {
                     const sr = start + i + 1;
                     const srPad = String(sr).padStart(2, '0');
+                    const up = segmentRefUploads[`${sub}::${dl.code}`];
                     return (
                       <tr key={dl.code}>
                         <td>{srPad}</td>
@@ -3984,6 +4023,11 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                             ? <span className="acm-badge acm-badge--mand">★ Mandatory</span>
                             : <span className="acm-badge acm-badge--opt">Optional</span>}
                         </td>
+                        {/* Dates captured in the upload popup — the same pair the
+                            Evidence Vault shows. N/A until a file carrying them
+                            is attached. */}
+                        <td><SegRefIssueDate value={up?.issueDate} /></td>
+                        <td><SegRefExpiryDate value={up?.expiryDate} /></td>
                         <td>
                           <SegmentRefRowActions
                             refKey={`${sub}::${dl.code}`}
@@ -5935,7 +5979,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-badge--done   { background:rgba(16,185,129,0.18); color:#6ee7b7; border-color:rgba(16,185,129,0.40); }
 [data-bs-theme="dark"] .acm-badge--miss-m { background:rgba(239,68,68,0.18); color:#fca5a5; border-color:rgba(239,68,68,0.40); }
 [data-bs-theme="dark"] .acm-badge--miss-o { background:rgba(255,255,255,0.06); color:#94a3b8; border-color:rgba(255,255,255,0.12); }
-.acm-expiry-na, .acm-expiry-date, .acm-expiry-varies, .acm-expiry-future, .acm-expiry-past, .acm-issue-date {
+.acm-expiry-na, .acm-expiry-date, .acm-expiry-varies, .acm-expiry-future, .acm-expiry-past, .acm-expiry-soon, .acm-issue-date {
   display: inline-block;
   padding: 4px 12px;
   border-radius: 20px;
@@ -5948,6 +5992,7 @@ const SCOPED_CSS = `
 .acm-issue-date    { background: linear-gradient(135deg,#e0e7ff,#c7d2fe); color: #3730a3; border: 1px solid #a5b4fc; }
 .acm-expiry-future { background: linear-gradient(135deg,#d1fae5,#a7f3d0); color: #047857; border: 1px solid #6ee7b7; }
 .acm-expiry-past   { background: linear-gradient(135deg,#fee2e2,#fecaca); color: #b91c1c; border: 1px solid #fca5a5; }
+.acm-expiry-soon   { background: linear-gradient(135deg,#fef3c7,#fde68a); color: #92400e; border: 1px solid #fcd34d; }
 /* Legacy class — used by the design-only Trade Licence placeholder
    table. Kept around so old data still renders consistently with the
    new contextual colours; treats any non-empty date as future. */
@@ -6658,6 +6703,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-issue-date    { background: rgba(99,102,241,0.20); color: #c7d2fe; border-color: rgba(99,102,241,0.40); }
 [data-bs-theme="dark"] .acm-expiry-future { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.40); }
 [data-bs-theme="dark"] .acm-expiry-past   { background: rgba(239,68,68,0.18); color: #fca5a5; border-color: rgba(239,68,68,0.40); }
+[data-bs-theme="dark"] .acm-expiry-soon   { background: rgba(245,158,11,0.18); color: #fcd34d; border-color: rgba(245,158,11,0.40); }
 [data-bs-theme="dark"] .acm-expiry-date   { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.40); }
 [data-bs-theme="dark"] .acm-expiry-varies { background: rgba(245,158,11,0.18); color: #fcd34d; border-color: rgba(245,158,11,0.40); }
 [data-bs-theme="dark"] .acm-doc-code { background: rgba(167,139,250,0.15); color: #c4b5fd; border-color: rgba(167,139,250,0.30); }

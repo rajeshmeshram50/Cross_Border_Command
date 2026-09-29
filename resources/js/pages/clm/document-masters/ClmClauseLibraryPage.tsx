@@ -114,7 +114,7 @@ export default function ClmClauseLibraryPage() {
         steps={[
           { n: '01', title: 'Create Clause Type',     desc: 'Define clause categories like Core Legal, Financial, Risk.', icon: ICO.grid },
           { n: '02', title: 'Draft Clause',           desc: 'Author reusable clause text with placeholders.',             icon: ICO.edit },
-          { n: '03', title: 'Set Applicable Party',   desc: 'Define buyer, consignee, and supplier applicability.',        icon: ICO.users },
+          { n: '03', title: 'Set Applicable Party',   desc: 'Define customer, consignee, and supplier applicability.',        icon: ICO.users },
           { n: '04', title: 'Insert Placeholders',    desc: 'Embed dynamic placeholders in clause content.',              icon: ICO.zap },
           { n: '05', title: 'Use in Agreements',      desc: 'Insert clauses in CLM agreement drafts automatically.',      icon: ICO.check },
         ]}

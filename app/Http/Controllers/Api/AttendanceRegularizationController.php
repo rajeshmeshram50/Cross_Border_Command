@@ -1152,6 +1152,13 @@ class AttendanceRegularizationController extends Controller
             ->first();
 
         if (!$attendance) {
+            /* Freeze the shift on a row this controller creates too, or the
+             * day would go on drifting with the employee's current shift —
+             * the fault #216 is about. Best effort for a backfilled past
+             * day: the shift in force when the correction is approved is
+             * the best record available, and freezing it at least stops it
+             * moving again afterwards. */
+            [$stampStart, $stampEnd] = $employee->resolveShiftWindow();
             $attendance = Attendance::create([
                 'client_id'       => $employee->client_id,
                 'branch_id'       => $employee->branch_id,
@@ -1159,6 +1166,9 @@ class AttendanceRegularizationController extends Controller
                 'employee_id'     => $employee->id,
                 'attendance_date' => $dateStr,
                 'status'          => $status,
+                'shift_name'      => trim((string) ($employee->shift ?? '')) ?: null,
+                'shift_start'     => $stampStart,
+                'shift_end'       => $stampEnd,
             ]);
         } else {
             // Record what the day looked like before the exemption, once, so the
@@ -1266,6 +1276,13 @@ class AttendanceRegularizationController extends Controller
                 $dayStatus = $restKind ?? 'Present';
 
                 if (!$attendance) {
+                /* Freeze the shift on a row this controller creates too, or the
+                 * day would go on drifting with the employee's current shift —
+                 * the fault #216 is about. Best effort for a backfilled past
+                 * day: the shift in force when the correction is approved is
+                 * the best record available, and freezing it at least stops it
+                 * moving again afterwards. */
+                    [$stampStart, $stampEnd] = $employee->resolveShiftWindow();
                     $attendance = Attendance::create([
                         'client_id'       => $employee->client_id,
                         'branch_id'       => $employee->branch_id,
@@ -1273,6 +1290,9 @@ class AttendanceRegularizationController extends Controller
                         'employee_id'     => $employee->id,
                         'attendance_date' => $dateStr,
                         'status'          => $dayStatus,
+                        'shift_name'      => trim((string) ($employee->shift ?? '')) ?: null,
+                        'shift_start'     => $stampStart,
+                        'shift_end'       => $stampEnd,
                     ]);
                 }
 

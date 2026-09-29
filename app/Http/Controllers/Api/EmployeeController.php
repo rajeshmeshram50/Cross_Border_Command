@@ -525,6 +525,31 @@ class EmployeeController extends Controller
             return $rows;
         };
 
+        /* The HR-document category (IT / Non-IT / Legal) each employee falls
+         * under, INHERITED from their department's parent chain. (QA #20)
+         *
+         * Opt-in, because it costs a query and only Generate Document needs it.
+         * It is stamped server-side on purpose: GenerateDocument.tsx used to
+         * decide this in the browser by exact-matching the department name
+         * against 'it' / 'legal', so a "Software" department under "IT" was
+         * Non-IT on that screen while the backend's own matcher called it IT —
+         * two definitions of one rule, disagreeing. There is now one, here.
+         */
+        $stampDocCategory = function ($rows) use ($request) {
+            if (!$request->boolean('with_document_category')) return $rows;
+
+            $items = $rows instanceof \Illuminate\Pagination\AbstractPaginator
+                ? $rows->items()
+                : $rows;
+
+            $map = \App\Support\HrTemplateMatch::categoryMap();
+            foreach ($items as $row) {
+                $row->document_category = $map[(int) $row->department_id] ?? 'Non-IT';
+            }
+
+            return $rows;
+        };
+
         if ($request->has('per_page') || $request->has('page')) {
             // A junk or non-positive per_page falls back to the DEFAULT, not to
             // the floor: max(1, (int) 'abc') is 1, which would answer a
@@ -535,10 +560,10 @@ class EmployeeController extends Controller
                 ? min(self::MAX_PER_PAGE, (int) $requested)
                 : self::DEFAULT_PER_PAGE;
 
-            return response()->json($stampExitFreeze($trimAppends($q->paginate($perPage))));
+            return response()->json($stampDocCategory($stampExitFreeze($trimAppends($q->paginate($perPage)))));
         }
 
-        return response()->json($stampExitFreeze($trimAppends($q->get())));
+        return response()->json($stampDocCategory($stampExitFreeze($trimAppends($q->get()))));
     }
 
     /**
@@ -2212,7 +2237,17 @@ class EmployeeController extends Controller
      * PF on  -> a type is always named; an absent/empty one becomes 'statutory',
      *           which is what PayrollService assumes anyway, now stored so both
      *           screens show it.
-     * PF off -> the type is cleared, matching SalaryStructureController::store().
+     * PF off -> the stored type is KEPT, matching
+     *           SalaryStructureController::store().
+     *
+     *           It used to be cleared, which made a Standard basis last only as
+     *           long as PF stayed on: off, save, on again, and the employee was
+     *           silently back on Statutory — ~1,200/yr less deducted for someone
+     *           on a basic above the 15,000 ceiling, with no message on either
+     *           screen and nothing in Salary History to point at. Payroll reads
+     *           the column only while PF is on, so carrying it through an off
+     *           spell costs nothing and is what keeps Compensation and Revise
+     *           Salary agreeing after a round trip. (#36)
      *
      * Returns $data untouched when the save carries neither key, so a step that
      * has nothing to do with PF never restates it.
@@ -2226,7 +2261,9 @@ class EmployeeController extends Controller
             ? (bool) $data['pf_eligible']
             : (bool) $row->pf_eligible;
         $pfType = array_key_exists('pf_type', $data) ? $data['pf_type'] : $row->pf_type;
-        $data['pf_type'] = $pfOn ? ($pfType ?: 'statutory') : null;
+        // An explicit empty type only falls back to statutory while PF is on;
+        // with PF off an absent type leaves whatever the employee already had.
+        $data['pf_type'] = $pfOn ? ($pfType ?: 'statutory') : ($pfType ?: $row->pf_type);
         return $data;
     }
 
@@ -2379,6 +2416,11 @@ class EmployeeController extends Controller
         }
 
         $oldStatus = (string) $row->getOriginal('status');
+        // Shift as it stood BEFORE this save, so the response can say whether a
+        // change to it reaches today or starts tomorrow. (#216)
+        $shiftChangedFrom = array_key_exists('shift', $data)
+            ? (string) ($row->getOriginal('shift') ?? '')
+            : null;
 
         $authId = $request->user()?->id;
         DB::transaction(function () use ($row, $data, $newStep, $newMacro, $oldStatus, $authId) {
@@ -2684,8 +2726,31 @@ class EmployeeController extends Controller
          * The columns themselves are already in memory and cost nothing, so
          * they stay: a caller that wants to read back what it saved still can.
          */
+        /* Say when a shift change does NOT apply to today. (#216)
+         *
+         * The shift is stamped onto the attendance row by the day's first
+         * punch, so an employee who has already punched today keeps working
+         * today under the shift they started on — the new one governs from
+         * their next first punch. That is the behaviour the ticket asks for,
+         * but silently it reads as the change not having taken, so the save
+         * says which day it starts on. */
+        $shiftNote = '';
+        if (array_key_exists('shift', $data) && $shiftChangedFrom !== null
+            && strcasecmp((string) $shiftChangedFrom, (string) ($row->shift ?? '')) !== 0) {
+            $todayIso  = \Carbon\Carbon::now(\App\Models\Attendance::WORK_TZ)->toDateString();
+            $workedToday = \App\Models\Attendance::where('employee_id', $row->id)
+                ->whereDate('attendance_date', $todayIso)
+                ->whereHas('punches')
+                ->exists();
+            if ($workedToday) {
+                $shiftNote = ' — the new shift starts tomorrow: today is already under way on "'
+                    . ($shiftChangedFrom ?: 'the previous shift')
+                    . '", and the day an employee has already punched into keeps the shift they started on.';
+            }
+        }
+
         return response()->json([
-            'message'  => 'Updated'
+            'message'  => 'Updated' . $shiftNote
                 . ($frozenCycles->isNotEmpty()
                     ? ' — note: already-approved payroll (' . $frozenCycles->implode(', ')
                         . ') keeps its original figures, so this change will not appear there.'

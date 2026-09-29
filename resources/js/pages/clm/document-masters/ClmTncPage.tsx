@@ -112,7 +112,7 @@ export default function ClmTncPage() {
         steps={[
           { n: '01', title: 'Create Category',       desc: 'Add PI, PO, Invoice, and document categories.',         icon: ICO.grid },
           { n: '02', title: 'Create T&C',            desc: 'Add reusable Terms & Conditions content.',              icon: ICO.book },
-          { n: '03', title: 'Set Applies To',        desc: 'Define buyer, consignee, and supplier applicability.',   icon: ICO.users },
+          { n: '03', title: 'Set Applies To',        desc: 'Define customer, consignee, and supplier applicability.',   icon: ICO.users },
           { n: '04', title: 'Write T&C Content',     desc: 'Create legal rules and reusable clauses.',              icon: ICO.edit },
           { n: '05', title: 'Enable Usage',          desc: 'Use T&Cs across contracts and trade workflows.',         icon: ICO.check },
         ]}

@@ -2,6 +2,7 @@
 
 namespace App\Services\P2p;
 
+use App\Models\P2p\PoGstApproval;
 use App\Models\P2p\PoItemQtyHistory;
 use App\Models\P2p\PoPaymentRequest;
 use App\Models\P2p\PoRefundAdjustment;
@@ -319,7 +320,18 @@ class PurchaseOrderService
             ->join('p2p_purchase_orders as po', 'po.id', '=', 'p2p_purchase_order_items.purchase_order_id')
             ->where('po.client_id', $clientId)
             ->whereNull('po.deleted_at')
-            ->where('po.status', '!=', PurchaseOrder::STATUS_CANCELLED)
+            /* What holds PI quantity: an order that has been SUBMITTED, or one
+               still in draft that a senior is deciding on. A plain draft used
+               to hold it too and nothing ever released it — drafts abandoned at
+               Step 02 had taken a whole PI between them, so no further PO could
+               be raised and the reason read "nothing left to order". A draft
+               sitting with a senior is not abandoned, so it keeps its hold. */
+            ->where(fn ($q) => $q
+                ->where('po.status', PurchaseOrder::STATUS_SUBMITTED)
+                ->orWhereExists(fn ($s) => $s->selectRaw('1')
+                    ->from('p2p_po_gst_approvals as ga')
+                    ->whereColumn('ga.purchase_order_id', 'po.id')
+                    ->whereIn('ga.status', [PoGstApproval::STATUS_PENDING, PoGstApproval::STATUS_APPROVED])))
             ->when($excludePoId, fn ($q) => $q->where('po.id', '!=', $excludePoId))
             ->whereIn('p2p_purchase_order_items.pi_item_id', $piItemIds)
             ->groupBy('p2p_purchase_order_items.pi_item_id')

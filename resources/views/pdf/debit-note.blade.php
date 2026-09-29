@@ -704,15 +704,15 @@
                 @foreach($__masterTerms as $__t)
                     @php $__p = $__splitTnc($__t); @endphp
                     @if(trim(strip_tags((string) $__p['intro'])) !== '')
-                        <div class="po-terms dn-tnc-item" style="margin-bottom:4px;">{!! $__p['intro'] !!}</div>
+                        <div class="po-terms dn-tnc-item" style="margin-bottom:4px;">{!! \App\Support\PdfHighlight::fix($__p['intro']) !!}</div>
                     @endif
                     @foreach($__p['items'] as $__i => $__li)
                         <div class="po-terms dn-tnc-item" style="margin-bottom:3px; padding-left:16px;">
-                            <span style="display:inline-block; width:14px; margin-left:-16px;">{{ $__i + 1 }}.</span>{!! $__li !!}
+                            <span style="display:inline-block; width:14px; margin-left:-16px;">{{ $__i + 1 }}.</span>{!! \App\Support\PdfHighlight::fix($__li) !!}
                         </div>
                     @endforeach
                     @if(empty($__p['items']) && trim(strip_tags((string) $__p['intro'])) === '')
-                        <div class="po-terms dn-tnc-item" style="margin-bottom:4px;">{!! $__t !!}</div>
+                        <div class="po-terms dn-tnc-item" style="margin-bottom:4px;">{!! \App\Support\PdfHighlight::fix($__t) !!}</div>
                     @endif
                 @endforeach
                 {{-- Free-text terms typed on the debit note form (splits line-by-line). --}}

@@ -28,6 +28,8 @@ class Attendance extends Model
         'check_in_ip', 'check_out_ip',
         'check_in_lat', 'check_in_lng', 'check_out_lat', 'check_out_lng',
         'status', 'notes',
+        // Shift as it stood on the day this row was worked. (#216)
+        'shift_name', 'shift_start', 'shift_end',
     ];
 
     protected $casts = [
@@ -86,7 +88,9 @@ class Attendance extends Model
     }
 
     /** Local timezone work is measured in. */
-    private const WORK_TZ = 'Asia/Kolkata';
+    /** Public so callers outside the model can ask "what is today, locally?"
+     *  against the same clock attendance is recorded on. (#216) */
+    public const WORK_TZ = 'Asia/Kolkata';
     /** Grace after the employee's shift ends before an unclosed day is
      *  auto-checked-out. A morning shift of 08:00–14:00 auto-closes at 15:00. */
     private const AUTO_CHECKOUT_GRACE_MINUTES = 60;
@@ -313,11 +317,39 @@ class Attendance extends Model
             ->getTimestamp();
     }
 
-    /** ["HH:MM" start, "HH:MM" end] for this row's employee, or [null, null]. */
-    private function shiftWindow(): array
+    /**
+     * ["HH:MM" start, "HH:MM" end] that applied ON THIS DAY, or [null, null].
+     *
+     * The stamped window wins. It is written when the day's first punch creates
+     * the row, so it records the shift the employee was actually on, not the one
+     * they are on now. Resolving from the employee — which is all this did —
+     * meant a shift change rewrote history: reassign someone from General to
+     * Night and every past day was suddenly judged against 21:00, turning
+     * on-time days into late ones months after the fact. It also let a shift
+     * assigned this afternoon govern a day already worked and punched out of.
+     *
+     * Rows written before the columns existed have no stamp, so they fall back
+     * to the old resolution rather than to a guess. (#216)
+     */
+    public function shiftWindow(): array
     {
+        $start = trim((string) ($this->shift_start ?? ''));
+        if ($start !== '') {
+            return [$start, trim((string) ($this->shift_end ?? '')) ?: null];
+        }
+
         $emp = $this->rowEmployee();
         return $emp ? $emp->resolveShiftWindow() : [null, null];
+    }
+
+    /** The shift NAME this day was worked under — the stamp, else the
+     *  employee's current one for rows written before the stamp existed. */
+    public function shiftNameForDay(): ?string
+    {
+        $name = trim((string) ($this->shift_name ?? ''));
+        if ($name !== '') return $name;
+        $emp = $this->rowEmployee();
+        return $emp ? (trim((string) ($emp->shift ?? '')) ?: null) : null;
     }
 
     /** The row's employee, preferring an already-loaded relation (list

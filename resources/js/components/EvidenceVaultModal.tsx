@@ -174,6 +174,11 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
       id: d.id, key: d.document_key, name: cat.name, sub: cat.desc, icon: cat.icon, iconBg: cat.iconBg, iconFg: cat.iconFg,
       // Resolved once here so both View and Download below get an absolute URL.
       category: cat.category, status, url: d.url ? resolveFileUrl(d.url) : null,
+      /* The employee_documents row id, so Download can go through the API
+         instead of the public storage URL. Set ONLY on these rows — template
+         and orphan-run rows carry a template id in `id` and must not be
+         mistaken for a document. (#142) */
+      docId: d.id as number,
     };
   });
 
@@ -324,7 +329,7 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
   const orgCount  = orgGroups.reduce((a, g) => a + g.docs.length, 0) + promoRows.length;
   const exitCount = exitGroups.reduce((a, g) => a + g.docs.length, 0);
 
-  type VaultDoc = { url: string | null; key: string; id: number; name: string; runId?: number | null };
+  type VaultDoc = { url: string | null; key: string; id: number; name: string; runId?: number | null; docId?: number | null };
   // View — show the SIGNED PDF inline for completed runs (opens the
   // authenticated blob in a new tab); falls back to an uploaded file URL.
   const handleViewRow = async (d: VaultDoc) => {
@@ -381,6 +386,40 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
     if (d.url) { window.open(d.url, '_blank', 'noopener,noreferrer'); return; }
     toast.info('Not available yet', 'This document has not been generated / signed yet.');
   };
+  /** The filename the server sent, else the category label plus whatever
+   *  extension the stored URL carries. (#142) */
+  const filenameFromResponse = (resp: any, d: VaultDoc): string => {
+    const cd = String(resp?.headers?.['content-disposition'] ?? '');
+    // RFC 5987 `filename*=UTF-8''…` first, then the plain quoted form.
+    const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
+    if (star?.[1]) {
+      try { return decodeURIComponent(star[1].trim()); } catch { /* fall through */ }
+    }
+    const plain = cd.match(/filename="?([^";]+)"?/i);
+    if (plain?.[1]) return plain[1].trim();
+
+    const base = (d.name || 'document').replace(/\s+/g, '-');
+    const ext = String(d.url || '').split('?')[0].match(/\.([a-z0-9]{2,5})$/i)?.[1];
+    return ext ? `${base}.${ext.toLowerCase()}` : base;
+  };
+
+  /* Save an in-memory blob under a filename.
+   *
+   * The revoke is deferred. It used to run on the line after a.click(), and a
+   * synchronous revoke can pull the object URL out from under a save the
+   * browser has not started yet — the same reason utils/downloadFile.ts waits.
+   * Shared by both branches below so the two cannot drift. */
+  const saveBlobAs = (blob: Blob, filename: string) => {
+    const objUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(objUrl), 1500);
+  };
+
   // Download — signed PDF for completed runs; uploaded file otherwise. Shows a
   // "downloading" toast, a button spinner, and blocks concurrent clicks.
   const handleDownloadRow = async (d: VaultDoc) => {
@@ -392,21 +431,35 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
         const resp = await api.get(`/hr-document-signatures/${d.runId}/download-pdf`, { responseType: 'blob' });
         // Same guard as View: never save a web page under a .pdf name. (CBC #23)
         await assertApiBlob(resp.data as Blob, 'pdf');
-        const objUrl = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
-        const a = document.createElement('a');
-        a.href = objUrl; a.download = `${(d.name || 'document').replace(/\s+/g, '-')}-signed.pdf`;
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(objUrl);
+        saveBlobAs(
+          new Blob([resp.data], { type: 'application/pdf' }),
+          `${(d.name || 'document').replace(/\s+/g, '-')}-signed.pdf`,
+        );
         toast.success('Downloaded', 'Signed PDF saved.');
+      } else if (d.docId) {
+        /* Uploaded employee documents come back through the API, not off their
+           public /storage URL. (#142)
+           downloadFile() fetches that URL and falls back to window.open() when
+           the fetch fails — and it fails whenever the SPA is not served from
+           the same origin as storage (the Vite dev server, or storage moved to
+           Azure), because the path then answers with the SPA's index.html and
+           the HTML guard rejects it. The fallback OPENS the file in a tab,
+           which is the preview this ticket reports: Download quietly became
+           View whenever the direct fetch could not reach the bytes.
+           GET /documents/{id}/download streams the file same-origin, already
+           authenticated and tenant-scoped, with an attachment disposition — so
+           there is no origin to mismatch and no fallback to reach. */
+        toast.info('Downloading…', 'Preparing the document.');
+        const resp = await api.get(`/documents/${d.docId}/download`, { responseType: 'blob' });
+        /* Name it the way the server does. `d.name` is the CATEGORY label
+           ("PAN Card") and carries no extension, so saving under it would hand
+           the user an extensionless file nothing opens. The endpoint already
+           sends the stored original_name in Content-Disposition; the URL's own
+           extension is the fallback. */
+        saveBlobAs(resp.data as Blob, filenameFromResponse(resp, d));
+        toast.success('Downloaded', 'Document saved.');
       } else if (d.url) {
-        /* Was a direct anchor download, on the reasoning that fetch() trips CORS
-           on cross-origin storage. True — but an <a download> is IGNORED
-           cross-origin too, so the target="_blank" fallback fired every time on
-           the deployed server and the file OPENED instead of saving.
-
-           downloadFile() solves it from the other end: our own uploads are
-           streamed back THROUGH the API, same-origin, with an attachment
-           disposition — so there is no CORS to trip and no fallback to reach. */
+        // No row id (legacy shapes) — fall back to the URL-based helper.
         await downloadFile(d.url, d.name || undefined);
         toast.success('Downloaded', 'Document saved.');
       } else {

@@ -2130,7 +2130,8 @@ const DEAL_SUB_TH: React.CSSProperties = { padding: '8px 12px', fontSize: 6.5, f
 
 function dealDocState(d: VaultDoc): { label: string; c: [string, string, string, string] } {
   if (d.sig_state === 'completed' || d.status === 'Signed') return { label: 'Signed', c: ['#ecfdf5', '#059669', '#a7f3d0', '#10b981'] };
-  if (d.sig_state === 'inprogress') return { label: 'Sent', c: ['#fffbeb', '#d97706', '#fcd34d', '#f59e0b'] };
+  // 'sent' is the Stage 04 word for the same state as CLM's 'inprogress'.
+  if (d.sig_state === 'inprogress' || d.sig_state === 'sent') return { label: 'Sent', c: ['#fffbeb', '#d97706', '#fcd34d', '#f59e0b'] };
 
   if (d.sig_state === 'declined' || d.sig_state === 'rejected') return { label: 'Declined', c: ['#fef2f2', '#b91c1c', '#fecaca', '#ef4444'] };
   if (d.sig_state === 'recalled') return { label: 'Recalled', c: ['#fffbeb', '#92400e', '#fde68a', '#f59e0b'] };

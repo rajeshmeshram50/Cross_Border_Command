@@ -1019,6 +1019,25 @@ export default function HrPayroll() {
 
     setBusy(true);
     try {
+      // Catch an empty cycle before the automatic attendance-finalize step.
+      // The run endpoint repeats this check, so a failed preflight request does
+      // not prevent a valid payroll run.
+      let eligibleCount: number | undefined;
+      try {
+        const preflight = await api.get('/payroll/preflight', { params: { month, year } });
+        const count = preflight.data?.data?.eligible_count;
+        if (typeof count === 'number') eligibleCount = count;
+      } catch {
+        // The server-side /payroll/run guard remains authoritative.
+      }
+      if (eligibleCount === 0) {
+        toast.error(
+          'No payroll data',
+          'Payroll cannot be processed because no payroll data is available for the selected month.',
+        );
+        return;
+      }
+
       if (!periodMeta?.attendance_finalized) {
         await api.post('/payroll/finalize-attendance', { month, year });
       }

@@ -23,16 +23,19 @@ use Illuminate\Support\Facades\DB;
 class HrTemplateMatch
 {
     /**
-     * Department name → template category.
+     * Department name → template category, for ONE name.
      *
      * Branch users name departments freely, so this is a substring match against
      * hint lists rather than a lookup. Legal is checked first: a "Legal &
      * Compliance Tech" department is Legal, not IT.
+     *
+     * Returns null when nothing matched, so the caller can keep looking up the
+     * hierarchy. categoryForDepartment() below is what most callers want.
      */
-    public static function categoryForDepartment(?string $deptName): string
+    private static function hintCategory(?string $deptName): ?string
     {
         $name = strtolower(trim((string) $deptName));
-        if ($name === '') return 'Non-IT';
+        if ($name === '') return null;
 
         $itHints    = ['it', 'information technology', 'tech', 'engineering', 'software', 'devops', 'qa', 'mobile', 'data', 'product'];
         $legalHints = ['legal', 'compliance', 'governance'];
@@ -43,7 +46,111 @@ class HrTemplateMatch
         foreach ($itHints as $h) {
             if (str_contains($name, $h)) return 'IT';
         }
+        return null;
+    }
+
+    /** Department name → template category, no hierarchy. Kept for callers that
+     *  hold only a name; prefer categoryForDepartmentId(). */
+    public static function categoryForDepartment(?string $deptName): string
+    {
+        return self::hintCategory($deptName) ?? 'Non-IT';
+    }
+
+    /**
+     * Department → category, INHERITED DOWN THE HIERARCHY. (QA #20)
+     *
+     * Departments nest (`master_departments.parent_id`), and the classification
+     * only ever looked at the employee's own department name. A "Software"
+     * department created under "IT" was judged on the word "Software" alone: if
+     * its name happened to contain no hint — "App Team", "Developement",
+     * "Platform" — it fell through to Non-IT while its parent was the very IT
+     * department the template was written for, and the employee simply never
+     * appeared in the recipient list.
+     *
+     * The nearest ancestor that names a category wins, so a child can still
+     * override its parent deliberately (a "Legal" sub-department under IT stays
+     * Legal), and a child that says nothing inherits.
+     *
+     * The walk is depth-capped: parent_id is a plain self-reference with no
+     * cycle guard in the database, and a loop here would hang every request
+     * that classifies an employee.
+     */
+    public static function categoryForDepartmentId(?int $deptId, ?string $deptName = null): string
+    {
+        $own = self::hintCategory($deptName);
+        if ($own !== null) return $own;
+        if (!$deptId) return 'Non-IT';
+
+        $seen = [];
+        $row  = DB::table('master_departments')->where('id', $deptId)->first(['id', 'name', 'parent_id']);
+
+        // Name may not have been supplied — try the row's own name first.
+        if ($row && $deptName === null) {
+            $cat = self::hintCategory($row->name ?? null);
+            if ($cat !== null) return $cat;
+        }
+
+        $depth = 0;
+        while ($row && !empty($row->parent_id) && $depth++ < 10) {
+            if (isset($seen[(int) $row->id])) break;   // cycle
+            $seen[(int) $row->id] = true;
+
+            $row = DB::table('master_departments')
+                ->where('id', $row->parent_id)
+                ->first(['id', 'name', 'parent_id']);
+            if (!$row) break;
+
+            $cat = self::hintCategory($row->name ?? null);
+            if ($cat !== null) return $cat;
+        }
+
         return 'Non-IT';
+    }
+
+    /**
+     * id → category for EVERY department, in one query. (QA #20)
+     *
+     * categoryForDepartmentId() walks the parent chain with a query per hop,
+     * which is fine for one employee and wasteful for a list of them. This
+     * resolves the whole tree once and memoises each node as it goes, so a page
+     * of employees costs a single SELECT no matter how deep the hierarchy is.
+     *
+     * @return array<int, string>
+     */
+    public static function categoryMap(): array
+    {
+        $rows = DB::table('master_departments')->get(['id', 'name', 'parent_id']);
+        $byId = [];
+        foreach ($rows as $r) $byId[(int) $r->id] = $r;
+
+        $resolved = [];
+        $resolve = function (int $id, array $seen = []) use (&$resolve, $byId, &$resolved): string {
+            if (isset($resolved[$id])) return $resolved[$id];
+            // A cycle, or a parent_id pointing at a row that no longer exists.
+            if (isset($seen[$id]) || !isset($byId[$id])) return 'Non-IT';
+
+            $row = $byId[$id];
+            $cat = self::hintCategory($row->name ?? null);
+            if ($cat === null) {
+                $seen[$id] = true;
+                $cat = !empty($row->parent_id)
+                    ? $resolve((int) $row->parent_id, $seen)
+                    : 'Non-IT';
+            }
+            return $resolved[$id] = $cat;
+        };
+
+        foreach ($byId as $id => $_) $resolve($id);
+        return $resolved;
+    }
+
+    /** The category an employee is classified under, hierarchy included. */
+    public static function categoryForEmployee(Employee $emp): string
+    {
+        return self::categoryForDepartmentId(
+            $emp->department_id ? (int) $emp->department_id : null,
+            $emp->department?->name,
+        );
     }
 
     /**
@@ -59,7 +166,7 @@ class HrTemplateMatch
     {
         $q = HrDocumentTemplate::query()
             ->where('status', 'Active')
-            ->where('employee_category', self::categoryForDepartment($emp->department?->name));
+            ->where('employee_category', self::categoryForEmployee($emp));
 
         $level = $emp->designation?->level;
         if ($level) $q->where('role_type', $level);
