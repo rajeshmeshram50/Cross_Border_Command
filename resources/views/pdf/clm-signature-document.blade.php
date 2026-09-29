@@ -828,7 +828,9 @@
     already swapped for real data + signature scaffolding. --}}
     <div class="document-section">
       <div class="document-content">
-        {!! $processedHtml !!}
+        {{-- PdfHighlight: moves text-highlight colour onto the text itself so
+             dompdf draws it behind the words in centred / right-aligned lines. --}}
+        {!! \App\Support\PdfHighlight::fix($processedHtml) !!}
       </div>
     </div>
   </div>

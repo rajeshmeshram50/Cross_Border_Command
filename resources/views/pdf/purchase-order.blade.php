@@ -689,7 +689,7 @@
                         @if(!empty($tnc['segment']))
                             <div style="font-size: 8.5px; font-weight: 700; color: {{ $companyDetails->primary_color ?? '#7CB342' }}; margin-bottom: 2px;">{{ $tnc['segment'] }}</div>
                         @endif
-                        {!! $tnc['content'] !!}
+                        {!! \App\Support\PdfHighlight::fix($tnc['content']) !!}
                     </div>
                 @endforeach
             </div>

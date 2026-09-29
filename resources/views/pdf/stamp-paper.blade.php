@@ -130,7 +130,7 @@
 
     {{-- ── Deed body ── --}}
     <div class="sp-body">
-        {!! $content !!}
+        {!! \App\Support\PdfHighlight::fix($content) !!}
     </div>
 
 </body>
