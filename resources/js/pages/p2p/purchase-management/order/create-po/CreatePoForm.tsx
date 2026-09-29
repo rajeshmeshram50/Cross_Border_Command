@@ -410,7 +410,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   };
 
   /** Step 02 as it stands right now — the same check its own save runs. */
-  const checkLines = () => validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids);
+  const checkLines = () => validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids, draft.currency);
 
   /* Step 02 is not something a later step can leave behind: the stepper lets an
      already-saved PO jump straight to Step 03, which would submit a PO whose
@@ -569,7 +569,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
     errors: shown[0] ? { ...serverErrors, ...validateStage1(draft) } : serverErrors,
     ...(() => {
       if (!shown[1]) return { lineErrors: serverLineErrors };
-      const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids);
+      const v = validateLines(draft.lines, lookups.products, draft.supplier?.segments, draft.docType === 'International', draft.supplier?.mapped_product_ids, draft.currency);
       return { lineErrors: { ...serverLineErrors, ...v.rows }, linesGeneral: v.general };
     })(),
   };

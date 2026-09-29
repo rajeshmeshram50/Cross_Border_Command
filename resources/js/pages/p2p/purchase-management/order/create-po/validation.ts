@@ -79,10 +79,13 @@ export function piSegmentMismatch(product: ProductOpt | undefined, piSegment: st
 export const MAX_RATE = 1_000_000_000;
 export const MAX_QUANTITY = 10_000_000;
 export const MAX_PO_TOTAL = 10_000_000_000;
-const fmt = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+// Grouped the way the amounts beside it are: lakh-crore for INR, else thousands.
+const fmtIn = (ccy: string | null | undefined) => (n: number) =>
+  n.toLocaleString((ccy ?? 'INR').toUpperCase() === 'INR' ? 'en-IN' : 'en-US', { maximumFractionDigits: 2 });
 
-export function validateLines(lines: PoLineRow[], products: ProductOpt[], supplierSegments?: string[] | null, international = false, mappedProductIds?: number[] | null): { rows: LineErrors; general?: string } {
+export function validateLines(lines: PoLineRow[], products: ProductOpt[], supplierSegments?: string[] | null, international = false, mappedProductIds?: number[] | null, currency?: string | null): { rows: LineErrors; general?: string } {
   const rows: LineErrors = {};
+  const fmt = fmtIn(currency);
   const set = (key: string, cell: 'product' | 'qty' | 'rate', msg: string) => { rows[key] = { ...rows[key], [cell]: msg }; };
   const byId = (id: number | null) => products.find((p) => p.id === id);
 

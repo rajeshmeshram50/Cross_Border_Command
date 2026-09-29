@@ -526,8 +526,11 @@ class PurchaseOrderController extends Controller
             'packaging_charges'   => 'nullable|numeric|min:0|max:' . self::MAX_PO_TOTAL,
             'other_charges'       => 'nullable|numeric|min:0|max:' . self::MAX_PO_TOTAL,
         ], [
-            'lines.*.quantity.max' => 'Quantity looks wrong — the most this PO takes on one line is ' . number_format(self::MAX_QUANTITY) . '.',
-            'lines.*.rate.max'     => 'Rate looks wrong — the most this PO takes for one unit is ' . number_format(self::MAX_RATE) . '.',
+            'lines.*.quantity.max'  => 'Quantity looks wrong — the most this PO takes on one line is ' . number_format(self::MAX_QUANTITY) . '.',
+            'lines.*.rate.max'      => 'Rate looks wrong — the most this PO takes for one unit is ' . number_format(self::MAX_RATE) . '.',
+            'shipping_charges.max'  => 'Shipping charges look wrong — the most this PO takes is ' . number_format(self::MAX_PO_TOTAL) . '.',
+            'packaging_charges.max' => 'Packaging charges look wrong — the most this PO takes is ' . number_format(self::MAX_PO_TOTAL) . '.',
+            'other_charges.max'     => 'Other charges look wrong — the most this PO takes is ' . number_format(self::MAX_PO_TOTAL) . '.',
         ]);
 
         $piItemIds = collect($data['lines'])->pluck('pi_item_id')->filter()->map(fn ($v) => (int) $v)->values()->all();
