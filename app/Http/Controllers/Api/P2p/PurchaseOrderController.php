@@ -127,6 +127,16 @@ class PurchaseOrderController extends Controller
         'cancelclosed' => "status = 'cancelled' AND COALESCE(cancel_stage, 'closed') = 'closed'",
     ];
 
+    /* An order of magnitude typed into the rate used to pass every check here
+       and fail hours later inside Zoho Books, which converts to the base
+       currency and refuses the result with a message it never fills in
+       ("out of range value ... contact {0}"). A PO of 1,987 cars at
+       13,000,000,000 each reached 25,831,000,000,000 that way. These are
+       deliberately generous — they catch a slipped decimal, not a big deal. */
+    private const MAX_RATE     = 1000000000;      // 1 billion per unit
+    private const MAX_QUANTITY = 10000000;        // 10 million units on a line
+    private const MAX_PO_TOTAL = 10000000000;     // 10 billion for the whole PO
+
     // Only what a list row shows (plus the ids its references are read through).
     private const LIST_COLUMNS = [
         'id', 'code', 'po_date', 'status', 'current_step', 'po_type', 'document_type', 'vendor_id', 'link_type',
@@ -509,12 +519,15 @@ class PurchaseOrderController extends Controller
             'lines'               => 'required|array|min:1',
             'lines.*.pi_item_id'  => 'nullable|integer|distinct',
             'lines.*.product_id'  => 'nullable|integer|required_without:lines.*.pi_item_id',
-            'lines.*.quantity'    => 'required|numeric|gt:0',
-            'lines.*.rate'        => 'required|numeric|min:0',
+            'lines.*.quantity'    => 'required|numeric|gt:0|max:' . self::MAX_QUANTITY,
+            'lines.*.rate'        => 'required|numeric|min:0|max:' . self::MAX_RATE,
             'lines.*.description' => 'nullable|string',
-            'shipping_charges'    => 'nullable|numeric|min:0',
-            'packaging_charges'   => 'nullable|numeric|min:0',
-            'other_charges'       => 'nullable|numeric|min:0',
+            'shipping_charges'    => 'nullable|numeric|min:0|max:' . self::MAX_PO_TOTAL,
+            'packaging_charges'   => 'nullable|numeric|min:0|max:' . self::MAX_PO_TOTAL,
+            'other_charges'       => 'nullable|numeric|min:0|max:' . self::MAX_PO_TOTAL,
+        ], [
+            'lines.*.quantity.max' => 'Quantity looks wrong — the most this PO takes on one line is ' . number_format(self::MAX_QUANTITY) . '.',
+            'lines.*.rate.max'     => 'Rate looks wrong — the most this PO takes for one unit is ' . number_format(self::MAX_RATE) . '.',
         ]);
 
         $piItemIds = collect($data['lines'])->pluck('pi_item_id')->filter()->map(fn ($v) => (int) $v)->values()->all();
@@ -586,6 +599,27 @@ class PurchaseOrderController extends Controller
                 $errors[$field] = ["Not mapped — this product is in {$seg}, and neither that segment nor the product is mapped to the supplier. Map one of them first."];
             }
         }
+        /* Each line can be within its own limits and the order still absurd, and
+           it is the TOTAL that Zoho converts and refuses. Checked here so the
+           mistake lands on the line that caused it, not on a sync hours later. */
+        $lineTotals = [];
+        foreach ($data['lines'] as $i => $line) {
+            $lineTotals[$i] = (float) $line['quantity'] * (float) $line['rate'];
+        }
+        $orderTotal = array_sum($lineTotals)
+            + (float) ($data['shipping_charges'] ?? 0)
+            + (float) ($data['packaging_charges'] ?? 0)
+            + (float) ($data['other_charges'] ?? 0);
+        if ($orderTotal > self::MAX_PO_TOTAL) {
+            arsort($lineTotals);
+            $worst = (int) array_key_first($lineTotals);
+            $ccy   = $po->currency_code ?: '';
+            $errors["lines.$worst.rate"] = [sprintf(
+                'This line alone comes to %s %s. Check the rate — the whole PO cannot exceed %s %s.',
+                $ccy, number_format($lineTotals[$worst], 2), $ccy, number_format(self::MAX_PO_TOTAL)
+            )];
+        }
+
         if ($errors) throw ValidationException::withMessages($errors);
 
         $this->inTransaction('save the product lines', function () use ($po, $user, $data, $piItems, $products, $orderedElsewhere) {

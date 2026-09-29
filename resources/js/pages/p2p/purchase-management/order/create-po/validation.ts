@@ -74,6 +74,13 @@ export function piSegmentMismatch(product: ProductOpt | undefined, piSegment: st
   return `The PI line is in ${want} — pick a product from the same segment.`;
 }
 
+/* Mirrors PurchaseOrderController::MAX_RATE / MAX_QUANTITY / MAX_PO_TOTAL —
+   generous enough to pass any real order, tight enough to catch a typo. */
+export const MAX_RATE = 1_000_000_000;
+export const MAX_QUANTITY = 10_000_000;
+export const MAX_PO_TOTAL = 10_000_000_000;
+const fmt = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+
 export function validateLines(lines: PoLineRow[], products: ProductOpt[], supplierSegments?: string[] | null, international = false, mappedProductIds?: number[] | null): { rows: LineErrors; general?: string } {
   const rows: LineErrors = {};
   const set = (key: string, cell: 'product' | 'qty' | 'rate', msg: string) => { rows[key] = { ...rows[key], [cell]: msg }; };
@@ -89,6 +96,14 @@ export function validateLines(lines: PoLineRow[], products: ProductOpt[], suppli
     if (!l.productId) set(l.key, 'product', l.pi ? 'Pick the product for this PI line.' : 'Pick a product, or remove the line.');
     if (l.pi && l.qtyPo > l.pi.pending_qty) set(l.key, 'qty', `Only ${l.pi.pending_qty} is still pending on the PI.`);
     if (l.rate <= 0) set(l.key, 'rate', 'Enter a rate.');
+    /* A slipped decimal used to pass every check and fail inside Zoho Books
+       hours later, which converts to the base currency and refuses the
+       result. Caught on the cell that caused it (server mirrors these). */
+    else if (l.rate > MAX_RATE) set(l.key, 'rate', `Rate looks wrong — the most for one unit is ${fmt(MAX_RATE)}.`);
+    if (l.qtyPo > MAX_QUANTITY) set(l.key, 'qty', `Quantity looks wrong — the most on one line is ${fmt(MAX_QUANTITY)}.`);
+    else if (l.rate > 0 && l.qtyPo * l.rate > MAX_PO_TOTAL) {
+      set(l.key, 'rate', `This line comes to ${fmt(l.qtyPo * l.rate)} — the whole PO cannot exceed ${fmt(MAX_PO_TOTAL)}.`);
+    }
     if (!international && l.productId && gstOf(l, products) === null) set(l.key, 'product', 'No GST % on the product master — set it there first.');
     const chosen = byId(l.productId);
     const why = inactiveProduct(chosen)
