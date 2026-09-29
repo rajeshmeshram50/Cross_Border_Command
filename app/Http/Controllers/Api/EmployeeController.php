@@ -2212,7 +2212,17 @@ class EmployeeController extends Controller
      * PF on  -> a type is always named; an absent/empty one becomes 'statutory',
      *           which is what PayrollService assumes anyway, now stored so both
      *           screens show it.
-     * PF off -> the type is cleared, matching SalaryStructureController::store().
+     * PF off -> the stored type is KEPT, matching
+     *           SalaryStructureController::store().
+     *
+     *           It used to be cleared, which made a Standard basis last only as
+     *           long as PF stayed on: off, save, on again, and the employee was
+     *           silently back on Statutory — ~1,200/yr less deducted for someone
+     *           on a basic above the 15,000 ceiling, with no message on either
+     *           screen and nothing in Salary History to point at. Payroll reads
+     *           the column only while PF is on, so carrying it through an off
+     *           spell costs nothing and is what keeps Compensation and Revise
+     *           Salary agreeing after a round trip. (#36)
      *
      * Returns $data untouched when the save carries neither key, so a step that
      * has nothing to do with PF never restates it.
@@ -2226,7 +2236,9 @@ class EmployeeController extends Controller
             ? (bool) $data['pf_eligible']
             : (bool) $row->pf_eligible;
         $pfType = array_key_exists('pf_type', $data) ? $data['pf_type'] : $row->pf_type;
-        $data['pf_type'] = $pfOn ? ($pfType ?: 'statutory') : null;
+        // An explicit empty type only falls back to statutory while PF is on;
+        // with PF off an absent type leaves whatever the employee already had.
+        $data['pf_type'] = $pfOn ? ($pfType ?: 'statutory') : ($pfType ?: $row->pf_type);
         return $data;
     }
 

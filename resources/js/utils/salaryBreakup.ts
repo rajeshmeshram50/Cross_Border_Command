@@ -192,14 +192,30 @@ export const pfDeduction = (basic: number, pfType: string, eligible: boolean): n
 export const CTC_ROUNDING_SLACK = 6;
 
 /** Identity of a breakup, for skipping a POST that would save nothing new. */
+/* `pfType` is part of the signature even though it is not a component and not
+   a structure column.
+   It decides the PF BASE — Statutory caps the basic at the 15,000 ceiling,
+   Standard charges the full basic — so switching it changes what is deducted.
+   The PF row is deliberately excluded from `deductions` (payroll recomputes it),
+   so a type-only change moved nothing else in here: the signature matched, the
+   revision POST was skipped, and the new basis reached the employee record
+   without a version behind it. Salary History showed nothing and Revise Salary
+   went on opening the old version, which is the half of this ticket where
+   Compensation changed and Revise Salary did not follow. (#36)
+   Optional so existing three-flag callers keep compiling; undefined and
+   'Statutory' hash alike, matching PayrollService's own fallback. */
 export const breakupSignature = (
   earnings: SalBreakComp[],
   deductions: SalBreakComp[],
   pf: boolean, esi: boolean, pt: boolean,
+  pfType?: string | null,
 ): string => JSON.stringify({
   e: earnings.map(c => [c.code, c.label.trim(), Number(c.amount) || 0]),
   d: deductions.map(c => [c.code, c.label.trim(), Number(c.amount) || 0]),
   pf, esi, pt,
+  // Only meaningful while PF is on; off, the column is dead weight and must not
+  // provoke a revision.
+  pfType: pf ? (String(pfType ?? '').toLowerCase() === 'standard' ? 'standard' : 'statutory') : null,
 });
 
 export interface BreakupErrors {

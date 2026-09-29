@@ -184,6 +184,15 @@ class SalaryStructureController extends Controller
                 'department'    => $deptNames[$e->department_id] ?? null,
                 'designation'   => $desigNames[$e->designation_id] ?? null,
                 'pf_eligible'   => (bool) $e->pf_eligible,
+                /* The Compensation step's banner toggle. PF is only ever
+                 * deducted when this is on as well (PayrollService gates the
+                 * whole employee on it), so Revise Salary has to be able to say
+                 * that the PF it is showing will not in fact be deducted.
+                 * Without it the two screens answered the same question — "is
+                 * PF applicable?" — from different columns. (#36)
+                 * Null is the legacy "never set" state and has always been
+                 * treated as on. */
+                'enable_payroll' => $e->enable_payroll === null ? true : (bool) $e->enable_payroll,
                 'pf_type'       => $e->pf_type, // statutory | standard | null
                 'esi_applicable'=> strtolower((string) ($e->esi_applicable ?? '')) === 'yes',
                 'annual_salary' => $e->annual_salary !== null ? (float) $e->annual_salary : null,
@@ -623,12 +632,17 @@ class SalaryStructureController extends Controller
              * PayrollService::computeForEmployee() reads when picking the PF
              * base. Written ONLY when the caller actually sent the field, so an
              * older client that posts without it leaves the stored type alone
-             * rather than silently resetting everyone to Statutory. Cleared
-             * when PF is switched off, matching the Employee form. (#127) */
-            if (array_key_exists('pf_type', $data)) {
-                $employeeChanges['pf_type'] = $created->pf_applicable
-                    ? ($data['pf_type'] ?: 'statutory')
-                    : null;
+             * rather than silently resetting everyone to Statutory. (#127)
+             *
+             * PF OFF no longer clears the column. Clearing it meant a Standard
+             * basis survived only as long as PF stayed on: switch PF off, save,
+             * switch it back on, and the employee silently came back on
+             * Statutory — a real change to the deduction (full basic vs the
+             * 15,000 ceiling) that nothing on either screen announced. Payroll
+             * never reads the column while PF is off, so keeping it is inert;
+             * keeping it is what makes the setting survive the round trip. (#36) */
+            if (array_key_exists('pf_type', $data) && $created->pf_applicable) {
+                $employeeChanges['pf_type'] = $data['pf_type'] ?: 'statutory';
             }
 
             $employee->update($employeeChanges);

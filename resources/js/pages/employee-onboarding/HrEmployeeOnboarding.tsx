@@ -2673,7 +2673,7 @@ function InitiateOnboardingModal({
           setObEsi(!!active.esi_applicable || ded.some((d: SalBreakComp) => d.code === 'esi'));
           setObPt(!!active.pt_applicable  || ded.some((d: SalBreakComp) => d.code === 'pt'));
           // What was on the server — a save that matches this is skipped.
-          obBaselineRef.current = `${breakupSignature(earn, ded, !!active.pf_applicable, !!active.esi_applicable, !!active.pt_applicable)}|${Math.round((Number(active.monthly_gross) || 0) * 12)}`;
+          obBaselineRef.current = `${breakupSignature(earn, ded, !!active.pf_applicable, !!active.esi_applicable, !!active.pt_applicable, s1.pf_type)}|${Math.round((Number(active.monthly_gross) || 0) * 12)}`;
         } else {
           seedFresh();
         }
@@ -2875,7 +2875,7 @@ function InitiateOnboardingModal({
       .filter(c => c.label.trim())
       .map((c, i) => ({ code: (c.code || `ded_${i + 1}`).trim(), label: c.label.trim(), amount: Number(c.amount) || 0 }));
     // CTC is part of the signature so a salary-only change is not skipped.
-    const sig = `${breakupSignature(earn, ded, !!s1.pf_eligible, obEsi, obPt)}|${obSalaryAnnual}`;
+    const sig = `${breakupSignature(earn, ded, !!s1.pf_eligible, obEsi, obPt, s1.pf_type)}|${obSalaryAnnual}`;
     if (obBaselineRef.current === sig) return;
 
     await api.post('/salary-structures', {
@@ -2892,7 +2892,8 @@ function InitiateOnboardingModal({
       pf_applicable: !!s1.pf_eligible,
       // Validated against the CTC on screen and written to annual_salary, same as the Employee form.
       annual_ctc: obSalaryAnnual > 0 ? obSalaryAnnual : undefined,
-      pf_type: s1.pf_eligible ? String(s1.pf_type || '').toLowerCase() || null : null,
+      // Kept through a PF-off spell so a Standard basis survives the round trip. (#36)
+      pf_type: String(s1.pf_type || '').toLowerCase() || null,
       esi_applicable: obEsi,
       pt_applicable: obPt,
     });
@@ -3634,7 +3635,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       holiday_group_id: intOrNull(s1.holiday_list),
       holiday_list:     mHolidayGroups.find(g => String(g.id) === String(s1.holiday_list))?.name || null,
       // PF type → backend expects lowercase; only meaningful when PF applies.
-      pf_type:     s1.pf_eligible ? String(s1.pf_type).toLowerCase() : null,
+      pf_type:     String(s1.pf_type).toLowerCase(), // kept when PF is off (#36)
       // Empty strings to null for nullable string columns
       first_name:  s1.first_name.trim() || null,
       middle_name: s1.middle_name.trim() || null,
@@ -5297,10 +5298,12 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   >
                     <span className={`onb-init-toggle${s1.enable_payroll ? '' : ' off'}`} aria-pressed={s1.enable_payroll} />
                     {/* Same field as the employee form's toggle (enable_payroll),
-                        so it carries the same words. It said "PF", which is the
-                        PF Applicable dropdown below it — one flag reading as two
-                        different settings depending on which screen you opened. */}
-                    <span className="onb-init-toggle-label">PF Applicable for this Employee</span>
+                        so it carries the same words — and the same rename.
+                        "PF Applicable for this Employee" was also the label of
+                        the PF dropdown below it and of nothing at all in Revise
+                        Salary, which is bound to the other column: one name,
+                        two fields, three screens disagreeing. (#36) */}
+                    <span className="onb-init-toggle-label">Include this Employee in Payroll</span>
                   </div>
                   {/* Same wording as the Employee form so one flag does not read
                       as two different settings depending on the screen. The scope
@@ -5312,7 +5315,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       switch whose explanation had scrolled away would strand the
                       warning exactly where it matters least. */}
                   <div className="onb-init-toggle-hint">
-                    Turning this off also removes <strong>CTC, salary effective date and the salary breakup</strong> for this employee, not just PF.
+                    Off, this employee is excluded from every payroll run — no payslip, and no PF, ESI or
+                    Professional Tax — and <strong>CTC, salary effective date and the salary breakup</strong> are
+                    hidden here. Their saved figures are kept. PF itself is switched separately, below.
                   </div>
                 </div>
 
