@@ -283,6 +283,15 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   const [ovDeal, setOvDeal] = useState<string | null>(null);
   const [ovPicked, setOvPicked] = useState<string[]>([]);
   const [ovTrack, setOvTrack] = useState<{ id: number; code: string } | null>(null);
+  /* This overlay renders the lock provider rather than sitting under it, so it
+     keeps its own: while a send or a reminder is out the table takes no click,
+     and the row it belongs to says which one is working. */
+  const [ovBusy, setOvBusy] = useState<string | null>(null);
+  const runOv = async (key: string, fn: () => Promise<unknown> | unknown) => {
+    if (ovBusy) return;
+    setOvBusy(key);
+    try { await fn(); } finally { setOvBusy(null); }
+  };
 
   const closeOverview = useCallback(() => {
     setOverview(null);
@@ -403,9 +412,66 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
 
   /* A purchase order row sends on its own: no library id to raise a CLM
      request against, so it takes the PO module's send. */
-  const sendPoFromRow = useCallback((d: VaultDoc) => {
-    if (isPoRow(d)) setSendRawPo({ poId: d.po_id as number, docs: [d] });
-  }, []);
+  /* A PO submitted a moment ago has its row but not yet its PDF — Stage 04
+     renders it on demand and so must this, or the preview opens on nothing. */
+  const ensurePoPdfs = useCallback(async (docs: VaultDoc[]): Promise<boolean> => {
+    const missing = docs.filter(d => isPoRow(d) && !d.attachment_url);
+    if (!missing.length) return true;
+    try {
+      await Promise.all(missing.map(d => api.post(`/p2p/orders/${d.po_id}/documents/${d.po_doc_id}/generate`)));
+      return true;
+    } catch (e: any) {
+      toast.error('Could not prepare the purchase order',
+        e?.response?.data?.message || 'Its PDF could not be generated. Try again in a moment.');
+      return false;
+    }
+  }, [toast]);
+
+  const sendPoFromRow = useCallback(async (d: VaultDoc) => {
+    if (!isPoRow(d) || !(await ensurePoPdfs([d]))) return;
+    setSendRawPo({ poId: d.po_id as number, docs: [d] });
+  }, [ensurePoPdfs]);
+
+  /* One selection, one envelope — the routing every send here goes through.
+     Trade documents, agreements and the purchase order ride together as they do
+     in Stage 04; purchase orders alone take the PO module's own send, having no
+     library row to raise a CLM request against. */
+  const sendSelection = useCallback(async (rows: { doc: VaultDoc; cat: 'td' | 'agreement' }[]) => {
+    if (!rows.length) return;
+    const poRows  = rows.filter(r => isPoRow(r.doc));
+    const libRows = rows.filter(r => !isPoRow(r.doc));
+    if (poRows.length && !(await ensurePoPdfs(poRows.map(r => r.doc)))) return;
+
+    if (!libRows.length) {
+      setSendRawPo({ poId: poRows[0].doc.po_id as number, docs: poRows.map(r => r.doc) });
+      return;
+    }
+    const tdIds   = libRows.filter(r => r.cat !== 'agreement').map(r => r.doc.db_id).filter((n): n is number => !!n);
+    const agrRows = libRows.filter(r => r.cat === 'agreement');
+    const agrIds  = agrRows.map(r => r.doc.db_id).filter((n): n is number => !!n);
+    const po      = poRows[0]?.doc ?? null;
+
+    setSendPoRows(poRowsOf(rows.map(r => r.doc)));
+    setSendBundlePo(po ? {
+      id:         po.po_doc_id as number,
+      code:       po.po_code || po.doc_code || '',
+      name:       `Purchase Order · ${po.po_code || po.doc_code || ''}`,
+      previewUrl: `/p2p/orders/${po.po_id}/documents/${po.po_doc_id}/download`,
+    } : null);
+
+    // Agreements alone keep the agreement envelope they have always used.
+    if (!tdIds.length && !po) {
+      setSendKind('agreement');
+      setSendMixedAgr([]);
+      setSendDocIds(agrIds);
+      return;
+    }
+    setSendKind('trade');
+    setSendMixedAgr(agrRows.map(r => ({
+      id: r.doc.db_id as number, name: r.doc.name, code: r.doc.doc_code ?? undefined,
+    })));
+    setSendDocIds(tdIds);
+  }, [ensurePoPdfs]);
 
   useEffect(() => {
     if (!open || !supplier?.db_id) { setSignatureRows([]); return; }
@@ -870,12 +936,12 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
             ? <VendorDealTable key={`${shipmentIdMode}-${tab}`} mode={shipmentIdMode} docKind="both"
                                rows={shipmentIdMode === 'with' ? (vault.vendor_with_shipment ?? []) : (vault.vendor_without_shipment ?? [])}
                                ownerId={supplier?.db_id ?? null} onReload={reloadVault}
-                               onSendTradeDoc={(d, category) => { if (d.db_id) { setSendKind(category === 'agreement' ? 'agreement' : 'trade'); setSendPoRows(poRowsOf([d])); setSendDocIds([d.db_id]); } }} onRemindTradeDoc={handleRemind} onSendPoDoc={sendPoFromRow} />
+                               onSendTradeDoc={(d, category) => { if (d.db_id) { setSendKind(category === 'agreement' ? 'agreement' : 'trade'); setSendPoRows(poRowsOf([d])); setSendDocIds([d.db_id]); } }} onRemindTradeDoc={handleRemind} onSendPoDoc={sendPoFromRow} onBulkSend={(rows) => void sendSelection(rows)} />
             : tab === 'shipment-agreements'
               ? <ShipmentTable rows={vault.shipment_agreements} />
               : <DocsTable rows={docsForTab} tab={tab} ownerType="supplier" ownerId={supplier?.db_id ?? null} onReload={reloadVault}
                            onSendTradeDoc={(d) => { if (d.db_id) { setSendKind('trade'); setSendPoRows(poRowsOf([d])); setSendDocIds([d.db_id]); } }}
-                           onRemindTradeDoc={handleRemind} onSendPoDoc={sendPoFromRow} />}
+                           onRemindTradeDoc={handleRemind} onSendPoDoc={sendPoFromRow} onBulkSend={(rows) => void sendSelection(rows)} />}
         </div>
         </div>)}
 
@@ -1051,42 +1117,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
         const sendable  = keyed.filter(r => !viewOnly && (!!r.doc.db_id || isPoRow(r.doc))
           && !isOutForSign(r.doc) && !isSignedRow(r.doc));
 
-        const sendDocs = (rows: OvRow[]) => {
-          if (!rows.length) return;
-          const poRows  = rows.filter(r => isPoRow(r.doc));
-          const libRows = rows.filter(r => !isPoRow(r.doc));
-          /* Nothing but purchase orders: no library row to raise a CLM request
-             against, so they go through the PO module's own send. */
-          if (!libRows.length) {
-            setSendRawPo({ poId: poRows[0].doc.po_id as number, docs: poRows.map(r => r.doc) });
-            return;
-          }
-          const tdIds  = libRows.filter(r => r.cat !== 'agreement')
-            .map(r => r.doc.db_id).filter((n): n is number => !!n);
-          const agrRows = libRows.filter(r => r.cat === 'agreement');
-          const agrIds  = agrRows.map(r => r.doc.db_id).filter((n): n is number => !!n);
-          const po      = poRows[0]?.doc ?? null;
-          // Every Stage 04 row in this envelope is told which request carried it.
-          setSendPoRows(poRowsOf(rows.map(r => r.doc)));
-          setSendBundlePo(po ? {
-            id:         po.po_doc_id as number,
-            code:       po.po_code || po.doc_code || '',
-            name:       `Purchase Order · ${po.po_code || po.doc_code || ''}`,
-            previewUrl: `/p2p/orders/${po.po_id}/documents/${po.po_doc_id}/download`,
-          } : null);
-          // Agreements alone keep the agreement envelope they have always used.
-          if (!tdIds.length && !po) {
-            setSendKind('agreement');
-            setSendMixedAgr([]);
-            setSendDocIds(agrIds);
-            return;
-          }
-          setSendKind('trade');
-          setSendMixedAgr(agrRows.map(r => ({
-            id: r.doc.db_id as number, name: r.doc.name, code: r.doc.doc_code ?? undefined,
-          })));
-          setSendDocIds(tdIds);
-        };
+        const sendDocs = (rows: OvRow[]) => sendSelection(rows.map(r => ({ doc: r.doc, cat: r.cat === 'agreement' ? 'agreement' as const : 'td' as const })));
 
         void overviewPage;
         return (
@@ -1098,17 +1129,6 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                   <div className="cev-ov-title">{title}</div>
                   <div className="cev-ov-sub">{sub}</div>
                 </div>
-                {deal && picked.length > 0 && (
-                  <Tooltip label={canBulk
-                    ? `Send the ${picked.length} selected document${picked.length > 1 ? 's' : ''} for signature in one envelope`
-                    : (!libSaved
-                      ? 'One of the ticked rows is not saved against this deal yet'
-                      : 'One envelope carries one purchase order — tick just the one')}>
-                    <button type="button" className="sev-ov-bulk" disabled={!canBulk} onClick={() => sendDocs(picked)}>
-                      <Glyph d={VAULT_GLYPHS.send} size={11} /> {picked.every(r => !r.doc.signature_request_id) ? 'Send' : 'Resend'} {picked.length} selected
-                    </button>
-                  </Tooltip>
-                )}
                 {deal && (
                   <button type="button" className="sev-ov-back" onClick={() => { setOvDeal(null); setOvPicked([]); }}>
                     <i className="ri-arrow-left-s-line" aria-hidden /> Back to shipments
@@ -1140,7 +1160,8 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                   )}
                 </div>
               ) : deal ? (
-                <div className="cev-ov-body">
+                <div className="cev-ov-body" style={{ position: 'relative' }}>
+                  {ovBusy && <div className="cev-busy-veil" aria-hidden />}
                   <table className="cev-ov-table sev-ov-c2c">
                     <thead>
                       <tr>
@@ -1174,7 +1195,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                         const rowName   = d.name || '';
                         const rowSub    = isPoRow(d) ? (d.po_code || d.doc_code || '') : (d.doc_code || '');
                         return (
-                          <tr key={r.key}>
+                          <tr key={r.key} className={ovBusy === `ov:${r.key}` ? 'cev-row-working' : undefined}>
                             <td>
                               <input
                                 type="checkbox"
@@ -1201,13 +1222,13 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                                   : (isSignedRow(d) ? 'Already signed'
                                     : isOutForSign(d) ? 'Already out for signature — use Remind to chase it'
                                     : 'Available once the document is saved against this deal')}>
-                                  <button type="button" className="sev-ov-act sev-ov-act-send" disabled={!canSend} onClick={() => sendDocs([r])}>
+                                  <button type="button" className="sev-ov-act sev-ov-act-send" disabled={!canSend} onClick={() => void runOv(`ov:${r.key}`, () => sendDocs([r]))}>
                                     <Glyph d={VAULT_GLYPHS.send} size={11} /> {sendLabel}
                                   </button>
                                 </Tooltip>
                                 {canRemind && (
                                   <Tooltip label="Remind the signer to sign this document">
-                                    <button type="button" className="sev-ov-act sev-ov-act-remind" onClick={() => void handleRemind(d)}>
+                                    <button type="button" className="sev-ov-act sev-ov-act-remind" onClick={() => void runOv(`ov:${r.key}`, () => handleRemind(d))}>
                                       <Glyph d={VAULT_GLYPHS.bell} size={11} /> Remind
                                     </button>
                                   </Tooltip>
@@ -1291,6 +1312,25 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                       })}
                     </tbody>
                   </table>
+                </div>
+              )}
+              {/* Bulk send under the table, as the Customer vault has it: the row
+                  ticked last is nearest the button, and the table never shifts. */}
+              {deal && picked.length > 0 && (
+                <div className="cev-sdp-bulk">
+                  <span className="cev-sdp-bulk-count">{picked.length} of {sendable.length} selected</span>
+                  <button type="button" className="cev-sdp-bulk-clear" onClick={() => setOvPicked([])}>Clear</button>
+                  <Tooltip label={canBulk
+                    ? `Send the ${picked.length} selected document${picked.length > 1 ? 's' : ''} for signature in one envelope`
+                    : (!libSaved
+                      ? 'One of the ticked rows is not saved against this deal yet'
+                      : 'One envelope carries one purchase order — tick just the one')}>
+                    <button type="button" className="cev-sdp-bulk-send" disabled={!canBulk}
+                            onClick={() => void runOv('ov:bulk', () => sendDocs(picked))}>
+                      <Glyph d={VAULT_GLYPHS.send} size={12} />
+                      {picked.every(r => !r.doc.signature_request_id) ? 'Send' : 'Resend'} {picked.length} for Signature
+                    </button>
+                  </Tooltip>
                 </div>
               )}
             </div>
@@ -1400,7 +1440,7 @@ function VaultSkeleton() {
   );
 }
 
-function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, onSendPoDoc }: {
+function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, onSendPoDoc, onBulkSend }: {
   rows: VaultDoc[];
   tab: TabKey;
   ownerType: 'customer' | 'consignee' | 'supplier';
@@ -1409,6 +1449,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
   onSendTradeDoc?: (doc: VaultDoc) => void;
   onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
   onSendPoDoc?: (doc: VaultDoc) => void;
+  onBulkSend?: (rows: { doc: VaultDoc; cat: 'td' | 'agreement' }[]) => void;
 }) {
   const authorityLbl = tab === 'trade-documents' ? 'Counter Party' : 'Issuing Authority';
 
@@ -2103,7 +2144,7 @@ function dealDocState(d: VaultDoc): { label: string; c: [string, string, string,
    into the trade-document library. */
 /* A shipment's purchase orders. The shipment row opens this; each PO here opens
    its own Stage 04 documents, so a shipment carrying several POs stays legible. */
-function DealPoSubTable({ pos, docKind, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, onSendPoDoc }: {
+function DealPoSubTable({ pos, docKind, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, onSendPoDoc, onBulkSend }: {
   pos: DealPoRow[];
   docKind: 'trade' | 'agreement' | 'both';
   ownerId: number | null;
@@ -2111,6 +2152,7 @@ function DealPoSubTable({ pos, docKind, ownerId, onReload, onSendTradeDoc, onRem
   onSendTradeDoc?: (doc: VaultDoc, category: 'td' | 'agreement') => void;
   onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
   onSendPoDoc?: (doc: VaultDoc) => void;
+  onBulkSend?: (rows: { doc: VaultDoc; cat: 'td' | 'agreement' }[]) => void;
 }) {
   const toast = useToast();
   const countOf = (r: DealPoRow) => (r.docs ?? []).length + (r.agreements ?? []).length;
@@ -2182,7 +2224,7 @@ function DealPoSubTable({ pos, docKind, ownerId, onReload, onSendTradeDoc, onRem
                         ...(docKind === 'trade' ? [] : (po.agreements ?? []).map(d => ({ doc: d, category: 'agreement' as const }))),
                       ]}
                       ownerId={ownerId}
-                      onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} onSendPoDoc={onSendPoDoc}
+                      onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} onSendPoDoc={onSendPoDoc} onBulkSend={onBulkSend}
                       emptyLabel={docKind === 'agreement' ? `No agreements marked necessary on ${po.po_code}.`
                                 : docKind === 'trade' ? `No trade documents marked necessary on ${po.po_code}.`
                                 : `Nothing marked necessary on ${po.po_code} in Stage 04 yet.`}
@@ -2211,16 +2253,34 @@ function DealPoStatus({ status }: { status?: string }) {
   );
 }
 
-function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, onSendPoDoc, emptyLabel = 'No trade documents or agreements on record.' }: {
+function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, onSendPoDoc, onBulkSend, emptyLabel = 'No trade documents or agreements on record.' }: {
   rows: { doc: VaultDoc; category: 'td' | 'agreement' }[];
   ownerId: number | null;
   onReload: () => Promise<void> | void;
   onSendTradeDoc?: (doc: VaultDoc, category: 'td' | 'agreement') => void;
   onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
   onSendPoDoc?: (doc: VaultDoc) => void;
+  /** Given, the table grows a select column and a bulk bar under it. */
+  onBulkSend?: (rows: { doc: VaultDoc; cat: 'td' | 'agreement' }[]) => void;
 
   emptyLabel?: string;
 }) {
+  const viewOnly = useContext(VaultViewOnlyCtx);
+  const [picked, setPicked] = useState<string[]>([]);
+  const bulkOn = !!onBulkSend && !viewOnly;
+  const rowKeyOf = (d: VaultDoc, category: string, di: number) => `${category}-${d.id}-${di}`;
+  /* Sendable is the same question the row's own button answers: it has
+     somewhere to send from, and it is neither out for signature nor signed. */
+  const canPick = (d: VaultDoc) => (!!d.db_id || isPoRow(d)) && !isOutForSign(d) && !isSignedRow(d);
+  const pickable = rows.filter(r => canPick(r.doc));
+  const chosen = rows
+    .map((r, di) => ({ ...r, key: rowKeyOf(r.doc, r.category, di) }))
+    .filter(r => picked.includes(r.key) && canPick(r.doc));
+  const allPicked = pickable.length > 0 && chosen.length === pickable.length;
+  /* Sending or reminding takes a moment, and until it lands the row still reads
+     as it did. The table says so and takes no other click meanwhile: the lock
+     already refused a second action, but nothing showed why (CS-567). */
+  const lock = useActionLock();
   /* Five documents are the window; the rest come on the scroll. Measured, so a
      wrapped document name does not cut the fifth row in half. */
   const boxRef = useRef<HTMLDivElement | null>(null);
@@ -2242,11 +2302,25 @@ function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTra
   }, [rows]);
 
   return (
-    <div ref={boxRef} style={{ overflowY: 'auto' }}>
+    <div ref={boxRef} style={{ overflowY: 'auto', position: 'relative' }}>
+    {/* Swallows every click while an action is in flight, so the table cannot
+        be worked on until the row it belongs to has settled. */}
+    {lock.busy && <div className="cev-busy-veil" aria-hidden />}
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead>
         {/* One row, one gradient — and it stays put while the documents scroll. */}
         <tr style={{ background: 'linear-gradient(110deg,#083344,#0e7490)', position: 'sticky', top: 0, zIndex: 2 }}>
+          {bulkOn && (
+            <th style={{ ...DEAL_SUB_TH, width: 34, textAlign: 'center' }}>
+              <Tooltip label={pickable.length === 0 ? 'Nothing here is waiting to be sent' : allPicked ? 'Clear selection' : 'Select everything not yet sent'}>
+                <span style={{ display: 'inline-flex' }}>
+                  <input type="checkbox" className="cev-sdp-check" aria-label="Select every document waiting to be sent"
+                         disabled={pickable.length === 0} checked={allPicked}
+                         onChange={(e) => setPicked(e.target.checked ? rows.map((r, di) => rowKeyOf(r.doc, r.category, di)).filter((_, di) => canPick(rows[di].doc)) : [])} />
+                </span>
+              </Tooltip>
+            </th>
+          )}
           <th style={{ ...DEAL_SUB_TH, width: 32, textAlign: 'center' }}>#</th>
           <th style={{ ...DEAL_SUB_TH, textAlign: 'left' }}>Document Name</th>
           <th style={{ ...DEAL_SUB_TH, textAlign: 'center' }}>Required</th>
@@ -2258,14 +2332,32 @@ function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTra
       </thead>
       <tbody>
         {rows.length === 0 ? (
-          <tr><td colSpan={7} style={{ padding: 18, textAlign: 'center', color: 'var(--dl-muted)', fontSize: 11, background: 'var(--dl-docrow)' }}>{emptyLabel}</td></tr>
+          <tr><td colSpan={bulkOn ? 8 : 7} style={{ padding: 18, textAlign: 'center', color: 'var(--dl-muted)', fontSize: 11, background: 'var(--dl-docrow)' }}>{emptyLabel}</td></tr>
         ) : rows.map(({ doc: d, category }, di) => {
           const st = dealDocState(d);
           /* Falls back to the library name so an agreement with no reference
              of its own still reads as an agreement in a mixed list. */
           const sub = d.reference || d.doc_code || (category === 'agreement' ? 'Agreement' : '');
           return (
-            <tr key={`${category}-${d.doc_code ?? 'doc'}-${di}`} style={{ background: 'var(--dl-docrow)', borderBottom: '1px solid var(--dl-docline)' }}>
+            <tr key={`${category}-${d.doc_code ?? 'doc'}-${di}`}
+                className={lock.active === `row:${category}:${d.id}` ? 'cev-row-working' : undefined}
+                style={{ background: 'var(--dl-docrow)', borderBottom: '1px solid var(--dl-docline)' }}>
+              {bulkOn && (
+                <td style={{ padding: '11px 12px', textAlign: 'center' }}>
+                  <Tooltip label={canPick(d) ? 'Select for bulk send'
+                    : isSignedRow(d) ? 'Already signed'
+                    : isOutForSign(d) ? 'Already out for signature'
+                    : 'Not saved against this deal yet'}>
+                    {/* The span keeps the tooltip alive over a disabled input. */}
+                    <span style={{ display: 'inline-flex' }}>
+                      <input type="checkbox" className="cev-sdp-check" aria-label={`Select ${d.name}`}
+                             disabled={!canPick(d)}
+                             checked={picked.includes(rowKeyOf(d, category, di)) && canPick(d)}
+                             onChange={(e) => { const k = rowKeyOf(d, category, di); setPicked(p => e.target.checked ? [...p, k] : p.filter(x => x !== k)); }} />
+                    </span>
+                  </Tooltip>
+                </td>
+              )}
               <td style={{ padding: '11px 12px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, color: '#0e7490' }}>{di + 1}</td>
               <td style={{ padding: '11px 12px' }}>
                 <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--dl-ink, #083344)' }}>{d.name}</div>
@@ -2289,11 +2381,26 @@ function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTra
         })}
       </tbody>
     </table>
+    {/* Under the table, as the Customer vault has it: the row ticked last is
+        nearest the button, and the table never shifts as the bar appears. */}
+    {bulkOn && chosen.length > 0 && (
+      <div className="cev-sdp-bulk">
+        <span className="cev-sdp-bulk-count">{chosen.length} of {pickable.length} selected</span>
+        <button type="button" className="cev-sdp-bulk-clear" onClick={() => setPicked([])}>Clear</button>
+        <Tooltip label={`Send the ${chosen.length} selected document${chosen.length > 1 ? 's' : ''} for signature in one envelope`}>
+          <button type="button" className="cev-sdp-bulk-send" disabled={lock.busy}
+                  onClick={() => { onBulkSend!(chosen.map(r => ({ doc: r.doc, cat: r.category }))); setPicked([]); }}>
+            <Glyph d={VAULT_GLYPHS.send} size={12} />
+            Send {chosen.length} for Signature
+          </button>
+        </Tooltip>
+      </div>
+    )}
     </div>
   );
 }
 
-function VendorDealTable({ mode, rows, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, onSendPoDoc, docKind = 'both' }: {
+function VendorDealTable({ mode, rows, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, onSendPoDoc, onBulkSend, docKind = 'both' }: {
   mode: 'with' | 'without';
   rows: VendorDealRow[];
   ownerId: number | null;
@@ -2301,6 +2408,7 @@ function VendorDealTable({ mode, rows, ownerId, onReload, onSendTradeDoc, onRemi
   onSendTradeDoc?: (doc: VaultDoc, category: 'td' | 'agreement') => void;
   onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
   onSendPoDoc?: (doc: VaultDoc) => void;
+  onBulkSend?: (rows: { doc: VaultDoc; cat: 'td' | 'agreement' }[]) => void;
 
   /* 'both' is what the merged Trade Documents & Agreements tab uses — trade
      docs first, then the agreements for the same transaction. The single-kind
@@ -2404,7 +2512,7 @@ function VendorDealTable({ mode, rows, ownerId, onReload, onSendTradeDoc, onRemi
                               ...(docKind === 'trade' ? [] : (r.agreements ?? []).map(d => ({ doc: d, category: 'agreement' as const }))),
                             ]}
                             ownerId={ownerId}
-                            onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} onSendPoDoc={onSendPoDoc}
+                            onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} onSendPoDoc={onSendPoDoc} onBulkSend={onBulkSend}
                             emptyLabel={`Nothing marked necessary on ${r.po_code ?? 'this PO'} in Stage 04 yet.`} />
                         )}
                       </td>

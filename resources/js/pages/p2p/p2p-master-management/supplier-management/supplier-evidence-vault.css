@@ -4605,3 +4605,52 @@
 [data-bs-theme="dark"] .sev-ov .sev-ov-name-sub {
   color: #7dd3e8;
 }
+
+/* ══ Working state ═══════════════════════════════════════════════════════
+   Sending or reminding takes a moment. Until it lands the veil takes every
+   click, and the row it belongs to says which one is working (CS-567). */
+.cev-busy-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  cursor: progress;
+  background: rgba(240, 253, 255, .35);
+  backdrop-filter: saturate(.85);
+}
+
+[data-bs-theme="dark"] .cev-busy-veil {
+  background: rgba(8, 34, 43, .38);
+}
+
+/* The bar travels while the request is out, so a slow send still reads as alive. */
+.cev-row-working {
+  position: relative;
+  z-index: 41;
+  /* Above the veil so the bar is visible, but still untouchable. */
+  pointer-events: none;
+}
+
+.cev-row-working > td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, #22d3ee, #0891b2);
+}
+
+.cev-row-working > td {
+  background: linear-gradient(90deg, rgba(34, 211, 238, .10), rgba(34, 211, 238, .02) 60%);
+  background-size: 200% 100%;
+  animation: cevRowWorking 1.1s ease-in-out infinite;
+}
+
+@keyframes cevRowWorking {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cev-row-working > td { animation: none; }
+}
