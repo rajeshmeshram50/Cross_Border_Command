@@ -1964,7 +1964,7 @@ function ConsigneeCustomerModal({ consignee, customers, onClose }: { consignee: 
             </div>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.01em' }}>{customers.length > 1 ? 'Customers' : 'Customer'}</div>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,.86)', marginTop: 2 }}>{customers.length > 1 ? 'The buyers this consignee is mapped to, with their compliance readiness.' : 'The buyer this consignee is mapped to, with its compliance readiness.'}</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,.86)', marginTop: 2 }}>{customers.length > 1 ? 'The customers this consignee is mapped to, with their compliance readiness.' : 'The customer this consignee is mapped to, with its compliance readiness.'}</div>
             </div>
           </div>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>

@@ -1942,7 +1942,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
         </div>
       )}
       {docs.length === 0 ? (
-        <div style={{ padding: '18px', textAlign: 'center', color: '#64748b', fontSize: 12, background: '#fff', border: '1px dashed #a5f3fc', borderRadius: 8 }}>No {activeParty === 'both' ? '' : activeParty === 'buyer' ? 'buyer ' : 'consignee '}documents on this shipment.</div>
+        <div style={{ padding: '18px', textAlign: 'center', color: '#64748b', fontSize: 12, background: '#fff', border: '1px dashed #a5f3fc', borderRadius: 8 }}>No {activeParty === 'both' ? '' : activeParty === 'buyer' ? 'customer ' : 'consignee '}documents on this shipment.</div>
       ) : (
         <div style={{ background: '#fff', border: '1px solid #d6eef5', borderRadius: 10, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>

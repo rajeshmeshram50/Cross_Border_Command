@@ -626,8 +626,8 @@ const IconDownloadSm = () => (
 );
 
 const STEPS = [
-  { n:1, title:'Create Quotation',          desc:'Prepare quotation using opportunity, buyer, product, pricing, currency, and bank details.', tag:'FOUNDATION STEP' },
-  { n:2, title:'Share & Track Response',    desc:'Send quotation to buyer and track response status.',                                          tag:'SALES TRACKING' },
+  { n:1, title:'Create Quotation',          desc:'Prepare quotation using opportunity, customer, product, pricing, currency, and bank details.', tag:'FOUNDATION STEP' },
+  { n:2, title:'Share & Track Response',    desc:'Send quotation to customer and track response status.',                                          tag:'SALES TRACKING' },
   { n:3, title:'Convert to Proforma Invoice', desc:'Convert accepted quotation into PI with shipment, payment, and document details.',        tag:'CONVERSION STEP' },
   { n:4, title:'Sales Readiness',           desc:'Prepare quotation and PI records for CLM, order confirmation, and export execution.',        tag:'FINAL EXECUTION' },
 ];
@@ -1843,7 +1843,7 @@ export default function SalesQPI() {
           </div>
           <div>
             <div className="qpi-header-title">Quotations V/S Proforma Invoice</div>
-            <div className="qpi-header-sub">Manage quotation creation, buyer approval and PI conversion</div>
+            <div className="qpi-header-sub">Manage quotation creation, customer approval and PI conversion</div>
           </div>
         </div>
         <div className="qpi-tab-switch">

@@ -67,9 +67,9 @@ trait EnforcesSegmentBuyerConsignee
 
         return response()->json([
             'status'  => false,
-            'message' => 'Buyer and Consignee must be the SAME for the segment'
+            'message' => 'Customer and Consignee must be the SAME for the segment'
                 . ($plural ? 's' : '') . ': ' . $blocked->implode(', ') . '. '
-                . 'This segment does not allow a different Buyer and Consignee — set the Consignee to '
+                . 'This segment does not allow a different Customer and Consignee — set the Consignee to '
                 . '“Same as Customer” (Stage 1) for this opportunity before saving.',
         ], 422);
     }
