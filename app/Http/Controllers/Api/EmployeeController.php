@@ -2391,6 +2391,11 @@ class EmployeeController extends Controller
         }
 
         $oldStatus = (string) $row->getOriginal('status');
+        // Shift as it stood BEFORE this save, so the response can say whether a
+        // change to it reaches today or starts tomorrow. (#216)
+        $shiftChangedFrom = array_key_exists('shift', $data)
+            ? (string) ($row->getOriginal('shift') ?? '')
+            : null;
 
         $authId = $request->user()?->id;
         DB::transaction(function () use ($row, $data, $newStep, $newMacro, $oldStatus, $authId) {
@@ -2696,8 +2701,31 @@ class EmployeeController extends Controller
          * The columns themselves are already in memory and cost nothing, so
          * they stay: a caller that wants to read back what it saved still can.
          */
+        /* Say when a shift change does NOT apply to today. (#216)
+         *
+         * The shift is stamped onto the attendance row by the day's first
+         * punch, so an employee who has already punched today keeps working
+         * today under the shift they started on — the new one governs from
+         * their next first punch. That is the behaviour the ticket asks for,
+         * but silently it reads as the change not having taken, so the save
+         * says which day it starts on. */
+        $shiftNote = '';
+        if (array_key_exists('shift', $data) && $shiftChangedFrom !== null
+            && strcasecmp((string) $shiftChangedFrom, (string) ($row->shift ?? '')) !== 0) {
+            $todayIso  = \Carbon\Carbon::now(\App\Models\Attendance::WORK_TZ)->toDateString();
+            $workedToday = \App\Models\Attendance::where('employee_id', $row->id)
+                ->whereDate('attendance_date', $todayIso)
+                ->whereHas('punches')
+                ->exists();
+            if ($workedToday) {
+                $shiftNote = ' — the new shift starts tomorrow: today is already under way on "'
+                    . ($shiftChangedFrom ?: 'the previous shift')
+                    . '", and the day an employee has already punched into keeps the shift they started on.';
+            }
+        }
+
         return response()->json([
-            'message'  => 'Updated'
+            'message'  => 'Updated' . $shiftNote
                 . ($frozenCycles->isNotEmpty()
                     ? ' — note: already-approved payroll (' . $frozenCycles->implode(', ')
                         . ') keeps its original figures, so this change will not appear there.'

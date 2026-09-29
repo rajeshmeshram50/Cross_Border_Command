@@ -49,6 +49,23 @@ class AttendancePunchService
         }
 
         try {
+            /* Stamp the shift the employee is on RIGHT NOW onto the day. (#216)
+             *
+             * Everything downstream — late marks, expected hours, payroll LOP —
+             * used to resolve the window from the employee at read time, so the
+             * employee's single `shift` column retro-applied to every day they
+             * had ever worked. Reassigning someone re-judged their whole history
+             * against the new timing, and a shift set this afternoon governed a
+             * day already worked and punched out of.
+             *
+             * Written on the FIRST punch of the day and never rewritten, so a
+             * reassignment made later today cannot reach back into a day that is
+             * already under way: the row holds the shift the employee actually
+             * started on, and the new one takes effect with tomorrow's first
+             * punch. That is the "effective from the next day" the ticket asks
+             * for, expressed where it can't be bypassed. */
+            [$shiftStart, $shiftEnd] = $employee->resolveShiftWindow();
+
             return Attendance::create([
                 'client_id'       => $employee->client_id,
                 'branch_id'       => $employee->branch_id,
@@ -56,6 +73,9 @@ class AttendancePunchService
                 'employee_id'     => $employee->id,
                 'attendance_date' => $date,
                 'status'          => 'Present',
+                'shift_name'      => trim((string) ($employee->shift ?? '')) ?: null,
+                'shift_start'     => $shiftStart,
+                'shift_end'       => $shiftEnd,
             ]);
         } catch (QueryException $e) {
             // Lost the create race (or a trashed row exists) — re-resolve.
