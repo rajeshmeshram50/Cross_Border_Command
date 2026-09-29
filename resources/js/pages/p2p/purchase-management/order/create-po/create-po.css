@@ -1088,6 +1088,9 @@
 .cpd-tbl tbody tr { --cpd-rowbg: #fff; }
 
 .cpd-miss { font-weight: 800; color: #b45309; }
+/* Ordered over what the PI had open -- it closes the line, so it reads as a
+   deliberate act rather than a shortfall. */
+.cpd-excess { font-weight: 800; color: #7c3aed; }
 .cpd-gst { color: #0891b2; font-weight: 800; }
 .cpd-final { background: rgba(6, 182, 212, .06); font-weight: 800; color: #0c4a6e; }
 .cpd-tbl tfoot td {
@@ -1449,6 +1452,7 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 [data-bs-theme="dark"] .cpd-more { color: #67e8f9; }
 [data-bs-theme="dark"] .cpd-gst { color: #67e8f9; }
 [data-bs-theme="dark"] .cpd-miss { color: #fbbf24; }
+[data-bs-theme="dark"] .cpd-excess { color: #c4b5fd; }
 [data-bs-theme="dark"] .cpd-code {
   background: rgba(34, 211, 238, .12);
   border-color: rgba(34, 211, 238, .3);

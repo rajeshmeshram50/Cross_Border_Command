@@ -97,7 +97,9 @@ export function validateLines(lines: PoLineRow[], products: ProductOpt[], suppli
       continue;
     }
     if (!l.productId) set(l.key, 'product', l.pi ? 'Pick the product for this PI line.' : 'Pick a product, or remove the line.');
-    if (l.pi && l.qtyPo > l.pi.pending_qty) set(l.key, 'qty', `Only ${l.pi.pending_qty} is still pending on the PI.`);
+    /* An open PI line may be over-ordered; over-drawing closes it, so a line
+       already at zero takes nothing more (the server checks this too). */
+    if (l.pi && l.pi.pending_qty <= 0) set(l.key, 'qty', 'This PI line is fully ordered — nothing is left to order against it.');
     if (l.rate <= 0) set(l.key, 'rate', 'Enter a rate.');
     /* A slipped decimal used to pass every check and fail inside Zoho Books
        hours later, which converts to the base currency and refuses the

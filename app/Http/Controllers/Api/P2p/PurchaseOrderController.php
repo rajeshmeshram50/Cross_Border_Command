@@ -549,14 +549,17 @@ class PurchaseOrderController extends Controller
             }
         }
 
-        // Quantity may not exceed what is still pending on the PI line.
+        /* A PI line that is still open may be over-ordered — trade quantities
+           round to containers and minimum order sizes. Over-drawing takes the
+           line's pending to zero, which closes it to every later PO, so the
+           total across POs cannot compound: at most one PO draws over. */
         $orderedElsewhere = $this->svc->orderedByPiItem((int) $po->client_id, $piItemIds, $po->id);
         foreach ($data['lines'] as $i => $line) {
             if (empty($line['pi_item_id']) || isset($errors["lines.$i.pi_item_id"])) continue;
             $pi = $piItems->get((int) $line['pi_item_id']);
             $pending = max(0, (float) $pi->quantity - ($orderedElsewhere[(int) $pi->id] ?? 0));
-            if ((float) $line['quantity'] > $pending + 0.0005) {
-                $errors["lines.$i.quantity"] = ["Only {$pending} is still pending on this PI line."];
+            if ($pending <= 0.0005 && (float) $line['quantity'] > 0) {
+                $errors["lines.$i.quantity"] = ['This PI line is fully ordered — nothing is left to order against it.'];
             }
         }
 
