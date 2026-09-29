@@ -3,25 +3,15 @@ import { formatDmy } from '../../../../../utils/formatDmy';
 import { createPortal } from 'react-dom';
 import api from '../../../../../api';
 import { useToast } from '../../../../../contexts/ToastContext';
+import { useAuth } from '../../../../../contexts/AuthContext';
+import LeadAckReasonModal, { type LeadAckReason } from '../../../core-masters/lead-ack/LeadAckReasonModal';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 import type { StageAcknowledgement } from '../SalesMatrixDetail';
 import Tooltip from '../../../../../components/ui/Tooltip';
 
-/* ─────────────────────────────────────────────────────────────────────────
- * Sales Matrix → Stage 2: Lead Acknowledgement
- *
- *   - Three status pills: Qualified Lead · Clarity Pending · Disqualified
- *   - Clicking a pill opens a modal listing the matching master reasons
- *     (from /sales/lead-ack-reasons). Disqualified is split into
- *     Positive / Negative columns by dq_status.
- *   - Multi-select reasons → Submit → POST /sales/leads/{id}/acknowledgements
- *     creates one activity row per picked reason. The backend also flips
- *     the lead's qualified / disqualified flags to match the submitted
- *     bucket so the worksheet tabs and counts stay in sync.
- *   - Activity Report table renders the append-only history (latest first).
- *   - Save & Next is gated on "latest activity row is Qualified" and on
- *     submit advances lead_stage_id → 3 via PUT /sales/leads/{id}.
- * ───────────────────────────────────────────────────────────────────────── */
+/* Sales Matrix → Stage 2: Lead Acknowledgement.
+ * A status pill opens its master reasons; each submitted reason becomes an
+ * Activity Report row, and the latest row must be Qualified to reach Stage 3. */
 
 type Bucket = 'qualified' | 'clarity_pending' | 'disqualified';
 
@@ -48,23 +38,13 @@ type MasterPayload = {
 export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, reloadLead, canEnterNextStage }: StageProps) {
   const toast = useToast();
 
-  /* Optimistic pending rows — prepended to the Activity Report the instant
-   * the user clicks Submit, so the table updates without waiting for the
-   * POST + reload round-trip (~200-800ms saved). Negative ids mark them
-   * as pending; the real rows replace them when reloadLead resolves. */
+  // Optimistic rows (negative ids) shown until reloadLead brings the real ones.
   const [pendingAcks, setPendingAcks] = useState<StageAcknowledgement[]>([]);
   const headerAcks = header.acknowledgements ?? [];
-  /* Count of server rows captured the moment we add optimistic placeholders.
-   * Lets the memo below detect when reloadLead() has pulled the real rows in
-   * and hide the matching placeholders in the SAME render — without it the
-   * table briefly shows each just-submitted row twice (optimistic + server)
-   * before the placeholders are stripped from state. */
+  // Server-row count when placeholders were added, so arriving rows retire them.
   const baseAckCountRef = useRef(0);
   const acks = useMemo(() => {
     if (pendingAcks.length === 0) return headerAcks;
-    // How many real rows have landed in headerAcks since we added the
-    // placeholders. Those newest server rows already represent the front
-    // (newest) optimistic rows, so drop that many placeholders.
     const landed = Math.max(0, headerAcks.length - baseAckCountRef.current);
     const visiblePending = landed >= pendingAcks.length ? [] : pendingAcks.slice(landed);
     return [...visiblePending, ...headerAcks];
@@ -78,7 +58,6 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [advancing, setAdvancing] = useState(false);
 
-  // Pull the master once on mount; the same payload feeds all three buckets.
   useEffect(() => {
     setMastersLoading(true);
     api.get<MasterPayload>('/sales/lead-ack-reasons')
@@ -101,23 +80,31 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
   };
   const closePicker = () => { setPickerBucket(null); setSelected(new Set()); };
 
-  /* ESC dismisses the picker — universal expectation for modal dialogs.
-   * Bound only while the modal is open so the listener doesn't fight
-   * any other ESC handlers (e.g., toolbar keyboard shortcuts) outside
-   * this stage. Safe to dismiss any time now because Submit fires
-   * optimistically and closes the picker before the POST is in flight. */
+  // Add New Reason — the Lead Acknowledgement master's own popup and permission.
+  const { user } = useAuth();
+  const ackPerm = user?.permissions?.['sales.lead_ack_master'];
+  const canAddReason = user?.user_type === 'super_admin' || !!ackPerm?.can_add;
+  const [addOpen, setAddOpen]     = useState(false);
+  const [addPreset, setAddPreset] = useState<Bucket | null>(null);
+  const openAddReason = (b?: Bucket | null) => { setAddPreset(b ?? null); setAddOpen(true); };
+
+  const onReasonAdded = (row: LeadAckReason) => {
+    if (row.status !== 'active') return;
+    const t = row.opportunity_type;
+    setMasters(prev => ({ ...prev, [t]: [...prev[t], row] }));
+    if (pickerBucket === t) setSelected(prev => new Set(prev).add(row.id));
+  };
+
+  // ESC closes the picker, unless the Add New Reason popup is on top of it.
   useEffect(() => {
-    if (!pickerBucket) return;
+    if (!pickerBucket || addOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') closePicker();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [pickerBucket]);
+  }, [pickerBucket, addOpen]);
 
-  /* Lock background scroll while the reason picker is open, so the page
-   * behind the overlay stays put instead of scrolling under it. Restores the
-   * previous overflow on close (and on unmount via the cleanup). */
   useEffect(() => {
     if (!pickerBucket) return;
     const prev = document.body.style.overflow;
@@ -132,18 +119,8 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
       return;
     }
 
-    /* A lead carrying sourced work cannot be un-qualified (CS-257).
-       Stage 3 onwards locks itself to qualified leads, so saving a
-       Disqualified / Clarity Pending verdict over mapped products, a
-       quotation or a PI strands that work: unreachable in the UI, still
-       counted everywhere that reads it.
-
-       This used to be a confirm keyed off `leadStageId > 2`, which the
-       reported path walked straight past — mapping a product does not move
-       lead_stage_id (only Save & Next does), so entering Stage 3 from the
-       stage tracker left it at 2 and the dialog never appeared. The check now
-       measures the WORK, and the API refuses the same save independently:
-       an invariant cannot rest on a dialog. */
+    // A lead with Stage 3+ work (products, quotation, PI) can't be un-qualified;
+    // the API enforces the same rule.
     const work = header.downstreamWork ?? [];
     if (pickerBucket !== 'qualified' && work.length > 0) {
       toast.error(
@@ -155,13 +132,6 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
       return;
     }
 
-    /* Build optimistic placeholder rows from the in-modal master list so
-     *  the Activity Report can show the new acknowledgements the instant
-     *  the user clicks Submit. Negative ids keep them distinct from
-     *  server rows; created_at = now sorts them to the top. The B23
-     *  invariant (Save & Next must see the new latest bucket) is
-     *  preserved because `latestBucket` is derived from `acks` which
-     *  includes these pending rows. */
     const reasonIds = Array.from(selected);
     const pickedReasons = pickerOptions.filter(r => selected.has(r.id));
     const nowIso = new Date().toISOString();
@@ -175,12 +145,6 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
     }));
     const optimisticIds = new Set(optimistic.map(o => o.id));
 
-    /* Close the picker + drop the placeholders into the table in the
-     *  SAME render, so the UI swap feels instant. Toast pre-confirms
-     *  the save; the rare failure path below rolls these rows back
-     *  and re-toasts an error. */
-    // Snapshot the current server-row count so the memo can tell, on reload,
-    // exactly how many placeholders to retire as the real rows arrive.
     baseAckCountRef.current = headerAcks.length;
     setPendingAcks(prev => [...optimistic, ...prev]);
     closePicker();
@@ -189,22 +153,13 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
     try {
       await api.post(`/sales/leads/${header.leadId}/acknowledgements`, { reason_ids: reasonIds });
       await reloadLead?.();
-      /* Reload landed — server rows now live in headerAcks. Strip our
-       *  placeholders so the table doesn't briefly double-up. (Targeted
-       *  removal, not a blanket clear, so a second concurrent submit's
-       *  pending rows survive.) */
       setPendingAcks(prev => prev.filter(p => !optimisticIds.has(p.id)));
     } catch (e: any) {
-      /* Rollback: remove ONLY this submit's optimistic rows, then
-       *  surface the error so the user can retry. */
       setPendingAcks(prev => prev.filter(p => !optimisticIds.has(p.id)));
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save acknowledgements');
     }
   };
 
-  // Save & Next — server-side validation already ensures latestBucket
-  // accurately reflects the lead's pipeline state; we still gate the
-  // button up front so the user gets a fast no-op + actionable toast.
   const onSaveAndNext = async () => {
     if (!header.leadId) {
       toast.warning('Open from worksheet', 'Re-enter this stage from the Lead Worksheet to save your progress.');
@@ -224,21 +179,13 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
       );
       return;
     }
-    /* Ask the page whether Stage 3 will accept this lead BEFORE writing the
-       advance. Stage 3 requires a salesperson, and that check used to run on
-       onNext() — after the PUT and after the success toast — so a lead with no
-       owner was told "Stage advanced", then refused, and left with
-       lead_stage_id = 3 on a screen still showing Stage 2. */
+    // Check Stage 3's entry rules (e.g. a salesperson) before writing the advance.
     if (canEnterNextStage && !canEnterNextStage()) return;
 
     setAdvancing(true);
     try {
       await api.put(`/sales/leads/${header.leadId}`, { lead_stage_id: 3 });
       toast.success('Stage advanced', 'Moving to Product Sourcing (Stage 3)…');
-      /* Await the reload (matches submitPicker's B23 pattern) so Stage 3
-       * mounts against the FRESH header — lead_stage_id, won_at, and
-       * the acknowledgement list are all derived from this fetch and
-       * would otherwise render stale for ~200ms. */
       await reloadLead?.();
       onNext();
     } catch (e: any) {
@@ -248,8 +195,7 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
     }
   };
 
-  /* ─── Reason picker modal — Qualified / Clarity show a single list;
-   *     Disqualified shows two columns split by dq_status. */
+  // Disqualified splits its reasons into Negative / Positive columns.
   const pickerOptions = useMemo<MasterReason[]>(
     () => pickerBucket ? masters[pickerBucket] : [],
     [pickerBucket, masters],
@@ -296,6 +242,14 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
               </svg>
             </span>
             <span className="smd-st2-status-title">LEAD ACKNOWLEDGEMENT STATUS</span>
+            {canAddReason && (
+              <button type="button" className="smd-st2-add-reason" onClick={() => openAddReason(null)}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                Add New Reason
+              </button>
+            )}
             {latestBucket && (
               <span className={`smd-st2-status-current ${BUCKET_META[latestBucket].pill}`}>
                 {BUCKET_META[latestBucket].label}
@@ -383,8 +337,6 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
                         </span>
                       </td>
                       <td className="smd-st2-row-reason-td">
-                        {/* Show only the first 20 characters + "…"; the full
-                            reason is on hover via the Tooltip (QA #112). */}
                         <Tooltip label={row.reason_snapshot ?? ''} themed maxWidth={480}>
                           <div className="smd-st2-row-reason">
                             {(() => { const rs = row.reason_snapshot ?? ''; return rs.length > 30 ? `${rs.slice(0, 30)}…` : (rs || '—'); })()}
@@ -446,7 +398,9 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
               )}
               {!mastersLoading && pickerOptions.length === 0 && (
                 <div className="st2-pick-empty">
-                  No active reasons configured for this bucket. Add some in <strong>Master → Lead Acknowledgement</strong>.
+                  {canAddReason
+                    ? <>No active reasons configured for this status yet. Use <strong>+ Add New Reason</strong> below to create one.</>
+                    : <>No active reasons configured for this bucket. Add some in <strong>Master → Lead Acknowledgement</strong>.</>}
                 </div>
               )}
 
@@ -481,7 +435,12 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
             </div>
 
             <div className={`st2-pick-foot ${BUCKET_META[pickerBucket].pill}`}>
-              <span className="st2-pick-count">{selected.size} selected</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span className="st2-pick-count">{selected.size} selected</span>
+                {canAddReason && (
+                  <button type="button" className="st2-pick-addlink" onClick={() => openAddReason(pickerBucket)}>+ Add New Reason</button>
+                )}
+              </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="st2-pick-btn st2-pick-btn-ghost" onClick={closePicker}>Cancel</button>
                 <button
@@ -496,6 +455,14 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
           </div>
         </div>
       ), document.body)}
+
+      {/* ── Add New Reason ── */}
+      <LeadAckReasonModal
+        open={addOpen}
+        presetType={addPreset}
+        onClose={() => setAddOpen(false)}
+        onSaved={(row) => onReasonAdded(row)}
+      />
     </>
   );
 }
@@ -509,7 +476,6 @@ function ReasonRow({ reason, checked, onToggle }: { reason: MasterReason; checke
   );
 }
 
-/* Per-bucket header icon for the reason-picker modal: check / clock / cross. */
 function BucketIcon({ bucket }: { bucket: Bucket }) {
   if (bucket === 'qualified')
     return (
@@ -531,7 +497,7 @@ function BucketIcon({ bucket }: { bucket: Bucket }) {
 }
 
 const STAGE2_CSS = `
-/* ── Status selector card — same frame as Stage 3's .s3-card. ── */
+/* ── Status card ── */
 .smd-st2-status-block {
   background: #fff;
   border: 1.5px solid #ddd6fe;
@@ -568,7 +534,6 @@ const STAGE2_CSS = `
   line-height: 1.5;
 }
 
-/* Pills row */
 .smd-st2-pills { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .smd-st2-pill {
   display: inline-flex; align-items: center; gap: 5px;
@@ -583,12 +548,10 @@ const STAGE2_CSS = `
 }
 .smd-st2-pill:hover { transform: translateY(-1px); }
 
-/* Inactive state colors per bucket */
 .smd-st2-pill-q { color: #9b8ec4; border-color: #ede9fe; background: #faf5ff; }
 .smd-st2-pill-c { color: #92400e; border-color: #fde68a; background: #fffdf5; }
 .smd-st2-pill-d { color: #be123c; border-color: #fecdd3; background: #fff5f6; }
 
-/* Active state — multi-stop gradient + colored ring + glow */
 .smd-st2-pill.active {
   border-color: transparent;
   color: #fff;
@@ -606,14 +569,11 @@ const STAGE2_CSS = `
   background: linear-gradient(115deg, #f43f5e, #e11d48, #fb7185, #fda4af);
   box-shadow: 0 4px 12px rgba(244,63,94,.28), 0 0 0 3px #fca5a5;
 }
-/* Figma: pills are plain text; the active pill leads with a small dot. */
 .smd-st2-pill.active::before {
   content: ''; width: 6px; height: 6px; border-radius: 50%;
   background: currentColor; flex-shrink: 0;
 }
 
-/* Current-status badge per bucket — solid DARK gradient (white text), not the
-   faint tinted style, so the active status reads clearly (QA #70). */
 .smd-st2-status-current.smd-st2-pill-q { background: linear-gradient(115deg, #6d28d9, #7c3aed, #8b5cf6); border-color: transparent; color: #fff; box-shadow: 0 2px 8px rgba(124,58,237,.35); }
 .smd-st2-status-current.smd-st2-pill-c { background: linear-gradient(115deg, #b45309, #d97706, #f59e0b); border-color: transparent; color: #fff; box-shadow: 0 2px 8px rgba(245,158,11,.32); }
 .smd-st2-status-current.smd-st2-pill-d { background: linear-gradient(115deg, #be123c, #e11d48, #f43f5e); border-color: transparent; color: #fff; box-shadow: 0 2px 8px rgba(244,63,94,.32); }
@@ -623,16 +583,13 @@ const STAGE2_CSS = `
   box-shadow: 0 0 5px currentColor;
 }
 
-/* Header badge — pill in the stage header */
 .smd-stg-head-badge.st2-badge-qualified       { background: linear-gradient(135deg, #10b981, #047857); color: #fff; border: none; box-shadow: 0 2px 8px rgba(16,185,129,.35); }
 .smd-stg-head-badge.st2-badge-disqualified    { background: linear-gradient(135deg, #f43f5e, #e11d48); color: #fff; border: none; box-shadow: 0 2px 8px rgba(244,63,94,.35); }
 .smd-stg-head-badge.st2-badge-clarity_pending { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; border: none; box-shadow: 0 2px 8px rgba(245,158,11,.35); }
-/* The Stage 2 header badge keeps its own literal ● in the label, so hide
-   the shared green pulsing ::before dot to avoid a doubled dot. */
+/* The label carries its own ●, so hide the shared ::before dot. */
 .smd-stg-head-badge::before { display: none; }
 
-/* ── Activity Report card — mirrors Stage 3's "All Mapped Products" card
-      (.s3-card / .s3-card-head / .s3-table) so both stages read the same. ── */
+/* ── Activity Report ── */
 .smd-st2-activity {
   background: #fff;
   border: 1.5px solid #ddd6fe;
@@ -648,7 +605,6 @@ const STAGE2_CSS = `
   border-bottom: 1.5px solid #ede9fe;
   gap: 12px; flex-wrap: wrap;
 }
-/* Left vertical accent strip — same as Stage 3's card header. */
 .smd-st2-activity-head::before {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0;
   width: 4px; background: linear-gradient(180deg, #7c3aed, #6d28d9);
@@ -672,8 +628,6 @@ const STAGE2_CSS = `
   background: linear-gradient(135deg, #7c3aed, #6d28d9);
 }
 
-/* Table wrap — same as .s3-table-wrap (plain top border, neutral scrollbar);
-   keeps the vertical cap + sticky header for long histories. */
 .smd-st2-table-wrap {
   max-height: 220px; overflow-y: auto; overflow-x: auto;
   background: #fff;
@@ -692,7 +646,6 @@ const STAGE2_CSS = `
 .smd-st2-table colgroup col:nth-child(1) { width: 62px; }
 .smd-st2-table colgroup col:nth-child(2) { width: 118px; }
 .smd-st2-table colgroup col:nth-child(3) { width: 150px; }
-/* Header cells — identical to .s3-table thead th. */
 .smd-st2-table thead th {
   position: sticky; top: 0; z-index: 1;
   padding: 11px 14px; text-align: left;
@@ -701,7 +654,6 @@ const STAGE2_CSS = `
   background: linear-gradient(180deg, #7c3aed, #6d28d9);
   border-bottom: 1.5px solid #6d28d9;
 }
-/* Body cells — identical to .s3-table tbody td. */
 .smd-st2-table tbody td {
   padding: 8px 10px;
   font-size: 11px; color: #1e293b;
@@ -712,15 +664,12 @@ const STAGE2_CSS = `
 .smd-st2-table tbody tr { background: #fff; transition: background .12s; }
 .smd-st2-table tbody tr:hover { background: #faf5ff; }
 
-/* SR chip — identical to .s3-sr / .s3-sr-violet. */
 .smd-st2-row-num {
   display: inline-flex; align-items: center; justify-content: center;
   width: 22px; height: 22px; border-radius: 7px;
   background: #ede9fe; color: #6d28d9;
   font-size: 10px; font-weight: 800;
 }
-/* Row status pill — identical shape to Stage 3's .s3-pill (solid tinted
-   fill, no border), with a ::before dot standing in for the literal ●. */
 .smd-st2-row-pill {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 2px 8px; border-radius: 999px;
@@ -738,11 +687,8 @@ const STAGE2_CSS = `
 
 .smd-st2-row-reason {
   font-size: 11px; font-weight: 500; color: #1e293b;
-  /* Reason is hard-capped to 20 chars + "…" in JS (full text on hover via the
-     Tooltip, QA #112); keep it on one line so it never stretches the row. */
   white-space: nowrap;
 }
-/* Empty state — identical to .s3-empty. */
 .smd-st2-empty {
   text-align: center; padding: 26px 14px;
   color: #94a3b8; font-style: italic;
@@ -791,9 +737,6 @@ const STAGE2_CSS = `
 }
 .st2-pick-close:hover { background: rgba(255,255,255,.32); }
 
-/* Cap the body so the popup stays a consistent compact size (figma) — when
-   there are many reasons the list scrolls INSIDE instead of the modal growing
-   tall. Thin themed scrollbar. */
 .st2-pick-body {
   padding: 14px 18px; overflow-y: auto; background: #f8fafc;
   height: min(280px, 44vh);
@@ -821,8 +764,6 @@ const STAGE2_CSS = `
 .st2-pick-cols .st2-pick-col:first-child { padding-right: 18px; border-right: 1.5px solid #cabffb; }
 .st2-pick-cols .st2-pick-col:last-child  { padding-left: 18px; }
 .st2-pick-row > span { min-width: 0; overflow-wrap: anywhere; }
-/* Underlined section headers (Figma) — coloured dot + uppercase label
-   over a tinted hairline, instead of the old filled pill. */
 .st2-pick-col-head {
   font-size: 11px; font-weight: 800; letter-spacing: .06em;
   text-transform: uppercase;
@@ -858,17 +799,35 @@ const STAGE2_CSS = `
 }
 .st2-pick-btn-primary:active:not(:disabled),
 .st2-pick-btn-ghost:active:not(:disabled) { transform: translateY(0); }
-/* Per-bucket primary tints (header + button match) */
 .st2-pick-foot.smd-st2-pill-c .st2-pick-btn-primary { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 3px 10px rgba(245,158,11,.35); }
 .st2-pick-foot.smd-st2-pill-d .st2-pick-btn-primary { background: linear-gradient(135deg, #f43f5e, #e11d48); box-shadow: 0 3px 10px rgba(244,63,94,.35); }
 
+/* ── Add New Reason ── */
+.smd-st2-add-reason {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 11px; border-radius: 20px; cursor: pointer;
+  font-family: inherit; font-size: 9.5px; font-weight: 700;
+  color: #6d28d9; background: #f5f3ff; border: 1.5px dashed #a78bfa;
+  transition: all .18s; white-space: nowrap;
+}
+.smd-st2-add-reason:hover {
+  background: #ede9fe; border-style: solid; color: #5b21b6;
+  transform: translateY(-1px); box-shadow: 0 3px 10px rgba(124,58,237,.18);
+}
+.st2-pick-addlink {
+  border: none; background: none; padding: 0; cursor: pointer;
+  font-family: inherit; font-size: 11.5px; font-weight: 700; color: #7c3aed;
+}
+.st2-pick-addlink:hover { text-decoration: underline; color: #5b21b6; }
 /* ── Dark mode ─────────────────────────────────────────────── */
+[data-bs-theme="dark"] .smd-st2-add-reason { background: rgba(124,58,237,.16); border-color: rgba(167,139,250,.55); color: #c4b5fd; }
+[data-bs-theme="dark"] .smd-st2-add-reason:hover { background: rgba(124,58,237,.30); color: #ede9fe; }
+[data-bs-theme="dark"] .st2-pick-addlink { color: #c4b5fd; }
 [data-bs-theme="dark"] .smd-st2-status-block {
   background: #14102a;
   border-color: rgba(167,139,250,.30);
   border-top-color: #7c3aed;
 }
-/* Activity card — same dark treatment as Stage 3's .s3-card. */
 [data-bs-theme="dark"] .smd-st2-activity {
   background: #14102a;
   border-color: rgba(167,139,250,.30);
@@ -877,19 +836,14 @@ const STAGE2_CSS = `
 [data-bs-theme="dark"] .smd-st2-status-title  { color: #c4b5fd; }
 [data-bs-theme="dark"] .smd-st2-status-hint   { color: #a78bfa; opacity: .80; }
 
-/* Inactive pill base — translucent violet wash on dark. */
 [data-bs-theme="dark"] .smd-st2-pill-q { background: rgba(124,58,237,.14); border-color: rgba(167,139,250,.30); color: #c4b5fd; }
 [data-bs-theme="dark"] .smd-st2-pill-c { background: rgba(245,158,11,.12); border-color: rgba(252,211,77,.35); color: #fbbf24; }
 [data-bs-theme="dark"] .smd-st2-pill-d { background: rgba(244,63,94,.12); border-color: rgba(252,165,165,.35); color: #fda4af; }
-/* Active pill — keep the rich multi-stop gradient (already vibrant enough for dark). */
 
-/* Current-status chip — keep the solid dark gradient (white text) in dark mode
-   too, so it doesn't fall back to the faint translucent wash (QA #70). */
 [data-bs-theme="dark"] .smd-st2-status-current.smd-st2-pill-q { background: linear-gradient(115deg, #6d28d9, #7c3aed, #8b5cf6); border-color: transparent; color: #fff; }
 [data-bs-theme="dark"] .smd-st2-status-current.smd-st2-pill-c { background: linear-gradient(115deg, #b45309, #d97706, #f59e0b); border-color: transparent; color: #fff; }
 [data-bs-theme="dark"] .smd-st2-status-current.smd-st2-pill-d { background: linear-gradient(115deg, #be123c, #e11d48, #f43f5e); border-color: transparent; color: #fff; }
 
-/* Activity head — same dark wash as Stage 3's .s3-card-head. */
 [data-bs-theme="dark"] .smd-st2-activity-head {
   background: rgba(124,58,237,.10);
   border-bottom-color: rgba(167,139,250,.25);
@@ -897,7 +851,6 @@ const STAGE2_CSS = `
 [data-bs-theme="dark"] .smd-st2-activity-title { color: #ede9fe; }
 [data-bs-theme="dark"] .smd-st2-activity-sub   { color: rgba(196,181,253,.55); }
 
-/* Table — identical dark treatment to Stage 3's .s3-table. */
 [data-bs-theme="dark"] .smd-st2-table-wrap {
   background: #14102a;
   border-top-color: rgba(167,139,250,.20);
@@ -919,7 +872,6 @@ const STAGE2_CSS = `
   color: #c4b5fd;
 }
 
-/* Row status pill — same dark fills as Stage 3's .s3-pill variants. */
 [data-bs-theme="dark"] .smd-st2-row-pill.smd-st2-pill-q { background: rgba(16,185,129,.18); color: #6ee7b7; }
 [data-bs-theme="dark"] .smd-st2-row-pill.smd-st2-pill-c { background: rgba(245,158,11,.18); color: #fde68a; }
 [data-bs-theme="dark"] .smd-st2-row-pill.smd-st2-pill-d { background: rgba(239,68,68,.18);  color: #fca5a5; }

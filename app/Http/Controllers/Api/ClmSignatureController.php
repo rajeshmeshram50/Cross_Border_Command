@@ -2107,7 +2107,8 @@ class ClmSignatureController extends Controller
      * An applicable-party CSV as the user reads it. The value is stored as
      * "Buyer" but the product calls that party the Customer, so messages that
      * quote a document's party say "Customer" — "Buyer,Consignee" reads
-     * "Customer, Consignee".
+     * "Customer, Consignee". Customer is always named first, so "Consignee,Buyer"
+     * and "Buyer,Consignee" read the same and don't list twice in a message.
      */
     private function partyLabel(?string $csv): string
     {
@@ -2115,6 +2116,8 @@ class ClmSignatureController extends Controller
             ->map(fn($t) => trim($t))
             ->filter()
             ->map(fn($t) => strcasecmp($t, 'Buyer') === 0 ? 'Customer' : $t)
+            ->unique()
+            ->sortBy(fn($t) => [$t === 'Customer' ? 0 : ($t === 'Consignee' ? 1 : 2), $t])
             ->implode(', ');
     }
 
