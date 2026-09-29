@@ -464,7 +464,21 @@ class ClmSignatureController extends Controller
             // cbc doc-id order MUST mirror $tempPaths order (CLM docs, then the
             // bundled PO under key 'po') so coords align to the right Zoho doc.
             $cbcDocIdsOrdered = $orderedDocs->map(fn($d) => $docKeyOf($d))->all();
-            if ($poDoc) $cbcDocIdsOrdered[] = 'po';
+            /* The purchase order counts here however it was attached.
+             *
+             * This asked for $poDoc alone — the Sales-side order. A Stage 04
+             * send bundles the P2P module's own PO instead ($p2pDoc), so the
+             * list came back one entry SHORT of the files actually uploaded:
+             * document_settings['po'] then had no document to attach itself to,
+             * Zoho was given no coordinates for the purchase order, and it fell
+             * back to its own default placement. The signature landed nowhere
+             * near the box that had been dragged for it, while the trade
+             * documents in the same envelope were placed correctly (CS-12).
+             *
+             * Both branches append the same 'po' key, in the same position as
+             * the file they pushed onto $tempPaths — which is what keeps every
+             * document's coordinates aligned to its own Zoho id. */
+            if (in_array('po', array_column($localDocMeta, 'id'), true)) $cbcDocIdsOrdered[] = 'po';
             $perDocCoords = $this->mapClientCoordsToZohoDocIds(
                 (array) ($data['document_settings'] ?? []),
                 $cbcDocIdsOrdered,

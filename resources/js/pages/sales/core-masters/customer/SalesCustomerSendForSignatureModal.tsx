@@ -333,6 +333,16 @@ export default function SalesCustomerSendForSignatureModal({
    * of Y" hint can be shown. Kept per modal-open (no per-doc map needed
    * since switching docs reloads the preview anyway). */
   const [pageCount, setPageCount] = useState<number>(1);
+  /* WHICH document that count belongs to.
+   *
+   * Switching documents changes activeDocId at once, while the new preview —
+   * and with it the real page count — arrives a second or two later. The clamp
+   * below therefore measured the incoming document against the outgoing one's
+   * length: a signature placed on page 5 of a 27-page document, after a look at
+   * a one-page one, came back clamped to page 1. The box had not been touched;
+   * switching documents moved it (CS-12). Nothing is clamped until the count
+   * and the document on screen are the same document. */
+  const [pageCountFor, setPageCountFor] = useState<number | null>(null);
   /* The page shown on the canvas - SEPARATE from the active box's page.
      Prev/Next used to patch the active box's `page`, so paging through the
      document physically dragged that signature box along with the view and
@@ -789,6 +799,7 @@ export default function SalesCustomerSendForSignatureModal({
     setPreviewLoading(true);
     setPreviewUrl(null);
     setPdfRenderReady(false);
+    setPageCountFor(null);        // the count on hand belongs to the last document
     // Per-doc page-shell override carried along so the preview reflects
     // whatever the user tweaked in the side panel + table inserts. The
     // backend layers these over the saved row's config; no override =
@@ -845,6 +856,7 @@ export default function SalesCustomerSendForSignatureModal({
           try { pdfDocRef.current?.destroy(); } catch { /* ignore */ }
           pdfDocRef.current = renderDoc;
           setPageCount(Math.max(1, renderDoc.numPages));
+          setPageCountFor(docId);
           setPdfRenderReady(true);
         } catch { /* keep any previous doc; the user can still drag the box */ }
 
@@ -865,7 +877,7 @@ export default function SalesCustomerSendForSignatureModal({
             const parties = roles.map(role => ROLE_TO_MARKER_TOKEN[role]);
             const uniqueParties = Array.from(new Set(parties));
             const detected = await detectSignatureMarkers(blob, uniqueParties, (n) => {
-              if (!cancelled) setPageCount(Math.max(1, n));
+              if (!cancelled) { setPageCount(Math.max(1, n)); setPageCountFor(docId); }
             });
             if (cancelled) return;
             setSignerSettings(prev => {
@@ -890,7 +902,7 @@ export default function SalesCustomerSendForSignatureModal({
             // key for this mode is just the docId.
             if (userOverrodeRef.current.has(String(docId))) return;
             const detected = await detectSignatureMarkers(blob, [partyToken], (n) => {
-              if (!cancelled) setPageCount(Math.max(1, n));
+              if (!cancelled) { setPageCount(Math.max(1, n)); setPageCountFor(docId); }
             });
             const found = detected[partyToken];
             if (cancelled || !found) return;
@@ -1250,6 +1262,7 @@ export default function SalesCustomerSendForSignatureModal({
   const addRoleBox = () => {
     if (!activeDocId || !activeSignerRole) return;
     const role = activeSignerRole; const docId = activeDocId;
+    markPlaced(docId, role);          // this document's boxes are the user's now
     const list = roleBoxList(docId, role);
     const last = list[list.length - 1];
     setRoleExtraBoxes(prev => {
@@ -1334,9 +1347,30 @@ export default function SalesCustomerSendForSignatureModal({
      target explicitly removes that dependency - which is what lets a single
      press select AND drag, instead of the old click-then-drag. */
   type BoxTarget = { docId: number; role?: SignerRoleKey | null; boxIdx?: number };
-  const updateActiveSettings = (patch: Partial<DocSettings>, target?: BoxTarget) => {
+  /**
+   * Remember that this document's boxes were placed by hand, so the next
+   * preview load does not snap them back to the marker it finds in the PDF.
+   *
+   * Only a DRAG used to count. Everything else the panel offers — the X / Y
+   * steppers, the Page field, arrow keys, adding a box — left the document
+   * looking untouched, so switching to another document and back re-ran
+   * placeholder detection and moved Signature 1 off the spot it had been
+   * given. With several documents selected that switch is unavoidable, which
+   * is why positions "changed at preview time" (CS-12).
+   */
+  const markPlaced = (docId: number, role?: SignerRoleKey | null) => {
+    userOverrodeRef.current.add(roleMode && role ? `${docId}:${role}` : String(docId));
+  };
+  const updateActiveSettings = (
+    patch: Partial<DocSettings>,
+    target?: BoxTarget,
+    /** `auto` is the app moving a box itself (clamping it back onto a shorter
+     *  document), which must not read as the user having placed it. */
+    opts?: { auto?: boolean },
+  ) => {
     const docId = target?.docId ?? activeDocId;
     if (!docId) return;
+    if (!opts?.auto) markPlaced(docId, target?.role ?? activeSignerRole);
     if (roleMode) {
       const role = target?.role ?? activeSignerRole;
       if (!role) return;
@@ -1380,6 +1414,7 @@ export default function SalesCustomerSendForSignatureModal({
   /* multiBox helpers — add / remove / select a signature box for the active doc. */
   const addBox = () => {
     if (!activeDocId) return;
+    markPlaced(activeDocId);          // this document's boxes are the user's now
     setMultiBoxes(prev => {
       const arr = (prev[activeDocId] ?? seedBoxes(activeDocId)).slice();
       const last = arr[arr.length - 1] ?? DEFAULTS;
@@ -1435,11 +1470,13 @@ export default function SalesCustomerSendForSignatureModal({
    * DISPLAYED, so a box left pointing past the end would have gone to Zoho with
    * a page_no the document has not got, and the field could not be placed. */
   useEffect(() => {
+    // Not this document's count yet — see pageCountFor.
+    if (!activeDocId || pageCountFor !== activeDocId) return;
     const last = Math.max(0, pageCount - 1);
     setViewPage(p => Math.min(p, last));
-    if (activeDocId && (activeSettings?.page ?? 0) > last) updateActiveSettings({ page: last });
+    if ((activeSettings?.page ?? 0) > last) updateActiveSettings({ page: last }, undefined, { auto: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageCount, activeDocId]);
+  }, [pageCount, pageCountFor, activeDocId]);
 
   /* ── Drag-to-position the signature box on the live PDF preview.
    * The preview wrapper is sized to A4 aspect ratio (595×842), so the
@@ -1605,10 +1642,7 @@ export default function SalesCustomerSendForSignatureModal({
     // we don't fight the user's intent on the next preview load. Agreement
     // mode keys per-role so dragging the buyer overlay doesn't freeze
     // the consignee's auto-detect (and vice versa).
-    const overrideKey = roleMode && activeSignerRole
-      ? `${activeDocId}:${activeSignerRole}`
-      : String(activeDocId);
-    userOverrodeRef.current.add(overrideKey);
+    markPlaced(activeDocId, target?.role ?? activeSignerRole);
     dragStateRef.current = {
       mode,
       startX: e.clientX, startY: e.clientY,
