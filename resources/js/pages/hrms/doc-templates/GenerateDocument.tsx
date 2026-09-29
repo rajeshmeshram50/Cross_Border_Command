@@ -67,6 +67,8 @@ interface EmployeeRow {
   display_name: string | null;
   email: string | null;
   department?: { id: number; name: string } | null;
+  /** IT / Non-IT / Legal, resolved server-side from the department hierarchy. */
+  document_category?: string | null;
   designation?: { id: number; name: string; level?: string | null } | null;
   status?: string;
 }
@@ -91,16 +93,39 @@ const STEPS = [
   { key: 3, label: 'Preview & Generate', sub: 'Review and generate documents' },
 ];
 
-// Map a template's employee_category (IT / Non-IT / Legal) to an employee's
-// DEPARTMENT. Employees carry no category field of their own, so the scope is
-// keyed on the department name: IT → the IT department, Legal → the Legal
-// department, Non-IT → every other department. Used to keep Step 1 recipients
-// aligned with the tab the template was authored under (bug #5).
-function employeeMatchesCategory(deptName: string | null | undefined, category?: string): boolean {
+/* Does this employee fall under the template's category (IT / Non-IT / Legal)?
+ *
+ * The ANSWER COMES FROM THE SERVER (`document_category`, requested with
+ * ?with_document_category=1). It is resolved there by App\Support * HrTemplateMatch, which walks the department's parent chain — so a "Software"
+ * department created under "IT" is IT, which is what the department hierarchy
+ * says and what HR expects. (#20)
+ *
+ * This screen used to decide it here instead, by exact-matching the department
+ * name against 'it' / 'information technology'. Anything else — every child
+ * department, and every IT department not named exactly that — was Non-IT, so
+ * the employee never appeared in the recipient list for their own department's
+ * template. The backend matcher meanwhile used substring hints and reached the
+ * opposite answer for the same person: one rule, two implementations,
+ * disagreeing.
+ *
+ * The name check survives only as a fallback for a response that predates the
+ * field, and is deliberately the LOOSE substring form so it cannot contradict
+ * the server on the common cases.
+ */
+function employeeMatchesCategory(
+  emp: { document_category?: string | null; department?: { name: string } | null },
+  category?: string,
+): boolean {
   if (!category) return true;
-  const d = (deptName || '').trim().toLowerCase();
-  const isIt    = d === 'it' || d === 'information technology';
-  const isLegal = d === 'legal' || d === 'legal & compliance' || d === 'legal and compliance';
+
+  const served = (emp.document_category || '').trim();
+  if (served) return served === category;
+
+  const d = (emp.department?.name || '').trim().toLowerCase();
+  if (!d) return category === 'Non-IT';
+  const isLegal = ['legal', 'compliance', 'governance'].some(h => d.includes(h));
+  const isIt    = !isLegal && ['it', 'information technology', 'tech', 'engineering', 'software',
+    'devops', 'qa', 'mobile', 'data', 'product'].some(h => d.includes(h));
   switch (category) {
     case 'IT':     return isIt;
     case 'Legal':  return isLegal;
@@ -147,7 +172,10 @@ export default function GenerateDocument() {
           // onboarded_only → only Active, fully-onboarded, non-disabled staff
           // are selectable (excludes exited / inactive / half-onboarded), the
           // same gate Recruitment's people-pickers use.
-          api.get('/employees', { params: { onboarded_only: 1 } }),
+          // with_document_category → the server resolves IT / Non-IT / Legal
+          // from the department HIERARCHY, so this screen does not have to
+          // guess from the name. (#20)
+          api.get('/employees', { params: { onboarded_only: 1, with_document_category: 1 } }),
           /* Who already has this document in flight.
              The backend refuses to create a second ACTIVE run for the same
              template + employee — it returns the existing one instead — so
@@ -219,8 +247,8 @@ export default function GenerateDocument() {
     // Non-IT staff, and vice-versa.
     const category = template?.employee_category;
     if (category) {
-      const anyDept = employees.some(e => e.department?.name);
-      if (anyDept) list = list.filter(e => employeeMatchesCategory(e.department?.name, category));
+      const anyDept = employees.some(e => e.department?.name || e.document_category);
+      if (anyDept) list = list.filter(e => employeeMatchesCategory(e, category));
     }
 
     // (2) Designation-level scope.

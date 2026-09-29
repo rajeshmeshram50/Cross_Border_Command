@@ -525,6 +525,31 @@ class EmployeeController extends Controller
             return $rows;
         };
 
+        /* The HR-document category (IT / Non-IT / Legal) each employee falls
+         * under, INHERITED from their department's parent chain. (QA #20)
+         *
+         * Opt-in, because it costs a query and only Generate Document needs it.
+         * It is stamped server-side on purpose: GenerateDocument.tsx used to
+         * decide this in the browser by exact-matching the department name
+         * against 'it' / 'legal', so a "Software" department under "IT" was
+         * Non-IT on that screen while the backend's own matcher called it IT —
+         * two definitions of one rule, disagreeing. There is now one, here.
+         */
+        $stampDocCategory = function ($rows) use ($request) {
+            if (!$request->boolean('with_document_category')) return $rows;
+
+            $items = $rows instanceof \Illuminate\Pagination\AbstractPaginator
+                ? $rows->items()
+                : $rows;
+
+            $map = \App\Support\HrTemplateMatch::categoryMap();
+            foreach ($items as $row) {
+                $row->document_category = $map[(int) $row->department_id] ?? 'Non-IT';
+            }
+
+            return $rows;
+        };
+
         if ($request->has('per_page') || $request->has('page')) {
             // A junk or non-positive per_page falls back to the DEFAULT, not to
             // the floor: max(1, (int) 'abc') is 1, which would answer a
@@ -535,10 +560,10 @@ class EmployeeController extends Controller
                 ? min(self::MAX_PER_PAGE, (int) $requested)
                 : self::DEFAULT_PER_PAGE;
 
-            return response()->json($stampExitFreeze($trimAppends($q->paginate($perPage))));
+            return response()->json($stampDocCategory($stampExitFreeze($trimAppends($q->paginate($perPage)))));
         }
 
-        return response()->json($stampExitFreeze($trimAppends($q->get())));
+        return response()->json($stampDocCategory($stampExitFreeze($trimAppends($q->get()))));
     }
 
     /**
