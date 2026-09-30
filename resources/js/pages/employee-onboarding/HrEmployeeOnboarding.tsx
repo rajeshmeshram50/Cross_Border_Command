@@ -3143,7 +3143,6 @@ const [nextLoading, setNextLoading] = useState(false);
   // (goToStage) deliberately do NOT lock, preserving the BUG-030
   // fire-and-forget navigation speed.
   const [formLocked, setFormLocked] = useState(false);
-
   // ── Reporting-manager rule (org hierarchy: employee → dept HOD → Branch User).
   // A non-HOD hire reports to their department's HOD when one exists; until then
   // to a Branch User (the backend re-parents them to the HOD once it's added).
@@ -5791,8 +5790,13 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     type="button"
     className="onb-init-btn-next"
     title={readOnly ? (empPerm.lockedTitle('edit') ?? undefined) : undefined}
+    /* nextLoading joins the list, or the loader is decorative. On stages 2
+       and 5 nothing else here is true, so the button stayed live through the
+       whole `await bumpMacroStage(...)`: a second click ran the handler again
+       and `setActiveStage(activeStage + 1)` fired twice, skipping a stage. */
     disabled={
       readOnly ||
+      nextLoading ||
       (activeStage === 1 && s1Saving) ||
       (activeStage === 3 && s1Saving) ||
       (activeStage === 4 && s4Saving)
@@ -5904,13 +5908,32 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
            agreement having come back signed (see the Complete Onboarding
            button below and OnboardingGuard::assertDocumentsSigned server-side). */
         setNextLoading(true);
-        // Flush any typed-but-unblurred Previous-Employment rows before
-        // we advance — same fix as the Previous / sidebar navigation.
-        if (activeStage === 2) {
-          await stage2Ref.current?.flush();
+        /* Lock the form too, not just the button. (#143)
+         *
+         * Stages 1, 3 and 4 advance through saveStage1 / saveStage4, and those
+         * raise formLocked — which is what draws the overlay over the body,
+         * disables the fieldset and holds the close button. Stages 2 and 5 do
+         * not go through either: they advance with bumpMacroStage, which never
+         * touched the flag. So on those two stages the only thing on screen
+         * during the round-trip was the spinner inside this button, while the
+         * form underneath stayed fully editable and closeable — the missing
+         * loader on this ticket.
+         *
+         * try/finally so a failed PUT cannot leave the form locked shut;
+         * bumpMacroStage swallows its own errors, but the flush above can
+         * throw. */
+        setFormLocked(true);
+        try {
+          // Flush any typed-but-unblurred Previous-Employment rows before
+          // we advance — same fix as the Previous / sidebar navigation.
+          if (activeStage === 2) {
+            await stage2Ref.current?.flush();
+          }
+          await bumpMacroStage(activeStage);
+        } finally {
+          setFormLocked(false);
+          setNextLoading(false);
         }
-        await bumpMacroStage(activeStage);
-        setNextLoading(false);
       }
 
       // Move to next stage
