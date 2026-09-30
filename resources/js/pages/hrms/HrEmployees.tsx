@@ -1031,16 +1031,24 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
   const [eCustomNotice, setECustomNotice] = useState('');
   const [eLeavePlan, setELeavePlan] = useState('');
   const [leavePlanOptions, setLeavePlanOptions] = useState<Array<{ value: string; label: string }>>([]);
+  /* Has the leave-plan list SETTLED (resolved or failed)? An empty list means
+     two different things — "this tenant has no configured plans" and "the
+     request has not come back yet" — and the required-rule below cannot tell
+     them apart without this. Treating the second as the first is what let Save
+     & Next through on an empty Leave Plan. (#41) */
+  const [leavePlansLoaded, setLeavePlansLoaded] = useState(false);
   useEffect(() => {
     /* Leave plans belong to the Leave module, not this one. Without a grant
        there the list isn't fetched at all — so the dropdown offers nothing
        instead of exposing (and letting someone assign) plans they have no
        access to. The "required" rule below only bites when options exist, so
        the form stays completable. */
-    if (!leavePerm.canView) { setLeavePlanOptions([]); return; }
+    // No grant: nothing will ever load, so the list is settled and empty.
+    if (!leavePerm.canView) { setLeavePlanOptions([]); setLeavePlansLoaded(true); return; }
     // Wizard-only, like the master lists — see the mastersWanted note above.
     if (!mastersWanted) return;
 
+    setLeavePlansLoaded(false);
     leavePlansApi.list()
       .then(plans => {
         // Only configured plans (quota setup complete) may be assigned to an
@@ -1051,7 +1059,11 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
             .map(p => ({ value: String(p.id), label: p.plan_name })),
         );
       })
-      .catch(err => console.warn('[HrEmployees] failed to load leave plans', err));
+      .catch(err => console.warn('[HrEmployees] failed to load leave plans', err))
+      /* Settled either way. A FAILED fetch must not leave the step permanently
+         un-advanceable — it leaves the list empty, which the rule below reads
+         as "nothing to assign" exactly as a genuinely empty tenant does. */
+      .finally(() => setLeavePlansLoaded(true));
   }, [leavePerm.canView, mastersWanted]);
   const [eHolidayList, setEHolidayList] = useState('');
   const [eAttendanceTracking, setEAttendanceTracking] = useState(true);
@@ -2622,9 +2634,25 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     const e: Record<string, string> = {};
     const existing = eExistingDocsRef.current;
 
-    if (leavePlanOptions.length > 0 && !eLeavePlan) {
+    /* Leave Plan is advertised with a `*`, so it has to actually hold the step.
+     *
+     * The old guard was `options.length > 0`, which quietly switched the rule
+     * OFF whenever the dropdown was empty — and an empty dropdown is most often
+     * a list that simply has not arrived yet. Reaching Work Details before the
+     * fetch resolved therefore let Save & Next straight past a blank mandatory
+     * field, which is this ticket. The two empty cases are now separated:
+     * un-settled blocks with a "loading" message, settled-and-empty means there
+     * is genuinely nothing to assign and the step stays completable (the `*` is
+     * hidden in that case, so the form no longer demands the impossible). */
+    if (leavePerm.canView && !leavePlansLoaded) {
+      e.leave_plan = 'Still loading leave plans — try again in a moment';
+    } else if (leavePlanOptions.length > 0 && !eLeavePlan) {
       e.leave_plan = 'Leave plan is required';
     }
+    /* Same rule, same reason. The holiday group sits on the next line with an
+       identical guard and an identical `*`, so leaving it would just bring this
+       ticket back under another number. Its list comes from the master payload
+       rather than its own fetch, so there is no separate loading state. */
     if (holidayGroupOptions.length > 0 && !eHolidayList) {
       e.holiday_list = 'Holiday group is required';
     }
@@ -2653,7 +2681,8 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     }
     return e;
   }, [eAadharFile, ePanFile, eLaptopAssigned, eLaptopMasterAssetId, eMobileAssigned, eMobileMasterAssetId,
-    leavePlanOptions, holidayGroupOptions, eLeavePlan, eHolidayList, eShift, eWeeklyOff, eExpensePolicy,
+    leavePlanOptions, leavePlansLoaded, leavePerm.canView,
+    holidayGroupOptions, eLeavePlan, eHolidayList, eShift, eWeeklyOff, eExpensePolicy,
     eOvertimeApplicable, eOvertime]);
 
   /* Keep the salary effective date locked to the joining date.
@@ -5108,7 +5137,14 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                     </div>
                     <Row className="g-3">
                       <Col md={4}>
-                        <label className="emp-label">Leave Plan<span className="req">*</span></label>
+                        {/* The `*` appears only when a plan can actually be
+                            chosen. Marking the field mandatory while the
+                            dropdown has nothing in it — no Leave grant, or no
+                            configured plans — advertised a rule the form could
+                            not let anyone satisfy. (#41) */}
+                        <label className="emp-label">Leave Plan
+                          {leavePerm.canView && leavePlanOptions.length > 0 && <span className="req">*</span>}
+                        </label>
                         <MasterSelect
                           value={eLeavePlan}
                           onChange={(v) => { setELeavePlan(v); clearEErr('leave_plan'); }}
