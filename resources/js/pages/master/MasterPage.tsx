@@ -2091,9 +2091,15 @@ function MasterPageInner({
           Flex row (flex:1 per tile) so ANY number of KPIs always fills the
           full width evenly — Bootstrap Col spans left a gap when the count
           didn't divide into 12 (e.g. 5 KPIs → 10/12 cols). Wraps on small
-          screens via flex-wrap + min-width. */}
+          screens via flex-wrap + min-width.
+
+          Spaced at 8px, like everything else on a page: .page-content sets an
+          8px gutter on all four sides and the strip above this one already sat
+          8px clear of it. Only this row kept Bootstrap's mb-3 and a 16px gap,
+          so the KPI tiles sat twice as far from the table below them as from
+          the header above — the one seam on the page that did not line up. */}
       {cfg.kpis && cfg.kpis.length > 0 && (
-        <div className="d-flex flex-wrap align-items-stretch mb-3" style={{ gap: 16 }}>
+        <div className="d-flex flex-wrap align-items-stretch mb-2" style={{ gap: 8 }}>
           {cfg.kpis.map(k => {
             const value = k.compute(records);
             return (
