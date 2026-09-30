@@ -3812,6 +3812,21 @@
   background: #ecfdf5;
   box-shadow: 0 0 0 3px rgba(16,185,129,0.10);
 }
+/* #71: while an export is running the scope can no longer be changed, so the
+   options must stop inviting the click as well as refusing it. */
+.cand-export-option.is-disabled {
+  cursor: not-allowed;
+  opacity: .6;
+}
+.cand-export-option.is-disabled:hover {
+  border-color: #ececf2;
+  background: transparent;
+}
+.cand-export-option.is-disabled.is-selected:hover {
+  border-color: #10b981;
+  background: #ecfdf5;
+}
+
 .cand-export-option > input[type="radio"] {
   position: absolute;
   width: 0; height: 0;

@@ -533,16 +533,22 @@ export default function HrRecruitment() {
         return <span className="rec-pill" style={{ background: et.bg, color: et.fg }}>{info.row.original.employmentType}</span>;
       },
     },
+    /* #72: these two were the only headers rendering a nested <div> instead of
+       a plain label. A block element inside the header's flex row will not
+       shrink past its longest word, so at 5%/6% the label overflowed its own
+       cell and ran under the sort arrow — the two read as one smudged word.
+       The label is centred by `align: 'center'` already, so the wrapper only
+       ever did harm; the widths now also leave room for label + arrow. */
     {
-      header: () => <div className="text-center">Openings</div>,
+      header: 'Openings',
       accessorKey: 'openings',
-      meta: { width: '5%', align: 'center' },
+      meta: { width: '7%', align: 'center' },
       cell: info => <span className="rec-num">{String(info.getValue() ?? '')}</span>,
     },
     {
-      header: () => <div className="text-center">Experience</div>,
+      header: 'Experience',
       accessorKey: 'experience',
-      meta: { width: '6%', align: 'center' },
+      meta: { width: '8%', align: 'center' },
       cell: info => <span className="text-muted fs-13">{String(info.getValue() ?? '')}</span>,
     },
     {

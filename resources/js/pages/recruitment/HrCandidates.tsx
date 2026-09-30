@@ -130,6 +130,13 @@ export default function HrCandidates() {
   const dark = theme === 'dark';
 
   const [recruitment, setRecruitment] = useState<RecruitmentInfo | null>(null);
+  /* #73: the status that decides whether candidates may still be added arrives
+     with the summary fetch, so until it lands nothing here knows the
+     recruitment is closed. Add/Import therefore sat ENABLED for the first few
+     hundred ms of every visit and a quick click opened the form on a Completed
+     recruitment. Unknown is treated as closed: the buttons start locked and
+     only open once a status has actually said they may. */
+  const [recStatusKnown, setRecStatusKnown] = useState(false);
   const [candidates, setCandidates]   = useState<CandidateRow[]>([]);
   const [loading, setLoading]         = useState(true);
   const [tab, setTab]                 = useState<'all' | 'final' | 'selected' | 'rejected'>('final');
@@ -194,8 +201,11 @@ export default function HrCandidates() {
   useEffect(() => {
     if (!recruitmentId) return;
     let alive = true;
+    setRecStatusKnown(false);
     api.get(`/recruitments/${recruitmentId}/candidates/summary`)
-      .then(({ data }) => { if (alive) setRecruitment(data?.recruitment || null); })
+      .then(({ data }) => { if (alive) { setRecruitment(data?.recruitment || null); setRecStatusKnown(true); } })
+      /* A failed fetch leaves the status unknown, so the buttons stay locked
+         rather than falling open on the permissive side. */
       .catch(() => { if (alive) setRecruitment(null); });
     return () => { alive = false; };
   }, [recruitmentId]);
@@ -259,8 +269,11 @@ export default function HrCandidates() {
     return () => { alive = false; };
   }, [recruitmentId, dataVersion]);
 
-  const recClosed = ['Cancelled', 'Completed', 'Expired'].includes(recruitment?.status || '');
-  const recClosedMsg = `Cannot add candidates — this recruitment is ${(recruitment?.status || '').toLowerCase()}`;
+  const recClosed = !recStatusKnown
+    || ['Cancelled', 'Completed', 'Expired'].includes(recruitment?.status || '');
+  const recClosedMsg = recStatusKnown
+    ? `Cannot add candidates — this recruitment is ${(recruitment?.status || '').toLowerCase()}`
+    : 'Checking recruitment status…';
 
   /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
      14+8+12+9+5+7+7+6+7+7+9+9. */
@@ -504,13 +517,13 @@ export default function HrCandidates() {
                 </button>
                 {/* Import is a bulk ADD of candidates, so it rides on can_add
                     — the same grant the Add button needs. */}
-                <button type="button" className="cand-pill-btn cand-pill-btn--violet" disabled={recClosed} aria-disabled={!perm.canAdd || undefined} style={perm.canAdd ? undefined : LOCKED_STYLE} title={recClosed ? recClosedMsg : (perm.lockedTitle('add') ?? 'Import candidates from CSV')} onClick={() => perm.guard('add', () => setImportOpen(true))}>
+                <button type="button" className="cand-pill-btn cand-pill-btn--violet" disabled={recClosed} aria-disabled={!perm.canAdd || undefined} style={perm.canAdd ? undefined : LOCKED_STYLE} title={recClosed ? recClosedMsg : (perm.lockedTitle('add') ?? 'Import candidates from CSV')} onClick={() => { if (recClosed) return; perm.guard('add', () => setImportOpen(true)); }}>
                   <i className="ri-upload-2-line" />Import
                 </button>
                 <button type="button" className="cand-pill-btn cand-pill-btn--green" title="Export candidates" onClick={() => setExportOpen(true)}>
                   <i className="ri-external-link-line" />Export
                 </button>
-                <button type="button" className="cand-pill-btn cand-pill-btn--primary" disabled={recClosed} aria-disabled={!perm.canAdd || undefined} style={perm.canAdd ? undefined : LOCKED_STYLE} title={recClosed ? recClosedMsg : (perm.lockedTitle('add') ?? 'Add a candidate')} onClick={() => perm.guard('add', () => { setEditing(null); setViewOnly(false); setModalOpen(true); })}>
+                <button type="button" className="cand-pill-btn cand-pill-btn--primary" disabled={recClosed} aria-disabled={!perm.canAdd || undefined} style={perm.canAdd ? undefined : LOCKED_STYLE} title={recClosed ? recClosedMsg : (perm.lockedTitle('add') ?? 'Add a candidate')} onClick={() => { if (recClosed) return; perm.guard('add', () => { setEditing(null); setViewOnly(false); setModalOpen(true); }); }}>
                   <i className="ri-add-line" />Add Candidate
                 </button>
                 {/* Back nav sits at the far-right corner, after the action buttons. */}
@@ -795,7 +808,20 @@ function ExportCandidatesModal({
   };
 
   return (
-    <Modal isOpen={open} toggle={onClose} centered size="md" backdrop="static" contentClassName="border-0 cand-export-modal">
+    /* #71: once Export is pressed the rest of the dialog has to stop
+       responding — the scope radios stayed live, so the selection could be
+       switched (and Escape could close the dialog) while the request for the
+       previous selection was still in flight, which then downloaded a file
+       that did not match what the dialog was showing. */
+    <Modal
+      isOpen={open}
+      toggle={exporting ? undefined : onClose}
+      keyboard={!exporting}
+      centered
+      size="md"
+      backdrop="static"
+      contentClassName="border-0 cand-export-modal"
+    >
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
         <div className="cand-export-head">
           <span className="cand-export-head-icon">
@@ -807,14 +833,15 @@ function ExportCandidatesModal({
           </div>
         </div>
 
-        <div className="cand-export-body">
+        <div className={`cand-export-body${exporting ? ' is-busy' : ''}`} aria-busy={exporting}>
           <div className="cand-export-section-label">Scope</div>
 
-          <label className={`cand-export-option${scope === 'all' ? ' is-selected' : ''}`}>
+          <label className={`cand-export-option${scope === 'all' ? ' is-selected' : ''}${exporting ? ' is-disabled' : ''}`}>
             <input
               type="radio"
               name="cand-export-scope"
               checked={scope === 'all'}
+              disabled={exporting}
               onChange={() => setScope('all')}
             />
             <span className="cand-export-option-radio" />
@@ -824,11 +851,12 @@ function ExportCandidatesModal({
             </div>
           </label>
 
-          <label className={`cand-export-option${scope === 'view' ? ' is-selected' : ''}`}>
+          <label className={`cand-export-option${scope === 'view' ? ' is-selected' : ''}${exporting ? ' is-disabled' : ''}`}>
             <input
               type="radio"
               name="cand-export-scope"
               checked={scope === 'view'}
+              disabled={exporting}
               onChange={() => setScope('view')}
             />
             <span className="cand-export-option-radio" />
@@ -1509,7 +1537,7 @@ function CandidateFormModal({
               <Row className="g-2">
                 <Col md={4}>
                   <label className="rec-form-label">Name<span className="req">*</span></label>
-                  <input type="text" className={`rec-input${errors.name ? ' is-invalid' : ''}`} placeholder="Full name" value={name} disabled={readOnly} onChange={e => setName(e.target.value.replace(/[^a-zA-Z .'\-]/g, ''))} onBlur={() => setName(prev => titleCaseName(prev))} />
+                  <input type="text" autoComplete="new-candidate-name" className={`rec-input${errors.name ? ' is-invalid' : ''}`} placeholder="Full name" value={name} disabled={readOnly} onChange={e => setName(e.target.value.replace(/[^a-zA-Z .'\-]/g, ''))} onBlur={() => setName(prev => titleCaseName(prev))} />
                   {errors.name && <div className="rec-error"><i className="ri-error-warning-line" />{errors.name}</div>}
                 </Col>
                 <Col md={4}>
@@ -1523,6 +1551,14 @@ function CandidateFormModal({
                       nagging while the address is still being typed. */}
                   <input
                     type="email"
+                    /* #70: the browser's own saved-address panel was opening
+                       under this field, and because it anchors to the viewport
+                       while the modal body scrolls it drifted down over the
+                       candidate list's search box behind the modal. Nothing in
+                       the app draws there — suppressing native autofill is the
+                       fix. "off" alone is ignored by Chrome's address
+                       heuristics, so an unrecognised token is used instead. */
+                    autoComplete="new-candidate-email"
                     className={`rec-input${errors.email ? ' is-invalid' : ''}`}
                     placeholder="name@email.com"
                     value={email}
@@ -1551,6 +1587,7 @@ function CandidateFormModal({
                   <label className="rec-form-label">Mobile Number<span className="req">*</span></label>
                   <input
                     type="text"
+                    autoComplete="new-candidate-mobile"
                     className={`rec-input${errors.mobile ? ' is-invalid' : ''}`}
                     placeholder="9XXXXXXXXX"
                     value={mobile}
@@ -1563,11 +1600,11 @@ function CandidateFormModal({
                 </Col>
                 <Col md={6}>
                   <label className="rec-form-label">Current Address</label>
-                  <input type="text" className="rec-input" placeholder="Full residential address" value={address} disabled={readOnly} onChange={e => setAddress(e.target.value)} onBlur={() => setAddress(prev => titleCaseWords(prev))} />
+                  <input type="text" autoComplete="new-candidate-address" className="rec-input" placeholder="Full residential address" value={address} disabled={readOnly} onChange={e => setAddress(e.target.value)} onBlur={() => setAddress(prev => titleCaseWords(prev))} />
                 </Col>
                 <Col md={6}>
                   <label className="rec-form-label">Qualification<span className="req">*</span></label>
-                  <input type="text" className={`rec-input${errors.qualification ? ' is-invalid' : ''}`} placeholder="e.g. B.Tech Computer Science" value={qualification} disabled={readOnly} onChange={e => setQualification(e.target.value)} onBlur={() => setQualification(prev => titleCaseWords(prev))} />
+                  <input type="text" autoComplete="new-candidate-qualification" className={`rec-input${errors.qualification ? ' is-invalid' : ''}`} placeholder="e.g. B.Tech Computer Science" value={qualification} disabled={readOnly} onChange={e => setQualification(e.target.value)} onBlur={() => setQualification(prev => titleCaseWords(prev))} />
                   {errors.qualification && <div className="rec-error"><i className="ri-error-warning-line" />{errors.qualification}</div>}
                 </Col>
                 <Col md={4}>

@@ -537,8 +537,18 @@ export default function DataTable<T extends object>({
     // `data-accent` (see the palette blocks in DataTable.css).
     <div className={`dt-search${searchHost ? ' dt-search--detached' : ''}`} data-accent={accent}>
       <i className="ri-search-line dt-search-icon" />
+      {/* #70: this box is a filter over data already on screen, never a field
+          anyone submits, so the browser has no business saving what is typed
+          here or replaying values saved from other forms into it — a candidate
+          email entered in the Add Candidate modal was being offered back in
+          this search bar. "off" alone is ignored by Chrome's own heuristics,
+          hence the unrecognised token. */}
       <input
         type="text"
+        autoComplete="new-table-search"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
         placeholder={searchPlaceholder}
         value={inputValue}
         onChange={e => onInput(e.target.value)}

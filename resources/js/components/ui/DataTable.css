@@ -465,7 +465,12 @@
 .dt-table thead tr {
   background: linear-gradient(110deg, var(--dt-a-400) 0%, var(--dt-a-500) 55%, var(--dt-a-600) 100%);
 }
-.dt-th-inner { display: flex; align-items: center; gap: 4px; }
+.dt-th-inner { display: flex; align-items: center; gap: 4px; min-width: 0; }
+/* #72: a header rendered as an element (rather than a bare string) becomes a
+   flex item that will not shrink below its longest word, so in a narrow column
+   it overflowed the cell and ran under the sort arrow. Letting it shrink keeps
+   the label inside its own cell and the arrow clear of it. */
+.dt-th-inner > * { min-width: 0; }
 
 /* Sortable header: whole cell is the hit target. Neutral arrows sit at low
    opacity so the column reads as sortable without shouting. */
