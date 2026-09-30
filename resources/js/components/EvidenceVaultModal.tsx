@@ -102,7 +102,11 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
   const [orgTemplates, setOrgTemplates]     = useState<VaultTemplate[]>([]);
   const [exitTemplates, setExitTemplates]   = useState<VaultTemplate[]>([]);
   const [signingRuns, setSigningRuns]       = useState<VaultRun[]>([]);
-  const [loading, setLoading]               = useState(false);
+  /* #43: the fetch is kicked off by an effect, which runs AFTER the first
+     paint — so a vault opened with `loading` false rendered one frame of a
+     finished-looking, empty vault before the loader appeared. Starting busy
+     means the dialog never claims to know anything it has not read yet. */
+  const [loading, setLoading]               = useState(true);
   /* Promotion-triggered templates matching the employee's CURRENT department
      and designation. Kept apart from `orgTemplates` (which is onboarding) so
      the signed groups below stay exactly what they were: a record. These are
@@ -119,6 +123,8 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
       setEmpDocs([]); setOrgTemplates([]); setExitTemplates([]); setSigningRuns([]);
       setPromoTemplates([]); setOnboardingDone(false);
       setTab(initialTab);
+      // Closed: back to the busy default, ready for the next open.
+      setLoading(true);
       return;
     }
     let cancelled = false;
@@ -490,10 +496,15 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
             </div>
           </div>
           <div className="ev-head-status">
-            <ProgressDial value={completionPct} />
+            {/* #43: zeros here read as "this vault is empty", which is an
+                answer — and the wrong one — while the documents are still on
+                the wire. Nothing states a figure until the fetch settles. */}
+            <ProgressDial value={loading ? 0 : completionPct} />
             <div className="ev-head-status-text">
               <div className="ev-head-status-label">Vault Status</div>
-              <div className="ev-head-status-num">{completionPct}% Complete</div>
+              <div className="ev-head-status-num">
+                {loading ? 'Loading…' : `${completionPct}% Complete`}
+              </div>
             </div>
           </div>
           <button type="button" className="ev-close" onClick={onClose} aria-label="Close">
@@ -511,7 +522,9 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
               <span className="rec-kpi-strip" style={{ background: k.gradient }} />
               <div className="rec-kpi-text">
                 <span className="rec-kpi-label">{k.label}</span>
-                <span className="rec-kpi-num" style={{ color: k.deep }}>{k.value}</span>
+                <span className="rec-kpi-num" style={{ color: k.deep }}>
+                  {loading ? <span className="ev-kpi-skeleton" aria-label="Loading" /> : k.value}
+                </span>
               </div>
               <span className="rec-kpi-icon" style={{ background: k.gradient }}>
                 <i className={k.icon} />
@@ -522,17 +535,17 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
 
         <div className="ev-tabs">
           <button type="button" className={`ev-tab${tab === 'employee' ? ' is-active' : ''}`} onClick={() => setTab('employee')}>
-            <i className="ri-user-line" />Employee Documents<span className="ev-tab-badge">{empCount}</span>
+            <i className="ri-user-line" />Employee Documents<span className="ev-tab-badge">{loading ? '–' : empCount}</span>
           </button>
           <button type="button" className={`ev-tab${tab === 'organizational' ? ' is-active' : ''}`} onClick={() => setTab('organizational')}>
-            <i className="ri-briefcase-4-line" />Organizational Documents<span className="ev-tab-badge">{orgCount}</span>
+            <i className="ri-briefcase-4-line" />Organizational Documents<span className="ev-tab-badge">{loading ? '–' : orgCount}</span>
           </button>
           <button type="button" className={`ev-tab${tab === 'exit' ? ' is-active' : ''}`} onClick={() => setTab('exit')}>
-            <i className="ri-logout-box-r-line" />Exit Documents<span className="ev-tab-badge">{exitCount}</span>
+            <i className="ri-logout-box-r-line" />Exit Documents<span className="ev-tab-badge">{loading ? '–' : exitCount}</span>
           </button>
         </div>
 
-        <div className="ev-body">
+        <div className="ev-body" aria-busy={loading}>
           {/* Promotion paperwork the new grade calls for. Shown before the
               signed record because it is the only thing here anyone can act
               on, and hidden entirely when there is nothing outstanding. */}
