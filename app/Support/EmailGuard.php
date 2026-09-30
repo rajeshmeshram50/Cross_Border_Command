@@ -114,12 +114,22 @@ final class EmailGuard
             foreach (($src['where'] ?? []) as $col => $val) {
                 if (self::hasColumn($table, $col)) $q->where($col, $val);
             }
-            /* Tenant scoping. A row with a NULL client_id is visible to every
+            /* Tenant scoping. A row with a NULL tenant key is visible to every
                tenant's check — it belongs to no one, so treating it as "free"
-               would let a platform-level address be claimed twice. */
-            if ($tenant && $clientId !== null && self::hasColumn($table, 'client_id')) {
-                $q->where(function ($w) use ($clientId) {
-                    $w->where('client_id', $clientId)->orWhereNull('client_id');
+               would let a platform-level address be claimed twice.
+             *
+             * The key is `client_id` for every table that sits INSIDE a tenant.
+             * The `clients` table is the tenant, so its own tenant key is `id`;
+             * a source declares that with 'tenant_column'. Without it the guard
+             * found no client_id on `clients`, skipped the filter entirely, and
+             * compared against EVERY client's address — which would refuse an
+             * employee here because an unrelated organisation uses that mailbox,
+             * the exact cross-tenant coupling this app is otherwise careful to
+             * avoid. */
+            $tenantColumn = $src['tenant_column'] ?? 'client_id';
+            if ($tenant && $clientId !== null && self::hasColumn($table, $tenantColumn)) {
+                $q->where(function ($w) use ($clientId, $tenantColumn) {
+                    $w->where($tenantColumn, $clientId)->orWhereNull($tenantColumn);
                 });
             }
             // Never collide with the row being edited.

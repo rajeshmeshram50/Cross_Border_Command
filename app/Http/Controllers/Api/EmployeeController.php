@@ -3686,6 +3686,29 @@ class EmployeeController extends Controller
 
 
         $emailRule = $isUpdate ? ['nullable', 'email', 'max:191'] : ['required', 'email', 'max:191'];
+
+        /* An address already used as a CLIENT or BRANCH contact is taken too.
+         *
+         * The rule below checks `users`, which is why reusing another
+         * employee's, a client_admin's or a branch_user's login was already
+         * refused. It cannot see clients.email or branches.email, and neither
+         * column belonged to any uniqueness scope, so an employee created on
+         * the organisation's own address or its branch's address was accepted
+         * outright - the duplicate this ticket reports. Declared in
+         * config/email_uniqueness.php so the two columns now participate, and
+         * applied to BOTH address fields. Tenant-scoped like everything else
+         * here: another organisation's address is not a clash. (#221) */
+         /* Skipped when the row has no tenant. `organisation` is tenant-scoped,
+            and EmailGuard drops the filter when the id is null — which turns the
+            check into a comparison against EVERY organisation's address, so a
+            platform-level employee would be refused because an unrelated client
+            uses that mailbox. Email is per-tenant here by design. A null-tenant
+            row keeps the `users` rule below, which scopes itself explicitly. */
+        $orgEmailRule = $scopeClientId === null
+            ? null
+            : new \App\Rules\UniqueSystemEmail('organisation', $scopeClientId);
+        $withOrg = fn(array $rules) => $orgEmailRule ? array_merge($rules, [$orgEmailRule]) : $rules;
+
         // Email is unique PER TENANT (not globally) — the same email may belong
         // to another client. Scope the dup check to the owning client_id so a
         // collision in a DIFFERENT client no longer blocks creation here. Mirrors
@@ -3861,11 +3884,11 @@ class EmployeeController extends Controller
             'blood_group'   => 'nullable|string|max:10',
             'nationality_country_id' => 'nullable|integer',
             'work_country_id'        => 'nullable|integer',
-            'email'        => $emailRule,
+            'email'        => $withOrg($emailRule),
             // Stage 3 provisioning — company-issued mailbox assigned at
             // onboarding (e.g. "test.demo@company.com"). Independent of
             // the personal email used for login.
-            'official_email' => 'nullable|email|max:191',
+            'official_email' => $withOrg(['nullable', 'email', 'max:191']),
             // Tightened from max:30 → max:15 (E.164 international cap).
             // Without this the DB layer rejected 20–30-digit input with a
             // hard 500 error instead of a friendly 422.
