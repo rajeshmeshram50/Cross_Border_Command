@@ -7,6 +7,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
 import { resolveFileUrl } from '../../../utils/resolveFileUrl';
 import avatar1 from "../../assets/images/users/image.png";
+import LogoutConfirmModal from './LogoutConfirmModal';
 
 const ProfileDropdown = () => {
   const { user, logout, tenantThemeEnabled } = useAuth();
@@ -20,6 +21,7 @@ const ProfileDropdown = () => {
 
   const [isProfileDropdown, setIsProfileDropdown] = useState(false);
   const toggleProfileDropdown = () => setIsProfileDropdown(!isProfileDropdown);
+  const [logoutOpen, setLogoutOpen] = useState(false);
 
   if (!user) return null;
 
@@ -37,7 +39,10 @@ const ProfileDropdown = () => {
 
   const roleLabel = user.user_type.replace(/_/g, ' ');
 
-  const handleLogout = () => {
+  // Ask first, as the horizontal header does; the menu item only opens the confirm.
+  const handleLogout = () => setLogoutOpen(true);
+  const confirmLogout = () => {
+    setLogoutOpen(false);
     toast.info('Logged Out', 'You have been signed out');
     logout();
   };
@@ -341,6 +346,7 @@ const ProfileDropdown = () => {
           </div>
         </DropdownMenu>
       </Dropdown>
+      <LogoutConfirmModal open={logoutOpen} onCancel={() => setLogoutOpen(false)} onConfirm={confirmLogout} />
     </React.Fragment>
   );
 };
