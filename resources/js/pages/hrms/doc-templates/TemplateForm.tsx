@@ -107,15 +107,29 @@ function Spin() {
 }
 
 const STEPS = [
-  { key: 1, label: 'Setup',                 sub: 'Basic information' },
-  { key: 2, label: 'Lifecycle & Signing',   sub: 'Trigger + approval workflow' },
-  { key: 3, label: 'Template Design',       sub: 'Content + placeholders' },
+  { key: 1, label: 'Basic Information',   sub: 'Define template details and applicability' },
+  { key: 2, label: 'Lifecycle & Signing', sub: 'Configure lifecycle event and approval workflow' },
+  { key: 3, label: 'Template Design',     sub: 'Create document content and add placeholders' },
 ];
 
 /** Max length of a template name. Enforced on the input, in validateStep and by
  *  the API (`max:100` on HrDocumentTemplateController's store/update rules) —
  *  long names were breaking the template card and list layouts. */
 const TEMPLATE_NAME_MAX = 100;
+// Longest description on record is 65 chars, so this caps nothing that exists.
+const DESCRIPTION_MAX = 500;
+/** The icon tile every card header wears. Solid, not tinted: against the light
+ *  header band the pale fill left the icon floating. */
+const cardHeadTile: React.CSSProperties = {
+  width: 36, height: 36, borderRadius: 10, flex: '0 0 auto',
+  background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff',
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  fontSize: 17, boxShadow: '0 2px 6px rgba(99,102,241,.35)',
+};
+
+/** Signer rows shown before the list starts scrolling, and one row's height. */
+const SIGNER_ROWS_VISIBLE = 3;
+const SIGNER_ROW_H = 50;
 
 // ── Form ─────────────────────────────────────────────────────────────────────
 /** Letterhead identity of the logged-in user's branch, as returned by
@@ -804,8 +818,10 @@ export default function TemplateFormPage() {
               </span>
               <div>
                 <h4 className="fw-bold mb-0" style={{ color: '#fff' }}>{editing ? 'Edit Template' : 'Add New Template'}</h4>
+                {/* Fixed: what the module is for. The step and its own
+                    subtitle are the stepper's whole job, just below. */}
                 <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.85)' }}>
-                  Step {step} of {STEPS.length} — {STEPS[step - 1].sub}
+                  Manage standardized documents and workflows across the employee lifecycle
                 </div>
               </div>
             </div>
@@ -813,7 +829,8 @@ export default function TemplateFormPage() {
                 is the page's identity (icon, title, step count) and an escape
                 hatch wedged in front of it read as part of that title. */}
             <div className="d-flex align-items-center gap-2 flex-shrink-0">
-              <span style={{ fontSize: 12, color: '#fff', background: 'rgba(255,255,255,0.20)', padding: '5px 12px', borderRadius: 999, fontWeight: 700 }}>{STEPS[step - 1].label}</span>
+              {/* The step name is already in the subtitle and again in the
+                  stepper below; a third copy beside Back said nothing. */}
               {/* The shared .frm-cstrip-back pill (resources/css/app.css), same as
                   Trigger Point Master and the other masters — a labelled button
                   rather than a bare arrow, so the way out of a 3-step wizard is
@@ -832,7 +849,9 @@ export default function TemplateFormPage() {
 
         {/* Step indicator */}
         <div className="tpl-step-strip" style={{ padding: '14px 22px', background: '#fff' }}>
-          <div className="tpl-stepper d-flex align-items-center" style={{ gap: 0 }}>
+          {/* Half the row (6 of 12) on wide screens: stretched over the full
+              width the rails grew longer than the steps they join. */}
+          <div className="tpl-stepper d-flex align-items-center" style={{ gap: 0, width: '50%', minWidth: 560 }}>
             {STEPS.map((s, i) => {
               const active = step === s.key;
               const done = step > s.key;
@@ -861,10 +880,10 @@ export default function TemplateFormPage() {
                     </div>
                   </button>
                   {i < STEPS.length - 1 && (
-                    /* Short fixed rail between steps, filled once the step it
-                       leaves is done. Fixed width keeps the strip left-aligned
-                       instead of stretching the steps across the full width. */
-                    <div aria-hidden style={{ flexShrink: 0, width: 44, height: 2, margin: '0 12px',
+                    /* The rail takes whatever is left, so the three steps sit
+                       evenly across the strip and the rail reaches the next
+                       circle. Filled once the step it leaves is done. */
+                    <div aria-hidden style={{ flex: '1 1 auto', minWidth: 24, height: 2, margin: '0 14px',
                       borderRadius: 2, background: done ? '#6366f1' : '#e5e7eb' }} />
                   )}
                 </Fragment>
@@ -900,6 +919,7 @@ export default function TemplateFormPage() {
               addSigner={addSigner} updateSigner={updateSigner} removeSigner={removeSigner}
               previewSigners={previewSigners}
               errors={errors}
+              setup={{ name, code, description, category, roleType, isMandatory, requiresSig, requiresMgr, includeAudit }}
             />
           )}
           {step === 3 && (
@@ -1002,103 +1022,92 @@ function Step1(props: {
 }) {
   return (
     <>
-      {/* Employee category — full-width card */}
+      {/* Employee category — full-width band, three cards across. */}
       <section className="tpl-section" style={sectionStyle}>
-        <div style={sectionLabel}>1. Employee Category <span style={req}>*</span></div>
-        <div className="row g-3">
-          {CATEGORIES.map(c => {
-            const active = props.category === c.value;
-            return (
-              <div key={c.value} className="col-md-4">
-                <button type="button" onClick={() => props.setCategory(c.value)}
-                  className={`tpl-pick-card${active ? ' is-active' : ''}`}
-                  style={{ width: '100%', padding: '14px 12px', borderRadius: 10, minHeight: 92,
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    border: '2px solid ' + (active ? '#6366f1' : '#e5e7eb'),
-                    background: active ? '#eef2ff' : '#fff',
-                    cursor: 'pointer', textAlign: 'center', transition: 'all .15s ease' }}>
-                  <div style={{ fontSize: 24, marginBottom: 6, color: active ? '#4338ca' : '#64748b', lineHeight: 1 }}><i className={c.icon} /></div>
-                  <div className="tpl-pick-card-label" style={{ fontWeight: 700, fontSize: 13.5, color: active ? '#4338ca' : '#374151' }}>{c.label}</div>
-                </button>
-              </div>
-            );
-          })}
+        <SectionHead icon="ri-group-2-line" n={1} title="Employee Category"
+          sub="Select the category for which this template will be applicable." />
+        <div className="row g-2">
+          {CATEGORIES.map(c => (
+            <div key={c.value} className="col-md-4">
+              <PickCard icon={c.icon} label={c.label}
+                active={props.category === c.value}
+                onClick={() => props.setCategory(c.value)} />
+            </div>
+          ))}
         </div>
       </section>
 
-      {/* Role / Designation — full-width card, six designation levels */}
+      {/* Role / designation — full-width band, six levels across. */}
       <section className="tpl-section" style={sectionStyle}>
-        <div style={sectionLabel}>2. Role / Designation Type <span style={req}>*</span></div>
-        <div className="row g-3">
-          {ROLE_TYPES.map(r => {
-            const active = props.roleType === r.value;
-            return (
-              <div key={r.value} className="col-lg-2 col-md-4 col-sm-6">
-                <button type="button" onClick={() => props.setRoleType(r.value)}
-                  className={`tpl-pick-card${active ? ' is-active' : ''}`}
-                  style={{ width: '100%', padding: '14px 12px', borderRadius: 10, minHeight: 92,
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    border: '2px solid ' + (active ? '#6366f1' : '#e5e7eb'),
-                    background: active ? '#eef2ff' : '#fff',
-                    cursor: 'pointer', textAlign: 'center' }}>
-                  <div style={{ fontSize: 24, marginBottom: 6, color: active ? '#4338ca' : '#64748b', lineHeight: 1 }}><i className={r.icon} /></div>
-                  <div className="tpl-pick-card-label" style={{ fontWeight: 700, fontSize: 12, color: active ? '#4338ca' : '#374151', lineHeight: 1.2 }}>{r.label}</div>
-                </button>
-              </div>
-            );
-          })}
+        <SectionHead icon="ri-shield-user-line" n={2} title="Role / Designation Type"
+          sub="Select the role or designation type for this template." />
+        <div className="row g-2">
+          {ROLE_TYPES.map(r => (
+            <div key={r.value} className="col-lg-2 col-md-4 col-sm-6">
+              <PickCard icon={r.icon} label={r.label} compact
+                active={props.roleType === r.value}
+                onClick={() => props.setRoleType(r.value)} />
+            </div>
+          ))}
         </div>
         {props.errors.role_type && <div style={errMsg}>{props.errors.role_type}</div>}
       </section>
 
       {/* Bottom row — two columns: basic info (left) + settings (right). The
           row uses align-items: stretch so both cards rise to the same height. */}
-      <div className="row g-3 align-items-stretch">
+      <div className="row g-2 align-items-stretch">
         <div className="col-lg-7">
           <section className="tpl-section" style={{ ...sectionStyle, marginBottom: 0, height: '100%' }}>
-            <div style={sectionLabel}>3. Basic Information</div>
-            <div className="mb-3 d-flex gap-3 align-items-start tpl-name-code">
-              <div style={{ flex: '0 0 70%', maxWidth: '70%', minWidth: 0 }}>
-              <label className="tpl-field-label" style={fieldLabel}>Template Name <span style={req}>*</span></label>
-              {/* Hard-capped at 100 chars: maxLength blocks typing past it, and
-                  the slice covers a paste that overshoots. */}
-              <input type="text" value={props.name}
-                onChange={e => props.setName(e.target.value.slice(0, TEMPLATE_NAME_MAX))}
-                maxLength={TEMPLATE_NAME_MAX}
-                placeholder="e.g. Internship Offer Letter (November)"
-                className="tpl-input"
-                style={inputStyle(!!props.errors.name)} />
-              <div className="d-flex align-items-center justify-content-between gap-2">
-                <div>{props.errors.name && <div style={errMsg}>{props.errors.name}</div>}</div>
-                <div className="tpl-hint" style={{ fontSize: 11, color: props.name.length >= TEMPLATE_NAME_MAX ? '#dc2626' : '#9ca3af', marginTop: 4 }}>
-                  {props.name.length}/{TEMPLATE_NAME_MAX}
+            <SectionHead icon="ri-file-text-line" n={3} title="Basic Information"
+              sub="Provide the basic details for this HR template." />
+            <div className="mb-2 row g-2 tpl-name-code">
+              <div className="col-md-6">
+                <label className="tpl-field-label" style={fieldLabel}>Template Name <span style={req}>*</span></label>
+                {/* Hard-capped at 100 chars: maxLength blocks typing past it, and
+                    the slice covers a paste that overshoots. */}
+                <input type="text" value={props.name}
+                  onChange={e => props.setName(e.target.value.slice(0, TEMPLATE_NAME_MAX))}
+                  maxLength={TEMPLATE_NAME_MAX}
+                  placeholder="e.g. Internship Offer Letter (November)"
+                  className="tpl-input"
+                  style={inputStyle(!!props.errors.name)} />
+                <div className="d-flex align-items-center justify-content-between gap-2" style={{ marginTop: 4 }}>
+                  <div>{props.errors.name && <div style={{ ...errMsg, marginTop: 0 }}>{props.errors.name}</div>}</div>
+                  <div className="tpl-hint" style={{ fontSize: 11, color: props.name.length >= TEMPLATE_NAME_MAX ? '#dc2626' : '#9ca3af' }}>
+                    {props.name.length}/{TEMPLATE_NAME_MAX}
+                  </div>
                 </div>
               </div>
-              </div>
-              <div style={{ flex: '1 1 30%', minWidth: 0 }}>
-              <label className="tpl-field-label" style={fieldLabel}>Template Code</label>
-              <input type="text" value={props.code} readOnly
-                className="tpl-code-field"
-                style={{ ...inputStyle(false), background: '#fef9c3', color: '#a16207', fontFamily: 'monospace', fontWeight: 700, border: '1px solid #fde68a' }} />
-              <div className="tpl-hint" style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Auto-generated per category + role.</div>
+              <div className="col-md-6">
+                <label className="tpl-field-label" style={fieldLabel}>Template Code <span style={req}>*</span></label>
+                <input type="text" value={props.code} readOnly
+                  className="tpl-code-field"
+                  style={{ ...inputStyle(false), background: '#f1f5ff', color: '#4338ca', fontFamily: 'monospace', fontWeight: 700, border: '1px solid #dbe1fb' }} />
+                <div className="tpl-hint" style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Auto-generated per category + role.</div>
               </div>
             </div>
             <div>
               <label className="tpl-field-label" style={fieldLabel}>Description</label>
-              <textarea value={props.description} onChange={e => props.setDescription(e.target.value)}
+              <textarea value={props.description}
+                onChange={e => props.setDescription(e.target.value.slice(0, DESCRIPTION_MAX))}
+                maxLength={DESCRIPTION_MAX}
                 placeholder="Short note describing when this template is used…"
-                rows={6} className="tpl-input" style={{ ...inputStyle(false), resize: 'vertical', minHeight: 130 }} />
+                rows={4} className="tpl-input" style={{ ...inputStyle(false), resize: 'vertical', minHeight: 88 }} />
+              <div className="tpl-hint d-flex justify-content-end" style={{ fontSize: 11, marginTop: 4, color: props.description.length >= DESCRIPTION_MAX ? '#dc2626' : '#9ca3af' }}>
+                {props.description.length}/{DESCRIPTION_MAX}
+              </div>
             </div>
           </section>
         </div>
 
         <div className="col-lg-5">
           <section className="tpl-section" style={{ ...sectionStyle, marginBottom: 0, height: '100%' }}>
-            <div style={sectionLabel}>4. Settings</div>
-            <Toggle on={props.isMandatory}  setOn={props.setIsMandatory}  title="Mandatory Document"          sub="Must be completed as part of onboarding/offboarding" />
-            <Toggle on={props.requiresSig}  setOn={props.setRequiresSig}  title="Requires Employee Signature" sub="Digital or physical signature required" />
-            <Toggle on={props.requiresMgr}  setOn={props.setRequiresMgr}  title="Requires Manager Approval"   sub="Manager must review and approve before sending" />
-            <Toggle on={props.includeAudit} setOn={props.setIncludeAudit} title="Include in Audit Trail"      sub="Track all generation and signing events" />
+            <SectionHead icon="ri-settings-4-line" n={4} title="Settings"
+              sub="Configure additional settings for this template." />
+            <Toggle icon="ri-file-list-3-line" on={props.isMandatory}  setOn={props.setIsMandatory}  title="Mandatory Document"          sub="Must be completed as part of onboarding/offboarding." />
+            <Toggle icon="ri-quill-pen-line"   on={props.requiresSig}  setOn={props.setRequiresSig}  title="Requires Employee Signature" sub="Digital or physical signature required." />
+            <Toggle icon="ri-user-follow-line" on={props.requiresMgr}  setOn={props.setRequiresMgr}  title="Requires Manager Approval"   sub="Manager must review and approve before sending." />
+            <Toggle icon="ri-history-line"     on={props.includeAudit} setOn={props.setIncludeAudit} title="Include in Audit Trail"      sub="Track all generation and signing events." />
           </section>
         </div>
       </div>
@@ -1106,14 +1115,65 @@ function Step1(props: {
   );
 }
 
-function Toggle({ on, setOn, title, sub }: { on: boolean; setOn: (v: boolean) => void; title: string; sub: string }) {
+/* Every Step 01 section opens the same way: a tile, a numbered title and one
+   line saying what the section is for. */
+function SectionHead({ icon, n, title, sub, required }: { icon: string; n: number; title: string; sub: string; required?: boolean }) {
   return (
-    <label className="tpl-toggle" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: 10, border: '1px solid #e5e7eb', borderRadius: 8, marginBottom: 8, background: '#fff', cursor: 'pointer' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 9 }}>
+      <span style={{ ...cardHeadTile, width: 30, height: 30, borderRadius: 9, fontSize: 15 }}>
+        <i className={icon} />
+      </span>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 800, color: '#111827', lineHeight: 1.25 }}>
+          {n}. {title} {required && <span style={req}>*</span>}
+        </div>
+        <div style={{ fontSize: 11.5, color: '#9ca3af' }}>{sub}</div>
+      </div>
+    </div>
+  );
+}
+
+/* A choice card: icon left, label, and the state on the right where the eye
+   ends up. The old card stacked them centred, so with six across the labels
+   wrapped and nothing showed which was chosen except a tint. */
+function PickCard({ icon, label, active, onClick, compact }: { icon: string; label: string; active: boolean; onClick: () => void; compact?: boolean }) {
+  return (
+    <button type="button" onClick={onClick}
+      className={`tpl-pick-card${active ? ' is-active' : ''}`}
+      style={{
+        width: '100%', padding: compact ? '8px 10px' : '9px 12px', borderRadius: 10,
+        display: 'flex', alignItems: 'center', gap: compact ? 8 : 10, textAlign: 'left',
+        border: '1.5px solid ' + (active ? '#6366f1' : '#e5e7eb'),
+        background: active ? '#eef2ff' : '#fff',
+        cursor: 'pointer', transition: 'all .15s ease',
+      }}>
+      <span className="tpl-pick-card-tile" style={{
+        width: compact ? 26 : 28, height: compact ? 26 : 28, borderRadius: 8, flex: '0 0 auto',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: compact ? 15 : 17,
+        background: active ? '#e0e7ff' : '#f1f5f9', color: active ? '#4338ca' : '#64748b',
+      }}>
+        <i className={icon} />
+      </span>
+      <span className="tpl-pick-card-label" style={{ flex: 1, minWidth: 0, fontWeight: 700, fontSize: compact ? 11.5 : 13, color: active ? '#4338ca' : '#374151', lineHeight: 1.25 }}>{label}</span>
+      {active
+        ? <i className="ri-checkbox-circle-fill" style={{ fontSize: 16, color: '#4f46e5', flex: '0 0 auto' }} />
+        : <span style={{ width: 14, height: 14, borderRadius: '50%', border: '1.5px solid #d1d5db', flex: '0 0 auto' }} />}
+    </button>
+  );
+}
+
+function Toggle({ on, setOn, title, sub, icon }: { on: boolean; setOn: (v: boolean) => void; title: string; sub: string; icon: string }) {
+  return (
+    <label className="tpl-toggle" style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '8px 10px', border: '1px solid #e5e7eb', borderRadius: 8, marginBottom: 6, background: '#fff', cursor: 'pointer' }}>
       <input type="checkbox" checked={on} onChange={e => setOn(e.target.checked)}
-        style={{ width: 18, height: 18, marginTop: 2, accentColor: '#6366f1' }} />
-      <div>
-        <div className="tpl-toggle-title" style={{ fontSize: 13.5, fontWeight: 700, color: '#374151' }}>{title}</div>
-        <div className="tpl-toggle-sub" style={{ fontSize: 12, color: '#6b7280' }}>{sub}</div>
+        style={{ width: 17, height: 17, marginTop: 2, accentColor: '#6366f1', flex: '0 0 auto' }} />
+      <span style={{ width: 27, height: 27, borderRadius: 8, background: '#f5f3ff', color: '#6366f1', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, flex: '0 0 auto' }}>
+        <i className={icon} />
+      </span>
+      <div style={{ minWidth: 0 }}>
+        <div className="tpl-toggle-title" style={{ fontSize: 13, fontWeight: 700, color: '#374151' }}>{title}</div>
+        <div className="tpl-toggle-sub" style={{ fontSize: 11.5, color: '#6b7280', lineHeight: 1.4 }}>{sub}</div>
       </div>
     </label>
   );
@@ -1130,6 +1190,14 @@ function Step2(props: {
   removeSigner: (i: number) => void;
   previewSigners: { label: string; action: string }[];
   errors: Record<string, string>;
+  /* Step 01's answers, read-only. The step used one narrow column and left
+     the rest of a wide screen blank, and what was decided on the step before
+     is exactly what you need in view while choosing a trigger and signers. */
+  setup: {
+    name: string; code: string; description: string; category: string;
+    roleType: string; isMandatory: boolean;
+    requiresSig: boolean; requiresMgr: boolean; includeAudit: boolean;
+  };
 }) {
   const triggerOptions = props.triggerPoints.map(tp => ({ value: String(tp.id), label: tp.module_name }));
 
@@ -1163,51 +1231,181 @@ function Step2(props: {
   ];
 
   return (
-    <>
+    /* Two columns: Setup's answers on the left, this step's work on the right.
+       One select used to stretch the full width of a wide monitor, so the step
+       read as empty however much was on it. */
+    <div className="row g-3">
+      {/* Setup, as Step 01 left it. Read-only — Back is how any of it changes;
+          a second place to edit the same fields is how two screens disagree. */}
+
+      <div className="col-xl-4">
+        <section style={{ ...sectionStyle, position: 'sticky', top: 12, padding: 0, overflow: 'hidden', background: '#fff' }}>
+          {/* Ruled off from the body, as the step cards above it are. */}
+          <header className="tpl-summary-head" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderBottom: '1px solid #e9e7f5', background: '#f5f3ff' }}>
+            <span style={cardHeadTile}>
+              <i className="ri-file-text-line" />
+            </span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="tpl-card-head-title" style={{ fontSize: 14.5, fontWeight: 800, color: '#111827', lineHeight: 1.25 }}>Summary</div>
+              <div style={{ fontSize: 11.5, color: '#9ca3af' }}>{STEPS[0].label} · {STEPS[0].sub}</div>
+            </div>
+          </header>
+
+          <div style={{ padding: 14 }}>
+            {([
+              ['ri-price-tag-3-line', 'Template Name', props.setup.name || '—', false],
+              ['ri-hashtag', 'Template Code', props.setup.code || 'Generated on save', !!props.setup.code],
+              /* The same icons Setup put on the cards, so the chosen option is
+                 recognisable here without reading the label. */
+              [CATEGORIES.find(c => c.value === props.setup.category)?.icon || 'ri-apps-2-line',
+                'Category', props.setup.category || '—', false],
+              [ROLE_TYPES.find(r => r.value === props.setup.roleType)?.icon || 'ri-user-line',
+                'Role', props.setup.roleType || '—', false],
+            ] as [string, string, string, boolean][]).map(([icon, label, value, accent]) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0' }}>
+                <i className={icon} style={{ fontSize: 15, color: '#9ca3af', flex: '0 0 18px' }} />
+                <span style={{ fontSize: 12.5, color: '#6b7280', flex: '0 0 110px' }}>{label}</span>
+                <span style={{
+                  fontSize: 13, minWidth: 0, wordBreak: 'break-word',
+                  fontWeight: value === '—' || value === 'Generated on save' ? 600 : 800,
+                  color: value === '—' || value === 'Generated on save' ? '#9ca3af' : (accent ? '#4f46e5' : '#111827'),
+                  ...(accent ? { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', letterSpacing: 0.2 } : {}),
+                }}>{value}</span>
+              </div>
+            ))}
+
+            <div style={{ borderTop: '1px solid #f1f0fa', margin: '9px 0 12px' }} />
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+              <i className="ri-shield-check-line" style={{ fontSize: 15, color: '#6b7280' }} />
+              <span style={{ fontSize: 12.5, fontWeight: 800, color: '#374151' }}>Applicable Rules</span>
+            </div>
+            <div className="d-flex flex-wrap" style={{ gap: 7 }}>
+              {([
+                ['Mandatory', props.setup.isMandatory],
+                ['Signature', props.setup.requiresSig],
+                ['Manager approval', props.setup.requiresMgr],
+                ['Audit trail', props.setup.includeAudit],
+              ] as [string, boolean][]).map(([label, on]) => (
+                <span key={label} style={{
+                  fontSize: 11.5, fontWeight: 700, padding: '5px 11px', borderRadius: 8,
+                  background: on ? '#ecfdf5' : '#f9fafb',
+                  color: on ? '#047857' : '#9ca3af',
+                  border: '1px solid ' + (on ? '#a7f3d0' : '#e5e7eb'),
+                }}>
+                  <i className={on ? 'ri-check-line' : 'ri-close-line'} style={{ marginRight: 4 }} />{label}
+                </span>
+              ))}
+            </div>
+
+            {/* Step 01's description, read-only. It is the one Setup field the
+                summary had no row for, and the card had the room. */}
+            <div style={{ borderTop: '1px solid #f1f0fa', margin: '12px 0' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+              <i className="ri-file-text-line" style={{ fontSize: 15, color: '#6b7280' }} />
+              <span style={{ fontSize: 12.5, fontWeight: 800, color: '#374151' }}>Description</span>
+            </div>
+            <div className="tpl-summary-desc" style={{
+              fontSize: 12.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+              padding: '10px 12px', borderRadius: 10, background: '#fafaff', border: '1px solid #f1f0fa',
+              color: props.setup.description ? '#374151' : '#9ca3af',
+              fontStyle: props.setup.description ? 'normal' : 'italic',
+            }}>
+              {props.setup.description || 'No description was added in Basic Information.'}
+            </div>
+
+            {(props.setup.roleType || props.setup.category) && (
+              <div style={{ display: 'flex', gap: 9, marginTop: 12, padding: '10px 12px', borderRadius: 10, background: '#eff6ff', border: '1px solid #dbeafe' }}>
+                <i className="ri-information-line" style={{ fontSize: 15, color: '#2563eb', flex: '0 0 auto', marginTop: 1 }} />
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#1d4ed8', marginBottom: 2 }}>Template Information</div>
+                  <div style={{ fontSize: 11.5, color: '#3b5bdb', lineHeight: 1.5 }}>
+                    Used for HR processes related to {props.setup.roleType || 'any'} roles
+                    {props.setup.category ? ` in the ${props.setup.category} department.` : '.'}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+
+      <div className="col-xl-8">
       {/* Lifecycle event */}
-      <section className="tpl-section" style={sectionStyle}>
-        <div style={sectionLabel}>HR Lifecycle Event <span style={req}>*</span></div>
-        <div className="row g-0">
-          <div className="col-md-8">
-            <div className="d-flex align-items-center gap-3">
-              <label className="tpl-field-label" style={{ ...fieldLabel, marginBottom: 0, whiteSpace: 'nowrap' }}>Trigger</label>
-              <div className="flex-grow-1">
-                <MasterSelect
-                  value={props.triggerPointId ? String(props.triggerPointId) : ''}
-                  onChange={(v) => props.setTriggerPointId(v ? Number(v) : '')}
-                  options={triggerOptions}
-                  placeholder="— Select trigger —"
-                  invalid={!!props.errors.trigger_point_id}
-                />
+      <section className="tpl-section" style={{ ...sectionStyle, background: '#fff', padding: 0, overflow: 'hidden' }}>
+        {/* Headed like the Summary card beside it, so the two read as a pair. */}
+        <header className="tpl-summary-head" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderBottom: '1px solid #e9e7f5', background: '#f5f3ff' }}>
+          <span style={cardHeadTile}>
+            <i className="ri-calendar-event-line" />
+          </span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div className="tpl-card-head-title" style={{ fontSize: 14.5, fontWeight: 800, color: '#111827', lineHeight: 1.25 }}>
+              HR Lifecycle Event <span style={req}>*</span>
+            </div>
+            <div style={{ fontSize: 11.5, color: '#9ca3af' }}>The event that puts this template in front of an employee</div>
+          </div>
+        </header>
+
+        <div style={{ padding: 14 }}>
+          <div style={{ maxWidth: 340 }}>
+            <MasterSelect
+              value={props.triggerPointId ? String(props.triggerPointId) : ''}
+              onChange={(v) => props.setTriggerPointId(v ? Number(v) : '')}
+              options={triggerOptions}
+              placeholder="— Select trigger —"
+              invalid={!!props.errors.trigger_point_id}
+            />
+            {props.errors.trigger_point_id && <div style={errMsg}>{props.errors.trigger_point_id}</div>}
+          </div>
+          {/* Same note box as the Summary card's Template Information. */}
+          <div style={{ display: 'flex', gap: 9, marginTop: 12, padding: '10px 12px', borderRadius: 10, background: '#eff6ff', border: '1px solid #dbeafe' }}>
+            <i className="ri-information-line" style={{ fontSize: 15, color: '#2563eb', flex: '0 0 auto', marginTop: 1 }} />
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: '#1d4ed8', marginBottom: 2 }}>Lifecycle Information</div>
+              <div style={{ fontSize: 11.5, color: '#3b5bdb', lineHeight: 1.5 }}>
+                When in an employee's lifecycle this template is offered.
               </div>
             </div>
-            {props.errors.trigger_point_id && <div style={errMsg}>{props.errors.trigger_point_id}</div>}
           </div>
         </div>
       </section>
 
       {/* Signing workflow */}
       <section className="tpl-sign-card" style={{ borderRadius: 12, marginBottom: 16, overflow: 'hidden', border: '1px solid #e5e7eb' }}>
-        <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div className="d-flex align-items-center gap-2">
-            <i className="ri-shield-check-line" style={{ fontSize: 18 }} />
-            <strong>Signing Workflow</strong>
+        <div className="tpl-summary-head" style={{ padding: '10px 14px', background: '#f5f3ff', borderBottom: '1px solid #e9e7f5', color: '#111827', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div className="d-flex align-items-center" style={{ gap: 12 }}>
+            <span style={cardHeadTile}><i className="ri-shield-check-line" /></span>
+            <div style={{ minWidth: 0 }}>
+              <div className="tpl-card-head-title" style={{ fontSize: 14.5, fontWeight: 800, lineHeight: 1.25 }}>Signing Workflow</div>
+              <div style={{ fontSize: 11.5, color: '#9ca3af' }}>Who signs this document, and in what order</div>
+            </div>
           </div>
-          <div style={{ minWidth: 160 }}>
-            <MasterSelect
-              value={props.signingMode}
-              onChange={(v) => props.setSigningMode(v as SigningMode)}
-              options={[{ value: 'Sequential', label: 'Sequential' }, { value: 'Parallel', label: 'Parallel' }]}
-            />
+          {/* Captioned: on its own the dropdown read as a filter rather than
+              as the thing deciding whether signers go one after another. */}
+          <div className="d-flex align-items-center gap-2 flex-shrink-0">
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: '#6b7280' }}>Order</span>
+            <div style={{ minWidth: 150 }}>
+              <MasterSelect
+                value={props.signingMode}
+                onChange={(v) => props.setSigningMode(v as SigningMode)}
+                options={[{ value: 'Sequential', label: 'Sequential' }, { value: 'Parallel', label: 'Parallel' }]}
+              />
+            </div>
           </div>
         </div>
 
-        <div className="tpl-sign-body" style={{ padding: 14, background: '#fff' }}>
-          <div className="tpl-sign-header" style={{ display: 'grid', gridTemplateColumns: '36px 1.6fr 1.2fr 100px 36px', gap: 10, padding: '0 6px 8px', fontSize: 11, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase' }}>
-            <div>#</div><div>Role / Position <span style={{ color: '#ef4444' }}>*</span></div><div>Action</div><div>Days</div><div />
+        <div className="tpl-sign-body" style={{ padding: 12, background: '#fff' }}>
+          <div className="tpl-sign-header" style={{ display: 'grid', gridTemplateColumns: '52px 1.6fr 1.2fr 100px 36px', gap: 10, padding: '0 6px 8px', fontSize: 11, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase' }}>
+            <div>Sr No</div><div>Role / Position <span style={{ color: '#ef4444' }}>*</span></div><div>Action</div><div>Days</div><div />
           </div>
+          {/* Three rows, then scroll: six signers made the card taller than the
+              screen and pushed Add Signer and the flow preview out of sight. */}
+          <div className="tpl-sign-rows" style={props.signers.length > SIGNER_ROWS_VISIBLE
+            ? { maxHeight: SIGNER_ROWS_VISIBLE * SIGNER_ROW_H, overflowY: 'auto', paddingRight: 4 }
+            : undefined}>
           {props.signers.map((s, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: '36px 1.6fr 1.2fr 100px 36px', gap: 10, padding: '6px', alignItems: 'center' }}>
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '52px 1.6fr 1.2fr 100px 36px', gap: 10, padding: '6px', alignItems: 'center',
+              borderBottom: i < props.signers.length - 1 ? '1px solid #f1f0fa' : 0 }}>
               <span className="tpl-sign-num" style={{ width: 28, height: 28, borderRadius: '50%', background: '#6366f1', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{i + 1}</span>
               {/* Role is now a free-text string (not an id) — three canonical
                   options drive the value, and we mirror it into role_name so
@@ -1230,10 +1428,11 @@ function Step2(props: {
               <button type="button" onClick={() => props.removeSigner(i)} title="Remove"
                 className="tpl-sign-remove"
                 style={{ width: 30, height: 30, border: 0, borderRadius: 6, background: '#fee2e2', color: '#b91c1c', cursor: 'pointer' }}>
-                <i className="ri-close-line" />
+                <i className="ri-delete-bin-line" />
               </button>
             </div>
           ))}
+          </div>
           {props.errors.signers && <div style={{ ...errMsg, padding: '0 6px' }}>{props.errors.signers}</div>}
 
           <button type="button" onClick={props.addSigner}
@@ -1243,10 +1442,11 @@ function Step2(props: {
           </button>
         </div>
 
-        {/* Preview */}
+        {/* Preview. The caption sits beside the chips rather than above them:
+            one signer used to get a band as tall as the table it summarises. */}
         {props.previewSigners.length > 0 && (
-          <div className="tpl-sign-preview" style={{ padding: 12, background: '#faf5ff', borderTop: '1px solid #e5e7eb' }}>
-            <div className="tpl-sign-preview-label" style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.4, color: '#6b7280', textTransform: 'uppercase', marginBottom: 8 }}>Signing Flow Preview</div>
+          <div className="tpl-sign-preview d-flex align-items-center flex-wrap" style={{ padding: '10px 14px', background: '#faf5ff', borderTop: '1px solid #e5e7eb', gap: 10 }}>
+            <div className="tpl-sign-preview-label" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 800, color: '#374151' }}><i className="ri-group-line" style={{ fontSize: 15, color: '#6b7280' }} />Signing Flow</div>
             <div className="d-flex align-items-center flex-wrap" style={{ gap: 6 }}>
               {props.previewSigners.map((p, i) => (
                 <div key={i} className="d-flex align-items-center" style={{ gap: 6 }}>
@@ -1262,7 +1462,9 @@ function Step2(props: {
           </div>
         )}
       </section>
-    </>
+      </div>
+
+    </div>
   );
 }
 
@@ -1286,6 +1488,17 @@ function Step3(props: {
   tokenPreviews?: Record<string, string>;
   livePreview: boolean; setLivePreview: (v: boolean) => void;
 }) {
+  // A half of the mode switch. Fixed min-width so the pair never re-measures
+  // when the selection moves.
+  const segBtn = (active: boolean): React.CSSProperties => ({
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    minWidth: 118, padding: '6px 14px', border: 0, borderRadius: 8,
+    background: active ? '#fff' : 'transparent',
+    color: active ? '#4338ca' : '#6b7280',
+    fontWeight: 700, fontSize: 12.5, cursor: 'pointer',
+    boxShadow: active ? '0 1px 3px rgba(17,24,39,.12)' : 'none',
+    transition: 'background .15s ease, color .15s ease',
+  });
   const tabBtn = (active: boolean): React.CSSProperties => ({
     padding: '7px 16px', border: '1px solid ' + (active ? '#6366f1' : '#e5e7eb'),
     background: active ? '#6366f1' : '#fff', color: active ? '#fff' : '#374151',
@@ -1313,30 +1526,48 @@ function Step3(props: {
     <>
       {/* The "Header & footer reused from your last template" strip was removed
           per request — the reuse still happens (it just isn't announced). */}
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-        <div className="tpl-help" style={{ fontSize: 11.5, color: '#6b7280' }}>
-          <i className="ri-information-line me-1" />
-          Header and footer have fixed heights — click any zone in the preview to edit logo / text / styling.
+      {/* Headed like the cards in Step 02: the step says what it is on the left
+          and which editor is in use on the right. The two view actions get
+          their own strip below, next to the note they qualify, rather than
+          riding along in the switch and disappearing with it. */}
+      <div className="tpl-section" style={{ ...sectionStyle, padding: 0, background: '#fff', overflow: 'hidden', marginBottom: 12 }}>
+        <div className="tpl-summary-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, padding: '10px 14px', background: '#f5f3ff', borderBottom: '1px solid #e9e7f5' }}>
+          <div className="d-flex align-items-center" style={{ gap: 12 }}>
+            <span style={cardHeadTile}><i className="ri-layout-4-line" /></span>
+            <div style={{ minWidth: 0 }}>
+              <div className="tpl-card-head-title" style={{ fontSize: 14.5, fontWeight: 800, color: '#111827', lineHeight: 1.25 }}>Template Design</div>
+              <div style={{ fontSize: 11.5, color: '#9ca3af' }}>{STEPS[2].sub}</div>
+            </div>
+          </div>
+          {/* WHICH editor. A segmented switch, so the pair keeps its shape
+              whichever half is chosen. */}
+          <div className="tpl-editor-seg" style={{ display: 'inline-flex', gap: 3, padding: 3, borderRadius: 10, background: '#eceafa', border: '1px solid #e0ddf5' }}>
+            <button type="button" className={`tpl-editor-segbtn${props.editorMode === 'web'  ? ' is-active' : ''}`} style={segBtn(props.editorMode === 'web')}  onClick={() => props.setEditorMode('web')}><i className="ri-global-line me-1" />Web Editor</button>
+            <button type="button" className={`tpl-editor-segbtn${props.editorMode === 'word' ? ' is-active' : ''}`} style={segBtn(props.editorMode === 'word')} onClick={() => props.setEditorMode('word')}><i className="ri-file-word-2-line me-1" />MS Word</button>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" className={`tpl-editor-tab${props.editorMode === 'web'  ? ' is-active' : ''}`} style={tabBtn(props.editorMode === 'web')}  onClick={() => props.setEditorMode('web')}><i className="ri-global-line me-1" />Web Editor</button>
-          <button type="button" className={`tpl-editor-tab${props.editorMode === 'word' ? ' is-active' : ''}`} style={tabBtn(props.editorMode === 'word')} onClick={() => props.setEditorMode('word')}><i className="ri-file-word-2-line me-1" />MS Word</button>
+
+        <div className="d-flex align-items-center justify-content-between flex-wrap" style={{ gap: 10, padding: '9px 14px' }}>
+          <div className="tpl-help" style={{ fontSize: 11.5, color: '#6b7280' }}>
+            <i className="ri-information-line me-1" />
+            Header and footer have fixed heights — click any zone in the preview to edit logo / text / styling.
+          </div>
           {/* The editor is a scrolling div, not a paginated engine, so it can only
-              hint at where a page ends. This renders the draft through the same
+              hint at where a page ends. Live PDF renders the draft through the same
               DomPDF pipeline the download uses and shows the real A4 pages. */}
           {props.editorMode === 'web' && (
-            <button type="button" className={`tpl-editor-tab${props.livePreview ? ' is-active' : ''}`} style={tabBtn(props.livePreview)}
-              title="Render the draft as a real PDF — true A4 pages, the actual header/footer, and where each page break lands"
-              onClick={() => props.setLivePreview(!props.livePreview)}>
-              <i className="ri-file-pdf-2-line me-1" />Live PDF
-            </button>
-          )}
-          {props.editorMode === 'web' && (
-            <button type="button" className="tpl-editor-tab" style={tabBtn(false)}
-              title="Open the editor full screen for more room to type (Esc to exit)"
-              onClick={() => setFullscreen(true)}>
-              <i className="ri-fullscreen-line me-1" />Full Screen
-            </button>
+            <div className="d-flex" style={{ gap: 8 }}>
+              <button type="button" className={`tpl-editor-tab${props.livePreview ? ' is-active' : ''}`} style={tabBtn(props.livePreview)}
+                title="Render the draft as a real PDF — true A4 pages, the actual header/footer, and where each page break lands"
+                onClick={() => props.setLivePreview(!props.livePreview)}>
+                <i className="ri-file-pdf-2-line me-1" />Live PDF
+              </button>
+              <button type="button" className="tpl-editor-tab" style={tabBtn(false)}
+                title="Open the editor full screen for more room to type (Esc to exit)"
+                onClick={() => setFullscreen(true)}>
+                <i className="ri-fullscreen-line me-1" />Full Screen
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -1543,10 +1774,13 @@ function Step3(props: {
    rhythm. `padding` is the breathing room INSIDE a card, around form fields —
    a different measurement with a different job, left at 18 so the fields do
    not crowd their own border. */
-const sectionStyle: React.CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, marginBottom: 14, background: '#fafaff' };
+const sectionStyle: React.CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 12, padding: 12, marginBottom: 10, background: '#fafaff' };
 const sectionLabel: React.CSSProperties = { fontSize: 11.5, fontWeight: 800, letterSpacing: 0.4, color: '#6366f1', textTransform: 'uppercase', marginBottom: 12 };
 const fieldLabel: React.CSSProperties = { fontSize: 11.5, fontWeight: 800, letterSpacing: 0.4, color: '#6b7280', textTransform: 'uppercase', marginBottom: 6, display: 'block' };
 const req: React.CSSProperties = { color: '#ef4444' };
+// Step 02's read-only summary of Step 01.
+const sumKey: React.CSSProperties = { margin: 0, fontWeight: 700, color: '#6b7280', whiteSpace: 'nowrap' };
+const sumVal: React.CSSProperties = { margin: 0, fontWeight: 600, color: '#111827' };
 function inputStyle(error: boolean): React.CSSProperties {
   return {
     width: '100%', padding: '8px 12px', borderRadius: 8,
@@ -1586,6 +1820,29 @@ function TplFormDarkStyles() {
       .tpl-form-page .tpl-head-back i { font-size: 14px; }
       [data-bs-theme="dark"] .tpl-form-page .tpl-head-back { background: var(--vz-card-bg); color: var(--vz-body-color); border-color: var(--vz-border-color); }
 
+      /* Light bands that would glare on dark: the Summary head and the rule
+         between signer rows. */
+      [data-bs-theme="dark"] .tpl-form-page .tpl-summary-head {
+        background: rgba(255,255,255,0.04) !important;
+        border-bottom-color: var(--vz-border-color) !important;
+        color: rgba(255,255,255,0.85) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-card-head-title {
+        color: rgba(255,255,255,0.88) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-summary-desc {
+        background: rgba(255,255,255,0.04) !important;
+        border-color: var(--vz-border-color) !important;
+        color: rgba(255,255,255,0.75) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-sign-rows > div {
+        border-bottom-color: rgba(255,255,255,0.07) !important;
+      }
+
+      /* The 50% / 560px stepper cannot hold on a narrow card. */
+      @media (max-width: 991.98px) {
+        .tpl-form-page .tpl-stepper { width: 100% !important; min-width: 0 !important; }
+      }
       [data-bs-theme="dark"] .tpl-form-page .tpl-step-strip {
         background: var(--vz-card-bg) !important;
         border-top: 1px solid var(--vz-border-color);
@@ -1648,6 +1905,15 @@ function TplFormDarkStyles() {
       [data-bs-theme="dark"] .tpl-form-page .tpl-pick-card.is-active .tpl-pick-card-label {
         color: #c4b5fd !important;
       }
+      /* The icon tile: its light-theme fills read as white patches on dark. */
+      [data-bs-theme="dark"] .tpl-form-page .tpl-pick-card-tile {
+        background: rgba(255,255,255,0.06) !important;
+        color: rgba(255,255,255,0.7) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-pick-card.is-active .tpl-pick-card-tile {
+        background: rgba(99,102,241,0.28) !important;
+        color: #c4b5fd !important;
+      }
 
       [data-bs-theme="dark"] .tpl-form-page .tpl-toggle {
         background: var(--vz-card-bg) !important;
@@ -1694,6 +1960,22 @@ function TplFormDarkStyles() {
         color: rgba(255,255,255,0.40) !important;
       }
 
+      /* The mode switch: a light trough with a white knob, neither of which
+         survives the dark page as-is. */
+      [data-bs-theme="dark"] .tpl-form-page .tpl-editor-seg {
+        background: rgba(255,255,255,0.05) !important;
+        border-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-editor-segbtn {
+        color: rgba(255,255,255,0.6) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-editor-segbtn.is-active {
+        background: rgba(99,102,241,0.30) !important;
+        color: #c4b5fd !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-editor-div {
+        background: var(--vz-border-color) !important;
+      }
       [data-bs-theme="dark"] .tpl-form-page .tpl-editor-tab:not(.is-active) {
         background: var(--vz-card-bg) !important;
         border-color: var(--vz-border-color) !important;
