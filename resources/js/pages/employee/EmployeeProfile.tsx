@@ -592,9 +592,29 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   useEffect(() => {
     if (tab !== 'vault' || !employeeId) return;
     let cancelled = false;
-    (async () => {
+
+    /* BOTH loaders go up here, synchronously, before the first await. (#43)
+     *
+     * They used to be raised inside the async body, one after the other, and
+     * the two fetches ran in sequence. So for the whole duration of the
+     * signed-documents request, `uploadedLoading` was still false while
+     * `uploadedDocs` was still [] — and the Employee Documents list, which
+     * keys its loader off that flag, rendered as a finished empty list. The
+     * tab looked like it had loaded and found nothing, for one entire network
+     * round-trip, before the real loader finally appeared. That is the missing
+     * loader on this ticket: the flag existed and was wired up, it was just
+     * raised too late to cover the wait.
+     *
+     * Raising both before any await means the loader is on screen from the
+     * first paint of the tab. */
+    setSignedLoading(true);
+    setUploadedLoading(true);
+
+    /* …and the two fetches now run CONCURRENTLY. They were sequential only by
+       accident of sharing one async block: neither needs the other's result,
+       so chaining them doubled the wait the user sits through. */
+    const loadSigned = async () => {
       try {
-        setSignedLoading(true);
         /* The NUMERIC id, resolved from the record — never the route slug.
            `employeeId` is whatever is in the URL, which is an ENCRYPTED id
            (or an EMP-### code), so `Number(employeeId) || employeeId` sent the
@@ -618,12 +638,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       } finally {
         if (!cancelled) setSignedLoading(false);
       }
+    };
 
-      // Uploaded employee documents — backend route binds {employee} to
-      // a numeric id, so we resolve the slug first via the same helper
-      // used for profile-photo uploads.
+    // Uploaded employee documents — backend route binds {employee} to
+    // a numeric id, so we resolve the slug first via the same helper
+    // used for profile-photo uploads.
+    const loadUploaded = async () => {
       try {
-        setUploadedLoading(true);
         const empId = await resolveEmployeeUploadId();
         if (cancelled) return;
         const { data } = await api.get(`/employees/${encodeURIComponent(String(empId))}/documents`);
@@ -633,7 +654,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       } finally {
         if (!cancelled) setUploadedLoading(false);
       }
-    })();
+    };
+
+    // Each settles its own flag, so one failing does not strand the other's
+    // loader on screen.
+    void Promise.all([loadSigned(), loadUploaded()]);
     return () => { cancelled = true; };
     /* empDetail.id joins the deps: the signed-docs fetch now needs the resolved
        numeric id, and on a cold open the vault tab can render before the
