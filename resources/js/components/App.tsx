@@ -679,6 +679,41 @@ function DashboardRoutes({ user }: { user: any }) {
   const onboardingPending = user.user_type === 'employee' && !!user.onboarding_pending;
   const onboardingPages = ['/inbox', '/profile'];
 
+  /* Freeze the browser Back button while onboarding is unfinished. (#42)
+   *
+   * The render guard below already refuses to SHOW anything but the Inbox and
+   * the profile, but it acts after the history entry has changed: Back pops to
+   * whatever preceded the Inbox — the login screen, or the dashboard the login
+   * pushed before the guard replaced it — React re-renders, and the guard
+   * bounces. The destination is never reachable, yet the pop still happens, so
+   * on a slow render the previous screen paints for a frame before the bounce,
+   * and any entry whose own render redirects (the catch-all sends '*' to
+   * /dashboard) gets a turn first. What the employee sees is Back opening the
+   * default tab.
+   *
+   * So the pop is corrected at the history layer, where it happens, instead of
+   * being cleaned up afterwards. Popping onto an allowed page is left alone —
+   * Profile back to Inbox still works, and freezing that would be a different
+   * bug — anything else is pinned straight back to the Inbox.
+   *
+   * Registered before the splash early-return so the hook order never changes
+   * between renders. */
+  useEffect(() => {
+    if (!onboardingPending) return;
+    const onPop = () => {
+      const popped = window.location.pathname;
+      if (onboardingPages.includes(popped)) return;
+      /* replaceState, not a router navigate: this has to take effect in the
+         same task as the pop, before React paints the popped entry. The router
+         is then told the same thing so its own location agrees. */
+      window.history.replaceState(null, '', '/inbox');
+      navigate('/inbox', { replace: true });
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onboardingPending, navigate]);
+
   /* The dashboard-stats preload that used to live here is GONE.
    *
    * It fired on every login and warmed the stats cache for a dashboard the

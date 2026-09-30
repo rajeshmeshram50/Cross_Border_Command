@@ -793,15 +793,30 @@ class AuthController extends Controller
         try {
             $candidates = \App\Models\HrDocumentSignature::query()
                 ->whereIn('status', ['Pending', 'In Progress'])
-                ->when($user->user_type !== 'super_admin', function ($q) use ($user) {
+                /* $linkedEmployeeId has to be captured by BOTH closures.
+                 * Neither used to take it, so at this depth it was undefined —
+                 * a PHP warning on every /me call, and `employee_id = NULL` in
+                 * the SQL, which matches nothing. The "documents addressed to
+                 * me" arm of this OR was therefore dead: the count came out of
+                 * the client_id arm alone, and a signature row carrying this
+                 * employee_id but a different client_id could not be seen at
+                 * all. The per-signer check below still had to agree, so the
+                 * total was usually right by accident rather than by this
+                 * query. Relevant here because an onboarding-pending employee
+                 * is locked to the Inbox this number describes. */
+                ->when($user->user_type !== 'super_admin', function ($q) use ($user, $linkedEmployeeId) {
                     if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
                         $q->where(function ($w) use ($user) {
                             $w->whereNull('client_id')->orWhere('client_id', $user->client_id);
                         });
                     } elseif (in_array($user->user_type, ['branch_user', 'employee'], true)) {
-                        $q->where(function ($w) use ($user) {
-                            $w->where('client_id', $user->client_id)
-                              ->orWhere('employee_id', $linkedEmployeeId);
+                        $q->where(function ($w) use ($user, $linkedEmployeeId) {
+                            $w->where('client_id', $user->client_id);
+                            // Only a real id is worth an OR arm; a null one
+                            // would just reinstate `employee_id = NULL`.
+                            if ($linkedEmployeeId) {
+                                $w->orWhere('employee_id', $linkedEmployeeId);
+                            }
                         });
                     }
                 })
