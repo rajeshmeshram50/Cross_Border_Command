@@ -11,6 +11,7 @@ import logoLight from "../assets/images/igc-logo.png";
 import SearchOption from '../Components/Common/SearchOption';
 import FullScreenDropdown from '../Components/Common/FullScreenDropdown';
 import ProfileDropdown from '../Components/Common/ProfileDropdown';
+import LogoutConfirmModal from '../Components/Common/LogoutConfirmModal';
 import LightDark from '../Components/Common/LightDark';
 import { useAuth } from '../../contexts/AuthContext';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
@@ -51,6 +52,7 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
     
 
     const [search, setSearch] = useState(false);
+    const [logoutOpen, setLogoutOpen] = useState(false);
     const toogleSearch = () => {
         setSearch(!search);
     };
@@ -256,7 +258,7 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
                             {/* Logout */}
                             <div className="ms-1 header-item d-none d-sm-flex">
                                 <button type="button" title="Logout"
-                                    onClick={() => logout()}
+                                    onClick={() => setLogoutOpen(true)}
                                     className="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle vth-logout-btn">
                                     <i className="bx bx-log-out fs-22"></i>
                                 </button>
@@ -271,6 +273,10 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
                     </div>
                 </div>
             </header>
+            <LogoutConfirmModal
+                open={logoutOpen}
+                onCancel={() => setLogoutOpen(false)}
+                onConfirm={() => { setLogoutOpen(false); logout(); }} />
         </React.Fragment>
     );
 };
