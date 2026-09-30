@@ -5125,7 +5125,7 @@ function RehireModal({ employee, onClose, onDone }: {
 
         <div style={{ padding: 18, background: 'var(--vz-secondary-bg)' }}>
           <div className="ep-section-label" style={{ marginBottom: 10 }}>How should they come back?</div>
-          <div className="etp-grid">
+          <div className="etp-grid etp-grid--pair">
             <button type="button" disabled={busy}
               className={`etp-card${!restart ? ' is-on' : ''}`}
               style={{ ['--etp-accent' as any]: '#0d9488' }}
@@ -5160,18 +5160,20 @@ function RehireModal({ employee, onClose, onDone }: {
               information either way, and payroll, tenure and probation all key
               off it. `min` blocks the past in the picker; submit() re-checks it
               because a typed value can bypass `min`, and the server checks it
-              again. (#120) */}
-          <div className="mt-3">
+              again. (#120)
+              Date and note share a row (they stack below md). */}
+          <div className="row g-3 mt-0">
+          <div className="col-md-3">
             <label className="ep-label" style={{ fontSize: 11.5, fontWeight: 700 }}>
               Rejoining Date <span style={{ color: '#dc2626' }}>*</span>
             </label>
-            <input
-              className={`ep-input${dateErr ? ' is-invalid' : ''}`}
-              type="date"
+            <MasterDatePicker
               value={rejoinDate}
-              min={todayIso}
+              onChange={v => { setRejoinDate(v); setDateErr(null); }}
               disabled={busy}
-              onChange={e => { setRejoinDate(e.target.value); setDateErr(null); }}
+              placeholder="dd-mm-yyyy"
+              minDate={todayIso}
+              invalid={!!dateErr}
             />
             {dateErr
               ? <small className="d-block" style={{ color: '#dc2626', fontSize: 11, marginTop: 3 }}>{dateErr}</small>
@@ -5183,11 +5185,12 @@ function RehireModal({ employee, onClose, onDone }: {
               )}
           </div>
 
-          <div className="mt-3">
+          <div className="col-md-9">
             <label className="ep-label" style={{ fontSize: 11.5, fontWeight: 700 }}>Note (optional)</label>
             <input className="ep-input" value={note} maxLength={500} disabled={busy}
               onChange={e => setNote(e.target.value)}
               placeholder="Why this employee is being rehired" />
+          </div>
           </div>
 
           <div className="etp-foot">
