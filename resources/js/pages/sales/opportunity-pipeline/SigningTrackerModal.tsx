@@ -791,7 +791,7 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
   activity.push({ label: 'Document sent', date: fmt(data?.created_at), type: 'sent', status: 'ok' });
   // Per-signer label, e.g. "Radhika (buyer)" — lets a multi-signer document
   // track each recipient individually in the activity log.
-  const sigLabel = (sg: any) => `${sg?.name || sg?.email || 'signer'}${sg?.role ? ` (${sg.role})` : ''}`;
+  const sigLabel = (sg: any) => `${sg?.name || sg?.email || 'signer'}${sg?.role ? ` (${/^buyer$/i.test(sg.role) ? 'customer' : sg.role})` : ''}`;
   // Per-signer "Viewed by …" events — each recipient who has opened the
   // document shows here, so a 2-signer doc reads exactly who reviewed it.
   /* Bounced recipients first — the log is read top-down when someone asks

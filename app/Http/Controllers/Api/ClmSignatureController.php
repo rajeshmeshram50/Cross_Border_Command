@@ -279,10 +279,14 @@ class ClmSignatureController extends Controller
         // the wrong parties. Each doc's `party` CSV is reduced to just its
         // signer-bearing tokens (Buyer / Consignee — Supplier-* and any others
         // don't change who signs) and they must all collapse to the same key.
-        $normaliseParty = function (?string $p): string {
+        // When the lead's consignee IS the customer, Consignee is read as Buyer:
+        // the same person signs every document, so there is no mix to split.
+        $sameAsCustomer = $this->leadConsigneeIsCustomer($lead, $user);
+        $normaliseParty = function (?string $p) use ($sameAsCustomer): string {
             return collect(explode(',', (string) $p))
                 ->map(fn($s) => strtolower(trim($s)))
                 ->filter(fn($t) => in_array($t, ['buyer', 'consignee'], true))
+                ->map(fn($t) => $sameAsCustomer ? 'buyer' : $t)
                 ->unique()
                 ->sort()
                 ->values()
@@ -293,7 +297,7 @@ class ClmSignatureController extends Controller
             return response()->json([
                 'status'  => false,
                 'message' => 'A single signature request can only contain documents for the same applicable party. '
-                    . 'Found a mix of: ' . $orderedDocs->pluck('party')->filter()->unique()->implode(' | ')
+                    . 'Found a mix of: ' . $orderedDocs->pluck('party')->filter()->map(fn($p) => $this->partyLabel($p))->unique()->implode(' | ')
                     . '. Send each party group separately.',
             ], 422);
         }
@@ -742,7 +746,7 @@ class ClmSignatureController extends Controller
             return response()->json([
                 'status'  => false,
                 'message' => 'Bulk send requires every selected agreement to share the same applicable party. Found: '
-                    . $orderedAgreements->pluck('party')->unique()->implode(' | '),
+                    . $orderedAgreements->pluck('party')->map(fn($p) => $this->partyLabel($p))->unique()->implode(' | '),
             ], 422);
         }
 
@@ -754,7 +758,7 @@ class ClmSignatureController extends Controller
         if (!$primary || empty($signers)) {
             return response()->json([
                 'status'  => false,
-                'message' => 'No signer could be resolved — the agreement\'s applicable party (' . $headAgreement->party . ') does not match a customer/consignee on this lead.',
+                'message' => 'No signer could be resolved — the agreement\'s applicable party (' . $this->partyLabel($headAgreement->party) . ') does not match a customer/consignee on this lead.',
             ], 422);
         }
 
@@ -2097,6 +2101,40 @@ class ClmSignatureController extends Controller
             'order' => 1,
             'role'  => 'buyer',
         ]];
+    }
+
+    /**
+     * An applicable-party CSV as the user reads it. The value is stored as
+     * "Buyer" but the product calls that party the Customer, so messages that
+     * quote a document's party say "Customer" — "Buyer,Consignee" reads
+     * "Customer, Consignee". Customer is always named first, so "Consignee,Buyer"
+     * and "Buyer,Consignee" read the same and don't list twice in a message.
+     */
+    private function partyLabel(?string $csv): string
+    {
+        return collect(explode(',', (string) $csv))
+            ->map(fn($t) => trim($t))
+            ->filter()
+            ->map(fn($t) => strcasecmp($t, 'Buyer') === 0 ? 'Customer' : $t)
+            ->unique()
+            ->sortBy(fn($t) => [$t === 'Customer' ? 0 : ($t === 'Consignee' ? 1 : 2), $t])
+            ->implode(', ');
+    }
+
+    /**
+     * True when the lead's consignee is the customer itself — the consignee row
+     * is flagged `same_as_customer` and mirrors this lead's customer. Buyer and
+     * Consignee are then one company with one signer, so a Buyer-only, a
+     * Consignee-only and a Buyer+Consignee document all go to the same person
+     * and may share a signature request.
+     */
+    private function leadConsigneeIsCustomer(?Lead $lead, $user): bool
+    {
+        if (!$lead || !$lead->consignee_id || !$lead->customer_id) return false;
+        $consignee = Consignee::query()->forUser($user)->find($lead->consignee_id);
+        return $consignee
+            && $consignee->same_as_customer
+            && (int) $consignee->customer_id === (int) $lead->customer_id;
     }
 
     /**

@@ -159,7 +159,7 @@
 </footer>
 
 <main class="body">
-  {!! $bodyHtml !!}
+  {!! \App\Support\PdfHighlight::fix($bodyHtml) !!}
 </main>
 </body>
 </html>

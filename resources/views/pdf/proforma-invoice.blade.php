@@ -1146,7 +1146,7 @@
                                         </div>
                                     @endif
                                     <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 4px;">
-                                        {!! $tnc['content'] !!}
+                                        {!! \App\Support\PdfHighlight::fix($tnc['content']) !!}
                                     </div>
                                 @endif
                             @endforeach
@@ -1371,7 +1371,7 @@
                                                 </div>
                                             @endif
                                             <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 4px;">
-                                                {!! $tnc['content'] !!}
+                                                {!! \App\Support\PdfHighlight::fix($tnc['content']) !!}
                                             </div>
                                         @endif
                                     @endforeach

@@ -161,7 +161,12 @@
 
 [data-bs-theme="dark"] .prm-page .ord-table th {
   color: #94a3b8;
-  background: linear-gradient(180deg, rgba(8,145,178,.16), rgba(8,145,178,.08));
+  /* The tint sits on the page's own surface colour, not on nothing.
+     This header is sticky, and a translucent background let every row that
+     scrolled under it show through — request ids and dates printed across the
+     column labels. The PO list's header solves it the same way; this rule is
+     more specific, so it has to carry the base with it. */
+  background: linear-gradient(180deg, rgba(8,145,178,.16), rgba(8,145,178,.08)), #0f172a;
 }
 [data-bs-theme="dark"] .prm-page .ord-srnum { color: #94a3b8; }
 [data-bs-theme="dark"] .prm-paytype { color: #e2e8f0; }

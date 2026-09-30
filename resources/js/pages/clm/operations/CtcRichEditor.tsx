@@ -1825,7 +1825,18 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
       editor.isActive('heading', { level: 3 }),
       editor.isActive({ textAlign: 'left' }), editor.isActive({ textAlign: 'center' }),
       editor.isActive({ textAlign: 'right' }), editor.isActive({ textAlign: 'justify' }),
-    ].map(Boolean).join('');
+    ].map(Boolean).join('')
+      /* The two dropdowns belong in here as well.
+       *
+       * They show what the CARET is on, but only buttons were signed — so
+       * moving to text of a different size re-rendered nothing and the Size box
+       * went on displaying the last value applied. A <select> whose value is
+       * already the value you pick fires no change event, so choosing that same
+       * size again did nothing at all, and the only way through was to pick some
+       * other size and come back (CS-13). Signed here, the box follows the
+       * selection and every pick is a real change. */
+      + '|' + String(editor.getAttributes('textStyle').fontSize ?? '')
+      + '|' + String(editor.getAttributes('textStyle').fontFamily ?? '');
 
     const sync = () => {
       const next = sign();
