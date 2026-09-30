@@ -915,11 +915,16 @@
   cursor: pointer; transition: all .15s ease;
   margin-bottom: 4px;
 }
-.lts-side-item:hover:not(.is-active) { background: #f3f4f6; }
+.lts-side-item:hover:not(.is-active):not(.is-locked) { background: #f3f4f6; }
+/* Sections the wizard has not unlocked yet (bug #135): reachable only via
+   Save & Next, so they read as dimmed and refuse the click. */
+.lts-side-item.is-locked {
+  opacity: .45; cursor: not-allowed;
+}
 /* Dark-mode hover — the light #f3f4f6 hover made the sidebar item flash a
    white block in dark mode when hovered/selected. Use a translucent tint
    instead (and scope off the active item so it keeps its purple). */
-[data-bs-theme="dark"] .lts-side-item:hover:not(.is-active) {
+[data-bs-theme="dark"] .lts-side-item:hover:not(.is-active):not(.is-locked) {
   background: var(--vz-secondary-bg);
 }
 .lts-side-item.is-active { background: #f3eeff; font-weight: 700; }
