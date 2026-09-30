@@ -80,10 +80,14 @@
     }
 }
 
-[data-layout="twocolumn"] { 
-    .footer {
-        @media (min-width: 768.1px) {
-            left: calc(#{$twocolumn-menu-iconview-width} + #{$twocolumn-menu-width});
-        }
+/* Same story as vertical above: the footer lives inside .main-content, whose
+ * margin-left already clears both menu columns, so shifting the footer again
+ * pushed it a full menu-width to the right (and off the right edge). The
+ * collapsed-panel rule in _two-column.scss is more specific, hence the second
+ * selector. */
+[data-layout="twocolumn"] {
+    .footer,
+    .twocolumn-panel .footer {
+        left: 0;
     }
 }

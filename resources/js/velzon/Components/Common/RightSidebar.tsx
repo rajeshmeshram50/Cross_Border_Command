@@ -308,38 +308,6 @@ const RightSidebar = (props: any) => {
                                         </div>
                                         <h5 className="fs-13 text-center mt-2">Two Column</h5>
                                     </div>
-                                    <div className="col-4">
-                                        <div className="form-check card-radio">
-                                            <input id="customizer-layout04" name="data-layout" type="radio" className="form-check-input"
-                                                value={LAYOUT_TYPES.SEMIBOX}
-                                                checked={layoutType === LAYOUT_TYPES.SEMIBOX}
-                                                onChange={e => {
-                                                    if (e.target.checked) {
-                                                        dispatch(changeLayout(e.target.value));
-                                                    }
-                                                }}
-                                            />
-                                            <label className="form-check-label p-0 avatar-md w-100" htmlFor="customizer-layout04">
-                                                <span className="d-flex gap-1 h-100">
-                                                    <span className="flex-shrink-0 p-1">
-                                                        <span className="bg-light d-flex h-100 flex-column gap-1 p-1">
-                                                            <span className="d-block p-1 px-2 bg-primary-subtle rounded mb-2"></span>
-                                                            <span className="d-block p-1 px-2 pb-0 bg-primary-subtle"></span>
-                                                            <span className="d-block p-1 px-2 pb-0 bg-primary-subtle"></span>
-                                                            <span className="d-block p-1 px-2 pb-0 bg-primary-subtle"></span>
-                                                        </span>
-                                                    </span>
-                                                    <span className="flex-grow-1">
-                                                        <span className="d-flex h-100 flex-column pt-1 pe-2">
-                                                            <span className="bg-light d-block p-1"></span>
-                                                            <span className="bg-light d-block p-1 mt-auto"></span>
-                                                        </span>
-                                                    </span>
-                                                </span>
-                                            </label>
-                                        </div>
-                                        <h5 className="fs-13 text-center mt-2">Semi Box</h5>
-                                    </div>
                                 </div>
 
                                 <h6 className="mt-4 mb-0 fw-bold text-uppercase">Color Scheme</h6>

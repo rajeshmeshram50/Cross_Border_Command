@@ -24,7 +24,7 @@ try {
     };
 
     seed('cbc-layout-mode',     'data-bs-theme',         ['light', 'dark']);
-    seed('cbc-layout',          'data-layout',           ['vertical', 'horizontal', 'twocolumn', 'semibox']);
+    seed('cbc-layout',          'data-layout',           ['vertical', 'horizontal', 'twocolumn']);
     seed('cbc-sidebar-theme',   'data-sidebar');
     seed('cbc-layout-width',    'data-layout-width',     ['fluid', 'boxed']);
     seed('cbc-layout-position', 'data-layout-position',  ['fixed', 'scrollable']);
