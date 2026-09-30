@@ -156,6 +156,10 @@ interface AttendanceLog {
   status: DayStatus;
   holidayName?: string | null;
   shift: string;
+  /* The window THIS day was worked under. Absent on rows from before the
+     server sent it, so the employee's current shift stays the fallback. (#35) */
+  shiftStart?: string | null;
+  shiftEnd?: string | null;
   firstIn: string;
   lastOut: string;
   worked: string;
@@ -1622,8 +1626,12 @@ function LogsRequestsCard({
                                       return /shift\s*$/i.test(raw) ? raw : `${raw} Shift`;
                                     })()} ({dateDay} {dateMonth})
                                   </div>
+                                  {/* This day's window, not the employee's current
+                                      one — a shift reassigned later must not
+                                      relabel the hours a past day was worked
+                                      under. (#35) */}
                                   <div className="att-log-pop-shift-time--v2">
-                                    {fmtClock(employee.shiftStart)} - {fmtClock(employee.shiftEnd)}
+                                    {fmtClock(l.shiftStart || employee.shiftStart)} - {fmtClock(l.shiftEnd || employee.shiftEnd)}
                                   </div>
 
                                   <button type="button" className="att-log-pop-regularize" onClick={() => { setPopoverIdx(null); if (l.iso) onRegularize(l.iso); }}>

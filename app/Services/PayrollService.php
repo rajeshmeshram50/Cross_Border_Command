@@ -4461,7 +4461,11 @@ class PayrollService
             ->whereBetween('attendance_date', [$start->toDateString(), $end->toDateString()])
             ->whereNotNull('check_out_at')
             ->orderBy('attendance_date')
-            ->get(['attendance_date', 'status', 'check_in_at', 'check_out_at']);
+            /* The per-day shift stamp comes along: this cycle's days must be
+               measured against the shift each was WORKED under, not the one the
+               employee happens to be on when payroll runs. Without it a shift
+               reassignment repriced closed history — real money. (#35 / #216) */
+            ->get(['attendance_date', 'status', 'check_in_at', 'check_out_at', 'shift_start', 'shift_end']);
 
         /* PAY-23 — a weekly off or a holiday is not a short working day, it is
          * a REST day, so every hour worked on it is overtime. Measuring those
@@ -4486,6 +4490,12 @@ class PayrollService
 
             $date = substr((string) $r->attendance_date, 0, 10);
 
+            /* This day's own shift window, falling back to the employee's
+               current one only for rows stamped before the columns existed. */
+            $dayShiftStart = trim((string) ($r->shift_start ?? '')) ?: $shiftStart;
+            $dayShiftEnd   = trim((string) ($r->shift_end   ?? '')) ?: $shiftEnd;
+            $dayOvernight  = $this->minutesBetween($dayShiftStart, $dayShiftEnd) <= 0;
+
             // Rest day → the whole worked stretch is overtime.
             $isRestDay = isset($restDays[$date])
                 || \App\Support\WeekOff::isOff($weeklyOff, Carbon::parse($date));
@@ -4507,7 +4517,7 @@ class PayrollService
                 $days++;
                 $detail[] = [
                     'date'      => $date,
-                    'shift_end' => $shiftEnd,
+                    'shift_end' => $dayShiftEnd,
                     'rest_day'  => true,
                     'punch_out' => $out->format('H:i'),
                     'minutes'   => $mins,
@@ -4519,8 +4529,8 @@ class PayrollService
             // Compare real instants, not wall-clock strings: a punch-out at
             // 01:00 is 6.5h of overtime on an 18:30 shift, while one two days
             // later must read as a huge (cappable) gap — not as "left early".
-            $endAt = Carbon::parse($date . ' ' . $shiftEnd, self::DISPLAY_TZ);
-            if ($overnight) {
+            $endAt = Carbon::parse($date . ' ' . $dayShiftEnd, self::DISPLAY_TZ);
+            if ($dayOvernight) {
                 $endAt->addDay();
             }
             $out  = Carbon::parse($r->check_out_at, 'UTC')->setTimezone(self::DISPLAY_TZ);
@@ -4533,7 +4543,7 @@ class PayrollService
             // starts. Past that the day was never properly closed, so its
             // overtime doesn't count at all (it is not carried, capped or
             // pro-rated — it's dropped). Mirrors Attendance::overtimeSecondsForDay().
-            $nextShiftStart = Carbon::parse($date . ' ' . $shiftStart, self::DISPLAY_TZ)->addDay();
+            $nextShiftStart = Carbon::parse($date . ' ' . $dayShiftStart, self::DISPLAY_TZ)->addDay();
             if ($out->greaterThanOrEqualTo($nextShiftStart)) {
                 continue;
             }
@@ -4546,7 +4556,7 @@ class PayrollService
             $days++;
             $detail[] = [
                 'date'      => $date,
-                'shift_end' => $shiftEnd,
+                'shift_end' => $dayShiftEnd,
                 // Date-stamped when the punch landed on a later day, so a
                 // 01:00 out-punch isn't mistaken for an early morning one.
                 'punch_out' => $out->toDateString() === $date
