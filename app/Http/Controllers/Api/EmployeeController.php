@@ -2551,8 +2551,155 @@ class EmployeeController extends Controller
          * then wrote the flag to a row payroll wasn't reading, and the change
          * appeared to do nothing. (#90 reopen) */
         if (array_key_exists('pf_eligible', $data) || array_key_exists('esi_applicable', $data)) {
+            /* …but NOT onto versions payroll can no longer rewrite. (#36)
+             *
+             * "Every resolvable version" was too wide. PayrollService::
+             * activeStructure() reaches back through the whole superseded chain
+             * to reconstruct a PAST period, so patching all of them rewrote
+             * history: turn PF off today and v1 and v2 — revisions that closed
+             * months ago, under terms that really did carry PF — came back
+             * saying PF=No. Salary History then showed past revisions stating
+             * today's configuration, which is the "inconsistent salary
+             * configuration data" this ticket reports, and it is also the one
+             * kind of disagreement that is NOT a sync failure: those versions
+             * are supposed to differ from the current one.
+             *
+             * The mirror exists so an open cycle reprices (#90), so it needs to
+             * reach exactly as far back as repricing does — recompute only
+             * touches draft/generated runs on unlocked periods. The earliest
+             * such period is the cut-off: the version in force when it opened,
+             * everything effective after it, and the active version (which
+             * governs cycles not yet run). Older versions keep the terms they
+             * were actually paid under. */
+            /* An applicability change IS a salary revision — cut a version. (#37)
+             *
+             * This path only ever PATCHED the live version's flag. Payroll
+             * followed it, so the deduction was right, but Salary History
+             * recorded nothing and Revise Salary kept showing the same version
+             * number: the change had been applied and simultaneously left
+             * untraceable. Stage 4's FULL save avoided this by posting the
+             * structure first (#217), which cuts a version — but its Save &
+             * Next sends only the fields that moved and never reaches that
+             * path, so a PF change made there landed with no version at all.
+             * That difference is the ticket: same field, same screen, versioned
+             * or not depending on which button saved it.
+             *
+             * A new version is cut only when the ACTIVE one actually disagrees,
+             * so the full-save path (structure POST first, then this PUT
+             * restating the same values) still produces exactly one version
+             * rather than two.
+             *
+             * Dated today, like any other revision, and never before the
+             * version it supersedes — an earlier date would leave payroll
+             * resolving the old row for the current month. Closed periods keep
+             * resolving the version they were paid under. */
+            $activeStructure = \App\Models\SalaryStructure::where('employee_id', $row->id)
+                ->where('status', 'active')
+                ->orderByDesc('version')
+                ->first();
+
+            if ($activeStructure) {
+                $wantPf = array_key_exists('pf_eligible', $data)
+                    ? (bool) $row->pf_eligible
+                    : (bool) $activeStructure->pf_applicable;
+                $wantEsi = array_key_exists('esi_applicable', $data)
+                    ? strtolower((string) $row->esi_applicable) === 'yes'
+                    : (bool) $activeStructure->esi_applicable;
+
+                if ($wantPf !== (bool) $activeStructure->pf_applicable
+                    || $wantEsi !== (bool) $activeStructure->esi_applicable) {
+
+                    /* PF off drops a MANUAL 'pf' deduction line, same rule the
+                       in-place patch below applies — payroll reads a structure's
+                       own pf row before it consults applicability, so leaving it
+                       would keep deducting PF after an explicit "No". */
+                    $newDeductions = array_values((array) ($activeStructure->deductions ?? []));
+                    if (!$wantPf) {
+                        $newDeductions = array_values(array_filter(
+                            $newDeductions,
+                            fn ($d) => strtolower((string) (((array) $d)['code'] ?? '')) !== 'pf'
+                        ));
+                    }
+
+                    $effective = now()->toDateString();
+                    $prevFrom  = $activeStructure->effective_from
+                        ? $activeStructure->effective_from->toDateString()
+                        : null;
+                    if ($prevFrom && $prevFrom > $effective) {
+                        $effective = $prevFrom;
+                    }
+
+                    $changes = [];
+                    if ($wantPf !== (bool) $activeStructure->pf_applicable) {
+                        $changes[] = 'PF ' . ($wantPf ? 'enabled' : 'disabled');
+                    }
+                    if ($wantEsi !== (bool) $activeStructure->esi_applicable) {
+                        $changes[] = 'ESI ' . ($wantEsi ? 'enabled' : 'disabled');
+                    }
+
+                    $nextVersion = (int) \App\Models\SalaryStructure::where('employee_id', $row->id)
+                        ->max('version') + 1;
+
+                    $activeStructure->update(['status' => 'superseded']);
+
+                    \App\Models\SalaryStructure::create([
+                        'client_id'       => $activeStructure->client_id,
+                        'branch_id'       => $activeStructure->branch_id,
+                        'employee_id'     => $row->id,
+                        'version'         => $nextVersion,
+                        'effective_from'  => $effective,
+                        'status'          => 'active',
+                        'earnings'        => array_values((array) ($activeStructure->earnings ?? [])),
+                        'deductions'      => $newDeductions,
+                        'monthly_gross'   => $activeStructure->monthly_gross,
+                        'monthly_ctc'     => $activeStructure->monthly_ctc,
+                        'pf_applicable'   => $wantPf,
+                        'esi_applicable'  => $wantEsi,
+                        'pt_applicable'   => (bool) $activeStructure->pt_applicable,
+                        'approval_status' => 'approved',
+                        'approved_by'     => $authId,
+                        'approved_at'     => now(),
+                        'revision_note'   => 'Employee form: ' . implode(', ', $changes),
+                        'created_by'      => $authId,
+                    ]);
+                }
+            }
+
+            $openFrom = \App\Models\Payslip::where('employee_id', $row->id)
+                ->whereHas('run', fn ($q) => $q->whereIn('status', ['draft', 'generated'])
+                    ->whereHas('period', fn ($p) => $p->where('status', '!=', 'locked')))
+                ->with('run.period')
+                ->get()
+                ->map(fn ($s) => $s->run?->period?->period_start)
+                ->filter()
+                ->min();
+
+            /* The version the open window OPENED on — resolved the same way
+               PayrollService::activeStructure() resolves one, so the mirror
+               reaches the row payroll will actually read for that period. */
+            $openingVersionId = $openFrom
+                ? \App\Models\SalaryStructure::where('employee_id', $row->id)
+                    ->whereIn('status', ['active', 'superseded'])
+                    ->whereDate('effective_from', '<=', $openFrom)
+                    ->orderByDesc('effective_from')
+                    ->orderByDesc('version')
+                    ->value('id')
+                : null;
+
             $structures = \App\Models\SalaryStructure::where('employee_id', $row->id)
                 ->whereIn('status', ['active', 'superseded'])
+                ->where(function ($q) use ($openFrom, $openingVersionId) {
+                    // Always the current version — it prices every future cycle.
+                    $q->where('status', 'active');
+                    // Everything effective inside the still-open window…
+                    if ($openFrom) {
+                        $q->orWhereDate('effective_from', '>=', $openFrom);
+                    }
+                    // …plus the version that window opened on.
+                    if ($openingVersionId) {
+                        $q->orWhere('id', $openingVersionId);
+                    }
+                })
                 ->get();
 
             foreach ($structures as $structure) {
@@ -3638,7 +3785,44 @@ class EmployeeController extends Controller
 
         $isFinalStep   = (int) $request->input('wizard_step_completed', 0) >= 4;
         $payrollOn     = (bool) $request->input('enable_payroll', true);
-        $requireSalary = $isFinalStep && $payrollOn;
+        /* The rule is "the wizard cannot be completed without a salary on
+         * file" — NOT "every request that mentions step 4 must restate it".
+         *
+         * Stage 4's Save & Next sends only the fields that MOVED, plus
+         * wizard_step_completed. So changing PF alone posted
+         * {pf_eligible, pf_type, wizard_step_completed: 4} and was rejected
+         * with "Annual CTC is required" for three fields the operator had not
+         * touched and which were already stored. Nothing saved, no version was
+         * cut, and Revise Salary went on showing the old PF — reported as the
+         * change not being reflected, because from the screen that is exactly
+         * what it looks like. (#37)
+         *
+         * So the requirement now falls away once the record already carries a
+         * salary: a partial update may leave it alone, while a first save (or
+         * one that blanks it) still has to provide it. */
+        $storedSalary = $employeeId
+            ? Employee::withTrashed()->whereKey($employeeId)
+                ->first(['annual_salary', 'salary_frequency', 'salary_effective_from'])
+            : null;
+        /* The stored ANNUAL CTC is the test, not all three columns. The gate
+         * exists so payroll has a salary to pay, and that is this figure;
+         * frequency defaults to monthly and the effective date is pinned to the
+         * joining date by the rule below either way. Demanding all three meant
+         * an employee created before those columns were populated — 480,000 on
+         * file, frequency null — could never have an unrelated field saved from
+         * stage 4 again. The full-payload save still validates the whole block,
+         * so nothing gets in that way. */
+        $hasStoredSalary = $storedSalary
+            && $storedSalary->annual_salary !== null
+            && (float) $storedSalary->annual_salary > 0;
+        /* Only a request that is silent on all three may lean on the stored
+         * copy. One that sends any of them is editing the salary block, so the
+         * whole block is validated together as before — a half-filled edit
+         * cannot slip through on the strength of what used to be there. */
+        $touchesSalary = $request->exists('annual_salary')
+            || $request->exists('salary_frequency')
+            || $request->exists('salary_effective_from');
+        $requireSalary = $isFinalStep && $payrollOn && ($touchesSalary || !$hasStoredSalary);
         $salaryMax     = 999999999999.99; // decimal(14, 2)
         $salaryRule    = $requireSalary
             ? ['required', 'numeric', 'min:0.01', "max:{$salaryMax}"]

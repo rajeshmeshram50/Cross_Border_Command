@@ -2421,6 +2421,14 @@ function LeaveTypeSetupModal({
 }) {
   const [active, setActive] = useState<SetupSection>('accrual');
   const [saving, setSaving] = useState(false);
+  /* Highest section index the user is allowed to open. The wizard is a
+     sequential flow: a later section only unlocks once the current one has been
+     persisted with Save & Next (bug #135 — the sidebar previously let you jump
+     straight to Approval and skip saving Accrual / Leave Application).
+     Going BACK to an already-saved section stays free, and a leave type that is
+     already configured opens with everything unlocked so edits aren't a forced
+     re-walk of the wizard. */
+  const [reached, setReached] = useState(0);
   /* Always open on the FIRST section (#103 / #105).
      useState's initial value only applies on MOUNT, and this component is never
      unmounted between opens — the `if (!leaveType) return null` below is an
@@ -2432,8 +2440,12 @@ function LeaveTypeSetupModal({
      Keyed on the leave type as well as `isOpen`, so switching types without
      closing the modal also rewinds to the start. */
   useEffect(() => {
-    if (isOpen) setActive(SETUP_SECTIONS[0].key);
-  }, [isOpen, leaveType?.id]);
+    if (!isOpen) return;
+    setActive(SETUP_SECTIONS[0].key);
+    // Read-only review and already-configured types get the whole wizard;
+    // a fresh setup starts with only the first section reachable.
+    setReached(readOnly || leaveType?.configured ? SETUP_SECTIONS.length - 1 : 0);
+  }, [isOpen, leaveType?.id, leaveType?.configured, readOnly]);
   const sectionIndex = SETUP_SECTIONS.findIndex(s => s.key === active);
   const sectionMeta = SETUP_SECTIONS[sectionIndex] ?? SETUP_SECTIONS[0];
 
@@ -2463,6 +2475,7 @@ function LeaveTypeSetupModal({
       setSaving(false);
     }
     if (!isLastSection) {
+      setReached(r => Math.max(r, sectionIndex + 1));
       setActive(SETUP_SECTIONS[sectionIndex + 1].key);
     } else {
       onClose();
@@ -2503,23 +2516,28 @@ function LeaveTypeSetupModal({
           <div className="lts-body">
             <aside className="lts-sidebar">
               <div className="lts-section-label">CONFIGURATION</div>
-              {SETUP_SECTIONS.map(s => (
-                <button
-                  key={s.key}
-                  type="button"
-                  className={`lts-side-item ${active === s.key ? 'is-active' : ''}`}
-                  style={active === s.key ? { color: s.tone } : undefined}
-                  onClick={() => setActive(s.key)}
-                >
-                  <span
-                    className="lts-side-icon"
-                    style={active === s.key ? { background: `${s.tone}20`, color: s.tone } : undefined}
+              {SETUP_SECTIONS.map((s, i) => {
+                const locked = i > reached;
+                return (
+                  <button
+                    key={s.key}
+                    type="button"
+                    className={`lts-side-item ${active === s.key ? 'is-active' : ''} ${locked ? 'is-locked' : ''}`}
+                    style={active === s.key ? { color: s.tone } : undefined}
+                    disabled={locked || saving}
+                    title={locked ? 'Use Save & Next to continue to this section' : undefined}
+                    onClick={() => { if (!locked) setActive(s.key); }}
                   >
-                    <i className={s.icon} />
-                  </span>
-                  {s.label}
-                </button>
-              ))}
+                    <span
+                      className="lts-side-icon"
+                      style={active === s.key ? { background: `${s.tone}20`, color: s.tone } : undefined}
+                    >
+                      <i className={locked ? 'ri-lock-2-line' : s.icon} />
+                    </span>
+                    {s.label}
+                  </button>
+                );
+              })}
             </aside>
 
             <main className="lts-main">

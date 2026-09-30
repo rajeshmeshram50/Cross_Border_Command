@@ -47,7 +47,7 @@ const persistedLayoutMode = read('cbc-layout-mode', 'light', ['light', 'dark'] a
 // sidebar via the customizer persist that choice in `cbc-layout` and the
 // read() above will honour it.
 const persistedLayoutType = read('cbc-layout', LAYOUT_TYPES.HORIZONTAL, [
-  LAYOUT_TYPES.VERTICAL, LAYOUT_TYPES.HORIZONTAL, LAYOUT_TYPES.TWOCOLUMN, LAYOUT_TYPES.SEMIBOX,
+  LAYOUT_TYPES.VERTICAL, LAYOUT_TYPES.HORIZONTAL, LAYOUT_TYPES.TWOCOLUMN,
 ] as const);
 const persistedSidebarTheme = read('cbc-sidebar-theme', LAYOUT_SIDEBAR_TYPES.DARK);
 const persistedLayoutWidth = read('cbc-layout-width', LAYOUT_WIDTH_TYPES.FLUID, [

@@ -141,8 +141,11 @@ body { overflow-x: hidden; }
    layout width, for nothing. Below 768px the menu is off-canvas and the stock
    flow is correct, so this stays a desktop rule. */
 @media (min-width: 768px) {
-  [data-layout="vertical"] #layout-wrapper { height: 100dvh; overflow: hidden; }
-  [data-layout="vertical"] .main-content {
+  /* Two-column renders the same shell as vertical (fixed topbar, footer inside
+     .main-content), so it needs the same frame or its pages slide under the
+     header too. */
+  :is([data-layout="vertical"], [data-layout="twocolumn"]) #layout-wrapper { height: 100dvh; overflow: hidden; }
+  :is([data-layout="vertical"], [data-layout="twocolumn"]) .main-content {
     height: 100dvh;
     padding-top: var(--vz-header-height, 70px);
     overflow-y: auto;
@@ -151,7 +154,7 @@ body { overflow-x: hidden; }
   }
   /* The footer rides at the end of the scroller in this layout; keeping it on
      the bottom edge matches the horizontal shell, where it is pinned. */
-  [data-layout="vertical"] .main-content > .footer { position: sticky; bottom: 0; }
+  :is([data-layout="vertical"], [data-layout="twocolumn"]) .main-content > .footer { position: sticky; bottom: 0; }
 }
 .page-content > .container-fluid { padding-left: 0 !important; padding-right: 0 !important; }
 .page-content > .container-fluid > .row { margin-left: 0 !important; margin-right: 0 !important; }
