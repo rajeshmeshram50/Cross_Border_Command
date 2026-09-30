@@ -123,6 +123,15 @@ class ClientController extends Controller
             'email' => [
                 'required', 'email', 'max:255',
                 Rule::unique('clients', 'email')->whereNull('deleted_at'),
+                /* No `person` check on CREATE, deliberately. (#221)
+                   The rule is tenant-scoped, and a client being created has no
+                   id to scope to — passing null makes EmailGuard compare against
+                   EVERY tenant's users and employees, which would refuse a new
+                   organisation because an unrelated one already employs someone
+                   at that address. Email is per-tenant here by design. There is
+                   also nothing legitimate to collide with: a brand-new client
+                   has no users of its own yet. The check applies on UPDATE,
+                   where the id exists. */
             ],
             'phone' => [
                 'nullable', 'string', 'max:20',
@@ -180,6 +189,11 @@ class ClientController extends Controller
             // this (about-to-be-created) client — which has no users yet. An
             // email already used in a DIFFERENT client must NOT block creating
             // this one. The users_email_client_unique DB index is the backstop.
+            /* No uniqueness rule here either, for the same reason as `email`
+               above: this client has no tenant yet, so a scoped check has
+               nothing to scope to and an unscoped one would reach across every
+               other organisation. users_email_client_unique remains the
+               backstop once the tenant exists. (#221) */
             'admin_email' => ['required', 'email'],
             'admin_phone' => [
                 'nullable', 'string', 'max:20',
@@ -453,6 +467,14 @@ class ClientController extends Controller
             'email' => [
                 'required', 'email', 'max:255',
                 Rule::unique('clients', 'email')->ignore($client->id)->whereNull('deleted_at'),
+                /* Same rule as the branch form, read from the client side: an
+                   organisation address cannot be one a person already holds as
+                   a login or an employee record. Scoped to THIS client, so
+                   another tenant's staff are not a clash. On create there is no
+                   client id yet, and `person` only reads tenant-scoped tables,
+                   so the check covers platform-level (client_id NULL) holders
+                   and the tenant's own rows once it exists. (#221) */
+                new \App\Rules\UniqueSystemEmail('person', $client->id),
             ],
             'phone' => [
                 'nullable', 'string', 'max:20',

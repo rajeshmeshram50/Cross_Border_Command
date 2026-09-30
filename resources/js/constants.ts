@@ -216,10 +216,12 @@ export const HR_GROUPS: MenuGroup[] = [
       // Custom Fields — variables defined here are NOT in employee data; the
       // template engine prompts for them manually at generation time.
       { id: 'hr.custom_fields', icon: 'Star', label: 'Custom Fields' },
-      // Trigger Point Master — branch-only master defining lifecycle trigger
-      // modules (Onboarding, Offboarding, Event-Based) used by Doc Generation
-      // Rules. Routes through /master/trigger_point (master.* convention).
-      { id: 'master.trigger_point', icon: 'Zap', label: 'Trigger Point Master' },
+      /* Trigger Point Master is not listed. Its three rows are global, and
+         which one applies is decided in code (HrDocumentSignatureController
+         ::inferTriggerKeyword matches onboarding / exit / employee), so a
+         fourth one added here would tag templates nothing ever fetches. The
+         table and the template form's dropdown stay; only the invitation to
+         add rows is gone. */
     ],
   },
 ];

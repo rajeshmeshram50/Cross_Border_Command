@@ -102,6 +102,52 @@ return [
             ],
         ],
 
+        /*
+         | ORGANISATION — the contact address on a client or a branch record.
+         |
+         | Neither column belonged to ANY scope, so neither blocked anything and
+         | nothing blocked them: an employee could be created on the address the
+         | branch itself uses, and on the client's own address, with no warning.
+         | Both were accepted outright (verified: HTTP 201 on each) even though
+         | employee-vs-employee and employee-vs-login were already refused. That
+         | is the duplicate this ticket is about — the address was already spoken
+         | for, just not by a row anyone was looking at.
+         |
+         | Checked BY people (employees, logins); deliberately NOT checked by
+         | clients and branches against each other. A client and its head-office
+         | branch legitimately share one mailbox — they are one organisation, and
+         | this database already has such a pair — so putting the two columns in
+         | one mutual scope would refuse an edit to a record that has been
+         | correct since the day it was created.
+         |
+         | `tenant_column` on clients is `id`: the clients table IS the tenant,
+         | so its own primary key is what scopes it. See EmailGuard.
+         */
+        'organisation' => [
+            'label'   => 'an organisation or branch contact address',
+            'tenant'  => true,
+            'sources' => [
+                ['table' => 'clients',  'column' => 'email', 'soft_deletes' => true, 'tenant_column' => 'id'],
+                ['table' => 'branches', 'column' => 'email', 'soft_deletes' => true],
+            ],
+        ],
+
+        /*
+         | PERSON — the identities a human holds inside a tenant: their login
+         | and their employee record. Used by the client and branch forms so an
+         | organisation address cannot be set to one a person already holds,
+         | which is the same rule as `organisation` read from the other side.
+         */
+        'person' => [
+            'label'   => 'a user account or employee',
+            'tenant'  => true,
+            'sources' => [
+                ['table' => 'users',     'column' => 'email',          'soft_deletes' => true, 'where' => ['email_active' => true]],
+                ['table' => 'employees', 'column' => 'email',          'soft_deletes' => true],
+                ['table' => 'employees', 'column' => 'official_email', 'soft_deletes' => true],
+            ],
+        ],
+
         'customer' => [
             'label'   => 'another customer',
             'tenant'  => true,

@@ -131,7 +131,15 @@ class BranchController extends Controller
             // onboarding invites are sent from and replied to, so a branch
             // without one silently breaks those flows.
             // `email` alone would accept test@mailinator — see EMAIL_REGEX.
-            'email' => ['required', 'email', 'max:255', 'regex:' . self::EMAIL_REGEX],
+            /* The reverse of the `organisation` scope: a branch contact address
+               cannot be one a person already holds as a login or an employee
+               record. Without it the rule only closed one direction — an
+               employee could no longer take a branch address, but a branch
+               could still be pointed at an employee's. `person`, not
+               `organisation`, so a client and its head-office branch may go on
+               sharing one mailbox. (#221) */
+            'email' => ['required', 'email', 'max:255', 'regex:' . self::EMAIL_REGEX, new \App\Rules\UniqueSystemEmail('person', $clientId)],
+
             // Required: this is the number that goes onto quotations and
             // invoices, so a branch without one prints a blank contact.
             //
@@ -520,7 +528,15 @@ class BranchController extends Controller
             // onboarding invites are sent from and replied to, so a branch
             // without one silently breaks those flows.
             // `email` alone would accept test@mailinator — see EMAIL_REGEX.
-            'email' => ['required', 'email', 'max:255', 'regex:' . self::EMAIL_REGEX],
+            /* The reverse of the `organisation` scope: a branch contact address
+               cannot be one a person already holds as a login or an employee
+               record. Without it the rule only closed one direction — an
+               employee could no longer take a branch address, but a branch
+               could still be pointed at an employee's. `person`, not
+               `organisation`, so a client and its head-office branch may go on
+               sharing one mailbox. (#221) */
+            'email' => ['required', 'email', 'max:255', 'regex:' . self::EMAIL_REGEX, new \App\Rules\UniqueSystemEmail('person', $branch->client_id)],
+
             // Required: this is the number that goes onto quotations and
             // invoices, so a branch without one prints a blank contact.
             //

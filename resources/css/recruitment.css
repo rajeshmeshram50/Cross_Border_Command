@@ -6519,6 +6519,10 @@
 
 /* ══ Initiate Exit — exit-type picker ══════════════════════════════════ */
 .etp-grid { display: flex; flex-direction: column; gap: 10px; }
+/* Two choices side by side, half each (Rehire modal). Stacks on phones. */
+.etp-grid--pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.etp-grid--pair .etp-card { height: 100%; }
+@media (max-width: 767px) { .etp-grid--pair { grid-template-columns: 1fr; } }
 .etp-card {
   display: flex; align-items: flex-start; gap: 12px; width: 100%;
   text-align: left; cursor: pointer; font: inherit; color: var(--vz-body-color);
