@@ -131,6 +131,54 @@ export default function PermissionMatrix({
 }: Props) {
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
 
+  /* Size the grid so the PAGE itself does not scroll — only the grid does.
+   *
+   * Two nested scrollers is what makes a long list feel laggy here: the wheel
+   * hands its delta to whichever one is under the pointer, the page and the
+   * grid take turns moving, and the header slides while the rows do not.
+   *
+   * So the height is derived from the page scroller rather than the window:
+   * everything above the grid, plus everything below it (the Save bar, the
+   * footer), is subtracted from the scroller's visible height and the grid
+   * takes the rest. Measuring against the window instead is wrong the moment
+   * the page happens to be scrolled — the grid comes out too tall and leaves
+   * the page scrolling as well, which is the state this replaces.
+   *
+   * Measured, not hard-coded: the three pages that render this matrix
+   * (employee, client, standalone) each put a different amount of heading
+   * above it. */
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const [gridH, setGridH] = useState(0);
+  useEffect(() => {
+    const scrollerOf = (node: HTMLElement): HTMLElement => {
+      for (let p = node.parentElement; p; p = p.parentElement) {
+        const oy = getComputedStyle(p).overflowY;
+        if (oy === 'auto' || oy === 'scroll') return p;
+      }
+      return document.scrollingElement as HTMLElement || document.documentElement;
+    };
+    const fit = () => {
+      const el = gridRef.current;
+      if (!el) return;
+      const sc = scrollerOf(el);
+      // Offsets taken through the scroller's own box so they hold whatever the
+      // current scroll position is.
+      const above = el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
+      // `below` is what sits under the grid inside the scroller. It is read off
+      // the current layout, so the sum must balance exactly: subtracting any
+      // extra margin here would take another slice off the grid on every single
+      // refit instead of settling on one height.
+      const below = Math.max(0, sc.scrollHeight - (above + el.offsetHeight));
+      setGridH(Math.max(320, Math.floor(sc.clientHeight - above - below)));
+    };
+    // Twice: the first pass settles the grid, the second reads the layout it
+    // produced (a shorter grid can drop a scrollbar and reflow what is below).
+    const run = () => { fit(); requestAnimationFrame(fit); };
+    run();
+    window.addEventListener('resize', run);
+    return () => window.removeEventListener('resize', run);
+  }, [loading, modules.length]);
+
   // Build tree
   const tree = useMemo(() => {
     const byId = new Map<number, PermModule>();
@@ -581,7 +629,7 @@ export default function PermissionMatrix({
       {/* 18px to match the hero card above — the employee avatar and the page
           title both start there, so this row lines up with them instead of
           sitting on its own inset. */}
-      <CardBody className="border-top border-bottom" style={{ background: 'var(--vz-secondary-bg)', padding: '12px 18px' }}>
+      <CardBody className="border-top border-bottom" style={{ background: 'var(--vz-secondary-bg)', padding: '8px 18px' }}>
         <div className="d-flex align-items-center gap-2 flex-wrap">
           {/* `px-3` dropped: the CardBody already sets the left inset, and the
               label's own 16px on top of it pushed "QUICK ACTIONS" a clear 36px
@@ -635,7 +683,7 @@ export default function PermissionMatrix({
         </div>
       </CardBody>
 
-      <div className="px-3 pt-3 pb-2">
+      <div className="px-3 pt-2 pb-2">
         <style>{`
           .perm-matrix-table .form-check-input:checked {
             background-color: ${ACCENT};
@@ -645,10 +693,33 @@ export default function PermissionMatrix({
             background-color: ${ACCENT};
             border-color: ${ACCENT};
           }
+          /* The column labels stay put while the grid scrolls. Backgrounds go
+             on the cells, not the row: a sticky <th> paints its own background
+             and a background set on the <tr> shows through as transparent. */
+          .perm-matrix-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: var(--vz-secondary-bg);
+            box-shadow: inset 0 -2px 0 var(--vz-primary);
+          }
         `}</style>
         <div
+          ref={gridRef}
           className="table-responsive perm-matrix-table rounded-3"
-          style={{ border: '1px solid var(--vz-border-color)', overflow: 'hidden' }}
+          style={{
+            border: '1px solid var(--vz-border-color)',
+            /* The grid scrolls itself rather than stretching the page.
+               Expanded, this table is ~8,500px tall: laid out at full height it
+               made the browser paint the whole thing behind a page-length
+               scroll (which is what felt heavy and smeared), the column headers
+               slid away so a checkbox no longer told you which right it was,
+               and the Save button ended up ~8,900px down the page. */
+            height: gridH ? `${gridH}px` : undefined,
+            maxHeight: gridH ? `${gridH}px` : undefined,
+            overflowY: 'auto',
+            overflowX: 'auto',
+          }}
         >
           {loading ? (
             /* Permission matrix shimmer — mirrors the table's actual
