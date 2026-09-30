@@ -31,6 +31,8 @@ interface AttendancePanelResponse {
     id: number; emp_code: string | null; name: string; face_registered: boolean;
     shift_start?: string | null; shift_end?: string | null;
     date_of_joining?: string | null;
+  attendance_from?: string | null;
+  owes_attendance?: boolean;
     /** 'YYYY-MM-DD' for an exited employee; null while still employed. (#87) */
     last_working_day?: string | null;
   };
@@ -48,6 +50,11 @@ interface AttendancePanelResponse {
   expected_minutes?: number;
   logs?: AttLog[];
   date_of_joining?: string | null;
+  /** Effective lower bound of the attendance window — joining date, else the
+   *  record's creation date. (#218) */
+  attendance_from?: string | null;
+  /** False while onboarding is unfinished. (#218) */
+  owes_attendance?: boolean;
 }
 
 
@@ -223,8 +230,14 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
     weeklyOff:  data.weekly_off || '',
     weeklyOffDates: data.weekly_off_dates || {},
     logs:       data.logs || [],
-    // Blanks out calendar cells from before the employee joined (CBC #74).
-    dateOfJoining: data.date_of_joining || data.employee?.date_of_joining || null,
+    /* Blanks out calendar cells from before the employee joined (CBC #74).
+       `attendance_from` is the effective bound: the joining date, or the
+       record's creation date when there is none. Without it an employee still
+       in onboarding had no bound at all and the whole month painted as
+       Absent. (#218) */
+    dateOfJoining: data.attendance_from || data.date_of_joining || data.employee?.date_of_joining || null,
+    // False while onboarding is unfinished — the calendar shows no absences.
+    owesAttendance: data.owes_attendance !== false,
     // Anchors the month rail to the end of the employment window (#87).
     lastWorkingDay: data.employee?.last_working_day || null,
   } : null;

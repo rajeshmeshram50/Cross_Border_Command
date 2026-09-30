@@ -448,6 +448,15 @@ class AttendanceController extends Controller
                 // Calendar cells before this date are not attendance days
                 // (CBC #74) — the SPA needs the date to blank them out.
                 'date_of_joining' => $this->joiningIso($emp),
+                /* The effective lower bound of the attendance window — the
+                   joining date, or the record's creation date when there is
+                   none. The SPA blanks cells before it. Sent separately from
+                   date_of_joining because it must not be shown as a joining
+                   date: it is a bound, not a fact about employment. (QA #218) */
+                'attendance_from' => $this->attendanceStartIso($emp),
+                /* False while onboarding is unfinished: no synthesised
+                   absences, so the calendar leaves those days blank. */
+                'owes_attendance' => $this->owesAttendance($emp),
                 /* The other end of the employment window. (#87)
                  *
                  * withTrashed() above made an exited employee's history
@@ -499,6 +508,8 @@ class AttendanceController extends Controller
                 $this->joiningIso($emp)
             ),
             'date_of_joining'  => $this->joiningIso($emp),
+            'attendance_from'  => $this->attendanceStartIso($emp),
+            'owes_attendance'  => $this->owesAttendance($emp),
         ]);
     }
 
@@ -1034,7 +1045,18 @@ class AttendanceController extends Controller
                exists on a pre-joining date, HR needs to see it, not a label
                that hides it. Weekly-off is deliberately overridden too: a
                Sunday before joining is not this employee's weekly off yet. */
-            if ($joinIso !== null && $date < $joinIso && !$today) {
+            /* $joinIso ?? the creation date, for the same reason the log builder
+               falls back: an employee still in onboarding has no joining date,
+               so this guard never fired for them and the roster read them as
+               plainly Absent. (QA #218) */
+            $startIso = $joinIso ?? $this->attendanceStartIso($emp);
+            if ($startIso !== null && $date < $startIso && !$today) {
+                $statusToday = 'Not Joined';
+            }
+            /* Onboarding still in progress — they are not expected in yet, so
+               the roster says so instead of counting them absent. A real row
+               still wins, as above. (QA #218) */
+            if (!$this->owesAttendance($emp) && !$today) {
                 $statusToday = 'Not Joined';
             }
             /* Selected date sits AFTER this employee left → out of scope for
@@ -1667,6 +1689,46 @@ class AttendanceController extends Controller
             : null;
     }
 
+    /**
+     * The first day this employee could meaningfully be marked absent. (QA #218)
+     *
+     * The joining date, and when there isn't one, the day the record was
+     * created — they did not exist to the company before that, so there is
+     * nothing for them to have been absent from.
+     *
+     * The fallback is the fix. The pre-joining guard read `$joinIso !== null`,
+     * so an employee still part-way through onboarding — who has no joining
+     * date yet — had no lower bound at all, and every past day in the window
+     * was synthesised as Absent. A profile opened on someone hired last week
+     * showed a full month of absences they could not possibly have accrued.
+     */
+    private function attendanceStartIso(Employee $emp): ?string
+    {
+        $join = $this->joiningIso($emp);
+        if ($join !== null) return $join;
+
+        return $emp->created_at
+            ? $emp->created_at->copy()->setTimezone(self::DISPLAY_TZ)->toDateString()
+            : null;
+    }
+
+    /**
+     * Is this employee expected to attend yet? (QA #218)
+     *
+     * Onboarding runs to stage 6, and PayrollService::eligibleEmployees() will
+     * not pay anyone below it. Marking those employees Absent asserts an
+     * obligation the rest of the system does not recognise — the calendar was
+     * the only place claiming they owed attendance at all.
+     *
+     * This suppresses SYNTHESISED absences only. A real punch still renders:
+     * if someone clocked in before their paperwork finished, that happened and
+     * the day says so.
+     */
+    private function owesAttendance(Employee $emp): bool
+    {
+        return (int) ($emp->onboarding_stage_completed ?? 0) >= 6;
+    }
+
     private function managerDisplayName(Employee $emp): string
     {
         $mgr  = $emp->reportingManager;
@@ -1741,6 +1803,11 @@ class AttendanceController extends Controller
 
         $shift = (string) ($emp->shift ?: '—');
         $todayLocal = self::todayLocal();
+        // Lower bound of the attendance window, and whether attendance is owed
+        // yet at all. Both resolved from the employee, so every caller of this
+        // builder gets the same answer. (QA #218)
+        $startIso = $joinIso ?? $this->attendanceStartIso($emp);
+        $owes     = $this->owesAttendance($emp);
         $out = [];
         // Walk newest-first so the table opens on the most recent day —
         // matches the user's expectation (and what the Logs table page-
@@ -1761,8 +1828,17 @@ class AttendanceController extends Controller
                "Absent" row for them was wrong on the log, wrong on the calendar
                and wrong in every count derived from either (CBC #74). A real
                punch row somehow dated before joining is still emitted rather
-               than hidden — that is a data problem HR needs to see. */
-            if ($joinIso !== null && $iso < $joinIso && !isset($byIso[$iso])) { $cursor->subDay(); continue; }
+               than hidden — that is a data problem HR needs to see.
+
+               $joinIso is the caller's date-of-joining; $startIso falls back to
+               the record's creation date when there isn't one, because
+               "$joinIso !== null" meant an employee mid-onboarding had NO lower
+               bound and collected a synthesised absence for every past day in
+               the window. (QA #218) */
+            if ($startIso !== null && $iso < $startIso && !isset($byIso[$iso])) { $cursor->subDay(); continue; }
+            /* Not onboarded yet — no synthesised absences at all, only real
+               rows. Payroll will not pay them below stage 6 either. (QA #218) */
+            if (!$owes && !isset($byIso[$iso])) { $cursor->subDay(); continue; }
             /* And days AFTER they left, for the same reason from the same
                direction (#91). Auditing a leaver's history is the whole point
                of showing them here, so the log must stop where their

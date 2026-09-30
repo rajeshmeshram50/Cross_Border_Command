@@ -62,6 +62,8 @@ export interface AttLogsEmployee {
   logs: AttLog[];
   /** 'YYYY-MM-DD' — nothing before this is an attendance day (CBC #74). */
   dateOfJoining?: string | null;
+  /** False while onboarding is unfinished — no absences are shown. (#218) */
+  owesAttendance?: boolean;
   /** 'YYYY-MM-DD' for an exited employee; null while still employed. (#87) */
   lastWorkingDay?: string | null;
 }
@@ -774,8 +776,13 @@ function CalendarMonthGrid({
      declared holiday does rather than leaving the rest of the month blank
      (#94) — the future gate applies to attendance facts, not to the roster
      pattern. Pre-joining days stay out of scope at the other end. */
+  /* Not onboarded yet → the calendar shows nothing, not a month of absences.
+     The backend already withholds the synthesised days; this also stops the
+     weekly-off pattern below painting a roster for someone who has none. (#218) */
+  const owes = employee.owesAttendance !== false;
   const statusFor = (iso: string): DayStatus | null => {
     if (preJoin(iso)) return null;
+    if (!owes && !logByIso.has(iso)) return null;
     const fromLog = logByIso.get(iso);
     if (fromLog) return fromLog.status;
     if (weeklyOffMap[iso]) return 'Weekly Off';
