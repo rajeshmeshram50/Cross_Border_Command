@@ -49,6 +49,27 @@
     } 
 }
 
+/* The sidebar offset is applied ONCE, by .main-content.
+ *
+ * Stock Velzon hangs the footer across the page and shifts it past the menu
+ * itself (the `left` above). This app renders the footer INSIDE .main-content,
+ * which already carries margin-left: the vertical menu width — so the shift
+ * landed on top of an offset that was already there and the bar started 250px
+ * to the right of the content, leaving a strip of empty page beside the menu
+ * and running the same 250px off the right edge. The horizontal layout has
+ * always had this override; vertical needs it for the same reason, and the
+ * sm / md sidebar sizes above inherit it. */
+[data-layout="vertical"] {
+    .footer {
+        left: 0;
+    }
+    &:is([data-sidebar-size="sm"], [data-sidebar-size="sm-hover"], [data-sidebar-size="md"]) {
+        .footer {
+            left: 0;
+        }
+    }
+}
+
 [data-layout="vertical"][data-layout-style="detached"] {
 
     @media (min-width: 1024.1px) {

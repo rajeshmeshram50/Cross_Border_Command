@@ -123,6 +123,36 @@ body { overflow-x: hidden; }
    wins over this rule no matter what is written below. Change the top gap
    there; this value only applies if that layout is ever dropped. */
 .page-content { padding-top: 8px !important; padding-left: 8px !important; padding-right: 8px !important; padding-bottom: 8px !important; }
+
+/* ── The sidebar layout needs a frame of its own ─────────────────────────────
+   The horizontal shell is a column that fills the viewport: the header is in
+   flow, .main-content is the only scroller, the footer sits below it. The
+   sidebar shell is the stock Velzon one — the topbar is position:fixed and the
+   page relies on .page-content's top padding to clear it. The rule above
+   replaces that padding with a flat 8px, which is right for the horizontal
+   header but leaves the sidebar layout with NOTHING under a 71px fixed bar: a
+   page's header strip renders behind it, which is the strip that "hides" no
+   matter how you scroll.
+
+   So the clearance goes on .main-content, where no !important fights it, and
+   the shell gets the same frame as the horizontal one: viewport-tall, scrolling
+   inside itself. That also removes the 8px of page scroll the stock margin left
+   behind — the document was always a little taller than the window, in every
+   layout width, for nothing. Below 768px the menu is off-canvas and the stock
+   flow is correct, so this stays a desktop rule. */
+@media (min-width: 768px) {
+  [data-layout="vertical"] #layout-wrapper { height: 100dvh; overflow: hidden; }
+  [data-layout="vertical"] .main-content {
+    height: 100dvh;
+    padding-top: var(--vz-header-height, 70px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    margin-bottom: 0 !important;   /* the stock mb-2, which the frame replaces */
+  }
+  /* The footer rides at the end of the scroller in this layout; keeping it on
+     the bottom edge matches the horizontal shell, where it is pinned. */
+  [data-layout="vertical"] .main-content > .footer { position: sticky; bottom: 0; }
+}
 .page-content > .container-fluid { padding-left: 0 !important; padding-right: 0 !important; }
 .page-content > .container-fluid > .row { margin-left: 0 !important; margin-right: 0 !important; }
 .page-content > .container-fluid > .row > [class*="col"] { padding-left: 0 !important; padding-right: 0 !important; }

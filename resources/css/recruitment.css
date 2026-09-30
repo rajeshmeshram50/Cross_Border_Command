@@ -14229,7 +14229,15 @@
      * min-height keeps the table filling the screen when there IS room, while
      * letting the page grow past the viewport and scroll normally when there
      * is not. No section is hidden inside another scroller. */
-    min-height: calc(100vh - var(--vz-header-height, 70px) - 16px);
+    /* NOT a guess at the chrome's height. --vz-header-height is set nowhere, so
+       this fell back to 70px against a header that measures 110: the column
+       came to 769px inside 705px of room and the page grew a scrollbar for the
+       difference plus its own padding. The card below is already sized from the
+       window down to the footer, so it fills the screen by itself; the column
+       only has to be as tall as what is in it. With both, the wheel drove a
+       127px table body and an 80px page in turn — the stuttering scroll this
+       screen was reported for. One scroller now, and it is the table's. */
+    min-height: 0;
   }
   .pay-page > .pay-top {
     /* NOT `flex: 0 1 auto` + `overflow-y: auto` any more.
@@ -14270,8 +14278,19 @@
        .pay-top is `flex: 0 1 auto` with its own scrollbar, so it yields first
        and scrolls internally; the table keeps a workable height instead of the
        two fighting over the same pixels. Below the shell's own 560px floor the
-       page scrolls again, which is the escape hatch for very short windows. */
-    min-height: 300px;
+       page scrolls again, which is the escape hatch for very short windows.
+
+       THE FLOOR MOVED TO THE CARD. .pay-top no longer yields (see the rule
+       above), so this floor no longer shares pixels with anything — it just
+       made this box taller than the card inside it. The card is sized from the
+       window down to the footer, and on a laptop that came to 242px against a
+       300px floor: 80px of height nothing was drawn in, which put the page
+       past the viewport and gave it a scrollbar of its own. Two scrollers then
+       shared one wheel — a few pixels inside the table's body, then the page —
+       which is the stuttering scroll this screen was reported for. DataTable's
+       own sizer keeps a 240px floor on the card, so nothing here can collapse
+       to an invisible table either way. */
+    min-height: 0;
     display: flex;
     flex-direction: column;
   }
