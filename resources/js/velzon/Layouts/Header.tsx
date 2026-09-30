@@ -13,6 +13,7 @@ import FullScreenDropdown from '../Components/Common/FullScreenDropdown';
 import ProfileDropdown from '../Components/Common/ProfileDropdown';
 import LightDark from '../Components/Common/LightDark';
 import { useAuth } from '../../contexts/AuthContext';
+import NotificationsDrawer, { useUnreadNotifications } from '../../components/NotificationsDrawer';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 
 import { changeSidebarVisibility } from '../slices/thunks';
@@ -22,6 +23,13 @@ import { createSelector } from 'reselect';
 const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
     const dispatch : any = useDispatch();
     const navigate = useNavigate();
+    /* The bell opens the notifications drawer, exactly as it does in the
+       horizontal header. This one only navigated to /inbox, so on the sidebar
+       layout there was no drawer at all — and pressing the bell while already
+       on /inbox did nothing at all, which is how it was reported. The Inbox is
+       still one click away, from the drawer's own footer. */
+    const [notifOpen, setNotifOpen] = useState(false);
+    const notifCount = useUnreadNotifications();
     // Tenant brand-color toggle. The button only appears when the logged-in
     // user actually has tenant colors (otherwise toggling is a no-op).
     const { user, logout, tenantThemeEnabled, toggleTenantTheme } = useAuth();
@@ -238,15 +246,17 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
                                 </div>
                             )}
 
-                            {/* Inbox / Notifications */}
+                            {/* Notifications */}
                             <div className="ms-1 header-item d-none d-sm-flex">
-                                <button type="button" title="Inbox"
-                                    onClick={() => navigate('/inbox')}
+                                <button type="button" title="Notifications"
+                                    onClick={() => setNotifOpen(true)}
                                     className="btn btn-icon btn-topbar btn-ghost-secondary rounded-circle position-relative">
                                     <i className="bx bx-bell fs-22"></i>
-                                    {!!user?.inbox_count && (
+                                    {/* What arrived is read in the drawer, so the badge counts the
+                                        same two things the horizontal header counts. */}
+                                    {!!(notifCount.count || user?.inbox_count) && (
                                         <span className="position-absolute topbar-badge fs-10 translate-middle badge rounded-pill bg-danger">
-                                            {user.inbox_count}
+                                            {notifCount.count || user?.inbox_count}
                                             <span className="visually-hidden">unread messages</span>
                                         </span>
                                     )}
@@ -271,6 +281,7 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
                     </div>
                 </div>
             </header>
+            <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} onCountChange={notifCount.refresh} />
         </React.Fragment>
     );
 };
