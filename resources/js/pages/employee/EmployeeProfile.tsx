@@ -3,6 +3,10 @@ import * as XLSX from 'xlsx';
 import { Col, Row } from 'reactstrap';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
+/* The same PF / PT maths the Employee form, Revise Salary and the onboarding
+   wizard use, so no two screens can quote a different deduction for one
+   employee. (#220) */
+import { pfDeduction } from '../../utils/salaryBreakup';
 import SalaryStructureModal, { type SalaryEmployeeLite } from '../../components/SalaryStructureModal';
 import PayslipViewerModal from '../../components/PayslipViewerModal';
 import HeaderFooterPanel, {
@@ -839,19 +843,97 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
    * The empty shape below renders the modal's own "nothing on file" state, so
    * the screen says what is true: this employee has no salary structure yet. */
   const breakdownRow   = realTimeline.find(r => r.id === breakdownRowId) || realTimeline[0] || null;
-  const breakdownData  = breakdownVersion ? {
-    rows: (breakdownVersion.earnings || [])
+  /* Annual figures for the breakdown table. (#219)
+   *
+   * Each row used to print `monthly * 12` raw, so a CTC of ₹4,00,000 — stored
+   * as ₹33,333.33 a month, because that is what a twelfth of it is — came back
+   * as ₹3,99,999.96 against a Total Earnings of ₹4,00,000 that WAS rounded.
+   * One table, two conventions, four paise apart, and the row disagreeing with
+   * the figure HR typed.
+   *
+   * The total is the anchor: the employee's configured annual CTC for the
+   * current version (the number that was agreed), else the version's own
+   * annualised gross. Rows are then rounded to the rupee and the leftover is
+   * carried onto the largest component, so the column always sums to the total
+   * exactly instead of missing it by a rupee or two once there are several
+   * components. Nothing here changes what payroll pays — the monthly
+   * components remain the figures of record and are untouched. */
+  const breakdownData = (() => {
+    if (!breakdownVersion) {
+      return { rows: [] as any[], totalMonthly: 0, totalAnnual: 0, pf: 0, fixed: 0, deductions: 0, netPay: 0 };
+    }
+
+    const monthlyGross = Number(breakdownVersion.monthly_gross) || 0;
+    const configured   = Number(empDetail?.annual_salary) || 0;
+    const totalAnnual  = breakdownVersion.status === 'active' && configured > 0
+      ? Math.round(configured)
+      : Math.round(monthlyGross * 12);
+
+    const rows = (breakdownVersion.earnings || [])
       /* Drop components the structure does not fund, matching what payroll
          now does with the payslip lines. A Special Allowance sitting at ₹0
          because Basic + HRA absorbed the whole CTC is not a pay component. */
       .filter((c: any) => (Number(c.amount) || 0) !== 0)
-      .map((c: any) => ({
-        label: c.label, monthly: Number(c.amount) || 0, annual: (Number(c.amount) || 0) * 12,
-      })),
-    totalMonthly: Number(breakdownVersion.monthly_gross) || 0,
-    totalAnnual: Math.round((Number(breakdownVersion.monthly_gross) || 0) * 12),
-    netPay: Math.round((Number(breakdownVersion.monthly_gross) || 0) * 0.88),
-  } : { rows: [] as any[], totalMonthly: 0, totalAnnual: 0, netPay: 0 };
+      .map((c: any) => {
+        const monthly = Number(c.amount) || 0;
+        return { label: c.label, monthly, annual: Math.round(monthly * 12) };
+      });
+
+    // Carry the rounding remainder onto the biggest component — the one where a
+    // rupee is least visible — so the column reconciles with its own total.
+    const drift = totalAnnual - rows.reduce((sum: number, r: any) => sum + r.annual, 0);
+    if (drift !== 0 && rows.length > 0) {
+      let biggest = 0;
+      for (let i = 1; i < rows.length; i++) if (rows[i].annual > rows[biggest].annual) biggest = i;
+      rows[biggest].annual += drift;
+    }
+
+    /* Net pay, from the employee's ACTUAL deductions. (#220)
+     *
+     * This was `monthlyGross * 0.88` — a flat 12% haircut applied to everyone,
+     * every time. It was not PF, it was not tax, it was not anything: an
+     * employee with PF switched off still had 12% taken off their net on this
+     * screen, and one on a Standard PF basis above the ceiling had too little
+     * taken off. The figure agreed with nothing the payslip would show.
+     *
+     * PF is charged only when the structure, the employee record AND payroll
+     * eligibility all say so — the same three-way test PayrollService applies,
+     * and the reason #36 exists. Its amount comes from the shared pfDeduction()
+     * helper, so this screen cannot quote a different number from the Employee
+     * form or Revise Salary.
+     *
+     * ESI and Professional Tax are already stored as rows in the structure's
+     * own `deductions`, entered by HR — so they are summed rather than
+     * re-derived. A row coded 'pf' is skipped: payroll recomputes PF from
+     * applicability, and counting both would deduct it twice.
+     *
+     * TDS is still excluded, and the note under the figure says so — it depends
+     * on declarations and investments this screen does not hold. */
+    const payrollOn  = empDetail?.enable_payroll !== false;
+    const pfOn       = payrollOn
+      && breakdownVersion.pf_applicable !== false
+      && !!empDetail?.pf_eligible;
+    const basic      = Number(
+      (breakdownVersion.earnings || []).find((c: any) => String(c.code ?? '').toLowerCase() === 'basic')?.amount,
+    ) || 0;
+    const pf         = pfOn ? pfDeduction(basic, String(empDetail?.pf_type ?? ''), true) : 0;
+
+    const fixed = (breakdownVersion.deductions || [])
+      .filter((d: any) => String(d.code ?? '').toLowerCase() !== 'pf')
+      .reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0);
+
+    const deductions = payrollOn ? pf + fixed : 0;
+
+    return {
+      rows,
+      totalMonthly: monthlyGross,
+      totalAnnual,
+      pf,
+      fixed,
+      deductions,
+      netPay: Math.max(0, Math.round(monthlyGross - deductions)),
+    };
+  })();
 
   // Submit New Expense Claim modal — opens from "+ Raise New Claim" in the
   // Expense Details tab. Two modes: Expense Claim (orange) and Advance
@@ -3336,7 +3418,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             <div className="ep-bd-note">
               <i className="ri-information-line ep-bd-note-icon" />
               <div>
-                <strong>Note:</strong> Net Pay excludes applicable taxes (TDS) and statutory deductions (PF, PT). Actual disbursement may vary based on declarations and investments.
+                {/* The note has to match what the figure above actually did.
+                    It claimed Net Pay "excludes … statutory deductions (PF,
+                    PT)" while the calculation took a flat 12% off regardless —
+                    so it described neither the old behaviour nor the new. It
+                    now names the deductions applied, and says plainly that TDS
+                    is the one thing still missing. (#220) */}
+                <strong>Note:</strong>{' '}
+                {breakdownData.deductions > 0
+                  ? <>Net Pay is Total Earnings less{breakdownData.pf > 0 ? <> PF (₹{breakdownData.pf.toLocaleString('en-IN')})</> : null}
+                      {breakdownData.pf > 0 && breakdownData.fixed > 0 ? ' and' : null}
+                      {breakdownData.fixed > 0 ? <> the structure&rsquo;s fixed deductions (₹{breakdownData.fixed.toLocaleString('en-IN')})</> : null}.
+                      {' '}It excludes TDS, which depends on declarations and investments, so actual disbursement may vary.</>
+                  : <>No deductions apply to this employee, so Net Pay equals Total Earnings. It excludes TDS, which depends on declarations and investments, so actual disbursement may vary.</>}
               </div>
             </div>
           </div>
