@@ -1609,12 +1609,14 @@ export default function Order() {
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
 
-            {/* Short enough to fit the box. What it actually searches is on
-                hover — spelled out, the placeholder was cut mid-word. */}
+            {/* Now that the box grows into the row it can name what it
+                searches instead of just "Search PO list" — the short wording
+                was only there because the old fixed-width box cut a fuller
+                placeholder mid-word. The rest is still on hover. */}
             <input
               type="text"
               aria-label="Search purchase orders"
-              placeholder="Search PO list"
+              placeholder="Search PO, supplier, ID or status…"
               title="Search by PO number, supplier, shipment / opportunity / PI id, PO type, document type or status"
               value={search}
               onChange={(e) => changeSearch(e.target.value)}

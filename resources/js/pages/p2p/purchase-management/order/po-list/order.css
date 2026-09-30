@@ -44,11 +44,15 @@
   padding: 0 20px;
   font-size: 12px;
 }
-/* Search, to the prototype: a compact box in the same gradient as the tab
-   strip, held at the right — not the shared row's stretch-to-fill field. */
+/* Search: same gradient as the tab strip, and the same width behaviour as
+   Payment Request Management — it grows into whatever the tabs leave rather
+   than holding one fixed size, capped at 594px so it stops matching the tab
+   strip's scale on a very wide screen. The prototype's compact box left a
+   wide idle stretch in the middle of the row on every real screen. */
 .ord-list .spi-segrow .spi-search {
-  flex: 0 1 240px;
-  max-width: 280px;
+  flex: 1 1 460px;
+  min-width: 260px;
+  max-width: 594px;
   height: 52px;
   margin-left: auto;
   padding: 0 16px 0 41px; /* 16px edge + 16px icon + 9px gap */
@@ -86,7 +90,7 @@
     flex-wrap: wrap;
     overflow: visible;
   }
-  .ord-list .spi-segrow .spi-search { flex: 0 0 240px; min-width: 0; }
+  .ord-list .spi-segrow .spi-search { flex: 1 1 460px; min-width: 260px; }
 }
 /* Narrower desktop (zoom 125–150%): a two-line strip looked lopsided, so the
    tabs go compact instead and stay on one line — smaller text and padding,
@@ -98,13 +102,13 @@
   .ord-list .spi-segrow .spi-seg { gap: 2px; padding: 4px; }
   .ord-list .spi-segrow .spi-seg-btn { height: 38px; gap: 6px; padding: 0 10px; font-size: 11.5px; }
   .ord-list .ord-seg-sub { display: none; }
-  .ord-list .spi-segrow .spi-search { flex-basis: 200px; height: 46px; }
+  .ord-list .spi-segrow .spi-search { flex-basis: 400px; height: 46px; }
 }
 /* Small laptops: tabs and search still share one row (CS-401) — icons go, padding tightens. */
 @media (min-width: 769px) and (max-width: 1280px) {
   .ord-list .spi-segrow .spi-seg-btn { padding: 0 8px; font-size: 11px; }
   .ord-list .spi-segrow .spi-seg-ico { display: none; }
-  .ord-list .spi-segrow .spi-search { flex-basis: 170px; }
+  .ord-list .spi-segrow .spi-search { flex-basis: 280px; }
   /* Still too narrow: the strip scrolls sideways rather than stacking. */
   .ord-list .spi-segrow .spi-seg { flex-wrap: nowrap; overflow-x: auto; }
 }

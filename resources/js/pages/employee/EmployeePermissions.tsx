@@ -3,6 +3,7 @@ import { Card, CardBody, Button, Spinner, Alert } from 'reactstrap';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
+import BusyOverlay from '../../components/ui/BusyOverlay';
 import PermissionMatrix, {
   extractLeafPermissions,
   emptyPerms,
@@ -185,7 +186,7 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
           One identity row below: avatar dominates left; on the right are name/ID/status,
           email, and inline meta chips (Dept · Desig · Primary · Ancillary · Manager). */}
       <Card
-        className="shadow-sm mb-3 overflow-hidden ep-perm-card"
+        className="shadow-sm mb-2 overflow-hidden ep-perm-card"
         style={{ borderRadius: 14, border: 'none' }}
       >
         <style>{`
@@ -207,8 +208,8 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
 
           /* Translucent chip — colour driven by per-chip CSS vars below. */
           .ep-chip {
-            display: inline-flex; align-items: center; gap: 6px;
-            padding: 4px 10px; border-radius: 999px;
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 2px 9px; border-radius: 999px;
             background: var(--chip-bg, rgba(255,255,255,0.06));
             border: 1px solid var(--chip-border, rgba(255,255,255,0.14));
             font-size: 12px; line-height: 1.3; max-width: 100%; min-width: 0;
@@ -232,7 +233,7 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
              feedback at all, so neither looked clickable. */
           .ep-hdr-btn {
             display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-            height: 40px; padding: 0 18px; border-radius: 10px;
+            height: 34px; padding: 0 15px; border-radius: 9px;
             font-size: 12.5px; font-weight: 700; white-space: nowrap;
             cursor: pointer;
             transition: background .15s ease, border-color .15s ease, transform .15s ease, box-shadow .15s ease;
@@ -281,7 +282,7 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
         `}</style>
 
         {/* Slim hero strip */}
-        <div style={{ padding: '12px 18px' }}>
+        <div style={{ padding: '9px 18px' }}>
           <div className="d-flex align-items-center justify-content-between gap-3 flex-wrap">
             <div className="d-flex align-items-center gap-2 min-w-0">
               <div className="min-w-0">
@@ -343,14 +344,14 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
         {/* Identity row — avatar leads, name/email/chips on the right.
             Sits on the same navy background, separated by a subtle 1px line. */}
         <div
-          className="d-flex gap-3 align-items-start"
-          style={{ padding: '14px 18px', borderTop: '1px solid rgba(255,255,255,0.08)' }}
+          className="d-flex gap-2 align-items-center"
+          style={{ padding: '10px 18px', borderTop: '1px solid rgba(255,255,255,0.08)' }}
         >
           <div
             className="d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
             style={{
-              width: 56, height: 56, fontSize: 18,
-              borderRadius: 14,
+              width: 42, height: 42, fontSize: 15,
+              borderRadius: 11,
               background: `linear-gradient(135deg, ${accent}, ${accent}cc)`,
               boxShadow: `0 8px 22px ${accent}55, 0 0 0 2px rgba(255,255,255,0.14)`,
             }}
@@ -406,18 +407,37 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
             {/* Meta chips — Department · Designation · Primary Role · Ancillary Role · Manager.
                 Each chip uses a translucent accent matching the EmployeeProfile pill style. */}
             {(() => {
-              const ancillaryList = Array.isArray(employee?.ancillaryRole)
-                ? (employee?.ancillaryRole as string[]).filter(Boolean)
-                : (employee?.ancillaryRole ? [employee.ancillaryRole as string] : []);
+              /* A chip's text, whichever shape the employee arrived in.
+               *
+               * Reached from the employee list, `employee` is that list's row:
+               * department, designation and the roles are already strings.
+               * Opened by URL — a refresh, a pasted link, a bookmark — the
+               * route wrapper fetches /employees/{id} instead and hands over
+               * the raw record, where those same fields are {id, name, code}.
+               * Rendering one of those put "Objects are not valid as a React
+               * child" on the screen: the page could be walked into but never
+               * reloaded. */
+              const chipText = (v: unknown): string => {
+                if (v === null || v === undefined) return '';
+                if (typeof v === 'object') {
+                  const o = v as Record<string, unknown>;
+                  return String(o.name ?? o.title ?? o.label ?? o.code ?? '');
+                }
+                return String(v);
+              };
+              const rawAncillary = Array.isArray(employee?.ancillaryRole)
+                ? (employee?.ancillaryRole as unknown[])
+                : (employee?.ancillaryRole ? [employee.ancillaryRole as unknown] : []);
+              const ancillaryList = rawAncillary.map(chipText).filter(Boolean);
               const chips = [
-                { label: 'Department',     value: employee?.department,                       icon: 'ri-building-2-line',  fg: '#93c5fd', bg: 'rgba(59,130,246,0.14)',  border: 'rgba(59,130,246,0.40)',  pillBg: 'rgba(59,130,246,0.22)' },
-                { label: 'Designation',    value: employee?.designation,                      icon: 'ri-briefcase-line',   fg: '#fcd34d', bg: 'rgba(245,158,11,0.14)',  border: 'rgba(245,158,11,0.40)',  pillBg: 'rgba(245,158,11,0.22)' },
-                { label: 'Primary Role',   value: employee?.primaryRole,                      icon: 'ri-user-star-line',   fg: '#99f6e4', bg: 'rgba(20,184,166,0.14)',  border: 'rgba(20,184,166,0.40)',  pillBg: 'rgba(20,184,166,0.22)' },
+                { label: 'Department',     value: chipText(employee?.department),             icon: 'ri-building-2-line',  fg: '#93c5fd', bg: 'rgba(59,130,246,0.14)',  border: 'rgba(59,130,246,0.40)',  pillBg: 'rgba(59,130,246,0.22)' },
+                { label: 'Designation',    value: chipText(employee?.designation),            icon: 'ri-briefcase-line',   fg: '#fcd34d', bg: 'rgba(245,158,11,0.14)',  border: 'rgba(245,158,11,0.40)',  pillBg: 'rgba(245,158,11,0.22)' },
+                { label: 'Primary Role',   value: chipText(employee?.primaryRole),            icon: 'ri-user-star-line',   fg: '#99f6e4', bg: 'rgba(20,184,166,0.14)',  border: 'rgba(20,184,166,0.40)',  pillBg: 'rgba(20,184,166,0.22)' },
                 { label: 'Ancillary Role', value: ancillaryList.length ? ancillaryList : null, icon: 'ri-team-line',        fg: '#e9d5ff', bg: 'rgba(168,85,247,0.14)',  border: 'rgba(168,85,247,0.40)',  pillBg: 'rgba(168,85,247,0.22)' },
-                { label: 'Manager',        value: employee?.manager,                          icon: 'ri-user-shared-line', fg: '#fbcfe8', bg: 'rgba(244,114,182,0.14)', border: 'rgba(244,114,182,0.40)', pillBg: 'rgba(244,114,182,0.22)' },
+                { label: 'Manager',        value: chipText(employee?.manager),                icon: 'ri-user-shared-line', fg: '#fbcfe8', bg: 'rgba(244,114,182,0.14)', border: 'rgba(244,114,182,0.40)', pillBg: 'rgba(244,114,182,0.22)' },
               ];
               return (
-                <div className="d-flex flex-wrap gap-2 mt-2">
+                <div className="d-flex flex-wrap gap-2 mt-1">
                   {chips.map(c => (
                     <span
                       key={c.label}
@@ -450,12 +470,23 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
       </Card>
 
       <Card className="shadow-sm">
-        <PermissionMatrix
-          modules={modules}
-          matrix={matrix}
-          onChange={setMatrix}
-          grantableBy={isSuperAdmin ? null : myPerms}
-        />
+        {/* The matrix is closed while the save is in flight.
+            `saving` disabled the two Save buttons and nothing else, so boxes
+            could still be ticked during the request — and those ticks were not
+            in the payload that had already gone out. The save then reported
+            success over a screen that no longer matched what was stored, and
+            the next reload silently dropped them. BusyOverlay takes the
+            pointer events with it (see .busy-content.is-busy), so the whole
+            grid — quick actions included — is out of reach until the answer is
+            back. */}
+        <BusyOverlay busy={saving} label="Saving permissions…">
+          <PermissionMatrix
+            modules={modules}
+            matrix={matrix}
+            onChange={setMatrix}
+            grantableBy={isSuperAdmin ? null : myPerms}
+          />
+        </BusyOverlay>
 
         <CardBody className="border-top bg-light-subtle d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
           <span className="text-muted fs-13">
