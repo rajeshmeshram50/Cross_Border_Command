@@ -28,11 +28,6 @@ export default function Login({ onForgotPassword }: LoginProps) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const googleBtnRef = useRef<HTMLDivElement>(null);
-  // True once Google's own button iframe is in the host. If it never arrives
-  // (blocked third-party cookies, a slow or offline network), a matching
-  // fallback pill takes its place instead of leaving an empty gap.
-  const [googleShown, setGoogleShown] = useState(false);
-  const [googleTimedOut, setGoogleTimedOut] = useState(false);
   const handleCredentialRef = useRef<(resp: { credential?: string }) => void>(() => {});
   // Organization picker — shown when an email exists in more than one client
   // and the backend asks which one to sign in to. `retry` re-runs the same
@@ -89,12 +84,19 @@ export default function Login({ onForgotPassword }: LoginProps) {
       if (!window.google?.accounts?.id || !googleBtnRef.current) return;
       // Measured BEFORE clearing — the host is w-full, so this is the layout
       // width and does not depend on what is currently inside it.
-      const measured = googleBtnRef.current.offsetWidth;
+      // Measured on the pill's wrapper: the host itself is sized to Google's
+      // button and scaled up over the pill (below).
+      const pill = googleBtnRef.current.parentElement ?? googleBtnRef.current;
+      const measured = pill.offsetWidth;
       // Google button max width is 400; clamp here.
       const width = Math.min(Math.max(measured || 320, 200), 400);
-      // Below Google's 200px floor the pill is narrower than the button, so
-      // the stylesheet scales the button down to the pill (--kx-gscale).
-      googleBtnRef.current.style.setProperty('--kx-gscale', measured && measured < 200 ? String(measured / 200) : '1');
+      // Google's button is invisible and stretched over our own pill (see the
+      // markup below), so it must cover the pill at any size: Google draws it
+      // 200-400 x 40, and these factors scale it to the pill's box.
+      const pillH = pill.offsetHeight || 44;
+      googleBtnRef.current.style.setProperty('--kx-gw', `${width}px`);
+      googleBtnRef.current.style.setProperty('--kx-gsx', String((measured || width) / width));
+      googleBtnRef.current.style.setProperty('--kx-gsy', String(pillH / 40));
       // Nothing the button would be drawn differently for. Return before
       // touching the DOM, so this callback causes no resize of its own.
       if (!force && width === lastWidth) return;
@@ -145,15 +147,8 @@ export default function Login({ onForgotPassword }: LoginProps) {
     const ro = googleBtnRef.current && 'ResizeObserver' in window
       ? new ResizeObserver(() => renderBtn())
       : null;
-    if (ro && googleBtnRef.current) ro.observe(googleBtnRef.current);
-
-    // Watch for Google's iframe; give up waiting after 3.5s.
-    const host = googleBtnRef.current;
-    const seen = () => !!host?.querySelector('iframe');
-    const mo = host ? new MutationObserver(() => { if (seen()) setGoogleShown(true); }) : null;
-    if (host && mo) mo.observe(host, { childList: true, subtree: true });
-    const timer = window.setTimeout(() => { if (!seen()) setGoogleTimedOut(true); }, 3500);
-    return () => { ro?.disconnect(); mo?.disconnect(); window.clearTimeout(timer); };
+    if (ro && googleBtnRef.current) ro.observe(googleBtnRef.current.parentElement ?? googleBtnRef.current);
+    return () => { ro?.disconnect(); };
   }, []);
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -266,22 +261,20 @@ export default function Login({ onForgotPassword }: LoginProps) {
 
       <div className="kx-social">
         {GOOGLE_CLIENT_ID ? (
-          /* Google draws its own button into this host (an iframe), so the
-             official sign-in flow is untouched. */
+          /* Our pill is what shows, so it matches the Face pill at every zoom
+             and screen size. Google's own button (an iframe) is laid invisibly
+             over it and takes the click, so sign-in is Google's official flow.
+             If Google never loads, the click reaches our pill instead. */
           <div className="kx-google-wrap">
+            <button
+              type="button"
+              className="kx-social-btn"
+              tabIndex={-1}
+              onClick={() => toast.error('Google Sign-In', 'Google sign-in could not load. Check your connection, or allow third-party cookies for accounts.google.com, then refresh.')}
+            >
+              <GoogleGlyph />Sign in with Google
+            </button>
             <div ref={googleBtnRef} className="cbc-google-btn kx-google" />
-            {!googleShown && googleTimedOut && (
-              <button
-                type="button"
-                className="kx-social-btn kx-google-fallback"
-                onClick={() => {
-                  if (window.google?.accounts?.id) window.google.accounts.id.prompt();
-                  else toast.error('Google Sign-In', 'Google sign-in could not load. Check your connection, or allow third-party cookies for accounts.google.com, then refresh.');
-                }}
-              >
-                <GoogleGlyph />Sign in with Google
-              </button>
-            )}
           </div>
         ) : (
           <button

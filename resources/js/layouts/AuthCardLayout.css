@@ -16,7 +16,14 @@
    out — not eyeballed values.
    ───────────────────────────────────────────────────────────────────────── */
 .kx-shell {
-  --u: clamp(0.5px, min(calc(100vw / 1672), calc(100vh / 941)), 2px);
+  /* No real upper cap: at a low browser zoom (33-50%) or on a huge screen the
+     viewport is very large, and a cap left the stage as a small box with a
+     differently-scaled photo round it. */
+  /* Width divides by 1420, not the render's 1672: the text column is pinned
+     to the left edge and the card to the right edge, and the city view between
+     them gives up width first, so a squarer window keeps readable text instead
+     of shrinking the whole composition. */
+  --u: clamp(0.5px, min(calc(100vw / 1420), calc(100vh / 941)), 12px);
   /* The clean room photo — no text and no card painted into it, so nothing
      shows under the live copy or behind the glass card. */
   /* Renamed whenever the photo changes: browsers cache it by URL and kept
@@ -62,48 +69,34 @@
   position: relative;
   z-index: 1;
   flex: none;
-  width: calc(1672 * var(--u));
+  /* Full width; the render's 941-tall band, centred vertically. */
+  width: 100vw;
   height: calc(941 * var(--u));
 }
 /* The photo at exactly the render's framing. Its left and right edges fade
    into the blurred fill above, so the seam never shows. */
 .kx-stage-bg {
-  position: absolute;
+  /* The photo always covers the whole viewport (exactly the render's framing
+     on a 16:9 screen), so no band or seam shows at any window shape. */
+  position: fixed;
   inset: 0;
   pointer-events: none;
-  background: var(--kx-bg) 0 0 / 100% 100% no-repeat;
+  background: var(--kx-bg) center / cover no-repeat;
   /* The render's room reads a touch brighter and richer than the photo. */
   filter: saturate(1.05) brightness(1.05);
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 3%, #000 97%, transparent 100%);
-          mask-image: linear-gradient(90deg, transparent 0%, #000 3%, #000 97%, transparent 100%);
-}
-/* Screens squarer than the render (1024 x 768, 1280 x 1024, 4:3 / 5:4): the
-   stage is width-fitted and leaves bands above and below. There the photo
-   covers the whole viewport instead, centred on the stage, so no seam shows. */
-@media (min-width: 1024px) and (max-aspect-ratio: 1672/941) {
-  .kx-stage-bg {
-    inset: auto;
-    left: 50%;
-    top: 50%;
-    width: 100vw;
-    height: 100vh;
-    transform: translate(-50%, -50%);
-    background-size: cover;
-    background-position: center;
-    -webkit-mask-image: none;
-            mask-image: none;
-  }
 }
 /* The copy painted into the render has been removed from the photo itself
    (inpainted), so the room shows through as it does in the design: the lit
    wall, the sofa, plant and lamp glow. This only deepens the wall a touch
    behind the copy for contrast, and leaves the room and the view untouched. */
 .kx-stage-scrim {
-  position: absolute;
+  position: fixed;
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(90deg, rgba(2, 10, 24, .38) 0%, rgba(2, 10, 24, .22) 30%, rgba(2, 10, 24, 0) 46%),
+    /* sized to the text column (it ends near x 720 in design units), so on a
+       narrower screen the module grid never sits on the bright window unshaded */
+    linear-gradient(90deg, rgba(2, 10, 24, .45) 0, rgba(2, 10, 24, .45) calc(600 * var(--u)), rgba(2, 10, 24, .34) calc(760 * var(--u)), rgba(2, 10, 24, 0) calc(930 * var(--u))),
     linear-gradient(180deg, rgba(2, 10, 24, .10) 0%, rgba(2, 10, 24, 0) 70%);
 }
 /* ── Left: brand + pitch ─────────────────────────────────────────────────── */
@@ -256,7 +249,8 @@
    with the left column instead of hanging from the top. */
 .kx-right {
   position: absolute;
-  left: calc(1047 * var(--u));
+  /* pinned to the right edge, 52 off it as in the render */
+  right: calc(52 * var(--u));
   top: calc(80 * var(--u));
   height: calc(790 * var(--u));
   display: flex;
@@ -748,28 +742,26 @@
 /* the render's bigger, bright-blue face mark and bolder label */
 .kx-social-btn svg.kx-face-ico { width: calc(27 * var(--u)); height: calc(27 * var(--u)); color: #2563ff; }
 .kx-social-btn:has(.kx-face-ico) { font-size: calc(15.5 * var(--u)); font-weight: 700; color: #16245e; }
-/* Google's own button is a cross-origin iframe drawn into this host. Pinning
-   the host to the light scheme keeps the browser from painting an opaque
-   white canvas around the white pill on this dark card. Fixed to the pill's
-   44px so a taller iframe can't push the card past the render's height. */
+/* Google sign-in: our pill (.kx-social-btn) is what shows; Google's own
+   button, a cross-origin iframe, sits over it invisibly and takes the click.
+   Google draws it 200-400 x 40, so Login.tsx sets --kx-gsx / --kx-gsy to
+   stretch it over the pill's whole box at any size. Pinned to the light
+   colour scheme so no opaque canvas is painted behind the iframe. */
+.kx-google-wrap { position: relative; min-width: 0; }
 .kx-google {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: calc(46 * var(--u));
-  min-width: 0;
+  position: absolute;
+  left: 0;
+  top: 0;
+  /* Google's own size, then scaled over the pill's whole box */
+  width: var(--kx-gw, 100%);
+  height: 40px;
+  transform-origin: 0 0;
+  transform: scale(var(--kx-gsx, 1), var(--kx-gsy, 1));
   overflow: hidden;
+  opacity: .01;
   color-scheme: light;
 }
 .kx-google iframe { color-scheme: light; background: transparent !important; }
-.kx-google-wrap { position: relative; min-width: 0; }
-/* stands in the same spot as Google's button when that never loads */
-.kx-google-fallback { position: absolute; inset: 0; font-weight: 700; color: #16245e; }
-/* Google will not draw its button narrower than 200px. In a narrower pill
-   (a 1366 laptop) Login.tsx renders it at 200 and sets --kx-gscale, and the
-   button is scaled down to fit — still Google's own button, clicks intact. */
-.kx-google > div {
-  flex: none;
-  transform: scale(var(--kx-gscale, 1));
-  transform-origin: center;
-}
+/* the pill reacts as if it were the one being hovered */
+.kx-google-wrap:hover .kx-social-btn { transform: translateY(-1px); box-shadow: 0 0 calc(16 * var(--u)) rgba(255, 255, 255, .36); }
+.kx-google-wrap .kx-social-btn { font-weight: 700; color: #16245e; }
