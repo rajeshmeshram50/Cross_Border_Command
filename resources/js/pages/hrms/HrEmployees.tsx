@@ -3793,7 +3793,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       <Row>
         <Col xs={12}>
           <div className="hr-employees-surface" style={{ background: 'transparent' }}>
-            <div className="frm-cstrip mb-2">
+            <div className="frm-cstrip hr-cstrip mb-2">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
                 <div className="frm-cstrip-icon"><i className="ri-team-line" /></div>

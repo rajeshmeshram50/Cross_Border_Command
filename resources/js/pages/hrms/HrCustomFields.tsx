@@ -438,7 +438,7 @@ export default function HrCustomFields() {
         `}</style>
         <div className="rec-page cf-page">
           {/* Header strip — same shape as the Clients / Branches headers. */}
-          <div className="frm-cstrip mb-3">
+          <div className="frm-cstrip hr-cstrip mb-3">
             <span className="frm-cstrip-accent" />
             <div className="frm-cstrip-left">
               <div className="frm-cstrip-icon"><i className="ri-star-fill" /></div>

@@ -498,7 +498,7 @@ export default function HrCandidates() {
                 Payroll / Attendance), rather than a bare flex row: bordered
                 white card, violet accent rail, 46px icon tile, and every page
                 action carried inside the strip on the right. */}
-            <div className="frm-cstrip mb-3">
+            <div className="frm-cstrip hr-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
                 <div className="frm-cstrip-icon"><i className="ri-group-line" /></div>

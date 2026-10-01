@@ -297,7 +297,7 @@ export default function HrBiometricDevices() {
           wrong most often, so it moves up here as the subtitle rather than
           sitting in a banner between the toolbar and the header row. */}
       <div className="rec-page biodev-page">
-        <div className="frm-cstrip mb-3">
+        <div className="frm-cstrip hr-cstrip mb-3">
           <span className="frm-cstrip-accent" />
           <div className="frm-cstrip-left">
             <div className="frm-cstrip-icon"><i className="ri-fingerprint-line" /></div>

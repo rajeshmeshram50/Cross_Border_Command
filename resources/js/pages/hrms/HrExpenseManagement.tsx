@@ -1020,7 +1020,7 @@ export default function HrExpenseManagement() {
             space-between, min-height, padding, border, radius, shadow); the
             modifier only changed how it looked.
             mb-3 rather than mb-2 for the same reason: the standard spacing. */}
-        <div className="frm-cstrip mb-3">
+        <div className="frm-cstrip hr-cstrip mb-3">
           <span className="frm-cstrip-accent" />
           <div className="frm-cstrip-left">
             <div className="frm-cstrip-icon"><i className="ri-bank-card-2-line" /></div>

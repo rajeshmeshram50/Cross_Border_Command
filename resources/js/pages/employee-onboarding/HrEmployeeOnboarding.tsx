@@ -1146,7 +1146,7 @@ export default function HrEmployeeOnboarding() {
       <div className="onb-page">
 
       {/* ── Header strip — same shape as the Clients / Branches headers. ── */}
-      <div className="frm-cstrip mb-3">
+      <div className="frm-cstrip hr-cstrip mb-3">
         <span className="frm-cstrip-accent" />
         <div className="frm-cstrip-left">
           <div className="frm-cstrip-icon"><i className="ri-user-add-line" /></div>

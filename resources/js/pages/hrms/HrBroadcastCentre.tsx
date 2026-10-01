@@ -378,7 +378,7 @@ export default function HrBroadcastCentre() {
         <Col xs={12}>
           <div className="rec-page bcast-page">
 
-            <div className="frm-cstrip mb-3">
+            <div className="frm-cstrip hr-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
                 <div className="frm-cstrip-icon"><i className="ri-send-plane-line" /></div>

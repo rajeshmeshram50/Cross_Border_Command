@@ -245,7 +245,7 @@ export default function HrLeaveApprovals() {
     <Row>
       <Col xs={12}>
         <div className="lp-shell">
-          <div className="frm-cstrip mb-3">
+          <div className="frm-cstrip hr-cstrip mb-3">
             <span className="frm-cstrip-accent" />
             <div className="frm-cstrip-left">
               <div className="frm-cstrip-icon"><i className="ri-check-double-line" /></div>
