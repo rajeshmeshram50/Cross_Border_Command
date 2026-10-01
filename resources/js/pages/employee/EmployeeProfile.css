@@ -3516,11 +3516,37 @@
 .ext-toolbar-row--status .ext-search-input,
 .ext-toolbar-row--status .ext-export-toggle { background: var(--vz-card-bg); }
 .ext-toolbar-actions { row-gap: 8px; }
-.ext-search { min-width: 180px; max-width: 320px; flex: 0 1 260px; }
+/* #224: the box grew the moment the first character was typed.
+   The × that empties the search (SearchClear) is a real 24px flex item that
+   only exists while there IS a query, and this wrapper is a flex row: adding
+   it pushed the row's min-content past the 260px basis, so the box stretched
+   toward its 320px ceiling on the first keystroke and snapped back on the
+   last. The flex basis was never the width — min-content was.
+   Two things fix it, and both are needed: the width is pinned so nothing
+   inside can argue with it, and the × is lifted out of the flow onto the
+   input's right-hand padding, which is reserved whether the button is there
+   or not. Typing now changes the text and nothing else. */
+.ext-search {
+  min-width: 180px;
+  width: 260px;
+  max-width: 260px;
+  flex: 0 1 260px;
+  position: relative;
+}
 .ext-search-input {
   font-size: 13px; height: 38px; border-radius: 10px;
   border: 1.5px solid var(--vz-border-color);
   padding-left: 34px;
+  /* Room for the ×, held open permanently so the text never reflows when it
+     appears, and the caret never slides under it. */
+  padding-right: 32px;
+  min-width: 0;
+}
+.ext-search .ui-search-clear {
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 .ext-search-input:focus {
   border-color: #8b5cf6;
