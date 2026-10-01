@@ -1,5 +1,5 @@
-import { useRef, useState, useEffect, useLayoutEffect, useMemo } from 'react';
-import { useScrollLock } from '../hooks/useScrollLock';
+import { useRef, useState, useEffect, useMemo } from 'react';
+import { useAnchoredPopover } from '../hooks/useAnchoredPopover';
 import { createPortal } from 'react-dom';
 import DataTable, { TruncCell, type DataTableColumn } from './ui/DataTable';
 import ProofOfPaymentCell from './ProofOfPaymentCell';
@@ -1003,85 +1003,12 @@ function AuditLogTrigger({
 }) {
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const popRef = useRef<HTMLDivElement | null>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-
-  // Position the popover when it opens. It is pinned to fixed coords taken
-  // from the trigger, so a scroll strands it away from its row — close it
-  // instead (same rule as the customers segment popover), except when the
-  // scroll happens INSIDE the popover's own body. A resize just re-anchors.
-  useEffect(() => {
-    if (!open) { setPos(null); return; }
-    const recompute = () => {
-      const btn = btnRef.current;
-      if (!btn) return;
-      const rect = btn.getBoundingClientRect();
-      const POP_WIDTH = 340;
-      /* The popover's REAL height once it is on screen. The 280 below is only
-         the first-paint guess; a shorter log flipped above the button was
-         placed 280px up regardless, leaving it floating well clear of the row
-         that opened it. (#228) */
-      const measured = popRef.current?.offsetHeight || 0;
-      const POP_HEIGHT = 280; // estimate — popover never grows much beyond this
-      // Prefer below-and-left so the popover body doesn't fall off the right
-      // edge of the page; flip above when there isn't enough room below.
-      const popH = measured || POP_HEIGHT;
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const top = spaceBelow > popH
-        ? rect.bottom + 6
-        : Math.max(8, rect.top - popH - 6);
-      const left = Math.min(
-        window.innerWidth - POP_WIDTH - 12,
-        Math.max(12, rect.right - POP_WIDTH),
-      );
-      setPos({ top, left });
-    };
-    recompute();
-    const onScroll = (e: Event) => {
-      const t = e.target as HTMLElement | null;
-      if (t && typeof t.closest === 'function' && t.closest('.ep-audit-popover')) return;
-      setOpen(false);
-    };
-    window.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', recompute);
-    return () => {
-      window.removeEventListener('scroll', onScroll, true);
-      window.removeEventListener('resize', recompute);
-    };
-  }, [open, setOpen]);
-
-  /* Second pass. The first placement runs before the popover is in the DOM, so
-     it can only use the 280px guess; this re-places it against the height it
-     actually took. Guarded on a >1px move so it settles in one correction. */
-  useLayoutEffect(() => {
-    if (!open || !pos || !popRef.current || !btnRef.current) return;
-    const h = popRef.current.offsetHeight;
-    const rect = btnRef.current.getBoundingClientRect();
-    const top = (window.innerHeight - rect.bottom) > h
-      ? rect.bottom + 6
-      : Math.max(8, rect.top - h - 6);
-    if (Math.abs(top - pos.top) > 1) setPos({ ...pos, top });
-  }, [open, pos]);
-
-  // Lock the page behind the popover. It is pinned to fixed coords, so letting
-  // the page scroll underneath drags it away from its row; the popover's own
-  // body still scrolls (CBC #73).
-  /* Shared hook instead of a local html+body lock: that pair misses the
-     element this app actually scrolls (.main-content), so the page carried on
-     moving behind the popup. */
-  useScrollLock(open);
-
-  // Click-outside to dismiss.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (popRef.current && popRef.current.contains(t)) return;
-      if (btnRef.current && btnRef.current.contains(t)) return;
-      setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [open, setOpen]);
+  /* Placement, the scroll/resize rules, the page lock and click-outside all
+     live in the hook now — the same panel in AdvanceRequestsTable had its own
+     copy of every one of them, and both copies had the same two faults: the
+     first click was swallowed by the page lock's own scroll event, and the
+     panel jumped from a guessed position to its real one. (#226) */
+  const { style: anchorStyle } = useAnchoredPopover({ open, setOpen, btnRef, popRef });
 
   return (
     <>
@@ -1103,7 +1030,7 @@ function AuditLogTrigger({
           <i className="ri-more-2-fill" />
         </button>
       </Tooltip>
-      {open && pos && createPortal(
+      {open && createPortal(
         <div
           ref={popRef}
           className="ep-audit-popover"
@@ -1114,10 +1041,7 @@ function AuditLogTrigger({
           // (recruitment.css) that forces #222831 for parity with the rest
           // of the popups when --vz-card-bg doesn't resolve to a dark hex.
           style={{
-            position: 'fixed',
-            top: pos.top,
-            left: pos.left,
-            width: 340,
+            ...anchorStyle,
             background: 'var(--vz-card-bg, #ffffff)',
             color: 'var(--vz-body-color, #1f2937)',
             border: '1px solid var(--vz-border-color, #e5e7eb)',
