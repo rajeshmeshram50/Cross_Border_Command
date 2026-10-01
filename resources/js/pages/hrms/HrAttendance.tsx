@@ -825,7 +825,7 @@ export default function HrAttendance() {
       <Row>
         <Col xs={12}>
           
-            <div className="frm-cstrip hr-cstrip mb-3">
+            <div className="frm-cstrip hr-cstrip hr-cstrip--teal mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
                 <div className="frm-cstrip-icon"><i className="ri-time-line" /></div>

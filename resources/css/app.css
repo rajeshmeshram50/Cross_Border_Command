@@ -1265,6 +1265,32 @@ tbody tr:nth-child(10) {
 [data-bs-theme="dark"] .hr-cstrip .frm-cstrip-title { color: #ede9fe; }
 [data-bs-theme="dark"] .hr-cstrip .frm-cstrip-sub { color: #c4b5fd; }
 [data-bs-theme="dark"] .hr-cstrip .frm-cstrip-icon::after { border-color: #21183b; }
+
+
+/* ── Attendance: the same strip in TEAL ───────────────────────────────────
+   Shape, height and sheen are the shared HRMS ones; only the hue changes, so
+   the page is recognisable at a glance without becoming a different design.
+   Applied by class, not by a page wrapper: .att-page is referenced in this
+   file but set on no element, so rules hung off it would never fire. */
+.frm-cstrip.hr-cstrip.hr-cstrip--teal {
+  border-color: #99e6dd;
+  background: linear-gradient(110deg, #f4fdfb 0%, #e9fbf7 25%, #d6f5ef 55%, #c3efe7 85%, #aee8de 100%);
+  box-shadow: 0 2px 0 rgba(255, 255, 255, .85) inset, 0 8px 28px rgba(13, 148, 136, .16), 0 2px 8px rgba(0, 0, 0, .06);
+}
+.frm-cstrip.hr-cstrip.hr-cstrip--teal::after {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, .5) 0%, transparent 50%),
+    radial-gradient(ellipse at 10% 50%, rgba(94, 234, 212, .45) 0%, transparent 50%),
+    radial-gradient(ellipse at 90% 50%, rgba(45, 212, 191, .28) 0%, transparent 55%);
+}
+.hr-cstrip.hr-cstrip--teal .frm-cstrip-icon {
+  background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, .22), 0 4px 14px rgba(13, 148, 136, .40);
+}
+.hr-cstrip.hr-cstrip--teal .frm-cstrip-icon::after { border-color: #e9fbf7; }
+.hr-cstrip.hr-cstrip--teal .frm-cstrip-title { color: #0f3d38; }
+.hr-cstrip.hr-cstrip--teal .frm-cstrip-sub { color: #0d9488; }
+.hr-cstrip.hr-cstrip--teal .frm-cstrip-accent { background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%); }
 @media (max-width: 767.98px) {
   .frm-cstrip.hr-cstrip { padding: 10px 14px; }
   .hr-cstrip .frm-cstrip-left { padding-left: 4px; }

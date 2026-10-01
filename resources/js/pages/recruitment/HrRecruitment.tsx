@@ -1660,6 +1660,12 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
           columns={columns}
           serial={{ width: 52 }}
           accent="violet"
+          /* hr-dt: the light HRMS header (muted caps on a pale band) instead of
+             the solid accent one. Every HRMS list gets it from the page's
+             .hr-cstrip header strip, which this table cannot inherit — it is a
+             modal, rendered outside that page's content. Asked for by name
+             instead, so it matches the lists it was opened from. */
+          className="hr-dt"
           minWidth={1150}
           /* 10, the same page size as HR Employees, Exit Management and the
              Recruitment list behind this modal. Still a FIXED size rather than
