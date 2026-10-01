@@ -18,12 +18,21 @@ import { useChartTheme } from '../../hooks/useChartTheme';
 /* Short INR ticks — a category axis labelled in full rupees overflows, so
  * ₹1,23,45,678 reads as ₹1.23Cr. Moved here with the chart; the page had no
  * other use for it. */
+/* Decimals only while the mantissa is small enough to need them. Two fixed
+ * decimals made the tick grow with the amount: ₹50000.00Cr is eleven glyphs,
+ * wider than the axis gutter, and the axis clips from the LEFT — so the one
+ * character that disappeared was the ₹. (#179) */
+function mantissa(n: number, suffix: string): string {
+  const dp = n >= 100 ? 0 : n >= 10 ? 1 : 2;
+  return `${n.toFixed(dp)}${suffix}`;
+}
+
 export function fmtINRShort(v: number): string {
   const n = Math.abs(v);
   const sign = v < 0 ? '-' : '';
-  if (n >= 1_00_00_000) return `${sign}₹${(n / 1_00_00_000).toFixed(2)}Cr`;
-  if (n >= 1_00_000)    return `${sign}₹${(n / 1_00_000).toFixed(1)}L`;
-  if (n >= 1_000)       return `${sign}₹${(n / 1_000).toFixed(0)}K`;
+  if (n >= 1_00_00_000) return `${sign}₹${mantissa(n / 1_00_00_000, 'Cr')}`;
+  if (n >= 1_00_000)    return `${sign}₹${mantissa(n / 1_00_000, 'L')}`;
+  if (n >= 1_000)       return `${sign}₹${mantissa(n / 1_000, 'K')}`;
   return `${sign}₹${Math.round(n)}`;
 }
 
@@ -84,7 +93,8 @@ export default function ExpenseSpendChart({ data }: { data: SpendSlice[] }) {
               tick={{ fontSize: 10, fill: chartTheme.axisTickMuted }}
               axisLine={false}
               tickLine={false}
-              width={64}
+              /* Room for the widest tick the formatter can now produce. */
+              width={72}
               tickFormatter={fmtINRShort}
             />
             <Tooltip

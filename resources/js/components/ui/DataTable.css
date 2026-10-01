@@ -130,6 +130,23 @@
   flex-shrink: 0;
   margin-left: auto;
 }
+/* One height for everything standing in the toolbar — the search field's, which
+   is the tab pill's. Pages hand their own buttons in through `toolbarActions`
+   (Batch Payment, Export, New …) and each sized itself by padding, so the row
+   held three or four different button heights at once. Vertical padding is
+   zeroed because height alone does not beat a padding-based size. */
+.dt-toolbar-actions > button,
+.dt-toolbar-actions > .btn,
+.dt-toolbar-actions > .dropdown > button {
+  height: 37px; min-height: 37px;
+  padding-top: 0; padding-bottom: 0;
+  display: inline-flex; align-items: center;
+  /* Squared to the search field's 10px, not the page header's pill. Pages pass
+     their own `rounded-pill` CTAs in here, and a 999px capsule beside a 10px
+     search box read as a stray button from another screen. !important because
+     Bootstrap's own .rounded-pill utility carries one. */
+  border-radius: 10px !important;
+}
 
 /* ── Tab rail ───────────────────────────────────────────────────────────────
    The Expense-module toggle recipe (Expense Claims / Advance Requests): a
@@ -139,9 +156,12 @@
    so a teal- or blue-accented table gets its own hue. */
 .dt-tabs {
   display: inline-flex; align-items: center; gap: 4px;
-  /* The rail stays plain. The accent wash belongs to the tabs themselves. */
-  background: var(--vz-card-bg, #fff);
-  border: 1px solid rgba(var(--dt-a-rgb), .14);
+  /* A recessed trough: the tabs standing in it are the white ones. The other
+     way round — white rail, tinted tabs — collapses wherever the toolbar band
+     behind it is already tinted (the Expense status row), leaving the tabs as
+     bare outlines on a wash of the same colour. */
+  background: rgba(var(--dt-a-rgb), .10);
+  border: 1px solid rgba(var(--dt-a-rgb), .16);
   border-radius: 10px;
   padding: 4px;
   /* Shrinkable (was flex-shrink: 0) with min-width: 0, so as the window narrows
@@ -173,16 +193,17 @@
 .dt-tab-emoji { font-size: 13px; line-height: 1; }
 /* Outlined, not blank: on a rail of two or three an unstyled tab read as a
    label beside the one button rather than as a tab you can press. */
+/* Solid and outlined, so each tab is a button standing in the trough rather
+   than a label painted on it. */
 .dt-tab.off {
-  /* The tint sits INSIDE the tab, with the outline around it — an unfilled
-     tab read as a label beside the active one rather than a button. */
-  background: rgba(var(--dt-a-rgb), .08);
+  background: var(--vz-card-bg, #fff);
   border-color: rgba(var(--dt-a-rgb), .22);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .05);
   color: var(--vz-secondary-color);
 }
 .dt-tab.off:hover {
-  background: rgba(var(--dt-a-rgb), .14);
-  border-color: rgba(var(--dt-a-rgb), .45);
+  background: var(--vz-card-bg, #fff);
+  border-color: rgba(var(--dt-a-rgb), .50);
   color: var(--vz-heading-color, var(--vz-body-color));
 }
 .dt-tab.on {
@@ -197,7 +218,7 @@
   border-radius: 999px;
   font-size: 10px; font-weight: 800; line-height: 1;
 }
-.dt-tab.off .dt-tab-count { color: var(--vz-secondary-color); background: var(--vz-card-bg, #fff); }
+.dt-tab.off .dt-tab-count { color: var(--vz-secondary-color); background: rgba(var(--dt-a-rgb), .11); }
 .dt-tab.on  .dt-tab-count { color: #fff; background: rgba(255, 255, 255, .22); }
 
 /* Filter button — same 42px height / 11px radius as the search field so the
@@ -205,7 +226,7 @@
 .dt-filter-btn {
   display: inline-flex; align-items: center; gap: 7px;
   flex-shrink: 0;
-  height: 42px; padding: 0 16px;
+  height: 37px; padding: 0 16px;
   border-radius: 11px;
   font-family: inherit;
   font-size: 12.5px; font-weight: 700;
@@ -249,7 +270,7 @@
    the search field instead: same 42px height, 11px radius, translucent white
    fill and accent border, so the whole toolbar reads as one row of controls. */
 .dt-toolbar .master-select-toggle {
-  height: 42px;
+  height: 37px;
   border-radius: 11px;
   border: 1.5px solid rgba(var(--dt-a-rgb), .28);
   background: rgba(255, 255, 255, .80);

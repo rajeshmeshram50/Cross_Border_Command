@@ -2423,10 +2423,16 @@
   color: #7c3aed;
   font-size: 16px;
 }
-.dlv-badge-draft {
+/* .badge.dlv-badge-draft, not .dlv-badge-draft: Bootstrap's own .badge sets
+   --bs-badge-color (white) and loads after this file, so the pill was white
+   text on a pale blue tint — present, unreadable. (#226) */
+.badge.dlv-badge-draft {
   background: rgba(14, 165, 233, 0.16);
+  border: 1px solid rgba(14, 165, 233, 0.38);
   color: #0369a1;
   font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
 }
 .dlv-reason {
   font-size: 11.5px;
@@ -3511,14 +3517,31 @@
 }
 [data-bs-theme="dark"] .ext-toolbar-row--scope  { background: rgba(59,130,246,0.12);  border-color: rgba(59,130,246,0.30); }
 [data-bs-theme="dark"] .ext-toolbar-row--status { background: rgba(139,92,246,0.12); border-color: rgba(139,92,246,0.30); }
+/* No outline on the tabs HERE. The shared rail gives an inactive tab a border
+   so it reads as a button on a plain toolbar; this row is already a tinted,
+   bordered card of its own, and a third ring inside it was one too many. The
+   white fill alone is enough separation against the wash. */
+.ext-toolbar-row .dt-tab.off {
+  border-color: transparent;
+  box-shadow: none;
+}
+.ext-toolbar-row .dt-tab.off:hover { border-color: transparent; }
+
 /* The search box sits on a tinted row now, so it needs its own solid ground
    to stay readable rather than borrowing the wash behind it. */
 .ext-toolbar-row--status .ext-search-input,
 .ext-toolbar-row--status .ext-export-toggle { background: var(--vz-card-bg); }
 .ext-toolbar-actions { row-gap: 8px; }
-.ext-search { min-width: 180px; max-width: 320px; flex: 0 1 260px; }
+/* Fixed, not shrinkable (was flex: 0 1 260px). The tab counts beside it change
+   as the query filters the list, and a shrinkable box gave that width back and
+   took it again on the next keystroke — the field visibly breathed while you
+   typed. (#224) */
+.ext-search { flex: 0 0 260px; width: 260px; max-width: 100%; }
+@media (max-width: 575.98px) { .ext-search { flex: 1 1 100%; width: 100%; } }
 .ext-search-input {
-  font-size: 13px; height: 38px; border-radius: 10px;
+  /* 37px: the .dt-tab pill's height, as in every DataTable toolbar. This
+     toolbar is hand-built, so it did not follow when that one changed. */
+  font-size: 13px; height: 37px; border-radius: 10px;
   border: 1.5px solid var(--vz-border-color);
   padding-left: 34px;
 }
@@ -3534,7 +3557,7 @@
   border-radius: 10px;
   font-size: 12.5px;
   font-weight: 700;
-  height: 38px;
+  height: 37px;
   padding: 0 14px;
 }
 .ext-new-claim {
@@ -3545,7 +3568,7 @@
   box-shadow: 0 4px 12px rgba(99,102,241,0.3);
   font-size: 12.5px;
   font-weight: 700;
-  height: 38px;
+  height: 37px;
   padding: 0 26px;
   min-width: 210px;
   justify-content: center;
