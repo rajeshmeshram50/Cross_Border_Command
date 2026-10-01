@@ -2073,11 +2073,7 @@ class AdvanceRequestController extends Controller
         return round($total, 2);
     }
 
-    /**
-     * GET /advance-requests/emi-info
-     * EMI headroom for an employee: net salary, ongoing EMIs, 70% cap and the
-     * amount still available for a new advance's per-cycle EMI.
-     */
+   
     public function emiInfo(Request $request)
     {
         $user = $request->user();
