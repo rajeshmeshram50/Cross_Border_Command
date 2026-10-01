@@ -139,8 +139,9 @@
    so a teal- or blue-accented table gets its own hue. */
 .dt-tabs {
   display: inline-flex; align-items: center; gap: 4px;
-  background: var(--vz-secondary-bg);
-  border: 1px solid var(--vz-border-color);
+  /* The rail stays plain. The accent wash belongs to the tabs themselves. */
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid rgba(var(--dt-a-rgb), .14);
   border-radius: 10px;
   padding: 4px;
   /* Shrinkable (was flex-shrink: 0) with min-width: 0, so as the window narrows
@@ -156,8 +157,11 @@
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   /* 11px (was 14) — across a six-tab rail that's ~36px reclaimed, which is the
      difference between the last tab fitting the row and wrapping under it. */
-  padding: 0 11px; height: 40px;
-  border: 0; border-radius: 8px;
+  padding: 0 11px; height: 37px;
+  /* Transparent on the active tab rather than absent, so switching tabs does
+     not move the rail by a pixel. */
+  border: 1px solid transparent; border-radius: 8px;
+
   background: transparent;
   font-family: inherit;
   font-size: 12.5px; font-weight: 600;
@@ -167,8 +171,20 @@
 }
 .dt-tab i { font-size: 14px; }
 .dt-tab-emoji { font-size: 13px; line-height: 1; }
-.dt-tab.off { background: transparent; color: var(--vz-secondary-color); }
-.dt-tab.off:hover { background: var(--vz-secondary-bg, #fff); color: var(--vz-heading-color, var(--vz-body-color)); }
+/* Outlined, not blank: on a rail of two or three an unstyled tab read as a
+   label beside the one button rather than as a tab you can press. */
+.dt-tab.off {
+  /* The tint sits INSIDE the tab, with the outline around it — an unfilled
+     tab read as a label beside the active one rather than a button. */
+  background: rgba(var(--dt-a-rgb), .08);
+  border-color: rgba(var(--dt-a-rgb), .22);
+  color: var(--vz-secondary-color);
+}
+.dt-tab.off:hover {
+  background: rgba(var(--dt-a-rgb), .14);
+  border-color: rgba(var(--dt-a-rgb), .45);
+  color: var(--vz-heading-color, var(--vz-body-color));
+}
 .dt-tab.on {
   background: linear-gradient(135deg, var(--dt-a-500), var(--dt-a-400));
   color: #fff;
@@ -181,7 +197,7 @@
   border-radius: 999px;
   font-size: 10px; font-weight: 800; line-height: 1;
 }
-.dt-tab.off .dt-tab-count { color: var(--vz-secondary-color); background: var(--vz-light); }
+.dt-tab.off .dt-tab-count { color: var(--vz-secondary-color); background: var(--vz-card-bg, #fff); }
 .dt-tab.on  .dt-tab-count { color: #fff; background: rgba(255, 255, 255, .22); }
 
 /* Filter button — same 42px height / 11px radius as the search field so the
@@ -285,9 +301,10 @@
      the search sat half empty. 420 still shows a full query; the high shrink
      factor collapses it to min-width on crowded toolbars so nothing wraps. */
   flex: 0 8 420px; min-width: 140px; max-width: 420px;
-  /* Exactly the selected tab pill's height (.dt-tab = 40px) so the search box
-     and the highlighted tab line up as one strip. */
-  height: 40px;
+  /* Exactly the selected tab pill's height (.dt-tab = 37px) so the search box
+     and the highlighted tab read as one strip — the rail's own padding is not
+     counted, the eye lines the pill up with the field, not the rail's edge. */
+  height: 37px;
   display: flex; align-items: center;
   padding: 0 8px 0 36px;
   background: rgba(255, 255, 255, .80);
@@ -736,7 +753,13 @@
 [data-bs-theme="dark"] .dt-tabs,
 [data-layout-mode="dark"] .dt-tabs { background: rgba(255, 255, 255, .05); border-color: rgba(255, 255, 255, .10); }
 [data-bs-theme="dark"] .dt-tab.off,
-[data-layout-mode="dark"] .dt-tab.off { color: var(--vz-secondary-color); }
+[data-layout-mode="dark"] .dt-tab.off {
+  color: var(--vz-secondary-color);
+  /* The light outline + white fill both glare here. */
+  background: rgba(255, 255, 255, .04);
+  border-color: rgba(255, 255, 255, .12);
+  box-shadow: none;
+}
 [data-bs-theme="dark"] .dt-tab.off:hover,
 [data-layout-mode="dark"] .dt-tab.off:hover { background: rgba(255, 255, 255, .07); color: #fff; }
 [data-bs-theme="dark"] .dt-tab.off .dt-tab-count,
@@ -928,3 +951,163 @@
    raised globally — other lists fill that space with filters and pickers, and
    widening the field there would push them onto a second row. */
 .dt-root.hre-list .dt-search { flex: 0 4 560px; max-width: 560px; }
+
+/* ── HRMS lists: the Purchase Order list look, in the table's own accent ────
+   The PO list (p2p/purchase-management/order/po-list/order.css) styles its
+   toolbar and header differently from this component: a soft toolbar band,
+   tabs in a recessed track where every tab reads in the accent and only the
+   active one fills, a tall rounded search, and a LIGHT header row with muted
+   caps instead of a solid accent band. Applies to every table on a page that
+   carries the HRMS header strip (.hr-cstrip), plus any table given .hr-dt —
+   so Customers, Consignee, CLM, Masters and the other DataTable users, none
+   of which use that header, are unchanged. */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) {
+  /* Also the colour of the sliver beside the scroll box — see .dt-table-wrap. */
+  --dt-head-fill: color-mix(in srgb, var(--dt-a-50) 40%, var(--dt-a-150));
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar {
+  gap: 14px;
+  padding: 14px;
+  background: linear-gradient(180deg, var(--dt-a-50) 0%, #fff 100%);
+  border-bottom: 0;
+}
+/* Tab track */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tabs {
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
+  border-radius: 14px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab {
+  height: 42px;
+  padding: 0 12px;
+  gap: 7px;
+  border: 0;
+  border-radius: 11px;
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: -.2px;
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off { background: transparent; color: var(--dt-a-700); }
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off:hover { background: rgba(var(--dt-a-rgb), .06); color: var(--dt-a-600); }
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.on {
+  color: #fff;
+  background: linear-gradient(135deg, var(--dt-a-400), var(--dt-a-600) 55%, var(--dt-a-700));
+  box-shadow: 0 6px 16px -5px rgba(var(--dt-a-rgb), .55), inset 0 1px 0 rgba(255, 255, 255, .25);
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab-count {
+  min-width: 18px; height: auto;
+  padding: 2px 7px;
+  border: 1px solid var(--dt-a-200);
+  border-radius: 20px;
+  font-size: 10.5px; font-weight: 800; line-height: 1.1;
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off .dt-tab-count { background: var(--dt-a-100); color: var(--dt-a-700); }
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.on .dt-tab-count {
+  border-color: rgba(255, 255, 255, .75);
+  background: rgba(255, 255, 255, .9);
+  color: var(--dt-a-800);
+}
+/* Search: grows into the row the tabs leave, the PO list's 52px field. */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search {
+  flex: 1 1 460px; min-width: 260px; max-width: 594px;
+  height: 52px;
+  /* No margin-left:auto here. The base rules already pin the search right
+     when the row has no actions group; forcing it ALWAYS also pushed it away
+     from the left edge on rows that have actions but no tabs (Broadcast
+     Centre), leaving it floating mid-row with a dead band on its left. */
+  padding: 0 16px 0 41px;
+  border: 1.5px solid color-mix(in srgb, var(--dt-a-200) 55%, #fff);
+  border-radius: 14px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+  box-shadow: none;
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search:focus-within {
+  border-color: var(--dt-a-400);
+  box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .14);
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search-icon { left: 16px; color: var(--dt-a-400); }
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search input::placeholder { color: color-mix(in srgb, var(--dt-a-400) 60%, #94a3b8); }
+/* Header: a light band with muted caps — no solid accent fill. */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-table thead tr { background: transparent; }
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-table thead th {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 50%, #fff), color-mix(in srgb, var(--dt-a-50) 40%, var(--dt-a-150)));
+  color: color-mix(in srgb, var(--dt-a-800) 55%, #64748b);
+  font-size: 9.5px;
+  letter-spacing: .04em;
+  text-shadow: none;
+  /* Hairline above and a firmer line below, drawn as shadows so they stay with
+     the sticky header as rows scroll — the band reads as one straight row. */
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--dt-a-200) 45%, #fff),
+    inset 0 -1.5px 0 color-mix(in srgb, var(--dt-a-200) 70%, #fff);
+}
+/* Every sort arrow sits right after its label. The base rule parks a centred
+   header's arrow at the cell's right edge, so on this light header half the
+   arrows hugged their label and half hugged the NEXT column's label
+   ("PRIMARY ROLE ⇅ANCILLARY ROLE") and the row read as uneven. */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-table thead th[data-align="center"] .dt-sort {
+  position: static;
+  transform: none;
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-table thead th[data-align="center"].dt-sortable .dt-th-inner {
+  padding-left: 0;
+  padding-right: 0;
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-table thead th.dt-sortable:hover {
+  background: var(--dt-a-100);
+  color: var(--dt-a-700);
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-sort { opacity: .55; }
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-sort.on { opacity: 1; color: var(--dt-a-600); }
+/* 52px only lines up with the 54px tab track. Next to the 42px selects and
+   buttons of an actions group, or with no tabs at all, it stood taller than
+   everything around it — so there it takes their 42px. */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar:not(:has(.dt-tabs)) .dt-search,
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar:has(.dt-toolbar-actions) .dt-search,
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar:has(.dt-filter-btn) .dt-search {
+  height: 42px;
+  border-radius: 11px;
+}
+@media (max-width: 1100px) {
+  :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search { flex: 1 1 220px; max-width: none; }
+}
+@media (max-width: 760px) {
+  :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search { flex: 1 1 100%; min-width: 0; height: 44px; }
+}
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root),
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) { --dt-head-fill: rgba(var(--dt-a-rgb), .12); }
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar {
+  background: linear-gradient(180deg, rgba(var(--dt-a-rgb), .10), rgba(var(--dt-a-rgb), .02));
+}
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tabs,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tabs,
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search {
+  background: rgba(var(--dt-a-rgb), .08);
+  border-color: rgba(var(--dt-a-rgb), .22);
+}
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off { background: transparent; color: var(--dt-a-300); }
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off:hover,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off:hover { background: rgba(var(--dt-a-rgb), .10); color: var(--dt-a-200); }
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off .dt-tab-count,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off .dt-tab-count {
+  background: rgba(var(--dt-a-rgb), .14);
+  border-color: rgba(var(--dt-a-rgb), .30);
+  color: var(--dt-a-300);
+}
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search-icon,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search-icon { color: var(--dt-a-300); }
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-table thead th,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-table thead th {
+  background: linear-gradient(180deg, rgba(var(--dt-a-rgb), .14), rgba(var(--dt-a-rgb), .08)), var(--vz-secondary-bg, #212529);
+  color: var(--dt-a-300);
+  box-shadow: inset 0 1px 0 rgba(var(--dt-a-rgb), .16), inset 0 -1.5px 0 rgba(var(--dt-a-rgb), .28);
+}
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-table thead th.dt-sortable:hover,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-table thead th.dt-sortable:hover {
+  background: linear-gradient(rgba(var(--dt-a-rgb), .22), rgba(var(--dt-a-rgb), .22)), var(--vz-secondary-bg, #212529);
+  color: var(--dt-a-200);
+}

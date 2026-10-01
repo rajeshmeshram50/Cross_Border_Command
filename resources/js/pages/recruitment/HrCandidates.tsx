@@ -7,7 +7,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useModulePermission } from '../../hooks/useModulePermission';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
-import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ActionIcon, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import '../../../css/recruitment.css';
 
 type CandidateStatus =
@@ -411,7 +411,7 @@ export default function HrCandidates() {
                   aria-label={perm.canEdit ? 'Edit Candidate' : 'View Candidate'}
                   onClick={() => { setEditing(c); setViewOnly(!perm.canEdit); setModalOpen(true); }}
                 >
-                  <i className={perm.canEdit ? 'ri-pencil-line' : 'ri-eye-line'} />
+                  {perm.canEdit ? <ActionIcon icon="edit-svg" /> : <i className="ri-eye-line" />}
                 </button>
               </Tooltip>
             )}
@@ -498,7 +498,7 @@ export default function HrCandidates() {
                 Payroll / Attendance), rather than a bare flex row: bordered
                 white card, violet accent rail, 46px icon tile, and every page
                 action carried inside the strip on the right. */}
-            <div className="frm-cstrip mb-3">
+            <div className="frm-cstrip hr-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
                 <div className="frm-cstrip-icon"><i className="ri-group-line" /></div>

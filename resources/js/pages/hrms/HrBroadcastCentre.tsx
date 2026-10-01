@@ -5,7 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
-import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ActionIcon, type DataTableColumn } from '../../components/ui/DataTable';
 import '../../../css/recruitment.css';
 import SearchClear from '../../components/ui/SearchClear';
 
@@ -271,7 +271,7 @@ export default function HrBroadcastCentre() {
                 aria-label={r.status === 'Draft' ? 'Edit' : 'View'}
                 onClick={() => { setEditingRow(r); setCreateOpen(true); }}
               >
-                <i className={r.status === 'Draft' ? 'ri-pencil-line' : 'ri-eye-line'} />
+                {r.status === 'Draft' ? <ActionIcon icon="edit-svg" /> : <i className="ri-eye-line" />}
               </button>
             </Tooltip>
             {r.status === 'Draft' && (
@@ -378,7 +378,7 @@ export default function HrBroadcastCentre() {
         <Col xs={12}>
           <div className="rec-page bcast-page">
 
-            <div className="frm-cstrip mb-3">
+            <div className="frm-cstrip hr-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
                 <div className="frm-cstrip-icon"><i className="ri-send-plane-line" /></div>

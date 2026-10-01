@@ -947,6 +947,27 @@ export function PillCell({
 
 /** Icon action button for the Actions column — tooltip label is mandatory so
  *  an icon-only control is never unlabelled for screen readers. */
+/**
+ * The glyph inside an action button.
+ *
+ * `edit-svg` draws the square-and-pencil mark rather than Remix's bare
+ * `ri-pencil-line`; the two were mixed across the app and the pencil alone read
+ * as "draw" where this reads as "edit this record". Anything else is treated as
+ * a Remix class, so existing icons are untouched.
+ */
+export function ActionIcon({ icon, className = '' }: { icon: string; className?: string }) {
+  if (icon === 'edit-svg') {
+    return (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+        <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+      </svg>
+    );
+  }
+  return <i className={`${icon} ${className}`.trim()} />;
+}
+
 export function ActionCell({
   title,
   icon,
@@ -968,7 +989,7 @@ export function ActionCell({
       className={`dt-act dt-act-${tone}`}
       onClick={e => { e.stopPropagation(); onClick(); }}
     >
-      <i className={icon} />
+      <ActionIcon icon={icon} />
     </button>
   );
   return disabled ? btn : <Tooltip label={title}>{btn}</Tooltip>;

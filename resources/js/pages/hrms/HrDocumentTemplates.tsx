@@ -398,7 +398,7 @@ export default function HrDocumentTemplates() {
                 Deprecate/Activate, Delete. View is first: it is the
                 non-destructive one, and the one reached most often. */}
             <ActionBtn icon="ri-eye-line" tone="primary" onClick={() => void openView(r)} title="View" />
-            <ActionBtn icon="ri-pencil-line" tone="info" onClick={() => navigate(`/hr/doc-templates/${r.id}/edit`)} title="Edit" />
+            <ActionBtn icon="edit-svg" tone="info" onClick={() => navigate(`/hr/doc-templates//edit`)} title="Edit" />
             <ActionBtn
               icon={r.status === 'Active' ? 'ri-forbid-2-line' : 'ri-checkbox-circle-line'}
               tone={r.status === 'Active' ? 'danger' : 'success'}
@@ -427,7 +427,7 @@ export default function HrDocumentTemplates() {
         <div className="rec-page dtm-page">
           <DtmDarkStyles />
           {/* Header strip — same shape as the Clients / Branches headers. */}
-          <div className="frm-cstrip mb-2">
+          <div className="frm-cstrip hr-cstrip mb-2">
             <span className="frm-cstrip-accent" />
             <div className="frm-cstrip-left">
               <div className="frm-cstrip-icon"><i className="ri-file-text-line" /></div>

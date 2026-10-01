@@ -66,6 +66,8 @@ interface EmployeeRow {
   last_name: string | null;
   display_name: string | null;
   email: string | null;
+  /** Already in the /employees payload (LIST_COLUMNS) — just never shown. */
+  mobile?: string | null;
   department?: { id: number; name: string } | null;
   /** IT / Non-IT / Legal, resolved server-side from the department hierarchy. */
   document_category?: string | null;
@@ -541,8 +543,9 @@ export default function GenerateDocument() {
               </span>
               <div>
                 <h4 className="fw-bold mb-0" style={{ color: '#fff' }}>Generate Document</h4>
+                {/* The three steps are the stepper's whole job, just below. */}
                 <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.85)' }}>
-                  {template.name} — Select employees, fill variables &amp; generate
+                  {template.name}{template.code ? ` · ${template.code}` : ''}
                 </div>
               </div>
             </div>
@@ -580,13 +583,14 @@ export default function GenerateDocument() {
               template={template}
               selectedEmployees={selectedEmployees}
               previews={previews}
+              letterheads={letterheads}
             />
           )}
         </CardBody>
 
         <div style={{ padding: 14, borderTop: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }} className="gd-footer">
           <span style={{ fontSize: 12, color: '#6b7280' }} className="gd-step-counter">Step {step} of {STEPS.length}</span>
-          <div className="d-flex gap-2">
+          <div className="d-flex gap-2 align-items-center flex-wrap justify-content-end">
             <button type="button" onClick={() => navigate('/hr/doc-templates')} disabled={saving || previewing}
               style={{ padding: '8px 16px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }} className="gd-cancel">
               Cancel
@@ -605,21 +609,26 @@ export default function GenerateDocument() {
                 {/* Send the customised doc straight into the signing workflow
                     (preserves the custom values filled in this wizard). Styled
                     Tooltip to match the doc-templates list action column. */}
+                {/* Leaving / stepping back, then the two alternatives, then the
+                    one thing this page is for. The alternatives used to wear a
+                    2px purple border, which read as loud as the primary and
+                    made the row a wall of five equal buttons. */}
+                <span className="gd-foot-div" aria-hidden style={{ width: 1, alignSelf: 'stretch', background: '#e5e7eb', margin: '0 2px' }} />
                 <Tooltip label="Send into the configured signing workflow for the selected employee(s)">
                   <button type="button" onClick={onSendForSignature} disabled={saving || sending} className="gd-outline-btn"
-                    style={{ padding: '8px 18px', background: '#fff', border: '2px solid #7c3aed', borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#7c3aed', cursor: (saving || sending) ? 'default' : 'pointer', opacity: (saving || sending) ? 0.6 : 1 }}>
-                    <i className="ri-quill-pen-line me-1" />{sending ? 'Sending…' : 'Send for Signature'}
+                    style={secondaryBtn(saving || sending)}>
+                    <i className="ri-quill-pen-line me-1" style={{ color: '#7c3aed' }} />{sending ? 'Sending…' : 'Send for Signature'}
                   </button>
                 </Tooltip>
                 {/* Generate + download the document(s) in one click. */}
                 <Tooltip label="Generate and download the document(s) right away">
                   <button type="button" onClick={onDownload} disabled={saving || sending} className="gd-outline-btn"
-                    style={{ padding: '8px 18px', background: '#fff', border: '2px solid #7c3aed', borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#7c3aed', cursor: (saving || sending) ? 'default' : 'pointer', opacity: (saving || sending) ? 0.6 : 1 }}>
-                    <i className="ri-download-2-line me-1" />{saving ? 'Working…' : `Download document${selectedEmployees.length === 1 ? '' : 's'}`}
+                    style={secondaryBtn(saving || sending)}>
+                    <i className="ri-download-2-line me-1" style={{ color: '#7c3aed' }} />{saving ? 'Working…' : `Download document${selectedEmployees.length === 1 ? '' : 's'}`}
                   </button>
                 </Tooltip>
                 <button type="button" onClick={onGenerate} disabled={saving || sending}
-                  style={{ padding: '8px 22px', background: PRIMARY_GRADIENT, border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: (saving || sending) ? 'default' : 'pointer', boxShadow: PRIMARY_GLOW, opacity: (saving || sending) ? 0.6 : 1 }}>
+                  style={{ display: 'inline-flex', alignItems: 'center', padding: '8px 20px', background: PRIMARY_GRADIENT, border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: (saving || sending) ? 'default' : 'pointer', boxShadow: PRIMARY_GLOW, opacity: (saving || sending) ? 0.6 : 1, whiteSpace: 'nowrap' }}>
                   <i className="ri-file-add-line me-1" />{saving ? 'Generating…' : `Generate ${selectedEmployees.length} document${selectedEmployees.length === 1 ? '' : 's'}`}
                 </button>
               </>
@@ -656,6 +665,44 @@ function StepStrip({ step }: { step: number }) {
       })}
     </div>
   );
+}
+
+/* The head every step wears: icon tile, title, one line of purpose, and
+ * whatever count belongs on the right. The three steps each opened with a bare
+ * <h5> and their own idea of spacing, so the page changed shape at every Next.
+ * Matches the Add / Edit Template wizard's card heads. */
+function StepHead({ icon, title, sub, right }: { icon: string; title: string; sub: string; right?: React.ReactNode }) {
+  return (
+    <div className="gd-step-head d-flex align-items-center justify-content-between flex-wrap" style={{
+      gap: 12, padding: '10px 14px', marginBottom: 14,
+      background: '#f5f3ff', border: '1px solid #e9e7f5', borderRadius: 12,
+    }}>
+      <div className="d-flex align-items-center" style={{ gap: 12, minWidth: 0 }}>
+        <span style={{
+          width: 36, height: 36, borderRadius: 10, flex: '0 0 auto',
+          background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 17, boxShadow: '0 2px 6px rgba(99,102,241,.35)',
+        }}><i className={icon} /></span>
+        <div style={{ minWidth: 0 }}>
+          <div className="gd-title" style={{ fontSize: 14.5, fontWeight: 800, color: '#111827', lineHeight: 1.25 }}>{title}</div>
+          <div className="gd-subtle" style={{ fontSize: 11.5, color: '#9ca3af' }}>{sub}</div>
+        </div>
+      </div>
+      {right}
+    </div>
+  );
+}
+
+/* A footer action that is not THE action: quiet border, dark label, colour
+ * carried by the icon alone, so only Generate is accented. */
+function secondaryBtn(busy: boolean): React.CSSProperties {
+  return {
+    display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap',
+    padding: '8px 16px', background: '#fff', border: '1px solid #ddd6fe',
+    borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#4c1d95',
+    cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
+  };
 }
 
 // ── Step 1: Select Employees ────────────────────────────────────────────────
@@ -710,12 +757,12 @@ function Step1(props: {
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
-        <h5 className="fw-bold mb-0 gd-title">Select Employees</h5>
-        <span className="gd-count-badge" style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', background: '#e0e7ff', padding: '4px 10px', borderRadius: 999 }}>
-          {props.selectedIds.size} selected
-        </span>
-      </div>
+      <StepHead icon="ri-team-line" title="Select Employees" sub={STEPS[0].sub}
+        right={
+          <span className="gd-count-badge" style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', background: '#e0e7ff', padding: '4px 10px', borderRadius: 999 }}>
+            {props.selectedIds.size} selected
+          </span>
+        } />
 
       {/* Scope hint — the list is filtered to the template's designation level
           (and IT/Non-IT/Legal category it was authored under) so only eligible
@@ -736,13 +783,15 @@ function Step1(props: {
       </div>
 
       <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }} className="gd-table-wrap">
-        <div style={{ background: '#f5f3ff', padding: '10px 14px', display: 'grid', gridTemplateColumns: '56px 32px 1fr 140px 160px 160px', gap: 12, fontSize: 11, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase' }} className="gd-table-head">
+        <div style={{ background: '#f5f3ff', padding: '10px 14px', display: 'grid', gridTemplateColumns: '52px 32px 2fr 104px 1.4fr 124px 0.9fr 0.9fr', gap: 12, fontSize: 11, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase' }} className="gd-table-head">
           <div>Sr No</div>
           <input type="checkbox" checked={allChecked} onChange={toggleAll} style={{ cursor: 'pointer' }} />
           <div>Employee</div>
-          <div>Code</div>
-          <div>Department</div>
-          <div>Designation</div>
+          <div style={{ textAlign: 'center' }}>Emp Code</div>
+          <div>Email</div>
+          <div style={{ textAlign: 'center' }}>Phone</div>
+          <div style={{ textAlign: 'center' }}>Department</div>
+          <div style={{ textAlign: 'center' }}>Designation</div>
         </div>
         <div>
           {filtered.length === 0 ? (
@@ -765,7 +814,7 @@ function Step1(props: {
             return (
               <label key={e.id} className="gd-row"
                 title={sentRun ? 'Already sent to this employee — waiting on the signers.' : undefined}
-                style={{ display: 'grid', gridTemplateColumns: '56px 32px 1fr 140px 160px 160px', gap: 12, padding: '10px 14px',
+                style={{ display: 'grid', gridTemplateColumns: '52px 32px 2fr 104px 1.4fr 124px 0.9fr 0.9fr', gap: 12, padding: '10px 14px',
                   borderTop: i === 0 ? 'none' : '1px solid #f1f5f9',
                   background: sentRun ? '#f9fafb' : checked ? '#eef2ff' : '#fff', alignItems: 'center',
                   cursor: sentRun ? 'not-allowed' : 'pointer', opacity: sentRun ? 0.65 : 1 }}>
@@ -781,11 +830,18 @@ function Step1(props: {
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 11.5, color: '#6b7280' }} className="gd-row-sub">{e.email || '—'}</div>
                 </div>
-                <div className="gd-row-cell" style={{ fontSize: 12.5, color: '#374151', fontFamily: 'monospace' }}>{e.emp_code || '—'}</div>
-                <div className="gd-row-cell" style={{ fontSize: 12.5, color: '#374151' }}>{e.department?.name || '—'}</div>
-                <div className="gd-row-cell" style={{ fontSize: 12.5, color: '#374151' }}>{e.designation?.name || '—'}</div>
+                <div className="gd-row-cell" style={{ textAlign: 'center' }}>
+                  {/* A badge, not bare text: the code is an identifier and was
+                      the one monospace run floating in a row of prose. */}
+                  <span className="gd-code-badge" style={{ display: 'inline-block', fontSize: 11.5, fontWeight: 700, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: '#4338ca', background: '#eef2ff', border: '1px solid #e0e7ff', borderRadius: 999, padding: '2px 9px', whiteSpace: 'nowrap' }}>
+                    {e.emp_code || '—'}
+                  </span>
+                </div>
+                <div className="gd-row-cell" style={{ fontSize: 12.5, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e.email || undefined}>{e.email || '—'}</div>
+                <div className="gd-row-cell" style={{ fontSize: 12.5, color: '#374151', whiteSpace: 'nowrap', textAlign: 'center' }}>{e.mobile || '—'}</div>
+                <div className="gd-row-cell" style={{ fontSize: 12.5, color: '#374151', textAlign: 'center' }}>{e.department?.name || '—'}</div>
+                <div className="gd-row-cell" style={{ fontSize: 12.5, color: '#374151', textAlign: 'center' }}>{e.designation?.name || '—'}</div>
               </label>
             );
           })}
@@ -849,10 +905,15 @@ function Step2(props: {
 
   return (
     <div>
-      <h5 className="fw-bold mb-1 gd-title">Fill Custom Variables</h5>
-      <div className="text-muted mb-3 gd-subtle" style={{ fontSize: 12.5 }}>
-        Auto-fetched fields are pre-filled. Enter custom values per employee below.
-      </div>
+      <StepHead icon="ri-input-cursor-move" title="Fill Custom Variables"
+        sub="Auto-fetched fields are pre-filled — enter the custom values per employee"
+        right={
+          customFields.length > 0 ? (
+            <span className="gd-count-badge" style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', background: '#e0e7ff', padding: '4px 10px', borderRadius: 999 }}>
+              {customFields.length} field{customFields.length === 1 ? '' : 's'}
+            </span>
+          ) : undefined
+        } />
 
       {customFields.length === 0 ? (
         <div style={{ borderRadius: 12, border: '1px dashed #c7d2fe', background: '#fafaff', padding: 18, textAlign: 'center', color: '#4338ca' }} className="gd-empty">
@@ -944,58 +1005,105 @@ function Step3(props: {
   template: TemplateRow;
   selectedEmployees: EmployeeRow[];
   previews: Record<number, string>;
+  /** Per-employee letterhead, resolved by the parent. Step 3 read the parent's
+   *  state directly, which is not in its scope — the preview threw on open. */
+  letterheads: Record<number, Letterhead>;
 }) {
-  const { template, selectedEmployees, previews } = props;
-  const [openId, setOpenId] = useState<number | null>(selectedEmployees[0]?.id ?? null);
+  const { template, selectedEmployees, previews, letterheads } = props;
+  /* One paper, one recipient at a time. The accordion drew a card per employee
+     and each opened its own copy of the page, so ten recipients meant ten
+     stacked A4 sheets to scroll past; picking a name now just re-renders the
+     one sheet. */
+  const [activeId, setActiveId] = useState<number | null>(selectedEmployees[0]?.id ?? null);
+  // The selection can shrink on Back, taking the active row with it.
+  const active = selectedEmployees.find(e => e.id === activeId) ?? selectedEmployees[0] ?? null;
+  const empName = (e: EmployeeRow) =>
+    (e.display_name || `${e.first_name ?? ''} ${e.last_name ?? ''}`.trim()) || `Employee #${e.id}`;
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between mb-3">
-        <div>
-          <h5 className="fw-bold mb-0 gd-title">Document Preview</h5>
-          <div className="text-muted gd-subtle" style={{ fontSize: 12.5 }}>
-            {selectedEmployees.length} document{selectedEmployees.length === 1 ? '' : 's'} will be generated when you click <strong>Generate</strong>.
-            {' '}Unfilled placeholders are highlighted below.
+      <StepHead icon="ri-file-search-line" title="Document Preview"
+        sub="Generate writes these documents — unfilled placeholders are highlighted"
+        right={
+          <span className="gd-count-badge" style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', background: '#e0e7ff', padding: '4px 10px', borderRadius: 999 }}>
+            {selectedEmployees.length} document{selectedEmployees.length === 1 ? '' : 's'}
+          </span>
+        } />
+
+      <div className="row g-3">
+        {/* Recipients */}
+        <div className="col-lg-4 col-xl-3">
+          <div className="gd-rcpt-card" style={{ border: '1px solid #e9e7f5', borderRadius: 12, overflow: 'hidden', background: '#fff' }}>
+            <div className="gd-rcpt-head" style={{ padding: '9px 12px', background: '#f5f3ff', borderBottom: '1px solid #e9e7f5', fontSize: 11, fontWeight: 800, letterSpacing: 0.4, textTransform: 'uppercase', color: '#6b7280' }}>
+              <i className="ri-team-line me-1" />Recipients
+            </div>
+            {/* Capped so a long selection scrolls the list, not the page — the
+                paper beside it has to stay in view to be worth previewing. */}
+            <div className="gd-rcpt-list" style={{ maxHeight: 520, overflowY: 'auto', padding: 8 }}>
+              {selectedEmployees.map(emp => {
+                const on = active?.id === emp.id;
+                return (
+                  <button key={emp.id} type="button" onClick={() => setActiveId(emp.id)}
+                    className={`gd-rcpt${on ? ' is-active' : ''}`}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', gap: 9, textAlign: 'left',
+                      padding: '8px 10px', marginBottom: 4, borderRadius: 9, cursor: 'pointer',
+                      border: '1px solid ' + (on ? '#c7d2fe' : 'transparent'),
+                      background: on ? '#eef2ff' : 'transparent',
+                    }}>
+                    <span style={{
+                      width: 28, height: 28, borderRadius: '50%', flex: '0 0 auto',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 11, fontWeight: 800,
+                      background: on ? '#6366f1' : '#eef2f7', color: on ? '#fff' : '#94a3b8',
+                    }}>{empName(emp).slice(0, 1).toUpperCase()}</span>
+                    <span style={{ minWidth: 0, flex: 1 }}>
+                      <span className="gd-rcpt-name" style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: on ? '#4338ca' : '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{empName(emp)}</span>
+                      <span className="gd-rcpt-sub" style={{ display: 'block', fontSize: 10.5, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emp.emp_code || emp.email || '—'}</span>
+                    </span>
+                    {on && <i className="ri-arrow-right-s-line" style={{ color: '#6366f1', flex: '0 0 auto' }} />}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
-        <span className="gd-count-badge" style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', background: '#e0e7ff', padding: '4px 10px', borderRadius: 999 }}>
-          {selectedEmployees.length} document{selectedEmployees.length === 1 ? '' : 's'}
-        </span>
-      </div>
 
-      <div style={{ display: 'grid', gap: 12 }}>
-        {selectedEmployees.map(emp => {
-          const open = openId === emp.id;
-          const name = `${emp.first_name ?? ''} ${emp.last_name ?? ''}`.trim() || `Employee #${emp.id}`;
-          const html = previews[emp.id] || '<p>(empty)</p>';
-          return (
-            <div key={emp.id} className="gd-preview-card">
-              <button type="button" onClick={() => setOpenId(open ? null : emp.id)}
-                className={`gd-preview-head${open ? ' is-open' : ''}`}>
+        {/* The one sheet, for whoever is picked */}
+        <div className="col-lg-8 col-xl-9">
+          {active ? (
+            <div className="gd-preview-card">
+              <div className="gd-preview-head is-open" style={{ cursor: 'default' }}>
                 <span className="d-flex align-items-center gap-2">
                   <span className="gd-preview-pill"><i className="ri-file-text-line" /></span>
                   <span style={{ display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
-                    <span style={{ fontWeight: 700, fontSize: 13, color: '#fff' }}>{name}</span>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: '#fff' }}>{empName(active)}</span>
                     <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.78)' }}>{template.name} · {template.code}</span>
                   </span>
                 </span>
                 <span style={{ fontSize: 11.5, opacity: 0.9, display: 'inline-flex', alignItems: 'center', gap: 6, color: '#fff' }}>
-                  <i className="ri-file-pdf-line" /> PDF Preview <i className={open ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'} />
+                  <i className="ri-file-pdf-line" /> PDF Preview
                 </span>
-              </button>
-              {open && (
-                <div className="gd-preview-stage">
-                  <div className="gd-preview-paper">
-                    <DocHeader cfg={template.header_config} letterhead={letterheads[emp.id]} />
-                    <div className="gd-preview-body"
-                      dangerouslySetInnerHTML={{ __html: decorateUnfilledTokens(html) }} />
-                    <DocFooter cfg={template.footer_config} letterhead={letterheads[emp.id]} />
-                  </div>
+              </div>
+              <div className="gd-preview-stage">
+                {/* Keyed by employee: without it React keeps the previous
+                    sheet's DOM and only swaps the inner HTML, so a scrolled
+                    preview stays scrolled when you pick the next person. */}
+                <div className="gd-preview-paper" key={active.id}>
+                  <DocHeader cfg={template.header_config} letterhead={letterheads[active.id]} />
+                  <div className="gd-preview-body"
+                    dangerouslySetInnerHTML={{ __html: decorateUnfilledTokens(previews[active.id] || '<p>(empty)</p>') }} />
+                  <DocFooter cfg={template.footer_config} letterhead={letterheads[active.id]} />
                 </div>
-              )}
+              </div>
             </div>
-          );
-        })}
+          ) : (
+            <div style={{ border: '1px dashed #c7d2fe', borderRadius: 12, background: '#fafaff', padding: 28, textAlign: 'center', color: '#6b7280', fontSize: 12.5 }}>
+              <i className="ri-user-search-line" style={{ fontSize: 22, display: 'block', marginBottom: 6, color: '#8b5cf6' }} />
+              Pick a recipient on the left to see their document.
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1199,9 +1307,15 @@ function ScopedStyles() {
       }
 
       /* Stepper — circle-and-line wizard indicator. White strip below header. */
+      /* Half the row (6 of 12), as the Add / Edit Template stepper is: across
+         the full width the rails grew longer than the steps they join. */
       .gd-page .gd-stepper {
-        display: flex; align-items: center; padding: 18px 22px;
+        display: flex; align-items: center; padding: 14px 22px;
+        width: 50%; min-width: 580px;
         background: #fff; border-top: 1px solid #f1f5f9;
+      }
+      @media (max-width: 991.98px) {
+        .gd-page .gd-stepper { width: 100%; min-width: 0; }
       }
       .gd-page .gd-stepper-frag { display: flex; align-items: center; flex: 1 1 0; min-width: 0; }
       .gd-page .gd-stepper-frag:last-child { flex: 0 0 auto; }
@@ -1245,6 +1359,43 @@ function ScopedStyles() {
       }
 
       /* Dark-mode stepper */
+      /* Step 3's recipient list and the footer's divider. */
+      [data-bs-theme="dark"] .gd-page .gd-code-badge,
+      [data-layout-mode="dark"] .gd-page .gd-code-badge {
+        background: rgba(99,102,241,0.18) !important; border-color: rgba(124,92,252,0.40) !important; color: #c4b5fd !important;
+      }
+      [data-bs-theme="dark"] .gd-page .gd-rcpt-card,
+      [data-layout-mode="dark"] .gd-page .gd-rcpt-card {
+        background: var(--vz-card-bg) !important; border-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .gd-page .gd-rcpt-head,
+      [data-layout-mode="dark"] .gd-page .gd-rcpt-head {
+        background: rgba(255,255,255,0.04) !important; border-bottom-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .gd-page .gd-rcpt.is-active,
+      [data-layout-mode="dark"] .gd-page .gd-rcpt.is-active {
+        background: rgba(99,102,241,0.18) !important; border-color: rgba(124,92,252,0.45) !important;
+      }
+      [data-bs-theme="dark"] .gd-page .gd-rcpt-name,
+      [data-layout-mode="dark"] .gd-page .gd-rcpt-name { color: rgba(255,255,255,0.8) !important; }
+      [data-bs-theme="dark"] .gd-page .gd-rcpt.is-active .gd-rcpt-name,
+      [data-layout-mode="dark"] .gd-page .gd-rcpt.is-active .gd-rcpt-name { color: #c4b5fd !important; }
+      [data-bs-theme="dark"] .gd-page .gd-outline-btn,
+      [data-layout-mode="dark"] .gd-page .gd-outline-btn {
+        background: rgba(124,92,252,0.12) !important; border-color: rgba(124,92,252,0.40) !important; color: #c4b5fd !important;
+      }
+      [data-bs-theme="dark"] .gd-page .gd-foot-div,
+      [data-layout-mode="dark"] .gd-page .gd-foot-div { background: var(--vz-border-color) !important; }
+
+      [data-bs-theme="dark"] .gd-page .gd-step-head,
+      [data-layout-mode="dark"] .gd-page .gd-step-head {
+        background: rgba(255,255,255,0.04) !important;
+        border-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .gd-page .gd-step-head .gd-title,
+      [data-layout-mode="dark"] .gd-page .gd-step-head .gd-title {
+        color: rgba(255,255,255,0.88) !important;
+      }
       [data-bs-theme="dark"] .gd-page .gd-stepper,
       [data-layout-mode="dark"] .gd-page .gd-stepper {
         background: #1f2937 !important; border-top-color: rgba(255,255,255,0.06) !important;

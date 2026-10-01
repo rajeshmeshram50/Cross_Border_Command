@@ -5,7 +5,7 @@ import { LFM_CSS } from '../sales/opportunity-pipeline/LeadFilterModal';
 import { Card, CardBody, Col, Row, Input, Modal, ModalBody, Spinner } from 'reactstrap';
 import { MasterFormStyles, MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
-import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ActionIcon, type DataTableColumn } from '../../components/ui/DataTable';
 import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -849,7 +849,7 @@ export default function HrLeave() {
       <Row>
         <Col xs={12}>
           <div className="rec-page leave-page">
-            <div className="frm-cstrip mb-3">
+            <div className="frm-cstrip hr-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
                 <div className="frm-cstrip-icon"><i className="ri-calendar-2-line" /></div>
@@ -1895,7 +1895,7 @@ function ActionBtn({
         onClick={onClick}
         className={`rec-act-icon ${toneClass}`}
       >
-        <i className={icon} />
+        <ActionIcon icon={icon} />
       </button>
     </Tooltip>
   );

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Card, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import Tooltip from '../../components/ui/Tooltip';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
-import DataTable, { ChipCell, IdCell, TruncCell, useIsClipped, type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ActionIcon, ChipCell, IdCell, TruncCell, useIsClipped, type DataTableColumn } from '../../components/ui/DataTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
@@ -3700,7 +3700,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                   : exitFrozen
                     ? 'Exit initiated — profile locked. Manage it in HR > Exit Management.'
                     : (perm.lockedTitle('edit') ?? 'Edit')}
-              icon="ri-pencil-line" color="info"
+              icon="edit-svg" color="info"
               onClick={() => exitFrozen
                 ? sayExitFrozen()
                 : perm.guard('edit', () => openEditEmployee(e))}
@@ -3793,7 +3793,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       <Row>
         <Col xs={12}>
           <div className="hr-employees-surface" style={{ background: 'transparent' }}>
-            <div className="frm-cstrip mb-2">
+            <div className="frm-cstrip hr-cstrip mb-2">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
                 <div className="frm-cstrip-icon"><i className="ri-team-line" /></div>
@@ -3930,7 +3930,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                 setTab(k as 'active' | 'disabled');
                 setStatusFilter(k === 'active' ? 'Active' : 'Disabled');
               }}
-              className="hre-list"
+              className="hre-list hr-dt"
               searchValue={q}
               onSearchChange={setQ}
               searchPlaceholder="Search name, ID, department, role…"
@@ -6241,7 +6241,7 @@ function ActionBtn({
         }}
         onClick={() => { if (!disabled) onClick(); }}
       >
-        <i className={`${icon} fs-14`} />
+        <ActionIcon icon={icon} className="fs-14" />
         {badge === 'dot' && (
           <span
             aria-hidden

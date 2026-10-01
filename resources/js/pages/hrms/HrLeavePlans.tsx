@@ -6,7 +6,7 @@ import '../../../css/recruitment.css';
 import '../../../css/leave.css';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
 import { leavePlansApi, leaveTypesApi, leaveBalancesApi, ApiLeavePlan, ApiLeaveType, ApiPlanEmployee, ApiLeaveBalancesResponse, ApiLeaveBalanceRow } from './leavePlansApi';
-import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ActionIcon, type DataTableColumn } from '../../components/ui/DataTable';
 import Tooltip from '../../components/ui/Tooltip';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { useAuth } from '../../contexts/AuthContext';
@@ -674,7 +674,7 @@ export default function HrLeavePlans() {
               Nesting the header inside .lp-shell produced a card-in-card look
               with inconsistent header/content spacing (bug #84). */}
           <div className="rec-page lplan-page">
-            <div className="frm-cstrip mb-3">
+            <div className="frm-cstrip hr-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
                 <div className="frm-cstrip-icon"><i className="ri-calendar-2-line" /></div>
@@ -1236,7 +1236,7 @@ function CatalogRow({
           {canEdit && (
           <Tooltip label="Edit leave type">
             <button type="button" className="lp-row-action" aria-label="Edit" onClick={() => onEdit(t.id)}>
-              <i className="ri-pencil-line" />
+              <ActionIcon icon="edit-svg" />
             </button>
           </Tooltip>
           )}

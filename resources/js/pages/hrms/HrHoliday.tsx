@@ -447,7 +447,7 @@ export default function HrHoliday() {
                 border-color: rgba(167,139,250,.28);
               }
             `}</style>
-            <div className="frm-cstrip mb-3">
+            <div className="frm-cstrip hr-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
                 <div className="frm-cstrip-icon"><i className="ri-calendar-event-line" /></div>

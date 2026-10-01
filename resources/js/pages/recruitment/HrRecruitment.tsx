@@ -7,7 +7,7 @@ import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { useModulePermission } from '../../hooks/useModulePermission';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
-import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ActionIcon, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import { Shimmer } from '../../components/ui/Shimmer';
 import '../../../css/recruitment.css';
 
@@ -629,7 +629,7 @@ export default function HrRecruitment() {
                 : r.status === 'Completed' ? 'Cannot edit — recruitment is completed'
                 : (perm.lockedTitle('edit') ?? 'Edit Recruitment')
               }
-              icon="ri-pencil-line"
+              icon="edit-svg"
               color="info"
               disabled={r.status === 'Cancelled' || r.status === 'Completed'}
               locked={!perm.canEdit}
@@ -685,7 +685,7 @@ export default function HrRecruitment() {
       <Row>
         <Col xs={12}>
           <div className="rec-page recruit-page">
-            <div className="frm-cstrip mb-3">
+            <div className="frm-cstrip hr-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
                 <div className="frm-cstrip-icon"><i className="ri-briefcase-4-fill" /></div>
@@ -3168,7 +3168,7 @@ function ActionBtn({
         style={locked && !disabled ? { opacity: .45, cursor: 'not-allowed', filter: 'grayscale(0.7)' } : undefined}
         className={`rec-act-icon ${toneClass}`}
       >
-        <i className={icon} />
+        <ActionIcon icon={icon} />
       </button>
     </Tooltip>
   );

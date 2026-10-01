@@ -2101,7 +2101,7 @@ export default function HrPayroll() {
             and taking the whole window's scrollbar with it. */}
         <div className="pay-top">
 
-      <div className="frm-cstrip mb-3">
+      <div className="frm-cstrip hr-cstrip mb-3">
         <span className="frm-cstrip-accent" />
         <div className="frm-cstrip-left">
           <div className="frm-cstrip-icon"><i className="ri-coins-line" /></div>
