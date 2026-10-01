@@ -95,6 +95,8 @@ interface AttendanceEmployee {
   overtimeSeconds?: number;
   expectedMinutes: number;
   lateByMinutes: number;
+  /** Server's grace window; the client no longer decides this for itself (#22). */
+  lateGraceMinutes?: number;
   punches: PunchEvent[];
   correction?: CorrectionRequest;
   presentDays: number;
@@ -218,10 +220,11 @@ const fmtDurHm = (m: number) => m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 6
 const fmtWorkHm = (m: number) => m > 0
   ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`
   : '—';
-// Grace window (minutes after shift start) before an arrival counts as late —
-// mirrors the server rule in AttendanceController (`minutesBetween > 10`). Below
-// this an arrival is on-time; at/above it we show the minutes-late measured from
-// the shift start time (e.g. 9:30 start, arrive 9:47 → 17 min late).
+/* Grace window (minutes after shift start) before an arrival counts as late.
+   The server sends its own figure as `lateGraceMinutes` and that is what every
+   reading here uses; this is only the fallback for a payload that predates it.
+   The number itself lives in Attendance::LATE_GRACE_MINUTES — one policy, read
+   by the roster, the log, the payslip and the captions below (#22). */
 const LATE_GRACE_MINUTES = 10;
 
 /* Leave portion labels. A half-day leave is shown on an otherwise normal
@@ -1072,6 +1075,10 @@ function TodayRecordCard({
     return Math.max(0, Math.floor((nowMs - Math.max(shiftEndMs, openInMs)) / 1000));
   })();
 
+  /* The roster, the log and payroll all score lateness against this; the
+     caption below has to use the same figure or it contradicts them. (#22) */
+  const lateGrace = employee.lateGraceMinutes ?? LATE_GRACE_MINUTES;
+
   const dateLabel = `${WEEK_LABELS[parseISO(viewDate).getDay()].slice(0,3)}, ${parseISO(viewDate).getDate()}-${monthOf(viewDate)}-${yearOf(viewDate)}`;
 
   return (
@@ -1084,8 +1091,16 @@ function TodayRecordCard({
             <span className="att-today-status-pill att-tone-pill" data-status={effectiveStatus} style={{ color: tone.fg, background: tone.bg }}>
               <span className="att-today-status-dot" style={{ background: tone.dot }} />
               {tone.label}
+              {/* #22: this said "· 7m late" beside a roster that had filed the
+                  same day under On Time, because it drew the raw difference
+                  while everything else applied the grace window. Past the
+                  grace it reads late, as it always did; inside it the arrival
+                  is named for what it is — the minutes are still shown, since
+                  hiding them would be its own kind of wrong. */}
               {!isPast && employee.lateByMinutes > 0 && effectiveStatus !== 'Weekly Off' && effectiveStatus !== 'Holiday' && effectiveStatus !== 'Leave' && effectiveStatus !== 'Absent' && (
-                <span className="att-today-status-sub"> · {employee.lateByMinutes}m late</span>
+                employee.lateByMinutes > lateGrace
+                  ? <span className="att-today-status-sub"> · {employee.lateByMinutes}m late</span>
+                  : <span className="att-today-status-sub"> · {employee.lateByMinutes}m within {lateGrace}m grace</span>
               )}
             </span>
           </div>
