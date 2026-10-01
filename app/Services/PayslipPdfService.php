@@ -130,6 +130,16 @@ class PayslipPdfService
             'earnings'        => $earnings,
             'deductions'      => $deductions,
             'totalEarnings'   => (float) $slip->gross_earnings,
+            /* What one payable day of salary is worth, printed under the
+               earnings total so the daily calculation can be checked on the
+               paper copy too. Salary only — overtime and bonus are paid for
+               work done, not for a day of employment. (#156) */
+            'perDaySalary'    => (float) $slip->working_days > 0
+                ? round(max(0, (float) $slip->gross_earnings
+                    - (float) ($slip->overtime_amount ?? 0)
+                    - (float) ($slip->bonus_amount ?? 0)) / (float) $slip->working_days, 2)
+                : null,
+            'payableDays'     => (float) $slip->working_days,
             'totalDeductions' => (float) $slip->total_deductions,
             'netPay'          => (float) $slip->net_pay,
             'netWords'        => $this->amountInWords((float) $slip->net_pay),

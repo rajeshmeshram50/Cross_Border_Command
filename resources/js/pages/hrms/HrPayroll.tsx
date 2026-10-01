@@ -448,7 +448,7 @@ export default function HrPayroll() {
   // so View PDF / the day chips always reflect the SELECTED period — not the
   // period the modal was first opened on.
   const [activePayslipId, setActivePayslipId] = useState<number | undefined>(undefined);
-  const [payslipDays, setPayslipDays] = useState<{ present?: number; lopDays?: number; totalMonthDays?: number; paidDays?: number; workingDays?: number; weekOffDays?: number; lateLopDays?: number } | null>(null);
+  const [payslipDays, setPayslipDays] = useState<{ present?: number; lopDays?: number; totalMonthDays?: number; paidDays?: number; workingDays?: number; weekOffDays?: number; lateLopDays?: number; perDayRate?: number | null; perDaySalary?: number | null }  | null>(null);
   /* Overtime for the open payslip. Only populated for employees the employee
      master marks overtime-applicable — drives the OT Hours KPI and the
      Overtime Allowance earnings line. */
@@ -522,6 +522,8 @@ export default function HrPayroll() {
              Paid Days could never appear. (#114) */
           weekOffDays: typeof d.weekOffDays === 'number' ? d.weekOffDays : undefined,
           lateLopDays: typeof d.lateLopDays === 'number' ? d.lateLopDays : undefined,
+          perDayRate: typeof d.perDayRate === 'number' ? d.perDayRate : null,
+          perDaySalary: typeof d.perDaySalary === 'number' ? d.perDaySalary : null,
         });
         setPayslipOt(d.overtimeApplicable ? {
           applicable: true,
@@ -2862,6 +2864,8 @@ export default function HrPayroll() {
             paidDays={payslipDays?.paidDays ?? r.attendance ?? 0}
             weekOffDays={payslipDays?.weekOffDays ?? 0}
             lateLopDays={payslipDays?.lateLopDays}
+            perDayRate={payslipDays?.perDayRate}
+            perDaySalary={payslipDays?.perDaySalary}
             overtimeApplicable={!!payslipOt?.applicable}
             overtimeHours={payslipOt?.hours ?? 0}
             overtimeDetectedHours={payslipOt?.detectedHours ?? 0}
