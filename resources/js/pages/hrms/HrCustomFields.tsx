@@ -5,7 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import Tooltip from '../../components/ui/Tooltip';
-import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ActionIcon, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import CustomFieldModal, { CustomFieldFormPayload } from './doc-templates/CustomFieldModal';
 import '../../../css/recruitment.css';
@@ -213,7 +213,7 @@ export default function HrCustomFields() {
       meta: { align: 'center', width: '10%' },
       cell: info => (
         <div className="d-flex gap-1 justify-content-center">
-          <ActionBtn icon="ri-pencil-line" tone="info"
+          <ActionBtn icon="edit-svg" tone="info"
             onClick={() => { setPrefillName(''); setEditing(info.row.original); setModalOpen(true); }} title="Edit" />
           <ActionBtn icon="ri-delete-bin-line" tone="danger"
             onClick={() => setDeleteTarget(info.row.original)} title="Delete" />
@@ -575,7 +575,7 @@ function ActionBtn({ icon, tone, onClick, title }: { icon: string; tone: 'info' 
         style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', color: 'var(--vz-secondary-color)', transition: 'all .15s ease' }}
         onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = `var(--vz-${tone})`; el.style.color = `var(--vz-${tone})`; }}
         onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = 'var(--vz-border-color)'; el.style.color = 'var(--vz-secondary-color)'; }}>
-        <i className={`${icon} fs-14`} />
+        <ActionIcon icon={icon} className="fs-14" />
       </button>
     </Tooltip>
   );

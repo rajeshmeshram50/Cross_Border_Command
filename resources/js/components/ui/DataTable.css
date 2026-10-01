@@ -139,8 +139,9 @@
    so a teal- or blue-accented table gets its own hue. */
 .dt-tabs {
   display: inline-flex; align-items: center; gap: 4px;
-  background: var(--vz-secondary-bg);
-  border: 1px solid var(--vz-border-color);
+  /* The rail stays plain. The accent wash belongs to the tabs themselves. */
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid rgba(var(--dt-a-rgb), .14);
   border-radius: 10px;
   padding: 4px;
   /* Shrinkable (was flex-shrink: 0) with min-width: 0, so as the window narrows
@@ -156,8 +157,11 @@
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   /* 11px (was 14) — across a six-tab rail that's ~36px reclaimed, which is the
      difference between the last tab fitting the row and wrapping under it. */
-  padding: 0 11px; height: 40px;
-  border: 0; border-radius: 8px;
+  padding: 0 11px; height: 37px;
+  /* Transparent on the active tab rather than absent, so switching tabs does
+     not move the rail by a pixel. */
+  border: 1px solid transparent; border-radius: 8px;
+
   background: transparent;
   font-family: inherit;
   font-size: 12.5px; font-weight: 600;
@@ -167,8 +171,20 @@
 }
 .dt-tab i { font-size: 14px; }
 .dt-tab-emoji { font-size: 13px; line-height: 1; }
-.dt-tab.off { background: transparent; color: var(--vz-secondary-color); }
-.dt-tab.off:hover { background: var(--vz-secondary-bg, #fff); color: var(--vz-heading-color, var(--vz-body-color)); }
+/* Outlined, not blank: on a rail of two or three an unstyled tab read as a
+   label beside the one button rather than as a tab you can press. */
+.dt-tab.off {
+  /* The tint sits INSIDE the tab, with the outline around it — an unfilled
+     tab read as a label beside the active one rather than a button. */
+  background: rgba(var(--dt-a-rgb), .08);
+  border-color: rgba(var(--dt-a-rgb), .22);
+  color: var(--vz-secondary-color);
+}
+.dt-tab.off:hover {
+  background: rgba(var(--dt-a-rgb), .14);
+  border-color: rgba(var(--dt-a-rgb), .45);
+  color: var(--vz-heading-color, var(--vz-body-color));
+}
 .dt-tab.on {
   background: linear-gradient(135deg, var(--dt-a-500), var(--dt-a-400));
   color: #fff;
@@ -181,7 +197,7 @@
   border-radius: 999px;
   font-size: 10px; font-weight: 800; line-height: 1;
 }
-.dt-tab.off .dt-tab-count { color: var(--vz-secondary-color); background: var(--vz-light); }
+.dt-tab.off .dt-tab-count { color: var(--vz-secondary-color); background: var(--vz-card-bg, #fff); }
 .dt-tab.on  .dt-tab-count { color: #fff; background: rgba(255, 255, 255, .22); }
 
 /* Filter button — same 42px height / 11px radius as the search field so the
@@ -285,9 +301,10 @@
      the search sat half empty. 420 still shows a full query; the high shrink
      factor collapses it to min-width on crowded toolbars so nothing wraps. */
   flex: 0 8 420px; min-width: 140px; max-width: 420px;
-  /* Exactly the selected tab pill's height (.dt-tab = 40px) so the search box
-     and the highlighted tab line up as one strip. */
-  height: 40px;
+  /* Exactly the selected tab pill's height (.dt-tab = 37px) so the search box
+     and the highlighted tab read as one strip — the rail's own padding is not
+     counted, the eye lines the pill up with the field, not the rail's edge. */
+  height: 37px;
   display: flex; align-items: center;
   padding: 0 8px 0 36px;
   background: rgba(255, 255, 255, .80);
@@ -736,7 +753,13 @@
 [data-bs-theme="dark"] .dt-tabs,
 [data-layout-mode="dark"] .dt-tabs { background: rgba(255, 255, 255, .05); border-color: rgba(255, 255, 255, .10); }
 [data-bs-theme="dark"] .dt-tab.off,
-[data-layout-mode="dark"] .dt-tab.off { color: var(--vz-secondary-color); }
+[data-layout-mode="dark"] .dt-tab.off {
+  color: var(--vz-secondary-color);
+  /* The light outline + white fill both glare here. */
+  background: rgba(255, 255, 255, .04);
+  border-color: rgba(255, 255, 255, .12);
+  box-shadow: none;
+}
 [data-bs-theme="dark"] .dt-tab.off:hover,
 [data-layout-mode="dark"] .dt-tab.off:hover { background: rgba(255, 255, 255, .07); color: #fff; }
 [data-bs-theme="dark"] .dt-tab.off .dt-tab-count,

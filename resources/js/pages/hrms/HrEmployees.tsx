@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Card, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import Tooltip from '../../components/ui/Tooltip';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
-import DataTable, { ChipCell, IdCell, TruncCell, useIsClipped, type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ActionIcon, ChipCell, IdCell, TruncCell, useIsClipped, type DataTableColumn } from '../../components/ui/DataTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
@@ -3700,7 +3700,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                   : exitFrozen
                     ? 'Exit initiated — profile locked. Manage it in HR > Exit Management.'
                     : (perm.lockedTitle('edit') ?? 'Edit')}
-              icon="ri-pencil-line" color="info"
+              icon="edit-svg" color="info"
               onClick={() => exitFrozen
                 ? sayExitFrozen()
                 : perm.guard('edit', () => openEditEmployee(e))}
@@ -6241,7 +6241,7 @@ function ActionBtn({
         }}
         onClick={() => { if (!disabled) onClick(); }}
       >
-        <i className={`${icon} fs-14`} />
+        <ActionIcon icon={icon} className="fs-14" />
         {badge === 'dot' && (
           <span
             aria-hidden

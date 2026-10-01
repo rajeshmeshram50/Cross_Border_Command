@@ -5,7 +5,7 @@ import { LFM_CSS } from '../sales/opportunity-pipeline/LeadFilterModal';
 import { Card, CardBody, Col, Row, Input, Modal, ModalBody, Spinner } from 'reactstrap';
 import { MasterFormStyles, MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
-import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ActionIcon, type DataTableColumn } from '../../components/ui/DataTable';
 import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -1895,7 +1895,7 @@ function ActionBtn({
         onClick={onClick}
         className={`rec-act-icon ${toneClass}`}
       >
-        <i className={icon} />
+        <ActionIcon icon={icon} />
       </button>
     </Tooltip>
   );

@@ -161,7 +161,7 @@ export default function HrBiometricDevices() {
          soft-primary / soft-danger squares. */
       cell: info => (
         <div className="d-flex gap-1 justify-content-center">
-          <ActionCell title="Edit"   icon="ri-pencil-line"     tone="info"   onClick={() => openEdit(info.row.original)} />
+          <ActionCell title="Edit"   icon="edit-svg"           tone="info"   onClick={() => openEdit(info.row.original)} />
           <ActionCell title="Remove" icon="ri-delete-bin-line" tone="danger" onClick={() => handleDelete(info.row.original)} />
         </div>
       ),

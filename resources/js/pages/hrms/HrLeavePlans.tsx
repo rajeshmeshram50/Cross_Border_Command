@@ -6,7 +6,7 @@ import '../../../css/recruitment.css';
 import '../../../css/leave.css';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
 import { leavePlansApi, leaveTypesApi, leaveBalancesApi, ApiLeavePlan, ApiLeaveType, ApiPlanEmployee, ApiLeaveBalancesResponse, ApiLeaveBalanceRow } from './leavePlansApi';
-import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ActionIcon, type DataTableColumn } from '../../components/ui/DataTable';
 import Tooltip from '../../components/ui/Tooltip';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { useAuth } from '../../contexts/AuthContext';
@@ -1236,7 +1236,7 @@ function CatalogRow({
           {canEdit && (
           <Tooltip label="Edit leave type">
             <button type="button" className="lp-row-action" aria-label="Edit" onClick={() => onEdit(t.id)}>
-              <i className="ri-pencil-line" />
+              <ActionIcon icon="edit-svg" />
             </button>
           </Tooltip>
           )}
