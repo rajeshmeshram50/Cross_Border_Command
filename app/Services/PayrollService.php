@@ -3318,8 +3318,9 @@ class PayrollService
             $status = (string) ($r->status ?? '');
             $hasIn  = !empty($r->check_in_at);
             $hasOut = !empty($r->check_out_at);
-            /* Is the first punch past the shift start? 10-minute grace, and the
-             * UTC→local conversion mirrors the attendance module. */
+            /* Is the first punch past the shift start? The grace comes from the
+             * attendance module itself (#22) so payroll cannot drift away from
+             * what the roster shows, and the UTC→local conversion mirrors it. */
             $arrivedLate = false;
             if ($hasIn && in_array(strtolower($status), ['present', 'half day'], true)) {
                 $localIn = Carbon::parse($r->check_in_at, 'UTC')->setTimezone(self::DISPLAY_TZ)->format('H:i');
@@ -3330,7 +3331,7 @@ class PayrollService
                  * charges half a day per 3 late marks). Days recorded before the
                  * stamp existed carry null and keep the old behaviour. (#216) */
                 $dayShift    = trim((string) ($r->shift_start ?? '')) ?: $shiftStart;
-                $arrivedLate = $this->minutesBetween($dayShift, $localIn) > 10;
+                $arrivedLate = $this->minutesBetween($dayShift, $localIn) > \App\Models\Attendance::LATE_GRACE_MINUTES;
             }
             // Promote Present → Late so the payslip's Late Marks column and the
             // Biometric Input table are not permanently zero (#34).

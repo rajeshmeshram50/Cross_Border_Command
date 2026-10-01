@@ -513,7 +513,8 @@ class ClientController extends Controller
             'admin_name' => 'nullable|string|max:255',
             // Per-tenant email: scope the dup check to THIS client so the same
             // email used by another client doesn't block updating this admin.
-            'admin_email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($adminUser?->id)->where(fn ($q) => $q->where('client_id', $client->id))->whereNull('deleted_at')],
+            // #221: system-wide — one address, one account, anywhere in the system.
+            'admin_email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($adminUser?->id)->whereNull('deleted_at')],
             'admin_phone' => [
                 'nullable', 'string', 'max:20',
                 Rule::unique('users', 'phone')->ignore($adminUser?->id)->whereNull('deleted_at'),

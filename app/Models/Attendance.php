@@ -91,6 +91,20 @@ class Attendance extends Model
     /** Public so callers outside the model can ask "what is today, locally?"
      *  against the same clock attendance is recorded on. (#216) */
     public const WORK_TZ = 'Asia/Kolkata';
+    /**
+     * Minutes after shift start that still count as ON TIME.
+     *
+     * One number, read by everything that has an opinion about lateness: the
+     * roster's Present→Late promotion, the attendance log, the payroll
+     * late-mark run that feeds the BR-01 half-day LOP, and the detail panel's
+     * "Xm late" caption. It used to be the literal 10 written out in four
+     * places plus a fifth copy in the React constants, which is how the detail
+     * panel came to call a 7-minute arrival late while the list, the log and
+     * the payslip all called it on time (#22). Changing the policy is changing
+     * this line.
+     */
+    public const LATE_GRACE_MINUTES = 10;
+
     /** Grace after the employee's shift ends before an unclosed day is
      *  auto-checked-out. A morning shift of 08:00–14:00 auto-closes at 15:00. */
     private const AUTO_CHECKOUT_GRACE_MINUTES = 60;

@@ -811,7 +811,11 @@ export default function Inbox() {
                             <button
                               type="button"
                               onClick={() => setReviewItem({ id: r.id, module: r.module })}
-                              className="ib-btn-approve"
+                              /* Green while the reporting manager still has to
+                                 act, faint blue once it is HR's turn — the same
+                                 stage rule the Expense and Advance tables use,
+                                 so one colour means one thing. (CBC #158) */
+                              className={`ib-btn-approve${r.raw.stage === 'hr' ? ' ib-btn-approve--hr' : ''}`}
                             >
                               <i className="ri-checkbox-circle-line me-1" />Review &amp; Approve
                             </button>

@@ -1,6 +1,6 @@
 import { Card, CardBody, Col, Row } from 'reactstrap';
 import { Shimmer } from '../../../components/ui/Shimmer';
-import DataTable, { type DataTableColumn } from '../../../components/ui/DataTable';
+import DataTable, { ActionIcon, type DataTableColumn } from '../../../components/ui/DataTable';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
 
 export default function HiringTab() {
@@ -132,7 +132,7 @@ export default function HiringTab() {
                       aria-label="Edit Draft"
                       onClick={() => { setHiringEditing({ ...r, _raw: r }); setRaiseHiringOpen(true); }}
                     >
-                      <i className="ri-pencil-line" />
+                      <ActionIcon icon="edit-svg" />
                     </button>
                   )}
                 </div>

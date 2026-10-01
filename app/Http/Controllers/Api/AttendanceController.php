@@ -1217,6 +1217,12 @@ class AttendanceController extends Controller
                 'overtimeSeconds'   => $overtimeSecs,
                 'expectedMinutes'   => $expectedMinutes,
                 'lateByMinutes'     => $lateByMinutes,
+                /* #22: the raw figure stays raw — the log and the payslip both
+                   want it — but the client was deciding on its own what counted
+                   as late and drew a "7m late" caption beside a roster that had
+                   already filed the day as on time. The threshold travels with
+                   the number now. */
+                'lateGraceMinutes'  => Attendance::LATE_GRACE_MINUTES,
                 'punches'           => $detailMode ? $this->renderPunches($todayPunches) : [],
                 'presentDays'       => $presentDays,
                 'lateMarks'         => $lateMarks,
@@ -1530,15 +1536,15 @@ class AttendanceController extends Controller
                 $stored = 'Present';
             }
 
-            // Auto-promote Present → Late based on the local first-in. 10-min
-            // grace matches the heuristic used by the MTD late-marks loop.
+            // Auto-promote Present → Late based on the local first-in, using
+            // the one grace figure every layer reads (#22).
             if (strcasecmp($stored, 'Present') === 0 && $row->check_in_at && $shiftStart) {
                 // The shift THIS day was worked under, not the employee's
                 // current one — see Attendance::shiftWindow(). (#216)
                 $dayShiftStart = $row->shiftWindow()[0] ?: $shiftStart;
                 $localIn = $row->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i');
                 $late = $this->minutesBetween($dayShiftStart, $localIn);
-                if ($late > 10) return 'Late';
+                if ($late > Attendance::LATE_GRACE_MINUTES) return 'Late';
             }
             return $stored;
         }
@@ -1767,7 +1773,7 @@ class AttendanceController extends Controller
                 // late. (#216)
                 $rowShift = $r->shiftWindow()[0] ?: $shiftStart;
                 if (strcasecmp($status, 'Present') === 0 && $firstIn !== '—' && $rowShift
-                    && $this->minutesBetween($rowShift, $firstIn) > 10) {
+                    && $this->minutesBetween($rowShift, $firstIn) > Attendance::LATE_GRACE_MINUTES) {
                     $status = 'Late';
                 }
                 // Missing checkout: a PAST day with a check-in but no check-out
@@ -2051,4 +2057,5 @@ class AttendanceController extends Controller
         }
         return sqrt($sum);
     }
+    
 }

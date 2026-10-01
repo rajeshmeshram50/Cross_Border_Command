@@ -1715,6 +1715,60 @@ class EmployeeController extends Controller
      * server returns 422. Soft-deleted rows are intentionally ignored
      * (they don't block fresh hires there either).
      */
+    /**
+     * "Is this email free?" — asked by Stage 1 of the employee wizard before it
+     * tries to save, so the duplicate is reported on the field the operator is
+     * standing on rather than after a round trip through the rest of the form.
+     *
+     * The answer is SYSTEM-WIDE (#221): an address held anywhere in this
+     * database, by any client, in any branch, by a login, an employee, a
+     * candidate, an organisation contact or a trade party, is taken. Nothing is
+     * disclosed about who holds it — EmailGuard::message names the KIND of
+     * record and never the record, because the holder may sit in a tenant this
+     * user cannot see.
+     */
+    public function checkEmail(Request $request)
+    {
+        $this->authorize($request, 'can_view');
+
+        $email = trim((string) $request->query('email', ''));
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return response()->json(['available' => true, 'conflict' => null]);
+        }
+
+        $excludeId = $request->integer('exclude_employee_id') ?: null;
+
+        if ($excludeId !== null) {
+            $clientId = Employee::withTrashed()->where('id', $excludeId)->value('client_id');
+        } else {
+            [$clientId] = $this->resolveOwnership($request);
+        }
+        $clientId = $clientId === null ? null : (int) $clientId;
+
+        /* Every scope a person's address can already be sitting in. `person`
+           covers logins and employee records, `candidate` the pipeline, and
+           `organisation` the client/branch contact addresses — the three that
+           produced the duplicates this ticket is about. The trade-party scopes
+           are included too: the instruction is that one address is used once,
+           full stop. */
+        foreach (['person', 'candidate', 'organisation', 'customer', 'consignee', 'vendor'] as $scope) {
+            $ignore = ($scope === 'person' && $excludeId !== null)
+                ? ['table' => 'employees', 'id' => $excludeId]
+                : [];
+
+            $conflict = \App\Support\EmailGuard::conflict($scope, $email, $clientId, $ignore);
+            if ($conflict) {
+                return response()->json([
+                    'available' => false,
+                    'conflict'  => true,
+                    'message'   => \App\Support\EmailGuard::message($conflict),
+                ]);
+            }
+        }
+
+        return response()->json(['available' => true, 'conflict' => null]);
+    }
+
     public function checkMobile(Request $request)
     {
         $this->authorize($request, 'can_view');
@@ -3698,29 +3752,28 @@ class EmployeeController extends Controller
          * config/email_uniqueness.php so the two columns now participate, and
          * applied to BOTH address fields. Tenant-scoped like everything else
          * here: another organisation's address is not a clash. (#221) */
-         /* Skipped when the row has no tenant. `organisation` is tenant-scoped,
-            and EmailGuard drops the filter when the id is null — which turns the
-            check into a comparison against EVERY organisation's address, so a
-            platform-level employee would be refused because an unrelated client
-            uses that mailbox. Email is per-tenant here by design. A null-tenant
-            row keeps the `users` rule below, which scopes itself explicitly. */
-        $orgEmailRule = $scopeClientId === null
-            ? null
-            : new \App\Rules\UniqueSystemEmail('organisation', $scopeClientId);
-        $withOrg = fn(array $rules) => $orgEmailRule ? array_merge($rules, [$orgEmailRule]) : $rules;
+         /* Applied whether or not the row has a tenant. The scope is system-wide
+            now (#221), so EmailGuard ignores the client id entirely and a
+            platform-level employee is checked against the same single list of
+            addresses as everybody else. */
+        $orgEmailRule = new \App\Rules\UniqueSystemEmail('organisation', $scopeClientId);
+        $withOrg = fn(array $rules) => array_merge($rules, [$orgEmailRule]);
 
-        // Email is unique PER TENANT (not globally) — the same email may belong
-        // to another client. Scope the dup check to the owning client_id so a
-        // collision in a DIFFERENT client no longer blocks creation here. Mirrors
-        // the pan_number rule above and the users_email_client_unique DB index.
-        // Only an ACTIVE account holds its email slot. When an employee EXITS,
-        // their user is marked `email_active = false`, which frees the email for
-        // reuse — so an exited person's email no longer blocks a new registration
-        // (the flag is reset to true on rehire). See migration add_email_active.
+        /* Email is unique ACROSS THE WHOLE SYSTEM (#221): once an address holds
+         * a login anywhere in this database it is spoken for, whatever client
+         * or branch that login belongs to. The tenant filter that used to sit
+         * here is gone — a collision in another organisation is now a collision.
+         *
+         * `email_active` stays in the rule. An address is released by EXIT, not
+         * by tenancy: exiting someone sets email_active = false and the flag
+         * flips back on rehire, which is how the same person returns to the
+         * same mailbox. The create-side rule below still refuses to hand a
+         * leaver's address to a DIFFERENT new joiner, so "freed" never means
+         * "free for anyone". */
         $emailRule[] = Rule::unique('users', 'email')
             ->whereNull('deleted_at')
             ->where('email_active', true)
-            ->where(fn($q) => $tenantWhere($q)
+            ->where(fn($q) => $q
                 ->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $request->input('email'))]))
             ->ignore($ignoreUserId);
 
@@ -3743,13 +3796,14 @@ class EmployeeController extends Controller
          *   - not rehireable (blacklisted, terminated, absconded, ...) -> the
          *     address stays spoken for; a genuinely new person needs their own.
          *
-         * Scoped to the tenant, like every other check here. UPDATES are
+         * System-wide, like every other email check here (#221). UPDATES are
          * untouched: an edit is not a new person, and the rehire flow itself
          * writes through the same validator. */
         if (!$isUpdate && $request->filled('email')) {
-            $emailRule[] = function (string $attribute, $value, $fail) use ($tenantWhere) {
+            $emailRule[] = function (string $attribute, $value, $fail) {
+                /* #221: system-wide, like the rule above — a leaver in ANOTHER
+                   organisation still holds their address. */
                 $user = \App\Models\User::query()
-                    ->where($tenantWhere)
                     ->where('email_active', false)
                     ->whereNull('deleted_at')
                     ->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $value)])
@@ -4102,7 +4156,7 @@ class EmployeeController extends Controller
             // branch/client) — it can't be branch-scoped without making login
             // ambiguous. Spell that out so an admin who can only see their own
             // branch doesn't read this as a false positive.
-            'email.unique'                 => 'This email already has an account in this organization. Each email can be used only once per organization — use a different email.',
+            'email.unique'                 => 'This email address is already in use in the system. Each address can be used only once, by one person, in one organization — use a different email.',
         ]);
     }
 

@@ -243,7 +243,10 @@ class BranchController extends Controller
             // Email is unique PER TENANT — scope the dup check to THIS branch's
             // client so the same email used in a different client doesn't block
             // creation here. Matches the users_email_client_unique DB index.
-            'user_email' => ['required', 'email', 'regex:' . self::EMAIL_REGEX, Rule::unique('users', 'email')->where(fn($q) => $q->where('client_id', $clientId))->whereNull('deleted_at')],
+            /* #221: system-wide — an address that is a login anywhere, in any
+               client or branch, is taken. The client_id filter that used to
+               narrow this is gone. */
+            'user_email' => ['required', 'email', 'regex:' . self::EMAIL_REGEX, Rule::unique('users', 'email')->whereNull('deleted_at')],
             'user_phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
             'user_designation' => 'nullable|string|max:100',
             'user_password' => 'required|string|min:6',
@@ -630,7 +633,8 @@ class BranchController extends Controller
             // Letters and spaces only — matches the employee form's name rule.
             // Without it digits and punctuation went through untouched.
             'user_name' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z ]+$/'],
-            'user_email' => ['nullable', 'email', 'regex:' . self::EMAIL_REGEX, Rule::unique('users', 'email')->ignore($branchUser?->id)->where(fn($q) => $q->where('client_id', $branch->client_id))->whereNull('deleted_at')],
+            // #221: system-wide, as on create.
+            'user_email' => ['nullable', 'email', 'regex:' . self::EMAIL_REGEX, Rule::unique('users', 'email')->ignore($branchUser?->id)->whereNull('deleted_at')],
             'user_phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
             'user_designation' => 'nullable|string|max:100',
             'user_password' => 'nullable|string|min:6',

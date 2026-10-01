@@ -2423,10 +2423,16 @@
   color: #7c3aed;
   font-size: 16px;
 }
-.dlv-badge-draft {
+/* .badge.dlv-badge-draft, not .dlv-badge-draft: Bootstrap's own .badge sets
+   --bs-badge-color (white) and loads after this file, so the pill was white
+   text on a pale blue tint — present, unreadable. (#226) */
+.badge.dlv-badge-draft {
   background: rgba(14, 165, 233, 0.16);
+  border: 1px solid rgba(14, 165, 233, 0.38);
   color: #0369a1;
   font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
 }
 .dlv-reason {
   font-size: 11.5px;
@@ -3511,16 +3517,58 @@
 }
 [data-bs-theme="dark"] .ext-toolbar-row--scope  { background: rgba(59,130,246,0.12);  border-color: rgba(59,130,246,0.30); }
 [data-bs-theme="dark"] .ext-toolbar-row--status { background: rgba(139,92,246,0.12); border-color: rgba(139,92,246,0.30); }
+/* No outline on the tabs HERE. The shared rail gives an inactive tab a border
+   so it reads as a button on a plain toolbar; this row is already a tinted,
+   bordered card of its own, and a third ring inside it was one too many. The
+   white fill alone is enough separation against the wash. */
+.ext-toolbar-row .dt-tab.off {
+  border-color: transparent;
+  box-shadow: none;
+}
+.ext-toolbar-row .dt-tab.off:hover { border-color: transparent; }
+
 /* The search box sits on a tinted row now, so it needs its own solid ground
    to stay readable rather than borrowing the wash behind it. */
 .ext-toolbar-row--status .ext-search-input,
 .ext-toolbar-row--status .ext-export-toggle { background: var(--vz-card-bg); }
 .ext-toolbar-actions { row-gap: 8px; }
-.ext-search { min-width: 180px; max-width: 320px; flex: 0 1 260px; }
+/* #224: the box changed width as you typed — fixed here from both ends,
+   because it had two causes and either one alone brings it back.
+   · It was shrinkable (flex: 0 1 260px) while the tab counts beside it
+     changed with the filtered list, so the row re-apportioned space on every
+     keystroke and the field visibly breathed.
+   · The × that empties the search (SearchClear) is a real 24px flex item that
+     exists only while there IS a query. min-width:auto means a flex item
+     cannot go below its min-content, so the × pushed the box WIDER than its
+     basis the moment the first character landed — pinning the basis alone
+     does not stop that.
+   So: the width is pinned, the input is allowed to shrink inside it
+   (min-width: 0), and the × is lifted out of the flow onto right-hand padding
+   that is reserved whether the button is there or not. On a phone the box
+   still takes the full row, as it always did. */
+.ext-search {
+  flex: 0 0 260px;
+  width: 260px;
+  max-width: 100%;
+  position: relative;
+}
+@media (max-width: 575.98px) { .ext-search { flex: 1 1 100%; width: 100%; } }
 .ext-search-input {
-  font-size: 13px; height: 38px; border-radius: 10px;
+  /* 37px: the .dt-tab pill's height, as in every DataTable toolbar. This
+     toolbar is hand-built, so it did not follow when that one changed. */
+  font-size: 13px; height: 37px; border-radius: 10px;
   border: 1.5px solid var(--vz-border-color);
   padding-left: 34px;
+  /* Room for the ×, held open permanently so the text never reflows when it
+     appears, and the caret never slides under it. */
+  padding-right: 32px;
+  min-width: 0;
+}
+.ext-search .ui-search-clear {
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 .ext-search-input:focus {
   border-color: #8b5cf6;
@@ -3534,7 +3582,7 @@
   border-radius: 10px;
   font-size: 12.5px;
   font-weight: 700;
-  height: 38px;
+  height: 37px;
   padding: 0 14px;
 }
 .ext-new-claim {
@@ -3545,7 +3593,7 @@
   box-shadow: 0 4px 12px rgba(99,102,241,0.3);
   font-size: 12.5px;
   font-weight: 700;
-  height: 38px;
+  height: 37px;
   padding: 0 26px;
   min-width: 210px;
   justify-content: center;

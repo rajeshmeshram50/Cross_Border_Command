@@ -84,7 +84,12 @@ class AdvanceRequestController extends Controller
             //     filed by their transitive downstream (direct + indirect
             //     reports), not just the first hop.
             if (in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) {
-                // no-op — tenant scope is the only filter.
+                // Tenant scope is the only filter — except that Team never
+                // shows the viewer their own rows, admin or not (QA #180/#181).
+                $myEmployeeId = $this->currentEmployeeId($user);
+                if ($myEmployeeId) {
+                    $q->where('employee_id', '!=', $myEmployeeId);
+                }
             } else {
                 $myEmployeeId = $this->currentEmployeeId($user);
                 $teamIds = $this->downstreamEmployeeIds($myEmployeeId);
@@ -100,10 +105,14 @@ class AdvanceRequestController extends Controller
                 if (!$teamIds && !$managedOthers) {
                     return response()->json([]);
                 }
-                // Include the manager's OWN advances — the "My Team" surface shows
-                // the whole team and a manager is part of their team, so their
-                // own advances must appear alongside their reports' (QA #144).
-                if ($myEmployeeId) $teamIds[] = $myEmployeeId;
+                /* The viewer's OWN rows are NOT part of Team. They were (QA
+                   #144, "a manager is part of their team"), and that is the
+                   reading QA #180 / #181 overturned: a manager opening Team
+                   wants what is waiting on them from other people, and their
+                   own filings are one tab away under My Expenses. Excluded
+                   below rather than simply left out of $teamIds, because the
+                   manager_id OR-clause would otherwise pull a self-filed row
+                   back in through the manager stamped on it. */
                 $teamIds = array_values(array_unique($teamIds)) ?: [-1];
                 // Filtering on employee_id alone reads the hierarchy as it stands
                 // TODAY: the moment a report is moved under a different manager,
@@ -118,6 +127,9 @@ class AdvanceRequestController extends Controller
                         $w->orWhere('manager_id', $myEmployeeId);
                     }
                 });
+                if ($myEmployeeId) {
+                    $q->where('employee_id', '!=', $myEmployeeId);
+                }
             }
         } else {
             $this->guardHrPermission($user, 'can_view');
@@ -2061,11 +2073,7 @@ class AdvanceRequestController extends Controller
         return round($total, 2);
     }
 
-    /**
-     * GET /advance-requests/emi-info
-     * EMI headroom for an employee: net salary, ongoing EMIs, 70% cap and the
-     * amount still available for a new advance's per-cycle EMI.
-     */
+   
     public function emiInfo(Request $request)
     {
         $user = $request->user();
@@ -2087,11 +2095,7 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-    /**
-     * POST /advance-requests/{id}/set-deductions
-     * Lock the one-time deductions / additions WITHOUT recording a payment —
-     * fixes the net payable before the first payout. Mirrors ExpenseClaim.
-     */
+   
     public function setDeductions(Request $request, $id)
     {
         $user = $request->user();
@@ -2147,12 +2151,7 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-    /**
-     * POST /advance-requests/{id}/settle
-     * Record ONE payout installment. The FIRST call also locks the sanctioned
-     * amount (requested − Σ deductions + Σ additions). Partial payments allowed
-     * until the sanctioned amount is met.
-     */
+  
     public function settle(Request $request, $id)
     {
         $user = $request->user();
@@ -2274,10 +2273,7 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-    /**
-     * Stream the proof-of-payment file attached to one settlement installment.
-     * Auth via query token so a plain browser link works (mirrors attachments).
-     */
+   
     public function paymentProof(Request $request, $paymentId)
     {
         $this->authenticateFromQueryToken($request);
@@ -2295,14 +2291,7 @@ class AdvanceRequestController extends Controller
         );
     }
 
-    /**
-     * POST /advance-requests/{id}/recover-onetime
-     * Record a ONE-TIME DIRECT repayment against a SELF advance's pending
-     * recovery — the employee pays the outstanding balance back from their
-     * profile instead of via payroll (typically at exit, when there is no more
-     * salary to deduct from and the advance can't just be removed). Direct only;
-     * there is no payroll option here by design.
-     */
+  
     public function recoverOnetime(Request $request, $id)
     {
         $user = $request->user();
@@ -2383,10 +2372,6 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-    /**
-     * Stream the proof attached to a one-time direct recovery payment.
-     * Auth via query token so a plain browser link works (mirrors paymentProof).
-     */
     public function recoveryPaymentProof(Request $request, $id, $index)
     {
         return $this->streamJsonAttachment(
@@ -2412,20 +2397,7 @@ class AdvanceRequestController extends Controller
         return "https://books.zoho.{$region}/app/{$org}#/expenses/" . rawurlencode($expenseId);
     }
 
-    /**
-     * POST /advance-requests/payments/{paymentId}/sync-zoho
-     * Push an advance payout to Zoho Books as an Expense — mirrors
-     * ExpenseClaimController::syncPaymentToZoho:
-     *   • Expense Account   ← the advance type (find-or-create in Zoho)
-     *   • Paid Through      ← the payout method (find-or-create in Zoho)
-     *   • Amount / Notes    ← payout amount / note
-     *   • Reference #       ← "ADV-ID - <Advance Type>"
-     *   • Receipts          ← EVERY related PDF: the payout proof, the advance's
-     *                         own attachments, and each distribution row's proof.
-     * Applies to BOTH self and company advances (the payout to the employee is
-     * the booked expense either way). Idempotent: a payment already carrying a
-     * zoho_expense_id is not re-created.
-     */
+
     public function syncPaymentToZoho(Request $request, $paymentId)
     {
         $user    = $request->user();
@@ -2535,10 +2507,7 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-    /**
-     * Normalise an itemised adjustments array (deductions / additions): keep only
-     * rows with amount > 0, require a reason for each, return [rows, total, err].
-     */
+  
     private function normaliseAdjustments(array $items, string $kind): array
     {
         $rows  = [];

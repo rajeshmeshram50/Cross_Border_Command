@@ -77,7 +77,7 @@ export default function AdvanceSettleModal({
   return createPortal((
     <div className="asm-backdrop" onMouseDown={onClose}>
       <style>{ASM_CSS}</style>
-      <div className="asm-modal" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
+      <div className={`asm-modal`} onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="asm-hero">
           <div className="asm-hero-l">
             <span className="asm-hero-ico"><i className="ri-check-double-line" /></span>
@@ -153,7 +153,14 @@ export default function AdvanceSettleModal({
           <div className="asm-foot-hint"><i className="ri-information-line" /> {rows.length} row{rows.length === 1 ? '' : 's'} · Total used {inr(total)}</div>
           <div className="asm-foot-r">
             <button className="asm-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
-            <button className="asm-btn-primary" onClick={submit} disabled={saving}>{saving ? 'Settling…' : 'Settle Advance'}</button>
+            {/* A spinner, not just a changed word: the rows carry file uploads,
+                so this can run for several seconds and the only feedback was
+                the verb. (#183) */}
+            <button className="asm-btn-primary" onClick={submit} disabled={saving}>
+              {saving
+                ? <><i className="ri-loader-4-line asm-spin" /> Settling…</>
+                : 'Settle Advance'}
+            </button>
           </div>
         </div>
       </div>
@@ -173,15 +180,26 @@ const ASM_CSS = `
 .asm-hero-sub{font-size:12px;opacity:.85;margin-top:2px;}
 .asm-x{background:rgba(255,255,255,.16);border:none;color:#fff;width:30px;height:30px;border-radius:9px;cursor:pointer;font-size:14px;flex-shrink:0;}
 .asm-x:hover{background:rgba(255,255,255,.3);}
-.asm-info{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:14px 22px;background:linear-gradient(120deg,#0b6a86,#0891b2);color:#fff;}
+/* The REASON column was being squeezed to nothing by the amount beside it:
+   equal 1fr tracks that cannot shrink below their content give the widest
+   number the room, and the free text loses it. The amount columns size to
+   their content, the reason takes what is left. (#182) */
+.asm-info{display:grid;grid-template-columns:auto auto max-content minmax(0,1fr);gap:14px;padding:14px 22px;background:linear-gradient(120deg,#0b6a86,#0891b2);color:#fff;}
+.asm-info>div{min-width:0;}
 .asm-info label{display:block;font-size:9.5px;font-weight:800;letter-spacing:.05em;opacity:.85;}
-.asm-info>div>div{font-size:13.5px;font-weight:700;margin-top:2px;}
+.asm-info>div>div{font-size:13.5px;font-weight:700;margin-top:2px;overflow-wrap:anywhere;}
 .asm-info-clip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .asm-body{padding:18px 22px;display:flex;flex-direction:column;gap:14px;}
 .asm-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
-.asm-kpi{border:1px solid #e2e8f0;border-radius:12px;padding:10px 14px;background:#f8fafc;}
+/* min-width:0 — a grid track refuses to shrink below its content by default,
+   so a ten-digit total pushed the three KPI tiles wider than the modal and the
+   strip spilled past its edge. (#182) */
+.asm-kpi{border:1px solid #e2e8f0;border-radius:12px;padding:10px 14px;background:#f8fafc;min-width:0;}
 .asm-kpi label{display:block;font-size:9.5px;font-weight:800;letter-spacing:.05em;color:#64748b;}
-.asm-kpi b{font-size:16px;font-weight:800;color:#0f172a;}
+/* The figure wraps inside its tile instead of widening it, and tabular digits
+   keep the three tiles reading as one row of numbers. */
+.asm-kpi b{font-size:16px;font-weight:800;color:#0f172a;display:block;min-width:0;
+  overflow-wrap:anywhere;line-height:1.25;font-variant-numeric:tabular-nums;}
 .asm-sec-lbl{font-size:11px;font-weight:800;letter-spacing:.03em;color:#0e7490;text-transform:uppercase;}
 .asm-rows{display:flex;flex-direction:column;gap:8px;}
 .asm-row{display:grid;grid-template-columns:150px 1fr 170px 30px;gap:8px;align-items:center;}
@@ -209,7 +227,13 @@ const ASM_CSS = `
 .asm-foot-hint i{color:#0891b2;}
 .asm-foot-r{display:flex;gap:10px;}
 .asm-btn-ghost{border:1.5px solid #e2e8f0;background:#fff;color:#475569;border-radius:9px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;}
-.asm-btn-primary{border:none;background:linear-gradient(135deg,#0e7490,#0891b2);color:#fff;border-radius:9px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(8,145,178,.35);}
+.asm-btn-primary{border:none;background:linear-gradient(135deg,#0e7490,#0891b2);color:#fff;border-radius:9px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(8,145,178,.35);display:inline-flex;align-items:center;gap:6px;}
+.asm-btn-primary:disabled{opacity:.75;cursor:progress;}
+.asm-spin{display:inline-block;animation:asm-spin .8s linear infinite;}
+@keyframes asm-spin{to{transform:rotate(360deg);}}
+/* While it saves, the sheet behind the button stops taking input — a second
+   row typed mid-upload would not be in what was sent. (#183) */
+.asm-saving .asm-body,.asm-saving .asm-info{pointer-events:none;opacity:.6;}
 .asm-btn-primary:disabled{opacity:.6;cursor:not-allowed;}
 [data-bs-theme="dark"] .asm-modal{background:#0c232c;}
 [data-bs-theme="dark"] .asm-kpi{background:#0b1e27;border-color:#173947;}

@@ -21,7 +21,7 @@ import HeaderFooterPanel, {
 } from '../hrms/doc-templates/HeaderFooterPanel';
 import DocGenerateModal from '../hrms/doc-templates/DocGenerateModal';
 import Tooltip from '../../components/ui/Tooltip';
-import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ActionIcon, ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import { Shimmer } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
@@ -1098,7 +1098,7 @@ export default function HrEmployeeOnboarding() {
                 style={empPerm.canEdit ? undefined : { opacity: .5, cursor: 'not-allowed', filter: 'grayscale(0.7)' }}
                 onClick={() => empPerm.guard('edit', () => openEdit(r))}
               >
-                <i className="ri-pencil-line" style={{ fontSize: 14 }} />
+                <ActionIcon icon="edit-svg" />
               </button>
             </Tooltip>
             {/* Onboarding cannot start before the person has actually joined.

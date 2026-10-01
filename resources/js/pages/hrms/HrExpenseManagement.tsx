@@ -868,13 +868,16 @@ export default function HrExpenseManagement() {
 
   // Company Used / Self Used toggle — sits at the START of the Advance table
   // toolbar (before the status tabs) via the DataTable `leadingToolbar` slot.
-  // Same rail + rounded-rect (8px) design as the status tabs — only the active
-  // colour differs (Company = violet, Self = blue).
+  // Same rail + rounded-rect (8px) design as the status tabs, and ONE active
+  // colour for both halves. Self Used used to fill blue while Company Used
+  // filled violet, so the toggle changed colour as well as side and the page
+  // read as two different screens depending on which half was chosen.
+  const USED_FOR_ACTIVE = '#8b5cf6';
   const usedForToggle = (
     <div className="d-inline-flex" style={{ background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 10, padding: 4, gap: 4 }}>
       {[
-        { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company, active: '#8b5cf6' },
-        { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self,    active: '#0ea5e9' },
+        { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company, active: USED_FOR_ACTIVE },
+        { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self,    active: USED_FOR_ACTIVE },
       ].map(t => {
         const on = advUsedFor === t.key;
         return (

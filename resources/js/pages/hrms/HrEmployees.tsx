@@ -2117,6 +2117,36 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     }
   }, []);
 
+  /* #221: an email address is used ONCE in this system — any client, any
+     branch, any kind of record. The save refuses it either way, but a wizard
+     that only says so on the way out of Stage 1 (or, worse, after Stage 4)
+     makes the operator re-find the field. This asks the same question the
+     validator will ask, on blur and again before Next, so the answer lands on
+     the field being typed. Mirrors checkMobileUnique above, token and all. */
+  const emailCheckTokenRef = useRef(0);
+  const checkEmailUnique = useCallback(async (value: string): Promise<boolean> => {
+    const v = (value || '').trim();
+    if (!v || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return true;
+
+    const token = ++emailCheckTokenRef.current;
+    try {
+      const params = new URLSearchParams({ email: v });
+      const excludeId = editingDbIdRef.current;
+      if (excludeId) params.set('exclude_employee_id', String(excludeId));
+      const r = await api.get(`/employees/check-email?${params.toString()}`);
+      // A stale answer must not overwrite a newer one.
+      if (token !== emailCheckTokenRef.current) return true;
+      if (r?.data?.available === false) {
+        setEErrors(prev => ({ ...prev, email: r.data.message || 'This email address is already in use.' }));
+        return false;
+      }
+      return true;
+    } catch {
+      // Unreachable check must never block the form — the save still refuses.
+      return true;
+    }
+  }, []);
+
   useEffect(() => {
     if (!empOpen) return;
     let cancelled = false;
@@ -3043,6 +3073,12 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     setSaving(true);
     try {
       if (empStep === 1) {
+        const emailOk = await checkEmailUnique(eWorkEmail);
+        if (!emailOk) {
+          toast.error('Duplicate email address', 'This email is already used somewhere in the system. Each address can be used only once.');
+          scrollToFirstError();
+          return;
+        }
         const mobileOk = await checkMobileUnique(eMobile);
         if (!mobileOk) {
           toast.error('Duplicate mobile number', 'This mobile is already in use by another employee.');
@@ -4743,6 +4779,8 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                             setEWorkEmail(v);
                             clearEErr('email');
                           }}
+                          // #221: answered here, not three steps later.
+                          onBlur={e => { void checkEmailUnique(e.target.value); }}
                         />
                         {eErrors.email && <small className="emp-err">{eErrors.email}</small>}
                       </Col>

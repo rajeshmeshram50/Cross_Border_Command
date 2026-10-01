@@ -813,6 +813,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::get   ('/employees/available-assets',  [EmployeeController::class, 'availableAssets']);
 
     Route::get   ('/employees/check-mobile',      [EmployeeController::class, 'checkMobile']);
+    // #221: same shape as check-mobile, asked by Stage 1 before it saves.
+    Route::get   ('/employees/check-email',       [EmployeeController::class, 'checkEmail']);
 
     Route::post  ('/employees/onboarding-invite', [OnboardingController::class, 'createInvite']);
 

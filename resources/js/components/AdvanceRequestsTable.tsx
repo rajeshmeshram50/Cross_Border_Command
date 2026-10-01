@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useMemo } from 'react';
-import { useScrollLock } from '../hooks/useScrollLock';
+import { useAnchoredPopover } from '../hooks/useAnchoredPopover';
 import { createPortal } from 'react-dom';
 import DataTable, { TruncCell, type DataTableColumn } from './ui/DataTable';
 import Tooltip from './ui/Tooltip';
@@ -356,7 +356,9 @@ export function advanceRequestColumns({
         const net = r.sanctioned_amount != null ? Number(r.sanctioned_amount) : null;
         const inr = (v: number) => '₹' + v.toLocaleString('en-IN');
         const adjusted = net != null && Math.abs(net - req) > 0.005;
-        if (!adjusted) return <span className="fw-bold">{inr(req)}</span>;
+        /* Tooltipped even when the figure is unadjusted: the column is 110px,
+           which clips a lakh-plus amount. (#227) */
+        if (!adjusted) return <Tooltip label={inr(req)}><span className="fw-bold">{inr(req)}</span></Tooltip>;
         return (
           <Tooltip label={`Requested ${inr(req)} · sanctioned ${inr(net!)} (${net! > req ? '+' : '−'}${inr(Math.abs(net! - req))})`}>
             <span className="d-inline-flex flex-column align-items-center" style={{ lineHeight: 1.15 }}>
@@ -1047,59 +1049,11 @@ function AuditLogTrigger({
 }) {
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const popRef = useRef<HTMLDivElement | null>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-
-  useEffect(() => {
-    if (!open) { setPos(null); return; }
-    const recompute = () => {
-      const btn = btnRef.current;
-      if (!btn) return;
-      const rect = btn.getBoundingClientRect();
-      const POP_WIDTH = 340;
-      const POP_HEIGHT = 280;
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const top = spaceBelow > POP_HEIGHT
-        ? rect.bottom + 6
-        : Math.max(8, rect.top - POP_HEIGHT - 6);
-      const left = Math.min(
-        window.innerWidth - POP_WIDTH - 12,
-        Math.max(12, rect.right - POP_WIDTH),
-      );
-      setPos({ top, left });
-    };
-    recompute();
-    // Pinned to fixed coords: a scroll behind it strands the popover, so close
-    // instead — unless the scroll is inside the popover's own body (CBC #53).
-    const onScroll = (e: Event) => {
-      const t = e.target as HTMLElement | null;
-      if (t && typeof t.closest === 'function' && t.closest('.ep-audit-popover')) return;
-      setOpen(false);
-    };
-    window.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', recompute);
-    return () => {
-      window.removeEventListener('scroll', onScroll, true);
-      window.removeEventListener('resize', recompute);
-    };
-  }, [open, setOpen]);
-
-  // Lock the page behind the popover; the log itself still scrolls (CBC #73).
-  /* Shared hook instead of a local html+body lock: that pair misses the
-     element this app actually scrolls (.main-content), so the page carried on
-     moving behind the popup. */
-  useScrollLock(open);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (popRef.current && popRef.current.contains(t)) return;
-      if (btnRef.current && btnRef.current.contains(t)) return;
-      setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [open, setOpen]);
+  /* Shared with the identical panel in ExpenseClaimsTable, which is where both
+     copies of its two faults came from: the page lock's own scroll event
+     closed the panel on the first click, and the position was guessed, painted
+     and then corrected in view. (#226) */
+  const { style: anchorStyle } = useAnchoredPopover({ open, setOpen, btnRef, popRef });
 
   return (
     <>
@@ -1118,15 +1072,12 @@ function AuditLogTrigger({
       >
         <i className="ri-more-2-fill" />
       </button>
-      {open && pos && createPortal(
+      {open && createPortal(
         <div
           ref={popRef}
           className="ep-audit-popover"
           style={{
-            position: 'fixed',
-            top: pos.top,
-            left: pos.left,
-            width: 340,
+            ...anchorStyle,
             background: 'var(--vz-card-bg, #ffffff)',
             color: 'var(--vz-body-color, #1f2937)',
             border: '1px solid var(--vz-border-color, #e5e7eb)',

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { Card, CardBody } from 'reactstrap';
+import { Card, CardBody, Modal, ModalBody } from 'reactstrap';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import Tooltip from '../../../components/ui/Tooltip';
@@ -1239,7 +1239,10 @@ function Step2(props: {
           a second place to edit the same fields is how two screens disagree. */}
 
       <div className="col-xl-4">
-        <section style={{ ...sectionStyle, position: 'sticky', top: 12, padding: 0, overflow: 'hidden', background: '#fff' }}>
+        {/* #50: this card was the one section on the page with no class, so
+            every dark rule below missed it and the step stayed a white slab on
+            a dark page. Classed like its neighbours now. */}
+        <section className="tpl-section tpl-summary-card" style={{ ...sectionStyle, position: 'sticky', top: 12, padding: 0, overflow: 'hidden', background: '#fff' }}>
           {/* Ruled off from the body, as the step cards above it are. */}
           <header className="tpl-summary-head" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderBottom: '1px solid #e9e7f5', background: '#f5f3ff' }}>
             <span style={cardHeadTile}>
@@ -1263,9 +1266,9 @@ function Step2(props: {
                 'Role', props.setup.roleType || '—', false],
             ] as [string, string, string, boolean][]).map(([icon, label, value, accent]) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0' }}>
-                <i className={icon} style={{ fontSize: 15, color: '#9ca3af', flex: '0 0 18px' }} />
-                <span style={{ fontSize: 12.5, color: '#6b7280', flex: '0 0 110px' }}>{label}</span>
-                <span style={{
+                <i className={`${icon} tpl-sum-icon`} style={{ fontSize: 15, color: '#9ca3af', flex: '0 0 18px' }} />
+                <span className="tpl-sum-label" style={{ fontSize: 12.5, color: '#6b7280', flex: '0 0 110px' }}>{label}</span>
+                <span className={`tpl-sum-value${accent ? ' is-accent' : ''}${value === '—' || value === 'Generated on save' ? ' is-empty' : ''}`} style={{
                   fontSize: 13, minWidth: 0, wordBreak: 'break-word',
                   fontWeight: value === '—' || value === 'Generated on save' ? 600 : 800,
                   color: value === '—' || value === 'Generated on save' ? '#9ca3af' : (accent ? '#4f46e5' : '#111827'),
@@ -1274,11 +1277,11 @@ function Step2(props: {
               </div>
             ))}
 
-            <div style={{ borderTop: '1px solid #f1f0fa', margin: '9px 0 12px' }} />
+            <div className="tpl-sum-rule" style={{ borderTop: '1px solid #f1f0fa', margin: '9px 0 12px' }} />
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-              <i className="ri-shield-check-line" style={{ fontSize: 15, color: '#6b7280' }} />
-              <span style={{ fontSize: 12.5, fontWeight: 800, color: '#374151' }}>Applicable Rules</span>
+              <i className="ri-shield-check-line tpl-sum-icon" style={{ fontSize: 15, color: '#6b7280' }} />
+              <span className="tpl-sum-subhead" style={{ fontSize: 12.5, fontWeight: 800, color: '#374151' }}>Applicable Rules</span>
             </div>
             <div className="d-flex flex-wrap" style={{ gap: 7 }}>
               {([
@@ -1287,7 +1290,7 @@ function Step2(props: {
                 ['Manager approval', props.setup.requiresMgr],
                 ['Audit trail', props.setup.includeAudit],
               ] as [string, boolean][]).map(([label, on]) => (
-                <span key={label} style={{
+                <span key={label} className={`tpl-rule-chip${on ? ' is-on' : ''}`} style={{
                   fontSize: 11.5, fontWeight: 700, padding: '5px 11px', borderRadius: 8,
                   background: on ? '#ecfdf5' : '#f9fafb',
                   color: on ? '#047857' : '#9ca3af',
@@ -1300,12 +1303,18 @@ function Step2(props: {
 
             {/* Step 01's description, read-only. It is the one Setup field the
                 summary had no row for, and the card had the room. */}
-            <div style={{ borderTop: '1px solid #f1f0fa', margin: '12px 0' }} />
+            <div className="tpl-sum-rule" style={{ borderTop: '1px solid #f1f0fa', margin: '12px 0' }} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
-              <i className="ri-file-text-line" style={{ fontSize: 15, color: '#6b7280' }} />
-              <span style={{ fontSize: 12.5, fontWeight: 800, color: '#374151' }}>Description</span>
+              <i className="ri-file-text-line tpl-sum-icon" style={{ fontSize: 15, color: '#6b7280' }} />
+              <span className="tpl-sum-subhead" style={{ fontSize: 12.5, fontWeight: 800, color: '#374151' }}>Description</span>
             </div>
-            <div className="tpl-summary-desc" style={{
+            {/* #51: the dark rule below already gave this box white text, but it
+                was sitting on the unclassed (still white) Summary card, so the
+                description typed in Step 1 was white on white — present, and
+                unreadable. The card is themed now; the empty-state line keeps
+                its own, dimmer ink so a real description still reads louder
+                than the placeholder. */}
+            <div className={`tpl-summary-desc${props.setup.description ? '' : ' is-empty'}`} style={{
               fontSize: 12.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
               padding: '10px 12px', borderRadius: 10, background: '#fafaff', border: '1px solid #f1f0fa',
               color: props.setup.description ? '#374151' : '#9ca3af',
@@ -1315,11 +1324,11 @@ function Step2(props: {
             </div>
 
             {(props.setup.roleType || props.setup.category) && (
-              <div style={{ display: 'flex', gap: 9, marginTop: 12, padding: '10px 12px', borderRadius: 10, background: '#eff6ff', border: '1px solid #dbeafe' }}>
-                <i className="ri-information-line" style={{ fontSize: 15, color: '#2563eb', flex: '0 0 auto', marginTop: 1 }} />
+              <div className="tpl-note" style={{ display: 'flex', gap: 9, marginTop: 12, padding: '10px 12px', borderRadius: 10, background: '#eff6ff', border: '1px solid #dbeafe' }}>
+                <i className="ri-information-line tpl-note-icon" style={{ fontSize: 15, color: '#2563eb', flex: '0 0 auto', marginTop: 1 }} />
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#1d4ed8', marginBottom: 2 }}>Template Information</div>
-                  <div style={{ fontSize: 11.5, color: '#3b5bdb', lineHeight: 1.5 }}>
+                  <div className="tpl-note-title" style={{ fontSize: 12, fontWeight: 800, color: '#1d4ed8', marginBottom: 2 }}>Template Information</div>
+                  <div className="tpl-note-text" style={{ fontSize: 11.5, color: '#3b5bdb', lineHeight: 1.5 }}>
                     Used for HR processes related to {props.setup.roleType || 'any'} roles
                     {props.setup.category ? ` in the ${props.setup.category} department.` : '.'}
                   </div>
@@ -1358,11 +1367,11 @@ function Step2(props: {
             {props.errors.trigger_point_id && <div style={errMsg}>{props.errors.trigger_point_id}</div>}
           </div>
           {/* Same note box as the Summary card's Template Information. */}
-          <div style={{ display: 'flex', gap: 9, marginTop: 12, padding: '10px 12px', borderRadius: 10, background: '#eff6ff', border: '1px solid #dbeafe' }}>
-            <i className="ri-information-line" style={{ fontSize: 15, color: '#2563eb', flex: '0 0 auto', marginTop: 1 }} />
+          <div className="tpl-note" style={{ display: 'flex', gap: 9, marginTop: 12, padding: '10px 12px', borderRadius: 10, background: '#eff6ff', border: '1px solid #dbeafe' }}>
+            <i className="ri-information-line tpl-note-icon" style={{ fontSize: 15, color: '#2563eb', flex: '0 0 auto', marginTop: 1 }} />
             <div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: '#1d4ed8', marginBottom: 2 }}>Lifecycle Information</div>
-              <div style={{ fontSize: 11.5, color: '#3b5bdb', lineHeight: 1.5 }}>
+              <div className="tpl-note-title" style={{ fontSize: 12, fontWeight: 800, color: '#1d4ed8', marginBottom: 2 }}>Lifecycle Information</div>
+              <div className="tpl-note-text" style={{ fontSize: 11.5, color: '#3b5bdb', lineHeight: 1.5 }}>
                 When in an employee's lifecycle this template is offered.
               </div>
             </div>
@@ -1509,6 +1518,13 @@ function Step3(props: {
   // far more room to type. Esc exits. This is the ONLY addition to Step 3; the
   // rest of the UI is unchanged.
   const [fullscreen, setFullscreen] = useState(false);
+  /* #52: the DOCX round-trip belongs with the other view actions in the strip
+     under the card head, where Web Editor keeps Live PDF / Full Screen — it is
+     the same kind of control and the strip sat empty in Word mode. The
+     step-by-step explanation moves behind a Guide button, so the instructions
+     are there when wanted without standing between the user and the two
+     buttons they came for. */
+  const [guideOpen, setGuideOpen] = useState(false);
   useEffect(() => {
     if (!fullscreen) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
@@ -1555,6 +1571,34 @@ function Step3(props: {
           {/* The editor is a scrolling div, not a paginated engine, so it can only
               hint at where a page ends. Live PDF renders the draft through the same
               DomPDF pipeline the download uses and shows the real A4 pages. */}
+          {props.editorMode === 'word' && (
+            <div className="d-flex flex-wrap" style={{ gap: 8 }}>
+              <button type="button" className="tpl-editor-tab" style={tabBtn(false)}
+                title="How the MS Word round-trip works"
+                onClick={() => setGuideOpen(true)}>
+                <i className="ri-book-open-line me-1" />Guide
+              </button>
+              <button type="button" onClick={props.onDownloadDocx}
+                className="tpl-word-dl-btn" disabled={props.downloadingDocx || props.uploadingDocx}
+                title="Download the body content as a .docx to edit in Word"
+                style={{ ...tabBtn(false), background: '#1f2937', color: '#fff', border: 0, cursor: (props.downloadingDocx || props.uploadingDocx) ? 'wait' : 'pointer', opacity: (props.downloadingDocx || props.uploadingDocx) ? 0.7 : 1 }}>
+                {props.downloadingDocx
+                  ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" /> Generating…</>
+                  : <><i className="ri-download-2-line me-1" /> Download DOCX</>}
+              </button>
+              <input ref={props.docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
+                disabled={props.uploadingDocx}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) props.onUploadDocx(f); e.currentTarget.value = ''; }} />
+              <button type="button" onClick={() => props.docxRef.current?.click()}
+                className="tpl-word-up-btn" disabled={props.uploadingDocx}
+                title="Upload the revised .docx — it replaces the body content only"
+                style={{ ...tabBtn(false), background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', cursor: props.uploadingDocx ? 'wait' : 'pointer', opacity: props.uploadingDocx ? 0.7 : 1 }}>
+                {props.uploadingDocx
+                  ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" /> Uploading…</>
+                  : <><i className="ri-upload-2-line me-1" /> Upload Revised DOCX</>}
+              </button>
+            </div>
+          )}
           {props.editorMode === 'web' && (
             <div className="d-flex" style={{ gap: 8 }}>
               <button type="button" className={`tpl-editor-tab${props.livePreview ? ' is-active' : ''}`} style={tabBtn(props.livePreview)}
@@ -1683,6 +1727,64 @@ function Step3(props: {
 
       {props.editorMode === 'word' && (
         <>
+          {/* #52: the detail the strip's Guide button opens. Everything that
+              used to sit on the card as a numbered list is here, plus the parts
+              people kept having to be told: what survives the round trip, that
+              placeholders must keep their braces, and that the upload replaces
+              the body rather than appending to it. */}
+          <Modal isOpen={guideOpen} toggle={() => setGuideOpen(false)} centered size="lg" contentClassName="border-0 tpl-guide-modal">
+            <ModalBody className="p-0" style={{ borderRadius: 14, overflow: 'hidden' }}>
+              <div className="tpl-guide-head" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'linear-gradient(118deg,#4C1D95 0%,#6D28D9 45%,#7C3AED 100%)', color: '#fff' }}>
+                <span style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <i className="ri-book-open-line" style={{ fontSize: 16 }} />
+                </span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, lineHeight: 1.2 }}>MS Word Workflow Guide</div>
+                  <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>Editing this template in Word and bringing it back</div>
+                </div>
+                <button type="button" onClick={() => setGuideOpen(false)} aria-label="Close"
+                  style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 32, height: 32, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' }}>
+                  <i className="ri-close-line" style={{ fontSize: 18 }} />
+                </button>
+              </div>
+
+              <div className="tpl-guide-body" style={{ padding: 16 }}>
+                <ol className="tpl-word-list" style={{ paddingLeft: 18, fontSize: 13, color: '#374151', lineHeight: 1.8, marginBottom: 14 }}>
+                  <li><strong>Download DOCX</strong> — the generated file holds the body content only. The header, logo and footer are managed on this screen and are deliberately left out.</li>
+                  <li><strong>Edit in Word</strong> — add tables, formatting and signature blocks as you would in any document.</li>
+                  <li><strong>Upload Revised DOCX</strong> — this <em>replaces</em> the body content with what you uploaded; it does not append to it. The header and footer are untouched.</li>
+                </ol>
+
+                <div className="tpl-guide-note" style={{ display: 'flex', gap: 9, padding: '10px 12px', borderRadius: 10, background: '#eff6ff', border: '1px solid #dbeafe', marginBottom: 10 }}>
+                  <i className="ri-information-line" style={{ fontSize: 15, color: '#2563eb', flex: '0 0 auto', marginTop: 1 }} />
+                  <div>
+                    <div className="tpl-guide-note-title" style={{ fontSize: 12, fontWeight: 800, color: '#1d4ed8', marginBottom: 2 }}>Placeholders</div>
+                    <div className="tpl-guide-note-text" style={{ fontSize: 11.5, color: '#3b5bdb', lineHeight: 1.5 }}>
+                      Keep tokens such as <code>{'{{CompanyName}}'}</code> exactly as they are, braces included. Word’s autocorrect can turn straight braces or quotes into curly ones, which stops a token being recognised when the document is generated.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="tpl-guide-note tpl-guide-note--warn" style={{ display: 'flex', gap: 9, padding: '10px 12px', borderRadius: 10, background: '#fef3c7', border: '1px solid #fde68a' }}>
+                  <i className="ri-error-warning-line" style={{ fontSize: 15, color: '#b45309', flex: '0 0 auto', marginTop: 1 }} />
+                  <div>
+                    <div className="tpl-guide-warn-title" style={{ fontSize: 12, fontWeight: 800, color: '#92400e', marginBottom: 2 }}>Before you download</div>
+                    <div className="tpl-guide-warn-text" style={{ fontSize: 11.5, color: '#92400e', lineHeight: 1.5 }}>
+                      Downloading or uploading saves this template as a draft first, so template name, category and role must already be filled in on Step 1. Switching back to the Web Editor keeps whatever the last upload produced.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="tpl-guide-foot" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '10px 16px', borderTop: '1px solid #e5e7eb' }}>
+                <button type="button" onClick={() => setGuideOpen(false)}
+                  style={{ padding: '7px 16px', background: '#4f46e5', color: '#fff', border: 0, borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                  Got it
+                </button>
+              </div>
+            </ModalBody>
+          </Modal>
+
           {/* MS Word workflow card */}
           <div className="tpl-word-card" style={{ position: 'relative', border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, background: '#fff', marginBottom: 16 }}>
             {props.uploadingDocx && (
@@ -1696,29 +1798,19 @@ function Step3(props: {
                 <div className="tpl-veil-sub" style={{ fontSize: 11.5, color: '#6b7280' }}>Extracting header, footer &amp; logo</div>
               </div>
             )}
-            <div className="tpl-word-title" style={{ fontSize: 13, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>MS Word Workflow</div>
-            <ol className="tpl-word-list" style={{ paddingLeft: 18, fontSize: 13, color: '#374151', lineHeight: 1.7, marginBottom: 16 }}>
-              <li>Download → the generated DOCX contains the body content only (the header, logo &amp; footer stay managed here)</li>
-              <li>Add tables, formatting, signature blocks in Word</li>
-              <li>Upload revised version below — it updates the body content only; the header &amp; footer are untouched</li>
-            </ol>
-            <div className="d-flex gap-2 flex-wrap">
-              <button type="button" onClick={props.onDownloadDocx}
-                className="tpl-word-dl-btn" disabled={props.downloadingDocx || props.uploadingDocx}
-                style={{ padding: '8px 16px', background: '#1f2937', color: '#fff', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: (props.downloadingDocx || props.uploadingDocx) ? 'wait' : 'pointer', opacity: (props.downloadingDocx || props.uploadingDocx) ? 0.7 : 1 }}>
-                {props.downloadingDocx
-                  ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" /> Generating DOCX…</>
-                  : <><i className="ri-download-2-line me-1" /> Download DOCX</>}
-              </button>
-              <input ref={props.docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
-                disabled={props.uploadingDocx}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) props.onUploadDocx(f); e.currentTarget.value = ''; }} />
-              <button type="button" onClick={() => props.docxRef.current?.click()}
-                className="tpl-word-up-btn" disabled={props.uploadingDocx}
-                style={{ padding: '8px 16px', background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: props.uploadingDocx ? 'wait' : 'pointer', opacity: props.uploadingDocx ? 0.7 : 1 }}>
-                {props.uploadingDocx
-                  ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" /> Uploading…</>
-                  : <><i className="ri-upload-2-line me-1" /> Upload Revised DOCX</>}
+            <div className="d-flex align-items-center flex-wrap" style={{ gap: 10, justifyContent: 'space-between' }}>
+              <div style={{ minWidth: 0 }}>
+                <div className="tpl-word-title" style={{ fontSize: 13, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>MS Word Workflow</div>
+                {/* The three steps now live in the Guide. What stays is the one
+                    sentence that governs every use of this screen: the round
+                    trip carries the BODY, and nothing else. */}
+                <div className="tpl-word-lead" style={{ fontSize: 13, color: '#374151', lineHeight: 1.6 }}>
+                  Download the body as a .docx, edit it in Word, then upload it back — the header, logo and footer stay managed here and are never touched.
+                </div>
+              </div>
+              <button type="button" className="tpl-word-guide-btn" onClick={() => setGuideOpen(true)}
+                style={{ padding: '7px 14px', background: '#eef2ff', color: '#4338ca', border: '1px solid #c7d2fe', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+                <i className="ri-book-open-line me-1" />Guide
               </button>
             </div>
             {!props.editingId && (
@@ -1833,8 +1925,65 @@ function TplFormDarkStyles() {
       [data-bs-theme="dark"] .tpl-form-page .tpl-summary-desc {
         background: rgba(255,255,255,0.04) !important;
         border-color: var(--vz-border-color) !important;
-        color: rgba(255,255,255,0.75) !important;
+        color: rgba(255,255,255,0.78) !important;
       }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-summary-desc.is-empty {
+        color: rgba(255,255,255,0.42) !important;
+      }
+      /* #50: Step 2 was still wearing its light palette on a dark page. The
+         card itself was unclassed (fixed above); everything inside it sets its
+         colour inline, so each piece needs an important override to let go of
+         the ink it was painted with for white. */
+      [data-bs-theme="dark"] .tpl-form-page .tpl-summary-card {
+        background: rgba(124,92,252,0.06) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-sum-icon {
+        color: rgba(255,255,255,0.45) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-sum-label {
+        color: rgba(255,255,255,0.55) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-sum-subhead {
+        color: rgba(255,255,255,0.82) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-sum-value {
+        color: rgba(255,255,255,0.90) !important;
+      }
+      /* The code value keeps its accent, lifted to read on dark. */
+      [data-bs-theme="dark"] .tpl-form-page .tpl-sum-value.is-accent {
+        color: #a5b4fc !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-sum-value.is-empty {
+        color: rgba(255,255,255,0.40) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-sum-rule {
+        border-top-color: rgba(255,255,255,0.08) !important;
+      }
+      /* Rule chips: the "on" green and the "off" grey both came from the light
+         palette, where off was near-white. */
+      [data-bs-theme="dark"] .tpl-form-page .tpl-rule-chip {
+        background: rgba(255,255,255,0.05) !important;
+        border-color: rgba(255,255,255,0.10) !important;
+        color: rgba(255,255,255,0.45) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-rule-chip.is-on {
+        background: rgba(16,185,129,0.14) !important;
+        border-color: rgba(16,185,129,0.38) !important;
+        color: #6ee7b7 !important;
+      }
+      /* The pale-blue note boxes (Template / Lifecycle Information). */
+      [data-bs-theme="dark"] .tpl-form-page .tpl-note {
+        background: rgba(59,130,246,0.10) !important;
+        border-color: rgba(59,130,246,0.30) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-note-icon,
+      [data-bs-theme="dark"] .tpl-form-page .tpl-note-title {
+        color: #93c5fd !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-note-text {
+        color: rgba(191,219,254,0.85) !important;
+      }
+
       [data-bs-theme="dark"] .tpl-form-page .tpl-sign-rows > div {
         border-bottom-color: rgba(255,255,255,0.07) !important;
       }
@@ -2020,6 +2169,50 @@ function TplFormDarkStyles() {
         color: #6ee7b7 !important;
         border-color: rgba(34,197,94,0.40) !important;
       }
+      /* #52: the lead line that replaced the numbered list, the Guide button,
+         and the Guide dialog itself — which is portaled to <body>, so it is
+         keyed on its own class rather than on .tpl-form-page. */
+      [data-bs-theme="dark"] .tpl-form-page .tpl-word-lead {
+        color: rgba(255,255,255,0.78) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-word-guide-btn {
+        background: rgba(99,102,241,0.18) !important;
+        color: #a5b4fc !important;
+        border-color: rgba(99,102,241,0.40) !important;
+      }
+      [data-bs-theme="dark"] .tpl-guide-modal {
+        background: var(--vz-card-bg) !important;
+      }
+      [data-bs-theme="dark"] .tpl-guide-modal .tpl-word-list {
+        color: rgba(255,255,255,0.80) !important;
+      }
+      [data-bs-theme="dark"] .tpl-guide-modal .tpl-guide-note:first-of-type {
+        background: rgba(59,130,246,0.10) !important;
+        border-color: rgba(59,130,246,0.30) !important;
+      }
+      [data-bs-theme="dark"] .tpl-guide-modal .tpl-guide-note-icon,
+      [data-bs-theme="dark"] .tpl-guide-modal .tpl-guide-note-title {
+        color: #93c5fd !important;
+      }
+      [data-bs-theme="dark"] .tpl-guide-modal .tpl-guide-note-text {
+        color: rgba(191,219,254,0.85) !important;
+      }
+      [data-bs-theme="dark"] .tpl-guide-modal .tpl-guide-note--warn {
+        background: rgba(245,158,11,0.14) !important;
+        border-color: rgba(245,158,11,0.35) !important;
+      }
+      [data-bs-theme="dark"] .tpl-guide-modal .tpl-guide-warn-title,
+      [data-bs-theme="dark"] .tpl-guide-modal .tpl-guide-warn-text {
+        color: #fbbf24 !important;
+      }
+      [data-bs-theme="dark"] .tpl-guide-modal .tpl-guide-foot {
+        border-top-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .tpl-guide-modal code {
+        background: rgba(255,255,255,0.08); color: #fbbf24;
+        padding: 1px 6px; border-radius: 4px;
+      }
+
       [data-bs-theme="dark"] .tpl-form-page .tpl-word-warn {
         background: rgba(245,158,11,0.14) !important;
         color: #fbbf24 !important;

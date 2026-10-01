@@ -37,10 +37,21 @@
 | That is the only knob. Adding a table to a scope is one line here; no
 | controller or model changes.
 |
-| tenant => true means "unique within the client", which is what the existing
-| users_email_client_unique index already enforces: the same person can hold
-| an account at two different client organisations, and login disambiguates
-| by org. Setting it false would make the address unique across every tenant.
+| tenant => false means "unique across the WHOLE system": once an address
+| exists anywhere in this database it cannot be used again, by any client, in
+| any branch, for any kind of record. That is what every scope below now says,
+| on instruction (#221).
+|
+| It replaces the previous per-tenant rule, under which the same person could
+| hold an account at two client organisations and login disambiguated by org
+| (#15). That org picker still exists in the login flow; with these settings it
+| can no longer be reached, because a second account on one address can no
+| longer be created. Nothing had to be migrated: a scan of every participating
+| column found no address used twice anywhere, so no existing row is made
+| unsaveable by the change.
+|
+| To return any single scope to per-tenant, set its `tenant` back to true —
+| one word, no other change.
 |
 */
 
@@ -66,7 +77,7 @@ return [
          */
         'login' => [
             'label'   => 'another user account',
-            'tenant'  => true,
+            'tenant'  => false,
             'sources' => [
                 ['table' => 'users', 'column' => 'email', 'soft_deletes' => true, 'where' => ['email_active' => true]],
             ],
@@ -81,7 +92,7 @@ return [
          */
         'employee' => [
             'label'   => 'another employee',
-            'tenant'  => true,
+            'tenant'  => false,
             'sources' => [
                 ['table' => 'employees', 'column' => 'email',          'soft_deletes' => true],
                 ['table' => 'employees', 'column' => 'official_email', 'soft_deletes' => true],
@@ -95,7 +106,7 @@ return [
          */
         'candidate' => [
             'label'   => 'another candidate or onboarding invite',
-            'tenant'  => true,
+            'tenant'  => false,
             'sources' => [
                 ['table' => 'candidates',                   'column' => 'email',         'soft_deletes' => true],
                 ['table' => 'employee_onboarding_invites',  'column' => 'invitee_email', 'soft_deletes' => false],
@@ -125,7 +136,7 @@ return [
          */
         'organisation' => [
             'label'   => 'an organisation or branch contact address',
-            'tenant'  => true,
+            'tenant'  => false,
             'sources' => [
                 ['table' => 'clients',  'column' => 'email', 'soft_deletes' => true, 'tenant_column' => 'id'],
                 ['table' => 'branches', 'column' => 'email', 'soft_deletes' => true],
@@ -140,7 +151,7 @@ return [
          */
         'person' => [
             'label'   => 'a user account or employee',
-            'tenant'  => true,
+            'tenant'  => false,
             'sources' => [
                 ['table' => 'users',     'column' => 'email',          'soft_deletes' => true, 'where' => ['email_active' => true]],
                 ['table' => 'employees', 'column' => 'email',          'soft_deletes' => true],
@@ -150,7 +161,7 @@ return [
 
         'customer' => [
             'label'   => 'another customer',
-            'tenant'  => true,
+            'tenant'  => false,
             'sources' => [
                 ['table' => 'customers', 'column' => 'primary_email', 'soft_deletes' => true],
             ],
@@ -158,7 +169,7 @@ return [
 
         'consignee' => [
             'label'   => 'another consignee',
-            'tenant'  => true,
+            'tenant'  => false,
             'sources' => [
                 ['table' => 'consignees', 'column' => 'primary_email', 'soft_deletes' => true],
             ],
@@ -170,7 +181,7 @@ return [
          */
         'vendor' => [
             'label'   => 'another vendor or supplier',
-            'tenant'  => true,
+            'tenant'  => false,
             'sources' => [
                 ['table' => 'vendors',       'column' => 'primary_email', 'soft_deletes' => true],
                 ['table' => 'p2p_suppliers', 'column' => 'email',         'soft_deletes' => true],

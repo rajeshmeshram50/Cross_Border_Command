@@ -133,7 +133,12 @@ class ExpenseClaimController extends Controller
             //     reports-of-reports, recursively) so a senior manager
             //     sees the whole sub-tree, not just the first hop.
             if (in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) {
-                // no-op — tenant scope is the only filter.
+                // Tenant scope is the only filter — except that Team never
+                // shows the viewer their own rows, admin or not (QA #180/#181).
+                $myEmployeeId = $this->currentEmployeeId($user);
+                if ($myEmployeeId) {
+                    $q->where('employee_id', '!=', $myEmployeeId);
+                }
             } else {
                 $myEmployeeId = $this->currentEmployeeId($user);
                 $teamIds = $this->downstreamEmployeeIds($myEmployeeId);
@@ -149,10 +154,14 @@ class ExpenseClaimController extends Controller
                 if (!$teamIds && !$managedOthers) {
                     return response()->json([]);
                 }
-                // Include the manager's OWN claims — the "My Team" surface shows
-                // the whole team and a manager is part of their team, so their
-                // own claims must appear alongside their reports' (QA #144).
-                if ($myEmployeeId) $teamIds[] = $myEmployeeId;
+                /* The viewer's OWN rows are NOT part of Team. They were (QA
+                   #144, "a manager is part of their team"), and that is the
+                   reading QA #180 / #181 overturned: a manager opening Team
+                   wants what is waiting on them from other people, and their
+                   own filings are one tab away under My Expenses. Excluded
+                   below rather than simply left out of $teamIds, because the
+                   manager_id OR-clause would otherwise pull a self-filed row
+                   back in through the manager stamped on it. */
                 $teamIds = array_values(array_unique($teamIds)) ?: [-1];
                 // Filtering on employee_id alone reads the hierarchy as it stands
                 // TODAY: the moment a report is moved under a different manager,
@@ -167,6 +176,9 @@ class ExpenseClaimController extends Controller
                         $w->orWhere('manager_id', $myEmployeeId);
                     }
                 });
+                if ($myEmployeeId) {
+                    $q->where('employee_id', '!=', $myEmployeeId);
+                }
             }
         } else {
             // scope=all — for HR/admin views. No additional filter beyond
