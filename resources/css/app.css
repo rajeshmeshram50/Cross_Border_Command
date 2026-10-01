@@ -1202,14 +1202,32 @@ tbody tr:nth-child(10) {
 }
 .hr-cstrip .frm-cstrip-title { font-size: 17px; color: #2e1065; letter-spacing: -.4px; }
 .hr-cstrip .frm-cstrip-sub { font-size: 12px; font-weight: 500; color: #6d28d9; opacity: .85; margin-top: 3px; line-height: 1.35; }
-/* Action buttons: round pills, 42px tall. Colours stay the page's own —
-   white outline for the secondary buttons, purple gradient for the main one. */
+/* Action buttons: the Create PO button's shape and finish (.spi-head-btn) —
+   12px corners, a glossy top half, a soft shadow and a lift on hover. Colours
+   stay the page's own: white outline for the secondary buttons, purple
+   gradient for the main one. */
 .hr-cstrip > .d-flex .btn.rounded-pill,
 .hr-cstrip > .d-flex .btn-label {
-  min-height: 42px; border-radius: 999px !important;
-  display: inline-flex; align-items: center; justify-content: center;
-  padding: 0 20px; font-size: 13px; font-weight: 700; white-space: nowrap;
+  position: relative; overflow: hidden;
+  min-height: 42px; border-radius: 12px !important;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 0 20px; font-size: 13px; font-weight: 700; letter-spacing: .02em; white-space: nowrap;
+  transition: transform .14s, box-shadow .14s, background .14s;
 }
+.hr-cstrip > .d-flex .btn.rounded-pill::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .18), transparent);
+  pointer-events: none;
+}
+/* Secondary (white) buttons: same lift and shadow as Create PO, in purple. */
+.hr-cstrip > .d-flex .btn.rounded-pill:not(.btn-label) {
+  box-shadow: 0 4px 14px rgba(124, 58, 237, .14), 0 1px 3px rgba(91, 33, 182, .10), inset 0 1px 0 rgba(255, 255, 255, .9);
+}
+.hr-cstrip > .d-flex .btn.rounded-pill:not(.btn-label):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(124, 58, 237, .24), 0 2px 5px rgba(91, 33, 182, .14), inset 0 1px 0 rgba(255, 255, 255, .9);
+}
+.hr-cstrip > .d-flex .btn:active { transform: translateY(0); }
 /* The main action (Add …): the PO's filled gradient button, in purple. */
 .hr-cstrip > .d-flex .btn-label {
   position: relative; overflow: hidden; gap: 7px;

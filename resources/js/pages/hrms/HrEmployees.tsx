@@ -3930,7 +3930,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                 setTab(k as 'active' | 'disabled');
                 setStatusFilter(k === 'active' ? 'Active' : 'Disabled');
               }}
-              className="hre-list"
+              className="hre-list hr-dt"
               searchValue={q}
               onSearchChange={setQ}
               searchPlaceholder="Search name, ID, department, role…"
