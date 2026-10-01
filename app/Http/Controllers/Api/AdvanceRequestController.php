@@ -2099,11 +2099,7 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-    /**
-     * POST /advance-requests/{id}/set-deductions
-     * Lock the one-time deductions / additions WITHOUT recording a payment —
-     * fixes the net payable before the first payout. Mirrors ExpenseClaim.
-     */
+   
     public function setDeductions(Request $request, $id)
     {
         $user = $request->user();
@@ -2159,12 +2155,7 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-    /**
-     * POST /advance-requests/{id}/settle
-     * Record ONE payout installment. The FIRST call also locks the sanctioned
-     * amount (requested − Σ deductions + Σ additions). Partial payments allowed
-     * until the sanctioned amount is met.
-     */
+  
     public function settle(Request $request, $id)
     {
         $user = $request->user();
@@ -2286,10 +2277,7 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-    /**
-     * Stream the proof-of-payment file attached to one settlement installment.
-     * Auth via query token so a plain browser link works (mirrors attachments).
-     */
+   
     public function paymentProof(Request $request, $paymentId)
     {
         $this->authenticateFromQueryToken($request);
@@ -2307,14 +2295,7 @@ class AdvanceRequestController extends Controller
         );
     }
 
-    /**
-     * POST /advance-requests/{id}/recover-onetime
-     * Record a ONE-TIME DIRECT repayment against a SELF advance's pending
-     * recovery — the employee pays the outstanding balance back from their
-     * profile instead of via payroll (typically at exit, when there is no more
-     * salary to deduct from and the advance can't just be removed). Direct only;
-     * there is no payroll option here by design.
-     */
+  
     public function recoverOnetime(Request $request, $id)
     {
         $user = $request->user();
@@ -2395,10 +2376,6 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-    /**
-     * Stream the proof attached to a one-time direct recovery payment.
-     * Auth via query token so a plain browser link works (mirrors paymentProof).
-     */
     public function recoveryPaymentProof(Request $request, $id, $index)
     {
         return $this->streamJsonAttachment(
@@ -2424,20 +2401,7 @@ class AdvanceRequestController extends Controller
         return "https://books.zoho.{$region}/app/{$org}#/expenses/" . rawurlencode($expenseId);
     }
 
-    /**
-     * POST /advance-requests/payments/{paymentId}/sync-zoho
-     * Push an advance payout to Zoho Books as an Expense — mirrors
-     * ExpenseClaimController::syncPaymentToZoho:
-     *   • Expense Account   ← the advance type (find-or-create in Zoho)
-     *   • Paid Through      ← the payout method (find-or-create in Zoho)
-     *   • Amount / Notes    ← payout amount / note
-     *   • Reference #       ← "ADV-ID - <Advance Type>"
-     *   • Receipts          ← EVERY related PDF: the payout proof, the advance's
-     *                         own attachments, and each distribution row's proof.
-     * Applies to BOTH self and company advances (the payout to the employee is
-     * the booked expense either way). Idempotent: a payment already carrying a
-     * zoho_expense_id is not re-created.
-     */
+
     public function syncPaymentToZoho(Request $request, $paymentId)
     {
         $user    = $request->user();
@@ -2547,10 +2511,7 @@ class AdvanceRequestController extends Controller
         ]);
     }
 
-    /**
-     * Normalise an itemised adjustments array (deductions / additions): keep only
-     * rows with amount > 0, require a reason for each, return [rows, total, err].
-     */
+  
     private function normaliseAdjustments(array $items, string $kind): array
     {
         $rows  = [];
