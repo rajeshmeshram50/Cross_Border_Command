@@ -8842,6 +8842,10 @@
    accent separators. `box-shadow: none` defeats Bootstrap's inset cell fill. */
 .reg-req-table {
   --atl-a-50:  #f0fdfa;
+  /* The two pale stops the light header band needs; without them it had to
+     mix with --atl-a-400 and came out a saturated teal. */
+  --atl-a-150: #ccfbf1;
+  --atl-a-200: #99f6e4;
   --atl-a-400: #2dd4bf;
   --atl-a-500: #14b8a6;
   --atl-a-600: #0d9488;
@@ -8849,14 +8853,17 @@
   --atl-a-rgb: 13, 148, 136;
   border-collapse: collapse;
 }
-.reg-req-table thead tr {
-  background: linear-gradient(110deg, var(--atl-a-400) 0%, var(--atl-a-500) 55%, var(--atl-a-600) 100%);
-}
+/* Light header, as .att-logs-table--v2 and every other HRMS list. */
+.reg-req-table thead tr { background: transparent; }
 .reg-req-table thead th {
   position: sticky; top: 0; z-index: 3;
-  background: color-mix(in srgb, var(--atl-a-500) 60%, var(--atl-a-600));
-  box-shadow: none;
-  color: #ffffff;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--atl-a-50) 50%, #fff),
+    color-mix(in srgb, var(--atl-a-50) 40%, var(--atl-a-150)));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--atl-a-200) 45%, #fff),
+    inset 0 -1.5px 0 color-mix(in srgb, var(--atl-a-200) 70%, #fff);
+  color: color-mix(in srgb, var(--atl-a-700) 55%, #64748b);
   text-transform: uppercase;
   font-weight: 800;
   font-size: 9.5px;
@@ -8870,9 +8877,10 @@
 }
 [data-bs-theme="dark"] .reg-req-table thead th,
 [data-layout-mode="dark"] .reg-req-table thead th {
-  background: color-mix(in srgb, var(--atl-a-600) 70%, var(--atl-a-700));
+  background: rgba(var(--atl-a-rgb), .14);
   border-bottom-color: transparent;
-  color: #ffffff;
+  box-shadow: inset 0 -1.5px 0 rgba(var(--atl-a-rgb), .35);
+  color: rgba(255, 255, 255, .72);
 }
 .reg-req-table tbody td {
   padding: 10px 9px;
@@ -10417,6 +10425,10 @@
    header band and the zebra tint. ── */
 .att-logs-table--v2 {
   --atl-a-50:  #f0fdfa;
+  /* The two pale stops the light header band needs; without them it had to
+     mix with --atl-a-400 and came out a saturated teal. */
+  --atl-a-150: #ccfbf1;
+  --atl-a-200: #99f6e4;
   --atl-a-400: #2dd4bf;
   --atl-a-500: #14b8a6;
   --atl-a-600: #0d9488;
@@ -10424,24 +10436,30 @@
   --atl-a-rgb: 13, 148, 136;
   border-collapse: collapse;
 }
-.att-logs-table--v2 thead tr {
-  background: linear-gradient(110deg, var(--atl-a-400) 0%, var(--atl-a-500) 55%, var(--atl-a-600) 100%);
-}
+/* The LIGHT header every other HRMS list wears (DataTable's .hr-dt variant):
+   a pale band of the table's own accent with muted caps, not a solid teal bar
+   with white ones. Same recipe, in attendance green. */
+.att-logs-table--v2 thead tr { background: transparent; }
 .att-logs-table--v2 thead th {
   position: sticky; top: 0; z-index: 3;
-  background: color-mix(in srgb, var(--atl-a-500) 60%, var(--atl-a-600));
-  box-shadow: none;
-  color: #ffffff;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--atl-a-50) 50%, #fff),
+    color-mix(in srgb, var(--atl-a-50) 40%, var(--atl-a-150)));
+  color: color-mix(in srgb, var(--atl-a-700) 55%, #64748b);
   font-size: 9.5px;
   font-weight: 800;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: 9px;
   line-height: 1.3;
   border: 0;
   vertical-align: middle;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.18);
+  text-shadow: none;
   white-space: normal;
+  /* Drawn as shadows so the rules stay with the sticky header as rows scroll. */
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--atl-a-200) 45%, #fff),
+    inset 0 -1.5px 0 color-mix(in srgb, var(--atl-a-200) 70%, #fff);
 }
 .att-logs-table--v2 tbody td {
   padding: 10px 9px;
@@ -10463,8 +10481,9 @@
 .att-logs-table--v2 tbody tr.att-log-row--off { background: var(--vz-light, #f9fafb); }
 
 [data-bs-theme="dark"] .att-logs-table--v2 thead th {
-  background: color-mix(in srgb, var(--atl-a-600) 70%, var(--atl-a-700));
-  color: #ffffff;
+  background: rgba(var(--atl-a-rgb), .14);
+  box-shadow: inset 0 -1.5px 0 rgba(var(--atl-a-rgb), .35);
+  color: rgba(255, 255, 255, .72);
   border-bottom-color: transparent;
 }
 [data-bs-theme="dark"] .att-logs-table--v2 tbody tr,

@@ -1562,7 +1562,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       // Refresh the list table so the new row appears immediately. Wrapped
       // in try/catch so a stale-fetch failure doesn't surface a second
       // error toast right after the success one.
-      try { await refreshAdvances(); } catch { /* swallow */ }
+      try { await refreshAdvances({ force: true }); } catch { /* swallow */ }
     } catch (err: any) {
       // Same surface-the-best-message pattern submitAllDrafts uses —
       // 422 field errors first, then top-level message, then a status
@@ -2145,8 +2145,27 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // super-admin viewing someone else's profile sees that employee's claims.
   // `team` is only meaningful for the current user — backend scopes it to
   // claims where manager_id = the current user's Employee.id.
-  const refreshClaims = async () => {
+  /* One guard for both lists below.
+   *
+   * Four requests (claims mine+team, advances mine+team) fired on every visit
+   * to the Expense tab, on every window focus AND on every visibilitychange —
+   * and the last two arrive together when you return to the browser, so one
+   * trip back cost twelve. Nothing had changed between them.
+   *
+   * `busy` drops a call while one is already in flight; `key` + `at` drop one
+   * that would re-fetch the same profile within FRESH_MS. A mutation passes
+   * force and is never dropped. */
+  const EXPENSE_FRESH_MS = 30_000;
+  const claimsFetch = useRef({ key: '', at: 0, busy: false });
+  const advancesFetch = useRef({ key: '', at: 0, busy: false });
+  const expenseKey = `${profileEmpCode ?? ''}|${profileEmpIdNum ?? ''}|${isOwnProfile ? 1 : 0}`;
+
+  const refreshClaims = async (opts?: { force?: boolean }) => {
     if (tab !== 'expense' || !profileEmpCode) return;
+    const g = claimsFetch.current;
+    if (g.busy) return;
+    if (!opts?.force && g.key === expenseKey && Date.now() - g.at < EXPENSE_FRESH_MS) return;
+    g.busy = true;
     setLoadingClaims(true);
     try {
       // Pass both forms — the backend accepts whichever resolves first.
@@ -2163,10 +2182,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       // when the result is non-empty AND this is their own profile.
       const teamRes = await api.get('/expense-claims', { params: { scope: 'team' } });
       setTeamClaims(Array.isArray(teamRes.data) ? teamRes.data : []);
+      claimsFetch.current.key = expenseKey;
+      claimsFetch.current.at = Date.now();
     } catch {
       setApiClaims([]);
       setTeamClaims([]);
+      // Not marked fresh — a failed load must be retried on the next visit.
     } finally {
+      claimsFetch.current.busy = false;
       setLoadingClaims(false);
     }
   };
@@ -2196,8 +2219,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // status pills (All/Approved/Rejected/Pending), narrowing by used_for first.
   const [advUsedForTab, setAdvUsedForTab] = useState<'self' | 'company'>('company');
 
-  const refreshAdvances = async () => {
+  const refreshAdvances = async (opts?: { force?: boolean }) => {
     if (tab !== 'expense' || !profileEmpCode) return;
+    const g = advancesFetch.current;
+    if (g.busy) return;
+    if (!opts?.force && g.key === expenseKey && Date.now() - g.at < EXPENSE_FRESH_MS) return;
+    g.busy = true;
     setLoadingAdvances(true);
     try {
       const mineRes = await api.get('/advance-requests', {
@@ -2211,10 +2238,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       setApiAdvances(Array.isArray(mineRes.data) ? mineRes.data : []);
       const teamRes = await api.get('/advance-requests', { params: { scope: 'team' } });
       setTeamAdvances(Array.isArray(teamRes.data) ? teamRes.data : []);
+      advancesFetch.current.key = expenseKey;
+      advancesFetch.current.at = Date.now();
     } catch {
       setApiAdvances([]);
       setTeamAdvances([]);
+      // Not marked fresh — a failed load must be retried on the next visit.
     } finally {
+      advancesFetch.current.busy = false;
       setLoadingAdvances(false);
     }
   };
@@ -2301,7 +2332,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // keeps showing the stale value until a full page reload. Refetch both
   // claims and advances whenever the tab regains focus / becomes visible.
   // The guards inside refreshClaims / refreshAdvances no-op unless the
-  // Expense Details tab is active, so this stays cheap.
+  // Expense Details tab is active AND the lists are older than the freshness
+  // window — `focus` and `visibilitychange` both fire on one trip back to the
+  // browser, so without that second guard every return cost two full reloads
+  // of four lists.
+
   useEffect(() => {
     if (tab !== 'expense') return;
     const resync = () => {
@@ -2328,7 +2363,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     try {
       await api.post(`/advance-requests/${advanceId}/${action}`, comment ? { comment } : {});
       toast.success('Updated', 'Advance request status updated');
-      await refreshAdvances();
+      await refreshAdvances({ force: true });
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Action failed.';
       toast.error('Action failed', msg);
@@ -2553,7 +2588,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         setClaimOpen(false);
         // A reimbursement submission linked back to an advance — refresh advances
         // so the settled section flips to "Reimbursement raised", then clear ctx.
-        if (reimburseCtx) { setReimburseCtx(null); void refreshAdvances(); }
+        if (reimburseCtx) { setReimburseCtx(null); void refreshAdvances({ force: true }); }
       } else if (created.length > 0) {
         // Partial — some went through, some didn't. Keep only the failed
         // drafts in the modal so the user can fix and resubmit just those.
@@ -2567,7 +2602,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         // Nothing went through — keep the modal open with all drafts intact.
         toast.error('Submit failed', failed.length > 1 ? `All ${failed.length} claims failed. ${failed[0].label}: ${failed[0].msg}` : failed[0].msg);
       }
-      await refreshClaims();
+      await refreshClaims({ force: true });
     } finally {
       setClaimSubmitting(false);
     }
@@ -2591,7 +2626,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         setTeamClaims(prev => prev.map(c => c.id === updated.id ? updated : c));
       }
       toast.success('Updated', 'Claim status updated');
-      await refreshClaims();
+      await refreshClaims({ force: true });
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Action failed.';
       toast.error('Action failed', msg);
