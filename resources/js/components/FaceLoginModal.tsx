@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Button } from 'reactstrap';
 import FaceCapture, { type FaceCaptureResult } from './FaceCapture';
 import { useToast } from '../contexts/ToastContext';
 
@@ -57,141 +56,153 @@ export default function FaceLoginModal({ open, onClose, initialEmail = '', onSub
   };
 
   return createPortal(
-    <div
-      className="cbc-face-login-overlay"
-      style={{
-        position: 'fixed', inset: 0, zIndex: 5000,
-        background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflowY: 'auto',
-      }}
-      onClick={() => { if (!working) onClose(); }}
-    >
+    <div className="kxf-overlay" onClick={() => { if (!working) onClose(); }}>
       <style>{`
-        /* The login page lives outside the main shell so the dark-theme
-           data-attribute on <html> doesn't always cascade into the body
-           portal — which is why this modal used to render pure white in
-           dark mode. Anchor everything to .cbc-face-login-card and let
-           [data-bs-theme="dark"] override surfaces, borders, inputs and
-           buttons so the modal matches the dark login surface. */
-        .cbc-face-login-card {
-          background: #ffffff;
-          color: #1f2937;
+        /* Same look as the KRYPTONE.AI sign-in card (layouts/AuthCardLayout.css):
+           near-black navy glass, a thin lit rim, navy fields and gradient
+           pills. Always dark, so it reads the same over the dark login page in
+           either theme. FaceCapture's own boxes are restyled from here so the
+           camera fills the card; its logic is untouched. */
+        .kxf-overlay {
+          position: fixed; inset: 0; z-index: 5000;
+          display: flex; align-items: center; justify-content: center;
+          padding: 16px; overflow-y: auto;
+          background: rgba(2, 8, 20, .62);
+          backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+          font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
         }
-        .cbc-face-login-head,
-        .cbc-face-login-foot {
-          border-color: #e5e7eb;
+        .kxf-card {
+          position: relative; width: 100%; max-width: 520px; max-height: calc(100vh - 32px);
+          display: flex; flex-direction: column; overflow: hidden;
+          border-radius: 26px; color: #eef1f7;
+          background: linear-gradient(180deg, rgba(14, 30, 54, .94) 0%, rgba(6, 18, 38, .97) 100%);
+          box-shadow:
+            inset 0 0 0 1px rgba(205, 220, 255, .55),
+            inset 0 0 12px rgba(140, 170, 255, .12),
+            0 0 1px rgba(225, 238, 255, .5),
+            -10px 14px 30px -14px rgba(60, 140, 255, .6),
+            10px 14px 30px -14px rgba(170, 90, 255, .6),
+            0 30px 70px rgba(0, 0, 0, .55);
         }
-        .cbc-face-login-card .form-control {
-          background: #ffffff;
-          color: #1f2937;
-          border-color: #d1d5db;
+        .kxf-head { display: flex; align-items: center; justify-content: space-between; padding: 22px 24px 6px; }
+        .kxf-title { display: flex; align-items: center; gap: 12px; }
+        .kxf-badge {
+          width: 38px; height: 38px; border-radius: 12px; flex-shrink: 0;
+          display: inline-flex; align-items: center; justify-content: center;
+          color: #fff; font-size: 19px;
+          background: linear-gradient(135deg, #1b90fe, #8438fc);
+          box-shadow: 0 6px 16px rgba(80, 90, 255, .45);
         }
-        .cbc-face-login-card .text-muted { color: #6b7280 !important; }
-        .cbc-face-login-x {
-          background: #f3f4f6;
-          color: #374151;
-          border: 1px solid #e5e7eb;
+        .kxf-title h6 { margin: 0; font-size: 19px; font-weight: 700; color: #fff; letter-spacing: -.01em; }
+        .kxf-title p { margin: 2px 0 0; font-size: 12.5px; color: #9aa3b5; }
+        .kxf-x {
+          width: 34px; height: 34px; border-radius: 10px; border: 1px solid rgba(255,255,255,.14);
+          background: rgba(255,255,255,.06); color: #dbe2f0; font-size: 18px; line-height: 1;
+          display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+          transition: background .15s;
         }
-
-        [data-bs-theme="dark"] .cbc-face-login-card {
-          background: #222831 !important;
-          color: rgba(255,255,255,0.92) !important;
+        .kxf-x:hover:not(:disabled) { background: rgba(255,255,255,.12); color: #fff; }
+        .kxf-body { padding: 16px 24px 4px; overflow-y: auto; }
+        .kxf-field {
+          display: flex; align-items: center; gap: 16px; height: 58px; padding: 0 18px;
+          border-radius: 10px; background: rgba(36, 52, 78, .70); border: 1px solid rgba(255,255,255,.14);
+          transition: border-color .18s, box-shadow .18s;
         }
-        [data-bs-theme="dark"] .cbc-face-login-head,
-        [data-bs-theme="dark"] .cbc-face-login-foot {
-          border-color: rgba(255,255,255,0.10) !important;
+        .kxf-field:focus-within { border-color: rgba(96,165,250,.55); box-shadow: 0 0 0 3px rgba(59,130,246,.18); }
+        .kxf-field > i { font-size: 21px; color: #e6e9f2; }
+        .kxf-field-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+        .kxf-field-body span { font-size: 12px; color: #9aa3b5; line-height: 1; }
+        .kxf-field-body input {
+          width: 100%; border: 0; outline: 0; background: transparent; padding: 0;
+          font: inherit; font-size: 14px; color: #f1f5f9;
         }
-        [data-bs-theme="dark"] .cbc-face-login-card h6 {
-          color: rgba(255,255,255,0.95) !important;
+        .kxf-field-body input::placeholder { color: #9aa3b5; }
+        .kxf-hint { margin: 8px 2px 16px; font-size: 12px; color: #8f98ab; }
+        /* FaceCapture: camera fills the card, guide ring in the brand cyan */
+        .kxf-body .d-flex.flex-column > div:first-child {
+          max-width: none !important; border-radius: 16px !important;
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,.12), 0 12px 30px rgba(0,0,0,.35) !important;
         }
-        [data-bs-theme="dark"] .cbc-face-login-card label {
-          color: rgba(255,255,255,0.78) !important;
+        .kxf-body .d-flex.flex-column > div:first-child > div:nth-child(2) > div {
+          border: 2px dashed rgba(90, 200, 255, .75) !important;
+          box-shadow: 0 0 18px rgba(60, 160, 255, .35);
         }
-        [data-bs-theme="dark"] .cbc-face-login-card .form-control {
-          background: rgba(255,255,255,0.04) !important;
-          color: rgba(255,255,255,0.92) !important;
-          border-color: rgba(255,255,255,0.16) !important;
+        .kxf-body .btn-primary {
+          height: 50px; margin-top: 6px; border: 0; border-radius: 999px;
+          font-size: 15px; font-weight: 600; color: #fff;
+          background: linear-gradient(90deg, #1b90fe 0%, #454ffd 50%, #8438fc 100%);
+          box-shadow: 0 8px 22px rgba(70, 80, 255, .40), inset 0 1px 0 rgba(255,255,255,.22);
+          transition: transform .15s, filter .15s;
         }
-        [data-bs-theme="dark"] .cbc-face-login-card .form-control::placeholder {
-          color: rgba(255,255,255,0.40) !important;
+        .kxf-body .btn-primary:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); }
+        .kxf-body .btn-primary:disabled { opacity: .55; }
+        .kxf-done { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+        .kxf-done img { width: 180px; height: 135px; object-fit: cover; border-radius: 14px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
+        .kxf-ok { font-size: 13.5px; color: #e6eaf2; }
+        .kxf-ok i { color: #34d399; margin-right: 6px; }
+        .kxf-retake { margin-top: 8px; padding: 0; border: 0; background: none; font: inherit; font-size: 13.5px; color: #38c8f5; cursor: pointer; }
+        .kxf-retake:hover { color: #7dd8fb; text-decoration: underline; }
+        .kxf-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 18px 24px 22px; }
+        .kxf-btn {
+          height: 44px; padding: 0 22px; border-radius: 999px; font: inherit; font-size: 14px; font-weight: 600;
+          cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: transform .15s, filter .15s, background .15s;
         }
-        [data-bs-theme="dark"] .cbc-face-login-card .text-muted {
-          color: rgba(255,255,255,0.55) !important;
+        .kxf-btn--ghost { border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); color: #dbe2f0; }
+        .kxf-btn--ghost:hover:not(:disabled) { background: rgba(255,255,255,.12); color: #fff; }
+        .kxf-btn--go {
+          border: 0; color: #fff;
+          background: linear-gradient(90deg, #1b90fe 0%, #454ffd 50%, #8438fc 100%);
+          box-shadow: 0 8px 22px rgba(70, 80, 255, .40), inset 0 1px 0 rgba(255,255,255,.22);
         }
-        [data-bs-theme="dark"] .cbc-face-login-x {
-          background: rgba(255,255,255,0.08) !important;
-          color: rgba(255,255,255,0.85) !important;
-          border-color: rgba(255,255,255,0.14) !important;
-        }
-        /* Cancel button (color="light") is normally a bright wash —
-           in dark mode we want a subdued translucent surface. */
-        [data-bs-theme="dark"] .cbc-face-login-card .btn-light {
-          background: rgba(255,255,255,0.08) !important;
-          color: rgba(255,255,255,0.85) !important;
-          border-color: rgba(255,255,255,0.14) !important;
-        }
-        [data-bs-theme="dark"] .cbc-face-login-card .btn-light:hover {
-          background: rgba(255,255,255,0.14) !important;
+        .kxf-btn--go:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); }
+        .kxf-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+        .kxf-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; animation: kxf-rot .75s linear infinite; }
+        @keyframes kxf-rot { to { transform: rotate(360deg); } }
+        @media (max-width: 480px) {
+          .kxf-head { padding: 18px 18px 4px; } .kxf-body { padding: 14px 18px 4px; } .kxf-foot { padding: 16px 18px 18px; }
+          .kxf-btn { flex: 1; justify-content: center; }
         }
       `}</style>
-      <div
-        className="cbc-face-login-card"
-        onClick={e => e.stopPropagation()}
-        style={{
-          borderRadius: 16,
-          boxShadow: '0 24px 60px rgba(0,0,0,0.45)',
-          width: '100%', maxWidth: 560, maxHeight: 'calc(100vh - 32px)',
-          overflow: 'hidden', display: 'flex', flexDirection: 'column',
-        }}
-      >
-        <div className="cbc-face-login-head d-flex align-items-center justify-content-between px-3 py-3" style={{ borderBottom: '1px solid' }}>
-          <div className="d-flex align-items-center gap-2">
-            <span style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(99,102,241,0.18)', color: '#a78bfa', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-              <i className="ri-user-smile-line" />
-            </span>
-            <h6 className="mb-0 fw-bold">Sign in with Face</h6>
+      <div className="kxf-card" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Sign in with Face">
+        <div className="kxf-head">
+          <div className="kxf-title">
+            <span className="kxf-badge"><i className="ri-user-smile-line" /></span>
+            <div>
+              <h6>Sign in with Face</h6>
+              <p>Look at the camera and capture your face.</p>
+            </div>
           </div>
-          <button type="button" className="btn btn-sm cbc-face-login-x" onClick={onClose} disabled={working} aria-label="Close">
+          <button type="button" className="kxf-x" onClick={onClose} disabled={working} aria-label="Close">
             <i className="ri-close-line" />
           </button>
         </div>
 
-        <div className="px-3 py-3" style={{ overflowY: 'auto' }}>
-          <div className="mb-3">
-            <label style={{ fontSize: 12, fontWeight: 600 }} className="mb-1">Email</label>
-            <input
-              type="email"
-              className="form-control"
-              placeholder="you@company.com"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              disabled={working}
-              autoFocus
-            />
-            <small className="text-muted" style={{ fontSize: 12 }}>
-              We match the captured face against this account's enrolled descriptor.
-            </small>
-          </div>
+        <div className="kxf-body">
+          <label className="kxf-field">
+            <i className="ri-mail-line" />
+            <span className="kxf-field-body">
+              <span>Email ID</span>
+              <input
+                type="email"
+                placeholder="you@company.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                disabled={working}
+                autoFocus
+              />
+            </span>
+          </label>
+          <div className="kxf-hint">We match the captured face against this account's enrolled face.</div>
 
           {result ? (
-            <div className="d-flex align-items-center gap-3 flex-wrap">
-              <img
-                src={result.previewDataUrl}
-                alt="Face preview"
-                style={{ width: 180, height: 135, objectFit: 'cover', borderRadius: 12, border: '1px solid var(--vz-border-color, rgba(255,255,255,0.16))' }}
-              />
+            <div className="kxf-done">
+              <img src={result.previewDataUrl} alt="Face preview" />
               <div>
-                <div style={{ fontSize: 13 }}>
-                  <i className="ri-check-line text-success me-1" />
+                <div className="kxf-ok">
+                  <i className="ri-checkbox-circle-fill" />
                   Face captured (confidence {(result.detectionScore * 100).toFixed(0)}%).
                 </div>
-                <button
-                  type="button"
-                  className="btn btn-link p-0 mt-1"
-                  onClick={() => setResult(null)}
-                  disabled={working}
-                  style={{ fontSize: 13 }}
-                >
+                <button type="button" className="kxf-retake" onClick={() => setResult(null)} disabled={working}>
                   <i className="ri-refresh-line me-1" /> Retake
                 </button>
               </div>
@@ -201,13 +212,11 @@ export default function FaceLoginModal({ open, onClose, initialEmail = '', onSub
           )}
         </div>
 
-        <div className="cbc-face-login-foot d-flex justify-content-end gap-2 px-3 py-3" style={{ borderTop: '1px solid' }}>
-          <Button color="light" size="sm" onClick={onClose} disabled={working}>Cancel</Button>
-          <Button color="primary" size="sm" onClick={handleSubmit} disabled={!result || !email || working}>
-            {working
-              ? (<><span className="spinner-border spinner-border-sm me-2" /> Verifying…</>)
-              : 'Sign in with Face'}
-          </Button>
+        <div className="kxf-foot">
+          <button type="button" className="kxf-btn kxf-btn--ghost" onClick={onClose} disabled={working}>Cancel</button>
+          <button type="button" className="kxf-btn kxf-btn--go" onClick={handleSubmit} disabled={!result || !email || working}>
+            {working ? (<><span className="kxf-spin" /> Verifying…</>) : (<>Sign in with Face <i className="ri-arrow-right-line" /></>)}
+          </button>
         </div>
       </div>
     </div>,

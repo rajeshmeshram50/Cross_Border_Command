@@ -1,0 +1,775 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   KRYPTONE.AI sign-in screen (Login, Forgot Password, Verify OTP, Reset).
+
+   Rebuilt from the 1672 x 941 design render, measured off the image itself:
+   ink extents for every line of text, sampled colours, and font sizes /
+   letter-spacing solved against the real font files' metrics.
+
+   The desktop page is a STAGE the size of the render, and everything on it
+   sits at the render's coordinates times --u (one design pixel). --u is the
+   smaller of the width and height ratios, so the whole composition scales as
+   one piece and always fits; the bands either side on a wider screen are
+   filled with a blurred copy of the same background.
+
+   Text boxes use line-height 1 (or the render's measured line pitch), so the
+   margins below are the render's gaps with each font's ascent offset taken
+   out — not eyeballed values.
+   ───────────────────────────────────────────────────────────────────────── */
+.kx-shell {
+  --u: clamp(0.5px, min(calc(100vw / 1672), calc(100vh / 941)), 2px);
+  /* The clean room photo — no text and no card painted into it, so nothing
+     shows under the live copy or behind the glass card. */
+  /* Renamed whenever the photo changes: browsers cache it by URL and kept
+     showing the previous version. */
+  --kx-bg: url('/images/kryptone/login-room.jpg');
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+  color: #fff;
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+  background: #030a18;
+}
+
+/* Full-viewport fill behind the stage: the same photo, sharp (the render has
+   no blur anywhere outside the card); the stage's own copy fades into it at
+   its edges so a wide screen shows no seam. */
+.kx-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    var(--kx-bg) center / cover no-repeat,
+    radial-gradient(38% 46% at 52% 66%, rgba(255, 138, 54, .40), transparent 70%),
+    linear-gradient(180deg, #08142b 0%, #0b1a35 45%, #1a1424 78%, #0c0a14 100%);
+}
+/* ::after so it paints over .kx-bg. The band left of the stage carries the
+   same light deepening as the stage's own scrim, so the two meet evenly. */
+.kx-shell::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(2, 10, 24, .45) 0%, rgba(2, 10, 24, .25) 30%, rgba(2, 10, 24, 0) 48%);
+}
+
+/* ── Stage ───────────────────────────────────────────────────────────────── */
+.kx-stage {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: calc(1672 * var(--u));
+  height: calc(941 * var(--u));
+}
+/* The photo at exactly the render's framing. Its left and right edges fade
+   into the blurred fill above, so the seam never shows. */
+.kx-stage-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--kx-bg) 0 0 / 100% 100% no-repeat;
+  /* The render's room reads a touch brighter and richer than the photo. */
+  filter: saturate(1.05) brightness(1.05);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 3%, #000 97%, transparent 100%);
+          mask-image: linear-gradient(90deg, transparent 0%, #000 3%, #000 97%, transparent 100%);
+}
+/* Screens squarer than the render (1024 x 768, 1280 x 1024, 4:3 / 5:4): the
+   stage is width-fitted and leaves bands above and below. There the photo
+   covers the whole viewport instead, centred on the stage, so no seam shows. */
+@media (min-width: 1024px) and (max-aspect-ratio: 1672/941) {
+  .kx-stage-bg {
+    inset: auto;
+    left: 50%;
+    top: 50%;
+    width: 100vw;
+    height: 100vh;
+    transform: translate(-50%, -50%);
+    background-size: cover;
+    background-position: center;
+    -webkit-mask-image: none;
+            mask-image: none;
+  }
+}
+/* The copy painted into the render has been removed from the photo itself
+   (inpainted), so the room shows through as it does in the design: the lit
+   wall, the sofa, plant and lamp glow. This only deepens the wall a touch
+   behind the copy for contrast, and leaves the room and the view untouched. */
+.kx-stage-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(2, 10, 24, .38) 0%, rgba(2, 10, 24, .22) 30%, rgba(2, 10, 24, 0) 46%),
+    linear-gradient(180deg, rgba(2, 10, 24, .10) 0%, rgba(2, 10, 24, 0) 70%);
+}
+/* ── Left: brand + pitch ─────────────────────────────────────────────────── */
+.kx-left {
+  position: absolute;
+  left: calc(102 * var(--u));
+  top: calc(47 * var(--u));
+}
+
+/* Logo — one SVG per placement, drawn in that placement's own coordinates */
+.kx-logo { display: block; }
+/* The render's wordmark glows softly off the wall — the K most of all. */
+.kx-logo--hero { filter: drop-shadow(0 0 calc(14 * var(--u)) rgba(40, 150, 255, .28)); }
+.kx-logo--card { filter: drop-shadow(0 0 calc(10 * var(--u)) rgba(40, 150, 255, .25)); }
+/* The wordmark is the render's own artwork (an image), so its letter shapes
+   are exact; the hero copy sits at the render's x 100, y 44. */
+.kx-logo { user-select: none; }
+.kx-logo--hero { margin: calc(-3 * var(--u)) 0 0 calc(-2 * var(--u)); }
+.kx-logo--card { margin: 0 auto; }
+
+.kx-tagline {
+  margin-top: calc(13.3 * var(--u));
+  font-family: 'Montserrat', sans-serif;
+  font-size: calc(16.9 * var(--u));
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: .175em;
+  color: #c6cbdd;
+  white-space: nowrap;
+}
+.kx-accent {
+  display: block;
+  /* 70 wide, cyan into violet — the render's bar (x 102-171). */
+  width: calc(70 * var(--u));
+  height: calc(5 * var(--u));
+  margin-top: calc(22.8 * var(--u));
+  border-radius: 999px;
+  background: linear-gradient(90deg, #05cdf9 0%, #6f66f7 50%, #a93af2 78%);
+}
+
+.kx-headline {
+  margin: calc(15.4 * var(--u)) 0 0 calc(-3 * var(--u));
+  /* Montserrat Bold, set explicitly: measured against the render it is the
+     closest face for the headline (Plus Jakarta Sans runs 7% narrow, DM Sans
+     8%). Explicit because the admin theme otherwise decides the h1 family. */
+  font-family: 'Montserrat', 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-size: calc(57.3 * var(--u));
+  /* 800 with tighter tracking: the render's strokes are heavier than Bold
+     at the same overall width. */
+  font-weight: 760;
+  line-height: calc(60.3 * var(--u));
+  letter-spacing: -.0155em;
+  color: #fff;
+  white-space: nowrap;
+}
+.kx-headline span { display: block; }
+/* inline-block, not block: a block-width span stretches the gradient across
+   the whole column, so the text only ever reached its blue end. */
+.kx-headline .kx-grad {
+  display: inline-block;
+  /* Line 2 runs 4% wider than line 1 in the render at the same size. */
+  letter-spacing: -.004em;
+  /* a touch heavier: the gradient fill reads lighter than solid white */
+  font-weight: 800;
+  /* sampled off the render: #08ABFB at the start, #597AF9 mid, #8A46F7 end */
+  background: linear-gradient(90deg, #08abfb 0%, #3f8ffa 30%, #6a72f8 60%, #8a46f7 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  /* crisp, as in the render — no glow softening the letters */
+  text-shadow: none;
+}
+
+.kx-lead {
+  margin: calc(12.5 * var(--u)) 0 0;
+  letter-spacing: .004em;
+  font-size: calc(18.4 * var(--u));
+  font-weight: 400;
+  line-height: calc(22 * var(--u));
+  word-spacing: .06em;
+  color: #c4c9d6;
+  white-space: nowrap;
+}
+
+/* Module grid — columns centred at x 153 / 306 / 463 / 624, rows 175 apart */
+.kx-modules {
+  display: grid;
+  grid-template-columns: repeat(4, calc(157 * var(--u)));
+  grid-auto-rows: calc(175 * var(--u));
+  margin-top: calc(29.5 * var(--u));
+  margin-left: calc(-27.5 * var(--u));
+}
+.kx-mod { display: flex; flex-direction: column; align-items: center; text-align: center; }
+/* Icon slot: 44 tall from the row's top (y 392 / 567). The art is the render's
+   own, glow included, so nothing is drawn over it. */
+.kx-mod-icowrap { display: flex; justify-content: center; align-items: flex-start; height: calc(44 * var(--u)); }
+.kx-mod-icowrap img { display: block; user-select: none; }
+.kx-mod-title {
+  margin-top: calc(6.1 * var(--u));
+  font-size: calc(14.6 * var(--u));
+  font-weight: 700;
+  line-height: calc(18 * var(--u));
+  letter-spacing: 0;
+  color: #fff;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* The qualifier line — (PROCUREMENT), (E DOCS) — is set lighter in the render. */
+.kx-mod-title small { display: block; font-size: inherit; font-weight: 500; }
+/* The render's second row sits a few pixels right of the first, and its
+   two-line titles sit tighter to their subtitles. */
+.kx-mod:nth-child(n + 5) { transform: translateX(calc(5 * var(--u))); }
+.kx-mod:nth-child(n + 5) .kx-mod-sub { margin-top: calc(0.5 * var(--u)); }
+.kx-mod-sub {
+  margin-top: calc(6.5 * var(--u));
+  font-size: calc(15 * var(--u));
+  font-weight: 400;
+  line-height: calc(19 * var(--u));
+  color: #a3a8ba;
+  white-space: nowrap;
+}
+.kx-mod-bar {
+  display: block;
+  width: calc(36 * var(--u));
+  height: calc(3 * var(--u));
+  margin-top: calc(13 * var(--u));
+  border-radius: 999px;
+  box-shadow: 0 0 calc(8 * var(--u)) color-mix(in srgb, var(--glow) 70%, transparent);
+}
+
+.kx-footer {
+  position: absolute;
+  left: calc(68 * var(--u));
+  /* Caps at y 888, INTELLIGENCE 125 wide (x 68-193), as measured off the render. */
+  top: calc(885.8 * var(--u));
+  font-family: 'Montserrat', sans-serif;
+  font-size: calc(14 * var(--u));
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: .165em;
+  color: #dde0e8;
+  white-space: nowrap;
+}
+/* The render leaves ~25px either side of each separator (x 193 | 218 | 244). */
+.kx-footer i { font-style: normal; margin: 0 calc(11 * var(--u)); color: rgba(200, 204, 216, .6); }
+
+/* ── The glass card — x 1047, y 80, 573 wide ─────────────────────────────── */
+/* The card's band in the render is y 80 → 870. The card is centred in it, so
+   a shorter card (no Login/SSO switch, or a Forgot / OTP step) stays level
+   with the left column instead of hanging from the top. */
+.kx-right {
+  position: absolute;
+  left: calc(1047 * var(--u));
+  top: calc(80 * var(--u));
+  height: calc(790 * var(--u));
+  display: flex;
+  align-items: center;
+}
+.kx-card {
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  width: calc(573 * var(--u));
+  /* Always the render's full 790 band: the card painted into the background
+     photo sits exactly here, and a shorter card let its edges show above and
+     below. Shorter steps (Forgot, OTP) keep the foot at the bottom. */
+  min-height: calc(790 * var(--u));
+  display: flex;
+  flex-direction: column;
+  padding: calc(59.6 * var(--u)) calc(52.5 * var(--u)) calc(60 * var(--u));
+  /* 34: measured off the render's rim along the corner diagonal. */
+  border-radius: calc(34 * var(--u));
+  /* Glass measured off the full-page render by comparing its card with the
+     clean photo underneath: about 25% of the blurred room shows through a
+     #0C192D navy tint, so the city reads softly through the card. */
+  /* Glass, measured across the render's card: lighter toward the top where
+     the ceiling light shows through, near-black toward the foot. */
+  background:
+    /* the ceiling's warm light showing through at the top-right (#443D42) */
+    radial-gradient(38% 20% at 94% 5%, rgba(255, 175, 120, .45), transparent 75%),
+    /* the render's lit lower corners: blue bottom-left, violet bottom-right */
+    radial-gradient(30% 16% at 0% 100%, rgba(60, 130, 255, .45), transparent 75%),
+    radial-gradient(30% 16% at 100% 100%, rgba(160, 80, 255, .50), transparent 75%),
+    /* near-black navy through the middle (#041527 top, #010E1D foot in the render) */
+    /* more see-through toward the edges, so the room glows in at the sides */
+    radial-gradient(75% 62% at 50% 48%, rgba(3, 16, 32, .93) 55%, rgba(4, 18, 36, .66) 100%);
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+  border: 0;
+  /* The render's edge: a wide inner glow — brightness climbs over the last
+     ~30px before the rim on every side — and no glow outside the card except
+     a faint blue / violet bloom at the two lower corners. */
+  box-shadow:
+    /* the render's inner glow: brightness falls from the rim over ~8px */
+    inset 0 0 calc(3 * var(--u)) rgba(220, 235, 255, .22),
+    inset 0 0 calc(9 * var(--u)) rgba(140, 170, 255, .12),
+    /* light creeping in from every edge, the middle stays near-black */
+    inset 0 0 calc(46 * var(--u)) rgba(120, 135, 175, .16),
+    /* tight neon edge; the room just outside stays clear */
+    0 0 1px rgba(225, 238, 255, .55),
+    /* coloured light hugging the rim: blue down the left, violet-pink down the right */
+    inset calc(2 * var(--u)) 0 calc(7 * var(--u)) rgba(110, 160, 255, .22),
+    inset calc(-2 * var(--u)) 0 calc(7 * var(--u)) rgba(180, 130, 255, .24),
+    calc(-1 * var(--u)) 0 calc(4 * var(--u)) rgba(80, 160, 255, .35),
+    calc(1 * var(--u)) 0 calc(4 * var(--u)) rgba(200, 110, 255, .40),
+    /* blue / violet light at the lower corners */
+    calc(-4 * var(--u)) calc(10 * var(--u)) calc(14 * var(--u)) calc(-9 * var(--u)) rgba(60, 140, 255, .75),
+    calc(4 * var(--u)) calc(10 * var(--u)) calc(14 * var(--u)) calc(-9 * var(--u)) rgba(170, 90, 255, .80),
+    0 calc(34 * var(--u)) calc(50 * var(--u)) calc(-22 * var(--u)) rgba(0, 0, 0, .45);
+  text-align: left;
+}
+/* The rim: a thin semi-transparent white line (~1.5px) that takes on the
+   colour behind it — warm down the left over the sunset, blue across the top,
+   pink down the right — as measured on the render's card edge. */
+.kx-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  /* Bright on every side (the render's rim reads 160-226 left and right),
+     cooling to lilac at the lower right. */
+  /* One device-crisp line, as in the render (its rim peaks on a single pixel). */
+  padding: 1px;
+  /* Measured on the render's rim: bright down the sides (~209 left, 164 right)
+     and along the foot (140), but dim across the top (~69); soft white-grey
+     with only a hint of blue at the lower left and lilac at the lower right. */
+  background:
+    radial-gradient(30% 16% at 0% 100%, rgba(150, 170, 225, .9), transparent 80%),
+    radial-gradient(30% 16% at 100% 100%, rgba(185, 170, 215, .9), transparent 80%),
+    linear-gradient(180deg, rgba(200, 212, 240, .32) 0%, rgba(225, 232, 248, .88) 12%, rgba(225, 232, 248, .86) 85%, rgba(200, 210, 240, .72) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+}
+.kx-card-head { position: relative; z-index: 1; text-align: center; }
+/* The glass's thickness: a faint second line ~9px inside the rim, as on the
+   render's left and right edges. */
+.kx-card-bevel {
+  position: absolute;
+  inset: calc(8 * var(--u));
+  border-radius: calc(27 * var(--u));
+  border: 1px solid rgba(220, 230, 255, .07);
+  pointer-events: none;
+  z-index: 0;
+}
+.kx-title {
+  margin: calc(42.3 * var(--u)) 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(10 * var(--u));
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+  font-size: calc(32.2 * var(--u));
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -.03em;
+  color: #fff;
+}
+.kx-sub {
+  margin: calc(9.7 * var(--u)) 0 0;
+  font-size: calc(17.7 * var(--u));
+  font-weight: 400;
+  line-height: 1;
+  word-spacing: .1em;
+  color: #e2e6ef;
+}
+/* Spacing from here down is the card render's (subtitle → field 42, fields
+   66 tall and 16 apart, …), scaled to this card. flex: 1 hands any spare height
+   on a shorter step to the body, so the strip and closing line stay at the foot. */
+/* flex: 1 + centred: the height the render's Login/SSO switch used is shared
+   above and below the form, so the strip and closing line sit at the foot. */
+.kx-card-body { position: relative; z-index: 1; flex: 1 0 auto; display: flex; flex-direction: column; justify-content: center; margin-top: calc(20 * var(--u)); }
+
+/* Signature strip, closing line, and the wave lines along the card's foot */
+.kx-tri {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: calc(56 * var(--u));
+  height: calc(4 * var(--u));
+  margin: calc(32 * var(--u)) auto 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #dec638 0%, #ca3cf0 50%, #0d9bea 100%);
+}
+.kx-card-foot {
+  position: relative;
+  z-index: 1;
+  margin-top: calc(24 * var(--u));
+  text-align: center;
+  font-family: 'Inter', sans-serif;
+  font-size: calc(15.6 * var(--u));
+  font-weight: 400;
+  line-height: 1;
+  color: #eceff5;
+}
+/* Blue light pooling along the card's foot, under the wave mesh */
+.kx-card::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(190 * var(--u));
+  pointer-events: none;
+  /* the render's lit foot: blue light pooling under the mesh */
+  opacity: .18;
+  /* Deep blue (#001D4C) pooling under the mesh, brightest along the foot. */
+  background:
+    radial-gradient(60% 40% at 50% 100%, rgba(60, 120, 255, .55), transparent 75%),
+    linear-gradient(0deg, rgba(0, 40, 120, .55) 0%, rgba(0, 29, 76, .25) 45%, transparent 100%);
+}
+.kx-waves {
+  position: absolute;
+  /* Wider than the card so the mesh runs right down into the rounded lower
+     corners, as in the render; the card's overflow clips it to the curve. */
+  left: -4%;
+  bottom: calc(-4 * var(--u));
+  width: 108%;
+  /* taller than the cut-out's own shape: the render's mesh rises to the
+     colour strip, so the closing line sits inside the waves */
+  height: calc(118 * var(--u));
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+  opacity: 1;
+  /* the render's mesh glows brighter than the cut-out alone */
+  /* crisp: brightened, no blur glow over the fine lines */
+  filter: brightness(1.25) saturate(1.1);
+}
+
+/* ── Phones and tablets: the card alone, centred, over the photo ─────────── */
+@media (max-width: 1023.98px) {
+  /* Fluid card scale: grows on tablets, shrinks on phones, never past the
+     card's desktop size. Scrolls if the card is taller than the screen
+     (landscape phones). */
+  .kx-shell { --u: clamp(0.66px, min(calc(100vw / 640), calc(100vh / 900)), 1.15px); padding: 24px 16px; overflow-x: hidden; overflow-y: auto; }
+  .kx-shell::after { display: none; }
+  .kx-bg { filter: blur(10px) brightness(.6); }
+  .kx-stage { width: 100%; max-width: calc(573 * var(--u)); height: auto; }
+  .kx-stage-bg, .kx-stage-scrim, .kx-left, .kx-footer { display: none; }
+  .kx-right { position: static; height: auto; }
+  /* No painted card behind it here, so the card sizes to its content. */
+  .kx-card { width: 100%; min-height: 0; padding-left: 24px; padding-right: 24px; }
+}
+/* Phones: the two social pills stack — side by side they need more width
+   than the card has, and pushed it off the right edge. */
+@media (max-width: 480px) {
+  .kx-card { padding-left: 18px; padding-right: 18px; }
+  /* .kx-card in the chain: the base .kx-social rule comes later in the file. */
+  .kx-card .kx-social { grid-template-columns: 1fr; }
+}
+
+/* ── Generic form content inside the card ─────────────────────────────────
+   Forgot Password, Verify OTP and Reset Password render their own light-
+   themed fields. These rules carry them onto the dark glass so every auth
+   step reads as one screen. Login's own fields use the kx-field rules below.
+   :not(.bg-white *) leaves white popups alone — Login's organisation picker
+   renders inside the card and keeps its own dark-on-white text. */
+.kx-card label:not(.bg-white *) { color: #9aa3b5; }
+.kx-card p:not(.bg-white *) { color: #c5cbd8 !important; }
+.kx-card .text-primary:not(.bg-white *) { color: #38bdf8 !important; }
+/* The auth steps' muted slate copy (#5e6b85) is written on divs as well as
+   p tags — e.g. Verify OTP's resend line. */
+.kx-card [class*="text-[#5e6b85]"]:not(.bg-white *) { color: #c5cbd8 !important; }
+.kx-card input.form-control,
+.kx-card input[type="email"]:not(.kx-input),
+.kx-card input[type="password"]:not(.kx-input),
+.kx-card input[type="text"]:not(.kx-input),
+.kx-card input[type="number"]:not(.kx-input),
+.kx-card input[type="tel"]:not(.kx-input) {
+  background: rgba(255, 255, 255, .06) !important;
+  border: 1px solid rgba(255, 255, 255, .10) !important;
+  color: #f1f5f9 !important;
+}
+.kx-card input::placeholder { color: rgba(226, 232, 240, .45) !important; }
+.kx-card input:not(.kx-input):focus {
+  background: rgba(255, 255, 255, .09) !important;
+  border-color: rgba(96, 165, 250, .65) !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, .22) !important;
+}
+/* The full-width primary buttons on those pages take the Log In gradient. */
+.kx-card button.bg-primary {
+  background: linear-gradient(90deg, #1b90fe 0%, #454ffd 50%, #8438fc 100%) !important;
+  box-shadow: 0 calc(10 * var(--u)) calc(26 * var(--u)) rgba(80, 90, 255, .35) !important;
+}
+
+/* ── Login form (Login.tsx) — y 307 → 745 in the render ──────────────────── */
+/* Fields: 460 x 63, 15 apart. Icon at x 1127, text column at x 1174. The
+   card has no Login/SSO switch, so the email field follows the subtitle
+   directly (the gap is .kx-card-body's margin). */
+.kx-form { margin-top: 0; }
+.kx-field {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: calc(28 * var(--u));
+  height: calc(66 * var(--u));
+  padding: 0 calc(20 * var(--u)) 0 calc(22 * var(--u));
+  border-radius: calc(10 * var(--u));
+  /* Solid navy, the render's field (#132437) — not a white wash, which turned
+     grey over the bright city. */
+  background: rgba(36, 52, 78, .70);
+  border: 1px solid rgba(255, 255, 255, .14);
+  cursor: text;
+  transition: border-color .18s, box-shadow .18s, background .18s;
+}
+.kx-field + .kx-field { margin-top: calc(16 * var(--u)); }
+.kx-field:focus-within {
+  background: rgba(22, 42, 64, .95);
+  border-color: rgba(96, 165, 250, .55);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, .18);
+}
+.kx-field-ico { flex-shrink: 0; width: calc(26 * var(--u)); height: calc(26 * var(--u)); color: #e6e9f2; }
+.kx-field-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: calc(5 * var(--u)); }
+.kx-field-label {
+  font-size: calc(12.8 * var(--u));
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: .01em;
+  color: #9aa3b5;
+}
+.kx-input {
+  width: 100%;
+  /* 18, not 14: a 14px box clipped the descenders of "you@company.com". */
+  height: calc(18 * var(--u));
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: calc(14 * var(--u));
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -.03em;
+  color: #f1f5f9;
+}
+.kx-input::placeholder { color: #9aa3b5 !important; }
+/* Masked password: the render's nine small dots, ~9.5px apart */
+.kx-input[type="password"] { letter-spacing: .33em; }
+.kx-input[type="password"]::placeholder { letter-spacing: .33em; color: #dbe2f0 !important; }
+/* Edge injects its own reveal/clear buttons on password inputs; the field
+   carries its own eye button. */
+.kx-input::-ms-reveal,
+.kx-input::-ms-clear { display: none !important; width: 0; height: 0; }
+/* Autofill paints a white box over the glass — keep it on the dark field. */
+.kx-input:-webkit-autofill,
+.kx-input:-webkit-autofill:hover,
+.kx-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #f1f5f9;
+  -webkit-box-shadow: 0 0 0 1000px #17263f inset;
+  caret-color: #f1f5f9;
+  transition: background-color 9999s ease-out 0s;
+}
+.kx-eye {
+  flex-shrink: 0;
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #dbe2f0;
+  cursor: pointer;
+  line-height: 0;
+}
+.kx-eye svg { width: calc(26 * var(--u)); height: calc(26 * var(--u)); }
+.kx-eye:hover { color: #fff; }
+
+/* Remember Me + Forgot password — 24 tall, y 539 */
+.kx-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: calc(26 * var(--u));
+  margin-top: calc(20.6 * var(--u));
+}
+.kx-remember {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: calc(13 * var(--u));
+  cursor: pointer;
+  user-select: none;
+  font-size: calc(15.8 * var(--u));
+  font-weight: 400;
+  line-height: 1;
+  word-spacing: .12em;
+  color: #eef1f7 !important;
+}
+.kx-remember input { position: absolute; opacity: 0; pointer-events: none; }
+.kx-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(28 * var(--u));
+  height: calc(28 * var(--u));
+  border-radius: calc(6 * var(--u));
+  border: 1.5px solid rgba(255, 255, 255, .35);
+  background: rgba(255, 255, 255, .05);
+  color: transparent;
+  transition: background .16s, border-color .16s, color .16s;
+}
+.kx-check svg { width: calc(18 * var(--u)); height: calc(18 * var(--u)); }
+.kx-remember input:checked + .kx-check {
+  border-color: transparent;
+  background: #3b29fd;
+  color: #fff;
+  box-shadow: 0 calc(3 * var(--u)) calc(10 * var(--u)) rgba(59, 41, 253, .45);
+}
+.kx-remember input:focus-visible + .kx-check { box-shadow: 0 0 0 3px rgba(96, 165, 250, .35); }
+.kx-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: calc(15.7 * var(--u));
+  font-weight: 400;
+  line-height: 1;
+  word-spacing: .08em;
+  color: #38c8f5;
+  cursor: pointer;
+}
+.kx-link:hover { color: #7dd8fb; text-decoration: underline; }
+/* level with Remember Me, as in the render */
+.kx-row .kx-link { position: relative; top: calc(-4.5 * var(--u)); }
+
+/* Log In — 460 x 58 pill, y 585 */
+.kx-submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(12 * var(--u));
+  width: 100%;
+  height: calc(60 * var(--u));
+  margin-top: calc(19.7 * var(--u));
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #1b90fe 0%, #454ffd 50%, #8438fc 100%);
+  box-shadow:
+    0 calc(10 * var(--u)) calc(28 * var(--u)) rgba(70, 80, 255, .40),
+    inset 0 1px 0 rgba(255, 255, 255, .22);
+  font-family: inherit;
+  font-size: calc(20.9 * var(--u));
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: .005em;
+  word-spacing: .14em;
+  color: #fff;
+  cursor: pointer;
+  transition: transform .16s, box-shadow .16s, filter .16s;
+}
+.kx-submit svg { width: calc(24 * var(--u)); height: calc(24 * var(--u)); }
+/* the render's longer, thinner arrow */
+.kx-submit svg.kx-submit-arrow { width: calc(30 * var(--u)); height: calc(30 * var(--u)); }
+.kx-submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  box-shadow:
+    0 calc(14 * var(--u)) calc(34 * var(--u)) rgba(70, 80, 255, .50),
+    inset 0 1px 0 rgba(255, 255, 255, .26);
+}
+/* Loading: same size and colour, never faded — a light sweeps across the
+   pill and a thin white ring stands where the arrow was. */
+.kx-submit { position: relative; overflow: hidden; }
+.kx-submit:disabled { cursor: progress; }
+.kx-submit.is-loading { transform: none; filter: none; }
+.kx-submit.is-loading::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -40%;
+  width: 40%;
+  background: linear-gradient(100deg, transparent 0%, rgba(255, 255, 255, .28) 50%, transparent 100%);
+  animation: kx-sweep 1.3s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes kx-sweep { to { left: 110%; } }
+.kx-spin {
+  display: inline-block;
+  flex-shrink: 0;
+  width: calc(22 * var(--u));
+  height: calc(22 * var(--u));
+  border-radius: 50%;
+  border: calc(2.4 * var(--u)) solid rgba(255, 255, 255, .28);
+  border-top-color: #fff;
+  animation: kx-rot .75s linear infinite;
+}
+@keyframes kx-rot { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .kx-submit.is-loading::after { animation: none; display: none; }
+  .kx-spin { animation-duration: 1.6s; }
+}
+
+/* OR CONTINUE WITH — caps at y 669 */
+.kx-or {
+  display: flex;
+  align-items: center;
+  gap: calc(14 * var(--u));
+  margin-top: calc(28 * var(--u));
+  font-size: calc(12.8 * var(--u));
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: .06em;
+  color: #9aa3b5;
+  white-space: nowrap;
+}
+.kx-or::before,
+.kx-or::after { content: ''; flex: 1 1 auto; height: 1px; background: rgba(255, 255, 255, .42); }
+
+/* Google + Microsoft — two 44-tall pills, 14 apart, y 701 */
+.kx-social {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: calc(13 * var(--u));
+  margin-top: calc(20 * var(--u));
+}
+.kx-social-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(14 * var(--u));
+  width: 100%;
+  height: calc(46 * var(--u));
+  padding: 0 calc(12 * var(--u));
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  font-family: inherit;
+  font-size: calc(14.5 * var(--u));
+  font-weight: 600;
+  line-height: 1;
+  color: #1e2a78;
+  white-space: nowrap;
+  cursor: pointer;
+  /* the render's soft white bloom round each pill */
+  box-shadow: 0 0 calc(12 * var(--u)) rgba(255, 255, 255, .28);
+  transition: transform .16s, box-shadow .16s;
+}
+.kx-social-btn:hover { transform: translateY(-1px); box-shadow: 0 calc(8 * var(--u)) calc(20 * var(--u)) rgba(0, 0, 0, .32); }
+.kx-social-btn svg { width: calc(22 * var(--u)); height: calc(22 * var(--u)); flex-shrink: 0; }
+/* the render's bigger, bright-blue face mark and bolder label */
+.kx-social-btn svg.kx-face-ico { width: calc(27 * var(--u)); height: calc(27 * var(--u)); color: #2563ff; }
+.kx-social-btn:has(.kx-face-ico) { font-size: calc(15.5 * var(--u)); font-weight: 700; color: #16245e; }
+/* Google's own button is a cross-origin iframe drawn into this host. Pinning
+   the host to the light scheme keeps the browser from painting an opaque
+   white canvas around the white pill on this dark card. Fixed to the pill's
+   44px so a taller iframe can't push the card past the render's height. */
+.kx-google {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: calc(46 * var(--u));
+  min-width: 0;
+  overflow: hidden;
+  color-scheme: light;
+}
+.kx-google iframe { color-scheme: light; background: transparent !important; }
+.kx-google-wrap { position: relative; min-width: 0; }
+/* stands in the same spot as Google's button when that never loads */
+.kx-google-fallback { position: absolute; inset: 0; font-weight: 700; color: #16245e; }
+/* Google will not draw its button narrower than 200px. In a narrower pill
+   (a 1366 laptop) Login.tsx renders it at 200 and sets --kx-gscale, and the
+   button is scaled down to fit — still Google's own button, clicks intact. */
+.kx-google > div {
+  flex: none;
+  transform: scale(var(--kx-gscale, 1));
+  transform-origin: center;
+}

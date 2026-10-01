@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
-import { FaLinkedin, FaInstagram, FaFacebook } from 'react-icons/fa';
-import { useSettings } from '../contexts/SettingsContext';
+import { useEffect, type CSSProperties, type ReactNode } from 'react';
+import './AuthCardLayout.css';
+
 interface AuthCardLayoutProps {
   children: ReactNode;
   title?: string;
@@ -8,424 +8,123 @@ interface AuthCardLayoutProps {
   icon?: ReactNode;
 }
 
-const socialLinks = [
-  { icon: FaLinkedin, href: 'https://www.linkedin.com/company/inorbvict-agrotech-pvt-ltd', label: 'LinkedIn' },
-  { icon: FaInstagram, href: 'https://www.instagram.com/inorbvict_agrotech/', label: 'Instagram' },
-  { icon: FaFacebook, href: 'https://www.facebook.com/people/Inorbvict-Agrotech', label: 'Facebook' },
+/* The sign-in screen's faces, matched to the design render by measuring its
+   text against each candidate font's metrics: Plus Jakarta Sans for the copy
+   (the headline lands within 3% of the render's width; Poppins is 14% off),
+   Montserrat for the KRYPTONE.AI wordmark and the spaced tagline. Inter, used
+   by the card's closing line, is already loaded by the page template. Loaded
+   here so only the auth screens pay for them; the id stops a second auth
+   page adding the same link again. */
+const FONT_LINK_ID = 'kx-auth-fonts';
+const FONT_HREF = 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Montserrat:wght@300..800&display=swap';
+
+/* The logo and the eight module icons are the design render's own artwork,
+   cut out of it as transparent PNGs (public/images/kryptone/): the
+   wordmark's letters are custom-drawn — the curled Y, the open P, the split
+   K — so no font can reproduce them, and the icons are the render's own
+   drawings rather than lookalikes. Each is placed at the size and position
+   it has in the 1672 x 941 render; `top` is its offset from its row's top. */
+const ART = '/images/kryptone';
+const LOGO = { w: 521, h: 70 };
+
+const MODULES: { key: string; ico: [number, number, number]; title: ReactNode; sub: [string, string]; bar: string; glow: string; subGap?: number }[] = [
+  { key: 'hrms',  ico: [48, 41, 0],  title: 'HRMS',                                    sub: ['Empowered', 'People'],     bar: 'linear-gradient(90deg,#5b5deb,#9b30f2)', glow: '#5b5deb' },
+  { key: 'sales', ico: [42, 41, 0],  title: 'Sales',                                   sub: ['Accelerated', 'Growth'],   bar: '#00e2f0',                                 glow: '#00e2f0' },
+  { key: 'clm',   ico: [38, 42, -1], title: 'Contract',                                sub: ['Seamless', 'Execution'],   bar: '#ffc331',                                 glow: '#ffc331' },
+  { key: 'p2p',   ico: [45, 41, 0],  title: <>P2P<small>(Procurement)</small></>,      sub: ['Efficient', 'Sourcing'],   bar: '#fa3888',                                 glow: '#fa3888' },
+  { key: 'trade', ico: [45, 44, -2], title: <>Trade Finance<small>(E Docs)</small></>, sub: ['Global', 'Trade'],         bar: 'linear-gradient(90deg,#953bf3,#1becfd)', glow: '#953bf3' },
+  { key: 'inv',   ico: [48, 42, -2], title: 'Inventory',                               sub: ['Real-time', 'Visibility'], bar: '#fdb734',                                 glow: '#fdb734', subGap: 14.5 },
+  { key: 'pm',    ico: [46, 44, -1], title: <>Project<small>Management</small></>,     sub: ['Smarter', 'Delivery'],     bar: 'linear-gradient(90deg,#01c1ff,#2f6bff)', glow: '#01c1ff' },
+  { key: 'vault', ico: [42, 42, 1],  title: <>Credential<small>Vault</small></>,       sub: ['Secure', 'Access'],        bar: '#00ebf1',                                 glow: '#00ebf1' },
 ];
 
-export default function AuthCardLayout({ children, title, subtitle, icon }: AuthCardLayoutProps) {
-  // Pull platform name from settings so super_admin's General-tab change
-  // appears here (e.g. branding the login screen for white-label customers).
-  // Falls back to the default if settings haven't loaded (first visit).
-  const { settings } = useSettings();
-  const platformName = settings.general.platform_name || 'Cross Border Command';
+const px = (n: number) => `calc(${n} * var(--u))`;
+
+/* The wordmark at a given width in design pixels (hero 521, card 338). */
+function KxLogo({ w, className }: { w: number; className: string }) {
   return (
-    <div className="flex w-full bg-slate-950 font-sans relative overflow-x-hidden cbc-shell">
-      {/* Background image — sharper now (no auto-scale that was softening
-          edges) and revealed through a lighter overlay so the building
-          shot reads as the hero asset, not muddy backdrop. */}
-      <div
-        className="fixed inset-0 bg-cover bg-center pointer-events-none"
-        /* .jpg, not .png: this is an opaque decorative photo, and as a 3000px PNG it
-           was 4.7 MB — the single heaviest asset in the app. Same image at 1600px
-           JPEG q82 is 193 KB and indistinguishable behind the login card. */
-        style={{ backgroundImage: 'url(/images/loginbg.jpg)' }}
-      />
-      {/* Lighter scrim — preserves contrast on the right card while
-          letting the photo's color and detail come through on the left. */}
-      <div className="fixed inset-0 bg-gradient-to-r from-slate-950/55 via-slate-950/25 to-slate-950/65 pointer-events-none" />
-      {/* Brand color accents — punchy radial glows that lift the dull
-          midtones of the photo without darkening it further. */}
-      <div className="fixed inset-0 pointer-events-none"
-        style={{
-          background:
-            'radial-gradient(900px 600px at 12% 20%, rgba(139,92,246,0.22), transparent 60%),' +
-            'radial-gradient(700px 500px at 90% 85%, rgba(245,176,111,0.18), transparent 60%)',
-        }} />
-      <div className="fixed inset-0 opacity-[0.04] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '32px 32px' }} />
+    <img
+      className={`kx-logo ${className}`}
+      src={`${ART}/logo.png`}
+      alt="KRYPTONE.AI"
+      draggable={false}
+      style={{ width: px(w), height: px(w * LOGO.h / LOGO.w) }}
+    />
+  );
+}
 
-      {/* Page-level CSS — uses dvh (dynamic viewport height) so the page
-          doesn't jump when mobile browser chrome (URL bar) hides/shows.
-          Falls back to vh on browsers that don't support dvh. */}
-      <style>{`
-        .cbc-shell { min-height: 100vh; min-height: 100dvh; }
-        .cbc-pane  { min-height: 100vh; min-height: 100dvh; }
-        /* On phones the keyboard pushes layout up — keep card area
-           scrollable rather than clipping the form below the fold. */
-        @media (max-width: 1023px) {
-          .cbc-pane-card { padding-top: max(1.25rem, env(safe-area-inset-top)); padding-bottom: max(1.25rem, env(safe-area-inset-bottom)); }
-        }
-        @media (max-width: 380px) {
-          /* Very narrow phones (e.g. iPhone SE) — pull card padding in
-             a notch so inputs aren't squashed against the rounded edge. */
-          .cbc-login-card { padding: 14px !important; }
-        }
-      `}</style>
+export default function AuthCardLayout({ children, title, subtitle, icon }: AuthCardLayoutProps) {
+  useEffect(() => {
+    if (document.getElementById(FONT_LINK_ID)) return;
+    const link = document.createElement('link');
+    link.id = FONT_LINK_ID;
+    link.rel = 'stylesheet';
+    link.href = FONT_HREF;
+    document.head.appendChild(link);
+  }, []);
 
-      {/* Main Content Container */}
-      <div className="relative z-10 flex w-full">
-        {/* Left Side: Branding & Info — visible only on lg+ (≥1024px).
-            Phone & tablet portrait collapse to just the centered card. */}
-        <div className="flex-1 hidden lg:flex flex-col justify-between p-6 lg:p-8 xl:p-12 text-white cbc-pane">
-          <div className="max-w-xl animate-in fade-in slide-in-from-left duration-700">
-            <div className="mb-2 animate-float">
-              <div className="w-36 lg:w-44 xl:w-48 h-24 lg:h-28 xl:h-32 hover-lift transition-transform duration-500">
-                <img src="/images/igc-logo.png" alt="IGC Group" className="w-full h-full object-contain object-left filter drop-shadow-[0_0_15px_rgba(255,255,255,0.1)]" />
+  return (
+    <div className="kx-shell">
+      <div className="kx-bg" />
+
+      <div className="kx-stage">
+        <div className="kx-stage-bg" />
+        <div className="kx-stage-scrim" />
+
+        {/* Left: brand + pitch — desktop only (≥1024px). */}
+        <section className="kx-left">
+          <KxLogo w={LOGO.w} className="kx-logo--hero" />
+          <div className="kx-tagline">UNIFIED ENTERPRISE OPERATIONS PLATFORM</div>
+          <span className="kx-accent" />
+
+          <h1 className="kx-headline">
+            <span>One Intelligence.</span>
+            <span className="kx-grad">Entire Enterprise.</span>
+          </h1>
+          <p className="kx-lead">
+            Connect every function. Automate every process.<br />
+            Power every decision — on a single, intelligent platform.
+          </p>
+
+          <div className="kx-modules">
+            {/* subGap: Inventory is the one single-line title in its row, and the
+                render still drops its subtitle to the row's shared subtitle line. */}
+            {MODULES.map(({ key, ico: [iw, ih, top], title: t, sub, bar, glow, subGap }) => (
+              <div key={key} className="kx-mod" style={{ '--glow': glow } as CSSProperties}>
+                <span className="kx-mod-icowrap">
+                  <img src={`${ART}/ico-${key}.png`} alt="" draggable={false} style={{ width: px(iw), height: px(ih), marginTop: px(top) }} />
+                </span>
+                <div className="kx-mod-title">{t}</div>
+                <div className="kx-mod-sub" style={subGap ? { marginTop: px(subGap) } : undefined}>{sub[0]}<br />{sub[1]}</div>
+                <span className="kx-mod-bar" style={{ background: bar }} />
               </div>
-            </div>
-
-            {/* Software product name — sits directly under the IGC mark.
-                Stylish typographic treatment: weight contrast across the
-                words (thin → medium → heavy gradient italic) so the wordmark
-                reads like a real product brand. Words come from Settings →
-                General → Platform Name, split on whitespace. Default
-                "Cross Border Command" renders as 3 distinct weights; a
-                custom 2-word name renders as thin + bold-italic; a single
-                word renders as the bold-italic treatment alone. */}
-            <div className="mb-6 ml-1 cbc-wordmark">
-              {(() => {
-                const words = platformName.trim().split(/\s+/).filter(Boolean);
-                const classFor = (i: number, last: number) => {
-                  if (i === last) return 'cbc-w3';           // last word — heavy gradient italic
-                  if (i === last - 1) return 'cbc-w2';        // penultimate — medium white
-                  return 'cbc-w1';                             // earlier words — thin
-                };
-                return words.map((w, i) => (
-                  <span key={`${w}-${i}`} className={classFor(i, words.length - 1)}>{w}</span>
-                ));
-              })()}
-              <span className="cbc-underline" aria-hidden />
-            </div>
-            <style>{`
-              .cbc-wordmark {
-                display: flex;
-                align-items: baseline;
-                gap: 10px;
-                position: relative;
-                font-family: var(--font-sans);
-                font-size: 30px;
-                line-height: 1;
-                letter-spacing: -0.025em;
-                padding-bottom: 12px;
-                white-space: nowrap;
-                width: max-content;
-                max-width: 100%;
-              }
-              @media (min-width: 1280px) {
-                .cbc-wordmark { font-size: 40px; gap: 12px; padding-bottom: 14px; }
-              }
-              @media (min-width: 1536px) {
-                .cbc-wordmark { font-size: 48px; gap: 14px; padding-bottom: 16px; }
-              }
-              .cbc-w1 {
-                font-weight: 300;
-                color: rgba(255,255,255,0.78);
-              }
-              .cbc-w2 {
-                font-weight: 600;
-                color: #ffffff;
-              }
-              .cbc-w3 {
-                font-weight: 900;
-                background: linear-gradient(120deg,
-                  #ffffff 0%,
-                  #d8dcff 35%,
-                  #b9b3ff 60%,
-                  #f5b06f 100%);
-                -webkit-background-clip: text;
-                background-clip: text;
-                -webkit-text-fill-color: transparent;
-                background-size: 200% 100%;
-                animation: cbc-w3-shimmer 6s linear infinite;
-                text-shadow: 0 0 30px rgba(185,179,255,0.20);
-              }
-              .cbc-underline {
-                position: absolute;
-                left: 0; bottom: 0;
-                width: 90px;
-                height: 3px;
-                background: linear-gradient(90deg, #f5b06f, transparent);
-                border-radius: 999px;
-                animation: cbc-underline-grow 1.2s cubic-bezier(0.22,1,0.36,1) 0.4s both;
-                transform-origin: left center;
-              }
-              @keyframes cbc-w3-shimmer {
-                from { background-position: 0% 0; }
-                to   { background-position: 200% 0; }
-              }
-              @keyframes cbc-underline-grow {
-                from { transform: scaleX(0); opacity: 0; }
-                to   { transform: scaleX(1); opacity: 1; }
-              }
-            `}</style>
-
-
-            <p className="text-base text-white/70 font-medium leading-relaxed max-w-md">
-              An intelligent platform connecting Operations, Procurement, Logistics, Finance and Compliance in one unified ecosystem.
-            </p>
-
-            
+            ))}
           </div>
+        </section>
 
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-3">
-              {socialLinks.map(({ icon: Icon, href, label }) => (
-                <a
-                  key={label}
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={label}
-                  className="w-9 h-9 rounded-full flex items-center justify-center border border-white/20 bg-white/5 text-white/50 hover:bg-white hover:text-primary hover:border-white hover-scale hover-lift transition-all duration-300"
-                >
-                  <Icon size={16} />
-                </a>
-              ))}
-            </div>
-            <div className="text-[10px] font-medium text-white/30 uppercase tracking-widest hover:text-white/50 transition-colors cursor-default">© 2026 IGC Group. All rights reserved.</div>
-          </div>
+        <div className="kx-footer">
+          INTELLIGENCE <i>|</i> AUTOMATION <i>|</i> UNIFICATION <i>|</i> GROWTH
         </div>
 
-        {/* Right Side: Login Form Card — centered on every viewport.
-            Vertical padding on small screens accounts for the iOS notch /
-            Android chrome via env(safe-area-inset-*). The card width
-            scales from 92vw on tiny phones up to 460px on tablet+. */}
-        <div
-          className="flex-1 flex items-center justify-center px-4 sm:px-6 lg:p-8 cbc-pane cbc-pane-card"
-        >
-          <div className="w-full max-w-[92vw] sm:max-w-[440px] md:max-w-[480px] animate-in zoom-in-95 duration-500">
-            <div className="cbc-login-card relative overflow-hidden p-4 sm:p-5 transition-all duration-700 ease-out group/card">
-              {/* Animated gradient border ring — premium signature glow
-                  that breathes around the card. Sits in ::before so it
-                  doesn't interfere with content stacking. */}
-
-              {/* Logo in Card */}
-              <div className="flex justify-center mb-3 sm:mb-4 relative z-10">
-                <img src="/images/igc-logo.png" alt="Logo" className="w-[64px] sm:w-[72px] object-contain drop-shadow-[0_2px_8px_rgba(99,102,241,0.20)]" />
-              </div>
-
-              {(title || subtitle) && (
-                <div className="mb-3 sm:mb-3.5 text-center relative z-10">
-                  {title && (
-                    <div className="flex items-center justify-center gap-2 mb-1">
-                      {icon && <span className="text-primary">{icon}</span>}
-                      <h2 className="text-[24px] sm:text-[26px] font-extrabold gradient-text tracking-tight leading-tight">{title}</h2>
-                    </div>
-                  )}
-                  {subtitle && <p className="text-[12px] text-[#5e6b85] font-medium leading-snug">{subtitle}</p>}
-                </div>
-              )}
-
-              <div className="relative z-10">{children}</div>
+        {/* Right: the glass card. */}
+        <section className="kx-right">
+          <div className="kx-card">
+            <span className="kx-card-bevel" aria-hidden />
+            <div className="kx-card-head">
+              <KxLogo w={365} className="kx-logo--card" />
+              {title && <h2 className="kx-title">{icon}{title}</h2>}
+              {subtitle && <p className="kx-sub">{subtitle}</p>}
             </div>
-            <style>{`
-              /* Frosted light-glass card — opaque enough that the bg
-                 image doesn't bleed through, but soft and white so the
-                 page reads bright and friendly. Heavy blur preserves
-                 the layered glass feel. */
-              .cbc-login-card {
-                background:
-                  radial-gradient(circle at 0% 0%, rgba(139,92,246,0.10) 0%, transparent 50%),
-                  radial-gradient(circle at 100% 100%, rgba(245,176,111,0.08) 0%, transparent 55%),
-                  linear-gradient(180deg, rgba(255,255,255,0.86) 0%, rgba(248,250,255,0.82) 100%);
-                backdrop-filter: blur(28px) saturate(160%);
-                -webkit-backdrop-filter: blur(28px) saturate(160%);
-                border-radius: 22px;
-                border: 1px solid rgba(255,255,255,0.70);
-                box-shadow:
-                  0 1px 0 rgba(255,255,255,0.95) inset,
-                  0 -1px 0 rgba(99,102,241,0.06) inset,
-                  0 20px 48px rgba(15,23,42,0.30),
-                  0 40px 90px rgba(99,102,241,0.20);
-              }
-              @media (min-width: 640px) {
-                .cbc-login-card { border-radius: 26px; }
-              }
-              /* Top accent bar — thin gradient stripe across the top
-                 edge that catches the eye against the dark background. */
-              .cbc-login-card::after {
-                content: '';
-                position: absolute;
-                top: 0; left: 0; right: 0;
-                height: 2px;
-                background: linear-gradient(90deg,
-                  transparent 0%,
-                  rgba(139,92,246,0.85) 25%,
-                  rgba(245,176,111,0.85) 75%,
-                  transparent 100%);
-                z-index: 2;
-              }
-              /* Animated gradient border ring. */
-              .cbc-login-card::before {
-                content: '';
-                position: absolute;
-                inset: 0;
-                border-radius: inherit;
-                padding: 1px;
-                background: linear-gradient(135deg,
-                  rgba(139,92,246,0.55) 0%,
-                  rgba(255,255,255,0.18) 30%,
-                  rgba(245,176,111,0.55) 60%,
-                  rgba(255,255,255,0.18) 80%,
-                  rgba(139,92,246,0.55) 100%);
-                background-size: 220% 220%;
-                -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-                -webkit-mask-composite: xor;
-                        mask-composite: exclude;
-                pointer-events: none;
-                opacity: 0.6;
-                animation: cbc-card-glow 7s linear infinite;
-              }
-              .cbc-login-card:hover {
-                box-shadow:
-                  0 1px 0 rgba(255,255,255,0.35) inset,
-                  0 -1px 0 rgba(0,0,0,0.20) inset,
-                  0 24px 60px rgba(0,0,0,0.55),
-                  0 48px 100px rgba(139,92,246,0.30);
-                transform: translateY(-2px);
-              }
-              .cbc-login-card:hover::before { opacity: 0.95; }
-              @keyframes cbc-card-glow {
-                from { background-position: 0% 50%; }
-                to   { background-position: 220% 50%; }
-              }
 
-              /* Card is light/white — text reverts to dark indigo brand
-                 colors for proper contrast on the bright surface. */
-              .cbc-login-card .gradient-text {
-                background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 60%, #f5b06f 100%) !important;
-                -webkit-background-clip: text !important;
-                background-clip: text !important;
-                -webkit-text-fill-color: transparent !important;
-              }
-              .cbc-login-card label {
-                color: #4338ca !important;
-              }
-              .cbc-login-card p { color: #5b6378 !important; }
-              .cbc-login-card input.form-control,
-              .cbc-login-card input[type="email"],
-              .cbc-login-card input[type="password"],
-              .cbc-login-card input[type="text"] {
-                background: rgba(255,255,255,0.85) !important;
-                border-color: rgba(99,102,241,0.18) !important;
-                color: #1e293b !important;
-              }
-              .cbc-login-card input::placeholder {
-                color: rgba(100,116,139,0.55) !important;
-              }
-              .cbc-login-card input:focus {
-                background: #ffffff !important;
-                border-color: rgba(99,102,241,0.55) !important;
-                box-shadow: 0 0 0 3px rgba(99,102,241,0.15) !important;
-              }
-              .cbc-login-card .cbc-remember-text { color: #475569 !important; }
-              /* Scoped to the UNCHECKED state only — the checked styling
-                 (purple gradient + white tick) is owned by Login.tsx and
-                 used to be stomped by an unconditional !important rule. */
-              .cbc-login-card .cbc-remember-box[data-checked="false"] {
-                background: rgba(255,255,255,0.90) !important;
-                border-color: rgba(99,102,241,0.30) !important;
-              }
+            <div className="kx-card-body">{children}</div>
 
-              /* ── Dark-mode login card ──────────────────────────────────
-                 When the user logged out from a dark-mode session, the
-                 persisted theme attribute keeps the page in dark mode,
-                 but the hardcoded white card above became unreadable
-                 (white-on-light input text, low-contrast labels). The
-                 rules below flip the card surface + inputs + labels to
-                 a slate palette so the form stays usable on dark. */
-              [data-bs-theme="dark"] .cbc-login-card {
-                background:
-                  radial-gradient(circle at 0% 0%, rgba(139,92,246,0.18) 0%, transparent 50%),
-                  radial-gradient(circle at 100% 100%, rgba(245,176,111,0.10) 0%, transparent 55%),
-                  linear-gradient(180deg, rgba(17,24,42,0.92) 0%, rgba(13,18,32,0.88) 100%) !important;
-                border-color: rgba(255,255,255,0.10) !important;
-                box-shadow:
-                  inset 0 1px 0 rgba(255,255,255,0.06),
-                  0 20px 48px rgba(0,0,0,0.55),
-                  0 40px 90px rgba(99,102,241,0.18) !important;
-              }
-              [data-bs-theme="dark"] .cbc-login-card .gradient-text {
-                background: linear-gradient(135deg, #c4b5fd 0%, #a78bfa 60%, #f5b06f 100%) !important;
-                -webkit-background-clip: text !important;
-                background-clip: text !important;
-                -webkit-text-fill-color: transparent !important;
-              }
-              [data-bs-theme="dark"] .cbc-login-card label {
-                color: #c4b5fd !important;
-              }
-              [data-bs-theme="dark"] .cbc-login-card p {
-                color: rgba(226,232,240,0.75) !important;
-              }
-              [data-bs-theme="dark"] .cbc-login-card input.form-control,
-              [data-bs-theme="dark"] .cbc-login-card input[type="email"],
-              [data-bs-theme="dark"] .cbc-login-card input[type="password"],
-              [data-bs-theme="dark"] .cbc-login-card input[type="text"] {
-                background: rgba(255,255,255,0.04) !important;
-                border-color: rgba(255,255,255,0.10) !important;
-                color: #f1f5f9 !important;
-              }
-              [data-bs-theme="dark"] .cbc-login-card input::placeholder {
-                color: rgba(226,232,240,0.40) !important;
-              }
-              [data-bs-theme="dark"] .cbc-login-card input:focus {
-                background: rgba(255,255,255,0.06) !important;
-                border-color: rgba(167,139,250,0.65) !important;
-                box-shadow: 0 0 0 3px rgba(124,92,252,0.25) !important;
-              }
-              [data-bs-theme="dark"] .cbc-login-card .cbc-remember-text {
-                color: rgba(226,232,240,0.80) !important;
-              }
-              [data-bs-theme="dark"] .cbc-login-card .cbc-remember-box[data-checked="false"] {
-                background: rgba(255,255,255,0.05) !important;
-                border-color: rgba(167,139,250,0.40) !important;
-              }
-              /* "OR CONTINUE WITH" divider + the Google/Face buttons. */
-              [data-bs-theme="dark"] .cbc-login-card hr,
-              [data-bs-theme="dark"] .cbc-login-card .divider-line {
-                border-color: rgba(255,255,255,0.10) !important;
-              }
-              /* ── Google Sign-In button, dark mode (QA #3) ────────────────
-                 Login.tsx already asks Google for its dark variant
-                 ('filled_black') and re-renders on a theme flip, and that part
-                 works — the pill, its text and the G mark all come back dark.
-                 What stayed white is the BACKDROP Google draws its button on:
-                 the wrapper it generates inside our host element renders on a
-                 light canvas, so the dark pill sat in a white rounded box on
-                 the dark card.
-                 That box is the browser, not Google: the button lives in a
-                 cross-origin iframe whose document is light-scheme, and when
-                 an iframe's color-scheme differs from its embedding element's
-                 the browser paints an opaque canvas (white) behind it. Dark
-                 mode puts color-scheme: dark on the page, so the iframe
-                 inherited dark and mismatched. Pinning the host — and so the
-                 iframe — to light makes the two agree, and the frame stays
-                 transparent over the dark card. (color-scheme: dark here was
-                 the earlier attempt, and is exactly what kept the box white.)
-                 The wrappers are also made transparent in case Google paints
-                 them. :not([role="button"]) is the important part — the button
-                 itself, and the white circle behind the G inside it, are
-                 Google's own branding and must keep their fills. This only
-                 ever clears the container around it. */
-              [data-bs-theme="dark"] .cbc-login-card .cbc-google-btn,
-              [data-bs-theme="dark"] .cbc-login-card .cbc-google-btn iframe {
-                color-scheme: light !important;
-                background: transparent !important;
-              }
-              [data-bs-theme="dark"] .cbc-login-card .cbc-google-btn > div:not([role="button"]),
-              [data-bs-theme="dark"] .cbc-login-card .cbc-google-btn > div:not([role="button"]) > div:not([role="button"]),
-              [data-bs-theme="dark"] .cbc-login-card .cbc-google-btn iframe {
-                background: transparent !important;
-                background-color: transparent !important;
-              }
-            `}</style>
+            <span className="kx-tri" />
+            <div className="kx-card-foot">One Platform. Every Operation. A Stronger Tomorrow.</div>
 
-            <div className="mt-3 sm:mt-4 text-center text-white/40 text-[10px] sm:text-[11px] font-medium lg:hidden">
-              © 2026 IGC Group. All rights reserved.
-            </div>
+            {/* The card render's own wave mesh, cut out of it (its closing line removed). */}
+            <img className="kx-waves" src={`${ART}/card-mesh-2.png`} alt="" draggable={false} />
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );

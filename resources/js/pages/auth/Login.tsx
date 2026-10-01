@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth, type LoginOrg, type LoginResult } from '../../contexts/AuthContext';
 import AuthCardLayout from '../../layouts/AuthCardLayout';
-import Input from '../../components/ui/Input';
-import Button from '../../components/ui/Button';
-import { LogIn, AlertCircle, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Eye, EyeOff, Mail, Lock, ArrowRight, ScanFace } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import FaceLoginModal from '../../components/FaceLoginModal';
 
@@ -30,6 +28,11 @@ export default function Login({ onForgotPassword }: LoginProps) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const googleBtnRef = useRef<HTMLDivElement>(null);
+  // True once Google's own button iframe is in the host. If it never arrives
+  // (blocked third-party cookies, a slow or offline network), a matching
+  // fallback pill takes its place instead of leaving an empty gap.
+  const [googleShown, setGoogleShown] = useState(false);
+  const [googleTimedOut, setGoogleTimedOut] = useState(false);
   const handleCredentialRef = useRef<(resp: { credential?: string }) => void>(() => {});
   // Organization picker — shown when an email exists in more than one client
   // and the backend asks which one to sign in to. `retry` re-runs the same
@@ -89,19 +92,20 @@ export default function Login({ onForgotPassword }: LoginProps) {
       const measured = googleBtnRef.current.offsetWidth;
       // Google button max width is 400; clamp here.
       const width = Math.min(Math.max(measured || 320, 200), 400);
+      // Below Google's 200px floor the pill is narrower than the button, so
+      // the stylesheet scales the button down to the pill (--kx-gscale).
+      googleBtnRef.current.style.setProperty('--kx-gscale', measured && measured < 200 ? String(measured / 200) : '1');
       // Nothing the button would be drawn differently for. Return before
       // touching the DOM, so this callback causes no resize of its own.
       if (!force && width === lastWidth) return;
       lastWidth = width;
       googleBtnRef.current.innerHTML = '';
-      // Pick the Google button variant that matches the current theme —
-      // the bright white 'outline' button looked harsh on the dark login
-      // card. Google's brand guide officially supports a dark variant
-      // ('filled_black') with white text + coloured "G" mark.
-      const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+      // Always the white 'outline' pill: the sign-in card is dark glass in
+      // both themes now, and the design pairs a white Google pill with the
+      // white Microsoft one beside it.
       window.google.accounts.id.renderButton(googleBtnRef.current, {
         type: 'standard',
-        theme: isDark ? 'filled_black' : 'outline',
+        theme: 'outline',
         size: 'large',
         shape: 'pill',
         text: 'signin_with',
@@ -142,12 +146,14 @@ export default function Login({ onForgotPassword }: LoginProps) {
       ? new ResizeObserver(() => renderBtn())
       : null;
     if (ro && googleBtnRef.current) ro.observe(googleBtnRef.current);
-    // Re-render when the user flips dark/light on this page — the theme
-    // toggle mutates <html data-bs-theme> and we need to re-issue the
-    // button with the matching `filled_black` / `outline` variant.
-    const themeObserver = new MutationObserver(() => renderBtn(true));
-    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-bs-theme'] });
-    return () => { ro?.disconnect(); themeObserver.disconnect(); };
+
+    // Watch for Google's iframe; give up waiting after 3.5s.
+    const host = googleBtnRef.current;
+    const seen = () => !!host?.querySelector('iframe');
+    const mo = host ? new MutationObserver(() => { if (seen()) setGoogleShown(true); }) : null;
+    if (host && mo) mo.observe(host, { childList: true, subtree: true });
+    const timer = window.setTimeout(() => { if (!seen()) setGoogleTimedOut(true); }, 3500);
+    return () => { ro?.disconnect(); mo?.disconnect(); window.clearTimeout(timer); };
   }, []);
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -186,270 +192,110 @@ export default function Login({ onForgotPassword }: LoginProps) {
 
   return (
     <AuthCardLayout
-      title="Access Command Center"
-      subtitle="Enter your secure credentials to manage your global operations."
+      title="Welcome Back"
+      subtitle="Access your unified enterprise workspace."
     >
-      <div className="space-y-3">
-        <form onSubmit={handleSubmit} className="space-y-2.5">
-          <div className="space-y-0.5">
-            <label className="text-[12.5px] font-semibold text-primary-hover ml-0.5">Email Id</label>
-            <Input
+      <form onSubmit={handleSubmit} className="kx-form">
+        <label className="kx-field">
+          <Mail className="kx-field-ico" strokeWidth={1.6} />
+          <span className="kx-field-body">
+            <span className="kx-field-label">Email ID</span>
+            <input
               required
               type="email"
+              autoComplete="username"
+              className="kx-input"
               placeholder="you@company.com"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              className="h-10 px-3 text-[13px] bg-white/70 border-[#2f4fa3]/15 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-[#2f4fa3]/10 transition-all rounded-[10px] hover:border-primary/30"
             />
-          </div>
+          </span>
+        </label>
 
-          <div className="space-y-0.5">
-            <label className="text-[12.5px] font-semibold text-primary-hover ml-0.5">Password</label>
-            {/* Custom show/hide toggle. Edge auto-injects its own ::-ms-reveal
-                eye button on every <input type="password">, which collided
-                with our custom one (two eye icons in Edge, none in Chrome).
-                The inline <style> below hides Edge's native reveal so the
-                custom button below behaves identically across browsers. */}
-            <style>{`
-              input[type="password"]::-ms-reveal,
-              input[type="password"]::-ms-clear {
-                display: none !important;
-                width: 0;
-                height: 0;
-              }
-            `}</style>
-            <div className="relative">
-              <Input
-                required
-                type={showPassword ? 'text' : 'password'}
-                placeholder="••••••••"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="h-10 px-3 text-[13px] bg-white/70 border-[#2f4fa3]/15 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-[#2f4fa3]/10 transition-all rounded-[10px] hover:border-primary/30 pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(s => !s)}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                tabIndex={-1}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary transition-colors p-0 bg-transparent border-0"
-                style={{ lineHeight: 0 }}
-              >
-                {showPassword
-                  ? <EyeOff size={17} strokeWidth={2} />
-                  : <Eye size={17} strokeWidth={2} />}
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between pt-0.5">
-            {/* Custom-styled Remember Me — replaces the default browser
-                checkbox with a polished inset square + amber check tick
-                that animates in on toggle. Whole label is the hit target. */}
-            <label className="cbc-remember">
-              <input type="checkbox" className="cbc-remember-input" />
-              <span className="cbc-remember-box" aria-hidden>
-                <svg viewBox="0 0 16 16" fill="none">
-                  <path d="M3.5 8.5l3 3 6-6" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </span>
-              <span className="cbc-remember-text">Remember Me</span>
-              <style>{`
-                .cbc-remember {
-                  display: inline-flex;
-                  align-items: center;
-                  gap: 9px;
-                  cursor: pointer;
-                  user-select: none;
-                  -webkit-tap-highlight-color: transparent;
-                }
-                .cbc-remember-input {
-                  position: absolute;
-                  opacity: 0;
-                  pointer-events: none;
-                }
-                .cbc-remember-box {
-                  width: 18px;
-                  height: 18px;
-                  border-radius: 5px;
-                  background: rgba(255,255,255,0.65);
-                  border: 1.5px solid rgba(99,102,241,0.30);
-                  display: inline-flex;
-                  align-items: center;
-                  justify-content: center;
-                  flex-shrink: 0;
-                  color: transparent;
-                  transition:
-                    background 180ms ease,
-                    border-color 180ms ease,
-                    color 180ms ease,
-                    transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1),
-                    box-shadow 180ms ease;
-                }
-                .cbc-remember-box svg { width: 12px; height: 12px; }
-                .cbc-remember:hover .cbc-remember-box {
-                  border-color: rgba(99,102,241,0.55);
-                  background: #ffffff;
-                }
-                .cbc-remember-input:focus-visible + .cbc-remember-box {
-                  box-shadow: 0 0 0 3px rgba(99,102,241,0.25);
-                }
-                .cbc-remember-input:checked + .cbc-remember-box {
-                  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-                  border-color: transparent;
-                  color: #ffffff;
-                  transform: scale(1.05);
-                  box-shadow: 0 4px 12px rgba(99,102,241,0.30);
-                }
-                .cbc-remember-text {
-                  font-size: 12.5px;
-                  font-weight: 600;
-                  color: #475569;
-                  letter-spacing: -0.005em;
-                  transition: color 180ms ease;
-                }
-                .cbc-remember:hover .cbc-remember-text {
-                  color: #6366f1;
-                }
-              `}</style>
-            </label>
-            <button
-              type="button"
-              onClick={onForgotPassword}
-              className="text-[12px] font-bold text-primary hover:underline hover-scale transition-all"
-            >
-              Forgot password?
-            </button>
-          </div>
-
-          <div className="pt-1">
-            <button
-              disabled={loading}
-              className="w-full btn-gradient-primary h-11 rounded-full  text-white text-[14px] font-semibold shadow-lg shadow-primary/20 hover:bg-primary-hover hover-lift hover-scale transition-all disabled:opacity-70 flex items-center justify-center gap-2"
-              type="submit"
-            >
-              {loading ? <Loader2 size={16} className="animate-spin" /> : null}
-              {loading ? 'Logging In...' : 'Log In'}
-            </button>
-          </div>
-        </form>
-
-        <div className="relative flex items-center py-1">
-          <div className="flex-grow border-t border-slate-200"></div>
-          <span className="flex-shrink mx-3 text-[11px] font-medium uppercase tracking-wider text-slate-400">or continue with</span>
-          <div className="flex-grow border-t border-slate-200"></div>
-        </div>
-
-        {/* cbc-google-btn — the hook the dark-mode rules in AuthCardLayout use.
-            Google renders its own markup in here, so its backdrop can only be
-            reached from CSS (QA #3). */}
-        <div ref={googleBtnRef} className="cbc-google-btn w-full flex justify-center min-h-[44px]" />
-
-        {/* Face-based sign-in. Visually distinct from the email + Google
-            paths so it reads as the "premium" option — gradient pill with
-            a pulsing scanner-style face icon, brand-coloured glow shadow,
-            and a lift on hover. Backend still demands an email so the
-            descriptor compare is scoped to ONE enrolled user — there's
-            no "any face wins" attack surface. */}
-        <div className="cbc-face-btn-wrap mt-2 flex justify-center">
+        <label className="kx-field">
+          <Lock className="kx-field-ico" strokeWidth={1.6} />
+          <span className="kx-field-body">
+            <span className="kx-field-label">Password</span>
+            <input
+              required
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              className="kx-input"
+              placeholder="•••••••••"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+            />
+          </span>
           <button
             type="button"
-            onClick={() => setFaceOpen(true)}
-            className="cbc-face-btn rounded-full text-[12.5px] font-semibold inline-flex items-center justify-center gap-2"
+            className="kx-eye"
+            onClick={() => setShowPassword(s => !s)}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            tabIndex={-1}
           >
-            <span className="cbc-face-icon">
-              <i className="ri-user-smile-line" />
-              <span className="cbc-face-pulse" />
+            {showPassword ? <EyeOff strokeWidth={1.8} /> : <Eye strokeWidth={1.8} />}
+          </button>
+        </label>
+
+        <div className="kx-row">
+          <label className="kx-remember">
+            <input type="checkbox" defaultChecked />
+            <span className="kx-check" aria-hidden>
+              <svg viewBox="0 0 16 16" fill="none">
+                <path d="M3.5 8.5l3 3 6-6" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </span>
-            Sign in with Face
+            Remember Me
+          </label>
+          <button type="button" className="kx-link" onClick={onForgotPassword}>
+            Forgot password?
           </button>
         </div>
-        <style>{`
-          /* Compact pill — auto width, slim height, soft border.
-             No heavy outer halo (the previous neon stack was too
-             loud); a single small drop shadow gives it just enough
-             lift to read as a button without overpowering the
-             Google option above it. */
-          .cbc-face-btn {
-            position: relative;
-            height: 34px;
-            padding: 0 18px;
-            /* Explicit pill rounding — Tailwind's rounded-full was being
-               beaten somewhere in the cascade, leaving the button looking
-               like a rounded rectangle instead of a true pill. */
-            border-radius: 999px !important;
-            border: 1px solid rgba(124,92,252,0.45);
-            background: #ffffff;
-            color: #4338ca;
-            box-shadow: 0 2px 6px rgba(99,102,241,0.10);
-            letter-spacing: 0.01em;
-            transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease, color 180ms ease;
-            overflow: hidden;
-          }
-          [data-bs-theme="dark"] .cbc-face-btn {
-            background: rgba(124,92,252,0.10);
-            color: #c4b5fd;
-            border-color: rgba(167,139,250,0.45);
-            box-shadow: 0 2px 6px rgba(0,0,0,0.30);
-          }
-          [data-bs-theme="dark"] .cbc-face-btn:hover {
-            background: rgba(124,92,252,0.18);
-            border-color: rgba(196,181,253,0.75);
-            color: #e9e3ff;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.40);
-          }
-          .cbc-face-btn::before {
-            /* Soft moving sheen so the button feels alive without being noisy. */
-            content: '';
-            position: absolute;
-            top: 0; left: -60%;
-            width: 50%; height: 100%;
-            background: linear-gradient(120deg,
-              transparent 0%,
-              rgba(124,92,252,0.18) 50%,
-              transparent 100%);
-            transform: skewX(-20deg);
-            transition: left 700ms ease;
-          }
-          .cbc-face-btn:hover {
-            transform: translateY(-1px);
-            border-color: #7c3aed;
-            background: #faf7ff;
-            box-shadow: 0 4px 10px rgba(99,102,241,0.18);
-          }
-          .cbc-face-btn:hover::before { left: 130%; }
-          .cbc-face-btn:active { transform: translateY(0); }
 
-          .cbc-face-icon {
-            position: relative;
-            width: 22px; height: 22px;
-            border-radius: 999px;
-            background: rgba(124,92,252,0.15);
-            display: inline-flex; align-items: center; justify-content: center;
-            font-size: 13px;
-            color: #6366f1;
-            box-shadow: inset 0 0 0 1px rgba(124,92,252,0.40);
-          }
-          [data-bs-theme="dark"] .cbc-face-icon {
-            background: rgba(167,139,250,0.20);
-            color: #c4b5fd;
-            box-shadow: inset 0 0 0 1px rgba(167,139,250,0.55);
-          }
-          .cbc-face-pulse {
-            position: absolute;
-            inset: -4px;
-            border-radius: 999px;
-            border: 2px solid rgba(255,255,255,0.55);
-            opacity: 0;
-            animation: cbcFacePulse 1.8s ease-out infinite;
-            pointer-events: none;
-          }
-          @keyframes cbcFacePulse {
-            0%   { transform: scale(0.85); opacity: 0.85; }
-            70%  { transform: scale(1.35); opacity: 0;    }
-            100% { transform: scale(1.35); opacity: 0;    }
-          }
-        `}</style>
+        {/* Loading keeps the button at full colour and the same size: a light
+            sweeps across it and a thin ring replaces the arrow. */}
+        <button type="submit" className={`kx-submit${loading ? ' is-loading' : ''}`} disabled={loading} aria-busy={loading}>
+          <span className="kx-submit-label">{loading ? 'Signing in' : 'Log In'}</span>
+          {loading
+            ? <span className="kx-spin" aria-hidden />
+            : <ArrowRight className="kx-submit-arrow" strokeWidth={1.8} />}
+        </button>
+      </form>
+
+      <div className="kx-or">OR CONTINUE WITH</div>
+
+      <div className="kx-social">
+        {GOOGLE_CLIENT_ID ? (
+          /* Google draws its own button into this host (an iframe), so the
+             official sign-in flow is untouched. */
+          <div className="kx-google-wrap">
+            <div ref={googleBtnRef} className="cbc-google-btn kx-google" />
+            {!googleShown && googleTimedOut && (
+              <button
+                type="button"
+                className="kx-social-btn kx-google-fallback"
+                onClick={() => {
+                  if (window.google?.accounts?.id) window.google.accounts.id.prompt();
+                  else toast.error('Google Sign-In', 'Google sign-in could not load. Check your connection, or allow third-party cookies for accounts.google.com, then refresh.');
+                }}
+              >
+                <GoogleGlyph />Sign in with Google
+              </button>
+            )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="kx-social-btn"
+            onClick={() => toast.info('Google Sign-In', 'Google sign-in is not configured for this environment.')}
+          >
+            <GoogleGlyph />Sign in with Google
+          </button>
+        )}
+        {/* Face sign-in — the existing FaceLoginModal flow. */}
+        <button type="button" className="kx-social-btn" onClick={() => setFaceOpen(true)}>
+          <ScanFace className="kx-face-ico" strokeWidth={2} />Sign in with Face
+        </button>
       </div>
 
       <FaceLoginModal
@@ -500,4 +346,15 @@ export default function Login({ onForgotPassword }: LoginProps) {
     </AuthCardLayout>
   );
 }
-      
+
+/* Google's mark for the fallback sign-in pill, in its official colours. */
+function GoogleGlyph() {
+  return (
+    <svg viewBox="0 0 48 48" aria-hidden>
+      <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z" />
+      <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" />
+      <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z" />
+      <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z" />
+    </svg>
+  );
+}
