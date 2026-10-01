@@ -180,6 +180,7 @@
 .ib-pill-stage--mgr { background: #dcfce7; color: #15803d; }
 [data-bs-theme="dark"] .ib-pill-stage--hr  { background: rgba(99,102,241,0.20); color: #a5b4fc; }
 [data-bs-theme="dark"] .ib-pill-stage--mgr { background: rgba(16,185,129,0.18); color: #6ee7b7; }
+[data-bs-theme="dark"] .ib-btn-approve--hr { background: rgba(59,130,246,0.18); color: #93c5fd; border-color: rgba(59,130,246,0.38); }
 
 .ib-title-line { font-size: 12px; color: #374151; }
 
@@ -191,6 +192,14 @@
   padding: 8px 12px; border-radius: 8px; border: 0;
   background: linear-gradient(135deg, #10b981, #059669);
   color: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+/* HR stage: the manager has approved and this is the final step. Same faint
+   blue the Expense / Advance tables use, so the colour means one thing across
+   the app rather than "approve" in one place and "HR's turn" in another. */
+.ib-btn-approve--hr {
+  background: #b6d9f7;
+  color: #08406f;
+  border: 1px solid #8dc3ef;
 }
 .ib-btn-approve:disabled { cursor: not-allowed; opacity: 0.6; }
 .ib-btn-reject {

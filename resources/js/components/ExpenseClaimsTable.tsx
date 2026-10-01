@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useMemo } from 'react';
+import { useRef, useState, useEffect, useLayoutEffect, useMemo } from 'react';
 import { useScrollLock } from '../hooks/useScrollLock';
 import { createPortal } from 'react-dom';
 import DataTable, { TruncCell, type DataTableColumn } from './ui/DataTable';
@@ -387,7 +387,16 @@ export function expenseClaimColumns({
       header: 'Amount',
       accessorKey: 'amount',
       meta: { width: 110, align: 'center' },
-      cell: info => <span className="fw-bold">₹{Number(info.row.original.amount || 0).toLocaleString('en-IN')}</span>,
+      /* A 110px column clips a lakh-plus figure, and a clipped amount is the
+         one cell nobody should have to guess at. (#227) */
+      cell: info => {
+        const amt = `₹${Number(info.row.original.amount || 0).toLocaleString('en-IN')}`;
+        return (
+          <Tooltip label={amt}>
+            <span className="fw-bold">{amt}</span>
+          </Tooltip>
+        );
+      },
     },
     {
       header: 'Proof of Payment',
@@ -1007,13 +1016,19 @@ function AuditLogTrigger({
       if (!btn) return;
       const rect = btn.getBoundingClientRect();
       const POP_WIDTH = 340;
+      /* The popover's REAL height once it is on screen. The 280 below is only
+         the first-paint guess; a shorter log flipped above the button was
+         placed 280px up regardless, leaving it floating well clear of the row
+         that opened it. (#228) */
+      const measured = popRef.current?.offsetHeight || 0;
       const POP_HEIGHT = 280; // estimate — popover never grows much beyond this
       // Prefer below-and-left so the popover body doesn't fall off the right
       // edge of the page; flip above when there isn't enough room below.
+      const popH = measured || POP_HEIGHT;
       const spaceBelow = window.innerHeight - rect.bottom;
-      const top = spaceBelow > POP_HEIGHT
+      const top = spaceBelow > popH
         ? rect.bottom + 6
-        : Math.max(8, rect.top - POP_HEIGHT - 6);
+        : Math.max(8, rect.top - popH - 6);
       const left = Math.min(
         window.innerWidth - POP_WIDTH - 12,
         Math.max(12, rect.right - POP_WIDTH),
@@ -1033,6 +1048,19 @@ function AuditLogTrigger({
       window.removeEventListener('resize', recompute);
     };
   }, [open, setOpen]);
+
+  /* Second pass. The first placement runs before the popover is in the DOM, so
+     it can only use the 280px guess; this re-places it against the height it
+     actually took. Guarded on a >1px move so it settles in one correction. */
+  useLayoutEffect(() => {
+    if (!open || !pos || !popRef.current || !btnRef.current) return;
+    const h = popRef.current.offsetHeight;
+    const rect = btnRef.current.getBoundingClientRect();
+    const top = (window.innerHeight - rect.bottom) > h
+      ? rect.bottom + 6
+      : Math.max(8, rect.top - h - 6);
+    if (Math.abs(top - pos.top) > 1) setPos({ ...pos, top });
+  }, [open, pos]);
 
   // Lock the page behind the popover. It is pinned to fixed coords, so letting
   // the page scroll underneath drags it away from its row; the popover's own

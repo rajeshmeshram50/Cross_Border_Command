@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useMemo } from 'react';
+import { useRef, useState, useEffect, useLayoutEffect, useMemo } from 'react';
 import { useScrollLock } from '../hooks/useScrollLock';
 import { createPortal } from 'react-dom';
 import DataTable, { TruncCell, type DataTableColumn } from './ui/DataTable';
@@ -356,7 +356,9 @@ export function advanceRequestColumns({
         const net = r.sanctioned_amount != null ? Number(r.sanctioned_amount) : null;
         const inr = (v: number) => '₹' + v.toLocaleString('en-IN');
         const adjusted = net != null && Math.abs(net - req) > 0.005;
-        if (!adjusted) return <span className="fw-bold">{inr(req)}</span>;
+        /* Tooltipped even when the figure is unadjusted: the column is 110px,
+           which clips a lakh-plus amount. (#227) */
+        if (!adjusted) return <Tooltip label={inr(req)}><span className="fw-bold">{inr(req)}</span></Tooltip>;
         return (
           <Tooltip label={`Requested ${inr(req)} · sanctioned ${inr(net!)} (${net! > req ? '+' : '−'}${inr(Math.abs(net! - req))})`}>
             <span className="d-inline-flex flex-column align-items-center" style={{ lineHeight: 1.15 }}>
@@ -1056,11 +1058,17 @@ function AuditLogTrigger({
       if (!btn) return;
       const rect = btn.getBoundingClientRect();
       const POP_WIDTH = 340;
+      /* The popover's REAL height once it is on screen. The 280 below is only
+         the first-paint guess; a shorter log flipped above the button was
+         placed 280px up regardless, leaving it floating well clear of the row
+         that opened it. (#228) */
+      const measured = popRef.current?.offsetHeight || 0;
       const POP_HEIGHT = 280;
+      const popH = measured || POP_HEIGHT;
       const spaceBelow = window.innerHeight - rect.bottom;
-      const top = spaceBelow > POP_HEIGHT
+      const top = spaceBelow > popH
         ? rect.bottom + 6
-        : Math.max(8, rect.top - POP_HEIGHT - 6);
+        : Math.max(8, rect.top - popH - 6);
       const left = Math.min(
         window.innerWidth - POP_WIDTH - 12,
         Math.max(12, rect.right - POP_WIDTH),
@@ -1082,6 +1090,19 @@ function AuditLogTrigger({
       window.removeEventListener('resize', recompute);
     };
   }, [open, setOpen]);
+
+  /* Second pass. The first placement runs before the popover is in the DOM, so
+     it can only use the 280px guess; this re-places it against the height it
+     actually took. Guarded on a >1px move so it settles in one correction. */
+  useLayoutEffect(() => {
+    if (!open || !pos || !popRef.current || !btnRef.current) return;
+    const h = popRef.current.offsetHeight;
+    const rect = btnRef.current.getBoundingClientRect();
+    const top = (window.innerHeight - rect.bottom) > h
+      ? rect.bottom + 6
+      : Math.max(8, rect.top - h - 6);
+    if (Math.abs(top - pos.top) > 1) setPos({ ...pos, top });
+  }, [open, pos]);
 
   // Lock the page behind the popover; the log itself still scrolls (CBC #73).
   /* Shared hook instead of a local html+body lock: that pair misses the

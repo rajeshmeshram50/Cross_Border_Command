@@ -974,6 +974,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     id: number; name: string;
   };
   const [claimCategories, setClaimCategories] = useState<ClaimCategory[]>([]);
+  /* Separate from an empty list: the picker used to read "Loading…" forever
+     when the branch simply had no categories configured. (#225) */
+  const [claimCategoriesLoading, setClaimCategoriesLoading] = useState(false);
   useEffect(() => {
     if (!claimOpen) return;
     // Use the expense-claims categories endpoint (branch-scoped) rather than
@@ -985,6 +988,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     const params: Record<string, string> = {};
     if (/^\d+$/.test(String(employeeId))) params.employee_id = String(employeeId);
     else if (employeeId) params.employee_code = String(employeeId);
+    setClaimCategoriesLoading(true);
     api.get('/expense-claims/categories', { params })
       .then((res: any) => {
         const rows = Array.isArray(res?.data) ? res.data : [];
@@ -997,7 +1001,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             })),
         );
       })
-      .catch(() => setClaimCategories([]));
+      .catch(() => setClaimCategories([]))
+      .finally(() => setClaimCategoriesLoading(false));
   }, [claimOpen, employeeId]);
   const categoryById = (id: string | number | undefined): ClaimCategory | null => {
     if (id === undefined || id === '' || id === null) return null;
@@ -3620,7 +3625,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <div className="ep-claim-label">Category <span className="ep-claim-req">*</span></div>
                     <MasterSelect
                       value={claimCategory}
-                      placeholder={claimCategories.length ? 'Select category' : 'Loading…'}
+                      placeholder={claimCategoriesLoading ? 'Loading…' : 'Select category'}
+                      emptyText="No category found"
                       options={claimCategories.map(c => ({ value: String(c.id), label: c.name }))}
                       onChange={(v) => { setClaimCategory(v); clearClaimErr('category'); }}
                       invalid={!!claimErrors.category}
@@ -3916,11 +3922,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <MasterSelect
                       value={advType}
                       placeholder="Select type..."
-                      /* Kept in step with AdvanceRequestController::ADVANCE_TYPES.
-                         'Salary Advance' was already accepted by the API but had
-                         no option here, and 'Loan' is the type payroll reports on
-                         the payslip's Loan Recovery line (Rule 11). */
-                      options={['Travel Advance','Salary Advance','Medical Advance','Loan','Other'].map(o => ({ value: o, label: o }))}
+                      /* A SUBSET of AdvanceRequestController::ADVANCE_TYPES.
+                         'Salary Advance' is not offered — the API still accepts
+                         it, so rows raised under it stay valid and keep showing
+                         their type; it is only no longer pickable. 'Loan' is the
+                         type payroll reports on the payslip's Loan Recovery
+                         line (Rule 11). */
+                      options={['Travel Advance','Medical Advance','Loan','Other'].map(o => ({ value: o, label: o }))}
                       onChange={(v) => { setAdvType(v); clearAdvErr('type'); }}
                       invalid={!!advErrors.type}
                     />

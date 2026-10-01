@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ActionIcon } from '../../components/ui/DataTable';
 import { Col, Row, Progress, Modal, ModalBody } from 'reactstrap';
 import ComingSoonShell from '../../components/ComingSoonShell';
 import '../../../css/recruitment.css';
@@ -1114,7 +1115,7 @@ function PipActionsView({ pips }: { pips: ActivePip[] }) {
                     <td style={{ textAlign: 'right' }}>
                       <div className="d-flex justify-content-end gap-1">
                         <button type="button" className="pip-icon-btn" title="View"><i className="ri-eye-line" /></button>
-                        <button type="button" className="pip-icon-btn" title="Edit"><i className="ri-pencil-line" /></button>
+                        <button type="button" className="pip-icon-btn" title="Edit"><ActionIcon icon="edit-svg" /></button>
                       </div>
                     </td>
                   </tr>

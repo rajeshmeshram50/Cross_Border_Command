@@ -12,6 +12,7 @@ import { useToast } from '../../contexts/ToastContext';
 import useModulePermission from '../../hooks/useModulePermission';
 import { Shimmer } from '../../components/ui/Shimmer';
 import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import Tooltip from '../../components/ui/Tooltip';
 import api from '../../api';
 import { assertApiBlob } from '../../utils/downloadFile';
 import '../../../css/recruitment.css';
@@ -1111,25 +1112,9 @@ export default function HrPayroll() {
     }
   };
 
-  /* Jump straight to this cycle's payroll sheet.
-   *
-   * This replaced the header's Reopen action. Reopening wipes a generated run
-   * so it can be re-run, which is a destructive correction step and a poor
-   * neighbour to Run Payroll / Export — the common intent from here is simply
-   * to look at what was generated. Correction still exists via the run modal's
-   * re-run path; it is just no longer one stray click from the header. */
+  /* The payroll sheet. Nothing scrolls to it any more — the header's View
+     button is gone — but the ref stays as the sheet's anchor. */
   const sheetRef = useRef<HTMLDivElement | null>(null);
-
-  const viewPayrollSheet = () => {
-    setTab('processing');
-    // After the tab switch has painted, so we scroll to the sheet's real spot.
-    requestAnimationFrame(() => {
-      sheetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  };
-
-  /** A generated run exists for this cycle — there is a sheet worth viewing. */
-  const hasRun = !!runMeta;
 
   const downloadPayslipPdf = async (row: PayrollRow) => {
     if (!row.payslip_id) {
@@ -2212,24 +2197,8 @@ export default function HrPayroll() {
               </DropdownItem>
             </DropdownMenu>
           </Dropdown>
-          {hasRun && (
-            <Button
-              color="light"
-              className="rounded-pill fw-semibold d-inline-flex align-items-center pay-hero-export"
-              onClick={viewPayrollSheet}
-              title="Jump to this cycle's payroll sheet"
-              style={{
-                padding: '10px 15px',
-                fontSize: 12,
-                border: '1px solid #705ad0',
-                background: 'var(--vz-card-bg)',
-                color: '#5a3fd1',
-              }}
-            >
-              <i className="ri-table-line me-2" style={{ fontSize: 14 }} />
-              View
-            </Button>
-          )}
+          {/* "View" only scrolled down to the payroll sheet, which is the next
+              thing on the page anyway. */}
         </div>
       </div>
 
@@ -2275,19 +2244,28 @@ export default function HrPayroll() {
                   disabled={busy}
                 />
               </div>
-              <button
-                type="button"
-                onClick={() => setCycleCollapsed(v => !v)}
-                className="btn btn-sm fw-semibold"
-                style={{
-                  background: 'transparent',
-                  color: '#5a3fd1',
-                  border: 'none',
-                  fontSize: 12,
-                }}
-              >
-                {cycleCollapsed ? 'Expand ↓' : 'Collapse ↑'}
-              </button>
+              {/* Icon only — the arrow says which way it goes, and the tooltip
+                  says it in words for anyone who needs them. */}
+              <Tooltip label={cycleCollapsed ? 'Expand cycle history' : 'Collapse cycle history'}>
+                <button
+                  type="button"
+                  onClick={() => setCycleCollapsed(v => !v)}
+                  aria-label={cycleCollapsed ? 'Expand cycle history' : 'Collapse cycle history'}
+                  aria-expanded={!cycleCollapsed}
+                  className="btn btn-sm d-inline-flex align-items-center justify-content-center"
+                  style={{
+                    background: 'transparent',
+                    color: '#5a3fd1',
+                    border: 'none',
+                    width: 28,
+                    height: 28,
+                    padding: 0,
+                    fontSize: 18,
+                  }}
+                >
+                  <i className={cycleCollapsed ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'} />
+                </button>
+              </Tooltip>
             </div>
           </div>
 

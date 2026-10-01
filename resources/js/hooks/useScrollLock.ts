@@ -36,10 +36,24 @@ export function useScrollLock(active = true, exceptSelector?: string): void {
       return (oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1;
     });
     const prevPanes = panes.map(el => el.style.overflow);
+    const prevPanePad = panes.map(el => el.style.paddingRight);
+    /* Each pane's OWN scrollbar width, measured before it is hidden. Hiding a
+       pane reclaims that strip, and its content widens into it — which is the
+       whole page shifting sideways the moment a popover opens. body gets this
+       treatment already; the panes never did, and in this app the page scrolls
+       on .main-content, not body, so the compensation was going to an element
+       that had no scrollbar to lose. (#228) */
+    const paneBars = panes.map(el => el.offsetWidth - el.clientWidth);
 
     html.style.overflow = 'hidden';
     body.style.overflow = 'hidden';
-    panes.forEach(el => { el.style.overflow = 'hidden'; });
+    panes.forEach((el, i) => {
+      el.style.overflow = 'hidden';
+      if (paneBars[i] > 0) {
+        const pad = parseFloat(getComputedStyle(el).paddingRight) || 0;
+        el.style.paddingRight = `${pad + paneBars[i]}px`;
+      }
+    });
     if (scrollbarW > 0) {
       const currentPad = parseFloat(getComputedStyle(body).paddingRight) || 0;
       body.style.paddingRight = `${currentPad + scrollbarW}px`;
@@ -48,7 +62,10 @@ export function useScrollLock(active = true, exceptSelector?: string): void {
       html.style.overflow = prevHtml;
       body.style.overflow = prevBody;
       body.style.paddingRight = prevPad;
-      panes.forEach((el, i) => { el.style.overflow = prevPanes[i]; });
+      panes.forEach((el, i) => {
+        el.style.overflow = prevPanes[i];
+        el.style.paddingRight = prevPanePad[i];
+      });
     };
   }, [active, exceptSelector]);
 }
