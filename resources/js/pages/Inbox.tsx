@@ -82,14 +82,22 @@ export default function Inbox() {
   // PO senior-approval counts, reported by their section (it pages on the server).
   const [poNewCount, setPoNewCount] = useState(0);
   const [poHistCount, setPoHistCount] = useState(0);
+  // PO approvals belong to the Purchase Order module, so the section (and its
+  // counts) only appear for users who can view it — 'p2p.order' (the Order
+  // module the approval flow lives in) or the legacy 'p2p.po' leaf. An
+  // HRMS-only user no longer sees an empty PO table in their Inbox (QA #11).
+  const canSeePo = user?.user_type === 'super_admin'
+    || !!user?.permissions?.['p2p.order']?.can_view
+    || !!user?.permissions?.['p2p.po']?.can_view;
   // The history section mounts only on its tab; its count is needed for the tab badge now.
   // One row is enough — meta.total is the count. A failure just leaves the badge at 0;
   // the section itself shows the error when opened.
   useEffect(() => {
+    if (!canSeePo) return;
     poApprovalApi.inbox({ history: true, per_page: 1 })
       .then((res) => setPoHistCount(res.meta?.total ?? res.rows.length))
       .catch(() => {});
-  }, []);
+  }, [canSeePo]);
   const [leaveRows, setLeaveRows] = useState<ApiLeaveRequest[]>([]);
   const [leaveLoading, setLeaveLoading] = useState(true);
   const [leaveActing, setLeaveActing] = useState<{ id: number; verdict: 'approve' | 'reject' } | null>(null);
@@ -833,8 +841,8 @@ export default function Inbox() {
           )}
 
           {/* PO senior approvals — overdue supplier GST; the review opens as a full page. */}
-          {tab === 'new' && <PoApprovalInboxSection onCount={setPoNewCount} />}
-          {tab === 'updated' && <PoApprovalInboxSection history onCount={setPoHistCount} />}
+          {canSeePo && tab === 'new' && <PoApprovalInboxSection onCount={setPoNewCount} />}
+          {canSeePo && tab === 'updated' && <PoApprovalInboxSection history onCount={setPoHistCount} />}
 
           {/* ── Updated (History) tab: the same Leave / Expense / Document
                  containers, listing items you've already acted on. ── */}
