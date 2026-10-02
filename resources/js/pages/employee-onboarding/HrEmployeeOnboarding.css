@@ -741,6 +741,20 @@
         .onb-init-modal .modal-dialog { max-width: min(1280px, 96vw); }
         .onb-init-content { border-radius: 18px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.22); }
 
+        /* Signed-copy viewer — the same 18px corner as every other dialog on
+           this page (checklist, edit employee, initiate onboarding). It was
+           left on Bootstrap's default with a 6px band on top, so it read as a
+           different kind of window to everything around it.
+           The body inherits the radius for the reason the Edit Employee header
+           needed it: a body rounded less than the card it sits in clips the
+           band's corners early and shows a wedge of the body's own colour. */
+        .vault-preview-modal .modal-content {
+          border-radius: 18px !important;
+          overflow: hidden;
+          box-shadow: 0 24px 60px rgba(18,38,63,0.22);
+        }
+        .vault-preview-modal .modal-body { border-radius: inherit; }
+
         /* Header */
         .onb-init-header {
           background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 50%, #7c3aed 100%);

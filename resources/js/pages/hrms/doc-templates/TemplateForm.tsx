@@ -1126,7 +1126,12 @@ function SectionHead({ icon, n, title, sub, required }: { icon: string; n: numbe
         <i className={icon} />
       </span>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 800, color: '#111827', lineHeight: 1.25 }}>
+        {/* The class matters: the colour below is an inline style, which dark
+            mode cannot reach, so in dark the numbered title ("1. Employee
+            Category", "3. Basic Information") was near-black ink on a dark
+            card — present but unreadable. `.tpl-card-head-title` is the hook
+            the dark block already uses for exactly this. */}
+        <div className="tpl-card-head-title" style={{ fontSize: 13.5, fontWeight: 800, color: '#111827', lineHeight: 1.25 }}>
           {n}. {title} {required && <span style={req}>*</span>}
         </div>
         <div style={{ fontSize: 11.5, color: '#9ca3af' }}>{sub}</div>

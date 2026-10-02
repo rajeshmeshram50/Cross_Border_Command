@@ -1344,8 +1344,16 @@ function ScopedStyles() {
       .gd-page .gd-stepper-sub {
         font-size: 10.5px; color: #9ca3af; margin-top: 1px;
       }
+      /* A fixed rail, centred in whatever space the step leaves.
+         flex: 1 1 auto made the rail soak up the slack in its own column,
+         and the three steps are not the same width — "Select Employees" is
+         210px against "Fill Variables" at 224 — so the rails came out 39px
+         and 25px. The columns were evenly spaced all along (277 and 276), but
+         the eye reads the rails, not the columns, so the strip looked
+         crooked. A fixed 30px rail with auto margins is identical between
+         every pair, and the slack goes to the margins instead. */
       .gd-page .gd-stepper-line {
-        flex: 1 1 auto; height: 2px; margin: 0 14px; background: #e5e7eb;
+        flex: 0 0 30px; height: 2px; margin: 0 auto; background: #e5e7eb;
         transition: background 200ms ease; border-radius: 2px;
       }
       .gd-page .gd-stepper-line.is-done { background: #818cf8; }
