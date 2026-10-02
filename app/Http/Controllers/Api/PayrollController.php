@@ -1385,10 +1385,12 @@ class PayrollController extends Controller
         // old seeder left behind, silently suppressing the notice.
         $pfStructure = $activeStructure;
 
-        // Same OR PayrollService::resolveCompensation() applies — the
-        // employee record is the master, the structure a cache of it.
-        $pfAppliesNow = $employee
-            && ((bool) ($pfStructure->pf_applicable ?? false) || (bool) $employee->pf_eligible);
+        /* The STRUCTURE decides, as PayrollService::resolveCompensation() now
+           does. This was the same OR, and it has to move with it: left as an
+           OR this notice would tell HR "PF is applicable but was not deducted"
+           for an employee whose structure says PF does not apply — i.e. the
+           engine behaving correctly, reported as a fault. */
+        $pfAppliesNow = $employee && (bool) ($pfStructure->pf_applicable ?? false);
 
         // Frozen exactly where recomputeEmployeePayslips() gives up.
         $frozen = !in_array($slip->run?->status, ['draft', 'generated'], true)
@@ -2687,6 +2689,35 @@ class PayrollController extends Controller
             $row['weekOffDays'] = $weekOffDays
                 ?? ($this->weekOffDaysMap(collect([$p]), $p->period)[$p->employee_id] ?? 0);
             $row['lopDays']           = (float) $p->lop_days;
+            /* What ONE day of loss of pay cost. (#156)
+             *
+             * Derived from the slip's own figures rather than re-deriving the
+             * branch policy here: lop_amount ÷ lop_days IS the rate that
+             * priced this slip, whatever basis and divisor produced it, and it
+             * stays correct for historic slips run under an older rule.
+             *
+             * Null when nothing was docked — there is no rate to quote, and a
+             * ₹0 would read as "a day here is worth nothing". */
+            $row['perDayRate']        = (float) $p->lop_days > 0
+                ? round((float) $p->lop_amount / (float) $p->lop_days, 2)
+                : null;
+            /* PER-DAY SALARY — what one payable day of this slip is worth.
+             *
+             * The salary portion only: overtime and bonus are paid for work
+             * done, not for being employed a day, and leaving them in would
+             * quote a daily rate the employee does not actually accrue.
+             *
+             * Divided by the slip's own payable days, which makes the figure
+             * self-checking: the two numbers it is derived from are both
+             * printed on the slip, so the reader can redo the division.
+             * Equivalent to monthly ÷ days in month, since that is exactly how
+             * the earnings were pro-rated in the first place. */
+            $salaryOnly = (float) $p->gross_earnings
+                - (float) ($p->overtime_amount ?? 0)
+                - (float) ($p->bonus_amount ?? 0);
+            $row['perDaySalary']      = (float) $p->working_days > 0
+                ? round(max(0, $salaryOnly) / (float) $p->working_days, 2)
+                : null;
             /* How much of Loss of Pay is the late-mark penalty rather than days
              * missed. Null on slips generated before the column existed — the
              * viewer prints the note only when it has a real figure, rather

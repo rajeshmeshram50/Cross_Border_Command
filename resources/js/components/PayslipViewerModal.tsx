@@ -44,6 +44,12 @@ export interface PayslipViewerModalProps {
    *  Undefined on slips generated before the split was recorded, in which case
    *  no note is shown at all. (#114) */
   lateLopDays?: number;
+  /** What one day of loss of pay cost on THIS slip (lop_amount 00f7 lop_days).
+   *  Null when nothing was docked, in which case no tile is shown. (#156) */
+  perDayRate?: number | null;
+  /** What ONE payable day of salary is worth — the salary portion of this
+   *  slip divided by its payable days. Shown as a row under Earnings. (#156) */
+  perDaySalary?: number | null;
   /** Overtime — only rendered when the employee master marks this employee
    *  overtime-applicable. The OT Hours KPI and the "Overtime Allowance"
    *  earnings line both key off this, so staff the policy doesn't cover see
@@ -181,6 +187,8 @@ export default function PayslipViewerModal({
   paidDays = 31,
   weekOffDays = 0,
   lateLopDays,
+  perDayRate,
+  perDaySalary,
   overtimeApplicable = false,
   overtimeHours = 0,
   overtimeDetectedHours = 0,
@@ -686,6 +694,15 @@ export default function PayslipViewerModal({
                     hint: weekOffDays > 0
                       ? `${weekOffDays} week-off day${weekOffDays === 1 ? '' : 's'} fall in this month. They are not counted in Paid Days and are not deducted either — salary is calculated on working days, which exclude them.`
                       : undefined },
+                  /* The rate the deduction was priced at. Without it the slip
+                     states a Loss of Pay amount and gives the reader no way to
+                     check it against the days beside it. (#156) */
+                  ...(perDayRate ? [{
+                    label: 'Per Day',
+                    value: `₹${perDayRate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                    tone: 'amber',
+                    hint: `One day of loss of pay costs ₹${perDayRate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Loss of Pay above is this rate × the days shown.`,
+                  }] : []),
                   ...(overtimeApplicable
                     ? [{ label: 'OT Hours', value: otHoursLabel, tone: 'violet' }]
                     : []),
@@ -764,6 +781,21 @@ export default function PayslipViewerModal({
                           <td className="fw-bold">Total Earnings</td>
                           <td className="text-end fw-bold">₹{inr(totalEarnings)}</td>
                         </tr>
+                        {/* BELOW the total, not inside it: this is the rate the
+                            total was built from, not another thing earned.
+                            Above the total it was read as a line item and the
+                            column stopped adding up. (#156) */}
+                        {!!perDaySalary && (
+                          <tr className="ep-pay-perday">
+                            <td style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)' }}>
+                              Per Day Salary
+                              <span style={{ opacity: .75 }}> · ₹{inr(totalEarnings)} ÷ {num(workingDays)} payable days</span>
+                            </td>
+                            <td className="text-end fw-semibold" style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)' }}>
+                              ₹{inr(perDaySalary)}
+                            </td>
+                          </tr>
+                        )}
                       </tfoot>
                     </table>
                     {/* How the amount was arrived at. Directly under the

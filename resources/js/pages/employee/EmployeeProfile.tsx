@@ -489,7 +489,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
              in Month"), which the viewer computes itself — this one has to be
              the payable WORKING days or the two cannot be compared. #114 */
           working: d.workingDays ?? d.totalMonthDays, present: d.present, paid: d.paidDays, lop: d.lopDays,
-          weekOff: d.weekOffDays, lateLop: d.lateLopDays,
+          weekOff: d.weekOffDays, lateLop: d.lateLopDays, perDay: d.perDayRate ?? null, perDaySalary: d.perDaySalary ?? null,
           /* Which salary version priced this month — the slip is costed on
              the version in force during its window, not the one current
              today, and without this the two look like a mismatch. */
@@ -3386,6 +3386,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         lossOfPay={viewSlip?.lop}
         weekOffDays={viewSlip?.weekOff ?? 0}
         lateLopDays={viewSlip?.lateLop}
+        perDayRate={viewSlip?.perDay}
+        perDaySalary={viewSlip?.perDaySalary}
         isFinal={viewSlip?.isFinal}
         /* #85 — hold the body until the breakup arrives. Without this the modal
            renders its own fallbacks (March, empty earnings/deductions, zero

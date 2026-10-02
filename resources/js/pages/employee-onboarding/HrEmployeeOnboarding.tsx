@@ -3080,7 +3080,14 @@ useEffect(() => {
     id_card_status:      String(x.id_card_status      ?? ''),
     attendance_tracking: x.attendance_tracking !== undefined ? !!x.attendance_tracking : true,
 
-    enable_payroll: x.enable_payroll !== undefined ? !!x.enable_payroll : true,
+    /* ALWAYS true, whatever the saved draft says. The switch that set this is
+       gone from the step, but the sections it gates are still gated — a draft
+       saved OFF payroll reopened with two fields, no PF picker and no breakup,
+       and nothing on screen to turn it back on. The step has no off-payroll
+       state any more, so it must not reopen in one. (The Employee form does
+       the same, and warns there because it edits a live record; a draft has
+       not reached payroll yet, so there is nothing to warn about.) */
+    enable_payroll: true,
     pay_group:             String(x.pay_group             ?? ''),
     /* The column carries two decimals, so a whole-rupee CTC comes back as
        "300000.00". The field is whole-rupee now, so those trailing zeros are
@@ -5280,52 +5287,17 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 <span className="onb-init-section-step comp">STEP 4 OF 4</span>
               </div>
               <div className="onb-init-section-body">
-                {/* The PF toggle pins to the top of the scroll area (#12).
-                    Compensation is the longest step in the wizard — CTC, the
-                    salary breakup and every statutory row sit below this
-                    switch, and it governs all of them, so scrolling down to
-                    check a figure left the operator editing fields with no
-                    sight of the flag that decides whether they apply at all.
+                {/* The "Include this Employee in Payroll" switch is NOT shown
+                    here any more, and is gone from the Employee form too. It sat
+                    immediately above PF Applicable and was read as the same
+                    question, while being a different column (enable_payroll, not
+                    pf_eligible) and a far wider one: off, the employee leaves
+                    every payroll run entirely.
 
-                    The sticky element is this WRAPPER rather than the pill
-                    itself: the pill is a rounded chip with its own green
-                    background, and pinning it directly would let the rows
-                    scrolling underneath show through the section body's
-                    padding on either side of it. The wrapper carries the body
-                    background edge to edge and keeps the chip's look intact. */}
-                <div className="onb-init-toggle-sticky">
-                  <div
-                    className="onb-init-toggle-row"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setS1(p => ({ ...p, enable_payroll: !p.enable_payroll }))}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setS1(p => ({ ...p, enable_payroll: !p.enable_payroll })); } }}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <span className={`onb-init-toggle${s1.enable_payroll ? '' : ' off'}`} aria-pressed={s1.enable_payroll} />
-                    {/* Same field as the employee form's toggle (enable_payroll),
-                        so it carries the same words — and the same rename.
-                        "PF Applicable for this Employee" was also the label of
-                        the PF dropdown below it and of nothing at all in Revise
-                        Salary, which is bound to the other column: one name,
-                        two fields, three screens disagreeing. (#36) */}
-                    <span className="onb-init-toggle-label">Include this Employee in Payroll</span>
-                  </div>
-                  {/* Same wording as the Employee form so one flag does not read
-                      as two different settings depending on the screen. The scope
-                      note is here for the same reason it is there: the label says
-                      PF, the flag switches off the whole compensation block.
-
-                      Inside the sticky wrapper with the toggle: the note explains
-                      what the switch does to the rest of the step, and a pinned
-                      switch whose explanation had scrolled away would strand the
-                      warning exactly where it matters least. */}
-                  <div className="onb-init-toggle-hint">
-                    Off, this employee is excluded from every payroll run — no payslip, and no PF, ESI or
-                    Professional Tax — and <strong>CTC, salary effective date and the salary breakup</strong> are
-                    hidden here. Their saved figures are kept. PF itself is switched separately, below.
-                  </div>
-                </div>
+                    Nothing in the UI sets it now, so every employee onboards ON
+                    payroll — which is what s1.enable_payroll already defaults to.
+                    The field, the API and payroll's use of it are untouched, so
+                    an employee taken off payroll elsewhere stays off. */}
 
                 <p className="onb-init-subgroup">Payroll Configuration</p>
                 <Row className="g-3">

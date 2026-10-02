@@ -54,6 +54,10 @@
     .ed-line td { padding: 6px 0; font-size: 11px; }
     .ed-line td.amt { text-align: right; }
     .ed-total td { font-weight: bold; padding-top: 8px; }
+    /* A rate, not an amount earned — muted and ruled off from the total above
+       it so it cannot be read as another line item. */
+    .ed-perday td { color: #6b7280; padding-top: 5px; border-top: 1px solid #eceef1; }
+    .ed-perday-calc { color: #9aa1ab; }
 
     /* ── Net pay ── */
     .net { width: 100%; border-collapse: collapse; background: #f6f7f9; margin-top: 22px; }
@@ -165,6 +169,14 @@
                         <tr><td>{{ $e['label'] }}</td><td class="amt">{{ number_format($e['amount'], 2) }}</td></tr>
                     @endforeach
                     <tr class="ed-total"><td>Total Earnings (A)</td><td class="amt">{{ number_format($totalEarnings, 2) }}</td></tr>
+                    {{-- The rate the total was built from. Below it, not in
+                         it, so the column still adds up. (#156) --}}
+                    @if(!empty($perDaySalary))
+                        <tr class="ed-perday">
+                            <td>Per Day Salary <span class="ed-perday-calc">({{ number_format($totalEarnings, 2) }} &divide; {{ rtrim(rtrim(number_format($payableDays, 2), '0'), '.') }} payable days)</span></td>
+                            <td class="amt">{{ number_format($perDaySalary, 2) }}</td>
+                        </tr>
+                    @endif
                 </table>
             </td>
             <td class="ed-col right-col">

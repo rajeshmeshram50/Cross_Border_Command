@@ -1406,6 +1406,9 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     }
   };
   const [eEnablePayroll, setEEnablePayroll] = useState(true);
+  /** This employee was saved OFF payroll before the switch was removed — the
+   *  step warns that saving will put them back in. */
+  const [eWasOffPayroll, setEWasOffPayroll] = useState(false);
   /* Exit under way ⇒ salary is frozen (QA #105). Payroll's Salary Setup already
      refuses to touch an exiting employee; this step wrote the same columns with
      nothing stopping it, so the lock belonged to one screen instead of to the
@@ -1480,7 +1483,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     setEExistingDocs({}); setEDocBusy({});
     // Unlocked by default — a fresh/new employee has no exit case (#105).
     setESalaryLocked(false);
-    setEEnablePayroll(true); setEPayGroup('');
+    setEEnablePayroll(true); setEWasOffPayroll(false); setEPayGroup('');
     setEAnnualSalary(''); setESalaryFreq('Per annum'); setESalaryFrom('');
     // Reset restores the DEFAULT, which is open — not `false`. Leaving this at
     // false meant the first employee of a session got the open section and
@@ -2457,7 +2460,19 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       // #105 — server-computed, since employees.status stays 'Active' for the
       // whole notice period and cannot answer this.
       setESalaryLocked(!!raw.exit_in_progress);
-      if (raw.enable_payroll !== undefined && raw.enable_payroll !== null) setEEnablePayroll(!!raw.enable_payroll);
+      /* ALWAYS opens ON, whatever the record says.
+       *
+       * The "Include this Employee in Payroll" switch is gone from this form,
+       * but the sections it gated are still gated — so an employee saved OFF
+       * payroll opened on a Compensation step with two fields, no PF picker and
+       * no breakup, and nothing on screen to turn it back on. A dead end.
+       *
+       * The form no longer HAS an off-payroll state: anyone edited here is on
+       * payroll, and saving says so. `eWasOffPayroll` keeps the old value so
+       * the step can warn that this edit will re-include them, rather than
+       * enrolling someone silently. */
+      setEEnablePayroll(true);
+      setEWasOffPayroll(raw.enable_payroll === false || raw.enable_payroll === 0);
       if (raw.pay_group !== undefined && raw.pay_group !== null) setEPayGroup(raw.pay_group);
       /* The column carries two decimals, so a whole-rupee CTC comes back as
          "300000888.00". The field is whole-rupee now, so those trailing zeros
@@ -5477,73 +5492,35 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                         </span>
                       </div>
                     )}
-                    <div
-                      className="emp-payroll-banner d-flex align-items-center gap-2 mb-3"
-                      style={{
-                        padding: '10px 14px',
-                        borderRadius: 10,
-                        /* The label is free to wrap now, so the row grows in
-                           height rather than the pill and the text colliding. */
-                        flexWrap: 'wrap',
-                        opacity: eSalaryLocked ? 0.55 : 1,
-                      }}
-                    >
-                      <button
-                        type="button"
-                        aria-pressed={eEnablePayroll}
-                        disabled={eSalaryLocked}
-                        title={eSalaryLocked ? 'Locked — an exit is in progress for this employee.' : undefined}
-                        onClick={() => { if (!eSalaryLocked) setEEnablePayroll(v => !v); }}
-                        className="btn p-0 border-0 d-inline-flex align-items-center"
+                    {/* The "Include this Employee in Payroll" switch is NOT shown
+                        here any more. It sat directly above the PF Applicable
+                        picker and was read as the same question — it is a
+                        different column (enable_payroll, not pf_eligible) and a
+                        far wider one: off, the employee leaves every payroll run
+                        entirely. Two switches that look alike, one of which
+                        quietly removes the employee from payroll, is a trap.
+
+                        The FIELD is untouched — payroll still honours it — but
+                        this form always opens ON, so the sections it gates are
+                        always shown. See the loader. */}
+                    {eWasOffPayroll && (
+                      <div
+                        className="emp-payroll-banner-note"
                         style={{
-                          /* flexShrink:0 — the pill is a flex item next to a long
-                             label, so on a narrow modal flex squeezed it below
-                             36px while the knob stayed absolutely positioned at
-                             left:19, pushing it out over the text. The track now
-                             holds its size and the label wraps instead. */
-                          width: 36, minWidth: 36, height: 20, flexShrink: 0,
-                          borderRadius: 999,
-                          background: eEnablePayroll ? '#7c5cfc' : '#e5e7eb',
-                          position: 'relative',
-                          transition: 'background .15s ease',
+                          display: 'flex', alignItems: 'flex-start', gap: 8,
+                          padding: '10px 12px', marginBottom: 12,
+                          borderRadius: 10, fontSize: 12,
+                          background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e',
                         }}
                       >
-                        <span
-                          style={{
-                            width: 14, height: 14, borderRadius: '50%',
-                            background: '#fff',
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                            position: 'absolute', top: 3,
-                            left: eEnablePayroll ? 19 : 3, transition: 'left .15s ease',
-                          }}
-                        />
-                      </button>
-                      <span className="emp-payroll-banner-text" style={{ fontSize: 13, fontWeight: 600 }}>
-                        {/* This is `enable_payroll`, NOT `pf_eligible`.
-                          It was labelled "PF Applicable for this Employee",
-                          which is also the label of the dropdown a few rows
-                          below — two different columns, one name. Revise Salary
-                          is bound to the OTHER one and has no control for this,
-                          so turning this off left that modal showing PF ticked
-                          with a 1,800 deduction while payroll excluded the
-                          employee outright. Nobody could tell which screen was
-                          lying; both were right about different fields. (#36)
-                          The name now says what the switch does: it gates the
-                          whole Compensation step — CTC, effective date and the
-                          breakup as well as PF. */}
-                        Include this Employee in Payroll
-                      </span>
-                    </div>
-                    {/* The -6px top margin pulled this note up into the banner
-                        above it, which overlapped once the banner's label
-                        wrapped to a second line. The banner already carries
-                        mb-3; this just sits under it. */}
-                    <div className="emp-payroll-banner-note" style={{ fontSize: 11.5, margin: '0 0 12px 2px', lineHeight: 1.45 }}>
-                      Off, this employee is excluded from every payroll run — no payslip, and no PF, ESI
-                      or Professional Tax — and <strong>CTC, salary effective date and the salary breakup</strong>
-                      are hidden here. Their saved figures are kept, and Revise Salary will say they are off payroll.
-                      PF itself is switched separately, below.
-                    </div>
+                        <i className="ri-information-line" style={{ marginTop: 1 }} />
+                        <span>
+                          This employee is currently <strong>excluded from payroll</strong>. Saving
+                          this form will include them again — they will appear in the next payroll
+                          run and receive a payslip.
+                        </span>
+                      </div>
+                    )}
                     <Row className="g-3">
                       <Col md={6}>
                         <label className="emp-label">Annual CTC{eEnablePayroll && <span className="req">*</span>}</label>

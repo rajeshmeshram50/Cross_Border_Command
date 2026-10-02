@@ -1949,12 +1949,24 @@ class PayrollService
         $lopPolicy = $lopBranch
             ? $lopBranch->lopPolicy()
             : \App\Models\Branch::normalizeLopPolicy(null);
+        /* THE DIVISOR IS A WHOLE-MONTH FIGURE, LIKE THE NUMERATOR. (#155)
+         *
+         * $basic / $gross above are the FULL monthly package. The 'working'
+         * divisor was being handed $effectiveWorkingDays, which is counted over
+         * the ACTIVE WINDOW — so a mid-month joiner priced a day of absence as
+         * a whole month's salary divided by the few days they had been here:
+         * ₹25,000 ÷ 10 = ₹2,500 a day, three times the real rate. The two sides
+         * of the division belonged to different periods.
+         *
+         * $empWorkingDays is the same count over the WHOLE period, so both
+         * sides now describe a month. A full-month employee is unaffected —
+         * their window IS the period, so the two figures were already equal. */
         $lopPerDay = \App\Models\Branch::lopPerDayFor(
             $lopPolicy,
             $basic,
             $gross,
             $totalMonthDays,
-            (float) $effectiveWorkingDays,
+            (float) $empWorkingDays,
         );
         $lopAmount = round($lopPerDay * $lopDays, 2);
 
@@ -2736,8 +2748,10 @@ class PayrollService
             'lop_per_day'      => $lopPerDay,
             'lop_basis'        => $lopPolicy['basis'],
             'lop_divisor'      => $lopPolicy['divisor'],
+            /* Mirrors what lopPerDayFor() was handed, or the slip explains the
+               deduction with a denominator that did not produce it. */
             'lop_divisor_days' => $lopPolicy['divisor'] === 'working'
-                ? (float) max(1, $effectiveWorkingDays)
+                ? (float) max(1, $empWorkingDays)
                 : (float) max(1, $totalMonthDays),
             'basic'          => $proratedBasic,
             'overtime_amount' => $overtimeAmount,
@@ -2916,36 +2930,57 @@ class PayrollService
     private function resolveCompensation(Employee $employee, ?SalaryStructure $structure, array &$exceptions): array
     {
         if ($structure) {
-            /* PF / ESI applicability is the OR of the structure and the EMPLOYEE
-             * record — the employee is the master, the structure a cache of it.
+            /* THE SALARY STRUCTURE DECIDES. ONE SOURCE, NOT TWO.
              *
-             * Reading the structure alone made payroll the last holdout of a
-             * rule the rest of the app had already settled. Salary Setup resolves
-             * the checkbox as `structure.pf_applicable || employee.pf_eligible`
-             * (QA #89) and EmployeeController mirrors the flag onto the active
-             * structure on save (QA #90) — but that mirror only runs for edits
-             * made through that form, and only since it was added. Anything else
-             * that ever set pf_eligible — imports, seeders, direct updates, or
-             * simply an employee edited before the mirror existed — leaves the
-             * structure's copy stale at false, and payroll then deducted no PF
-             * while every screen showed PF as applicable. Silently: a missing
-             * deduction has nothing to render, so there was no line to question.
+             * This was the OR of the structure and the employee record, with
+             * the employee as master and the structure a cache (QA #89/#90).
+             * The OR could only widen, which is why it never looked dangerous —
+             * but it made the answer unreachable from the one screen that owns
+             * it: set PF Applicable = No in Revise Salary, and the employee's
+             * own stale pf_eligible=true turned it straight back on. Payroll
+             * kept deducting against an explicit No, with the structure, the
+             * modal and the payslip all disagreeing.
              *
-             * OR-ing here makes the read path agree with the write path, and
-             * repairs those existing rows without a migration. It can only ever
-             * ENABLE a statutory deduction the employee record already claims, so
-             * it cannot quietly stop one being taken.
+             * Applicability belongs to a salary VERSION — "PF from March" is a
+             * sentence only the structure can say — and the structure is what
+             * every other read path already uses. The employee flag stays as a
+             * record of intent and is mirrored onto the active structure on
+             * save (EmployeeController), so the two normally agree.
              *
-             * The ESI gross ceiling is applied where ESI is computed, so widening
-             * applicability here does not bypass it. */
+             * When they DON'T, the difference is now reported rather than
+             * silently resolved: a legacy row whose structure never received
+             * the flag would otherwise lose its PF with nothing on screen to
+             * say so. The run names it; HR fixes it in Salary Setup once.
+             *
+             * The ESI gross ceiling is applied where ESI is computed, so none
+             * of this bypasses it. */
+            $structPf  = (bool) $structure->pf_applicable;
+            $structEsi = (bool) $structure->esi_applicable;
+            $empPf     = (bool) $employee->pf_eligible;
+            $empEsi    = strtolower((string) ($employee->esi_applicable ?? '')) === 'yes';
+
+            if ($empPf && !$structPf) {
+                $exceptions = $this->withException(
+                    $exceptions,
+                    'warning',
+                    'PF is marked applicable on the employee record but not on the salary structure in force — no PF deducted. Set PF Applicable in Salary Setup to charge it.'
+                );
+            }
+            if ($empEsi && !$structEsi) {
+                $exceptions = $this->withException(
+                    $exceptions,
+                    'warning',
+                    'ESI is marked applicable on the employee record but not on the salary structure in force — no ESI deducted. Set ESI in Salary Setup to charge it.'
+                );
+            }
+
             return [
                 (float) $structure->monthly_gross,
                 (float) $structure->basicAmount(),
                 (array) $structure->earnings,
                 (array) $structure->deductions,
-                (bool) $structure->pf_applicable || (bool) $employee->pf_eligible,
-                (bool) $structure->esi_applicable
-                    || strtolower((string) ($employee->esi_applicable ?? '')) === 'yes',
+                $structPf,
+                $structEsi,
                 (bool) $structure->pt_applicable,
             ];
         }
