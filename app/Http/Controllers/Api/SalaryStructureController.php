@@ -980,6 +980,18 @@ class SalaryStructureController extends Controller
             'pf_applicable'   => (bool) $s->pf_applicable,
             'esi_applicable'  => (bool) $s->esi_applicable,
             'pt_applicable'   => (bool) $s->pt_applicable,
+            /* PF TYPE RIDES ALONG. (#214)
+             *
+             * It is an EMPLOYEE column, not a structure one, so Revise Salary
+             * had no server copy to read and seeded it from whatever employee
+             * row the caller happened to hold. Open the modal from a list that
+             * was loaded before Compensation changed the type, and the modal
+             * showed the old value — "PF changes made in one section are not
+             * reflected in the other".
+             *
+             * Served from the structure's own employee so the modal reads one
+             * fresh answer for both fields, in the request it already makes. */
+            'pf_type'         => $s->employee?->pf_type,
             'revision_note'   => $s->revision_note,
             'created_at'      => optional($s->created_at)->toIso8601String(),
         ];

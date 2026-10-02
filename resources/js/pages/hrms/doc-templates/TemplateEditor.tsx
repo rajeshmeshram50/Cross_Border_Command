@@ -57,13 +57,17 @@ export const STATIC_PLACEHOLDER_GROUPS: PlaceholderGroup[] = [
     { label: 'Reports To',     token: '{{ReportsTo}}' },
   ]},
   { id: 'salary', label: 'Salary', fields: [
-    /* CTC is the ANNUAL figure on the employee record; Basic and HRA are the
-       MONTHLY components off the active salary structure. Labelled so an
-       author doesn't put all three in one column and imply they share a
-       period. */
+    /* CTC is the ANNUAL figure on the employee record; Basic is the MONTHLY
+       component off the active salary structure. Labelled so an author doesn't
+       put both in one column and imply they share a period.
+
+       {{HRA}} is no longer OFFERED (#29) — not every structure funds an HRA
+       component, so the token printed a blank line on the employees that do
+       not. It still RESOLVES in HrGeneratedDocumentController, so templates
+       already carrying it keep working; it just cannot be inserted into a new
+       one by mistake. */
     { label: 'CTC (annual)',   token: '{{CTC}}' },
     { label: 'Basic (monthly)',token: '{{Basic}}' },
-    { label: 'HRA (monthly)',  token: '{{HRA}}' },
   ]},
   { id: 'org', label: 'Organization', fields: [
     { label: 'Company Name',   token: '{{CompanyName}}' },

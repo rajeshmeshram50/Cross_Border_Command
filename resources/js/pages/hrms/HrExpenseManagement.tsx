@@ -32,6 +32,7 @@ import { expenseClaimColumns, expenseClaimsMinWidth, EXPENSE_CLAIM_BADGE_CSS, ty
 import { advanceRequestColumns, advanceRequestsMinWidth, DeclineReasonModal, ADVANCE_BADGE_CSS, type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import DataTable from '../../components/ui/DataTable';
+import { markExpenseChanged, expenseChangedAt, onExpenseChanged } from '../../utils/expenseBus';
 import '../../../css/expense.css';
 import { lazyPage } from '../../utils/lazyPage';
 
@@ -356,6 +357,43 @@ export default function HrExpenseManagement() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, perPage, filter, debouncedSearch, dateFilter]);
 
+  /* Re-read when an approval happened SOMEWHERE ELSE. (#185)
+   *
+   * Approvals are made in the Inbox, on the employee's own profile, or in
+   * another tab, and nothing pushes that back here — this page refetched only
+   * when its own query changed, so a manager who approved in the Inbox returned
+   * to a row still showing the old status.
+   *
+   * Driven by the expense bus, not by focus: a focus refetch costs a query
+   * every time you Alt-Tab, and this list is already the expensive one. The bus
+   * carries a timestamp, so the only question asked on return is "has anything
+   * changed since I last read?" — and when the answer is no, nothing happens.
+   * `onExpenseChanged` additionally refreshes while the page is OPEN, which is
+   * the two-tab case. */
+  const lastReadAt = useRef(0);
+  useEffect(() => { lastReadAt.current = Date.now(); }, [rows, advanceRows]);
+  useEffect(() => {
+    const catchUp = () => {
+      if (document.visibilityState === 'hidden') return;
+      if (expenseChangedAt() <= lastReadAt.current) return;
+      lastReadAt.current = Date.now();
+      /* BOTH lists. This page shows claims or advances depending on the module
+         tab, and the ticket is about an ADVANCE — refreshing only the claims
+         query would have left the exact row it reports untouched. */
+      void refresh();
+      void refreshAdvances();
+    };
+    const off = onExpenseChanged(catchUp);
+    window.addEventListener('focus', catchUp);
+    document.addEventListener('visibilitychange', catchUp);
+    return () => {
+      off();
+      window.removeEventListener('focus', catchUp);
+      document.removeEventListener('visibilitychange', catchUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, perPage, filter, debouncedSearch, dateFilter]);
+
   const onAct = async (
     claimId: number,
     action: 'manager-approve' | 'manager-reject' | 'hr-approve' | 'hr-reject',
@@ -369,6 +407,9 @@ export default function HrExpenseManagement() {
       if (res?.data?.id) {
         setRows(prev => prev.map(r => r.id === res.data.id ? res.data : r));
       }
+      // Tell the other expense screens — the employee's own tab, another
+      // browser tab — that a status moved. (#185)
+      markExpenseChanged();
       toast.success('Updated', 'Claim status updated');
       /* Only refetch when the response did NOT carry the updated row.
          The endpoint returns the fully-serialized claim and it is patched in
@@ -400,6 +441,7 @@ export default function HrExpenseManagement() {
   ) => {
     try {
       await api.post(`/advance-requests/${advanceId}/${action}`, comment ? { comment } : {});
+      markExpenseChanged();   // (#185) — the employee's own tab, and other tabs
       toast.success('Updated', 'Advance status updated');
       await refreshAdvances();
     } catch (err: any) {

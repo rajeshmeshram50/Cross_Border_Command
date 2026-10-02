@@ -138,10 +138,37 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
     setPfType(String(employee.pf_type ?? '').toLowerCase() === 'standard' ? 'Standard' : 'Statutory');
 
     if (employee.structure_id) {
-      // Revising — load the current active structure to prefill.
+      /* Resolve the ACTIVE structure from the server, not the id on the row
+         that opened this modal. (#214)
+         
+         That id is whatever the Salary Setup roster held when it was last
+         fetched. Change PF on the Employee form — which supersedes the active
+         version and cuts a new one — and the roster still points at the old
+         id: the modal loaded v2, showed PF unchecked, and announced "Revising
+         v2" while Salary Revision History showed v3 as current. Saving from
+         there would then supersede the live version using figures taken from a
+         superseded one.
+         
+         Falls back to the row's id when the lookup returns nothing, so an
+         employee whose only structure is somehow not 'active' still opens. */
       setLoading(true);
-      api.get(`/salary-structures/${employee.structure_id}`)
-        .then(res => {
+      (async () => {
+        let d: any = null;
+        try {
+          const res: any = await api.get('/salary-structures', {
+            params: { employee_id: employee.employee_id, per_page: 50 },
+          });
+          const list: any[] = Array.isArray(res.data?.data) ? res.data.data
+            : (Array.isArray(res.data) ? res.data : []);
+          d = list.find((s: any) => String(s.status).toLowerCase() === 'active') ?? null;
+        } catch { /* fall through to the row's own id */ }
+        if (!d) {
+          const res: any = await api.get(`/salary-structures/${employee.structure_id}`);
+          d = res.data?.data ?? {};
+        }
+        return { data: { data: d } };
+      })()
+        .then((res: any) => {
           const d = res.data?.data ?? {};
           setEarnings((d.earnings ?? []).map((c: any) => ({ code: c.code, label: c.label, amount: Number(c.amount) || 0 })));
           setDeductions((d.deductions ?? []).map((c: any) => ({ code: c.code, label: c.label, amount: Number(c.amount) || 0 })));
@@ -172,6 +199,15 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
              The two are now kept in step by both save paths writing both
              sides, so an OR has nothing left to rescue. (#36) */
           setPfApplicable(!!d.pf_applicable);
+          /* …and PF TYPE from the same response. (#214)
+             It was seeded ONCE from the employee row this modal was opened
+             with, and never refreshed — so a type changed in Compensation
+             after that row was loaded did not show here. The server now sends
+             it alongside the structure, which is the one read that is always
+             current. `undefined` means an older API: keep what was seeded. */
+          if (d.pf_type !== undefined) {
+            setPfType(String(d.pf_type ?? '').toLowerCase() === 'standard' ? 'Standard' : 'Statutory');
+          }
           setEsiApplicable(!!d.esi_applicable);
           /* Read the saved flag as it is. `d.pt_applicable !== false` treated a
              MISSING field as ticked, which is the state the ticket names — the

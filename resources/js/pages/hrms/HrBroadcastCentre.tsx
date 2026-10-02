@@ -706,7 +706,19 @@ function CreateAnnouncementModal({
   };
 
   const handleSubmit = async (asDraft: boolean) => {
-    if (!asDraft && !validateStep(1)) { setStep(1); return; }
+    /* STEP 1 IS REQUIRED FOR A DRAFT TOO. (#35)
+     *
+     * Save Draft skipped validation entirely, so an empty composer saved a row
+     * with no title and no description — a draft nobody can identify in the
+     * list, and one that cannot be published without filling in the fields the
+     * form had already marked required.
+     *
+     * Only step 1. Audience (step 2) stays optional on a draft, because "I have
+     * not decided who this goes to yet" is exactly what a draft is for; title
+     * and description carry a red asterisk on screen, and the form should mean
+     * it. The toast says which field is missing rather than failing silently. */
+    if (!validateStepWithToast(1)) { setStep(1); return; }
+    if (!asDraft && !validateStep(2)) { setStep(2); return; }
     setSaving(asDraft ? 'draft' : 'publish');
     try {
       const fd = buildPayload(asDraft ? 'Draft' : null);

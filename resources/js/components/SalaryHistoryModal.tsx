@@ -82,6 +82,20 @@ const dayBefore = (d?: string | null) => {
 };
 
 const lineLabel = (l: Line, i: number) => l.label || l.name || l.code || `Component ${i + 1}`;
+
+/** The statutory heads this version applies that have NO stored deduction line
+ *  — payroll computes them per cycle, so the structure holds a flag and not an
+ *  amount. Returned with the RULE rather than a figure: the amount depends on
+ *  the cycle's earned days, which this screen cannot know. (#159) */
+const statutoryOnly = (v: Version) => {
+  const has = (code: string) =>
+    (v.deductions || []).some(l => String(l.code ?? l.name ?? l.label ?? '').toLowerCase().includes(code));
+  const out: { code: string; label: string; rule: string }[] = [];
+  if (v.pf_applicable  && !has('pf'))  out.push({ code: 'pf',  label: 'Provident Fund (PF)', rule: '12% of basic' });
+  if (v.esi_applicable && !has('esi')) out.push({ code: 'esi', label: 'ESI',                 rule: '0.75% of gross' });
+  if (v.pt_applicable  && !has('pt'))  out.push({ code: 'pt',  label: 'Professional Tax',    rule: 'state slab' });
+  return out;
+};
 const lineAmount = (l: Line) => Number(l.amount ?? 0);
 
 export default function SalaryHistoryModal({ open, onClose, employee }: Props) {
@@ -323,7 +337,7 @@ export default function SalaryHistoryModal({ open, onClose, employee }: Props) {
 
                     <div className="col-md-6">
                       <div className="fw-bold text-danger mb-2" style={{ fontSize: 11, letterSpacing: '.05em' }}>FIXED DEDUCTIONS</div>
-                      {(v.deductions || []).length === 0
+                      {(v.deductions || []).length === 0 && !statutoryOnly(v).length
                         ? <div className="text-muted" style={{ fontSize: 12 }}>None configured</div>
                         : (v.deductions || []).map((l, i) => (
                           <div key={i} className="d-flex justify-content-between py-1" style={{ fontSize: 12.5, borderBottom: '1px dashed var(--vz-border-color)' }}>
@@ -331,6 +345,23 @@ export default function SalaryHistoryModal({ open, onClose, employee }: Props) {
                             <span className="fw-semibold">{inr(lineAmount(l))}</span>
                           </div>
                         ))}
+                      {/* STATUTORY HEADS THAT CARRY NO STORED LINE. (#159)
+                          PF, ESI and PT are deducted from an APPLICABILITY FLAG
+                          — payroll computes the amount each cycle (12% of basic
+                          for PF, 0.75% of gross for ESI, the state slab for PT)
+                          and only writes a `deductions` line when someone types
+                          a flat override. So a version with PF applicable and no
+                          override listed no PF at all, while the Statutory chips
+                          directly above it said PF applied: the two halves of
+                          one card disagreeing. Listed with their rule instead of
+                          a rupee figure, because the figure depends on the
+                          cycle's earned days and is not knowable here. */}
+                      {statutoryOnly(v).map(s => (
+                        <div key={s.code} className="d-flex justify-content-between py-1" style={{ fontSize: 12.5, borderBottom: '1px dashed var(--vz-border-color)' }}>
+                          <span>{s.label}</span>
+                          <span className="text-muted" style={{ fontSize: 11.5 }}>{s.rule}</span>
+                        </div>
+                      ))}
                       {totalDeductions > 0 && (
                         <div className="d-flex justify-content-between pt-2 fw-bold" style={{ fontSize: 12.5 }}>
                           <span>Total</span><span>{inr(totalDeductions)}</span>

@@ -673,6 +673,15 @@ export default function PayslipViewerModal({
                   { label: 'Loss of Pay',  value: lossOfPay,   tone: 'amber',
                     note: lateLopDays && lateLopDays > 0
                       ? `incl. ${lateLopDays} for late marks`
+                      : undefined,
+                    /* The RATE lives on the tooltip of the thing it prices,
+                       not in a tile of its own. It is the LOP rate, which the
+                       branch's LOP Policy may put on a different basis from
+                       the salary rate — so it is stated where the difference
+                       is visible rather than beside a figure it does not
+                       explain. */
+                    hint: perDayRate
+                      ? `Charged at ₹${perDayRate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} per day, per this branch's LOP Policy.`
                       : undefined },
                   /* Week-offs are NOT inside Paid Days and must not be — the
                      salary is built from working days, which exclude them. But
@@ -694,15 +703,14 @@ export default function PayslipViewerModal({
                     hint: weekOffDays > 0
                       ? `${weekOffDays} week-off day${weekOffDays === 1 ? '' : 's'} fall in this month. They are not counted in Paid Days and are not deducted either — salary is calculated on working days, which exclude them.`
                       : undefined },
-                  /* The rate the deduction was priced at. Without it the slip
-                     states a Loss of Pay amount and gives the reader no way to
-                     check it against the days beside it. (#156) */
-                  ...(perDayRate ? [{
-                    label: 'Per Day',
-                    value: `₹${perDayRate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-                    tone: 'amber',
-                    hint: `One day of loss of pay costs ₹${perDayRate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Loss of Pay above is this rate × the days shown.`,
-                  }] : []),
+                  /* No "Per Day" tile here. The day strip answers "how many
+                     days", and Per Day Salary already states the rate under
+                     Total Earnings — a second rate in the KPI row put two
+                     different per-day figures on one slip (the salary rate and
+                     the LOP rate, which differ whenever the branch charges LOP
+                     on a basis other than calendar days) and they read as a
+                     contradiction. The LOP rate now explains itself where the
+                     deduction is, not here. */
                   ...(overtimeApplicable
                     ? [{ label: 'OT Hours', value: otHoursLabel, tone: 'violet' }]
                     : []),

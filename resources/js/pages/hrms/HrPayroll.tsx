@@ -600,6 +600,9 @@ export default function HrPayroll() {
   const [runOpen, setRunOpen] = useState(false);
   const [proceeding, setProceeding] = useState(false);
 
+  /** Latest runIssues, readable from an async handler — a closure would hold
+   *  the list as it was when the handler was created, i.e. BEFORE the re-run. */
+  const runIssuesRef = useRef<PayrollRunIssue[]>([]);
   const runIssues = useMemo<PayrollRunIssue[]>(() => {
     const list: PayrollRunIssue[] = [];
     for (const r of rows) {
@@ -632,6 +635,9 @@ export default function HrPayroll() {
     }
     return list;
   }, [rows]);
+  /* Keep the ref in step with the memo — the async re-run handler reads it
+     AFTER the roster reloads, when its own closure is already stale. */
+  useEffect(() => { runIssuesRef.current = runIssues; }, [runIssues]);
 
   const blockedAmount = useMemo(
     () => rows.filter(r => r.status === 'On Hold').reduce((s, r) => s + r.netPay, 0),
@@ -2786,6 +2792,15 @@ export default function HrPayroll() {
         open={runOpen}
         onClose={() => setRunOpen(false)}
         onProceedToPay={proceedToPay}
+        /* The REAL re-run. (#160) The modal used to decide success from the
+           boxes the operator ticked; it now regenerates the cycle on the
+           server, waits for the roster to reload, and is handed back whatever
+           issues the fresh data produced. `runIssues` is derived from `rows`,
+           so reading it after the awaits above gives the post-run list. */
+        onReRun={async () => {
+          await runPayroll();
+          return runIssuesRef.current;
+        }}
         proceeding={proceeding}
         cycleLabel={cycle.label}
         totalEmployees={counts.totalEmployees}

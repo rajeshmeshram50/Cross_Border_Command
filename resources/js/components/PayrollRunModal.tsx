@@ -86,6 +86,10 @@ export interface PayrollRunModalProps {
   /** Fires when the user confirms the final "Proceed to Pay" step on the
    *  success screen — parent decides what to do (toast + close, route, …). */
   onProceedToPay: () => void;
+  /** Actually RE-RUN the cycle on the server and resolve with the issues that
+   *  remain. Without it "Re-run Payroll" only re-read the user's own ticks.
+   *  (#160) */
+  onReRun?: () => Promise<PayrollRunIssue[] | void>;
   /** True while the parent's async "Proceed to Pay" work (payroll approve →
    *  open disbursement) is in flight — drives the button's spinner + disabled
    *  state so it can't be double-clicked. */
@@ -275,6 +279,7 @@ export default function PayrollRunModal({
   open,
   onClose,
   onProceedToPay,
+  onReRun,
   proceeding = false,
   cycleLabel,
   totalEmployees,
@@ -345,12 +350,49 @@ export default function PayrollRunModal({
   const allClear          = remainingCount === 0;
   const resolvedPct       = totalIssues ? Math.round((resolvedCount / totalIssues) * 100) : 100;
 
-  const handleReRun = () => {
+  /* RE-RUN MEANS RE-RUN. (#160)
+   *
+   * This used to check `resolvedIds` — the boxes the USER ticked in this modal
+   * — and then flip straight to "Payroll Processed Successfully" without
+   * calling anything. So a cycle whose data had not loaded properly reported
+   * success on the strength of the operator's own checklist, and the ticks
+   * were self-certified: nothing verified that the issue behind one had been
+   * fixed.
+   *
+   * It now asks the SERVER to regenerate and judges the result it gets back.
+   * Blocking issues that survive the re-run keep the modal on the preflight
+   * screen with the real count, whatever was ticked. Without an onReRun the
+   * old behaviour stands, so a caller that has not been updated still works. */
+  const [reRunning, setReRunning] = useState(false);
+  const handleReRun = async () => {
     if (blockingRemaining > 0) {
       setReRunError(`${blockingRemaining} blocking issue${blockingRemaining > 1 ? 's' : ''} must be resolved first.`);
       return;
     }
-    setPhase('success');
+    if (!onReRun) { setPhase('success'); return; }
+
+    setReRunError('');
+    setReRunning(true);
+    try {
+      const fresh = await onReRun();
+      if (Array.isArray(fresh)) {
+        const stillBlocking = fresh.filter(i => i.type === 'blocking');
+        if (stillBlocking.length > 0) {
+          /* The ticks were about the OLD list; a surviving issue has not been
+             fixed, so clear them rather than leaving it looking resolved. */
+          setResolvedIds(new Set());
+          setReRunError(
+            `${stillBlocking.length} blocking issue${stillBlocking.length > 1 ? 's' : ''} still present after the re-run — payroll was not processed.`,
+          );
+          return;
+        }
+      }
+      setPhase('success');
+    } catch (e: any) {
+      setReRunError(e?.response?.data?.message || 'Re-run failed — payroll was not processed.');
+    } finally {
+      setReRunning(false);
+    }
   };
 
   if (!open) return null;
@@ -669,10 +711,12 @@ export default function PayrollRunModal({
                 type="button"
                 className="prm-btn prm-btn--dark"
                 onClick={handleReRun}
-                disabled={blockingRemaining > 0}
-                style={blockingRemaining > 0 ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                disabled={blockingRemaining > 0 || reRunning}
+                style={(blockingRemaining > 0 || reRunning) ? { opacity: 0.5, cursor: reRunning ? 'wait' : 'not-allowed' } : undefined}
               >
-                <i className="ri-play-circle-line me-1" /> Re-run Payroll
+                {reRunning
+                  ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" /> Re-running…</>
+                  : <><i className="ri-play-circle-line me-1" /> Re-run Payroll</>}
               </button>
             </div>
           </div>

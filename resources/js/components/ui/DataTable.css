@@ -119,6 +119,11 @@
    which is what actually triggers shrinking: the tab rail gives up width and
    wraps its own tabs INSIDE the rail, the search shrinks to its min, and the
    actions (flex-shrink: 0) stay whole and hard-right. */
+/* ONE line on any desktop width. (#24)
+ *
+ * Everything in the toolbar is sized to fit together rather than fought over:
+ * the tabs are compact, the rail will not break its own tabs, and the search
+ * absorbs whatever is left. Wrapping is the small-screen fallback only. */
 @media (min-width: 1200px) {
   .dt-toolbar { flex-wrap: nowrap; }
 }
@@ -169,7 +174,13 @@
      rail. Before, an unshrinkable rail forced the whole search + actions group
      onto another toolbar row the moment the tabs got wide — the tab rail on a
      4-tab table (Expense Claims) is ~600px on its own. */
-  flex: 0 1 auto;
+  /* The rail keeps its natural width and never breaks its own tabs: it is one
+     control, and a tab on a second row reads as a different group. When the
+     toolbar runs out of room the SEARCH wraps below instead — see .dt-toolbar.
+     flex-wrap stays `wrap` only for the extreme case where the rail alone is
+     wider than the card (six tabs on a phone), where breaking is the only
+     thing left to do. (#24) */
+  flex: 0 0 auto;
   min-width: 0;
   flex-wrap: wrap;
 }
@@ -177,19 +188,19 @@
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   /* 11px (was 14) — across a six-tab rail that's ~36px reclaimed, which is the
      difference between the last tab fitting the row and wrapping under it. */
-  padding: 0 11px; height: 37px;
+  padding: 0 9px; height: 37px;
   /* Transparent on the active tab rather than absent, so switching tabs does
      not move the rail by a pixel. */
   border: 1px solid transparent; border-radius: 8px;
 
   background: transparent;
   font-family: inherit;
-  font-size: 12.5px; font-weight: 600;
+  font-size: 12px; font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
   transition: background .16s, color .16s, box-shadow .16s;
 }
-.dt-tab i { font-size: 14px; }
+.dt-tab i { font-size: 13px; }
 .dt-tab-emoji { font-size: 13px; line-height: 1; }
 /* Outlined, not blank: on a rail of two or three an unstyled tab read as a
    label beside the one button rather than as a tab you can press. */
@@ -214,7 +225,7 @@
 }
 .dt-tab-count {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 20px; height: 18px; padding: 0 7px;
+  min-width: 18px; height: 17px; padding: 0 5px;
   border-radius: 999px;
   font-size: 10px; font-weight: 800; line-height: 1;
 }
@@ -321,7 +332,13 @@
      so a 5-tab table (Leave Management) wrapped its tabs onto a second row while
      the search sat half empty. 420 still shows a full query; the high shrink
      factor collapses it to min-width on crowded toolbars so nothing wraps. */
-  flex: 0 8 420px; min-width: 140px; max-width: 420px;
+  /* Basis 320, not 420, and it shrinks harder still. The 4-tab Expense rail
+     was wrapping "Rejected" onto a second line while the search beside it sat
+     at its full 420 — the shrink factor only decides who gives up width once
+     the line is over-full, and a wide BASIS makes the line over-full in the
+     first place. A smaller basis means the rail gets its natural width before
+     the search asks for anything beyond what a query needs. (#24) */
+  flex: 1 1 260px; min-width: 150px; max-width: 420px;
   /* Exactly the selected tab pill's height (.dt-tab = 37px) so the search box
      and the highlighted tab read as one strip — the rail's own padding is not
      counted, the eye lines the pill up with the field, not the rail's edge. */
