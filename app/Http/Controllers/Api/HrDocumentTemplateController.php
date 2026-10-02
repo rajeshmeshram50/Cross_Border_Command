@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Support\HrTemplateMatch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -1349,19 +1350,43 @@ class HrDocumentTemplateController extends Controller
         // PhpWord's Html::addHtml uses loadXML (not loadHTML) so the body
         // must be valid XML. Bare void tags from rich-text editors (<br>,
         // <hr>, <img ...>) abort parsing silently and drop everything that
-        // follows. Self-close them before handing off.
-        $html = preg_replace('/<br\s*>/i',  '<br/>',  $html);
-        $html = preg_replace('/<hr\s*>/i',  '<hr/>',  $html);
+        // follows. Self-close EVERY void tag before handing off, not just the
+        // three we first met: the web editor writes a table as
+        // <colgroup><col style="width: 347px;"></colgroup>, and a single
+        // unclosed <col> aborts the parse of the WHOLE body — not the table,
+        // the body — so the file downloaded after any web-editor table came out
+        // with no content at all. Measured on template #368: 0 elements before
+        // this, 313 after. (#57)
+        $html = preg_replace(
+            '#<(br|hr|col|input|area|base|embed|link|meta|param|source|track|wbr)\b([^>]*?)/?>#i',
+            '<$1$2/>',
+            $html
+        );
         /* Point every body <img> at a local file BEFORE self-closing them —
            PhpWord drops any it cannot read off disk, silently. */
         $imgTemps = [];
         $html = $this->localiseImagesForDocx($html, $imgTemps);
         $html = preg_replace('/<img([^>]*[^\/])>/i', '<img$1/>', $html);
         $wrapped = '<html><body>' . $html . '</body></html>';
+
+        /* A FAILED PARSE IS SILENT. Html::addHtml swallows libxml's errors and
+           simply adds nothing — it does not throw — so the catch below never
+           fired and a broken body produced an empty .docx with no warning
+           anywhere. Count the elements instead: that is the only honest signal
+           that the body made it in. */
+        $before = count($section->getElements());
+        $parsed = false;
         try {
             Html::addHtml($section, $wrapped, false, false);
+            $parsed = count($section->getElements()) > $before;
         } catch (\Throwable $e) {
-            $section->addText(strip_tags($html));
+            $parsed = false;
+        }
+        if (!$parsed && trim(strip_tags($html)) !== '') {
+            Log::warning('Template body could not be parsed as HTML; writing it as plain paragraphs', [
+                'template_id' => $row->id ?? null,
+            ]);
+            $this->addHtmlAsPlainParagraphs($section, $html);
         }
 
         $writer = IOFactory::createWriter($phpWord, 'Word2007');
@@ -1375,6 +1400,41 @@ class HrDocumentTemplateController extends Controller
             if (is_file($t)) @unlink($t);
         }
         return $tmp;
+    }
+
+    /**
+     * Last-resort body writer: HTML the XML parser rejected, written as real
+     * Word paragraphs.
+     *
+     * The previous fallback was `addText(strip_tags($html))` — one addText call
+     * for the entire document, which is one Word paragraph. That is precisely
+     * the "everything merged into a single line" the ticket describes: not the
+     * conversion mangling the text, but every paragraph break being thrown away
+     * on the way out. Block ends become line breaks here, table cells become
+     * tabs, so the document stays readable even on the path that fails.
+     *
+     * Character formatting IS lost here (it lives in tags, and the tags are
+     * what could not be parsed). That is the trade for not losing the text.
+     */
+    private function addHtmlAsPlainParagraphs($section, string $html): void
+    {
+        // Cell boundaries first — a tab keeps a row on one line but still shows
+        // where one cell ends and the next begins.
+        $t = preg_replace('#</t[dh]\s*>#i', "\t", $html);
+        // Every block end, and every <br>, is a paragraph break.
+        $t = preg_replace('#<(?:br\s*/?|/p|/h[1-6]|/li|/tr|/div|/blockquote)\s*>#i', "\n", $t);
+        $t = html_entity_decode(strip_tags($t), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        $wrote = false;
+        foreach (preg_split('/\n/', $t) ?: [] as $line) {
+            // Collapse runs of spaces only — tabs are the cell separators.
+            $line = trim(preg_replace('/[ \x{00A0}]{2,}/u', ' ', $line));
+            if ($line === '') continue;
+            $section->addText($line);
+            $wrote = true;
+        }
+        // A body that is all markup and no text still deserves a page.
+        if (!$wrote) $section->addText(trim(strip_tags($html)));
     }
 
     /**
@@ -1833,6 +1893,49 @@ class HrDocumentTemplateController extends Controller
      * parser that wins is whichever recovers more text: a document with mixed
      * formatting produces TextRuns and reads correctly, a plain one does not.
      */
+    /**
+     * A DOCX element's paragraph alignment as an inline style attribute.
+     *
+     * PhpWord's HTML reader honours `text-align`, so what comes out here goes
+     * back in on the next download — centred signature blocks and right-aligned
+     * dates survive the round trip instead of all resetting to the left margin.
+     * Left alignment is the default and is left off.
+     */
+    private function paragraphAlignAttr($el): string
+    {
+        if (!method_exists($el, 'getParagraphStyle')) return '';
+        $p = $el->getParagraphStyle();
+        $a = (is_object($p) && method_exists($p, 'getAlignment')) ? $p->getAlignment() : null;
+        /* Word's own names, not CSS's: OOXML calls them start/end (and PhpWord
+           keeps right/left as deprecated aliases), so a map is needed — reading
+           only 'right' let every right-aligned line drift back to the margin on
+           the first round trip while centred ones held. */
+        $map = [
+            'center' => 'center',
+            'end'    => 'right',
+            'right'  => 'right',
+            'both'   => 'justify',
+            'justify' => 'justify',
+        ];
+        return isset($map[$a]) ? ' style="text-align:' . $map[$a] . '"' : '';
+    }
+
+    /**
+     * Size and colour of a run as CSS. Both are read back by PhpWord's HTML
+     * reader, so carrying them keeps a document's type scale and colours
+     * through upload → edit → download; without them every run came back at
+     * the default size in black.
+     */
+    private function fontCss($f): string
+    {
+        $css = [];
+        $size = method_exists($f, 'getSize') ? $f->getSize() : null;
+        if (is_numeric($size) && $size > 0) $css[] = 'font-size:' . (float) $size . 'pt';
+        $color = method_exists($f, 'getColor') ? $f->getColor() : null;
+        if (is_string($color) && preg_match('/^[0-9a-fA-F]{6}$/', $color)) $css[] = 'color:#' . $color;
+        return implode(';', $css);
+    }
+
     private function elementToHtml($el, bool $inline = false): string
     {
         $cls = class_basename($el);
@@ -1840,17 +1943,25 @@ class HrDocumentTemplateController extends Controller
         if ($cls === 'TextRun') {
             $inner = '';
             foreach ($el->getElements() as $child) $inner .= $this->elementToHtml($child, true);
-            return '<p>' . $inner . '</p>';
+            return '<p' . $this->paragraphAlignAttr($el) . '>' . $inner . '</p>';
         }
         if ($cls === 'Text') {
             $text = htmlspecialchars($el->getText() ?? '', ENT_QUOTES);
             $f = $el->getFontStyle();
             if ($f) {
-                if (method_exists($f, 'isBold')      && $f->isBold())      $text = "<b>{$text}</b>";
-                if (method_exists($f, 'isItalic')    && $f->isItalic())    $text = "<i>{$text}</i>";
-                if (method_exists($f, 'isUnderline') && $f->isUnderline()) $text = "<u>{$text}</u>";
+                if (method_exists($f, 'isBold')   && $f->isBold())   $text = "<b>{$text}</b>";
+                if (method_exists($f, 'isItalic') && $f->isItalic()) $text = "<i>{$text}</i>";
+                /* getUnderline(), NOT isUnderline(): PhpWord's Font style has
+                   no isUnderline(), so method_exists() was always false and
+                   every underline in an uploaded document was silently
+                   dropped. It returns a style name ('single', 'dash', …) or
+                   'none'. (#57) */
+                $u = method_exists($f, 'getUnderline') ? $f->getUnderline() : null;
+                if ($u && $u !== 'none') $text = "<u>{$text}</u>";
+                $css = $this->fontCss($f);
+                if ($css !== '') $text = '<span style="' . $css . '">' . $text . '</span>';
             }
-            return $inline ? $text : '<p>' . $text . '</p>';
+            return $inline ? $text : '<p' . $this->paragraphAlignAttr($el) . '>' . $text . '</p>';
         }
 
         if ($cls === 'Title') {

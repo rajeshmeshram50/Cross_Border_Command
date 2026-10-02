@@ -37,6 +37,13 @@ export function validateStage1(d: PoDraft): FieldErrors {
     if (!e.currency && d.currency.trim().toUpperCase() === 'INR') e.currency = 'An international PO cannot be in INR — choose the supplier currency.';
     need('exchangeRate', 'Exchange Rate');
     if (!e.exchangeRate && !(Number(d.exchangeRate) > 0)) e.exchangeRate = 'Exchange rate must be greater than 0.';
+    /* Upper bound too, matching App\Support\FxRate::MAX. The field stops the
+       typing, but a draft saved before that guard existed can still carry a
+       larger rate — without this the step would pass validation and fail only
+       on the API, after every other field had been filled in. */
+    if (!e.exchangeRate && Number(d.exchangeRate) > 10000) {
+      e.exchangeRate = 'Exchange rate looks wrong — the highest allowed is 10,000. Check for a misplaced decimal.';
+    }
     need('incoTerm', 'INCO Term');
     need('portLoading', 'Port of Loading');
     need('portDischarge', 'Port of Discharge');

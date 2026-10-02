@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\P2p;
 
+use App\Support\FxRate;
 use App\Http\Controllers\Api\P2p\Concerns\RunsInTransaction;
 use App\Http\Controllers\Controller;
 use App\Models\P2p\PoGstApproval;
@@ -144,19 +145,33 @@ class PurchaseOrderController extends Controller
        rate and posts the rupee figure to the ledger, so that is the only number
        it judges. Evidence from this org: 20.88 trillion synced, 2,546 trillion
        refused as "out of range" — Zoho's amount field is a 14-digit whole part,
-       the same shape as ours. 1 trillion keeps a 100x margin under that and is
-       still 5,000x any real order. What a PO may be in ITS OWN currency follows
-       from this and the exchange rate, rather than being fixed per currency. */
-    private const MAX_ZOHO_BASE = 1000000000000;  // 1 trillion rupees
+       the same shape as ours. What a PO may be in ITS OWN currency follows from
+       this and the exchange rate, rather than being fixed per currency.
 
-    /* A unit rate is judged in rupees too, for the same reason the order is:
-       a billion yen and a billion dollars are 150x apart. 10 billion rupees is
-       about 100 million dollars a unit — an aircraft, a ship, a whole plant. */
-    private const MAX_UNIT_RATE_BASE = 10000000000;  // 10 billion rupees per unit
+       ₹1 BILLION, not the 1 trillion this started at — tightened deliberately
+       so the guard catches a typo nearer the size of a real order instead of
+       only an absurd one. Measured against this org's own 17 orders before
+       choosing it: the largest GENUINE order is ₹1.73 crore, so a 100-crore
+       ceiling still leaves ~58x headroom. The three above it are the known
+       bad rows (₹20.88 tn, ₹11.06 tn, ₹123.6 bn) — exactly what this is for. */
+    private const MAX_ZOHO_BASE = 1000000000;  // 1 billion rupees (₹100 crore)
+
+    /* A unit rate is judged in rupees too, for the same reason the order is: a
+       billion yen and a billion dollars are 150x apart.
+
+       Tied to the order ceiling rather than carrying a second hand-picked
+       number — one unit cannot be worth more than the whole order may be, and
+       at any quantity above 1 the order ceiling binds first anyway. It was
+       10 billion while the order was 1 trillion; left there it would now be
+       ten times the order it belongs to. */
+    private const MAX_UNIT_RATE_BASE = self::MAX_ZOHO_BASE;
 
     /* Currency-agnostic, so they stay plain numbers. */
     private const MAX_QUANTITY      = 10000000;   // 10 million units on a line
-    private const MAX_EXCHANGE_RATE = 10000;      // the column takes 8 digits; a typo here multiplies
+    /* The shared bound — see App\Support\FxRate for why 10,000 and not some
+       larger round number. Referenced rather than repeated, so the PO, the
+       quotation, the PI and the supplier invoice cannot drift apart. */
+    private const MAX_EXCHANGE_RATE = FxRate::MAX;
 
     // Only what a list row shows (plus the ids its references are read through).
     private const LIST_COLUMNS = [

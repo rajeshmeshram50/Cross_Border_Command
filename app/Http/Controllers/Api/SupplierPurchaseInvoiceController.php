@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Support\FxRate;
 use App\Http\Controllers\Controller;
 use App\Models\PurchaseOrder;
 use App\Models\SupplierPurchaseInvoice;
@@ -1268,7 +1269,7 @@ class SupplierPurchaseInvoiceController extends Controller
             'physical_inspection' => 'nullable|boolean',
             'supplier_type' => 'nullable|string|max:128',
             'currency' => 'nullable|string|max:8',
-            'exchange_rate' => 'nullable|numeric|min:0',
+            'exchange_rate' => FxRate::rules(),   // gt:0 and <= 10,000 — see App\Support\FxRate
             'inco_term' => 'nullable|string|max:16',
             'port_of_loading' => 'nullable|string|max:128',
             'port_of_discharge' => 'nullable|string|max:128',

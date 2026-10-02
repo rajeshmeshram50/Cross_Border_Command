@@ -1968,6 +1968,38 @@ class PayrollService
             $totalMonthDays,
             (float) $empWorkingDays,
         );
+        /* A DAY OF ABSENCE CANNOT COST MORE THAN A DAY OF WORK PAYS. (#155)
+         *
+         * The policy rate above is a WHOLE-MONTH figure — the monthly package
+         * over the month's days — but on a pro-rated cycle the salary is not.
+         * A mid-month joiner earning ₹8,333.33 for 10 of 30 days was still
+         * docked ₹25,000 ÷ 26 = ₹961.54 for one absent day, against the
+         * ₹833.33 that same day paid her. The slip printed both numbers and
+         * they disagreed by 15%.
+         *
+         * The ceiling is the day's own pay: pro-rated gross over the days this
+         * cycle actually bills. $effectiveWorkingDays is the same count LOP
+         * days are drawn from, so a fully absent cycle now lands at exactly
+         * zero net by arithmetic rather than by the total cap below catching
+         * an overdraft after the fact.
+         *
+         * This only ever LOWERS a rate that had climbed above what the day was
+         * worth. A branch charging less than a day's pay — basic ÷ calendar,
+         * the lenient legacy rule — is untouched, and so is any full-month
+         * employee whose policy rate already sits at or below a day's pay. */
+        $earnPerDay = $effectiveWorkingDays > 0
+            ? $proratedGross / $effectiveWorkingDays
+            : 0.0;
+        $lopRateCapped = $earnPerDay > 0 && $lopPerDay > $earnPerDay;
+        if ($lopRateCapped) {
+            $lopPerDay = round($earnPerDay, 4);
+            $exceptions = $this->withException(
+                $exceptions,
+                'info',
+                'Loss of pay charged at this cycle\'s own per-day salary ('
+                . number_format($lopPerDay, 2) . '), not the branch rate — a pro-rated cycle earns less per day than the monthly policy assumes.'
+            );
+        }
         $lopAmount = round($lopPerDay * $lopDays, 2);
 
         /* The ceiling has to follow the BASIS.
@@ -2748,11 +2780,15 @@ class PayrollService
             'lop_per_day'      => $lopPerDay,
             'lop_basis'        => $lopPolicy['basis'],
             'lop_divisor'      => $lopPolicy['divisor'],
-            /* Mirrors what lopPerDayFor() was handed, or the slip explains the
-               deduction with a denominator that did not produce it. */
-            'lop_divisor_days' => $lopPolicy['divisor'] === 'working'
-                ? (float) max(1, $empWorkingDays)
-                : (float) max(1, $totalMonthDays),
+            /* Mirrors what produced the rate, or the slip explains the
+               deduction with a denominator that did not produce it — including
+               when the day's own pay capped it. */
+            'lop_divisor_days' => $lopRateCapped
+                ? (float) max(1, $effectiveWorkingDays)
+                : ($lopPolicy['divisor'] === 'working'
+                    ? (float) max(1, $empWorkingDays)
+                    : (float) max(1, $totalMonthDays)),
+            'lop_rate_capped'  => $lopRateCapped,
             'basic'          => $proratedBasic,
             'overtime_amount' => $overtimeAmount,
             'bonus_amount'   => $bonusAmount,

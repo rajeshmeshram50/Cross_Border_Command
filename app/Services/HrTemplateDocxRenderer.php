@@ -86,11 +86,16 @@ class HrTemplateDocxRenderer
 
         $html = (string) ($row->content_html ?: '<p>(empty template)</p>');
         // PhpWord's Html::addHtml uses loadXML (not loadHTML) so the body
-        // must be valid XML. Bare void tags from rich-text editors (<br>,
-        // <hr>, <img ...>) abort parsing silently and drop everything that
-        // follows. Self-close them before handing off.
-        $html = preg_replace('/<br\s*>/i',  '<br/>',  $html);
-        $html = preg_replace('/<hr\s*>/i',  '<hr/>',  $html);
+        // must be valid XML. Bare void tags from rich-text editors abort
+        // parsing silently and drop everything that follows. Self-close ALL of
+        // them, not only <br>/<hr>/<img>: the web editor writes a table as
+        // <colgroup><col style="width: 347px;"></colgroup>, and that one
+        // unclosed <col> is enough to lose the entire body. (#57)
+        $html = preg_replace(
+            '#<(br|hr|col|input|area|base|embed|link|meta|param|source|track|wbr)\b([^>]*?)/?>#i',
+            '<$1$2/>',
+            $html
+        );
         $html = preg_replace('/<img([^>]*[^\/])>/i', '<img$1/>', $html);
         $html = self::pageBreaksToWord($html);
         $html = self::localiseImageSources($html);
@@ -108,7 +113,16 @@ class HrTemplateDocxRenderer
         $parsedCleanly = true;
         try {
             $probe = new PhpWord();
-            Html::addHtml($probe->addSection(), $wrapped, false, false);
+            $probeSection = $probe->addSection();
+            Html::addHtml($probeSection, $wrapped, false, false);
+            /* THE PROBE HAS TO COUNT, not just survive. addHtml swallows
+             * libxml's errors and returns normally having added nothing, so a
+             * try/catch alone called a body that produced an empty document
+             * "clean" and the reader got a blank page. */
+            $parsedCleanly = count($probeSection->getElements()) > 0;
+            if (!$parsedCleanly) {
+                Log::warning('DOCX body HTML parsed to nothing; falling back to plain paragraphs');
+            }
         } catch (\Throwable $e) {
             $parsedCleanly = false;
             Log::warning('DOCX body HTML did not parse; falling back to plain text', [
@@ -119,7 +133,20 @@ class HrTemplateDocxRenderer
         if ($parsedCleanly) {
             Html::addHtml($section, $wrapped, false, false);
         } else {
-            $section->addText(strip_tags($html));
+            /* One addText for the whole body is ONE Word paragraph — the
+             * "everything on a single line" the ticket describes. Break on the
+             * block ends so the text keeps its shape even on this path. */
+            $plain = preg_replace('#</t[dh]\s*>#i', "\t", $html);
+            $plain = preg_replace('#<(?:br\s*/?|/p|/h[1-6]|/li|/tr|/div|/blockquote)\s*>#i', "\n", $plain);
+            $plain = html_entity_decode(strip_tags($plain), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $any = false;
+            foreach (preg_split('/\n/', $plain) ?: [] as $line) {
+                $line = trim(preg_replace('/[ \x{00A0}]{2,}/u', ' ', $line));
+                if ($line === '') continue;
+                $section->addText($line);
+                $any = true;
+            }
+            if (!$any) $section->addText(trim(strip_tags($html)));
         }
 
         $writer = IOFactory::createWriter($phpWord, 'Word2007');

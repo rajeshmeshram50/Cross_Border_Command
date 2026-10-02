@@ -748,7 +748,12 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
               </Field>
               {!withPo && basic.docType === 'International' && (<>
                 <Field label="CURRENCY"><EditSelect value={basic.currency} options={currencies.length ? currencies : CURRENCIES} onChange={v => setBasic(b => ({ ...b, currency: v }))} /></Field>
-                <Field label="EXCHANGE RATE"><input className="spi-dt-inp" value={basic.exRate} onChange={e => setBasic(b => ({ ...b, exRate: e.target.value }))} placeholder="e.g. 83.25" /></Field>
+                {/* Capped at the API's 10,000 (App\Support\FxRate). Decimals are
+                    allowed here — an SPI rate is often 83.25 — so only the VALUE
+                    is bounded, not the characters. */}
+                <Field label="EXCHANGE RATE"><input className="spi-dt-inp" value={basic.exRate}
+                  onChange={e => { const v = e.target.value; if (v !== '' && Number(v) > 10000) return; setBasic(b => ({ ...b, exRate: v })); }}
+                  placeholder="e.g. 83.25" /></Field>
                 <Field label="INCO TERM"><EditSelect value={basic.inco} options={INCO} onChange={v => setBasic(b => ({ ...b, inco: v }))} /></Field>
                 <Field label="PORT OF LOADING"><input className="spi-dt-inp" value={basic.portLoad} onChange={e => setBasic(b => ({ ...b, portLoad: e.target.value }))} placeholder="e.g. Nhava Sheva" /></Field>
                 <Field label="PORT OF DISCHARGE"><input className="spi-dt-inp" value={basic.portDischarge} onChange={e => setBasic(b => ({ ...b, portDischarge: e.target.value }))} placeholder="e.g. Jebel Ali" /></Field>

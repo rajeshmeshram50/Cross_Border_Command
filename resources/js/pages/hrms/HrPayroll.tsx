@@ -163,6 +163,16 @@ const financialYearOf = (month?: number, year?: number): string => {
 // now run in order it is also what blocks every later month. Painting it
 // "Not Started" sent HR to click Run, which then failed with "already
 // approved/paid and cannot be regenerated".
+/* How long a cycle selection must hold still before the page fetches it.
+ *
+ * Switching cycle costs two requests — the payroll rows and the Salary Setup
+ * roster — and both are heavy. Clicking along the Cycle History strip fired
+ * one pair per month passed through, which is how a walk across half a year
+ * turned into 7.5 MB and tens of seconds of traffic, all of it for months
+ * nobody stopped on and none of it cancellable once sent. Short enough that a
+ * deliberate click still feels immediate. */
+const CYCLE_SWITCH_DEBOUNCE_MS = 300;
+
 const buildYearMonths = (
   year: number,
   statusByKey: Record<string, CycleStatus>,
@@ -298,6 +308,11 @@ export default function HrPayroll() {
   // by `${year}-${month}`. The visible strip is generated one full year at a
   // time from this map — no hardcoded month seed on the frontend.
   const [rawCycles, setRawCycles] = useState<CycleMonth[]>([]);
+  /* True until /payroll/cycles has answered once. Until then the strip is
+     generated from an EMPTY status map, so all twelve months render as "Not
+     Started" — a confident wrong answer that then rewrites itself. It
+     shimmers instead. */
+  const [cyclesLoading, setCyclesLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
 
   const statusByKey = useMemo(() => {
@@ -399,7 +414,17 @@ export default function HrPayroll() {
      cycleKey is what `cycle` is derived from, so it changes on exactly the same
      occasions, and loadRoster() reads `cycle` when it is CALLED (after render),
      by which time it is initialised. */
-  useEffect(() => { loadRoster(); /* eslint-disable-next-line */ }, [cycleKey]);
+  /* DEBOUNCED, like the cycle fetch below and for the same reason: the Cycle
+     History strip is a row of twelve buttons and people click along it. Every
+     key fired a roster request of its own — ~80 kB and well over a second each
+     — so a walk from January to June queued six of them behind the six payroll
+     requests, and the page stayed busy long after the clicking stopped. Only
+     the month the user settles on is fetched now. */
+  useEffect(() => {
+    const t = setTimeout(() => loadRoster(), CYCLE_SWITCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+    /* eslint-disable-next-line */
+  }, [cycleKey]);
   const [q, setQ] = useState('');
   const [deptFilter, setDeptFilter]     = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<'All' | RowStatus>('All');
@@ -798,8 +823,16 @@ export default function HrPayroll() {
   /* No permission outranks every other reason: a viewer cannot act on the
      cycle whatever state it is in, and telling them "complete July first" when
      they could not run July either would be misleading. (CBC #16) */
-  const cycleLocked = !canManage || isFutureCycle || isOpenCurrentCycle || !!blockedByCycle || runLockedCycle;
-  const cycleLockReason = !canManage
+  /* `loading` belongs in here. Run Payroll was live while the cycle's own rows,
+     period meta and run meta were still in flight, so it could be pressed
+     against the PREVIOUS month's state — and every guard below it (is this
+     cycle locked, already run, blocked by an earlier one) reads that same
+     not-yet-arrived data. The page now says it is loading and the button waits
+     for it. */
+  const cycleLocked = loading || !canManage || isFutureCycle || isOpenCurrentCycle || !!blockedByCycle || runLockedCycle;
+  const cycleLockReason = loading
+    ? 'Loading this cycle — the run button unlocks once its figures are on screen.'
+    : !canManage
     ? 'You do not have permission to run payroll. Ask an administrator for the Payroll "edit" or "approve" permission on your account.'
     : isFutureCycle
     ? `${cycle?.label} hasn't started yet — a future cycle has no attendance to process.`
@@ -896,7 +929,8 @@ export default function HrPayroll() {
           setCycleKey(monthKey(curY, (cur?.month ?? curM) - 1));
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setCyclesLoading(false));
   }, []);
 
   // Returning from Open Employee / Go to Attendance (#38): re-surface the
@@ -971,7 +1005,15 @@ export default function HrPayroll() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cycleKey, cycleMonths]);
 
-  useEffect(() => { reloadCycle(); }, [reloadCycle]);
+  /* Debounced — see CYCLE_SWITCH_DEBOUNCE_MS. Mutations still call
+     reloadCycle() directly and are never delayed; this only covers the user
+     moving along the Cycle History strip. The loadSeq guard inside already
+     discards a superseded response, so this is about not SENDING the requests
+     rather than about correctness. */
+  useEffect(() => {
+    const t = setTimeout(() => { reloadCycle(); }, CYCLE_SWITCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [reloadCycle]);
 
   /* reloadCycle is declared below the sandwich handlers that need it, and a
      `const` cannot be named in a dependency array before its own declaration.
@@ -983,6 +1025,11 @@ export default function HrPayroll() {
 
   const runPayroll = async () => {
     if (busy) return;
+    /* The figures this run would be launched against are not on screen yet. */
+    if (loading) {
+      toast.warning('Still loading', 'Wait for this cycle to finish loading before running payroll.');
+      return;
+    }
     /* Defence in depth. The button is already disabled without the permission,
        but this path is also reachable from the Reopen branch and a keyboard
        activation, and a silent no-op is what #16 was about. */
@@ -2134,10 +2181,15 @@ export default function HrPayroll() {
           <Button
             className="rounded-pill fw-bold d-inline-flex align-items-center pay-hero-run"
             onClick={canReopenCycle ? reopenCycle : runPayroll}
-            disabled={busy || (cycleLocked && !canReopenCycle)}
-            title={canReopenCycle
-              ? `${cycle.label} is already ${cycle.run_status} but not disbursed — reopen it to run payroll again.`
-              : cycleLockReason}
+            /* `loading` is listed on its own rather than left to cycleLocked,
+               because the Reopen branch escapes cycleLocked — and reopening on
+               a half-loaded cycle is the same mistake as running on one. */
+            disabled={busy || loading || (cycleLocked && !canReopenCycle)}
+            title={loading
+              ? 'Loading this cycle — the run button unlocks once its figures are on screen.'
+              : canReopenCycle
+                ? `${cycle.label} is already ${cycle.run_status} but not disbursed — reopen it to run payroll again.`
+                : cycleLockReason}
             style={{
               padding: '10px 18px',
               fontSize: 13,
@@ -2146,13 +2198,18 @@ export default function HrPayroll() {
                 ? 'linear-gradient(135deg,#f7a325 0%,#d9820a 100%)'
                 : 'linear-gradient(135deg,#0ab39c 0%,#078b78 100%)',
               boxShadow: '0 8px 18px rgba(90,63,209,0.32)',
-              opacity: (busy || (cycleLocked && !canReopenCycle)) ? 0.6 : 1,
+              opacity: (busy || loading || (cycleLocked && !canReopenCycle)) ? 0.6 : 1,
             }}
           >
             {/* Animated spinner while processing (the static loader icon read as
-                "no loader"). Matches the Export button's Spinner pattern. */}
+                "no loader"). Matches the Export button's Spinner pattern.
+                "Loading…" is a separate word from "Processing…" so the two
+                spinners never read as the same thing — one means the page is
+                still arriving, the other that payroll is being generated. */}
             {busy
               ? <><Spinner size="sm" className="me-2" /> Processing…</>
+              : loading
+              ? <><Spinner size="sm" className="me-2" /> Loading…</>
               : canReopenCycle
                 ? <><i className="ri-lock-unlock-line me-2" style={{ fontSize: 16 }} /> Reopen Cycle</>
                 : <><i className="ri-play-circle-line me-2" style={{ fontSize: 16 }} /> Run Payroll</>}
@@ -2221,7 +2278,11 @@ export default function HrPayroll() {
                 <i className="ri-calendar-2-line" style={{ fontSize: 14 }} />
               </span>
               <span className="fw-bold" style={{ fontSize: 13 }}>Cycle History</span>
-              {(['Completed', 'In Progress', 'Not Started'] as CycleStatus[]).map(s => {
+              {/* Counted from the same statuses the strip draws, so they are
+                  held back together — a "Not Started · 12" that corrects itself
+                  a second later is worse than no count. */}
+              {cyclesLoading && <Shimmer height={17} width={190} radius={999} />}
+              {!cyclesLoading && (['Completed', 'In Progress', 'Not Started'] as CycleStatus[]).map(s => {
                 const t = CYCLE_TONES[s];
                 const n = cycleMonths.filter(c => c.status === s).length;
                 if (!n) return null;
@@ -2303,7 +2364,22 @@ export default function HrPayroll() {
                   paddingBottom: 4,
                 }}
               >
-                {cycleMonths.map(m => {
+                {cyclesLoading && Array.from({ length: 7 }).map((_, i) => (
+                  /* Placeholder chips at the real chip's size, so the strip does
+                     not jump when the statuses land. Without them the page drew
+                     twelve "NOT STARTED" months and then rewrote every one. */
+                  <div
+                    key={`cyc-skel-${i}`}
+                    className="flex-shrink-0 d-flex flex-column gap-2"
+                    style={{ minWidth: 138, padding: '10px 12px', borderRadius: 12, border: '1px solid var(--vz-border-color)' }}
+                    aria-hidden="true"
+                  >
+                    <Shimmer height={13} width="62%" radius={5} />
+                    <Shimmer height={9} width="88%" radius={5} />
+                    <Shimmer height={16} width={82} radius={999} />
+                  </div>
+                ))}
+                {!cyclesLoading && cycleMonths.map(m => {
                   const on = m.key === cycleKey;
                   // A future month is frozen outright — not selectable, greyed,
                   // and labelled LOCKED. A month held up by an earlier open
@@ -2518,7 +2594,13 @@ export default function HrPayroll() {
                       color: on ? '#fff' : 'var(--vz-secondary-color)',
                     }}
                   >
-                    {t.count}
+                    {/* Shimmer rather than a stale number: these counts come
+                        from the cycle being fetched, so during a switch they
+                        were still showing the PREVIOUS month's totals as
+                        settled figures. */}
+                    {(t.key === 'salary' ? rosterLoading : loading)
+                      ? <Shimmer height={11} width={18} radius={6} />
+                      : t.count}
                   </span>
                 </button>
               );
