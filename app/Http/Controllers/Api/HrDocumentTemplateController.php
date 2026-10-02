@@ -448,16 +448,24 @@ class HrDocumentTemplateController extends Controller
         $this->authorize($request, 'can_view');
         $row = $this->resolveRow($request, (int) $id);
 
-        // Always render fresh from content_html so the download is content-only
-        // (no header/footer/logo — see buildDocxFile). We deliberately do NOT
-        // return the stored docx_path byte-for-byte: a stored file can carry a
-        // baked-in header/footer — every file produced by the old renderer does,
-        // and so does any Word doc a user uploaded with its own header — and
-        // returning it verbatim would re-introduce exactly the chrome this
-        // workflow removes, with no way to bootstrap out of it. content_html is
-        // the canonical body (an uploaded DOCX is parsed into it on upload), so
-        // rendering from it keeps the body while guaranteeing the chrome is gone.
-        return $this->renderDocx($row, ($row->code ?: 'template') . '.docx', false);
+        /* WITH the header, logo and footer. (#24)
+         *
+         * This used to render body-only, so the author downloaded a Word file
+         * that looked nothing like the document the employee receives — no
+         * letterhead at all, and on an empty template, a blank page.
+         *
+         * The round-trip is safe because they are written as real Word HEADER
+         * and FOOTER parts, not body paragraphs: Word keeps them in
+         * word/header1.xml and word/footer1.xml, and BOTH readers on the upload
+         * side take the body alone — PhpWord walks $section->getElements() and
+         * the raw fallback reads word/document.xml. So a file downloaded, edited
+         * and re-uploaded brings its body back and cannot duplicate the chrome.
+         *
+         * Still rendered fresh from content_html rather than returning the
+         * stored docx byte-for-byte: a file from the old renderer has the
+         * letterhead baked into its BODY, and handing that back would re-import
+         * it as content with no way out. content_html is the canonical body. */
+        return $this->renderDocx($row, ($row->code ?: 'template') . '.docx', true);
     }
 
     /**
@@ -1810,13 +1818,28 @@ class HrDocumentTemplateController extends Controller
         return $out;
     }
 
-    private function elementToHtml($el): string
+    /**
+     * One DOCX element → HTML.
+     *
+     * $inline says where the element sits. A Text INSIDE a TextRun is part of a
+     * paragraph and must stay inline, or every bold word would start a new one.
+     * A Text at the TOP of a section IS a paragraph — PhpWord's reader emits
+     * one for any paragraph made of a single plain run, which is most of them
+     * in a plain Word document.
+     *
+     * Without the distinction the top-level case returned bare text, so a
+     * document of simple paragraphs came back as one unbroken string and
+     * downloaded as a single line. (#27/#57) It looked intermittent because the
+     * parser that wins is whichever recovers more text: a document with mixed
+     * formatting produces TextRuns and reads correctly, a plain one does not.
+     */
+    private function elementToHtml($el, bool $inline = false): string
     {
         $cls = class_basename($el);
 
         if ($cls === 'TextRun') {
             $inner = '';
-            foreach ($el->getElements() as $child) $inner .= $this->elementToHtml($child);
+            foreach ($el->getElements() as $child) $inner .= $this->elementToHtml($child, true);
             return '<p>' . $inner . '</p>';
         }
         if ($cls === 'Text') {
@@ -1827,13 +1850,25 @@ class HrDocumentTemplateController extends Controller
                 if (method_exists($f, 'isItalic')    && $f->isItalic())    $text = "<i>{$text}</i>";
                 if (method_exists($f, 'isUnderline') && $f->isUnderline()) $text = "<u>{$text}</u>";
             }
-            return $text;
+            return $inline ? $text : '<p>' . $text . '</p>';
         }
+
         if ($cls === 'Title') {
             return '<h2>' . htmlspecialchars((string) $el->getText(), ENT_QUOTES) . '</h2>';
         }
         if ($cls === 'ListItem') {
             return '<li>' . htmlspecialchars((string) $el->getText(), ENT_QUOTES) . '</li>';
+        }
+        /* ListItemRun deliberately has NO branch. It falls through to the
+         * getText() case below and comes out as a <p>, which is what it has
+         * always done and what the editor and the DOCX writer both handle. A
+         * <li> here would be a bare list item with no <ul> around it — checked
+         * against a real uploaded agreement carrying 127 of them: nothing is
+         * lost today, so there is nothing to win by changing it. */
+        /* An empty paragraph. Dropped before, so a deliberate blank line
+         * between two blocks disappeared and the blocks closed up. */
+        if ($cls === 'TextBreak') {
+            return $inline ? '<br/>' : '<p></p>';
         }
         if ($cls === 'Table') {
             $rows = '';
@@ -1841,6 +1876,8 @@ class HrDocumentTemplateController extends Controller
                 $cells = '';
                 foreach ($r->getCells() as $cell) {
                     $cellInner = '';
+                    /* A cell is a block context: its paragraphs each need their
+                       own <p>, exactly as they do in the body. */
                     foreach ($cell->getElements() as $child) $cellInner .= $this->elementToHtml($child);
                     $cells .= '<td>' . $cellInner . '</td>';
                 }

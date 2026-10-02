@@ -895,7 +895,10 @@ export default function TemplateFormPage() {
 
       {/* Body */}
       <Card style={{ borderRadius: 14 }}>
-        <CardBody style={{ padding: 22 }}>
+        {/* Less air on top: the stepper card sits directly above, and Step 03
+            opens on its own titled header, so 22px left a visible gap between
+            two things that read as one stack. */}
+        <CardBody style={{ padding: '12px 22px 22px' }}>
           {step === 1 && (
             <Step1
               name={name} setName={setName}
@@ -931,7 +934,6 @@ export default function TemplateFormPage() {
               signers={signers}
               slotError={errors.signers_placeholders}
               editingId={editing?.id || null}
-              docxName={editing?.docx_original_name || null}
               docxRef={docxRef}
               onDownloadDocx={downloadDocx}
               onUploadDocx={uploadDocx}
@@ -1486,7 +1488,6 @@ function Step3(props: {
   signers: SignerRow[];
   slotError?: string;
   editingId: number | null;
-  docxName: string | null;
   docxRef: React.RefObject<HTMLInputElement | null>;
   onDownloadDocx: () => void;
   onUploadDocx: (f: File) => void;
@@ -1564,9 +1565,21 @@ function Step3(props: {
         </div>
 
         <div className="d-flex align-items-center justify-content-between flex-wrap" style={{ gap: 10, padding: '9px 14px' }}>
-          <div className="tpl-help" style={{ fontSize: 11.5, color: '#6b7280' }}>
-            <i className="ri-information-line me-1" />
-            Header and footer have fixed heights — click any zone in the preview to edit logo / text / styling.
+          {/* One titled section PER MODE, not one row serving both. The two tabs
+              are two different workflows — compose in place, or round-trip
+              through Word — and the row under the switch is where each one
+              should name itself and say how it works. Shared markup made it a
+              strip of buttons whose note belonged to neither. */}
+          <div className="tpl-flow" style={{ minWidth: 0 }}>
+            <div className="tpl-flow-title" style={{ fontSize: 11, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 }}>
+              {props.editorMode === 'word' ? 'MS Word Workflow' : 'Web Editor Workflow'}
+            </div>
+            <div className="tpl-help" style={{ fontSize: 11.5, color: '#6b7280' }}>
+              <i className="ri-information-line me-1" />
+              {props.editorMode === 'word'
+                ? 'Download the body as a .docx, edit it in Word, then upload it back — the header, logo and footer stay managed here and are never touched.'
+                : 'Header and footer have fixed heights — click any zone in the preview to edit logo / text / styling.'}
+            </div>
           </div>
           {/* The editor is a scrolling div, not a paginated engine, so it can only
               hint at where a page ends. Live PDF renders the draft through the same
@@ -1594,7 +1607,7 @@ function Step3(props: {
                 title="Upload the revised .docx — it replaces the body content only"
                 style={{ ...tabBtn(false), background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', cursor: props.uploadingDocx ? 'wait' : 'pointer', opacity: props.uploadingDocx ? 0.7 : 1 }}>
                 {props.uploadingDocx
-                  ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" /> Uploading…</>
+                  ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" /> Uploading &amp; processing…</>
                   : <><i className="ri-upload-2-line me-1" /> Upload Revised DOCX</>}
               </button>
             </div>
@@ -1717,6 +1730,14 @@ function Step3(props: {
                   content={props.contentHtml}
                   headerConfig={props.headerConfig as unknown as Record<string, unknown>}
                   footerConfig={props.footerConfig as unknown as Record<string, unknown>}
+                  /* The preview re-renders when ASKED (↻ or Ctrl+S), not on a
+                     900ms pause in typing. (#25) Every other caller of this
+                     panel — CLM agreements, trade documents, Case-to-Case —
+                     already passes this; Document Templates was the one left
+                     auto-rendering, so an author editing a paragraph was
+                     interrupted by a full PDF render every time they paused.
+                     The panel marks itself stale and waits. */
+                  manualRefresh
                 />
               </div>
             </div>
@@ -1785,45 +1806,21 @@ function Step3(props: {
             </ModalBody>
           </Modal>
 
-          {/* MS Word workflow card */}
-          <div className="tpl-word-card" style={{ position: 'relative', border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, background: '#fff', marginBottom: 16 }}>
-            {props.uploadingDocx && (
-              <div className="tpl-upload-veil" style={{
-                position: 'absolute', inset: 0, zIndex: 20, borderRadius: 12,
-                background: 'rgba(255,255,255,0.78)', backdropFilter: 'blur(1px)',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10,
-              }}>
-                <span className="spinner-border text-success" role="status" aria-hidden="true" />
-                <div className="tpl-veil-title" style={{ fontSize: 13, fontWeight: 700, color: '#15803d' }}>Uploading &amp; processing DOCX…</div>
-                <div className="tpl-veil-sub" style={{ fontSize: 11.5, color: '#6b7280' }}>Extracting header, footer &amp; logo</div>
-              </div>
-            )}
-            <div className="d-flex align-items-center flex-wrap" style={{ gap: 10, justifyContent: 'space-between' }}>
-              <div style={{ minWidth: 0 }}>
-                <div className="tpl-word-title" style={{ fontSize: 13, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>MS Word Workflow</div>
-                {/* The three steps now live in the Guide. What stays is the one
-                    sentence that governs every use of this screen: the round
-                    trip carries the BODY, and nothing else. */}
-                <div className="tpl-word-lead" style={{ fontSize: 13, color: '#374151', lineHeight: 1.6 }}>
-                  Download the body as a .docx, edit it in Word, then upload it back — the header, logo and footer stay managed here and are never touched.
-                </div>
-              </div>
-              <button type="button" className="tpl-word-guide-btn" onClick={() => setGuideOpen(true)}
-                style={{ padding: '7px 14px', background: '#eef2ff', color: '#4338ca', border: '1px solid #c7d2fe', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
-                <i className="ri-book-open-line me-1" />Guide
-              </button>
+          {/* The draft-autosave warning, and only on a template that has not
+              been saved yet. The "Latest uploaded: <file>" strip that used to
+              sit here is gone: the uploaded body is already visible in the
+              preview directly below, so naming the file added a row without
+              adding an answer. */}
+          {/* Everything else this card used to hold now lives in the titled MS
+              Word Workflow row above it — heading, round-trip sentence, Guide
+              button — or has gone entirely (the upload veil, #26; the "Latest
+              uploaded" strip). One notice is left, and it needs no card of its
+              own around it. */}
+          {!props.editingId && (
+            <div className="tpl-word-warn" style={{ fontSize: 11.5, color: '#b45309', background: '#fef3c7', border: '1px solid #fde68a', padding: '8px 12px', borderRadius: 10, marginBottom: 16 }}>
+              <i className="ri-information-line me-1" />Downloading or uploading a DOCX will auto-save this template as a draft first (template name, category and role are required).
             </div>
-            {!props.editingId && (
-              <div className="tpl-word-warn" style={{ marginTop: 10, fontSize: 11.5, color: '#b45309', background: '#fef3c7', border: '1px solid #fde68a', padding: '6px 10px', borderRadius: 8 }}>
-                <i className="ri-information-line me-1" />Downloading or uploading a DOCX will auto-save this template as a draft first (template name, category and role are required).
-              </div>
-            )}
-            {props.docxName && (
-              <div className="tpl-docx-info" style={{ marginTop: 12, padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12.5, color: '#374151' }}>
-                <i className="ri-file-word-2-line me-1" /> Latest uploaded: <strong>{props.docxName}</strong>
-              </div>
-            )}
-          </div>
+          )}
 
           {/* Page preview — read-only render of the latest content with the
               fixed header/footer wrapped around it. Useful so the user can

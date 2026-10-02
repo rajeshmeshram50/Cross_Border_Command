@@ -34,6 +34,7 @@ import { leaveTypesApi, leaveRequestsApi, ApiLeaveRequest } from '../hrms/leaveP
 import LeaveSummaryPanel from './LeaveSummaryPanel';
 import HolidayCalendarPanel from './HolidayCalendarPanel';
 import { EpModal } from './EmployeeProfileShared';
+import { markExpenseChanged, expenseChangedAt, onExpenseChanged } from '../../utils/expenseBus';
 import { EmployeeProfileProvider, type EmployeeProfileCtx } from './EmployeeProfileContext';
 import AttendanceTab from './tabs/AttendanceTab';
 import ProfileTab from './tabs/ProfileTab';
@@ -2158,6 +2159,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const EXPENSE_FRESH_MS = 30_000;
   const claimsFetch = useRef({ key: '', at: 0, busy: false });
   const advancesFetch = useRef({ key: '', at: 0, busy: false });
+  /** When the last focus/visibility resync ran — see the resync effect. */
+  const lastResync = useRef(0);
   const expenseKey = `${profileEmpCode ?? ''}|${profileEmpIdNum ?? ''}|${isOwnProfile ? 1 : 0}`;
 
   const refreshClaims = async (opts?: { force?: boolean }) => {
@@ -2339,16 +2342,33 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
   useEffect(() => {
     if (tab !== 'expense') return;
-    const resync = () => {
+    /* Re-read ONLY when something actually changed. (#185)
+     *
+     * Two wrong answers were tried here. Refetching on every focus meant four
+     * list queries each time you Alt-Tabbed away and back — the slow, pointless
+     * reload the user reported. Refetching no more than once per 30s meant an
+     * approval made in the Inbox did not show on return, because the decision
+     * was made by the clock instead of by the event.
+     *
+     * The bus carries a timestamp of the last change made anywhere — this tab
+     * or another. On return we compare it to our own last read and re-read only
+     * when it is newer, so an idle Alt-Tab costs nothing at all. `force` skips
+     * the freshness window, which exists for a different purpose: stopping the
+     * same view re-reading itself while nothing has happened. */
+    const catchUp = () => {
       if (document.visibilityState === 'hidden') return;
-      refreshClaims();
-      refreshAdvances();
+      if (expenseChangedAt() <= lastResync.current) return;
+      lastResync.current = Date.now();
+      refreshClaims({ force: true });
+      refreshAdvances({ force: true });
     };
-    window.addEventListener('focus', resync);
-    document.addEventListener('visibilitychange', resync);
+    const off = onExpenseChanged(catchUp);
+    window.addEventListener('focus', catchUp);
+    document.addEventListener('visibilitychange', catchUp);
     return () => {
-      window.removeEventListener('focus', resync);
-      document.removeEventListener('visibilitychange', resync);
+      off();
+      window.removeEventListener('focus', catchUp);
+      document.removeEventListener('visibilitychange', catchUp);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, profileEmpIdNum, isOwnProfile]);
@@ -2362,6 +2382,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   ) => {
     try {
       await api.post(`/advance-requests/${advanceId}/${action}`, comment ? { comment } : {});
+      markExpenseChanged();   // (#185) — HR's list, and other tabs
       toast.success('Updated', 'Advance request status updated');
       await refreshAdvances({ force: true });
     } catch (err: any) {
@@ -2625,6 +2646,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         setApiClaims(prev => prev.map(c => c.id === updated.id ? updated : c));
         setTeamClaims(prev => prev.map(c => c.id === updated.id ? updated : c));
       }
+      markExpenseChanged();
       toast.success('Updated', 'Claim status updated');
       await refreshClaims({ force: true });
     } catch (err: any) {

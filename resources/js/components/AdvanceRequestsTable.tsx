@@ -244,7 +244,14 @@ function withAuthToken(url: string): string {
  * BOTH switches — `usedFor` adds or drops four columns and `mode` resizes
  * Action — so no single literal can be right at every call site. Restating it
  * by hand is how the old sum drifted out of date. */
-const ADV_ACTION_W = (mode: 'mine' | 'team' | 'hr') => (mode === 'hr' || mode === 'team' ? 240 : 130);
+/* Width of the Action column, per view.
+ *
+ * `mine` was 130px on the understanding that an employee's own row carries
+ * icons only. It does not: a fully-paid company advance shows "Settle Payment"
+ * and a settled one shows "Raise Expense", each with a kebab and sometimes an
+ * eye beside it. The group is ~185px wide, so at 130 the buttons ran past the
+ * column and out of the table. (#184) */
+const ADV_ACTION_W = (mode: 'mine' | 'team' | 'hr') => (mode === 'hr' || mode === 'team' ? 240 : 200);
 
 /**
  * Sum of every column width below, including DataTable's 56px serial.
@@ -691,8 +698,8 @@ export function advanceRequestColumns({
        * action group wrapped on some rows but not others, leaving the column
        * ragged down the page. A pixel width is not scaled, so the widest case
        * always fits and every row lines up.
-       * The non-approver views keep a percentage: they show icons only, and a
-       * 240px reservation there would be dead space. */
+       * The non-approver view is narrower but still fixed — see ADV_ACTION_W:
+       * it carries CTAs of its own, so a percentage left them overflowing. */
       meta: {
         align: 'center',
         width: ADV_ACTION_W(mode),

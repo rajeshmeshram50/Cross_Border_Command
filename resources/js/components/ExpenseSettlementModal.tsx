@@ -1,11 +1,20 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../hooks/useScrollLock';
+import { markExpenseChanged } from '../utils/expenseBus';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { MasterSelect } from './ui/MasterSelect';
 import { MasterDatePicker } from './ui/MasterDatePicker';
 import { Shimmer } from './ui/Shimmer';
+
+/** Ceiling for a settlement amount.
+ *
+ *  advance_requests.amount is decimal(18,2) — sixteen whole digits — so a
+ *  larger figure cannot be stored whatever the form accepts. Capping here
+ *  keeps the dialog honest: an uncapped number field let a tester hold down a
+ *  key and produce a rupee figure wide enough to burst the popup. (#184) */
+const SETTLE_AMOUNT_MAX = 9999999999999999;
 
 /**
  * Record Payment (settlement) for an APPROVED expense claim — styled like the
@@ -174,7 +183,7 @@ const IcoMinus = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="non
 const IcoPlus = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>;
 
 export default function ExpenseSettlementModal({
-  claimId, onClose, onDone, readOnly = false, review = false,
+  claimId, onClose, onDone: onDoneProp, readOnly = false, review = false,
   basePath = '/expense-claims', kind = 'expense', allowSettle = false,
   canApproveSettle = false,
   onRaiseReimbursement,
@@ -221,6 +230,11 @@ export default function ExpenseSettlementModal({
 }) {
   const toast = useToast();
   const open = claimId != null;
+  /* Every mutation in this modal — approve, reject, settle, recover, confirm
+     utilisation — ends by calling onDone(). Wrapping it once announces each of
+     them on the expense bus, so the HR list and the employee's own tab know
+     something changed without five separate call sites to keep in step. (#185) */
+  const onDone = () => { markExpenseChanged(); onDoneProp(); };
   /* Background scroll lock (QA #99, #115) — the shared hook, not a local copy.
      It discovers whatever is actually scrolling (this app's page scrolls on
      .main-content, and from the Inbox this dialog opens over ANOTHER modal
@@ -2504,12 +2518,27 @@ export default function ExpenseSettlementModal({
               <div className="esm-choose-fld">
                 <label>AMOUNT UTILIZED <span className="esm-req">*</span> <span className="esm-muted">(more than {inr(settleBase)})</span></label>
                 <div className="esm-money"><span className="esm-cur">₹</span>
-                  <input className="esm-in" type="number" min={0} placeholder="0.00"
+                  {/* Capped at the column's own ceiling. advance_requests.amount
+                      is decimal(18,2) — 16 whole digits — so anything past this
+                      cannot be stored anyway, and typing it only produced a
+                      figure wide enough to burst the dialog. maxLength stops the
+                      keystrokes, the slice covers a paste. (#184) */}
+                  <input className="esm-in" type="number" min={0} max={SETTLE_AMOUNT_MAX} placeholder="0.00"
                     value={settleTargetTmp}
-                    onChange={e => setSettleTargetTmp(e.target.value)} />
+                    onChange={e => {
+                      const v = e.target.value;
+                      if (v !== '' && Number(v) > SETTLE_AMOUNT_MAX) return;
+                      setSettleTargetTmp(v.slice(0, 19));
+                    }} />
                 </div>
                 {!!settleTargetTmp && !(Number(settleTargetTmp) > settleBase) && <span className="esm-err">Must be greater than {inr(settleBase)}.</span>}
-                {Number(settleTargetTmp) > settleBase && <span className="esm-muted" style={{ fontSize: 11 }}>Extra to claim: {inr(Number(settleTargetTmp) - settleBase)} — you'll raise an expense for it.</span>}
+                {/* Wraps instead of running off the edge: a long rupee figure is
+                    one unbroken token, and nothing breaks it without this. */}
+                {Number(settleTargetTmp) > settleBase && (
+                  <span className="esm-muted" style={{ fontSize: 11, display: 'block', minWidth: 0, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                    Extra to claim: {inr(Number(settleTargetTmp) - settleBase)} — you'll raise an expense for it.
+                  </span>
+                )}
               </div>
             )}
             <div className="esm-choose-note">

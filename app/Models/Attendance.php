@@ -352,6 +352,38 @@ class Attendance extends Model
             return [$start, trim((string) ($this->shift_end ?? '')) ?: null];
         }
 
+        /* A stamped NAME with no times still beats the employee's current
+         * shift. (#216)
+         *
+         * shift_name is written from the employee's shift at punch time, but
+         * shift_start comes from resolveShiftWindow(), which returns null when
+         * the branch has no definition for that name yet — 8,627 rows here are
+         * in exactly that state. Falling straight through to the employee meant
+         * those days were judged against whatever shift the employee holds
+         * TODAY, which is the history-rewriting this ticket reports, just by a
+         * narrower door than the one already closed.
+         *
+         * Resolve the times for the STAMPED name instead: the row knows which
+         * shift it was worked under, so a definition added or corrected later
+         * applies to it, while a REASSIGNMENT does not. */
+        $name = trim((string) ($this->shift_name ?? ''));
+        if ($name !== '') {
+            $emp = $this->rowEmployee();
+            $branch = $emp?->relationLoaded('branch') ? $emp->getRelation('branch') : null;
+            if ($emp && (!$branch || !array_key_exists('shifts', $branch->getAttributes()))) {
+                $branch = $emp->branch()->first();
+            }
+            foreach ((array) ($branch->shifts ?? []) as $s) {
+                if (strcasecmp(trim((string) ($s['name'] ?? '')), $name) !== 0) continue;
+                $from = self::hhmmOrNull($s['start'] ?? '');
+                if ($from) return [$from, self::hhmmOrNull($s['end'] ?? '')];
+            }
+            /* Named but unresolvable — the day was worked under a shift whose
+             * definition is gone. No window is the honest answer; the
+             * employee's current one would be a fabrication. */
+            return [null, null];
+        }
+
         $emp = $this->rowEmployee();
         return $emp ? $emp->resolveShiftWindow() : [null, null];
     }
@@ -364,6 +396,14 @@ class Attendance extends Model
         if ($name !== '') return $name;
         $emp = $this->rowEmployee();
         return $emp ? (trim((string) ($emp->shift ?? '')) ?: null) : null;
+    }
+
+    /** "9:30" out of "9:30 AM", "09:30-18:30" or a bare value — the same
+     *  normalisation Employee::hhmm() applies, so a stamped name resolves to
+     *  the identical window the employee would have produced. */
+    private static function hhmmOrNull($v): ?string
+    {
+        return preg_match('/(\d{1,2}:\d{2})/', (string) $v, $m) ? $m[1] : null;
     }
 
     /** The row's employee, preferring an already-loaded relation (list
