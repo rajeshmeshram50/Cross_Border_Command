@@ -449,6 +449,30 @@ export default function DataTable<T extends object>({
      * footer instead of stopping mid-page — and it stays plain whitespace, not
      * the filler rows deliberately removed from <tbody> below. */
     const size = () => {
+      /* On a phone the PAGE scrolls, not the card.
+       *
+       * Pinning the card to the space left below it assumes there is space
+       * left. On a narrow screen there is not: the KPI tiles stack, the
+       * toolbar breaks onto its own rows, and the table starts at or below
+       * the fold — so `innerHeight - top` goes negative and the 240px floor
+       * takes over. The card is then forced to exactly 240px, and once the
+       * toolbar and the column header have taken their share, .dt-scroll is
+       * left with ZERO height: every row is in the DOM, none of them can be
+       * seen, and the sideways scroll that a wide table needs is unreachable
+       * because the box it lives in has no height to touch.
+       *
+       * Below the mobile breakpoint the pin is dropped entirely and the card
+       * takes its natural height, which is the behaviour the page already
+       * expects there — .main-content scrolls it. */
+      if (window.innerWidth < 768) {
+        if (el.style.height || el.style.minHeight || el.style.maxHeight || el.style.flex) {
+          el.style.flex = '';
+          el.style.height = '';
+          el.style.minHeight = '';
+          el.style.maxHeight = '';
+        }
+        return;
+      }
       const top = el.getBoundingClientRect().top;
       const h = `${Math.max(240, window.innerHeight - top - bottomReserve())}px`;
       if (manualSize !== null) {

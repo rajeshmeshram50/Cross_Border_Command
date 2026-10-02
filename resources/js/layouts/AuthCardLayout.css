@@ -120,7 +120,7 @@
 .kx-tagline {
   margin-top: calc(13.3 * var(--u));
   font-family: 'Montserrat', sans-serif;
-  font-size: calc(16.9 * var(--u));
+  font-size: max(calc(16.9 * var(--u)), 10px);
   font-weight: 400;
   line-height: 1;
   letter-spacing: .175em;
@@ -143,7 +143,7 @@
      closest face for the headline (Plus Jakarta Sans runs 7% narrow, DM Sans
      8%). Explicit because the admin theme otherwise decides the h1 family. */
   font-family: 'Montserrat', 'Plus Jakarta Sans', system-ui, sans-serif;
-  font-size: calc(57.3 * var(--u));
+  font-size: max(calc(57.3 * var(--u)), 26px);
   /* 800 with tighter tracking: the render's strokes are heavier than Bold
      at the same overall width. */
   font-weight: 760;
@@ -173,7 +173,7 @@
 .kx-lead {
   margin: calc(12.5 * var(--u)) 0 0;
   letter-spacing: .004em;
-  font-size: calc(18.4 * var(--u));
+  font-size: max(calc(18.4 * var(--u)), 12px);
   font-weight: 400;
   line-height: calc(22 * var(--u));
   word-spacing: .06em;
@@ -196,7 +196,7 @@
 .kx-mod-icowrap img { display: block; user-select: none; }
 .kx-mod-title {
   margin-top: calc(6.1 * var(--u));
-  font-size: calc(14.6 * var(--u));
+  font-size: max(calc(14.6 * var(--u)), 11px);
   font-weight: 700;
   line-height: calc(18 * var(--u));
   letter-spacing: 0;
@@ -212,7 +212,7 @@
 .kx-mod:nth-child(n + 5) .kx-mod-sub { margin-top: calc(0.5 * var(--u)); }
 .kx-mod-sub {
   margin-top: calc(6.5 * var(--u));
-  font-size: calc(15 * var(--u));
+  font-size: max(calc(15 * var(--u)), 10px);
   font-weight: 400;
   line-height: calc(19 * var(--u));
   color: #a3a8ba;
@@ -233,7 +233,7 @@
   /* Caps at y 888, INTELLIGENCE 125 wide (x 68-193), as measured off the render. */
   top: calc(885.8 * var(--u));
   font-family: 'Montserrat', sans-serif;
-  font-size: calc(14 * var(--u));
+  font-size: max(calc(14 * var(--u)), 10px);
   font-weight: 400;
   line-height: 1;
   letter-spacing: .165em;
@@ -297,7 +297,7 @@
     /* light creeping in from every edge, the middle stays near-black */
     inset 0 0 calc(46 * var(--u)) rgba(120, 135, 175, .16),
     /* tight neon edge; the room just outside stays clear */
-    0 0 1px rgba(225, 238, 255, .55),
+    0 0 max(1px, calc(1 * var(--u))) rgba(225, 238, 255, .55),
     /* coloured light hugging the rim: blue down the left, violet-pink down the right */
     inset calc(2 * var(--u)) 0 calc(7 * var(--u)) rgba(110, 160, 255, .22),
     inset calc(-2 * var(--u)) 0 calc(7 * var(--u)) rgba(180, 130, 255, .24),
@@ -319,8 +319,14 @@
   border-radius: inherit;
   /* Bright on every side (the render's rim reads 160-226 left and right),
      cooling to lilac at the lower right. */
-  /* One device-crisp line, as in the render (its rim peaks on a single pixel). */
-  padding: 1px;
+  /* Scales with the card, floored at one device pixel.
+     Everything else on this card is a multiple of --u, so the card keeps the
+     same size on screen at any browser zoom — but a flat 1px rim does not: it
+     lands on 0.25 screen pixels at 25% zoom and 1.5 at 150%, so the edge
+     looked six times heavier zoomed in than zoomed out. Scaling it holds the
+     rim at the same thickness on screen, and the 1px floor keeps it a crisp
+     line rather than a blurred half-pixel when --u drops below 1. */
+  padding: max(1px, calc(1 * var(--u)));
   /* Measured on the render's rim: bright down the sides (~209 left, 164 right)
      and along the foot (140), but dim across the top (~69); soft white-grey
      with only a hint of blue at the lower left and lilac at the lower right. */
@@ -340,7 +346,7 @@
   position: absolute;
   inset: calc(8 * var(--u));
   border-radius: calc(27 * var(--u));
-  border: 1px solid rgba(220, 230, 255, .07);
+  border: max(1px, calc(1 * var(--u))) solid rgba(220, 230, 255, .07);
   pointer-events: none;
   z-index: 0;
 }
@@ -351,7 +357,7 @@
   justify-content: center;
   gap: calc(10 * var(--u));
   font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
-  font-size: calc(32.2 * var(--u));
+  font-size: max(calc(32.2 * var(--u)), 20px);
   font-weight: 700;
   line-height: 1;
   letter-spacing: -.03em;
@@ -359,7 +365,7 @@
 }
 .kx-sub {
   margin: calc(9.7 * var(--u)) 0 0;
-  font-size: calc(17.7 * var(--u));
+  font-size: max(calc(17.7 * var(--u)), 12px);
   font-weight: 400;
   line-height: 1;
   word-spacing: .1em;
@@ -389,7 +395,7 @@
   margin-top: calc(24 * var(--u));
   text-align: center;
   font-family: 'Inter', sans-serif;
-  font-size: calc(15.6 * var(--u));
+  font-size: max(calc(15.6 * var(--u)), 11px);
   font-weight: 400;
   line-height: 1;
   color: #eceff5;
@@ -496,7 +502,12 @@
   display: flex;
   align-items: center;
   gap: calc(28 * var(--u));
-  height: calc(66 * var(--u));
+  /* Floored, not purely scaled. Every size on this card is a multiple of --u,
+     which is tied to viewport HEIGHT, so a short window shrank the login form
+     along with the artwork: at 900x600 the field was 44px tall holding 9.3px
+     text, and the label under it 8.5px. The photo may scale; what the user has
+     to read and type may not. */
+  height: max(calc(66 * var(--u)), 46px);
   padding: 0 calc(20 * var(--u)) 0 calc(22 * var(--u));
   border-radius: calc(10 * var(--u));
   /* Solid navy, the render's field (#132437) — not a white wash, which turned
@@ -513,9 +524,9 @@
   box-shadow: 0 0 0 3px rgba(59, 130, 246, .18);
 }
 .kx-field-ico { flex-shrink: 0; width: calc(26 * var(--u)); height: calc(26 * var(--u)); color: #e6e9f2; }
-.kx-field-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: calc(5 * var(--u)); }
+.kx-field-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: max(calc(5 * var(--u)), 3px); }
 .kx-field-label {
-  font-size: calc(12.8 * var(--u));
+  font-size: max(calc(12.8 * var(--u)), 11px);
   font-weight: 400;
   line-height: 1;
   letter-spacing: .01em;
@@ -524,13 +535,13 @@
 .kx-input {
   width: 100%;
   /* 18, not 14: a 14px box clipped the descenders of "you@company.com". */
-  height: calc(18 * var(--u));
+  height: max(calc(18 * var(--u)), 17px);
   padding: 0;
   border: 0;
   outline: 0;
   background: transparent;
   font-family: inherit;
-  font-size: calc(14 * var(--u));
+  font-size: max(calc(14 * var(--u)), 13px);
   font-weight: 400;
   line-height: 1;
   letter-spacing: -.03em;
@@ -581,7 +592,7 @@
   gap: calc(13 * var(--u));
   cursor: pointer;
   user-select: none;
-  font-size: calc(15.8 * var(--u));
+  font-size: max(calc(15.8 * var(--u)), 12px);
   font-weight: 400;
   line-height: 1;
   word-spacing: .12em;
@@ -613,7 +624,7 @@
   border: 0;
   background: transparent;
   font-family: inherit;
-  font-size: calc(15.7 * var(--u));
+  font-size: max(calc(15.7 * var(--u)), 12px);
   font-weight: 400;
   line-height: 1;
   word-spacing: .08em;
@@ -631,7 +642,7 @@
   justify-content: center;
   gap: calc(12 * var(--u));
   width: 100%;
-  height: calc(60 * var(--u));
+  height: max(calc(60 * var(--u)), 44px);
   margin-top: calc(19.7 * var(--u));
   border: 0;
   border-radius: 999px;
@@ -640,7 +651,7 @@
     0 calc(10 * var(--u)) calc(28 * var(--u)) rgba(70, 80, 255, .40),
     inset 0 1px 0 rgba(255, 255, 255, .22);
   font-family: inherit;
-  font-size: calc(20.9 * var(--u));
+  font-size: max(calc(20.9 * var(--u)), 14px);
   font-weight: 500;
   line-height: 1;
   letter-spacing: .005em;
@@ -698,7 +709,7 @@
   align-items: center;
   gap: calc(14 * var(--u));
   margin-top: calc(28 * var(--u));
-  font-size: calc(12.8 * var(--u));
+  font-size: max(calc(12.8 * var(--u)), 10px);
   font-weight: 500;
   line-height: 1;
   letter-spacing: .06em;
@@ -711,7 +722,13 @@
 /* Google + Microsoft — two 44-tall pills, 14 apart, y 701 */
 .kx-social {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* Two pills side by side only while both fit. The card's width scales with
+     --u but the labels no longer shrink below 12px, so on a short window the
+     columns became narrower than "Sign in with Google" and the two pills ran
+     into each other. auto-fit drops them onto one column at the point they
+     stop fitting, which the 480px-wide media query below cannot do — that is
+     a viewport width, and this card goes narrow on a viewport that is short. */
+  grid-template-columns: repeat(auto-fit, minmax(max(150px, calc(170 * var(--u))), 1fr));
   gap: calc(13 * var(--u));
   margin-top: calc(20 * var(--u));
 }
@@ -721,13 +738,13 @@
   justify-content: center;
   gap: calc(14 * var(--u));
   width: 100%;
-  height: calc(46 * var(--u));
+  height: max(calc(46 * var(--u)), 40px);
   padding: 0 calc(12 * var(--u));
   border: 0;
   border-radius: 999px;
   background: #fff;
   font-family: inherit;
-  font-size: calc(14.5 * var(--u));
+  font-size: max(calc(14.5 * var(--u)), 14px);
   font-weight: 600;
   line-height: 1;
   color: #1e2a78;
@@ -741,7 +758,7 @@
 .kx-social-btn svg { width: calc(22 * var(--u)); height: calc(22 * var(--u)); flex-shrink: 0; }
 /* the render's bigger, bright-blue face mark and bolder label */
 .kx-social-btn svg.kx-face-ico { width: calc(27 * var(--u)); height: calc(27 * var(--u)); color: #2563ff; }
-.kx-social-btn:has(.kx-face-ico) { font-size: calc(15.5 * var(--u)); font-weight: 700; color: #16245e; }
+.kx-social-btn:has(.kx-face-ico) { font-size: max(calc(15.5 * var(--u)), 14px); font-weight: 700; color: #16245e; }
 /* Google sign-in: our pill (.kx-social-btn) is what shows; Google's own
    button, a cross-origin iframe, sits over it invisibly and takes the click.
    Google draws it 200-400 x 40, so Login.tsx sets --kx-gsx / --kx-gsy to

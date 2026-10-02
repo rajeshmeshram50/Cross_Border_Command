@@ -13209,6 +13209,12 @@
 
           .emp-modal-wide .modal-dialog { max-width: min(1280px, 95vw); }
           .emp-modal-wide .modal-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
+          /* The body carries Bootstrap's default 12px rounding inside a card
+             rounded 22px, and both clip. The purple header therefore stopped
+             10px short of the card's corner and the white body showed through
+             as a wedge on either side of it. Inheriting keeps the two in step
+             whatever radius the card is given. */
+          .emp-modal-wide .modal-body { border-radius: inherit !important; }
           /* Spinning loader for the Next / Save button when the step is
              persisting. Uses ri-loader-4-line which already looks like a
              circular spinner — we just rotate it. */
@@ -13951,6 +13957,31 @@
   /* The active step gets a little breathing room on either side so it does not
      land flush against the edge when scrolled into view. */
   .emp-stepper-bar > .d-flex { padding: 0 6px; }
+
+  /* The scrolling form pane reserves a flat 320px for the wizard chrome
+     (header + stepper + footer + margins). That is a desktop figure: on a
+     phone the chrome measures ~234px, so ~86px of screen sat empty below the
+     footer while the pane — holding 2,168px of fields — showed five inputs at
+     a time. Letting the modal fill the dialog and the pane take whatever is
+     left replaces the assumption with the real measurement, at any phone
+     height. The pane is addressed by aria-busy, which it carries for the
+     saving state, rather than by child position. */
+  .emp-modal-wide .modal-content { height: 100%; }
+  .emp-modal-wide .modal-body { display: flex; flex-direction: column; min-height: 0; }
+  /* The chrome keeps its own height — in a flex column every child shrinks by
+     default, which crushed the step rail to 38px over its 68px of circles. */
+  .emp-modal-wide .modal-body > div:first-child,
+  .emp-modal-wide .emp-stepper-bar,
+  .emp-modal-wide .emp-footer-bar { flex: 0 0 auto; }
+  .emp-modal-wide .modal-body > div[aria-busy] {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none !important;
+    padding: 12px 14px !important;
+  }
+  /* Header and cards give their padding back to the fields. */
+  .emp-modal-wide .modal-body > div:first-child { padding: 11px 14px !important; }
+  .emp-modal-wide .emp-section { padding: 12px 14px; }
 }
 @media (max-width: 575.98px) {
   /* Footer actions go full width. A right-aligned "Next" on a phone sits under
@@ -13964,7 +13995,13 @@
 
 /* ── Modal body padding on phones ──────────────────────────────────────── */
 @media (max-width: 575.98px) {
-  .emp-modal-wide .modal-body { padding: 12px 14px !important; }
+  /* Zero, not 12px 14px: every pane in this wizard — the purple header, the
+     step rail, the form and the footer — carries its own padding, so padding
+     here insets them all a second time. It showed on the header, which is
+     meant to run edge to edge: held 14px in from the sides and 12px down from
+     the top, it sat as a square purple block inside a white frame instead of
+     taking the card's rounded top corners. */
+  .emp-modal-wide .modal-body { padding: 0 !important; }
   /* Two-column form rows become one — a 46%-wide date input is unusable. */
   .emp-modal-wide .row > [class*="col-md-"],
   .emp-modal-wide .row > [class*="col-lg-"] { flex: 0 0 100%; max-width: 100%; }
