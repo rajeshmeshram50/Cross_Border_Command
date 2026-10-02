@@ -23,7 +23,15 @@
      to the left edge and the card to the right edge, and the city view between
      them gives up width first, so a squarer window keeps readable text instead
      of shrinking the whole composition. */
-  --u: clamp(0.5px, min(calc(100vw / 1420), calc(100vh / 941)), 12px);
+  /* Fixed, not viewport-derived.
+     Every size on this page is written as a multiple of --u, so tying the unit
+     to the window scaled the whole composition with it — and with it the text,
+     which changed size every time the window was resized or the browser
+     zoomed. Pinning the unit to 1px makes each of those multiples resolve to
+     the size it was designed at and stay there: the card is 573px wide, the
+     input 14px, the title 32.2px, on every screen. The card centres, and a
+     window too small to hold it scrolls rather than shrinking it. */
+  --u: 1px;
   /* The clean room photo — no text and no card painted into it, so nothing
      shows under the live copy or behind the glass card. */
   /* Renamed whenever the photo changes: browsers cache it by URL and kept
@@ -69,9 +77,14 @@
   position: relative;
   z-index: 1;
   flex: none;
-  /* Full width; the render's 941-tall band, centred vertically. */
+  /* Full width; the render's 941-tall band, but never taller than the window.
+     At a fixed scale that band is 941px, and a 1920x1080 screen leaves about
+     940px of viewport once the browser's own chrome is taken off — so the band
+     alone put the page into a scrollbar on the commonest desktop there is,
+     with nothing below the fold worth scrolling to. Capped at the viewport, it
+     simply uses the height it is given. */
   width: 100vw;
-  height: calc(941 * var(--u));
+  height: min(calc(941 * var(--u)), 100vh);
 }
 /* The photo at exactly the render's framing. Its left and right edges fade
    into the blurred fill above, so the seam never shows. */
@@ -230,8 +243,13 @@
 .kx-footer {
   position: absolute;
   left: calc(68 * var(--u));
-  /* Caps at y 888, INTELLIGENCE 125 wide (x 68-193), as measured off the render. */
-  top: calc(885.8 * var(--u));
+  /* Caps at y 888, INTELLIGENCE 125 wide (x 68-193), as measured off the render.
+     Measured from the BOTTOM of the band rather than its top, so that when the
+     band is shorter than the render — a 900px-tall window, say — the strip
+     stays inside it. Pinned from the top it hung 1.8px below the fold, which
+     was enough for a scrollbar on a page with nothing to scroll to.
+     941 - 885.8 - 18 (its own line) = 37.2 from the foot. */
+  bottom: calc(37.2 * var(--u));
   font-family: 'Montserrat', sans-serif;
   font-size: max(calc(14 * var(--u)), 10px);
   font-weight: 400;
@@ -251,10 +269,19 @@
   position: absolute;
   /* pinned to the right edge, 52 off it as in the render */
   right: calc(52 * var(--u));
-  top: calc(80 * var(--u));
-  height: calc(790 * var(--u));
+  /* Centred in whatever band the stage has, rather than 80 from its top with a
+     fixed 790 height: at the render's size those two are the same placement
+     (80 above, 71 below), and this one keeps the card centred when the window
+     is shorter than the band instead of pushing it off the bottom. */
+  top: 0;
+  bottom: 0;
   display: flex;
-  align-items: center;
+  /* `safe`, because a card taller than the band would otherwise be centred
+     out of reach: centring overflows equally top and bottom, and the part
+     above the start edge cannot be scrolled back to. With safe it falls back
+     to the top edge the moment it stops fitting, and the page scrolls down to
+     the rest. */
+  align-items: safe center;
 }
 .kx-card {
   position: relative;
@@ -264,7 +291,10 @@
   /* Always the render's full 790 band: the card painted into the background
      photo sits exactly here, and a shorter card let its edges show above and
      below. Shorter steps (Forgot, OTP) keep the foot at the bottom. */
-  min-height: calc(790 * var(--u));
+  /* The render's band, unless the window is shorter than it — the card's own
+     content is well under 790, so on a 768-tall laptop holding the full band
+     bought 11px of scrollbar and nothing else. */
+  min-height: min(calc(790 * var(--u)), calc(100vh - 56px));
   display: flex;
   flex-direction: column;
   padding: calc(59.6 * var(--u)) calc(52.5 * var(--u)) calc(60 * var(--u));
@@ -435,12 +465,58 @@
   filter: brightness(1.25) saturate(1.1);
 }
 
+/* ── Laptops under 1400: both columns, with the brand panel compacted ─────
+   At the fixed scale the module grid alone is 628px wide and the left column
+   ends at x 703, while the card starts 625 in from the right edge — so the two
+   need about 1350px and ran into each other on anything smaller: "P2P
+   (Procurement)" and "Credential Vault" half hidden behind the glass.
+   The brand panel is not dropped here, it is rebuilt narrower: the eight
+   modules go two across instead of four, the headline and lead take a step
+   down and are allowed to wrap, and the card gives back some width. Text sizes
+   change once, at this breakpoint, rather than drifting with every pixel of
+   window — the panel stays readable and everything is on screen. ── */
+@media (min-width: 1024px) and (max-width: 1399.98px) {
+  .kx-left { left: calc(44 * var(--u)); top: calc(26 * var(--u)); max-width: calc(466 * var(--u)); }
+  .kx-headline { font-size: calc(36 * var(--u)); line-height: 1.06; white-space: normal; margin-top: calc(8 * var(--u)); }
+  .kx-lead { white-space: normal; font-size: calc(14 * var(--u)); line-height: calc(18 * var(--u)); margin-top: calc(8 * var(--u)); }
+  .kx-tagline { font-size: calc(12.5 * var(--u)); }
+  /* Three across, not two: two columns fit the width but ran the eight modules
+     four rows deep, past the foot of a 620px-tall laptop screen and into the
+     footer strip. Three keeps them on three shorter rows and still clears the
+     card. */
+  .kx-modules {
+    grid-template-columns: repeat(3, calc(157 * var(--u)));
+    /* Rows take their content's height with a gap between, rather than a fixed
+       one: "P2P (Procurement)" and "Trade Finance (E Docs)" wrap to two lines
+       and a fixed row let the next row's icons sit on top of them. */
+    grid-auto-rows: auto;
+    row-gap: calc(16 * var(--u));
+    margin-top: calc(12 * var(--u));
+  }
+  /* The nudge that lines the second row up under the first belongs to the
+     four-across grid; with three across it just pushes them off true. */
+  .kx-mod:nth-child(n + 5) { transform: none; }
+  /* The grid reaches where this strip sits, and it is the one thing on the
+     panel that repeats the four words already in the headline. */
+  .kx-footer { display: none; }
+  /* The card gives back the width the panel needs, and keeps its right inset. */
+  .kx-card { width: calc(470 * var(--u)); padding-left: calc(40 * var(--u)); padding-right: calc(40 * var(--u)); }
+  .kx-right { right: calc(34 * var(--u)); }
+}
+
 /* ── Phones and tablets: the card alone, centred, over the photo ─────────── */
 @media (max-width: 1023.98px) {
   /* Fluid card scale: grows on tablets, shrinks on phones, never past the
      card's desktop size. Scrolls if the card is taller than the screen
      (landscape phones). */
-  .kx-shell { --u: clamp(0.66px, min(calc(100vw / 640), calc(100vh / 900)), 1.15px); padding: 24px 16px; overflow-x: hidden; overflow-y: auto; }
+    /* A phone gets its own fixed scale, not the desktop one. Every box here is a
+     multiple of --u, and at the desktop value the card comes to 839px — the
+     whole of a phone screen before the browser's own bars — so it could only
+     ever overflow. 0.78 brings the boxes down to phone proportions while the
+     readable minimums on the type (13px input, 11px label, 20px title) hold
+     the text where it is, which is what a phone layout does: tighter spacing,
+     same legibility. Still fixed, so nothing moves as the window changes. */
+  .kx-shell { --u: 0.78px; padding: 16px 14px; overflow-x: hidden; overflow-y: auto; }
   .kx-shell::after { display: none; }
   .kx-bg { filter: blur(10px) brightness(.6); }
   .kx-stage { width: 100%; max-width: calc(573 * var(--u)); height: auto; }
@@ -563,7 +639,22 @@
   -webkit-box-shadow: 0 0 0 1000px #17263f inset;
   caret-color: #f1f5f9;
   transition: background-color 9999s ease-out 0s;
+  /* An autofilled value is drawn by the browser, not by the field: Chrome
+     brings its own font and size along with the yellow background, which is
+     why a remembered email could come out far smaller than the label above it
+     while a typed one matched. Restating the type here keeps a remembered
+     value identical to a typed one. */
+  font-family: inherit !important;
+  font-size: inherit !important;
+  font-weight: inherit !important;
+  letter-spacing: inherit !important;
+  line-height: inherit !important;
 }
+/* The same for the password field, which carries its own letter-spacing so the
+   masking dots sit apart. */
+.kx-input[type="password"]:-webkit-autofill,
+.kx-input[type="password"]:-webkit-autofill:hover,
+.kx-input[type="password"]:-webkit-autofill:focus { letter-spacing: .33em !important; }
 .kx-eye {
   flex-shrink: 0;
   display: inline-flex;
