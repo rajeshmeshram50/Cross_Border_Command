@@ -597,11 +597,11 @@ export default function Inbox() {
                             <Shimmer width={60} height={18} radius={6} />
                             <Shimmer width={180} height={11} />
                           </div>
-                          <Shimmer height={32} radius={6} />
-                        </div>
-                        <div className="d-flex flex-column gap-2 ib-actions-col">
-                          <Shimmer height={32} radius={8} />
-                          <Shimmer height={32} radius={8} />
+                          <div className="ib-decision-row">
+                            <div style={{ flex: '1 1 240px' }}><Shimmer height={36} radius={6} /></div>
+                            <Shimmer width={110} height={36} radius={8} />
+                            <Shimmer width={110} height={36} radius={8} />
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -653,17 +653,17 @@ export default function Inbox() {
                                 <i className="ri-double-quotes-l me-1" />{r.reason}
                               </div>
                             )}
-                            {/* Comment input — required when rejecting, optional when approving */}
+                            {/* Remark + decision share one row at one height, so the
+                                buttons line up with the input they act on (QA #9).
+                                Remark is required when rejecting, optional when approving. */}
+                            <div className="ib-decision-row mt-2">
                             <input
                               type="text"
-                              className="form-control mt-2 ib-remark-input"
+                              className="form-control ib-remark-input"
                               placeholder="Add a remark (required for reject, optional for approve)"
                               value={leaveComment[r.id] || ''}
                               onChange={e => setLeaveComment(prev => ({ ...prev, [r.id]: e.target.value }))}
                             />
-                          </div>
-                          {/* Actions */}
-                          <div className="d-flex flex-column gap-2 ib-actions-col">
                             <button
                               type="button"
                               onClick={() => actOnLeave(r.id, 'approve')}
@@ -680,6 +680,7 @@ export default function Inbox() {
                             >
                               {isRejecting ? <><i className="ri-loader-4-line ri-spin me-1" />Rejecting…</> : <><i className="ri-close-line me-1" />Reject</>}
                             </button>
+                            </div>
                           </div>
                         </div>
                       </div>
