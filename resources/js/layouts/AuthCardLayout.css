@@ -23,15 +23,13 @@
      to the left edge and the card to the right edge, and the city view between
      them gives up width first, so a squarer window keeps readable text instead
      of shrinking the whole composition. */
-  /* Fixed, not viewport-derived.
-     Every size on this page is written as a multiple of --u, so tying the unit
-     to the window scaled the whole composition with it — and with it the text,
-     which changed size every time the window was resized or the browser
-     zoomed. Pinning the unit to 1px makes each of those multiples resolve to
-     the size it was designed at and stay there: the card is 573px wide, the
-     input 14px, the title 32.2px, on every screen. The card centres, and a
-     window too small to hold it scrolls rather than shrinking it. */
-  --u: 1px;
+  /* One unit, derived from the window, that every size on this page is a
+     multiple of — so the whole composition is laid out at the size the window
+     can actually hold and arrives in one piece, which is the point of this
+     design. Text included: at 1920x940 the input is 14px, at 1536x760 it is
+     11px. Nothing is floored, because a floor binds only on the smallest
+     windows and then the text stops matching the card it sits in. */
+  --u: clamp(0.5px, min(calc(100vw / 1420), calc(100vh / 941)), 12px);
   /* The clean room photo — no text and no card painted into it, so nothing
      shows under the live copy or behind the glass card. */
   /* Renamed whenever the photo changes: browsers cache it by URL and kept
@@ -84,7 +82,7 @@
      with nothing below the fold worth scrolling to. Capped at the viewport, it
      simply uses the height it is given. */
   width: 100vw;
-  height: min(calc(941 * var(--u)), 100vh);
+  height: calc(941 * var(--u));
 }
 /* The photo at exactly the render's framing. Its left and right edges fade
    into the blurred fill above, so the seam never shows. */
@@ -133,7 +131,7 @@
 .kx-tagline {
   margin-top: calc(13.3 * var(--u));
   font-family: 'Montserrat', sans-serif;
-  font-size: max(calc(16.9 * var(--u)), 10px);
+  font-size: calc(16.9 * var(--u));
   font-weight: 400;
   line-height: 1;
   letter-spacing: .175em;
@@ -156,7 +154,7 @@
      closest face for the headline (Plus Jakarta Sans runs 7% narrow, DM Sans
      8%). Explicit because the admin theme otherwise decides the h1 family. */
   font-family: 'Montserrat', 'Plus Jakarta Sans', system-ui, sans-serif;
-  font-size: max(calc(57.3 * var(--u)), 26px);
+  font-size: calc(57.3 * var(--u));
   /* 800 with tighter tracking: the render's strokes are heavier than Bold
      at the same overall width. */
   font-weight: 760;
@@ -186,7 +184,7 @@
 .kx-lead {
   margin: calc(12.5 * var(--u)) 0 0;
   letter-spacing: .004em;
-  font-size: max(calc(18.4 * var(--u)), 12px);
+  font-size: calc(18.4 * var(--u));
   font-weight: 400;
   line-height: calc(22 * var(--u));
   word-spacing: .06em;
@@ -209,7 +207,7 @@
 .kx-mod-icowrap img { display: block; user-select: none; }
 .kx-mod-title {
   margin-top: calc(6.1 * var(--u));
-  font-size: max(calc(14.6 * var(--u)), 11px);
+  font-size: calc(14.6 * var(--u));
   font-weight: 700;
   line-height: calc(18 * var(--u));
   letter-spacing: 0;
@@ -225,7 +223,7 @@
 .kx-mod:nth-child(n + 5) .kx-mod-sub { margin-top: calc(0.5 * var(--u)); }
 .kx-mod-sub {
   margin-top: calc(6.5 * var(--u));
-  font-size: max(calc(15 * var(--u)), 10px);
+  font-size: calc(15 * var(--u));
   font-weight: 400;
   line-height: calc(19 * var(--u));
   color: #a3a8ba;
@@ -251,7 +249,7 @@
      941 - 885.8 - 18 (its own line) = 37.2 from the foot. */
   bottom: calc(37.2 * var(--u));
   font-family: 'Montserrat', sans-serif;
-  font-size: max(calc(14 * var(--u)), 10px);
+  font-size: calc(14 * var(--u));
   font-weight: 400;
   line-height: 1;
   letter-spacing: .165em;
@@ -291,10 +289,7 @@
   /* Always the render's full 790 band: the card painted into the background
      photo sits exactly here, and a shorter card let its edges show above and
      below. Shorter steps (Forgot, OTP) keep the foot at the bottom. */
-  /* The render's band, unless the window is shorter than it — the card's own
-     content is well under 790, so on a 768-tall laptop holding the full band
-     bought 11px of scrollbar and nothing else. */
-  min-height: min(calc(790 * var(--u)), calc(100vh - 56px));
+  min-height: calc(790 * var(--u));
   display: flex;
   flex-direction: column;
   padding: calc(59.6 * var(--u)) calc(52.5 * var(--u)) calc(60 * var(--u));
@@ -387,7 +382,7 @@
   justify-content: center;
   gap: calc(10 * var(--u));
   font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
-  font-size: max(calc(32.2 * var(--u)), 20px);
+  font-size: calc(32.2 * var(--u));
   font-weight: 700;
   line-height: 1;
   letter-spacing: -.03em;
@@ -395,7 +390,7 @@
 }
 .kx-sub {
   margin: calc(9.7 * var(--u)) 0 0;
-  font-size: max(calc(17.7 * var(--u)), 12px);
+  font-size: calc(17.7 * var(--u));
   font-weight: 400;
   line-height: 1;
   word-spacing: .1em;
@@ -425,7 +420,7 @@
   margin-top: calc(24 * var(--u));
   text-align: center;
   font-family: 'Inter', sans-serif;
-  font-size: max(calc(15.6 * var(--u)), 11px);
+  font-size: calc(15.6 * var(--u));
   font-weight: 400;
   line-height: 1;
   color: #eceff5;
@@ -465,58 +460,12 @@
   filter: brightness(1.25) saturate(1.1);
 }
 
-/* ── Laptops under 1400: both columns, with the brand panel compacted ─────
-   At the fixed scale the module grid alone is 628px wide and the left column
-   ends at x 703, while the card starts 625 in from the right edge — so the two
-   need about 1350px and ran into each other on anything smaller: "P2P
-   (Procurement)" and "Credential Vault" half hidden behind the glass.
-   The brand panel is not dropped here, it is rebuilt narrower: the eight
-   modules go two across instead of four, the headline and lead take a step
-   down and are allowed to wrap, and the card gives back some width. Text sizes
-   change once, at this breakpoint, rather than drifting with every pixel of
-   window — the panel stays readable and everything is on screen. ── */
-@media (min-width: 1024px) and (max-width: 1399.98px) {
-  .kx-left { left: calc(44 * var(--u)); top: calc(26 * var(--u)); max-width: calc(466 * var(--u)); }
-  .kx-headline { font-size: calc(36 * var(--u)); line-height: 1.06; white-space: normal; margin-top: calc(8 * var(--u)); }
-  .kx-lead { white-space: normal; font-size: calc(14 * var(--u)); line-height: calc(18 * var(--u)); margin-top: calc(8 * var(--u)); }
-  .kx-tagline { font-size: calc(12.5 * var(--u)); }
-  /* Three across, not two: two columns fit the width but ran the eight modules
-     four rows deep, past the foot of a 620px-tall laptop screen and into the
-     footer strip. Three keeps them on three shorter rows and still clears the
-     card. */
-  .kx-modules {
-    grid-template-columns: repeat(3, calc(157 * var(--u)));
-    /* Rows take their content's height with a gap between, rather than a fixed
-       one: "P2P (Procurement)" and "Trade Finance (E Docs)" wrap to two lines
-       and a fixed row let the next row's icons sit on top of them. */
-    grid-auto-rows: auto;
-    row-gap: calc(16 * var(--u));
-    margin-top: calc(12 * var(--u));
-  }
-  /* The nudge that lines the second row up under the first belongs to the
-     four-across grid; with three across it just pushes them off true. */
-  .kx-mod:nth-child(n + 5) { transform: none; }
-  /* The grid reaches where this strip sits, and it is the one thing on the
-     panel that repeats the four words already in the headline. */
-  .kx-footer { display: none; }
-  /* The card gives back the width the panel needs, and keeps its right inset. */
-  .kx-card { width: calc(470 * var(--u)); padding-left: calc(40 * var(--u)); padding-right: calc(40 * var(--u)); }
-  .kx-right { right: calc(34 * var(--u)); }
-}
-
 /* ── Phones and tablets: the card alone, centred, over the photo ─────────── */
 @media (max-width: 1023.98px) {
   /* Fluid card scale: grows on tablets, shrinks on phones, never past the
      card's desktop size. Scrolls if the card is taller than the screen
      (landscape phones). */
-    /* A phone gets its own fixed scale, not the desktop one. Every box here is a
-     multiple of --u, and at the desktop value the card comes to 839px — the
-     whole of a phone screen before the browser's own bars — so it could only
-     ever overflow. 0.78 brings the boxes down to phone proportions while the
-     readable minimums on the type (13px input, 11px label, 20px title) hold
-     the text where it is, which is what a phone layout does: tighter spacing,
-     same legibility. Still fixed, so nothing moves as the window changes. */
-  .kx-shell { --u: 0.78px; padding: 16px 14px; overflow-x: hidden; overflow-y: auto; }
+    .kx-shell { --u: clamp(0.66px, min(calc(100vw / 640), calc(100vh / 900)), 1.15px); padding: 24px 16px; overflow-x: hidden; overflow-y: auto; }
   .kx-shell::after { display: none; }
   .kx-bg { filter: blur(10px) brightness(.6); }
   .kx-stage { width: 100%; max-width: calc(573 * var(--u)); height: auto; }
@@ -583,7 +532,7 @@
      along with the artwork: at 900x600 the field was 44px tall holding 9.3px
      text, and the label under it 8.5px. The photo may scale; what the user has
      to read and type may not. */
-  height: max(calc(66 * var(--u)), 46px);
+  height: calc(66 * var(--u));
   padding: 0 calc(20 * var(--u)) 0 calc(22 * var(--u));
   border-radius: calc(10 * var(--u));
   /* Solid navy, the render's field (#132437) — not a white wash, which turned
@@ -600,9 +549,9 @@
   box-shadow: 0 0 0 3px rgba(59, 130, 246, .18);
 }
 .kx-field-ico { flex-shrink: 0; width: calc(26 * var(--u)); height: calc(26 * var(--u)); color: #e6e9f2; }
-.kx-field-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: max(calc(5 * var(--u)), 3px); }
+.kx-field-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: calc(5 * var(--u)); }
 .kx-field-label {
-  font-size: max(calc(12.8 * var(--u)), 11px);
+  font-size: calc(12.8 * var(--u));
   font-weight: 400;
   line-height: 1;
   letter-spacing: .01em;
@@ -611,13 +560,13 @@
 .kx-input {
   width: 100%;
   /* 18, not 14: a 14px box clipped the descenders of "you@company.com". */
-  height: max(calc(18 * var(--u)), 17px);
+  height: calc(18 * var(--u));
   padding: 0;
   border: 0;
   outline: 0;
   background: transparent;
   font-family: inherit;
-  font-size: max(calc(14 * var(--u)), 13px);
+  font-size: calc(14 * var(--u));
   font-weight: 400;
   line-height: 1;
   letter-spacing: -.03em;
@@ -683,7 +632,7 @@
   gap: calc(13 * var(--u));
   cursor: pointer;
   user-select: none;
-  font-size: max(calc(15.8 * var(--u)), 12px);
+  font-size: calc(15.8 * var(--u));
   font-weight: 400;
   line-height: 1;
   word-spacing: .12em;
@@ -715,7 +664,7 @@
   border: 0;
   background: transparent;
   font-family: inherit;
-  font-size: max(calc(15.7 * var(--u)), 12px);
+  font-size: calc(15.7 * var(--u));
   font-weight: 400;
   line-height: 1;
   word-spacing: .08em;
@@ -733,7 +682,7 @@
   justify-content: center;
   gap: calc(12 * var(--u));
   width: 100%;
-  height: max(calc(60 * var(--u)), 44px);
+  height: calc(60 * var(--u));
   margin-top: calc(19.7 * var(--u));
   border: 0;
   border-radius: 999px;
@@ -742,7 +691,7 @@
     0 calc(10 * var(--u)) calc(28 * var(--u)) rgba(70, 80, 255, .40),
     inset 0 1px 0 rgba(255, 255, 255, .22);
   font-family: inherit;
-  font-size: max(calc(20.9 * var(--u)), 14px);
+  font-size: calc(20.9 * var(--u));
   font-weight: 500;
   line-height: 1;
   letter-spacing: .005em;
@@ -800,7 +749,7 @@
   align-items: center;
   gap: calc(14 * var(--u));
   margin-top: calc(28 * var(--u));
-  font-size: max(calc(12.8 * var(--u)), 10px);
+  font-size: calc(12.8 * var(--u));
   font-weight: 500;
   line-height: 1;
   letter-spacing: .06em;
@@ -819,7 +768,7 @@
      into each other. auto-fit drops them onto one column at the point they
      stop fitting, which the 480px-wide media query below cannot do — that is
      a viewport width, and this card goes narrow on a viewport that is short. */
-  grid-template-columns: repeat(auto-fit, minmax(max(150px, calc(170 * var(--u))), 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: calc(13 * var(--u));
   margin-top: calc(20 * var(--u));
 }
@@ -829,13 +778,13 @@
   justify-content: center;
   gap: calc(14 * var(--u));
   width: 100%;
-  height: max(calc(46 * var(--u)), 40px);
+  height: calc(46 * var(--u));
   padding: 0 calc(12 * var(--u));
   border: 0;
   border-radius: 999px;
   background: #fff;
   font-family: inherit;
-  font-size: max(calc(14.5 * var(--u)), 14px);
+  font-size: calc(14.5 * var(--u));
   font-weight: 600;
   line-height: 1;
   color: #1e2a78;
@@ -849,7 +798,7 @@
 .kx-social-btn svg { width: calc(22 * var(--u)); height: calc(22 * var(--u)); flex-shrink: 0; }
 /* the render's bigger, bright-blue face mark and bolder label */
 .kx-social-btn svg.kx-face-ico { width: calc(27 * var(--u)); height: calc(27 * var(--u)); color: #2563ff; }
-.kx-social-btn:has(.kx-face-ico) { font-size: max(calc(15.5 * var(--u)), 14px); font-weight: 700; color: #16245e; }
+.kx-social-btn:has(.kx-face-ico) { font-size: calc(15.5 * var(--u)); font-weight: 700; color: #16245e; }
 /* Google sign-in: our pill (.kx-social-btn) is what shows; Google's own
    button, a cross-origin iframe, sits over it invisibly and takes the click.
    Google draws it 200-400 x 40, so Login.tsx sets --kx-gsx / --kx-gsy to
