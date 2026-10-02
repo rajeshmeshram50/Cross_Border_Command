@@ -7786,11 +7786,59 @@
   }
   .ev-head, .ev-kpis, .ev-tabs { flex-shrink: 0; }
   .ev-body { flex: 1; min-height: 0; max-height: none; }
-  .ev-kpis { grid-template-columns: repeat(2, 1fr); }
+  /* The header is three columns side by side. At 393px that left the text
+     column 71px wide — the title broke over two lines and the description ran
+     129px down a 71px channel — while the whole header took 307px, more than a
+     third of the screen, before a single document was visible. The text takes
+     the rest of its row beside the icon, and the status block drops to a row of
+     its own. */
+  .ev-head-text { flex: 1 1 calc(100% - 56px); min-width: 0; }
+  .ev-head-status {
+    flex: 1 1 100%;
+    order: 3;
+    /* The dial goes to the far edge rather than trailing the label: left
+       aligned, the pair sat in the first half of a full-width row and left a
+       blank purple field beside it, which read as something missing. */
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 0;
+    padding-top: 2px;
+    border-top: 1px solid rgba(255, 255, 255, 0.16);
+  }
+  /* The close button is an ordinary item in the header row, so once the status
+     block took a row of its own the X was pushed onto a line by itself with a
+     band of empty purple around it. Pinned to the corner it belongs in; the
+     text column keeps clear of it. */
+  .ev-head { position: relative; }
+  .ev-close { position: absolute; top: 12px; right: 12px; }
+  .ev-head-text { padding-right: 40px; }
+
+  /* Three tiles in two columns left a hole where the fourth would be. At three
+     across, a tile is ~116px, and the desktop padding plus a 38px icon left
+     38px for the label — enough to clip "PENDING". */
+  .ev-kpis { grid-template-columns: repeat(3, 1fr); }
+  .ev-kpis .rec-kpi-card { padding: 9px 10px; gap: 6px; min-height: 72px; }
+  .ev-kpis .rec-kpi-icon { width: 28px; height: 28px; border-radius: 8px; }
+  .ev-kpis .rec-kpi-icon i { font-size: 14px; }
+  .ev-kpis .rec-kpi-label { font-size: 9.5px; letter-spacing: 0.03em; }
+
+  /* The dial is drawn at 58px for a desktop header band; on a phone it is the
+     tallest thing in a row that only reports one number. */
+  .ev-head { padding: 10px 12px; gap: 10px; }
+  .ev-head-status .ep-dial svg { width: 46px; height: 46px; }
+  .ev-head-status .ep-dial-num { font-size: 13px; }
   .ev-tabs { padding: 0 12px; overflow-x: auto; flex-wrap: nowrap; white-space: nowrap; }
   .ev-tab { flex-shrink: 0; padding: 10px 12px; font-size: 11.5px; }
-  .ev-doc { flex-wrap: wrap; }
-  .ev-doc-info { flex: 1 1 100%; }
+  .ev-doc { flex-wrap: wrap; align-items: flex-start; row-gap: 8px; }
+  /* Beside the icon, not under it. `1 1 100%` claimed the whole row, so the
+     icon sat alone on one line with the document's name on the next — two
+     lines to say what fits on one, repeated down the list. `auto` lets the
+     name shrink into the space the icon leaves instead, and only the status
+     and the buttons wrap to a second row. */
+  .ev-doc-info { flex: 1 1 auto; min-width: 0; }
+  /* ...and that second row lines up under the name rather than the icon. */
+  .ev-doc-status { margin-left: 46px; }
+  .ev-doc-status ~ * { margin-left: 0; }
   .ev-doc-cat, .ev-doc-status { font-size: 9.5px; }
 }
 
@@ -13867,8 +13915,27 @@
   .rec-page .dt-tabrail::-webkit-scrollbar, .pay-page .dt-tabrail::-webkit-scrollbar,
   .cf-page .dt-tabrail::-webkit-scrollbar, .hr-employees-surface .dt-tabrail::-webkit-scrollbar,
   .hrexp-surface .dt-tabrail::-webkit-scrollbar { display: none; }
+  /* The scroll has to sit on .dt-tabs as well, not only on the rail around it:
+     .dt-tabrail is hand-rolled markup that only the Expense tabs use, while the
+     shared DataTable renders the tab strip straight into the toolbar. On those
+     pages nowrap left the tabs with nowhere to go — on Employees at 393px the
+     two tabs need 363px in a 347px strip, so they spilled past the card and
+     were clipped by its edges. Where a rail does exist the tabs are given its
+     full width and never overflow, so this is inert there. */
   .rec-page .dt-tabs, .pay-page .dt-tabs, .cf-page .dt-tabs,
-  .hr-employees-surface .dt-tabs, .hrexp-surface .dt-tabs { flex-wrap: nowrap; }
+  .hr-employees-surface .dt-tabs, .hrexp-surface .dt-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    max-width: 100%;
+  }
+  .rec-page .dt-tabs::-webkit-scrollbar, .pay-page .dt-tabs::-webkit-scrollbar,
+  .cf-page .dt-tabs::-webkit-scrollbar, .hr-employees-surface .dt-tabs::-webkit-scrollbar,
+  .hrexp-surface .dt-tabs::-webkit-scrollbar { display: none; }
+  /* A tab must keep its own width inside a scrolling strip, or the two of them
+     squeeze to fit and clip their labels instead of scrolling. */
+  .rec-page .dt-tab, .pay-page .dt-tab, .cf-page .dt-tab,
+  .hr-employees-surface .dt-tab, .hrexp-surface .dt-tab { flex: 0 0 auto; }
 }
 
 /* ── Table body on phones ──────────────────────────────────────────────── */
@@ -13899,10 +13966,13 @@
   .hr-employees-surface .dt-table tbody td, .hrexp-surface .dt-table tbody td {
     padding: 6px 8px; font-size: 11px;
   }
-  /* Pager stacks instead of squeezing "Showing x-y of z" against the controls. */
+  /* Pager stacks instead of squeezing "Showing x-y of z" against the controls.
+     Centred, not stretched: stretch blew the count pill out to the full width
+     of the card — a 357px bar around a line of text that needs none of it —
+     and made the footer look twice as heavy as it is. */
   .rec-page .tc-wl-pag, .pay-page .tc-wl-pag, .cf-page .tc-wl-pag,
   .hr-employees-surface .tc-wl-pag, .hrexp-surface .tc-wl-pag {
-    flex-direction: column; gap: 8px; align-items: stretch; text-align: center;
+    flex-direction: column; gap: 8px; align-items: center; text-align: center;
   }
 }
 

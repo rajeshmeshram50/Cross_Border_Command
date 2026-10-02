@@ -1948,6 +1948,10 @@
      that overflows on a phone — stack it into one column. The Basic-Details
      form fields already use responsive reactstrap Cols, so they reflow. */
   .onb-init-breakup-grid { grid-template-columns: 1fr; }
+  /* The salary-breakup rows keep a desktop row height — 30px, the only fields
+     in the wizard under a comfortable tap size on a phone, and the ones most
+     likely to be retyped. */
+  .onb-init-input { min-height: 34px; }
 }
 /* Annual CTC breakup check (Employee form + Onboarding setup), light and dark. */
 .ctc-verdict { border: 1px solid; border-radius: 10px; font-size: 12px; font-weight: 600; }

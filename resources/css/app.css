@@ -1346,14 +1346,17 @@ tbody tr:nth-child(10) {
 }
 .tc-wl-rows-btn i { font-size: 13px; line-height: 1; }
 .tc-wl-rows-menu {
-  position: absolute; bottom: calc(100% + 8px); left: -10px; z-index: 20;
-  display: flex; flex-direction: column; min-width: 64px; padding: 4px;
+  /* Centred over the trigger and only as wide as the numbers need. It used to
+     hang from left: -10px at a 64px minimum with 12px of padding either side
+     of a two-digit number, which read as a panel rather than a short list. */
+  position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); z-index: 20;
+  display: flex; flex-direction: column; min-width: 52px; padding: 4px;
   background: #fff; border: 1.5px solid var(--tcwl-border, #ddd6fe); border-radius: 10px;
   box-shadow: 0 10px 26px rgba(17, 12, 46, .16), 0 2px 6px rgba(17, 12, 46, .08);
 }
 .tc-wl-rows-menu button {
   border: none; background: transparent; border-radius: 7px;
-  padding: 5px 12px; text-align: left;
+  padding: 5px 10px; text-align: center;
   font-family: inherit; font-size: 11.5px; font-weight: 700;
   color: var(--tcwl-text, #6d28d9); cursor: pointer;
 }
@@ -1392,6 +1395,25 @@ tbody tr:nth-child(10) {
 @media (max-width: 640px) {
   .tc-wl-pag { flex-direction: column; align-items: center; gap: 9px; }
   .tc-wl-right { width: 100%; justify-content: center; flex-wrap: wrap; }
+  /* Sized for a fingertip. These controls carry desktop proportions down to
+     the phone: the rows-per-page trigger was a 28x18px hit area and the two
+     arrows 32x32, well under the ~40px a thumb needs, on the one row of the
+     page that exists to be tapped. The text goes up a step with them — 11.5px
+     is small for a number you are checking against the table above. */
+  .tc-wl-pag { gap: 7px; padding: 8px; }
+  .tc-wl-info { font-size: 11.5px; padding: 4px 11px; }
+  .tc-wl-rows { font-size: 11.5px; padding-top: 2px; padding-bottom: 2px; }
+  .tc-wl-rows-btn {
+    font-size: 11.5px;
+    min-height: 30px;
+    padding: 0 5px 0 6px;
+  }
+  .tc-wl-rows-btn i { font-size: 13px; }
+  .tc-wl-btn { width: 34px; height: 34px; }
+  .tc-wl-btn i { font-size: 15px; }
+  .tc-wl-nav { gap: 6px; }
+  /* The menu this opens is tapped too, not just read. */
+  .tc-wl-rows-menu button { min-height: 32px; font-size: 11.5px; }
 }
 [data-bs-theme="dark"] .tc-wl-rows select { color: #ddd6fe; }
 [data-bs-theme="dark"] .tc-wl-rows select option {

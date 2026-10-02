@@ -3346,6 +3346,37 @@ const scrollToFirstError = (errors: Record<string, string>) => {
   if (first) scrollToField(first);
 };
 
+/** The same jump, for the errors the SERVER sends back on a 422.
+ *
+ * Client-side validation already walks the user to the field it rejected;
+ * a rejection from the API only raised a toast, so "the selected reporting
+ * manager is not eligible" appeared at the top of the screen while the field
+ * it was about sat somewhere else in a six-stage form, with nothing marking
+ * it. The toast is the message; this is the address.
+ *
+ * Laravel names the column (reporting_manager_id, department_id) where the
+ * form anchors the control by its own name (reporting_manager, department_id),
+ * so the key is tried as sent, then without the _id suffix, then without any
+ * array index — "salary_breakup.2.amount" lands on salary_breakup. */
+const serverErrorAnchor = (key: string): string | null => {
+  if (!key) return null;
+  const base = key.split('.')[0];
+  for (const candidate of [key, base, base.replace(/_id$/, '')]) {
+    if (candidate && document.querySelector(`[data-field="${candidate}"]`)) return candidate;
+  }
+  return null;
+};
+
+/** Returns the anchor it jumped to, so the caller can mark that field too. */
+const scrollToServerError = (errors: unknown): string | null => {
+  if (!errors || typeof errors !== 'object') return null;
+  for (const key of Object.keys(errors as Record<string, unknown>)) {
+    const anchor = serverErrorAnchor(key);
+    if (anchor) { scrollToField(anchor); return anchor; }
+  }
+  return null;
+};
+
 /* ── Bank name ──────────────────────────────────────────────────────────────
  * Real bank names are words, optionally with punctuation: "HDFC Bank",
  * "Bank of Baroda", "HDFC Bank Ltd.", "Kotak & Co.", "St. George's".
@@ -3716,6 +3747,12 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         || err?.message
         || 'Could not save changes — please try again.';
       toast.error('Save failed', String(msg));
+      // Walk the user to the field the server named, and mark it, so the
+      // message has somewhere to point.
+      const hit = scrollToServerError(errors);
+      if (hit) {
+        setS1Errors(prev => ({ ...prev, [hit]: String(firstFieldMsg || msg) }));
+      }
       console.error('saveStage1 failed', err?.response?.data || err);
       return false;
     } finally {
@@ -4007,6 +4044,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         || err?.message
         || 'Could not save changes — please try again.';
       toast.error('Save failed', String(msg));
+      const hit = scrollToServerError(errors);
+      if (hit) setS4ShowErrors(true);
       console.error('saveStage4 failed', err?.response?.data || err);
       return false;
     } finally {

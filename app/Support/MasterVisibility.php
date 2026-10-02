@@ -242,7 +242,15 @@ class MasterVisibility
         // are off-limits. This short-circuits before the tier ladder so
         // an employee in the same branch as the row's creator still
         // gets denied.
-        if (($user->user_type ?? null) === 'employee') {
+        //
+        // EXCEPT Expense Categories: they are branch-shared lookups (every
+        // employee in the branch reads the same list), so the master.
+        // expense_category permission is the gate, not authorship. Such an
+        // employee falls through to the tier ladder below — they may manage
+        // any row of their own branch, but never a client-level or global
+        // row. An in-use category is still blocked by destroy()'s 409 guard.
+        if (($user->user_type ?? null) === 'employee'
+            && !($row instanceof \App\Models\Masters\ExpenseCategories)) {
             $verb = $action === 'delete' ? 'delete' : 'edit';
             return "You cannot {$verb} this record — employees can only manage rows they created themselves.";
         }

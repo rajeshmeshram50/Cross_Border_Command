@@ -82,14 +82,22 @@ export default function Inbox() {
   // PO senior-approval counts, reported by their section (it pages on the server).
   const [poNewCount, setPoNewCount] = useState(0);
   const [poHistCount, setPoHistCount] = useState(0);
+  // PO approvals belong to the Purchase Order module, so the section (and its
+  // counts) only appear for users who can view it — 'p2p.order' (the Order
+  // module the approval flow lives in) or the legacy 'p2p.po' leaf. An
+  // HRMS-only user no longer sees an empty PO table in their Inbox (QA #11).
+  const canSeePo = user?.user_type === 'super_admin'
+    || !!user?.permissions?.['p2p.order']?.can_view
+    || !!user?.permissions?.['p2p.po']?.can_view;
   // The history section mounts only on its tab; its count is needed for the tab badge now.
   // One row is enough — meta.total is the count. A failure just leaves the badge at 0;
   // the section itself shows the error when opened.
   useEffect(() => {
+    if (!canSeePo) return;
     poApprovalApi.inbox({ history: true, per_page: 1 })
       .then((res) => setPoHistCount(res.meta?.total ?? res.rows.length))
       .catch(() => {});
-  }, []);
+  }, [canSeePo]);
   const [leaveRows, setLeaveRows] = useState<ApiLeaveRequest[]>([]);
   const [leaveLoading, setLeaveLoading] = useState(true);
   const [leaveActing, setLeaveActing] = useState<{ id: number; verdict: 'approve' | 'reject' } | null>(null);
@@ -597,11 +605,11 @@ export default function Inbox() {
                             <Shimmer width={60} height={18} radius={6} />
                             <Shimmer width={180} height={11} />
                           </div>
-                          <Shimmer height={32} radius={6} />
-                        </div>
-                        <div className="d-flex flex-column gap-2 ib-actions-col">
-                          <Shimmer height={32} radius={8} />
-                          <Shimmer height={32} radius={8} />
+                          <div className="ib-decision-row">
+                            <div style={{ flex: '1 1 240px' }}><Shimmer height={36} radius={6} /></div>
+                            <Shimmer width={110} height={36} radius={8} />
+                            <Shimmer width={110} height={36} radius={8} />
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -653,17 +661,17 @@ export default function Inbox() {
                                 <i className="ri-double-quotes-l me-1" />{r.reason}
                               </div>
                             )}
-                            {/* Comment input — required when rejecting, optional when approving */}
+                            {/* Remark + decision share one row at one height, so the
+                                buttons line up with the input they act on (QA #9).
+                                Remark is required when rejecting, optional when approving. */}
+                            <div className="ib-decision-row mt-2">
                             <input
                               type="text"
-                              className="form-control mt-2 ib-remark-input"
+                              className="form-control ib-remark-input"
                               placeholder="Add a remark (required for reject, optional for approve)"
                               value={leaveComment[r.id] || ''}
                               onChange={e => setLeaveComment(prev => ({ ...prev, [r.id]: e.target.value }))}
                             />
-                          </div>
-                          {/* Actions */}
-                          <div className="d-flex flex-column gap-2 ib-actions-col">
                             <button
                               type="button"
                               onClick={() => actOnLeave(r.id, 'approve')}
@@ -680,6 +688,7 @@ export default function Inbox() {
                             >
                               {isRejecting ? <><i className="ri-loader-4-line ri-spin me-1" />Rejecting…</> : <><i className="ri-close-line me-1" />Reject</>}
                             </button>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -832,8 +841,8 @@ export default function Inbox() {
           )}
 
           {/* PO senior approvals — overdue supplier GST; the review opens as a full page. */}
-          {tab === 'new' && <PoApprovalInboxSection onCount={setPoNewCount} />}
-          {tab === 'updated' && <PoApprovalInboxSection history onCount={setPoHistCount} />}
+          {canSeePo && tab === 'new' && <PoApprovalInboxSection onCount={setPoNewCount} />}
+          {canSeePo && tab === 'updated' && <PoApprovalInboxSection history onCount={setPoHistCount} />}
 
           {/* ── Updated (History) tab: the same Leave / Expense / Document
                  containers, listing items you've already acted on. ── */}

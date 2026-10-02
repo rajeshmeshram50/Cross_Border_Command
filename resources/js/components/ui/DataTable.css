@@ -886,7 +886,17 @@
 }
 @media (max-width: 760px) {
   .dt-toolbar { gap: 10px; }
-  .dt-tabs, .dt-filter-btn { width: 100%; justify-content: center; }
+  .dt-filter-btn { width: 100%; justify-content: center; }
+  /* `safe center`, not `center`: centred content that is WIDER than its box
+     overflows equally on both sides, and the half that hangs off the start
+     edge cannot be scrolled to — on Employees at 393px the two tabs need
+     381px in a 337px strip, so the first tab began 22px outside the strip
+     with its icon cut off and no way to bring it back. `safe` centres while
+     the tabs fit and falls back to the start edge the moment they do not, so
+     the strip simply scrolls instead. A browser that does not know the
+     keyword drops the declaration and starts from the left, which is the same
+     outcome. */
+  .dt-tabs { width: 100%; justify-content: safe center; }
   .dt-search { flex: 1 1 100%; min-width: 0; }
   /* Stop pinning right — a lone right-aligned button under a full-width search
      looks detached; centre the group instead. */

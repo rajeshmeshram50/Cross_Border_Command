@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Card, CardBody, CardHeader, Row, Col,
@@ -98,6 +98,9 @@ function MasterPageInner({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [viewOnly, setViewOnly] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Synchronous in-flight flag. `saving` only disables the button after the
+  // next render, so a fast double-click / Enter could submit twice before it.
+  const savingRef = useRef(false);
   // Server-derived auto-generated values (e.g. next DEPT-### code) keyed by
   // field name. Populated when openAdd() fires for any field with
   // `autogenApi: true`. Cleared on master switch / modal close so a stale
@@ -941,6 +944,7 @@ function MasterPageInner({
 
   const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (savingRef.current) return;
     const fd = new FormData(e.currentTarget);
 
     const errs = validateForm(fd);
@@ -1035,6 +1039,7 @@ function MasterPageInner({
       }
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       const base = masterEndpoint(cfg);
@@ -1116,6 +1121,7 @@ function MasterPageInner({
         toast.error('Error', msg);
       }
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -2358,6 +2364,9 @@ function MasterPageInner({
         </div>
         <Form onSubmit={handleSave} noValidate>
           <ModalBody className="px-4 py-3">
+            {/* Lock every field while the request is in flight. `disabled` covers
+                native inputs; pointer-events covers custom pickers. */}
+            <fieldset disabled={saving} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, pointerEvents: saving ? 'none' : undefined }}>
             {sectionedFields.map((group, gIdx) => {
               const p = SECTION_PALETTES[gIdx % SECTION_PALETTES.length];
               return (
@@ -2406,12 +2415,13 @@ function MasterPageInner({
                 </div>
               );
             })}
+            </fieldset>
           </ModalBody>
           <ModalFooter className="px-4 py-3 d-flex align-items-center justify-content-between flex-wrap gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
             <span />
             {/* Action buttons on the right */}
             <div className="d-flex align-items-center gap-2">
-              <button type="button" className="master-modal-cancel" onClick={() => setModalOpen(false)}>
+              <button type="button" className="master-modal-cancel" disabled={saving} onClick={() => setModalOpen(false)}>
                 <i className="ri-close-line align-middle me-1"></i>
                 {viewOnly ? 'Close' : 'Cancel'}
               </button>

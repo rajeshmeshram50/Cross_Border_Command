@@ -23,7 +23,20 @@
      to the left edge and the card to the right edge, and the city view between
      them gives up width first, so a squarer window keeps readable text instead
      of shrinking the whole composition. */
-  --u: clamp(0.5px, min(calc(100vw / 1420), calc(100vh / 941)), 12px);
+  /* One unit, derived from the window, that every size on this page is a
+     multiple of — so the whole composition is laid out at the size the window
+     can actually hold and arrives in one piece, which is the point of this
+     design. Text included: at 1920x940 the input is 14px, at 1536x760 it is
+     11px. Nothing is floored, because a floor binds only on the smallest
+     windows and then the text stops matching the card it sits in. */
+  /* Scales to fit the window, but stops before the type stops being readable.
+     Pure fit-to-window put the composition on screen whole at any size, at the
+     cost of 9px text on a short laptop; a fixed unit kept the text steady but
+     could no longer fit the design. The floor is the middle: the page scales
+     down with the window as far as 0.85, where the input is ~12px, and does
+     not go further. Below that the window is simply smaller than the design
+     and the page scrolls the remainder. */
+  --u: clamp(0.85px, min(calc(100vw / 1420), calc(100vh / 941)), 12px);
   /* The clean room photo — no text and no card painted into it, so nothing
      shows under the live copy or behind the glass card. */
   /* Renamed whenever the photo changes: browsers cache it by URL and kept
@@ -69,9 +82,17 @@
   position: relative;
   z-index: 1;
   flex: none;
-  /* Full width; the render's 941-tall band, centred vertically. */
+  /* Full width; the render's 941-tall band, but never taller than the window.
+     At a fixed scale that band is 941px, and a 1920x1080 screen leaves about
+     940px of viewport once the browser's own chrome is taken off — so the band
+     alone put the page into a scrollbar on the commonest desktop there is,
+     with nothing below the fold worth scrolling to. Capped at the viewport, it
+     simply uses the height it is given. */
   width: 100vw;
-  height: calc(941 * var(--u));
+  /* Never taller than the window: the band is scenery, and a band that
+     overflows puts the page into a scrollbar on its own — which is what made
+     the photo scroll on Reset Password while the card itself fitted. */
+  height: min(calc(941 * var(--u)), 100vh);
 }
 /* The photo at exactly the render's framing. Its left and right edges fade
    into the blurred fill above, so the seam never shows. */
@@ -120,7 +141,7 @@
 .kx-tagline {
   margin-top: calc(13.3 * var(--u));
   font-family: 'Montserrat', sans-serif;
-  font-size: max(calc(16.9 * var(--u)), 10px);
+  font-size: calc(16.9 * var(--u));
   font-weight: 400;
   line-height: 1;
   letter-spacing: .175em;
@@ -143,7 +164,7 @@
      closest face for the headline (Plus Jakarta Sans runs 7% narrow, DM Sans
      8%). Explicit because the admin theme otherwise decides the h1 family. */
   font-family: 'Montserrat', 'Plus Jakarta Sans', system-ui, sans-serif;
-  font-size: max(calc(57.3 * var(--u)), 26px);
+  font-size: calc(57.3 * var(--u));
   /* 800 with tighter tracking: the render's strokes are heavier than Bold
      at the same overall width. */
   font-weight: 760;
@@ -173,7 +194,7 @@
 .kx-lead {
   margin: calc(12.5 * var(--u)) 0 0;
   letter-spacing: .004em;
-  font-size: max(calc(18.4 * var(--u)), 12px);
+  font-size: calc(18.4 * var(--u));
   font-weight: 400;
   line-height: calc(22 * var(--u));
   word-spacing: .06em;
@@ -196,7 +217,7 @@
 .kx-mod-icowrap img { display: block; user-select: none; }
 .kx-mod-title {
   margin-top: calc(6.1 * var(--u));
-  font-size: max(calc(14.6 * var(--u)), 11px);
+  font-size: calc(14.6 * var(--u));
   font-weight: 700;
   line-height: calc(18 * var(--u));
   letter-spacing: 0;
@@ -212,7 +233,7 @@
 .kx-mod:nth-child(n + 5) .kx-mod-sub { margin-top: calc(0.5 * var(--u)); }
 .kx-mod-sub {
   margin-top: calc(6.5 * var(--u));
-  font-size: max(calc(15 * var(--u)), 10px);
+  font-size: calc(15 * var(--u));
   font-weight: 400;
   line-height: calc(19 * var(--u));
   color: #a3a8ba;
@@ -230,10 +251,15 @@
 .kx-footer {
   position: absolute;
   left: calc(68 * var(--u));
-  /* Caps at y 888, INTELLIGENCE 125 wide (x 68-193), as measured off the render. */
-  top: calc(885.8 * var(--u));
+  /* Caps at y 888, INTELLIGENCE 125 wide (x 68-193), as measured off the render.
+     Measured from the BOTTOM of the band rather than its top, so that when the
+     band is shorter than the render — a 900px-tall window, say — the strip
+     stays inside it. Pinned from the top it hung 1.8px below the fold, which
+     was enough for a scrollbar on a page with nothing to scroll to.
+     941 - 885.8 - 18 (its own line) = 37.2 from the foot. */
+  bottom: calc(37.2 * var(--u));
   font-family: 'Montserrat', sans-serif;
-  font-size: max(calc(14 * var(--u)), 10px);
+  font-size: calc(14 * var(--u));
   font-weight: 400;
   line-height: 1;
   letter-spacing: .165em;
@@ -251,10 +277,19 @@
   position: absolute;
   /* pinned to the right edge, 52 off it as in the render */
   right: calc(52 * var(--u));
-  top: calc(80 * var(--u));
-  height: calc(790 * var(--u));
+  /* Centred in whatever band the stage has, rather than 80 from its top with a
+     fixed 790 height: at the render's size those two are the same placement
+     (80 above, 71 below), and this one keeps the card centred when the window
+     is shorter than the band instead of pushing it off the bottom. */
+  top: 0;
+  bottom: 0;
   display: flex;
-  align-items: center;
+  /* `safe`, because a card taller than the band would otherwise be centred
+     out of reach: centring overflows equally top and bottom, and the part
+     above the start edge cannot be scrolled back to. With safe it falls back
+     to the top edge the moment it stops fitting, and the page scrolls down to
+     the rest. */
+  align-items: safe center;
 }
 .kx-card {
   position: relative;
@@ -264,7 +299,9 @@
   /* Always the render's full 790 band: the card painted into the background
      photo sits exactly here, and a shorter card let its edges show above and
      below. Shorter steps (Forgot, OTP) keep the foot at the bottom. */
-  min-height: calc(790 * var(--u));
+  /* The render's band for Login, but a shorter form (Forgot, OTP, Reset) only
+     needs its own height, and no card needs to be taller than the window. */
+  min-height: min(calc(790 * var(--u)), calc(100vh - 32px));
   display: flex;
   flex-direction: column;
   padding: calc(59.6 * var(--u)) calc(52.5 * var(--u)) calc(60 * var(--u));
@@ -357,7 +394,7 @@
   justify-content: center;
   gap: calc(10 * var(--u));
   font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
-  font-size: max(calc(32.2 * var(--u)), 20px);
+  font-size: calc(32.2 * var(--u));
   font-weight: 700;
   line-height: 1;
   letter-spacing: -.03em;
@@ -365,7 +402,7 @@
 }
 .kx-sub {
   margin: calc(9.7 * var(--u)) 0 0;
-  font-size: max(calc(17.7 * var(--u)), 12px);
+  font-size: calc(17.7 * var(--u));
   font-weight: 400;
   line-height: 1;
   word-spacing: .1em;
@@ -395,7 +432,7 @@
   margin-top: calc(24 * var(--u));
   text-align: center;
   font-family: 'Inter', sans-serif;
-  font-size: max(calc(15.6 * var(--u)), 11px);
+  font-size: calc(15.6 * var(--u));
   font-weight: 400;
   line-height: 1;
   color: #eceff5;
@@ -440,7 +477,7 @@
   /* Fluid card scale: grows on tablets, shrinks on phones, never past the
      card's desktop size. Scrolls if the card is taller than the screen
      (landscape phones). */
-  .kx-shell { --u: clamp(0.66px, min(calc(100vw / 640), calc(100vh / 900)), 1.15px); padding: 24px 16px; overflow-x: hidden; overflow-y: auto; }
+    .kx-shell { --u: clamp(0.66px, min(calc(100vw / 640), calc(100vh / 900)), 1.15px); padding: 24px 16px; overflow-x: hidden; overflow-y: auto; }
   .kx-shell::after { display: none; }
   .kx-bg { filter: blur(10px) brightness(.6); }
   .kx-stage { width: 100%; max-width: calc(573 * var(--u)); height: auto; }
@@ -507,7 +544,7 @@
      along with the artwork: at 900x600 the field was 44px tall holding 9.3px
      text, and the label under it 8.5px. The photo may scale; what the user has
      to read and type may not. */
-  height: max(calc(66 * var(--u)), 46px);
+  height: calc(66 * var(--u));
   padding: 0 calc(20 * var(--u)) 0 calc(22 * var(--u));
   border-radius: calc(10 * var(--u));
   /* Solid navy, the render's field (#132437) — not a white wash, which turned
@@ -524,9 +561,9 @@
   box-shadow: 0 0 0 3px rgba(59, 130, 246, .18);
 }
 .kx-field-ico { flex-shrink: 0; width: calc(26 * var(--u)); height: calc(26 * var(--u)); color: #e6e9f2; }
-.kx-field-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: max(calc(5 * var(--u)), 3px); }
+.kx-field-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: calc(5 * var(--u)); }
 .kx-field-label {
-  font-size: max(calc(12.8 * var(--u)), 11px);
+  font-size: calc(12.8 * var(--u));
   font-weight: 400;
   line-height: 1;
   letter-spacing: .01em;
@@ -535,13 +572,13 @@
 .kx-input {
   width: 100%;
   /* 18, not 14: a 14px box clipped the descenders of "you@company.com". */
-  height: max(calc(18 * var(--u)), 17px);
+  height: calc(18 * var(--u));
   padding: 0;
   border: 0;
   outline: 0;
   background: transparent;
   font-family: inherit;
-  font-size: max(calc(14 * var(--u)), 13px);
+  font-size: calc(14 * var(--u));
   font-weight: 400;
   line-height: 1;
   letter-spacing: -.03em;
@@ -563,7 +600,22 @@
   -webkit-box-shadow: 0 0 0 1000px #17263f inset;
   caret-color: #f1f5f9;
   transition: background-color 9999s ease-out 0s;
+  /* An autofilled value is drawn by the browser, not by the field: Chrome
+     brings its own font and size along with the yellow background, which is
+     why a remembered email could come out far smaller than the label above it
+     while a typed one matched. Restating the type here keeps a remembered
+     value identical to a typed one. */
+  font-family: inherit !important;
+  font-size: inherit !important;
+  font-weight: inherit !important;
+  letter-spacing: inherit !important;
+  line-height: inherit !important;
 }
+/* The same for the password field, which carries its own letter-spacing so the
+   masking dots sit apart. */
+.kx-input[type="password"]:-webkit-autofill,
+.kx-input[type="password"]:-webkit-autofill:hover,
+.kx-input[type="password"]:-webkit-autofill:focus { letter-spacing: .33em !important; }
 .kx-eye {
   flex-shrink: 0;
   display: inline-flex;
@@ -592,7 +644,7 @@
   gap: calc(13 * var(--u));
   cursor: pointer;
   user-select: none;
-  font-size: max(calc(15.8 * var(--u)), 12px);
+  font-size: calc(15.8 * var(--u));
   font-weight: 400;
   line-height: 1;
   word-spacing: .12em;
@@ -624,7 +676,7 @@
   border: 0;
   background: transparent;
   font-family: inherit;
-  font-size: max(calc(15.7 * var(--u)), 12px);
+  font-size: calc(15.7 * var(--u));
   font-weight: 400;
   line-height: 1;
   word-spacing: .08em;
@@ -642,7 +694,7 @@
   justify-content: center;
   gap: calc(12 * var(--u));
   width: 100%;
-  height: max(calc(60 * var(--u)), 44px);
+  height: calc(60 * var(--u));
   margin-top: calc(19.7 * var(--u));
   border: 0;
   border-radius: 999px;
@@ -651,7 +703,7 @@
     0 calc(10 * var(--u)) calc(28 * var(--u)) rgba(70, 80, 255, .40),
     inset 0 1px 0 rgba(255, 255, 255, .22);
   font-family: inherit;
-  font-size: max(calc(20.9 * var(--u)), 14px);
+  font-size: calc(20.9 * var(--u));
   font-weight: 500;
   line-height: 1;
   letter-spacing: .005em;
@@ -709,7 +761,7 @@
   align-items: center;
   gap: calc(14 * var(--u));
   margin-top: calc(28 * var(--u));
-  font-size: max(calc(12.8 * var(--u)), 10px);
+  font-size: calc(12.8 * var(--u));
   font-weight: 500;
   line-height: 1;
   letter-spacing: .06em;
@@ -728,7 +780,7 @@
      into each other. auto-fit drops them onto one column at the point they
      stop fitting, which the 480px-wide media query below cannot do — that is
      a viewport width, and this card goes narrow on a viewport that is short. */
-  grid-template-columns: repeat(auto-fit, minmax(max(150px, calc(170 * var(--u))), 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: calc(13 * var(--u));
   margin-top: calc(20 * var(--u));
 }
@@ -738,13 +790,13 @@
   justify-content: center;
   gap: calc(14 * var(--u));
   width: 100%;
-  height: max(calc(46 * var(--u)), 40px);
+  height: calc(46 * var(--u));
   padding: 0 calc(12 * var(--u));
   border: 0;
   border-radius: 999px;
   background: #fff;
   font-family: inherit;
-  font-size: max(calc(14.5 * var(--u)), 14px);
+  font-size: calc(14.5 * var(--u));
   font-weight: 600;
   line-height: 1;
   color: #1e2a78;
@@ -758,7 +810,7 @@
 .kx-social-btn svg { width: calc(22 * var(--u)); height: calc(22 * var(--u)); flex-shrink: 0; }
 /* the render's bigger, bright-blue face mark and bolder label */
 .kx-social-btn svg.kx-face-ico { width: calc(27 * var(--u)); height: calc(27 * var(--u)); color: #2563ff; }
-.kx-social-btn:has(.kx-face-ico) { font-size: max(calc(15.5 * var(--u)), 14px); font-weight: 700; color: #16245e; }
+.kx-social-btn:has(.kx-face-ico) { font-size: calc(15.5 * var(--u)); font-weight: 700; color: #16245e; }
 /* Google sign-in: our pill (.kx-social-btn) is what shows; Google's own
    button, a cross-origin iframe, sits over it invisibly and takes the click.
    Google draws it 200-400 x 40, so Login.tsx sets --kx-gsx / --kx-gsy to
