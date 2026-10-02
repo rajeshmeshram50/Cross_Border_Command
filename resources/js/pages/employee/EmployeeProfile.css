@@ -2781,6 +2781,35 @@
   font-size: 16px;
 }
 .pft-file-input { font-size: 11px; padding: 2px 6px; height: 26px; }
+/* The browser's own "Choose File" chip is the one control on this page drawn
+   by the OS rather than the design: grey, square-cornered, and 27px tall on a
+   phone, next to buttons that are rounded, coloured and 34px. Styling the
+   file-selector part keeps the native file picker and its keyboard behaviour
+   while making it look like the rest. */
+.pft-file-input::file-selector-button {
+  margin: -2px 8px -2px -6px;
+  padding: 0 10px;
+  height: 100%;
+  border: 0;
+  border-right: 1px solid var(--vz-border-color);
+  border-radius: 4px 0 0 4px;
+  background: var(--vz-light, #f3f4f6);
+  color: var(--vz-body-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.pft-file-input::file-selector-button:hover {
+  background: var(--vz-primary, #7c3aed);
+  color: #fff;
+}
+@media (max-width: 767.98px) {
+  /* Tall enough to tap, like every other control in these rows. */
+  .pft-file-input { height: 34px; font-size: 12px; }
+  .pft-file-input::file-selector-button { font-size: 11.5px; padding: 0 12px; }
+}
 /* Square, and exactly as tall as the file input they sit beside. btn-sm's own
    padding made them taller, so they overhung the field on both edges. */
 .pft-btn-icon-sm {
@@ -4035,6 +4064,55 @@
      (horizontal scroll). The Attendance timelog wrapper only scrolled
      vertically, so add horizontal scroll there too; keep a sensible min-width
      so its nowrap columns stay readable while scrolling. */
+  /* The whole profile scrolls as one page here, instead of a pinned hero over
+     a window of what is left.
+     The overlay is a fixed flex column: the hero takes its content height and
+     the content pane scrolls inside the remainder. On a desktop that remainder
+     is most of the screen. On a phone the hero — name, seven role pills, four
+     meta rows and the eight navigation tiles — comes to 443px of an 852px
+     screen, so every tab was reading its content through a 409px slot while
+     half the screen repeated the same header. Letting the overlay scroll means
+     the header moves out of the way once you start reading, and each tab gets
+     the full screen. */
+  .ep-fullscreen-overlay { overflow-y: auto; overflow-x: hidden; }
+  .ep-hero { flex: 0 0 auto; }
+  .ep-content-pane { flex: 0 0 auto; overflow-y: visible; }
+  /* The fill helpers stretch a tab to the pane's height; with the pane no
+     longer the thing that scrolls, there is no fixed height to stretch to. */
+  .ep-content-pane .ep-tab-fill,
+  .ep-content-pane .vt-tab-fill,
+  .ep-content-pane .att-tab-fill,
+  .ep-content-pane .ep-tab-pane { height: auto; min-height: 0; }
+  /* Tables inside the tabs reach past a phone's width; each keeps its own
+     sideways scroll rather than being cut off at the card's edge. */
+  .ep-content-pane .dt-scroll,
+  .ep-content-pane .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Sub-tab strips scroll sideways instead of pushing the page.
+     Evidence Vault's three document strips and Expense's status rail are plain
+     flex rows that neither wrap nor scroll, so the last button in each ran off
+     the screen and took the whole page sideways with it — 52px on Evidence
+     Vault. flex-start, not centre: a centred strip that overflows hides its
+     first item past the start edge, where scrolling cannot reach it. */
+  .ep-content-pane .vt-subtab-bar,
+  .ep-content-pane .dt-tabrail,
+  .ep-content-pane .dt-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    justify-content: flex-start;
+    scrollbar-width: none;
+    max-width: 100%;
+  }
+  .ep-content-pane .vt-subtab-bar::-webkit-scrollbar,
+  .ep-content-pane .dt-tabrail::-webkit-scrollbar,
+  .ep-content-pane .dt-tabs::-webkit-scrollbar { display: none; }
+  .ep-content-pane .vt-subtab-bar > .btn,
+  .ep-content-pane .dt-tab { flex: 0 0 auto; }
+
+  /* The decorative blob is drawn wider than the strip it sits in and was
+     reaching 32px past the screen. */
+  .ep-content-pane .vt-hero-strip,
+  .ep-content-pane .ext-hero { overflow: hidden; }
   .ep-att-scroll-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .ep-att-table { min-width: 620px; }
 
