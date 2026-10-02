@@ -29,7 +29,14 @@
      design. Text included: at 1920x940 the input is 14px, at 1536x760 it is
      11px. Nothing is floored, because a floor binds only on the smallest
      windows and then the text stops matching the card it sits in. */
-  --u: clamp(0.5px, min(calc(100vw / 1420), calc(100vh / 941)), 12px);
+  /* Scales to fit the window, but stops before the type stops being readable.
+     Pure fit-to-window put the composition on screen whole at any size, at the
+     cost of 9px text on a short laptop; a fixed unit kept the text steady but
+     could no longer fit the design. The floor is the middle: the page scales
+     down with the window as far as 0.85, where the input is ~12px, and does
+     not go further. Below that the window is simply smaller than the design
+     and the page scrolls the remainder. */
+  --u: clamp(0.85px, min(calc(100vw / 1420), calc(100vh / 941)), 12px);
   /* The clean room photo — no text and no card painted into it, so nothing
      shows under the live copy or behind the glass card. */
   /* Renamed whenever the photo changes: browsers cache it by URL and kept
@@ -82,7 +89,10 @@
      with nothing below the fold worth scrolling to. Capped at the viewport, it
      simply uses the height it is given. */
   width: 100vw;
-  height: calc(941 * var(--u));
+  /* Never taller than the window: the band is scenery, and a band that
+     overflows puts the page into a scrollbar on its own — which is what made
+     the photo scroll on Reset Password while the card itself fitted. */
+  height: min(calc(941 * var(--u)), 100vh);
 }
 /* The photo at exactly the render's framing. Its left and right edges fade
    into the blurred fill above, so the seam never shows. */
@@ -289,7 +299,9 @@
   /* Always the render's full 790 band: the card painted into the background
      photo sits exactly here, and a shorter card let its edges show above and
      below. Shorter steps (Forgot, OTP) keep the foot at the bottom. */
-  min-height: calc(790 * var(--u));
+  /* The render's band for Login, but a shorter form (Forgot, OTP, Reset) only
+     needs its own height, and no card needs to be taller than the window. */
+  min-height: min(calc(790 * var(--u)), calc(100vh - 32px));
   display: flex;
   flex-direction: column;
   padding: calc(59.6 * var(--u)) calc(52.5 * var(--u)) calc(60 * var(--u));
