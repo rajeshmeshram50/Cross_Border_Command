@@ -1406,6 +1406,9 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     }
   };
   const [eEnablePayroll, setEEnablePayroll] = useState(true);
+  /** This employee was saved OFF payroll before the switch was removed — the
+   *  step warns that saving will put them back in. */
+  const [eWasOffPayroll, setEWasOffPayroll] = useState(false);
   /* Exit under way ⇒ salary is frozen (QA #105). Payroll's Salary Setup already
      refuses to touch an exiting employee; this step wrote the same columns with
      nothing stopping it, so the lock belonged to one screen instead of to the
@@ -1480,7 +1483,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     setEExistingDocs({}); setEDocBusy({});
     // Unlocked by default — a fresh/new employee has no exit case (#105).
     setESalaryLocked(false);
-    setEEnablePayroll(true); setEPayGroup('');
+    setEEnablePayroll(true); setEWasOffPayroll(false); setEPayGroup('');
     setEAnnualSalary(''); setESalaryFreq('Per annum'); setESalaryFrom('');
     // Reset restores the DEFAULT, which is open — not `false`. Leaving this at
     // false meant the first employee of a session got the open section and
@@ -2457,7 +2460,19 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       // #105 — server-computed, since employees.status stays 'Active' for the
       // whole notice period and cannot answer this.
       setESalaryLocked(!!raw.exit_in_progress);
-      if (raw.enable_payroll !== undefined && raw.enable_payroll !== null) setEEnablePayroll(!!raw.enable_payroll);
+      /* ALWAYS opens ON, whatever the record says.
+       *
+       * The "Include this Employee in Payroll" switch is gone from this form,
+       * but the sections it gated are still gated — so an employee saved OFF
+       * payroll opened on a Compensation step with two fields, no PF picker and
+       * no breakup, and nothing on screen to turn it back on. A dead end.
+       *
+       * The form no longer HAS an off-payroll state: anyone edited here is on
+       * payroll, and saving says so. `eWasOffPayroll` keeps the old value so
+       * the step can warn that this edit will re-include them, rather than
+       * enrolling someone silently. */
+      setEEnablePayroll(true);
+      setEWasOffPayroll(raw.enable_payroll === false || raw.enable_payroll === 0);
       if (raw.pay_group !== undefined && raw.pay_group !== null) setEPayGroup(raw.pay_group);
       /* The column carries two decimals, so a whole-rupee CTC comes back as
          "300000888.00". The field is whole-rupee now, so those trailing zeros
@@ -5485,10 +5500,27 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                         entirely. Two switches that look alike, one of which
                         quietly removes the employee from payroll, is a trap.
 
-                        The FIELD is untouched. Onboarding's Compensation step
-                        still sets it, payroll still honours it, and eEnablePayroll
-                        below still gates CTC / effective date / breakup — this
-                        form simply no longer offers to change it. */}
+                        The FIELD is untouched — payroll still honours it — but
+                        this form always opens ON, so the sections it gates are
+                        always shown. See the loader. */}
+                    {eWasOffPayroll && (
+                      <div
+                        className="emp-payroll-banner-note"
+                        style={{
+                          display: 'flex', alignItems: 'flex-start', gap: 8,
+                          padding: '10px 12px', marginBottom: 12,
+                          borderRadius: 10, fontSize: 12,
+                          background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e',
+                        }}
+                      >
+                        <i className="ri-information-line" style={{ marginTop: 1 }} />
+                        <span>
+                          This employee is currently <strong>excluded from payroll</strong>. Saving
+                          this form will include them again — they will appear in the next payroll
+                          run and receive a payslip.
+                        </span>
+                      </div>
+                    )}
                     <Row className="g-3">
                       <Col md={6}>
                         <label className="emp-label">Annual CTC{eEnablePayroll && <span className="req">*</span>}</label>

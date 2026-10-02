@@ -3080,7 +3080,14 @@ useEffect(() => {
     id_card_status:      String(x.id_card_status      ?? ''),
     attendance_tracking: x.attendance_tracking !== undefined ? !!x.attendance_tracking : true,
 
-    enable_payroll: x.enable_payroll !== undefined ? !!x.enable_payroll : true,
+    /* ALWAYS true, whatever the saved draft says. The switch that set this is
+       gone from the step, but the sections it gates are still gated — a draft
+       saved OFF payroll reopened with two fields, no PF picker and no breakup,
+       and nothing on screen to turn it back on. The step has no off-payroll
+       state any more, so it must not reopen in one. (The Employee form does
+       the same, and warns there because it edits a live record; a draft has
+       not reached payroll yet, so there is nothing to warn about.) */
+    enable_payroll: true,
     pay_group:             String(x.pay_group             ?? ''),
     /* The column carries two decimals, so a whole-rupee CTC comes back as
        "300000.00". The field is whole-rupee now, so those trailing zeros are
