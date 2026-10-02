@@ -10,11 +10,14 @@ import { Shimmer } from './ui/Shimmer';
 
 /** Ceiling for a settlement amount.
  *
- *  advance_requests.amount is decimal(18,2) — sixteen whole digits — so a
- *  larger figure cannot be stored whatever the form accepts. Capping here
- *  keeps the dialog honest: an uncapped number field let a tester hold down a
- *  key and produce a rupee figure wide enough to burst the popup. (#184) */
-const SETTLE_AMOUNT_MAX = 9999999999999999;
+ *  THE SERVER'S number, not the column's. AdvanceRequestController validates
+ *  `target_amount` at max:9999999999999.99 — thirteen whole digits — so the
+ *  column's sixteen were never reachable. Capping at the column let the form
+ *  accept a figure the API then refused with its raw rule text ("The target
+ *  amount field must not be greater than 9999999999999.99"), which is the
+ *  error in the ticket: the dialog promised something the server would not
+ *  honour. Keep the two in step. (#184) */
+const SETTLE_AMOUNT_MAX = 9999999999999.99;
 
 /**
  * Record Payment (settlement) for an APPROVED expense claim — styled like the
@@ -2495,8 +2498,12 @@ export default function ExpenseSettlementModal({
 
       {/* ── Settle Advance — pick outcome type (locked once chosen) ── */}
       {settleMode === 'choose' && summary && (
-        <div className="esm-sub-backdrop" onMouseDown={() => setSettleMode('idle')}>
+        <div className="esm-sub-backdrop" onMouseDown={() => { if (!settleSaving) setSettleMode('idle'); }}>
           <div className="esm-confirm esm-confirm--wide" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            {/* The settlement write locks the advance for good, so the dialog
+                goes busy as a whole — a spinner inside the button left the
+                amount and the dropdown live while the request was in flight. */}
+            {settleSaving && <BusyVeil label="Saving settlement…" />}
             <span className="esm-confirm-ico is-approve"><i className="ri-check-double-line" /></span>
             <div className="esm-confirm-title">Have you utilized your advance?</div>
             <div className="esm-confirm-sub">Advance amount <strong>{inr(settleBase)}</strong>. Confirm whether you used exactly the advance, or spent more.</div>
@@ -2510,6 +2517,7 @@ export default function ExpenseSettlementModal({
                   { value: 'maximum', label: 'Maximum — used more (raise expense for the extra)' },
                 ]}
                 placeholder="Select how the advance was used"
+                disabled={settleSaving}
               />
             </div>
             {/* Amount utilised — only asked for "Maximum" (used more). Equal is
@@ -2524,11 +2532,12 @@ export default function ExpenseSettlementModal({
                       figure wide enough to burst the dialog. maxLength stops the
                       keystrokes, the slice covers a paste. (#184) */}
                   <input className="esm-in" type="number" min={0} max={SETTLE_AMOUNT_MAX} placeholder="0.00"
+                    disabled={settleSaving}
                     value={settleTargetTmp}
                     onChange={e => {
                       const v = e.target.value;
                       if (v !== '' && Number(v) > SETTLE_AMOUNT_MAX) return;
-                      setSettleTargetTmp(v.slice(0, 19));
+                      setSettleTargetTmp(v.slice(0, 16));
                     }} />
                 </div>
                 {!!settleTargetTmp && !(Number(settleTargetTmp) > settleBase) && <span className="esm-err">Must be greater than {inr(settleBase)}.</span>}
@@ -2551,8 +2560,15 @@ export default function ExpenseSettlementModal({
                 || (settleChosenTmp === 'maximum' && t > settleBase);
               return (
                 <div className="esm-confirm-actions">
-                  <button type="button" className="esm-btn-approve" disabled={!valid || settleSaving} onClick={confirmSettleDirect}>
-                    {settleSaving ? 'Saving…' : 'Confirm'}
+                  {/* A SPINNER, not just a changed word. The call writes the
+                      settlement and can run for a second or two; "Saving…" on
+                      its own left the dialog looking idle, and a second click
+                      felt like the right thing to try. (#184) */}
+                  <button type="button" className="esm-btn-approve" disabled={!valid || settleSaving} onClick={confirmSettleDirect}
+                    style={settleSaving ? { cursor: 'progress', opacity: .8 } : undefined}>
+                    {settleSaving
+                      ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" /> Saving…</>
+                      : 'Confirm'}
                   </button>
                   <button type="button" className="esm-btn-ghost" onClick={() => setSettleMode('idle')} disabled={settleSaving}>Cancel</button>
                 </div>

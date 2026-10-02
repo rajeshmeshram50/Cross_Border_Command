@@ -416,6 +416,12 @@ const pinIco = (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stro
 const fileIco = (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" /></svg>);
 const boxIco = (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>);
 const linesIco = (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="6" x2="20" y2="6" /><line x1="4" y1="12" x2="16" y2="12" /><line x1="4" y1="18" x2="11" y2="18" /></svg>);
+/** Highest exchange rate a document may carry — the same 10,000 the API
+ *  enforces in App\Support\FxRate. A rate is a MULTIPLIER, so the two sides
+ *  disagreeing shows up as a save that fails only after the whole step has
+ *  been filled in. */
+const FX_RATE_MAX = 10000;
+
 // Reference-pill icon by label — supplier code = lines, supplier name = person,
 // state code = map pin, everything else = document.
 const refIcoFor = (label: string) => label.includes('Supplier Name') || label.includes('Customer') || label.includes('Consignee')
@@ -1425,8 +1431,20 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                         <Toggle label="Physical Inspection Required" on={po.inspection} onToggle={() => setPoF('inspection', !po.inspection)} />
                         {po.docType === 'International' && (<>
                           <Dd label="Currency" value={po.currency} options={currencies.length ? currencies.map(c => c.code) : CURRENCIES} onChange={v => { setPoF('currency', v); setCurrencyId(currencies.find(c => c.code === v)?.id ?? null); }} />
-                          {/* Exchange Rate — integer only (digits, no decimal). */}
-                          <Field label="Exchange Rate" value={po.exRate} onChange={v => setPoF('exRate', v.replace(/[^0-9]/g, ''))} ph="e.g. 83" />
+                          {/* Exchange Rate — integer only (digits, no decimal),
+                              and capped at the same 10,000 the API enforces
+                              (App\Support\FxRate). The field took any length, so
+                              a held-down key produced a 16-digit rate that only
+                              failed on save — and a rate is a MULTIPLIER, so the
+                              figure it would have produced was 16 digits wider
+                              than the amount anyone typed. Stop it at the field,
+                              where the operator can still see what they typed. */}
+                          <Field label="Exchange Rate" value={po.exRate} ph="e.g. 83"
+                            onChange={v => {
+                              const digits = v.replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '');
+                              if (digits !== '' && Number(digits) > FX_RATE_MAX) return;
+                              setPoF('exRate', digits);
+                            }} />
                           <Dd label="INCO Term" value={po.inco} options={INCO} onChange={v => setPoF('inco', v)} />
                           <Field label="Port of Loading" value={po.portLoad} onChange={v => setPoF('portLoad', v)} ph="e.g. Nhava Sheva" />
                           <Field label="Port of Discharge" value={po.portDischarge} onChange={v => setPoF('portDischarge', v)} ph="e.g. Jebel Ali" />

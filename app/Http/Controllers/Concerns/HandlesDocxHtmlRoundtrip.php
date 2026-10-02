@@ -574,7 +574,11 @@ trait HandlesDocxHtmlRoundtrip
             if ($f) {
                 if (method_exists($f, 'isBold')      && $f->isBold())      $text = "<b>{$text}</b>";
                 if (method_exists($f, 'isItalic')    && $f->isItalic())    $text = "<i>{$text}</i>";
-                if (method_exists($f, 'isUnderline') && $f->isUnderline()) $text = "<u>{$text}</u>";
+                /* getUnderline(), NOT isUnderline(): PhpWord's Font style has
+                   no isUnderline(), so this never fired and underlines were
+                   lost on every import. It returns a style name or 'none'. */
+                $u = method_exists($f, 'getUnderline') ? $f->getUnderline() : null;
+                if ($u && $u !== 'none') $text = "<u>{$text}</u>";
             }
             return $text;
         }
@@ -951,9 +955,14 @@ trait HandlesDocxHtmlRoundtrip
     protected function addHtmlResilient($section, string $bodyHtml): void
     {
         $whole = '<!DOCTYPE html><html><body>' . $bodyHtml . '</body></html>';
+        /* A failed parse does NOT throw: addHtml swallows libxml's errors and
+           returns having added nothing, so "no exception" was never proof the
+           body went in, and the per-block path below could not be reached on
+           the one failure it exists for. Count the elements instead. */
+        $before = count($section->getElements());
         try {
             \PhpOffice\PhpWord\Shared\Html::addHtml($section, $whole, true, false);
-            return;
+            if (count($section->getElements()) > $before) return;
         } catch (\Throwable $e) {
             // fall through to per-block
         }

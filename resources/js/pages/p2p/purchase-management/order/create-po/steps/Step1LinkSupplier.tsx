@@ -5,6 +5,11 @@ import { lazy, Suspense, useEffect, useMemo, useState, useRef } from 'react';
 import { EditSelect, Field, FitTip } from '../form-fields';
 import { gstCheck } from '../gst-check';
 // Only fetched when "+ Add Supplier" is clicked.
+/** Highest exchange rate a PO may carry — the same 10,000 the API enforces in
+ *  App\Support\FxRate. Declared here because the frontend cannot import a PHP
+ *  constant; if one side moves, the other must be moved with it. */
+const FX_RATE_MAX = 10000;
+
 const AddSupplierFlow = lazy(() => import('../AddSupplierFlow'));
 // The Supplier master's wizard, opened from the pencil beside Select Supplier to edit that supplier.
 const AddVendorModal = lazy(() => import('../../../../p2p-master-management/supplier-management/AddVendorModal'));
@@ -319,8 +324,18 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
                     )} />
               </Field>
               <Field label="Exchange Rate" req error={err.exchangeRate}>
+                {/* Capped at 10,000 — the same ceiling the API enforces
+                    (App\Support\FxRate). The 16-character slice bounded the
+                    TEXT and not the VALUE, so a held-down key produced a
+                    sixteen-digit rate that looked accepted until save. A rate
+                    is a multiplier: a typo here does not add one digit to the
+                    order, it adds as many as the typo is long. */}
                 <input className={`spi-dt-inp${inv('exchangeRate')}`} inputMode="decimal" placeholder="e.g. 83.25" value={draft.exchangeRate}
-                  onChange={(e) => set({ exchangeRate: e.target.value.replace(/[^\d.]/g, '').slice(0, 16) })} />
+                  onChange={(e) => {
+                    const v = e.target.value.replace(/[^\d.]/g, '').slice(0, 16);
+                    if (v !== '' && Number(v) > FX_RATE_MAX) return;
+                    set({ exchangeRate: v });
+                  }} />
               </Field>
               <Field label="INCO Term" req error={err.incoTerm}>
                 <EditSelect value={draft.incoTerm} options={INCO_TERMS} onChange={(x) => set({ incoTerm: x })} invalid={!!err.incoTerm} />

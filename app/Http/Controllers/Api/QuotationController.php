@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Support\FxRate;
 use App\Http\Controllers\Concerns\EnforcesSegmentBuyerConsignee;
 use App\Http\Controllers\Controller;
 /* Fanned out to by qpiMasterBundle() so each list keeps its own scoping
@@ -518,7 +519,7 @@ class QuotationController extends Controller
             'bank_account_id'   => 'nullable|integer',
             // No length cap on currency — free-form code (USD, INR, EUR…).
             'currency'          => 'nullable|string',
-            'exchange_rate'     => 'nullable|numeric|min:0',
+            'exchange_rate'     => FxRate::rules(),   // gt:0 and <= 10,000 — see App\Support\FxRate
             'sales_manager_id'  => 'nullable|integer|exists:users,id',
             'shipping'          => 'nullable|numeric|min:0',
             'terms'             => 'nullable|string|max:8000',

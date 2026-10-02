@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Support\FxRate;
 use App\Http\Controllers\Controller;
 use App\Models\ClmSegment;
 use App\Models\PurchaseOrder;
@@ -1637,7 +1638,7 @@ class PurchaseOrderController extends Controller
             'physical_inspection' => 'nullable|boolean',
             'currency_id' => 'nullable|integer',
             'currency_code' => 'nullable|string|max:16',
-            'exchange_rate' => 'nullable|numeric|min:0',
+            'exchange_rate' => FxRate::rules(),   // gt:0 and <= 10,000 — see App\Support\FxRate
             'inco_term' => 'nullable|string|max:32',
             'port_of_loading' => 'nullable|string|max:128',
             'port_of_discharge' => 'nullable|string|max:128',

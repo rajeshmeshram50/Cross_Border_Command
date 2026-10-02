@@ -1959,10 +1959,28 @@ class CtcContractController extends Controller
         $section->addTitle(strip_tags($title), 1);
 
         $clean = preg_replace('/<img[^>]*src="data:[^"]*"[^>]*>/i', '', $html) ?? $html;
+        /* Self-close the void tags. PhpWord parses with loadXML, and one bare
+           <col> — which the editor writes for every table column — ends the
+           parse of the whole body, not just the table. (#57) */
+        $clean = preg_replace(
+            '#<(br|hr|col|input|area|base|embed|link|meta|param|source|track|wbr)\b([^>]*?)/?>#i',
+            '<$1$2/>',
+            $clean
+        ) ?? $clean;
+
+        /* addHtml does not throw on a parse failure — it returns having added
+           nothing — so the count, not the catch, is what tells us the body
+           arrived. */
+        $before = count($section->getElements());
+        $added  = false;
         try {
             \PhpOffice\PhpWord\Shared\Html::addHtml($section, $clean, false, false);
+            $added = count($section->getElements()) > $before;
         } catch (\Throwable $e) {
-            foreach (preg_split('/<\/p>|<br\s*\/?>/i', $clean) ?: [] as $chunk) {
+            $added = false;
+        }
+        if (!$added) {
+            foreach (preg_split('/<\/p>|<\/h[1-6]>|<\/tr>|<br\s*\/?>/i', $clean) ?: [] as $chunk) {
                 $text = trim(html_entity_decode(strip_tags($chunk), ENT_QUOTES | ENT_HTML5));
                 if ($text !== '') $section->addText($text);
             }
