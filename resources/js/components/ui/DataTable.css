@@ -387,6 +387,24 @@
   font-size: 14px; line-height: 1;
 }
 .dt-search-clear:hover { background: rgba(var(--dt-a-rgb), .20); }
+/* Dark mode. The ink is the accent's 700 — its darkest step, chosen to read on
+   a white search bar — and there was no dark rule at all, so on a dark one the
+   × was dark on dark and looked absent. Reported on twelve search bars (Leave,
+   Holiday, Biometric Device, Payroll, Expense, Broadcast, Document Template,
+   Custom Field, Recruitment, Employee, Onboarding, Exit); they all use this
+   one control, so this covers them together.
+   The 300 step of whatever accent the table carries, so the × keeps the
+   table's own colour instead of going plain white. */
+[data-bs-theme="dark"] .dt-search-clear,
+[data-layout-mode="dark"] .dt-search-clear {
+  color: var(--dt-a-300);
+  background: rgba(var(--dt-a-rgb), .24);
+}
+[data-bs-theme="dark"] .dt-search-clear:hover,
+[data-layout-mode="dark"] .dt-search-clear:hover {
+  background: rgba(var(--dt-a-rgb), .40);
+  color: #ffffff;
+}
 
 /* ── Applied-filter chips bar ─────────────────────────────────────────────── */
 .dt-chipbar {

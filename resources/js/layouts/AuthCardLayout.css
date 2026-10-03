@@ -36,7 +36,7 @@
      down with the window as far as 0.85, where the input is ~12px, and does
      not go further. Below that the window is simply smaller than the design
      and the page scrolls the remainder. */
-  --u: clamp(0.85px, min(calc(100vw / 1420), calc(100vh / 941)), 12px);
+  --u: clamp(0.85px, calc(var(--kx-zoom, 1) * min(calc(100vw / 1420), calc(100vh / 941))), 12px);
   /* The clean room photo — no text and no card painted into it, so nothing
      shows under the live copy or behind the glass card. */
   /* Renamed whenever the photo changes: browsers cache it by URL and kept
@@ -124,7 +124,11 @@
 .kx-left {
   position: absolute;
   left: calc(102 * var(--u));
-  top: calc(47 * var(--u));
+  /* Level with the card, not above it. The card is 790 units tall in a 941-unit
+     band and centred, so its top edge falls at (941 - 790) / 2 = 75.5 — the
+     panel began at 47 and sat 27px higher than the card on screen, which read
+     as the two columns being out of step. */
+  top: calc(88 * var(--u));
 }
 
 /* Logo — one SVG per placement, drawn in that placement's own coordinates */
@@ -141,7 +145,7 @@
 .kx-tagline {
   margin-top: calc(13.3 * var(--u));
   font-family: 'Montserrat', sans-serif;
-  font-size: calc(16.9 * var(--u));
+  font-size: calc(15 * var(--u));
   font-weight: 400;
   line-height: 1;
   letter-spacing: .175em;
@@ -159,16 +163,16 @@
 }
 
 .kx-headline {
-  margin: calc(15.4 * var(--u)) 0 0 calc(-3 * var(--u));
+  margin: calc(13 * var(--u)) 0 0 calc(-2.5 * var(--u));
   /* Montserrat Bold, set explicitly: measured against the render it is the
      closest face for the headline (Plus Jakarta Sans runs 7% narrow, DM Sans
      8%). Explicit because the admin theme otherwise decides the h1 family. */
   font-family: 'Montserrat', 'Plus Jakarta Sans', system-ui, sans-serif;
-  font-size: calc(57.3 * var(--u));
+  font-size: calc(44 * var(--u));
   /* 800 with tighter tracking: the render's strokes are heavier than Bold
      at the same overall width. */
   font-weight: 760;
-  line-height: calc(60.3 * var(--u));
+  line-height: calc(47 * var(--u));
   letter-spacing: -.0155em;
   color: #fff;
   white-space: nowrap;
@@ -194,9 +198,9 @@
 .kx-lead {
   margin: calc(12.5 * var(--u)) 0 0;
   letter-spacing: .004em;
-  font-size: calc(18.4 * var(--u));
+  font-size: calc(15 * var(--u));
   font-weight: 400;
-  line-height: calc(22 * var(--u));
+  line-height: calc(18.5 * var(--u));
   word-spacing: .06em;
   color: #c4c9d6;
   white-space: nowrap;
@@ -205,21 +209,37 @@
 /* Module grid — columns centred at x 153 / 306 / 463 / 624, rows 175 apart */
 .kx-modules {
   display: grid;
-  grid-template-columns: repeat(4, calc(157 * var(--u)));
-  grid-auto-rows: calc(175 * var(--u));
+  /* 157 units per column was sized for the render's larger labels; with the
+     type brought down the widest label measures 91px inside a 150px column,
+     so 59px of every column was empty and read as a wide gap between them. */
+  grid-template-columns: repeat(4, calc(140 * var(--u)));
+  column-gap: calc(8 * var(--u));
+  /* The rows take their content's height with a gap between, rather than a
+     fixed 175 units each. That figure was set for the render's larger tiles;
+     with the icons and labels brought down, a tile's content came to 80px
+     inside a 167px row — 87px of nothing, read as a gap between the two rows
+     of modules. */
+  grid-auto-rows: auto;
+  row-gap: calc(8 * var(--u));
   margin-top: calc(29.5 * var(--u));
   margin-left: calc(-27.5 * var(--u));
 }
 .kx-mod { display: flex; flex-direction: column; align-items: center; text-align: center; }
 /* Icon slot: 44 tall from the row's top (y 392 / 567). The art is the render's
    own, glow included, so nothing is drawn over it. */
-.kx-mod-icowrap { display: flex; justify-content: center; align-items: flex-start; height: calc(44 * var(--u)); }
+/* A step smaller than the render. Each icon carries its own size inline
+   (41-44 units tall, widths from 38 to 48), and against the labels they read
+   heavier than the rest of the panel. Height drives the size here and width
+   follows it, so every icon keeps its own proportions rather than being
+   squared off to one box. */
+.kx-mod-icowrap { display: flex; justify-content: center; align-items: flex-start; height: calc(34 * var(--u)); }
+.kx-mod-icowrap img { height: calc(32 * var(--u)) !important; width: auto !important; }
 .kx-mod-icowrap img { display: block; user-select: none; }
 .kx-mod-title {
-  margin-top: calc(6.1 * var(--u));
-  font-size: calc(14.6 * var(--u));
+  margin-top: calc(5 * var(--u));
+  font-size: calc(11.5 * var(--u));
   font-weight: 700;
-  line-height: calc(18 * var(--u));
+  line-height: calc(14.4 * var(--u));
   letter-spacing: 0;
   color: #fff;
   text-transform: uppercase;
@@ -232,18 +252,18 @@
 .kx-mod:nth-child(n + 5) { transform: translateX(calc(5 * var(--u))); }
 .kx-mod:nth-child(n + 5) .kx-mod-sub { margin-top: calc(0.5 * var(--u)); }
 .kx-mod-sub {
-  margin-top: calc(6.5 * var(--u));
-  font-size: calc(15 * var(--u));
+  margin-top: calc(5 * var(--u));
+  font-size: calc(11.5 * var(--u));
   font-weight: 400;
-  line-height: calc(19 * var(--u));
+  line-height: calc(16 * var(--u));
   color: #a3a8ba;
   white-space: nowrap;
 }
 .kx-mod-bar {
   display: block;
-  width: calc(36 * var(--u));
-  height: calc(3 * var(--u));
-  margin-top: calc(13 * var(--u));
+  width: calc(30 * var(--u));
+  height: calc(2.6 * var(--u));
+  margin-top: calc(8 * var(--u));
   border-radius: 999px;
   box-shadow: 0 0 calc(8 * var(--u)) color-mix(in srgb, var(--glow) 70%, transparent);
 }
@@ -472,12 +492,64 @@
   filter: brightness(1.25) saturate(1.1);
 }
 
+/* ── Short screens: the card gives up decoration, never the form ──────────
+   Height, not width, is what runs out first here. Below these heights the
+   composition has already scaled down to its readable floor, so the only way
+   to keep the whole card on one screen is to spend less height on the card's
+   own ornament — its padding, the little rule and the tagline under it —
+   rather than on the fields.
+   Measured at 1280x600 before this: 635px of card in a 600px window, of which
+   102px was padding and 63px the rule plus the tagline and their margins,
+   against 324px of actual form.
+   Width is handled by the scale unit; these two bands only touch height. ── */
+@media (max-height: 760px) {
+  .kx-card {
+    padding-top: calc(34 * var(--u));
+    padding-bottom: calc(34 * var(--u));
+  }
+  .kx-card-body { margin-top: calc(10 * var(--u)); }
+  .kx-tri       { margin-top: calc(14 * var(--u)); }
+  .kx-card-foot { margin-top: calc(10 * var(--u)); }
+  /* The brand panel is the other tall thing on the page: its eight module
+     tiles stand on 175-unit rows, which is what pushed it past the foot of a
+     600px window while the card itself already fitted. */
+  .kx-left    { top: calc(52 * var(--u)); }
+  .kx-modules { row-gap: calc(24 * var(--u)); margin-top: calc(18 * var(--u)); }
+}
+@media (max-height: 640px) {
+  .kx-card {
+    padding-top: calc(22 * var(--u));
+    padding-bottom: calc(22 * var(--u));
+  }
+  .kx-card-body { margin-top: calc(6 * var(--u)); }
+  /* The rule and the tagline are decoration. On a screen this short the form
+     has to win, and losing them is less costly than a scrollbar. */
+  .kx-tri, .kx-card-foot { display: none; }
+  .kx-left    { top: calc(36 * var(--u)); }
+  .kx-modules { row-gap: calc(16 * var(--u)); margin-top: calc(12 * var(--u)); }
+  .kx-lead    { margin-top: calc(8 * var(--u)); }
+}
+
 /* ── Phones and tablets: the card alone, centred, over the photo ─────────── */
 @media (max-width: 1023.98px) {
   /* Fluid card scale: grows on tablets, shrinks on phones, never past the
      card's desktop size. Scrolls if the card is taller than the screen
      (landscape phones). */
-    .kx-shell { --u: clamp(0.66px, min(calc(100vw / 640), calc(100vh / 900)), 1.15px); padding: 24px 16px; overflow-x: hidden; overflow-y: auto; }
+    /* The floor matches the desktop one (0.85). They used to differ — 0.66
+       here against 0.85 above — and this block takes over at 1024px wide,
+       which a zoomed-in desktop reaches: at 200% zoom a 1920 screen is a
+       960px viewport. The text grew with every zoom step up to 175% and then
+       dropped back at 200%, because it crossed into this branch and started
+       measuring from a smaller floor. Same floor, no step. */
+    /* No scale of its own. This branch used to divide by 640x900 while the
+       desktop one divides by 1420x941, so crossing 1024px jumped the unit from
+       0.85 to 1.11 — shrink the window past that point and the card and the
+       text both grew by a third, which reads as a fault rather than a layout
+       change. Worse, between about 740 and 1024 the height governed and the
+       card stopped responding to width at all.
+       The unit from the base rule carries through; this branch only changes
+       what the layout DOES — brand panel away, card on its own. */
+    .kx-shell { padding: 24px 16px; overflow-x: hidden; overflow-y: auto; }
   .kx-shell::after { display: none; }
   .kx-bg { filter: blur(10px) brightness(.6); }
   .kx-stage { width: 100%; max-width: calc(573 * var(--u)); height: auto; }

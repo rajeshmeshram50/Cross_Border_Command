@@ -3314,68 +3314,70 @@
 .cand-pill-btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
 .cand-pill-btn:disabled:hover { transform: none; filter: none; }
 
-/* All header actions use a SOLID colour fill (white text), matching the
-   Add Candidate primary button — just in each button's own hue. */
+/* One primary, the rest quiet.
+   Five actions in four solid gradients — blue Sample, violet Import, green
+   Export, blue Add Candidate, violet Back — all shouted equally, so the strip
+   read as decoration rather than a toolbar and nothing said which action the
+   page is actually for. Add Candidate keeps a fill; the other four become
+   outline buttons on the page's own surface, each keeping its hue on the ICON
+   only, so Export is still recognisable at a glance without competing. */
+.cand-pill-btn--violet,
+.cand-pill-btn--blue,
+.cand-pill-btn--green {
+  background: #ffffff;
+  color: #374151;
+  border-color: #e5e7eb;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+.cand-pill-btn--violet:hover,
+.cand-pill-btn--blue:hover,
+.cand-pill-btn--green:hover {
+  background: #f9fafb;
+  border-color: #d1d5db;
+  box-shadow: 0 4px 10px rgba(16, 24, 40, 0.08);
+  filter: none;
+}
+/* The hue survives on the icon, which is what makes them scannable. */
+.cand-pill-btn--blue i   { color: #2563eb; }
+.cand-pill-btn--violet i { color: #7c3aed; }
+.cand-pill-btn--green i  { color: #16a34a; }
 
-/* Violet — used by Back to Recruitment List + Import */
-.cand-pill-btn--violet {
+/* Primary — the one action with a fill. Violet, not blue: the page's strip,
+   tabs and accents are violet, so a blue primary was a third colour again. */
+.cand-pill-btn--primary {
   background: linear-gradient(135deg, #8b5cf6, #7c3aed);
   color: #ffffff;
   border-color: transparent;
-  box-shadow: 0 6px 16px rgba(124,58,237,0.34), inset 0 1px 0 rgba(255,255,255,0.26);
-}
-.cand-pill-btn--violet:hover {
-  filter: brightness(1.05);
-  box-shadow: 0 10px 22px rgba(124,58,237,0.42), inset 0 1px 0 rgba(255,255,255,0.30);
-}
-
-/* Blue — used by Sample */
-.cand-pill-btn--blue {
-  background: linear-gradient(135deg, #38bdf8, #2563eb);
-  color: #ffffff;
-  border-color: transparent;
-  box-shadow: 0 6px 16px rgba(37,99,235,0.34), inset 0 1px 0 rgba(255,255,255,0.26);
-}
-.cand-pill-btn--blue:hover {
-  filter: brightness(1.05);
-  box-shadow: 0 10px 22px rgba(37,99,235,0.42), inset 0 1px 0 rgba(255,255,255,0.30);
-}
-
-/* Green — used by Export */
-.cand-pill-btn--green {
-  background: linear-gradient(135deg, #22c55e, #15803d);
-  color: #ffffff;
-  border-color: transparent;
-  box-shadow: 0 6px 16px rgba(21,128,61,0.34), inset 0 1px 0 rgba(255,255,255,0.26);
-}
-.cand-pill-btn--green:hover {
-  filter: brightness(1.05);
-  box-shadow: 0 10px 22px rgba(21,128,61,0.42), inset 0 1px 0 rgba(255,255,255,0.30);
-}
-
-/* Primary — solid blue gradient for Add Candidate */
-.cand-pill-btn--primary {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  color: #ffffff;
-  border-color: transparent;
   box-shadow:
-    0 6px 16px rgba(37,99,235,0.40),
-    0 2px 4px rgba(37,99,235,0.22),
-    inset 0 1px 0 rgba(255,255,255,0.28);
+    0 6px 16px rgba(124, 58, 237, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.26);
 }
+.cand-pill-btn--primary i { color: inherit; }
 .cand-pill-btn--primary:hover {
   filter: brightness(1.05);
   box-shadow:
-    0 10px 22px rgba(37,99,235,0.48),
-    0 3px 6px rgba(37,99,235,0.26),
-    inset 0 1px 0 rgba(255,255,255,0.32);
+    0 10px 22px rgba(124, 58, 237, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.30);
 }
 
-/* Dark-mode tints */
-/* Dark mode keeps the SAME solid fills (white text) — no tint-down. */
-[data-bs-theme="dark"] .cand-pill-btn--violet { color: #ffffff; border-color: transparent; }
-[data-bs-theme="dark"] .cand-pill-btn--blue   { color: #ffffff; border-color: transparent; }
-[data-bs-theme="dark"] .cand-pill-btn--green  { color: #ffffff; border-color: transparent; }
+/* Dark mode: the same hierarchy on a dark surface. */
+[data-bs-theme="dark"] .cand-pill-btn--violet,
+[data-bs-theme="dark"] .cand-pill-btn--blue,
+[data-bs-theme="dark"] .cand-pill-btn--green {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--vz-body-color);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .cand-pill-btn--violet:hover,
+[data-bs-theme="dark"] .cand-pill-btn--blue:hover,
+[data-bs-theme="dark"] .cand-pill-btn--green:hover {
+  background: rgba(255, 255, 255, 0.11);
+  border-color: rgba(255, 255, 255, 0.24);
+}
+[data-bs-theme="dark"] .cand-pill-btn--blue i   { color: #93c5fd; }
+[data-bs-theme="dark"] .cand-pill-btn--violet i { color: #c4b5fd; }
+[data-bs-theme="dark"] .cand-pill-btn--green i  { color: #86efac; }
 
 /* ---------------------------------------------------------------------
    Sample Import Format modal — preview table + download CTA
@@ -8307,15 +8309,24 @@
    instead of hanging below the right boxes. Below 768px the columns stack and
    the roster keeps sizing to its content (rules above). */
 @media (min-width: 768px) {
+  /* The roster takes its own height, and scrolls only when it is genuinely
+     long.
+     Pinned to the row with position: absolute; inset: 0, the panel was always
+     as tall as the detail pane beside it — and with five employees the list
+     needed 364px in the 348px that left, so it scrolled by SIXTEEN pixels. A
+     scroller with nothing in it still catches the wheel: the pointer over the
+     roster meant sixteen pixels of list, a pause, and only then the page. That
+     hand-off is what reads as lag.
+     Sized to its content it does not scroll at all at that length, leaving the
+     page as the only scroller; a long roster still gets its own scroll at the
+     cap below, which is when an inner scroller earns its keep. */
   .att-emplist-col { position: relative; }
   .att-emplist-col .att-emplist {
-    position: absolute;
-    inset: 0;
-    align-self: stretch;
+    align-self: flex-start;
     max-height: none;
   }
   .att-emplist-col .att-emplist-scroll {
-    max-height: none;
+    max-height: calc(100vh - 360px);
     min-height: 0;
   }
 }
