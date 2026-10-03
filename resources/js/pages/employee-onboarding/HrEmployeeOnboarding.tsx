@@ -5538,8 +5538,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                         return (
                           <div style={{ flex: '1 1 260px', minWidth: 240 }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `2px solid ${accent}26`, paddingBottom: 5, marginBottom: 4 }}>
-                              <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: accent }}>{heading}</span>
+                              {/* The accents (#108548 green, #b91c1c red) are picked to sit on
+                                  white. On the dark card they are ink on ink — the Add button
+                                  measured 2.38:1 against its background, which is why it reads
+                                  as missing rather than as a button. The classes give dark mode
+                                  something to grip; the inline colours stay for the light theme. */}
+                              <span className={`onb-breakup-head onb-breakup-head--${which}`} style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: accent }}>{heading}</span>
                               <button type="button" onClick={() => addObRow(which)}
+                                className={`onb-breakup-add onb-breakup-add--${which}`}
                                 style={{ fontSize: 11, fontWeight: 700, color: accent, background: `${accent}12`, border: `1px solid ${accent}33`, borderRadius: 8, padding: '3px 11px', display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
                                 <i className="ri-add-line" /> Add
                               </button>
