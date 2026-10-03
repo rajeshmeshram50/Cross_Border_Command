@@ -212,7 +212,7 @@
   /* 157 units per column was sized for the render's larger labels; with the
      type brought down the widest label measures 91px inside a 150px column,
      so 59px of every column was empty and read as a wide gap between them. */
-  grid-template-columns: repeat(4, calc(120 * var(--u)));
+  grid-template-columns: repeat(4, calc(140 * var(--u)));
   column-gap: calc(8 * var(--u));
   /* The rows take their content's height with a gap between, rather than a
      fixed 175 units each. That figure was set for the render's larger tiles;
