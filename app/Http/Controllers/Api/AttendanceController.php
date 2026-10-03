@@ -490,6 +490,35 @@ class AttendanceController extends Controller
     }
 
     
+    /**
+     * The shift window to DISPLAY against a day. (#216)
+     *
+     * The name was already taken from the day's stamp while the window beside
+     * it still came from the employee, so the two halves of one chip described
+     * different things — "After noon shift 12:00 PM – 06:00 PM", a pairing that
+     * exists nowhere: the name off the day, the hours off the shift assigned
+     * minutes earlier.
+     *
+     * A day that NAMES its shift answers for its own window, even when that
+     * answer is "unknown" — 8,627 rows carry a name whose definition the branch
+     * no longer has, and the employee's current hours are a fabrication there,
+     * not a fallback. The caller renders nothing rather than something untrue.
+     *
+     * Only a day with NO stamp at all borrows the employee's window; there is
+     * no recorded history on it to contradict.
+     *
+     * DISPLAY ONLY. The late-mark and overtime maths keep their own fallback,
+     * because removing it would restate lateness on those 8,627 historical days
+     * — a payroll change, not a labelling one.
+     */
+    private static function displayShiftWindow($row, ?string $empStart, ?string $empEnd): array
+    {
+        if (!$row) return [$empStart, $empEnd];
+        [$s, $e] = $row->shiftWindow();
+        if (trim((string) ($row->shift_name ?? '')) !== '') return [$s, $e];
+        return [$s ?: $empStart, $e ?: $empEnd];
+    }
+
     public function dailyView(Request $request)
     {
         $user = $request->user();
@@ -1200,8 +1229,10 @@ class AttendanceController extends Controller
                    reassignment relabelled days already worked. (#35) */
                 'shift'             => ($today?->shiftNameForDay())
                     ?: (string) ($emp->shift ?? 'General (09:30 – 18:30)'),
-                'shiftStart'        => $shiftStart,
-                'shiftEnd'          => $shiftEnd,
+                /* Window from the SAME day as the name above — see
+                   displayShiftWindow(). These two read as one fact on screen. */
+                'shiftStart'        => self::displayShiftWindow($today, $shiftStart, $shiftEnd)[0],
+                'shiftEnd'          => self::displayShiftWindow($today, $shiftStart, $shiftEnd)[1],
                 'weeklyOff'         => (string) ($emp->weekly_off ?? 'Sun'),
                 'attendanceNumber'  => (string) ($emp->attendance_number ?? ''),
                 'status'            => $statusToday,
@@ -1896,8 +1927,8 @@ class AttendanceController extends Controller
                    only the name left the popover captioned with the day's real
                    shift over the CURRENT shift's timings. (#35) */
                 'shift'            => ($r?->shiftNameForDay()) ?: $shift,
-                'shiftStart'       => ($r ? $r->shiftWindow()[0] : null) ?: $shiftStart,
-                'shiftEnd'         => ($r ? $r->shiftWindow()[1] : null) ?: $shiftEndLabel,
+                'shiftStart'       => self::displayShiftWindow($r, $shiftStart, $shiftEndLabel)[0],
+                'shiftEnd'         => self::displayShiftWindow($r, $shiftStart, $shiftEndLabel)[1],
                 'firstIn'          => $firstIn,
                 'lastOut'          => $lastOut,
                 'worked'           => $dayOpen ? 'In Progress' : ($worked === 0 ? '—' : sprintf('%dh %02dm', intdiv($worked, 60), $worked % 60)),

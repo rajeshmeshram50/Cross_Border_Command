@@ -4682,10 +4682,17 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               Without this, users could keep editing mid-save and the form
               looked saved while still holding unsaved changes. */}
           {formLocked && (
-            <div
-              title="Saving…"
-              style={{ position: 'absolute', inset: 0, zIndex: 30, cursor: 'wait', background: 'rgba(255,255,255,0.35)' }}
-            />
+            /* The overlay used to be a bare translucent rectangle whose only
+               explanation was a `title` tooltip — so Save & Next dimmed the
+               whole popup and nothing on screen said why. It now carries a
+               turning spinner and says what it is waiting for; the blocking
+               and the wait cursor are unchanged. */
+            <div className="onb-busy-veil" aria-live="polite" aria-busy="true">
+              <div className="onb-busy-box">
+                <span className="onb-busy-spin" role="status" aria-hidden="true" />
+                <span>{nextLoading ? 'Loading the next stage…' : 'Saving…'}</span>
+              </div>
+            </div>
           )}
           {/* Sidebar */}
           <div className="onb-init-side">

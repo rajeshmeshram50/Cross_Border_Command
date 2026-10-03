@@ -1968,3 +1968,54 @@
 .salary-version-badge i { font-size: 12px; }
 .salary-version-badge-date { font-weight: 500; opacity: .8; }
 [data-bs-theme="dark"] .salary-version-badge { background: rgba(124,92,252,0.18); color: #c4b5fd; border-color: rgba(124,92,252,0.38); }
+
+/* #43-adjacent — the busy veil over the onboarding popup body.
+   A dimmed form with no loader reads as frozen, not as working. The veil keeps
+   blocking every pointer interaction (the disabled <fieldset> under it kills
+   keyboard edits) and now also says what is happening. */
+.onb-busy-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: wait;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(1.5px);
+}
+[data-bs-theme="dark"] .onb-busy-veil { background: rgba(9, 15, 28, 0.55); }
+
+.onb-busy-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid rgba(124, 92, 252, 0.28);
+  box-shadow: 0 10px 28px rgba(49, 28, 122, 0.18);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #4c1d95;
+}
+[data-bs-theme="dark"] .onb-busy-box {
+  background: #141c2b;
+  border-color: rgba(167, 139, 250, 0.35);
+  color: #ddd6fe;
+}
+
+.onb-busy-spin {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  border: 2px solid rgba(124, 92, 252, 0.25);
+  border-top-color: #7c5cfc;
+  border-radius: 50%;
+  animation: onb-busy-spin 0.7s linear infinite;
+}
+@keyframes onb-busy-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .onb-busy-spin { animation-duration: 2s; }
+  .onb-busy-veil { backdrop-filter: none; }
+}
