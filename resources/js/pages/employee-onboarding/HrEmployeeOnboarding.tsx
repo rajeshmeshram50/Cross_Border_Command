@@ -1,9 +1,8 @@
-import { Fragment, forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { Col, Row, Button, Modal, ModalBody } from 'reactstrap';
 import HrEmployees from '../hrms/HrEmployees';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
-import { useConfirm } from '../../contexts/ConfirmContext';
 import { useModulePermission } from '../../hooks/useModulePermission';
 import api from '../../api';
 import { rankForDesignationName, rankOutranks } from '../../utils/positionHierarchy';
@@ -12,7 +11,6 @@ import {
   seedBreakup, absorbIntoSpecial, reseedSplit, planEarningRemoval, statutoryPt, pfDeduction, breakupSignature, validateBreakup,
   CTC_ROUNDING_SLACK,
 } from '../../utils/salaryBreakup';
-import ComingSoonShell from '../../components/ComingSoonShell';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
@@ -47,10 +45,6 @@ const isForbidden = (err: any): boolean => err?.response?.status === 403;
 
 const OPT = (...vals: string[]) => vals.map(v => ({ value: v, label: v }));
 const ONB_GENDER       = OPT('Male', 'Female', 'Other');
-const ONB_NATIONALITY  = OPT('Indian', 'Other');
-const ONB_EMP_STATUS   = OPT('Active', 'On Probation');
-const ONB_LEGAL_ENTITY = OPT('Cross Border Command Pvt Ltd', 'CBC International LLP');
-const ONB_LOCATION     = OPT('Pune HQ', 'Mumbai', 'Bengaluru');
 
 const ONB_CUSTOM_PROBATION = '__custom_probation__';
 const ONB_PROBATION    = [
@@ -75,32 +69,16 @@ const ONB_WEEKLY_OFF   = OPT(
   'Rotational — 2nd & 4th Saturday',
 );
 
-const ONB_TIME_TRACK   = OPT('Manual', 'Biometric');
-const ONB_PENALIZE     = OPT('Tracking Policy', 'Strict Policy', 'Lenient Policy', 'No Penalty');
 const ONB_EXPENSE      = OPT('Applicable', 'Not Applicable');
 const ONB_YES_NO       = OPT('No', 'Yes');
 const ONB_ACCESS_CARD  = OPT('Not Issued', 'Issued');
 
-const ONB_PERIOD       = OPT('Per annum', 'Per month', 'Per hour', 'Per day');
-const ONB_SAL_STRUCT   = OPT('Range Based', 'Fixed', 'Component Based');
 const ONB_TAX_REGIME   = OPT('New Regime (115BAC)', 'Old Regime');
 const ONB_ACCOUNT_TYPE = OPT('Salary', 'Savings', 'Current');
-const ONB_PF_DEDUCT    = OPT('Employee + Employer', 'Employee only');
 const ONB_PF_TYPE      = OPT('Statutory', 'Standard');
 const ONB_BLOOD_GROUP  = OPT('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-');
 
 
-type VaultStatus = 'Verified' | 'Uploaded' | 'Pending' | 'Rejected' | 'Signed' | 'Sent' | 'Not Generated';
-
-const VAULT_STATUS_COLOR: Record<VaultStatus, 'success' | 'danger' | 'warning' | 'info' | 'primary' | 'secondary'> = {
-  'Verified':      'success',
-  'Uploaded':      'info',
-  'Pending':       'warning',
-  'Rejected':      'danger',
-  'Signed':        'primary',
-  'Sent':          'info',
-  'Not Generated': 'secondary',
-};
 
 type OnboardStatus =
   | 'Document Pending'
@@ -424,14 +402,6 @@ const DEPT_OPTIONS = [
   { value: 'Mobile',       label: 'Mobile' },
   { value: 'Data Science', label: 'Data Science' },
 ];
-const STATUS_OPTIONS_PENDING = [
-  { value: 'All',              label: 'All' },
-  { value: 'Document Pending', label: 'Document Pending' },
-  { value: 'In Progress',      label: 'In Progress' },
-  { value: 'IT Setup',         label: 'IT Setup' },
-  { value: 'Not Started',      label: 'Not Started' },
-  { value: 'Orientation',      label: 'Orientation' },
-];
 
 const DESIGNATION_LEVELS = [
   { id: 'all',    label: 'All Levels',         icon: 'ri-global-line' },
@@ -504,7 +474,7 @@ export default function HrEmployeeOnboarding() {
 
   const [tab, setTab] = useState<'pending' | 'completed'>('pending');
   const [q, setQ] = useState('');
-  const [deptFilter, setDeptFilter]     = useState<string>('All');
+  const [deptFilter] = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [checklistOpen, setChecklistOpen] = useState(false);
 
@@ -1433,12 +1403,6 @@ function SendWorkflowPreview({ templateId }: { templateId: number | null }) {
   );
 }
 
-const menuItemStyle: React.CSSProperties = {
-  display: 'block', width: '100%', textAlign: 'left',
-  padding: '8px 12px', border: 0, background: 'transparent', borderRadius: 6,
-  fontSize: 13, color: 'var(--vz-body-color, #374151)', cursor: 'pointer',
-};
-
 function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [level, setLevel] = useState<string>('all');
   const [empType, setEmpType] = useState<string>('all');
@@ -1640,28 +1604,6 @@ const STAGE2_CATEGORIES: DocCategory[] = [
     ],
   },
 ];
-
-interface PrevCompany {
-  id: string;
-  name: string;
-  jobTitle: string;
-  startDate: string;
-  endDate: string;
-  hrEmail1: string;
-  hrEmail2: string;
-  contactNumber: string;
-}
-
-const makePrevCompany = (): PrevCompany => ({
-  id: `pc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-  name: '',
-  jobTitle: '',
-  startDate: '',
-  endDate: '',
-  hrEmail1: '',
-  hrEmail2: '',
-  contactNumber: '',
-});
 
 const STAGE2_COMPANY_DOCS: { id: string; name: string; status: DocStatus; maxMb?: number }[] = [
   { id: 'exp_letter',   name: 'Experience Letter',          status: 'Pending',  maxMb: 5 },
@@ -2332,11 +2274,6 @@ const [completeNotes, setCompleteNotes] = useState('');
 
 useEffect(() => { if (isOpen) setS1Errors({}); }, [isOpen, emp?.id]);
 
-const _toIso = (d: Date) => {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
-const todayIso = _toIso(new Date());
 const dobMin = _shiftYears(-100);
 const dobMax = _shiftYears(-18);
 const joinMax = _shiftYears(1);
@@ -2897,11 +2834,6 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
   if (!emp) return null;
 
-  const firstName = emp.name.split(' ')[0] ?? '';
-  const lastName  = emp.name.split(' ').slice(1).join(' ') ?? '';
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _legacyRefs = { firstName, lastName, r };
-
   const wizardStep = Math.max(0, Math.min(4, Number(emp.wizardStep ?? 0)));
   const stage1RequiredFields = [
     s1.work_country_id,
@@ -2933,9 +2865,6 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   const stage1Filled = stage1RequiredFields.filter(v => String(v ?? '').trim()).length;
   const stage1LivePct = Math.round((stage1Filled / stage1RequiredFields.length) * 100);
   const stage1Done = wizardStep >= 4;
-  const stage1Pct = stage1Done
-    ? 100
-    : Math.max(stage1LivePct, wizardStep * 25);
 
   const stage2RequiredCatalogueKeys = STAGE2_CATEGORIES.flatMap(cat =>
     cat.docs.filter(d => d.status !== 'Optional').map(d => d.id),
@@ -3892,11 +3821,6 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                         return (
                           <div style={{ flex: '1 1 260px', minWidth: 240 }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `2px solid ${accent}26`, paddingBottom: 5, marginBottom: 4 }}>
-                              {/* The accents (#108548 green, #b91c1c red) are picked to sit on
-                                  white. On the dark card they are ink on ink — the Add button
-                                  measured 2.38:1 against its background, which is why it reads
-                                  as missing rather than as a button. The classes give dark mode
-                                  something to grip; the inline colours stay for the light theme. */}
                               <span className={`onb-breakup-head onb-breakup-head--${which}`} style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: accent }}>{heading}</span>
                               <button type="button" onClick={() => addObRow(which)}
                                 className={`onb-breakup-add onb-breakup-add--${which}`}
@@ -4959,20 +4883,6 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
     setDeleteTarget({ kind: 'doc', id: docId, name: docName });
   };
 
-  const catalogueKeys: string[] = [
-    ...STAGE2_CATEGORIES.flatMap(cat => cat.docs.map(d => d.id)),
-  ];
-  const savedCompanies = prevCompanies.filter(c => c.id !== null);
-  const perCompanyKeys: string[] = savedCompanies.flatMap(c =>
-    STAGE2_COMPANY_DOCS.map(d => `prev_${c.id}_${d.id}`)
-  );
-  const allKeys = [...catalogueKeys, ...perCompanyKeys];
-  const totalDocs = allKeys.length;
-  const uploadedDocs = allKeys
-    .map(k => docsByKey[k]?.status)
-    .filter(s => s === 'uploaded' || s === 'verified').length;
-  const pct = totalDocs ? Math.round((uploadedDocs / totalDocs) * 100) : 0;
-
   if (docsLoading || prevLoading) {
     return (
       <div className="onb-s2sk">
@@ -5544,12 +5454,6 @@ function Stage3Provisioning({
   assetsLoading?: boolean;
   onAssetsOpen?: () => void;
 }) {
-  const tasksTotal = 2;
-  const tasksDone  =
-    (assetSlotAnswered(s1.laptop_assigned, s1.laptop_master_asset_id) ? 1 : 0)
-    + (assetSlotAnswered(s1.mobile_assigned, s1.mobile_master_asset_id) ? 1 : 0);
-  const pct = Math.round((tasksDone / tasksTotal) * 100);
-
   const autoGenLabel = (
     <span className="auto" style={{ background: '#ede9fe', color: '#5b3fd1' }}>AUTO GENERATED</span>
   );
@@ -5787,7 +5691,7 @@ type S4State = {
 };
 
 function Stage4Payroll({
-  s4, setS4, checks, showErrors, pass, total, ctcProblem, pfApplicable = true,
+  s4, setS4, checks, showErrors, ctcProblem, pfApplicable = true,
 }: {
   s4: S4State;
   setS4: React.Dispatch<React.SetStateAction<S4State>>;
@@ -5804,8 +5708,6 @@ function Stage4Payroll({
     { id: 'salary', name: 'Salary structure confirmed' },
     { id: 'pf',     name: 'PF / ESIC setup complete' },
   ];
-  const pct = total ? Math.round((pass / total) * 100) : 0;
-  const allDone = pass === total;
 
   const bankMode = s4.salary_payment_mode === 'bank';
   const invalid = {
@@ -6226,7 +6128,6 @@ function Stage5Policies({ emp, onProgress }: {
     onProgress?.({ signed: signedCount, sent: sentCount, total: templates.length });
   }, [loading, signedCount, sentCount, templates.length, onProgress]);
 
-  const handleSend = (tpl: Tpl) => { setSendForTpl(tpl); };
   const confirmSend = async () => {
     const tpl = sendForTpl;
     if (!tpl || !emp?.dbId || sendingId) return;
@@ -6635,7 +6536,7 @@ function Stage5Policies({ emp, onProgress }: {
 
 
 function Stage6Verify({
-  emp, stagesView, profilePct, onActivated,
+  emp, stagesView, profilePct,
 }: {
   emp: OnboardRow;
   profilePct: number;
