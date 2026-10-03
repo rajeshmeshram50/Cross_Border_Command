@@ -19,6 +19,9 @@ import { Shimmer } from './ui/Shimmer';
  *  honour. Keep the two in step. (#184) */
 const SETTLE_AMOUNT_MAX = 9999999999999.99;
 
+/** Where the header's open/closed choice is remembered, per browser. */
+const HERO_OPEN_KEY = 'cbc:esm-hero-open';
+
 /**
  * Record Payment (settlement) for an APPROVED expense claim — styled like the
  * app's "Payment Summary Against PO" screen (teal header + progress bar):
@@ -311,6 +314,26 @@ export default function ExpenseSettlementModal({
   const [distOpen, setDistOpen] = useState(true);
   // Proof-of-payment list — collapse to the first few, expand on "+N more".
   const [showAllProofs, setShowAllProofs] = useState(false);
+  /* Is the header's detail panel open?
+   *
+   * The panel carries up to twelve fields plus the proof documents, so on a
+   * recovery-scheduled advance the header took more of the dialog than the
+   * payments the dialog exists to show. Collapsing is per viewer and
+   * remembered, because whether these fields are reference material or the
+   * thing you came for depends on the person, not on the record.
+   *
+   * localStorage can throw (private window, blocked site data), so every
+   * access is guarded and the panel simply defaults to open. */
+  const [heroOpen, setHeroOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem(HERO_OPEN_KEY) !== '0'; } catch { return true; }
+  });
+  const toggleHero = () => {
+    setHeroOpen(v => {
+      const next = !v;
+      try { localStorage.setItem(HERO_OPEN_KEY, next ? '1' : '0'); } catch { /* not worth failing over */ }
+      return next;
+    });
+  };
   // Employee "Settlement" (company advance) — itemised usage rows.
   const [settleRows, setSettleRows] = useState<{ amount: string; reason: string; method: string; proof: File | null }[]>([{ amount: '', reason: '', method: '', proof: null }]);
   const [settleNote, setSettleNote] = useState('');
@@ -1120,7 +1143,7 @@ export default function ExpenseSettlementModal({
       <style>{CSS}</style>
       <div className={`esm-modal ${inReview ? 'esm-modal--fit' : ''} ${managerReview ? 'esm-modal--fit-mgr' : ''}`} onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
         {/* ── Teal hero header (with embedded claim summary panel) ── */}
-        <div className="esm-hero">
+        <div className={`esm-hero${(summary && !managerReview && heroOpen) ? '' : ' is-collapsed'}`}>
           <div className="esm-hero-top">
             <div className="esm-hero-l">
               <span className="esm-hero-ico">
@@ -1132,10 +1155,25 @@ export default function ExpenseSettlementModal({
                 <div className="esm-hero-sub">{inReview ? (managerReview ? `Review the ${noun}, then approve or reject.` : `Review the ${noun}, set adjustments, then approve or reject.`) : readOnly ? (isAdvance ? 'Payout details for this advance.' : 'Reimbursement details for this expense claim.') : (isAdvance ? 'Settle an approved advance and record the payout.' : 'Settle an approved expense claim and record the reimbursement.')}</div>
               </div>
             </div>
-            <button className="esm-x" onClick={onClose} aria-label="Close">✕</button>
+            <div className="esm-hero-acts">
+              {summary && !managerReview && (
+                <button
+                  type="button"
+                  className={`esm-hero-toggle${heroOpen ? ' is-open' : ''}`}
+                  onClick={toggleHero}
+                  aria-expanded={heroOpen}
+                  aria-controls="esm-hero-panel"
+                  title={heroOpen ? 'Hide the claim details' : 'Show the claim details'}
+                >
+                  <span>Details</span>
+                  <i className="ri-arrow-down-s-line" />
+                </button>
+              )}
+              <button className="esm-x" onClick={onClose} aria-label="Close">✕</button>
+            </div>
           </div>
-          {summary && !managerReview && (
-            <div className="esm-hpanel">
+          {summary && !managerReview && heroOpen && (
+            <div className="esm-hpanel" id="esm-hero-panel">
               <div className="esm-hp"><label>EXPENSE ID</label><div>{summary.claim_no || '—'}</div></div>
               <div className="esm-hp"><label>EMPLOYEE</label><div>{summary.employee_name || '—'}</div></div>
               {/* Claimed leads because that is what the label says, but once HR
@@ -3187,13 +3225,20 @@ const CSS = `
 [data-bs-theme="dark"] .esm-radio.is-on{color:#67e8f9;}
 [data-bs-theme="dark"] .esm-radio{background:#0b2029;border-color:#173947;color:#cbd5e1;}
 [data-bs-theme="dark"] .esm-radio.is-on{background:#0e2730;border-color:#0891b2;color:#67e8f9;}
-.esm-hero{display:flex;flex-direction:column;gap:16px;padding:22px 28px;background:linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%);color:#fff;flex-shrink:0;}
+/* Tighter than it was (22/16 -> 16/12). The header is reference material above
+   the payments the dialog exists to show, and on a recovery-scheduled advance
+   it was taking more vertical space than them. */
+.esm-hero{display:flex;flex-direction:column;gap:12px;padding:16px 24px;background:linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%);color:#fff;flex-shrink:0;}
+/* With the panel hidden the band's only child is the title block, so the gap
+   contributes nothing and the subtitle sat almost on the bottom edge. The
+   padding has to carry that space itself. */
+.esm-hero.is-collapsed{padding-bottom:20px;}
 .esm-hero-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
 .esm-hero-l{display:flex;align-items:center;gap:14px;min-width:0;}
 /* Embedded claim summary panel. Left edge indented past the hero icon so it
    lines up under the "Settle…" text; right edge stops at the close (×) button's
    left edge (32px button + a small gap). */
-.esm-hpanel{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 20px;margin-left:62px;margin-right:40px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:14px 18px;}
+.esm-hpanel{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 20px;margin-left:62px;margin-right:40px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:12px 16px;}
 /* Emphasised bottom divider + spacing only in the review popup. */
 .esm-modal--fit .esm-hpanel{border-bottom:2px solid rgba(255,255,255,.45);margin-bottom:16px;}
 .esm-hp{min-width:0;}
@@ -3212,9 +3257,17 @@ const CSS = `
 .esm-hp-more:hover{background:rgba(255,255,255,.36);}
 @media (max-width:820px){.esm-hpanel{grid-template-columns:repeat(2,1fr);margin-left:0;margin-right:0;}.esm-hp-proof{grid-column:span 2;}.esm-hpanel .esm-sched-row{grid-column:span 2;}}
 @media (max-width:480px){.esm-hpanel{grid-template-columns:1fr;}.esm-hp-proof{grid-column:span 1;}.esm-hpanel .esm-sched-row{grid-column:span 1;}}
-.esm-hero-ico{width:48px;height:48px;border-radius:12px;background:rgba(255,255,255,.18);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+.esm-hero-ico{width:42px;height:42px;border-radius:11px;background:rgba(255,255,255,.18);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+/* Toggle + close sit together so the header has one control cluster rather
+   than a button floating at each end. */
+.esm-hero-acts{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.esm-hero-toggle{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 10px;border:1px solid rgba(255,255,255,.28);border-radius:9px;background:rgba(255,255,255,.14);color:#fff;font-size:11.5px;font-weight:800;letter-spacing:.02em;cursor:pointer;}
+.esm-hero-toggle:hover{background:rgba(255,255,255,.26);}
+.esm-hero-toggle i{font-size:15px;transition:transform .18s ease;}
+.esm-hero-toggle.is-open i{transform:rotate(180deg);}
+@media (prefers-reduced-motion:reduce){.esm-hero-toggle i{transition:none;}}
 .esm-hero-eyebrow{font-size:10.5px;font-weight:800;letter-spacing:.09em;opacity:.85;margin-bottom:2px;}
-.esm-hero-title{font-size:20px;font-weight:800;line-height:1.15;}
+.esm-hero-title{font-size:18px;font-weight:800;line-height:1.15;}
 /* A long expense title used to stretch the whole header (QA). Cap it with an
    ellipsis; the full title stays available on hover (title attr). */
 .esm-hero-sub-inline{font-weight:600;opacity:.9;display:inline-block;max-width:min(60vw,760px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;}
@@ -3274,7 +3327,7 @@ const CSS = `
    five parts of one repayment plan, not five independent values — so it keeps
    its own 5-up split and earns a rule above it. Without the divider the 5
    columns just read as misaligned against the 3 above. */
-.esm-hpanel .esm-sched-row{grid-column:span 3;display:grid;grid-template-columns:repeat(5,1fr);gap:14px 20px;align-items:start;padding-top:12px;margin-top:2px;border-top:1px solid rgba(255,255,255,.20);}
+.esm-hpanel .esm-sched-row{grid-column:span 3;display:grid;grid-template-columns:repeat(5,1fr);gap:10px 20px;align-items:start;padding-top:10px;margin-top:2px;border-top:1px solid rgba(255,255,255,.20);}
 @media (max-width:900px){.esm-grid12 .esm-sched-row,.esm-hpanel .esm-sched-row{grid-template-columns:repeat(3,1fr);}}
 @media (max-width:600px){.esm-grid12 .esm-sched-row,.esm-hpanel .esm-sched-row{grid-template-columns:repeat(2,1fr);}}
 .esm-grid12 .c4{grid-column:span 4;}

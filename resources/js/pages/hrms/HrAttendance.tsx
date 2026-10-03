@@ -1641,12 +1641,17 @@ function LogsRequestsCard({
                                       return /shift\s*$/i.test(raw) ? raw : `${raw} Shift`;
                                     })()} ({dateDay} {dateMonth})
                                   </div>
-                                  {/* This day's window, not the employee's current
-                                      one — a shift reassigned later must not
-                                      relabel the hours a past day was worked
-                                      under. (#35) */}
+                                  {/* This day's window, and NOTHING when the day
+                                      has none. Falling back to the employee here
+                                      put the hours of a shift assigned minutes
+                                      ago under the name of the shift the day was
+                                      actually worked under — the same relabelling
+                                      the ticket is about, one field narrower.
+                                      (#216) */}
                                   <div className="att-log-pop-shift-time--v2">
-                                    {fmtClock(l.shiftStart || employee.shiftStart)} - {fmtClock(l.shiftEnd || employee.shiftEnd)}
+                                    {l.shiftStart && l.shiftEnd
+                                      ? `${fmtClock(l.shiftStart)} - ${fmtClock(l.shiftEnd)}`
+                                      : 'Timings not recorded'}
                                   </div>
 
                                   <button type="button" className="att-log-pop-regularize" onClick={() => { setPopoverIdx(null); if (l.iso) onRegularize(l.iso); }}>

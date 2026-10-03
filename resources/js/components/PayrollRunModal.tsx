@@ -131,6 +131,15 @@ export interface PayrollRunModalProps {
   /** True while the parent's payslip export is in flight — drives the button's
    *  spinner + disabled state. */
   exporting?: boolean;
+  /** True while the cycle's own figures are still being fetched.
+   *
+   *  Every number this modal shows is handed to it by the parent, so during a
+   *  load it renders a complete, confident screen made of zeros: "0 blocking
+   *  issues", "0 employees total", "₹0 total payroll" — and Re-run Payroll was
+   *  live, because nothing was blocking it yet. Re-running against figures
+   *  that have not arrived is exactly what the operator must not be able to
+   *  do. The actions wait for the data. */
+  loading?: boolean;
 }
 
 /** "07–10 Aug" / "28 Jul – 02 Aug" — the range has to fit on one line beside
@@ -293,6 +302,7 @@ export default function PayrollRunModal({
   excludedItems = [],
   onAction,
   onExportPayslips,
+  loading = false,
   exporting = false,
 }: PayrollRunModalProps) {
   /* Sandwich rows indexed by employee code, so each IssueCard can render only
@@ -430,9 +440,26 @@ export default function PayrollRunModal({
           overflow: 'hidden',
           display: 'flex', flexDirection: 'column',
           color: 'var(--vz-body-color)',
+          /* Containing block for the loading veil below. */
+          position: 'relative',
         }}
       >
         {children}
+        {/* ONE loader, over the whole dialog — not a spinner on each button.
+            Every figure on screen during a load is a placeholder zero, so the
+            honest thing is to cover the dialog rather than mark two buttons
+            busy and leave "0 blocking issues · ₹0 total payroll" reading as an
+            answer. Pointer events are swallowed here; the buttons are disabled
+            individually as well, because an overlay does not stop the
+            keyboard. */}
+        {loading && (
+          <div className="prm-veil" aria-live="polite" aria-busy="true">
+            <div className="prm-veil-box">
+              <span className="prm-veil-spin" role="status" aria-hidden="true" />
+              <span>Loading this cycle…</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -711,8 +738,13 @@ export default function PayrollRunModal({
                 type="button"
                 className="prm-btn prm-btn--dark"
                 onClick={handleReRun}
-                disabled={blockingRemaining > 0 || reRunning}
-                style={(blockingRemaining > 0 || reRunning) ? { opacity: 0.5, cursor: reRunning ? 'wait' : 'not-allowed' } : undefined}
+                disabled={loading || blockingRemaining > 0 || reRunning}
+                title={loading
+                  ? 'Loading this cycle — re-run unlocks once its figures are on screen.'
+                  : blockingRemaining > 0
+                    ? 'Resolve the blocking issues first.'
+                    : undefined}
+                style={(loading || blockingRemaining > 0 || reRunning) ? { opacity: 0.5, cursor: (loading || reRunning) ? 'wait' : 'not-allowed' } : undefined}
               >
                 {reRunning
                   ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" /> Re-running…</>
@@ -809,7 +841,9 @@ export default function PayrollRunModal({
           </div>
 
           {/* Primary CTA */}
-          <button type="button" className="prm-pay-cta" onClick={onProceedToPay} disabled={proceeding} style={proceeding ? { opacity: 0.75, cursor: 'wait' } : undefined}>
+          {/* Same reason as Re-run: the total beside it is the parent's, and
+              paying against a figure still in flight is worse than waiting. */}
+          <button type="button" className="prm-pay-cta" onClick={onProceedToPay} disabled={loading || proceeding} style={(loading || proceeding) ? { opacity: 0.75, cursor: 'wait' } : undefined}>
             {proceeding ? (
               <><i className="ri-loader-4-line me-2" style={{ animation: 'spin 1s linear infinite' }} />Processing…</>
             ) : (
@@ -979,6 +1013,39 @@ function IssueCard({
 function PayrollRunStyles() {
   return (
     <style>{`
+      /* Loading veil — covers the whole dialog while the cycle's figures are
+         still arriving, so the placeholder zeros underneath cannot be read as
+         an answer. */
+      .prm-veil {
+        position: absolute; inset: 0; z-index: 40;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(255,255,255,0.72);
+        backdrop-filter: blur(2px);
+        border-radius: inherit;
+        cursor: wait;
+      }
+      [data-bs-theme="dark"] .prm-veil { background: rgba(8,15,28,0.72); }
+      .prm-veil-box {
+        display: inline-flex; align-items: center; gap: 10px;
+        padding: 11px 20px; border-radius: 999px;
+        background: var(--vz-card-bg, #fff);
+        border: 1px solid var(--vz-border-color);
+        box-shadow: 0 10px 30px rgba(15,23,42,0.18);
+        font-size: 13px; font-weight: 700; color: var(--vz-body-color);
+      }
+      .prm-veil-spin {
+        width: 18px; height: 18px; flex-shrink: 0;
+        border: 2px solid rgba(16,133,72,0.25);
+        border-top-color: #108548;
+        border-radius: 50%;
+        animation: prm-veil-spin .7s linear infinite;
+      }
+      @keyframes prm-veil-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        .prm-veil-spin { animation-duration: 2s; }
+        .prm-veil { backdrop-filter: none; }
+      }
+
       /* Header and footer keep their natural height; only the body between them
          scrolls. Without flex-shrink:0 a long issue list squeezes the footer's
          buttons instead of scrolling past them. */

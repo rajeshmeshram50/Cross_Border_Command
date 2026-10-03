@@ -535,13 +535,13 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
 
         <div className="ev-tabs">
           <button type="button" className={`ev-tab${tab === 'employee' ? ' is-active' : ''}`} onClick={() => setTab('employee')}>
-            <i className="ri-user-line" />Employee Documents<span className="ev-tab-badge">{loading ? '–' : empCount}</span>
+            <i className="ri-user-line" />Employee Documents<span className="ev-tab-badge">{loading ? <span className="ev-kpi-skeleton" style={{ width: 14, height: 9 }} aria-label="Loading" /> : empCount}</span>
           </button>
           <button type="button" className={`ev-tab${tab === 'organizational' ? ' is-active' : ''}`} onClick={() => setTab('organizational')}>
-            <i className="ri-briefcase-4-line" />Organizational Documents<span className="ev-tab-badge">{loading ? '–' : orgCount}</span>
+            <i className="ri-briefcase-4-line" />Organizational Documents<span className="ev-tab-badge">{loading ? <span className="ev-kpi-skeleton" style={{ width: 14, height: 9 }} aria-label="Loading" /> : orgCount}</span>
           </button>
           <button type="button" className={`ev-tab${tab === 'exit' ? ' is-active' : ''}`} onClick={() => setTab('exit')}>
-            <i className="ri-logout-box-r-line" />Exit Documents<span className="ev-tab-badge">{loading ? '–' : exitCount}</span>
+            <i className="ri-logout-box-r-line" />Exit Documents<span className="ev-tab-badge">{loading ? <span className="ev-kpi-skeleton" style={{ width: 14, height: 9 }} aria-label="Loading" /> : exitCount}</span>
           </button>
         </div>
 
@@ -627,9 +627,35 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
           )}
 
           {loading ? (
-            <div style={{ padding: 28, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
-              <i className="ri-loader-4-line" style={{ fontSize: 28, display: 'block', marginBottom: 6 }} />
-              Loading vault…
+            /* #43 — the loader was a STATIC ri-loader-4-line. A loader icon
+               that does not turn is indistinguishable from an error glyph, and
+               it was the only thing on a blank panel, so the vault read as
+               broken rather than busy.
+               A turning spinner says the work is live; the skeleton beneath
+               traces the real group → rows layout, so the panel keeps its shape
+               and the documents land in place instead of pushing the view. */
+            <div className="ev-loading" aria-busy="true" aria-label="Loading vault">
+              {[0, 1].map(gi => (
+                <div className="ev-group" key={`ev-skel-${gi}`} aria-hidden="true">
+                  <div className="ev-group-head">
+                    <span className="ev-skel ev-skel--icon" />
+                    <span className="ev-skel" style={{ height: 11, width: gi === 0 ? 132 : 94 }} />
+                    <span className="ev-skel ev-skel--pill" />
+                  </div>
+                  <div className="ev-doc-list">
+                    {[0, 1, 2].map(ri => (
+                      <div className="ev-doc" key={ri}>
+                        <span className="ev-skel ev-skel--icon" />
+                        <div className="ev-doc-info">
+                          <span className="ev-skel" style={{ height: 11, width: `${58 - ri * 9}%`, display: 'block' }} />
+                          <span className="ev-skel" style={{ height: 9, width: `${38 - ri * 5}%`, display: 'block', marginTop: 6 }} />
+                        </div>
+                        <span className="ev-skel ev-skel--status" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           ) : groups.length === 0 ? (
             <div style={{ padding: 28, textAlign: 'center', color: 'var(--vz-secondary-color)', background: 'var(--vz-secondary-bg)', border: '1px dashed var(--vz-border-color)', borderRadius: 10, fontSize: 13 }}>
