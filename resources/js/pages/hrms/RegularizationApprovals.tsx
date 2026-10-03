@@ -214,7 +214,7 @@ function ReasonCell({ text }: { text: string | null }) {
           <div className="d-flex align-items-center justify-content-between px-3 py-2"
                style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
             <div className="fw-bold" style={{ fontSize: 13.5 }}>
-              <i className="ri-chat-quote-line me-1" style={{ color: '#6d28d9' }} />
+              <i className="ri-chat-quote-line me-1" style={{ color: '#0d9488' }} />
               Regularization reason
             </div>
             <button type="button" className="btn-close" onClick={() => setFull(false)} aria-label="Close" />
@@ -679,7 +679,7 @@ function RegularizationDetailModal({ row, onClose }: { row: ApiRegularization | 
             headers (dark on the left, light on the right). */}
         <div
           className="d-flex align-items-center gap-3 px-3 py-3"
-          style={{ background: 'linear-gradient(135deg,#5b21b6 0%,#7c3aed 55%,#a78bfa 100%)', color: '#fff' }}
+          style={{ background: 'linear-gradient(135deg,#0f766e 0%,#0d9488 55%,#5eead4 100%)', color: '#fff' }}
         >
           <span
             className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
@@ -742,7 +742,7 @@ function RegularizationDetailModal({ row, onClose }: { row: ApiRegularization | 
                 {originals.length ? <PunchChips pairs={originals} muted /> : <span className="text-muted ep-fs-12">No punches</span>}
               </div>
               <div className="d-flex align-items-baseline gap-2">
-                <span className="flex-shrink-0" style={{ ...LABEL, width: 64, letterSpacing: 0, color: '#6d28d9' }}>After</span>
+                <span className="flex-shrink-0" style={{ ...LABEL, width: 64, letterSpacing: 0, color: '#0d9488' }}>After</span>
                 {requested.length ? <PunchChips pairs={requested} /> : <span className="text-muted ep-fs-12">No punches</span>}
               </div>
             </div>
@@ -750,11 +750,11 @@ function RegularizationDetailModal({ row, onClose }: { row: ApiRegularization | 
 
           {/* Reason — a callout, because it is the one free-text field and the
               only thing on here written by a person. */}
-          <div style={{ ...PANEL, background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.18)' }}>
+          <div style={{ ...PANEL, background: 'rgba(13,148,136,0.06)', border: '1px solid rgba(13,148,136,0.18)' }}>
             <div className="d-flex gap-2">
-              <i className="ri-chat-quote-line flex-shrink-0" style={{ color: '#6d28d9', marginTop: 1 }} />
+              <i className="ri-chat-quote-line flex-shrink-0" style={{ color: '#0d9488', marginTop: 1 }} />
               <div className="min-w-0">
-                <div style={{ ...LABEL, color: '#6d28d9' }}>Reason</div>
+                <div style={{ ...LABEL, color: '#0d9488' }}>Reason</div>
                 {/* Scrolls WITHIN the callout. (#7)
                     Uncapped, a long reason grew this panel until the whole
                     dialog scrolled, pushing the correction, the decision and the

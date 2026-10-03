@@ -1058,7 +1058,25 @@ function DtmDarkStyles() {
          over and gives the rail a line of its own. */
       @media (min-width: 1200px) and (max-width: 1699.98px) {
         .dtm-page .dt-toolbar { flex-wrap: nowrap; }
+        /* The rail is hand-rolled markup only a few pages use; here the shared
+           DataTable renders the tab strip straight into the toolbar, so the
+           shrink has to name THAT, and at the same weight as the rule above
+           that pins it (.dtm-page .dt-toolbar .dt-tabs). Without this the strip
+           never gave up width: the row stayed over-full at 1362px in 1262px and
+           .dt-root clipped the tail of it — the "+ Add Template" button.
+           The six level tabs scroll inside their pill rather than wrapping,
+           since the pill is a single rounded trough and a second line inside it
+           reads as a broken control. */
         .dtm-page .dt-tabrail { flex: 0 1 auto; min-width: 0; }
+        .dtm-page .dt-toolbar .dt-tabs {
+          flex: 0 1 auto;
+          width: auto;
+          min-width: 0;
+          overflow-x: auto;
+          scrollbar-width: none;
+        }
+        .dtm-page .dt-toolbar .dt-tabs::-webkit-scrollbar { display: none; }
+        .dtm-page .dt-toolbar .dt-tab { flex: 0 0 auto; }
         .dtm-page .dt-tab { padding-left: 10px; padding-right: 10px; font-size: 11.5px; }
         .dtm-page .dt-tab-count { min-width: 17px; height: 17px; font-size: 9.5px; padding: 0 4px; }
         .dtm-page .dt-search { flex: 0 3 240px; max-width: 240px; }

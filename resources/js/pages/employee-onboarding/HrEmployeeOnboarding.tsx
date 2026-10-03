@@ -1733,7 +1733,7 @@ export function SignedDocumentsSection({ runs, emptyHint }: {
       <Modal isOpen={!!viewRun} toggle={() => setViewRun(null)} size="lg" centered
         contentClassName="border-0" modalClassName="vault-preview-modal" backdrop="static">
         <ModalBody className="p-0">
-          <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg,#047857 0%,#059669 60%,#10b981 100%)', borderRadius: '6px 6px 0 0' }}>
+          <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg,#047857 0%,#059669 60%,#10b981 100%)', borderRadius: '18px 18px 0 0' }}>
             <div className="d-flex align-items-center justify-content-between gap-3">
               <div className="d-flex align-items-center gap-2 min-w-0">
                 <span style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>

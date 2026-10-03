@@ -1183,6 +1183,27 @@ tbody tr:nth-child(10) {
     radial-gradient(ellipse at 10% 50%, rgba(196, 181, 253, .45) 0%, transparent 50%),
     radial-gradient(ellipse at 90% 50%, rgba(167, 139, 250, .28) 0%, transparent 55%);
 }
+/* Dark mode for the HRMS strip itself, not only for .att-page.
+   The dark rule above is written as [data-bs-theme=dark] .att-page .frm-cstrip,
+   and Attendance's strip does not sit under .att-page — so the light purple
+   gradient below stood untouched: a near-white banner across the top of an
+   otherwise dark page. Keyed off .hr-cstrip, every HRMS page that opts into
+   this strip follows the theme. Same ink as the .att-page rule, so the two
+   agree wherever both apply. */
+[data-bs-theme="dark"] .frm-cstrip.hr-cstrip {
+  border-color: rgba(167, 139, 250, 0.34);
+  background:
+    radial-gradient(130% 130% at 0% 50%, rgba(124, 58, 237, 0.18), transparent 55%),
+    linear-gradient(165deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0) 60%),
+    var(--vz-card-bg);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+/* The sheen on top of it is a white wash — it reads as fog on a dark strip. */
+[data-bs-theme="dark"] .frm-cstrip.hr-cstrip::after {
+  background-image:
+    radial-gradient(ellipse at 10% 50%, rgba(167, 139, 250, 0.16) 0%, transparent 55%),
+    radial-gradient(ellipse at 90% 50%, rgba(124, 58, 237, 0.12) 0%, transparent 60%);
+}
 .hr-cstrip .frm-cstrip-accent { width: 5px; z-index: 2; }
 .hr-cstrip .frm-cstrip-left { gap: 13px; padding-left: 10px; }
 /* Everything in the strip sits above the ::after sheen — pages put their
@@ -1283,6 +1304,24 @@ tbody tr:nth-child(10) {
     radial-gradient(ellipse at 10% 50%, rgba(94, 234, 212, .45) 0%, transparent 50%),
     radial-gradient(ellipse at 90% 50%, rgba(45, 212, 191, .28) 0%, transparent 55%);
 }
+/* ...and the same in dark. The teal rules above sit after the generic
+   .hr-cstrip dark rule and carry the same weight, so they won on order alone
+   and Attendance kept a near-white mint banner across the top of a dark page.
+   Teal-tinted rather than purple, so the page stays recognisable, and the
+   white sheen comes off: on a dark strip it reads as fog. */
+[data-bs-theme="dark"] .frm-cstrip.hr-cstrip.hr-cstrip--teal {
+  border-color: rgba(45, 212, 191, 0.30);
+  background:
+    radial-gradient(130% 130% at 0% 50%, rgba(13, 148, 136, 0.20), transparent 55%),
+    linear-gradient(165deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0) 60%),
+    var(--vz-card-bg);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+[data-bs-theme="dark"] .frm-cstrip.hr-cstrip.hr-cstrip--teal::after {
+  background-image:
+    radial-gradient(ellipse at 10% 50%, rgba(45, 212, 191, 0.16) 0%, transparent 55%),
+    radial-gradient(ellipse at 90% 50%, rgba(20, 184, 166, 0.12) 0%, transparent 60%);
+}
 .hr-cstrip.hr-cstrip--teal .frm-cstrip-icon {
   background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
   box-shadow: 0 0 0 3px rgba(13, 148, 136, .22), 0 4px 14px rgba(13, 148, 136, .40);
@@ -1290,6 +1329,11 @@ tbody tr:nth-child(10) {
 .hr-cstrip.hr-cstrip--teal .frm-cstrip-icon::after { border-color: #e9fbf7; }
 .hr-cstrip.hr-cstrip--teal .frm-cstrip-title { color: #0f3d38; }
 .hr-cstrip.hr-cstrip--teal .frm-cstrip-sub { color: #0d9488; }
+/* Those two are ink for a pale mint strip: on the dark strip the title was a
+   near-black teal on near-black, and the subtitle sat at the edge of legible.
+   Light teal on dark keeps the page's colour without losing the words. */
+[data-bs-theme="dark"] .hr-cstrip.hr-cstrip--teal .frm-cstrip-title { color: #e6fffa; }
+[data-bs-theme="dark"] .hr-cstrip.hr-cstrip--teal .frm-cstrip-sub { color: #7fe3d4; }
 .hr-cstrip.hr-cstrip--teal .frm-cstrip-accent { background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%); }
 @media (max-width: 767.98px) {
   .frm-cstrip.hr-cstrip { padding: 10px 14px; }

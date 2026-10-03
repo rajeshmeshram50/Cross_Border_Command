@@ -13643,6 +13643,19 @@
           .emp-payroll-banner-note { color: #6b7280; }
           [data-bs-theme="dark"] .emp-payroll-banner-note,
           [data-layout-mode="dark"] .emp-payroll-banner-note { color: var(--vz-secondary-color); }
+          /* The payroll-exclusion warning on Compensation carries its colours
+             inline (#fffbeb on #fde68a with #92400e ink), so no plain rule can
+             reach it and the rule above never had an effect: a cream banner
+             with brown text sat in the middle of a dark form. Amber on dark,
+             the same tint the rest of the app uses for a warning surface. */
+          [data-bs-theme="dark"] .emp-payroll-banner-note,
+          [data-layout-mode="dark"] .emp-payroll-banner-note {
+            background: rgba(245, 158, 11, 0.12) !important;
+            border-color: rgba(245, 158, 11, 0.35) !important;
+            color: #fcd34d !important;
+          }
+          [data-bs-theme="dark"] .emp-payroll-banner-note strong,
+          [data-layout-mode="dark"] .emp-payroll-banner-note strong { color: #fde68a; }
           [data-layout-mode="dark"] .emp-payroll-banner { background: linear-gradient(135deg, rgba(124,92,252,0.18), rgba(124,92,252,0.10)); border-color: rgba(124,92,252,0.35); }
           [data-layout-mode="dark"] .emp-payroll-banner-text { color: #c4b5fd; }
           .emp-attn-text { color: #374151; }
