@@ -58,6 +58,32 @@ export default function HrDocumentTemplates() {
      every page load pay for a body the user had not asked to see. */
   const [viewTarget, setViewTarget] = useState<TemplateRow | null>(null);
   const [viewLoading, setViewLoading] = useState(false);
+  /* Which row's PDF is being built — the render runs server-side and takes a
+     moment, so the row's own button spins rather than the whole table. (#30) */
+  const [pdfBusyId, setPdfBusyId] = useState<number | null>(null);
+
+  /** Download the template as a PDF, letterhead and all. (#30) */
+  const downloadPdf = async (r: TemplateRow) => {
+    if (pdfBusyId !== null) return;
+    setPdfBusyId(r.id);
+    try {
+      const res = await api.get(`/hr-document-templates/${r.id}/download-pdf`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${r.code || 'template'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revoke on the next tick — revoking immediately can cancel the download
+      // in some browsers before it has read the blob.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e: any) {
+      toast.error('Download failed', e?.response?.data?.message || 'Could not build the PDF. Please try again.');
+    } finally {
+      setPdfBusyId(null);
+    }
+  };
 
   const openView = async (r: TemplateRow) => {
     // Paint immediately from the list row — code, name, flags and dates are all
@@ -389,7 +415,7 @@ export default function HrDocumentTemplates() {
       header: () => <div className="text-center">Actions</div>,
       id: '__actions',
       enableSorting: false,
-      meta: { align: 'center', width: '17%' },   // four buttons since View was added
+      meta: { align: 'center', width: '20%' },   // five buttons since Download PDF was added (#30)
       cell: info => {
         const r = info.row.original;
         return (
@@ -398,6 +424,12 @@ export default function HrDocumentTemplates() {
                 Deprecate/Activate, Delete. View is first: it is the
                 non-destructive one, and the one reached most often. */}
             <ActionBtn icon="ri-eye-line" tone="primary" onClick={() => void openView(r)} title="View" />
+            <ActionBtn
+              icon={pdfBusyId === r.id ? 'ri-loader-4-line ri-spin' : 'ri-file-pdf-2-line'}
+              tone="dark"
+              onClick={() => void downloadPdf(r)}
+              title={pdfBusyId === r.id ? 'Building the PDF…' : 'Download PDF'}
+            />
             <ActionBtn icon="edit-svg" tone="info" onClick={() => navigate(`/hr/doc-templates/${r.id}/edit`)} title="Edit" />
             <ActionBtn
               icon={r.status === 'Active' ? 'ri-forbid-2-line' : 'ri-checkbox-circle-line'}
@@ -410,8 +442,10 @@ export default function HrDocumentTemplates() {
         );
       },
     },
+    // pdfBusyId is a dependency so the row's button actually shows its spinner
+    // — without it the memo keeps the render where the download started.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [navigate]);
+  ], [navigate, pdfBusyId]);
 
   // KPI strip
   const KPI = [
