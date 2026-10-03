@@ -2897,6 +2897,10 @@ export default function HrPayroll() {
         onAction={handleIssueAction}
         onExportPayslips={downloadAllPayslips}
         exporting={downloading === 'zip'}
+        /* Every figure the modal shows comes from this page's `rows`, so while
+           the cycle is being fetched it would otherwise render a confident
+           screen of zeros with its actions live. */
+        loading={loading}
       />
 
       {paySlipRow && (() => {

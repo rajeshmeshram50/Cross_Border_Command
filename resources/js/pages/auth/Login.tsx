@@ -33,7 +33,13 @@ export default function Login({ onForgotPassword }: LoginProps) {
   // and the backend asks which one to sign in to. `retry` re-runs the same
   // login (password or Google) with the chosen client_id.
   const [orgPrompt, setOrgPrompt] = useState<{ organizations: LoginOrg[]; message?: string; retry: (clientId: number | null) => Promise<void> } | null>(null);
-  const [orgBusy, setOrgBusy] = useState(false);
+  /* WHICH organization is signing in, not merely THAT one is. (#19)
+   *
+   * A single boolean put the spinner on every row at once, so the dialog said
+   * all of them were being signed into. The key identifies the chosen row;
+   * null means idle, and every row stays disabled while one is in flight. */
+  const [orgBusyKey, setOrgBusyKey] = useState<string | null>(null);
+  const orgBusy = orgBusyKey !== null;
 
   /* Say WHY the user is looking at a login form they didn't ask for.
    *
@@ -312,18 +318,29 @@ export default function Login({ onForgotPassword }: LoginProps) {
               {orgPrompt.message || 'This email is registered with more than one organization. Pick which one to sign in to.'}
             </p>
             <div className="space-y-2">
-              {orgPrompt.organizations.map((org, i) => (
-                <button
-                  key={`${org.client_id ?? 'null'}-${i}`}
-                  type="button"
-                  disabled={orgBusy}
-                  onClick={async () => { setOrgBusy(true); try { await orgPrompt.retry(org.client_id); } finally { setOrgBusy(false); } }}
-                  className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 hover:border-primary hover:bg-primary/5 transition-all text-[13px] font-semibold text-slate-700 disabled:opacity-60 flex items-center justify-between gap-2"
-                >
-                  <span>{org.name}</span>
-                  {orgBusy ? <Loader2 size={15} className="animate-spin text-slate-400" /> : null}
-                </button>
-              ))}
+              {orgPrompt.organizations.map((org, i) => {
+                const key = `${org.client_id ?? 'null'}-${i}`;
+                const isBusy = orgBusyKey === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    disabled={orgBusy}
+                    aria-busy={isBusy}
+                    onClick={async () => {
+                      setOrgBusyKey(key);
+                      try { await orgPrompt.retry(org.client_id); } finally { setOrgBusyKey(null); }
+                    }}
+                    className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 hover:border-primary hover:bg-primary/5 transition-all text-[13px] font-semibold text-slate-700 disabled:opacity-60 flex items-center justify-between gap-2"
+                  >
+                    <span>{org.name}</span>
+                    {/* Only the row being signed into spins. The others stay
+                        disabled — a second choice mid-request would race the
+                        first — but they are not pretending to be busy. */}
+                    {isBusy ? <Loader2 size={15} className="animate-spin text-slate-400" /> : null}
+                  </button>
+                );
+              })}
             </div>
             <button
               type="button"
