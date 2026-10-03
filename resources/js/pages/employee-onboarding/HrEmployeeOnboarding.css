@@ -1,17 +1,4 @@
-/* ============================================================
-   Employee Onboarding — extracted styles
-   Originally inline <style> blocks in HrEmployeeOnboarding.tsx;
-   moved here for separation of concerns.
-   ============================================================ */
 
-/* ─── Employees list table — crisper typography on big displays
-   and in dark mode. The default Velzon table fonts are 13px / 400
-   weight which reads as fuzzy on 1440p+ and especially loses
-   contrast in dark mode. Bump to 14px / 500, enable subpixel
-   antialiasing, and lift contrast for dark mode. */
-/* The rows scroll INSIDE this wrapper (min-height:0 lets the flex child shrink
-   below its content), so the card keeps its full height, the sticky header
-   stays put and the pager below never leaves the card's bottom edge. */
 .onb-list-table {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -21,17 +8,6 @@
 }
 .onb-list-table table { font-size: 13px; }
 
-/* Header — an exact copy of the Recruitment list header
-   (.rec-list-table thead th in resources/css/recruitment.css): same micro-caps
-   type, 10.5px/700 at 0.08em, same soft vertical gradient bar, same 13px/12px
-   padding and 1px divider, so Onboarding, Recruitment and HR Employees read as
-   one table system. It used to run 11px/800 at 0.4px on a flat tint, which sat
-   noticeably heavier and looser than every other HRMS list.
-
-   Sticky lives on the th cells so the background paints over scrolled rows in
-   every browser. The fill must stay OPAQUE for that to work — .table-light was
-   dropped from the markup because Bootstrap paints its fill via an inset
-   box-shadow that would cover any background set here. */
 .onb-list-table thead th {
   position: sticky;
   top: 0;
@@ -51,10 +27,6 @@
 }
 .onb-list-table thead th:first-child { border-top-left-radius: 14px; }
 .onb-list-table thead th:last-child  { border-top-right-radius: 14px; }
-/* Body keeps its denser 10px vertical rhythm (the rows carry 34px avatars and
-   progress bars), but takes the header's 12px horizontal padding so the column
-   text lines up with the header labels — Bootstrap's default cell padding is
-   8px, which left every heading sitting 4px right of its own column. */
 .onb-list-table tbody td {
   font-size: 13px;
   color: var(--vz-body-color);
@@ -64,7 +36,6 @@
   padding-right: 12px;
   vertical-align: middle;
 }
-/* Pager never shrinks — the table above it absorbs the height instead. */
 .onb-page .wl-pager { flex-shrink: 0; }
 
 .onb-list-table tbody tr { transition: background 120ms ease; }
@@ -72,21 +43,10 @@
 .onb-list-table .onb-id-pill,
 .onb-list-table .onb-role-pill { font-size: 11.5px; font-weight: 700; }
 
-/* ACTION column — header text and the button group both centred so
-   the column reads as one visual axis. The cell's content is wrapped
-   in a flex row, so we also push that row to centre via the > div.d-flex
-   descendant selector. Without these, the header text sat at the left
-   edge of the column while the wide button group (pencil + Initiate
-   Onboarding pill) drifted toward the centre/right, making the header
-   look detached from its contents. */
 .onb-list-table thead th:last-child,
 .onb-list-table tbody td:last-child { text-align: center; }
 .onb-list-table tbody td:last-child > .d-flex { justify-content: center; }
 
-/* Dark-mode contrast bump — the default body-color in dark mode
-   sits at rgba ~0.65 which renders thin-on-thin against the card
-   background. Lift to a near-white for primary content + a softer
-   light grey for muted/sub text so nothing looks "blurry". */
 [data-bs-theme="dark"] .onb-list-table tbody td,
 [data-layout-mode="dark"] .onb-list-table tbody td {
   color: #f1f5f9 !important;
@@ -95,12 +55,6 @@
 [data-layout-mode="dark"] .onb-list-table tbody td .text-muted {
   color: rgba(241,245,249,0.62) !important;
 }
-/* Dark-mode header — the same dark recipe as the Recruitment header, replacing
-   the blurple gradient this table used to carry (Bug #38 fixed the older
-   near-invisible tint by inventing a violet band; matching Recruitment solves
-   the same contrast problem without diverging from the other lists). The
-   fallback colour in the var() is required: an opaque fill is what stops
-   scrolled rows bleeding through the sticky header. */
 [data-bs-theme="dark"] .onb-list-table thead th,
 [data-layout-mode="dark"] .onb-list-table thead th {
   background-color: var(--vz-card-bg, #1a1d29);
@@ -115,18 +69,15 @@
   background: rgba(99,102,241,0.12);
 }
 
-/* ── Block 1: Page-level surface, hero, KPI, table, checklist modal ── */
         .onb-surface { background: #ffffff; }
         [data-bs-theme="dark"] .onb-surface { background: #1c2531; }
 
-        /* KPI cards — hover lift + icon scale, matches admin dashboard feel */
         .onb-kpi-card { cursor: pointer; transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
         .onb-kpi-card:hover { transform: translateY(-3px); box-shadow: 0 12px 32px rgba(18,38,63,0.12) !important; border-color: rgba(124,92,252,0.30) !important; }
         .onb-kpi-card .onb-kpi-icon { transition: transform .25s ease; }
         .onb-kpi-card:hover .onb-kpi-icon { transform: scale(1.08); }
         [data-bs-theme="dark"] .onb-kpi-card:hover { box-shadow: 0 12px 32px rgba(0,0,0,0.45) !important; }
 
-        /* Hero card (purple-tinted, separate container — matches screenshot) */
         .onb-hero-card {
           display: flex; align-items: center; justify-content: space-between;
           gap: 16px; flex-wrap: wrap;
@@ -151,23 +102,14 @@
         }
         .onb-checklist-cta:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(91,63,209,0.38) !important; }
 
-        /* Hero pill (Active) */
         .onb-hero-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; background: rgba(124,92,252,0.18); color: #5a3fd1; }
         .onb-hero-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: #7c5cfc; box-shadow: 0 0 0 3px rgba(124,92,252,0.20); }
 
-        /* Status & badge pills — match HrEmployees */
         .onb-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
         .onb-pill .d { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-        /* Payroll's Status chip sits in a cell that no longer clips (meta.wrap),
-           so the label must refuse to break instead — otherwise "Pending Review"
-           would fold onto two lines in a narrow column. (CBC #3) */
         .onb-pill.pay-status-pill { white-space: nowrap; }
         .onb-id-pill { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: #ece6ff; color: #5a3fd1; font-family: var(--vz-font-monospace, monospace); font-weight: 700; font-size: 12px; letter-spacing: 0.02em; }
         .onb-role-pill {
-          /* inline-block, not inline-flex: the pill renders through ChipCell,
-             which relies on text-overflow: ellipsis — and that only applies to
-             a block-level container, so a flex pill would clip the role name
-             dead with no ellipsis and no hover affordance. */
           display: inline-block;
           padding: 4px 12px;
           border-radius: 999px;
@@ -178,11 +120,6 @@
           letter-spacing: 0.02em;
           white-space: nowrap;
         }
-        /* Dark-mode role pill — tinted-glass violet so the badge is
-           clearly readable on the dark canvas. The previous
-           var(--vz-secondary-bg) + var(--vz-body-color) combo rendered
-           as near-transparent grey text on a near-transparent grey
-           background — effectively invisible. */
         [data-bs-theme="dark"] .onb-role-pill {
           background: rgba(167,139,250,0.18);
           color: #ddd6fe;
@@ -190,15 +127,6 @@
           box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
         }
 
-        /* ── Row action buttons — same recipe as the Supplier list
-              (.sup-fig .sl-act-btn--edit / .sl-evault-btn in
-              p2p-master-management/supplier-management.css), so an icon action
-              and a labelled action read the same in both modules. Copied rather
-              than imported because those rules are scoped under `.sup-fig`.
-
-              min-width/flex-shrink are load-bearing: inside the Action cell's
-              flex row the square was being squeezed to a sliver, which read as
-              a broken icon rather than a button. ── */
         .onb-edit-btn {
           width: 34px; min-width: 34px; height: 34px; flex-shrink: 0; padding: 0;
           display: inline-flex; align-items: center; justify-content: center;
@@ -221,9 +149,6 @@
 
         .onb-init-btn { padding: 7px 14px; border-radius: 9px; font-size: 12.5px; font-weight: 600; color: #fff; border: none; background: linear-gradient(135deg,#7c5cfc,#5a3fd1); box-shadow: 0 3px 8px rgba(91,63,209,0.24); cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
         .onb-init-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(91,63,209,0.32); }
-        /* In-row variant — the Supplier list's Evidence Vault pill: 34px tall,
-           4-stop violet gradient with a lit top edge (the ::before sheen) and a
-           text-shadow so the label stays crisp on the gradient. */
         .onb-init-btn.is-compact {
           position: relative; overflow: hidden;
           height: 34px; width: auto; flex-shrink: 0;
@@ -246,20 +171,12 @@
         .onb-vault-btn:hover { background: #d3f0ee; border-color: #8ad3c7; }
         [data-bs-theme="dark"] .onb-vault-btn { background: rgba(10,113,106,0.18); border-color: rgba(10,179,156,0.40); color: #4dd4be; }
 
-        /* ── Page-level dark-mode polish ──────────────────────────────────
-           These rules close the remaining bright-on-dark gaps for the
-           listing page (Hub banner, KPI cards, filters, table head, ID
-           pills, profile bar) so the dark theme feels intentional rather
-           than a partial inversion. Light-mode rendering is untouched. */
 
-        /* ID pill (EMP-003 etc.) — translucent purple instead of bright
-           lavender on dark, so it doesn't glow on the dark card surface. */
         [data-bs-theme="dark"] .onb-id-pill {
           background: rgba(124,92,252,0.18);
           color: #c4b5fd;
         }
 
-        /* Hero "Active" pill — bump opacity + lighten text for contrast. */
         [data-bs-theme="dark"] .onb-hero-pill {
           background: rgba(124,92,252,0.28);
           color: #c4b5fd;
@@ -269,23 +186,12 @@
           box-shadow: 0 0 0 3px rgba(167,139,250,0.25);
         }
 
-        /* KPI cards — soften the bright pastel icon tile on dark surface,
-           strengthen the card border so it reads as a defined card. */
         [data-bs-theme="dark"] .onb-kpi-card {
           background: var(--vz-card-bg);
           border-color: rgba(255,255,255,0.08) !important;
           box-shadow: 0 2px 10px rgba(0,0,0,0.30);
         }
-        /* The KPI icon tiles now carry a vivid gradient fill + white glyph
-           (matching the Employee module KPIs) so they stay prominent in both
-           themes — no desaturating override needed in dark mode. */
 
-        /* Status pills inside the table — the light-mode inline tones
-           ('#dceefe', '#d6f4e3' etc.) read as bright white-ish pills on
-           the dark row background. Override per-status via a [data-status]
-           attribute set in the JSX. `!important` is required because the
-           original styles are inline. The colored dot (also inline) stays
-           untouched so the brand colour still drives the status cue. */
         [data-bs-theme="dark"] .onb-pill[data-status="Document Pending"] {
           background-color: rgba(245,158,11,0.18) !important;
           color: #fcd34d !important;
@@ -307,23 +213,15 @@
           background-color: rgba(16,185,129,0.20) !important;
           color: #4ade80 !important;
         }
-        /* Catch-all for any future status — falls back to a neutral dark
-           wash with body text. */
         [data-bs-theme="dark"] .onb-pill:not([data-status="Document Pending"]):not([data-status="In Progress"]):not([data-status="IT Setup"]):not([data-status="Not Started"]):not([data-status="Orientation"]):not([data-status="Completed"]) {
           background-color: rgba(255,255,255,0.08) !important;
           color: rgba(255,255,255,0.92) !important;
         }
 
-        /* Profile bar background track — the inline #e5e7eb looks like a
-           bright stripe on dark. CSS overrides the inline bg via id-less
-           shape selector on the parent td. */
         [data-bs-theme="dark"] table tr td > div > div[style*="border-radius: 999"]:not([style*="repeating-linear-gradient"]) {
           background: rgba(255,255,255,0.08) !important;
         }
 
-        /* Table head — Bootstrap's table-light is white-on-light by
-           default; force a card-bg variant so the header bar matches the
-           rest of the table on dark theme. */
         [data-bs-theme="dark"] .table-light,
         [data-bs-theme="dark"] .table > :not(caption) > * > * {
           --vz-table-bg: transparent;
@@ -335,19 +233,12 @@
         }
         [data-bs-theme="dark"] .table-card { background: var(--vz-card-bg); }
 
-        /* Search box icon — keep it readable on the dark card. */
         [data-bs-theme="dark"] .search-box .search-icon { color: var(--vz-secondary-color); }
 
-        /* "5 results" / "Showing X of Y" copy — slightly brighter so it
-           doesn't fade into the card bg. */
         [data-bs-theme="dark"] .onb-results-count { color: var(--vz-body-color); }
 
 
-        /* ── Checklist modal ─────────────────────────────────────────────── */
         .onb-checklist-modal .modal-dialog { max-width: min(1080px, 96vw); }
-        /* The modal is a bounded flex column: header + footer stay put and the
-           checkpoint list is the ONE scroll area. The modal-body must not
-           scroll as well, otherwise the popup shows two nested scrollbars. */
         .onb-checklist-content { border-radius: 18px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.22); max-height: calc(100vh - var(--vz-modal-margin, 1.75rem) * 2); }
         .onb-checklist-content > .modal-body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
         .onb-checklist-header { background: linear-gradient(135deg,#3b0764,#4c1d95 35%,#6d28d9 70%,#7c3aed); color: #fff; padding: 14px 20px 12px; position: relative; flex: 0 0 auto; }
@@ -367,13 +258,9 @@
         .onb-cl-pill:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.55); }
         .onb-cl-pill.is-active { background: #ffffff; color: #4c1d95; border-color: #ffffff; box-shadow: 0 4px 10px rgba(0,0,0,0.14); font-weight: 700; }
         .onb-cl-pill.is-active i { color: #6d28d9; opacity: 1; }
-        /* Dark mode — solid-white selected chip looks like a light-theme
-           sticker; use a dark translucent pill with light text so the selected
-           filter follows the dark theme while staying legible on the purple header. */
         [data-bs-theme="dark"] .onb-cl-pill.is-active { background: rgba(10,8,20,0.55); color: #ffffff; border-color: rgba(255,255,255,0.55); }
         [data-bs-theme="dark"] .onb-cl-pill.is-active i { color: #c4b5fd; }
 
-        /* Employee Type row uses a translucent segmented control */
         .onb-cl-row { display: flex; align-items: center; gap: 14px; padding: 12px 20px 16px; flex-wrap: wrap; }
         .onb-cl-row .onb-cl-filter-label { margin: 0; }
         .onb-cl-typebox { display: inline-flex; gap: 4px; padding: 4px; border-radius: 11px; background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.22); }
@@ -387,8 +274,6 @@
 
         .onb-cl-summary { margin-left: auto; padding: 6px 14px; border-radius: 999px; font-size: 11.5px; font-weight: 700; background: rgba(255,255,255,0.16); color: #fff; border: 1px solid rgba(255,255,255,0.22); }
 
-        /* Only scroller in the modal — grows to fill whatever the header and
-           footer leave behind (min-height:0 lets it actually shrink). */
         .onb-cl-body { background: #f7f5fc; padding: 14px 18px 10px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
         [data-bs-theme="dark"] .onb-cl-body { background: #1f2630; }
 
@@ -415,42 +300,23 @@
         .onb-cp-desc { font-size: 10.5px; color: #6b7280; margin-top: 2px; line-height: 1.4; }
         [data-bs-theme="dark"] .onb-cp-desc { color: var(--vz-secondary-color); }
         .onb-cp-badge { font-size: 8.5px; font-weight: 800; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 4px; }
-        /* Dark mode — swap the light-pastel inline fill for a translucent
-           same-hue chip with lifted text (opt-in via the inline --pill-fg
-           custom property the badge passes), so badges stop showing as
-           white/light blocks against the dark checklist body. */
         [data-bs-theme="dark"] .onb-cp-badge[style*="--pill-fg"] {
           background: color-mix(in srgb, var(--pill-fg) 22%, transparent) !important;
           color: color-mix(in srgb, var(--pill-fg) 58%, #ffffff) !important;
         }
 
-        /* Sits outside the scroll area so the Close button is always fully
-           visible (it used to scroll below the fold / jam into the 18px
-           rounded corner on short viewports). Extra, even padding keeps a
-           consistent gap from the modal boundaries. */
         .onb-cl-footer { flex: 0 0 auto; background: #fff; border-top: 1px solid #eef0f4; padding: 14px 22px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
         [data-bs-theme="dark"] .onb-cl-footer { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
         .onb-cl-footer .hint { font-size: 11px; color: #6b7280; }
         [data-bs-theme="dark"] .onb-cl-footer .hint { color: var(--vz-secondary-color); }
-        /* margin-left:auto keeps the button hard-right even when the hint text
-           wraps onto its own line (space-between would otherwise left-align it). */
         .onb-cl-close { margin-left: auto; padding: 8px 20px; border-radius: 9px; font-size: 12px; font-weight: 700; color: #fff; border: none; background: linear-gradient(90deg,#7c3aed,#4c1d95); box-shadow: 0 6px 14px rgba(76,29,149,0.28); cursor: pointer; }
         .onb-cl-close:hover { transform: translateY(-1px); box-shadow: 0 10px 18px rgba(76,29,149,0.36); }
 
-        /* Phone — fill the screen, same as the Exit Process Checklist modal.
-           The flex column above still keeps .onb-cl-body the only scroller. */
         @media (max-width: 767.98px) {
           .onb-checklist-modal .modal-dialog { height: calc(100vh - 30px); margin: 15px auto; }
           .onb-checklist-content { height: 100%; }
           .onb-cl-body { -webkit-overflow-scrolling: touch; }
 
-          /* The purple header is a filter, not the content. At desktop sizes
-             it costs one strip; on a phone the five designation pills wrap to
-             three rows and the Employee Type buttons break their labels in
-             two, so the header took 441px of an 836px modal and the checklist
-             itself — the reason the modal is open — was left 332px to show
-             2,900px of stages. Everything in the header is tightened so the
-             list gets the screen instead. */
           .onb-checklist-header { padding: 10px 14px 8px; }
           .onb-cl-titlewrap { gap: 10px; padding-right: 38px; }
           .onb-cl-icon { width: 34px; height: 34px; border-radius: 9px; }
@@ -460,9 +326,6 @@
 
           .onb-cl-filters { padding: 9px 14px 0; }
           .onb-cl-filter-label { font-size: 9.5px; letter-spacing: 0.1em; margin-bottom: 5px; }
-          /* Six designation pills wrapped onto three rows. They run along one
-             row that scrolls sideways instead — the pill cut off at the edge is
-             what tells you there are more. */
           .onb-cl-pillrow {
             gap: 6px;
             flex-wrap: nowrap;
@@ -474,21 +337,16 @@
           .onb-cl-pill { flex: 0 0 auto; padding: 5px 11px; font-size: 11.5px; gap: 5px; white-space: nowrap; }
           .onb-cl-pill i { font-size: 12px; }
 
-          /* Labels broken across two lines are what made this row 167px tall. */
           .onb-cl-row { gap: 8px; padding: 8px 14px 10px; flex-wrap: nowrap; }
           .onb-cl-typebox { padding: 3px; border-radius: 9px; }
           .onb-cl-type { padding: 5px 10px; font-size: 11.5px; gap: 5px; white-space: nowrap; }
           .onb-cl-type i { font-size: 12px; }
-          /* Reads back the two filters that are already shown as selected one
-             line above, and cost a whole row of a phone screen to do it. */
           .onb-cl-summary { display: none; }
 
-          /* Whatever the header still costs, the list keeps most of the modal. */
           .onb-cl-body { padding: 10px 12px 8px; min-height: 55vh; }
           .onb-cl-footer { padding: 10px 14px; }
         }
 
-/* ── Block 2: Edit Employee modal ── */
         .onb-edit-emp-modal .modal-dialog { max-width: min(960px, 95vw); }
         .onb-edit-emp-modal .modal-content { border-radius: 18px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
         .onb-ee-header { padding: 20px 24px; background: linear-gradient(120deg,#5a3fd1 0%,#7c5cfc 55%,#a78bfa 100%); color: #fff; position: relative; }
@@ -510,17 +368,6 @@
         .onb-ee-input { width: 100%; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; }
         .onb-ee-input::placeholder { color: #9ca3af; }
         .onb-ee-input:focus { outline: none; border-color: #7c5cfc; box-shadow: 0 0 0 3px rgba(124,92,252,0.15); }
-        /* Same green as every other system-filled field. (#138)
-           This one was purple (#f5f1ff / #d6c9ff, bold violet text) while the
-           ten AUTO fields on the initiate form and the auto-fetched fields on
-           the provisioning form were all green, so the SAME idea — the system
-           filled this, you cannot edit it — arrived in two different colours
-           depending on which stage the user happened to be on. The comment
-           further down states the rule this now follows: the green tint is this
-           form's signal for "auto-filled / locked", and nothing else may paint
-           a field. It also had no dark-mode rule at all, so the pale violet
-           survived into the dark theme; folding it into the shared selector
-           below fixes that in the same move. */
         .onb-ee-input.is-readonly { border-color: #b6e4be; background: #f5fcf6; }
         [data-bs-theme="dark"] .onb-ee-input { background: var(--vz-card-bg); border-color: var(--vz-border-color); color: var(--vz-body-color); }
         [data-bs-theme="dark"] .onb-ee-input::placeholder { color: var(--vz-secondary-color); }
@@ -532,7 +379,6 @@
         .onb-ee-save { padding: 10px 20px; border-radius: 9px; border: none; background: linear-gradient(135deg,#7c5cfc,#5a3fd1); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 8px 18px rgba(91,63,209,0.30); transition: transform .15s ease, box-shadow .15s ease; }
         .onb-ee-save:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(91,63,209,0.38); }
 
-/* ── Block 3: Evidence Vault modal ── */
         .vault-modal-wide .modal-dialog { max-width: min(1080px, 94vw); }
         .vault-modal-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
         .vault-pill { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: rgba(255,255,255,0.18); color: #fff; }
@@ -555,39 +401,17 @@
         .vault-tab-btn.is-active { color: #5a3fd1; border-bottom-color: #7c5cfc; }
         .vault-tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 18px; padding: 0 6px; border-radius: 999px; background: var(--vz-light); color: var(--vz-secondary-color); font-size: 10.5px; font-weight: 700; }
         .vault-tab-btn.is-active .vault-tab-count { background: #ece6ff; color: #5a3fd1; }
-        /* Dark mode — the active tab's count chip was a light lavender block and
-           the active/hover text was a dark purple, both low-contrast on the dark
-           vault. Lift to translucent violet + light-violet text. */
         [data-bs-theme="dark"] .vault-tab-count { background: rgba(255,255,255,0.10); color: rgba(255,255,255,0.72); }
         [data-bs-theme="dark"] .vault-tab-btn.is-active .vault-tab-count { background: rgba(124,92,252,0.28); color: #c4b5fd; }
         [data-bs-theme="dark"] .vault-tab-btn.is-active { color: #c4b5fd; border-bottom-color: #a78bfa; }
         [data-bs-theme="dark"] .vault-tab-btn:hover { color: #c4b5fd; }
         .vault-doc-row { display: flex; align-items: center; gap: 14px; padding: 14px 4px; border-bottom: 1px solid var(--vz-border-color); }
         .vault-doc-row:last-child { border-bottom: none; }
-        /* Wrapper card around the doc row + signing-workflow stepper.
-           The row used to carry the divider itself; now the stepper
-           sits underneath it, so the divider moves onto the wrapper
-           and the row inside it goes border-less. */
         .vault-tpl-card { border-bottom: 1px solid var(--vz-border-color); padding-bottom: 8px; margin-bottom: 4px; }
         .vault-tpl-card:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
         .vault-tpl-card .vault-doc-row { border-bottom: none; padding-bottom: 6px; }
         .vault-tpl-card .ep-signing { margin: 6px 4px 4px; }
 
-        /* ── Document preview modal — button hover polish ──
-           The Close / Download DOCX / header-X buttons were inline
-           styles only, so they sat flat under the cursor. Real hover
-           states (color shift + 1px lift + soft shadow) bring them in
-           line with the rest of the module's interactive feel. The
-           inline `style` props above each button still set the base
-           paint; these rules only kick in on hover/active. */
-        /* Signed-document preview: footer + Close button. (CBC #6)
-           Both were inline `var(--vz-card-bg, #fff)`. Unlike --vz-secondary-bg
-           (which the scrolling body above uses, and which is global and did go
-           dark) --vz-card-bg is not defined outside a .card in this theme, so
-           the fallback applied and the action bar rendered white under a dark
-           document — the reported white strip.
-           Explicit hexes here, and !important because the values they replace
-           are inline declarations on the elements themselves. */
         :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-prev-foot {
           background: #222831 !important;
           border-top-color: rgba(255,255,255,0.10) !important;
@@ -614,9 +438,6 @@
           box-shadow: 0 6px 18px rgba(22,163,74,0.40);
         }
 
-        /* Top-right close X in the purple preview header. Sits on a
-           translucent white pill — bump opacity + rotate the glyph
-           slightly so the press feels deliberate. */
         .tpl-prev-x { transition: background .15s ease, transform .15s ease, box-shadow .18s ease; }
         .tpl-prev-x:hover {
           background: rgba(255,255,255,0.32) !important;
@@ -625,8 +446,6 @@
         }
         .tpl-prev-x:active { transform: scale(0.96); }
 
-        /* Dark-mode polish — keep the same lift, paint the ghost
-           button against the dark surface instead of bright violet. */
         [data-bs-theme="dark"] .tpl-prev-btn--ghost:hover {
           background: rgba(124,92,252,0.16) !important;
           border-color: rgba(167,139,250,0.55) !important;
@@ -647,10 +466,6 @@
         .vault-action-view:hover { color: #5a3fd1; border-color: #c4b5fd; }
         .vault-action-download { display: inline-flex; align-items: center; gap: 5px; padding: 7px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: linear-gradient(135deg,#7c5cfc,#a78bfa); color: #fff; border: none; box-shadow: 0 4px 10px rgba(124,92,252,0.25); }
 
-        /* Document row badges in dark mode. Bootstrap's *-subtle status tokens
-           render as muddy low-contrast chips on the dark vault surface, and the
-           category badge is an inline light-grey pill. Pin clearer violet/tinted
-           pills with bright readable text. */
         [data-bs-theme="dark"] .vault-cat-badge { background: rgba(255,255,255,0.08) !important; color: #cbd5e1 !important; }
         [data-bs-theme="dark"] .vault-status-badge.bg-success-subtle   { background: rgba(16,185,129,0.22) !important;  color: #4ade80 !important; }
         [data-bs-theme="dark"] .vault-status-badge.bg-info-subtle      { background: rgba(56,189,248,0.22) !important;  color: #7dd3fc !important; }
@@ -658,15 +473,9 @@
         [data-bs-theme="dark"] .vault-status-badge.bg-danger-subtle    { background: rgba(239,68,68,0.22) !important;   color: #fca5a5 !important; }
         [data-bs-theme="dark"] .vault-status-badge.bg-primary-subtle   { background: rgba(99,102,241,0.22) !important;  color: #a5b4fc !important; }
         [data-bs-theme="dark"] .vault-status-badge.bg-secondary-subtle { background: rgba(148,163,184,0.18) !important; color: #cbd5e1 !important; }
-        /* "View" action was a hard white pill — looked like a bright sticker on
-           the dark vault. Recolour to the dark surface + light text. (Download
-           keeps its violet gradient — already fine in dark.) */
         [data-bs-theme="dark"] .vault-action-view { background: #1c2531 !important; color: #cbd5e1 !important; border-color: rgba(255,255,255,0.12) !important; }
         [data-bs-theme="dark"] .vault-action-view:hover { color: #c4b5fd !important; border-color: #6d5bd0 !important; }
 
-        /* Document code badge (e.g. IT-EMP-003 / IT-DIR-001). Light amber chip
-           by default; in dark mode swap to a translucent amber so it stays
-           legible instead of a bright sticker on the dark vault surface. */
         .vault-doc-code {
           font-size: 10.5px; font-family: monospace; color: #a16207;
           background: #fef3c7; padding: 1px 6px; border-radius: 4px; margin-left: 6px;
@@ -675,16 +484,8 @@
           background: rgba(245,158,11,0.20) !important;
           color: #fcd34d !important;
         }
-        /* Document type icon tiles carry inline light-pastel backgrounds with a
-           dark coloured glyph — both illegible on the dark vault. Recolour to a
-           translucent violet tile + light violet glyph (the app's dark accent)
-           so they read consistently regardless of the per-category inline hue. */
         [data-bs-theme="dark"] .vault-doc-icon { background: rgba(124,92,252,0.18) !important; color: #c4b5fd !important; }
 
-        /* ─── Organizational tab — match-context strip, doc-count pill,
-             loading + empty states. Tied to theme vars so dark mode picks
-             up the correct surfaces instead of flashing the light hex
-             values that used to sit inline. ─── */
         .vault-match-strip {
           padding: 10px 14px;
           background: #eef2ff;
@@ -737,17 +538,9 @@
         }
         .vault-action-download:hover { box-shadow: 0 6px 14px rgba(124,92,252,0.35); }
 
-/* ── Block 4: Initiate Onboarding wizard (stages 1-6, modals, footer) ── */
         .onb-init-modal .modal-dialog { max-width: min(1280px, 96vw); }
         .onb-init-content { border-radius: 18px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.22); }
 
-        /* Signed-copy viewer — the same 18px corner as every other dialog on
-           this page (checklist, edit employee, initiate onboarding). It was
-           left on Bootstrap's default with a 6px band on top, so it read as a
-           different kind of window to everything around it.
-           The body inherits the radius for the reason the Edit Employee header
-           needed it: a body rounded less than the card it sits in clips the
-           band's corners early and shows a wedge of the body's own colour. */
         .vault-preview-modal .modal-content {
           border-radius: 18px !important;
           overflow: hidden;
@@ -755,7 +548,6 @@
         }
         .vault-preview-modal .modal-body { border-radius: inherit; }
 
-        /* Header */
         .onb-init-header {
           background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 50%, #7c3aed 100%);
           color: #fff;
@@ -812,7 +604,6 @@
         .onb-init-prod { font-size: 9.5px; letter-spacing: 0.10em; text-transform: uppercase; color: rgba(255,255,255,0.72); margin: 0; text-align: right; }
         .onb-init-prod-name { font-size: 12.5px; font-weight: 700; color: #fff; }
 
-        /* Stepper */
         .onb-init-stepper { display: flex; align-items: center; gap: 4px; padding: 10px 0 12px; flex-wrap: wrap; }
         .onb-init-step { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; font-size: 11px; font-weight: 600; background: rgba(255,255,255,0.10); color: rgba(255,255,255,0.78); border: 1px solid rgba(255,255,255,0.20); cursor: pointer; transition: all .15s ease; }
         .onb-init-step:hover { background: rgba(255,255,255,0.18); color: #fff; }
@@ -821,11 +612,9 @@
         .onb-init-step.is-active .num { background: #4c1d95; color: #fff; }
         .onb-init-step-sep { color: rgba(255,255,255,0.40); font-size: 11px; }
 
-        /* Body layout */
         .onb-init-body { display: flex; gap: 0; background: #f7f5fc; max-height: 64vh; overflow: hidden; }
         [data-bs-theme="dark"] .onb-init-body { background: #1f2630; }
 
-        /* Sidebar */
         .onb-init-side { width: 270px; flex-shrink: 0; padding: 14px 14px 14px 18px; overflow-y: auto; border-right: 1px solid #ece9f6; }
         [data-bs-theme="dark"] .onb-init-side { border-color: var(--vz-border-color); }
         .onb-init-side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
@@ -853,7 +642,6 @@
         .onb-init-stage-pct { font-weight: 700; color: var(--vz-secondary-color); }
         .onb-init-stage-card.is-active .onb-init-stage-pct { color: #7c3aed; }
 
-        /* Main content */
         .onb-init-main { flex: 1; min-width: 0; padding: 16px 22px; overflow-y: auto; }
         .onb-init-stage-banner { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
         [data-bs-theme="dark"] .onb-init-stage-banner { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
@@ -865,7 +653,6 @@
         .onb-init-banner-state { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: #7c3aed; }
         .onb-init-banner-state .dot { width: 6px; height: 6px; border-radius: 50%; background: #7c3aed; }
 
-        /* Profile completion banner */
         .onb-init-profile-bar { background: #f3edff; border: 1px solid #e3d6ff; border-radius: 12px; padding: 12px 16px; margin-bottom: 14px; }
         [data-bs-theme="dark"] .onb-init-profile-bar { background: rgba(124,92,252,0.12); border-color: rgba(124,92,252,0.28); }
         .onb-init-profile-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
@@ -875,13 +662,7 @@
         .onb-init-profile-fill { height: 100%; background: linear-gradient(90deg,#f06548,#f7b84b); border-radius: 999px; }
         .onb-init-profile-help { font-size: 10.5px; color: #5b3fd1; margin-top: 6px; }
 
-        /* Sub-step section.
-           overflow: visible (not hidden) — dropdown menus opened inside a
-           section need to escape the box vertically; clipping made them
-           disappear behind the next section. */
         .onb-init-section { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; margin-bottom: 14px; overflow: visible; }
-        /* Lift sections that contain an open dropdown above siblings so the
-           menu visually layers correctly when it overlaps the next section. */
         .onb-init-section:has(.master-select-wrap.show),
         .onb-init-section:has(.master-datepicker-wrap.show) { position: relative; z-index: 5; }
         [data-bs-theme="dark"] .onb-init-section { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
@@ -902,12 +683,6 @@
         .onb-init-section-step.comp { background: #fde8c4; color: #a4661c; }
         .onb-init-section-body { padding: 14px 16px; }
 
-        /* Top margin separates each sub-heading from the field row above it,
-           bottom margin gives breathing room before the fields/checkboxes
-           below — previously there was no top margin so headings like
-           "Organisational Details" / "Bonus, Perks & Statutory" looked
-           cramped against the preceding row. The first sub-heading in a
-           section keeps zero top margin so it sits snug under the section head. */
         .onb-init-subgroup { font-size: 9.5px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: var(--vz-secondary-color); margin: 20px 0 12px; }
         .onb-init-subgroup:first-child { margin-top: 0; }
         .onb-init-subgroup + .onb-init-subgroup { margin-top: 16px; }
@@ -915,11 +690,6 @@
         .onb-init-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #374151; margin: 0 0 5px; display: flex; align-items: center; gap: 5px; }
         [data-bs-theme="dark"] .onb-init-label { color: var(--vz-body-color); }
         .onb-init-label .req { color: #f06548; font-weight: 700; }
-        /* Scoped to BOTH label classes. (#138)
-           The badge was defined only under .onb-init-label, so the same
-           <span className="auto">AUTO</span> placed on an .onb-ee-label rendered
-           as bare unstyled text — which is how an inconsistency here turns into
-           a worse one rather than a fix. */
         .onb-init-label .auto,
         .onb-ee-label .auto {
           font-size: 8.5px; padding: 1px 6px; border-radius: 4px;
@@ -927,9 +697,6 @@
           letter-spacing: 0.04em; font-weight: 700;
           text-transform: uppercase;
         }
-        /* .onb-init-label is a flex row with a gap, which spaces the badge for
-           free; .onb-ee-label is display:block, so the badge needs its own
-           offset or it butts straight against the label text. */
         .onb-ee-label .auto { display: inline-block; margin-left: 5px; vertical-align: middle; }
         [data-bs-theme="dark"] .onb-init-label .auto,
         [data-layout-mode="dark"] .onb-init-label .auto,
@@ -938,9 +705,6 @@
           background: rgba(16,185,129,0.18) !important;
           color: #6ee7b7 !important;
         }
-        /* No native number spinners — on a salary field one click moves the CTC
-           by ₹1, and the arrows sit on top of a right-aligned figure, appearing
-           only on hover so the amount shifts as the pointer crosses it. */
         .onb-init-input[type="number"]::-webkit-outer-spin-button,
         .onb-init-input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
         .onb-init-input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
@@ -948,11 +712,7 @@
         .onb-init-input, .onb-init-select { width: 100%; height: 36px; padding: 6px 10px; font-size: 12px; color: #1f2937; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; transition: all .15s ease; }
         .onb-init-input::placeholder { color: #9ca3af; }
         .onb-init-input:focus, .onb-init-select:focus { outline: none; border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(124,92,252,0.15); }
-        /* `is-required` is a marker class, not an error state — an empty
-           required field should look neutral, not pink. Real errors land on
-           `.is-invalid` (handled below). Leaving this rule as a no-op so we
-           don't break callers but inherit the default input look. */
-        .onb-init-input.is-required { /* intentionally neutral */ }
+        .onb-init-input.is-required {  }
         .onb-init-input.is-autofilled { border-color: #b6e4be; background: #f5fcf6; }
         .onb-init-input.is-invalid { border-color: #f06548; background: #fff5f3; box-shadow: 0 0 0 3px rgba(240,101,72,0.12); }
         .onb-field-error { display: block; font-size: 11px; font-weight: 500; color: #c43d20; margin-top: 4px; }
@@ -960,13 +720,10 @@
         [data-bs-theme="dark"] .onb-init-input.is-invalid { border-color: #ef4444; background: rgba(240,101,72,0.12); }
         [data-bs-theme="dark"] .onb-field-error { color: #fca5a5; }
 
-        /* Spinner animation for loader */
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
-        /* Apply this class to a Remix loader icon (e.g. ri-loader-4-line)
-           to make it actually spin. Inline-block + spin keyframe. */
         .onb-spin {
           display: inline-block;
           animation: spin 0.85s linear infinite;
@@ -980,66 +737,18 @@
         .onb-init-toggle.off { background: #d1d5db; }
         .onb-init-toggle.off::after { left: 2px; }
         .onb-init-toggle-label { font-size: 12.5px; font-weight: 700; color: #108548; }
-        /* Scope note under the payroll toggle — secondary to the label, so
-           it reads as an explanation rather than a second setting. */
         .onb-init-toggle-hint { font-size: 11.5px; color: #6b7280; margin: 6px 0 12px 2px; line-height: 1.45; }
         [data-bs-theme="dark"] .onb-init-toggle-hint { color: #9ca3af; }
         [data-bs-theme="dark"] .onb-init-toggle-label { color: #4ade80; }
 
-        /* PF Applicable stays pinned while Compensation scrolls (#12).
-           SCOPED to this wrapper, not to .onb-init-toggle-row — the same pill
-           is used for the Attendance Tracking switch on Work Details, which
-           sits at the end of a short step and has nothing to stay above.
-
-           top: 0 pins it to .onb-init-main, the wizard's scroll container.
-           Sticky needs an unclipped ancestor chain: .onb-init-section is
-           `overflow: visible` and .onb-init-section-body sets no overflow, so
-           nothing here traps it.
-
-           The negative side margins pull the wrapper out over the section
-           body's 16px padding and the matching padding puts the chip back
-           where it was, so the opaque background reaches the section edges and
-           fields cannot be seen sliding through the gap beside the pill. The
-           vertical padding replaces the chip's own 10px margins, which would
-           otherwise collapse through a wrapper with no padding of its own and
-           leave a transparent strip above the pinned row.
-
-           z-index only has to beat the fields it scrolls over. An open
-           MasterSelect menu is portalled to the body at z-index 12000, so it
-           is never at risk of being covered by this. */
         .onb-init-toggle-sticky {
           position: sticky;
           top: 0;
           z-index: 3;
           margin: 0 -16px;
-          /* No top padding — the chip sits flush with the container's top edge
-             when pinned. The 10px that used to be here was meant to absorb the
-             chip's collapsing top margin, but the rule below already zeroes
-             that margin, so it only pushed the pill down and left a strip for
-             passing rows to show in.
-             Sides and bottom stay: the side padding cancels the negative margin
-             that carries the opaque background out to the section edges, and
-             the 12px bottom is the hint's own margin moved onto the wrapper so
-             the gap before "Payroll Configuration" is unchanged. */
           padding: 0 16px 12px;
           background: #fff;
         }
-        /* Opaque band ABOVE the pinned wrapper.
-         *
-         * A sticky element only paints its own box. Rows scrolling past it
-         * travel through the strip between the scroll container's top edge and
-         * the wrapper — sub-pixel rounding, a partially-scrolled row, or any
-         * offset above `top: 0` all leave something visible there, which is the
-         * "background data" showing over the pill (QA: onboarding PF).
-         *
-         * bottom: 100% anchors this to the wrapper's top edge, so it travels
-         * WITH the pinned block rather than sitting at a fixed page position.
-         * `background: inherit` means it follows the wrapper's own colour and
-         * needs no separate dark-mode rule — one less thing to drift.
-         *
-         * 24px is generous on purpose: it has to out-cover a scrolled row's
-         * partial height, and it is clipped by the scroll container above, so
-         * over-reaching costs nothing visually. */
         .onb-init-toggle-sticky::before {
           content: '';
           position: absolute;
@@ -1050,27 +759,8 @@
           background: inherit;
           pointer-events: none;
         }
-        /* Both outer margins move onto the wrapper as padding. A margin on the
-           first/last child collapses straight through a wrapper that has no
-           padding on that edge, which would leave a transparent strip above
-           and below the pinned block for the rows underneath to show through.
-           The 12px bottom padding is the hint's own bottom margin, so the gap
-           before "Payroll Configuration" is unchanged. */
         .onb-init-toggle-sticky .onb-init-toggle-row { margin-top: 0; }
         .onb-init-toggle-sticky .onb-init-toggle-hint { margin-bottom: 0; }
-        /* The pinned row MUST be opaque — it is what stops the fields scrolling
-           underneath from showing through it. Two ways it was failing: (CBC #5)
-             1. `var(--vz-card-bg)` carried NO fallback. Where that token does
-                not resolve the declaration is invalid at computed-value time,
-                which makes the background TRANSPARENT rather than falling back
-                to the light #fff above — so the Compensation rows slid straight
-                through the toggle and its label, which is the reported overlap.
-             2. It answered to [data-bs-theme] only, so under the
-                [data-layout-mode="dark"] variant the wrapper kept the light
-                #fff while everything scrolling under it was dark.
-           An explicit hex fixes both. isolation:isolate keeps the pinned row in
-           its own stacking context so a positioned control inside a field below
-           cannot paint over it regardless of z-index. */
         [data-bs-theme="dark"] .onb-init-toggle-sticky,
         [data-layout-mode="dark"] .onb-init-toggle-sticky { background: #222831; }
         .onb-init-toggle-sticky { isolation: isolate; }
@@ -1103,7 +793,6 @@
         .onb-init-breakup-cell.total .v { color: #4c1d95; }
         .onb-init-breakup-op { font-size: 16px; font-weight: 800; color: var(--vz-secondary-color); }
 
-        /* ── Stage 6 — Final Verification & Activation ── */
         .onb-ver-progress { background: #ecfdf3; border: 1px solid #bbf7d0; border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; display: flex; align-items: flex-start; gap: 12px; }
         [data-bs-theme="dark"] .onb-ver-progress { background: rgba(16,133,72,0.16); border-color: rgba(16,133,72,0.40); }
         .onb-ver-progress-icon { width: 36px; height: 36px; border-radius: 9px; background: linear-gradient(135deg,#0ab39c,#108548); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -1173,7 +862,6 @@
         .onb-ver-activate-btn { padding: 14px 20px; border-radius: 11px; font-size: 13px; font-weight: 700; color: #fff; background: linear-gradient(135deg,#10b981,#059669); border: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 8px 18px rgba(5,150,105,0.30); transition: all .15s ease; }
         .onb-ver-activate-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(5,150,105,0.38); }
 
-        /* ── Flag Issue Modal ── */
         .onb-flag-modal .modal-dialog { max-width: 520px; }
         .onb-flag-content { border-radius: 16px; overflow: hidden; border: none; box-shadow: 0 24px 60px rgba(0,0,0,0.30); }
         .onb-flag-header { background: linear-gradient(135deg,#ef4444 0%,#dc2626 100%); color: #fff; padding: 22px 24px 20px; position: relative; }
@@ -1207,7 +895,6 @@
         .onb-flag-submit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(220,38,38,0.38); }
         .onb-flag-submit:disabled { opacity: 0.6; cursor: not-allowed; }
 
-        /* ── Activate Employee Modal ── */
         .onb-act-modal .modal-dialog { max-width: 500px; }
         .onb-act-content { border-radius: 16px; overflow: hidden; border: none; box-shadow: 0 24px 60px rgba(0,0,0,0.30); }
         .onb-act-header { background: linear-gradient(135deg,#10b981 0%,#059669 100%); color: #fff; padding: 22px 24px 20px; position: relative; }
@@ -1234,7 +921,6 @@
         .onb-act-confirm { flex: 1.2; padding: 12px 16px; border-radius: 10px; border: none; background: linear-gradient(135deg,#10b981,#059669); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 8px 18px rgba(5,150,105,0.30); transition: transform .15s ease, box-shadow .15s ease; }
         .onb-act-confirm:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(5,150,105,0.38); }
 
-        /* ── Stage 4 — Payroll ── */
         .onb-pay-progress { background: #fef3c7; border: 1px solid #fde68a; border-radius: 12px; padding: 12px 16px; margin-bottom: 14px; display: flex; align-items: flex-start; gap: 12px; }
         [data-bs-theme="dark"] .onb-pay-progress { background: rgba(245,158,11,0.18); border-color: rgba(245,158,11,0.40); }
         .onb-pay-progress-icon { width: 36px; height: 36px; border-radius: 9px; background: linear-gradient(135deg,#f59e0b,#b45309); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -1256,8 +942,6 @@
         .onb-pay-section-icon.tax  { background: #fef3c7; color: #b45309; }
         .onb-pay-section-icon.check { background: #d6f4e3; color: #108548; }
         .onb-pay-section-title { font-size: 13.5px; font-weight: 700; color: #1f2937; margin: 0; }
-        /* Says a required-looking block isn't required right now (bank details
-           under cheque). Sits after the title, wraps on a narrow modal. */
         .onb-pay-section-note { font-size: 11.5px; font-weight: 500; color: #6b7280; line-height: 1.35; }
         [data-bs-theme="dark"] .onb-pay-section-note { color: var(--vz-secondary-color); }
         [data-bs-theme="dark"] .onb-pay-section-title { color: var(--vz-heading-color, var(--vz-body-color)); }
@@ -1281,7 +965,6 @@
         .onb-pay-check-name { font-size: 12.5px; font-weight: 700; color: #1f2937; margin: 0; flex-grow: 1; }
         [data-bs-theme="dark"] .onb-pay-check-name { color: var(--vz-heading-color, var(--vz-body-color)); }
 
-        /* ── Stage 5 — Policies ── */
         .onb-pol-progress { background: #f3edff; border: 1px solid #e3d6ff; border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; display: flex; align-items: flex-start; gap: 12px; }
         [data-bs-theme="dark"] .onb-pol-progress,
         [data-layout-mode="dark"] .onb-pol-progress { background: rgba(124,92,252,0.12); border-color: rgba(124,92,252,0.28); }
@@ -1301,12 +984,6 @@
         .onb-pol-legend-link { margin-left: auto; color: #7c3aed; font-weight: 600; }
 
         .onb-pol-section { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
-        /* Explicit hex, NOT var(--vz-card-bg). (CBC #11)
-           That token is defined inside `.card` and nowhere else — never on
-           :root — and this panel has no card ancestor, so the declaration was
-           invalid at computed-value time and the background fell back to
-           TRANSPARENT. The light surface behind it then showed through and the
-           whole Organizational Documents area read white in dark mode. */
         [data-bs-theme="dark"] .onb-pol-section,
         [data-layout-mode="dark"] .onb-pol-section { background: #222831; border-color: var(--vz-border-color); }
         .onb-pol-section-head { display: flex; align-items: center; gap: 11px; padding: 11px 16px; border-bottom: 1px solid #f1eff7; }
@@ -1322,9 +999,6 @@
         [data-bs-theme="dark"] .onb-pol-doc,
         [data-layout-mode="dark"] .onb-pol-doc { border-color: var(--vz-border-color); }
         .onb-pol-doc:last-child { border-bottom: none; }
-        /* Hover affordance — the row is now click-to-expand, so it
-           highlights softly under the cursor. Expanded rows keep the
-           accent so the user can tell which one they opened. */
         .onb-pol-doc:hover { background: #faf8ff; }
         .onb-pol-doc.is-expanded { background: #faf8ff; }
         [data-bs-theme="dark"] .onb-pol-doc,
@@ -1343,15 +1017,10 @@
         .onb-pol-gen-btn { padding: 6px 13px; border-radius: 8px; font-size: 11.5px; font-weight: 600; color: #fff; border: none; background: linear-gradient(135deg,#0ab39c,#0a8a72); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 3px 8px rgba(10,138,114,0.24); }
         .onb-pol-gen-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba(10,138,114,0.32); }
         .onb-pol-doc-help { font-size: 10.5px; color: var(--vz-secondary-color); margin: 8px 0 0; padding-left: 43px; display: flex; align-items: center; gap: 5px; }
-        /* A rejection reads as a warning, not as the grey hint the other
-           three states share, and it can run to 500 characters — so it wraps
-           and aligns to the top of its icon instead of centring one long line
-           against it. */
         .onb-pol-doc-help.is-rejected { color: #ef4444; font-weight: 600; align-items: flex-start; }
         .onb-pol-doc-help.is-rejected i { margin-top: 1px; flex-shrink: 0; }
         .onb-pol-doc-help.is-rejected strong { font-weight: 700; }
 
-        /* ── Stage 3 — Provisioning ── */
         .onb-prov-progress { background: #dceefe; border: 1px solid #b6d6fb; border-radius: 12px; padding: 12px 16px; margin-bottom: 14px; display: flex; align-items: flex-start; gap: 12px; }
         [data-bs-theme="dark"] .onb-prov-progress { background: rgba(12,99,176,0.18); border-color: rgba(12,99,176,0.40); }
         .onb-prov-progress-icon { width: 36px; height: 36px; border-radius: 9px; background: linear-gradient(135deg,#3b82f6,#1d4ed8); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -1407,7 +1076,6 @@
         .onb-prov-input.is-autofetched i { color: #108548; }
         [data-bs-theme="dark"] .onb-prov-input { background: var(--vz-card-bg); border-color: var(--vz-border-color); color: var(--vz-body-color); }
 
-        /* ── Stage 2 — Documents ── */
         .onb-init-banner-state.pending { color: #a4661c; }
         .onb-init-banner-state.pending .dot { background: #f59e0b; }
 
@@ -1430,9 +1098,6 @@
         [data-bs-theme="dark"] .onb-doc-cat { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
         .onb-doc-cat-head { display: flex; align-items: center; gap: 11px; padding: 10px 14px; }
         .onb-doc-cat-icon { width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
-        /* BUG-151: category icons used light inline tints (white/blue/green)
-           that stayed light in dark mode. Override per-category in dark with
-           translucent fills + bright glyphs (!important beats the inline). */
         [data-bs-theme="dark"] .onb-doc-cat-icon--identity,
         [data-layout-mode="dark"] .onb-doc-cat-icon--identity { background: rgba(124,58,237,0.20) !important; color: #c4b5fd !important; }
         [data-bs-theme="dark"] .onb-doc-cat-icon--address,
@@ -1442,7 +1107,6 @@
         [data-bs-theme="dark"] .onb-doc-cat-icon--bank,
         [data-layout-mode="dark"] .onb-doc-cat-icon--bank { background: rgba(16,185,129,0.20) !important; color: #6ee7b7 !important; }
 
-        /* "Save the company name first…" hint banner — was hardcoded light amber. */
         .onb-doc-hint-banner { font-size: 11.5px; color: #a4661c; background: #fde8c4; padding: 6px 10px; border-radius: 8px; margin-bottom: 6px; }
         [data-bs-theme="dark"] .onb-doc-hint-banner,
         [data-layout-mode="dark"] .onb-doc-hint-banner { color: #fcd34d; background: rgba(251,191,36,0.14); border: 1px solid rgba(251,191,36,0.30); }
@@ -1457,18 +1121,12 @@
         .onb-doc-row-meta { min-width: 0; flex-grow: 1; }
         .onb-doc-row-name { font-size: 12.5px; font-weight: 700; color: #1f2937; margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
         [data-bs-theme="dark"] .onb-doc-row-name { color: var(--vz-heading-color, var(--vz-body-color)); }
-        /* One line only. The uploaded file name lives here, and a long one used
-           to wrap onto a second row and push the row's height around; clip it
-           with an ellipsis instead (the full name is on the element's tooltip).
-           Needs the min-width:0 on .onb-doc-row-meta above to shrink in flex. */
         .onb-doc-row-sub {
           font-size: 11px; color: var(--vz-secondary-color); margin: 1px 0 0;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .onb-doc-status-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 600; }
         .onb-doc-status-pill .dot { width: 6px; height: 6px; border-radius: 50%; }
-        /* Per-status colours as classes (was inline tones) so dark mode adapts.
-           Light = pastel; dark = translucent tint + bright ink. No leading dot. */
         .onb-doc-status-pill--pending  { background: #fde8c4; color: #a4661c; }
         .onb-doc-status-pill--uploaded { background: #dceefe; color: #0c63b0; }
         .onb-doc-status-pill--verified { background: #d6f4e3; color: #108548; }
@@ -1483,9 +1141,6 @@
         .onb-doc-upload-btn { padding: 6px 13px; border-radius: 8px; font-size: 11.5px; font-weight: 600; color: #fff; border: none; background: linear-gradient(135deg,#7c3aed,#5b21b6); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 3px 8px rgba(91,33,182,0.24); }
         .onb-doc-upload-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba(91,33,182,0.32); }
 
-        /* Ghost (secondary) doc buttons — View / Delete. Were hardcoded white
-           inline, so they stayed white in dark mode. Now theme-aware classes
-           (the !important beats the .onb-doc-upload-btn gradient base). */
         .onb-doc-ghost-btn { box-shadow: none !important; text-decoration: none; }
         .onb-doc-ghost-view { background: #fff !important; color: #5a3fd1 !important; border: 1px solid #d6c9ff !important; }
         .onb-doc-ghost-del  { background: #fff !important; color: #b1401d !important; border: 1px solid #f3c0b3 !important; }
@@ -1500,9 +1155,6 @@
         [data-bs-theme="dark"] .onb-doc-ghost-del:hover,
         [data-layout-mode="dark"] .onb-doc-ghost-del:hover { background: rgba(239,68,68,0.26) !important; }
 
-        /* ── Stage 2 loading skeleton — unique animated category cards shown
-           while documents + previous-employments fetch. Distinct diagonal
-           sweep (onb-s2sweep) so it doesn't look like other shimmers. ── */
         .onb-s2sk { display: flex; flex-direction: column; gap: 14px; padding: 4px 2px; }
         .onb-s2sk-cat { border: 1px solid #ece6ff; border-radius: 12px; padding: 14px; background: #faf9ff; }
         .onb-s2sk-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
@@ -1530,7 +1182,6 @@
           background-size: 250% 100%;
         }
 
-        /* Previous Employment companies */
         .onb-doc-prev { background: #fff; border: 1px solid #fde8c4; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
         .onb-doc-prev-head { display: flex; align-items: center; gap: 11px; padding: 12px 14px; background: linear-gradient(90deg,#fef3c7,#fffbe7); border-bottom: 1px solid #fde8c4; }
         [data-bs-theme="dark"] .onb-doc-prev { background: var(--vz-card-bg); border-color: rgba(245,158,11,0.40); }
@@ -1566,7 +1217,6 @@
         [data-bs-theme="dark"] .onb-doc-add-comp { background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.45); color: #fcd34d; }
         [data-bs-theme="dark"] .onb-doc-add-comp:hover { background: rgba(245,158,11,0.18); border-color: rgba(245,158,11,0.65); }
 
-        /* Footer */
         .onb-init-footer { background: #fff; border-top: 1px solid #ece9f6; padding: 12px 22px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
         [data-bs-theme="dark"] .onb-init-footer { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
         .onb-init-footer-meta { font-size: 11px; color: var(--vz-secondary-color); display: inline-flex; align-items: center; gap: 6px; }
@@ -1574,10 +1224,6 @@
         .onb-init-btn-ghost:hover { color: #1f2937; border-color: #9ca3af; }
         .onb-init-btn-outline { padding: 7px 14px; border-radius: 8px; font-size: 11.5px; font-weight: 600; background: #fff; color: #374151; border: 1px solid #d1d5db; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease, background .15s ease, color .15s ease; }
         .onb-init-btn-outline:hover:not(:disabled) { border-color: #7c3aed; color: #4c1d95; background: #f5f0ff; transform: translateY(-1px); box-shadow: 0 6px 14px rgba(124,58,237,0.18); }
-        /* Disabled draft button — Save Draft is a no-op on stages that have
-           no draftable form (Documents / Policies / Final Verification), so
-           it must READ as disabled rather than looking clickable and doing
-           nothing on click. Greyed surface + not-allowed cursor + no hover. */
         .onb-init-btn-outline:disabled { background: #f3f4f6; color: #9ca3af; border-color: #e5e7eb; cursor: not-allowed; opacity: 0.7; transform: none; box-shadow: none; }
         [data-bs-theme="dark"] .onb-init-btn-outline:disabled { background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.40); border-color: var(--vz-border-color); }
         .onb-init-btn-ghost { transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease, color .15s ease, background .15s ease; }
@@ -1587,19 +1233,12 @@
         .onb-init-btn-complete { padding: 7px 16px; border-radius: 9px; font-size: 11.5px; font-weight: 700; background: linear-gradient(135deg,#10b981,#059669); color: #fff; border: none; cursor: pointer; box-shadow: 0 6px 14px rgba(5,150,105,0.30); display: inline-flex; align-items: center; gap: 5px; }
         .onb-init-btn-complete:hover { transform: translateY(-1px); box-shadow: 0 10px 18px rgba(5,150,105,0.38); }
 
-        /* ── Dark theme — close the remaining hardcoded #fff / dark-text gaps so the
-              onboarding form is fully readable on a dark surface. Each rule below
-              maps a light-mode background or text colour to its dark equivalent. ── */
 
-        /* Sidebar stage cards (hover + active) — were stark white panels */
         [data-bs-theme="dark"] .onb-init-stage-card:hover { background: rgba(255,255,255,0.04); border-color: var(--vz-border-color); }
         [data-bs-theme="dark"] .onb-init-stage-card.is-active { background: rgba(124,92,252,0.14); border-color: rgba(124,92,252,0.50); box-shadow: 0 4px 12px rgba(0,0,0,0.30); }
         [data-bs-theme="dark"] .onb-init-side-bar { background: rgba(255,255,255,0.08); }
         [data-bs-theme="dark"] .onb-init-stage-num { background: rgba(255,255,255,0.08); color: var(--vz-secondary-color); }
 
-        /* Form inputs — autofilled (green) tinted bg in dark mode only.
-           `.is-required` is a marker; it stays visually neutral so empty
-           required fields don't look like errors before validation runs. */
         [data-bs-theme="dark"] .onb-init-input.is-autofilled,
         [data-layout-mode="dark"] .onb-init-input.is-autofilled,
         [data-bs-theme="dark"] .onb-prov-input.is-autofetched,
@@ -1607,13 +1246,6 @@
         [data-bs-theme="dark"] .onb-ee-input.is-readonly,
         [data-layout-mode="dark"] .onb-ee-input.is-readonly { background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.40); }
 
-        /* The green tint is this form's signal for "auto-filled / locked", so
-           nothing ELSE may paint a field. Chrome does exactly that on any field
-           it autofills (:-webkit-autofill), and its wash is close enough to the
-           tint that First Name coming back highlighted read as the same "auto"
-           treatment applied at random. background is ignored on an autofilled
-           input, so the fill has to be repainted with a large inset shadow and
-           the text recoloured with -webkit-text-fill-color. (CBC #4) */
         .onb-init-input:-webkit-autofill,
         .onb-init-input:-webkit-autofill:hover,
         .onb-init-input:-webkit-autofill:focus,
@@ -1637,25 +1269,20 @@
           -webkit-text-fill-color: var(--vz-body-color) !important;
           caret-color: var(--vz-body-color);
         }
-        /* An autofilled field that IS auto-filled by us keeps the green. */
         :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .onb-init-input.is-autofilled:-webkit-autofill {
           -webkit-box-shadow: 0 0 0 1000px rgba(16,185,129,0.10) inset !important;
           box-shadow: 0 0 0 1000px rgba(16,185,129,0.10) inset !important;
         }
 
-        /* Profile completion banner — help text */
         [data-bs-theme="dark"] .onb-init-profile-help { color: #c4b5fd; }
         [data-bs-theme="dark"] .onb-init-profile-track { background: rgba(255,255,255,0.10); }
 
-        /* Add-experience button (dashed yellow) */
         [data-bs-theme="dark"] .onb-init-add-btn { background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.45); color: #fcd34d; }
         [data-bs-theme="dark"] .onb-init-add-btn:hover { background: rgba(245,158,11,0.20); border-color: rgba(245,158,11,0.65); }
 
-        /* Salary breakup panel */
         [data-bs-theme="dark"] .onb-init-breakup { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
         [data-bs-theme="dark"] .onb-init-breakup-cell.total .v { color: #c4b5fd; }
 
-        /* Verification (Stage 6) progress bar inner track */
         [data-bs-theme="dark"] .onb-ver-progress-bar,
         [data-bs-theme="dark"] .onb-pay-progress-bar,
         [data-bs-theme="dark"] .onb-pol-progress-bar,
@@ -1664,22 +1291,18 @@
         [data-bs-theme="dark"] .onb-doc-progress-bar { background: rgba(255,255,255,0.10); }
         [data-bs-theme="dark"] .onb-ver-info-track { background: rgba(255,255,255,0.10); }
 
-        /* Stage 5 — policy doc rows + progress help */
         [data-bs-theme="dark"] .onb-pol-doc,
         [data-layout-mode="dark"] .onb-pol-doc { background: #1b2230; }
         [data-bs-theme="dark"] .onb-pol-progress-help,
         [data-layout-mode="dark"] .onb-pol-progress-help,
         [data-bs-theme="dark"] .onb-doc-progress-help { color: #c4b5fd; }
 
-        /* Stage 4 — payroll radio hover */
         [data-bs-theme="dark"] .onb-pay-radio:hover { background: rgba(124,58,237,0.10); border-color: rgba(124,58,237,0.45); }
         [data-bs-theme="dark"] .onb-pay-check-icon { background: rgba(245,158,11,0.16); }
 
-        /* Stage 6 — Flag Issue button (light pink-cream) */
         [data-bs-theme="dark"] .onb-ver-flag-btn { background: var(--vz-card-bg); border-color: rgba(240,101,72,0.45); color: #fca5a5; }
         [data-bs-theme="dark"] .onb-ver-flag-btn:hover { background: rgba(240,101,72,0.10); border-color: rgba(240,101,72,0.70); }
 
-        /* Stage 2 — previous-employment company close button + pill */
         [data-bs-theme="dark"] .onb-doc-comp-close { background: var(--vz-card-bg); border-color: rgba(245,158,11,0.40); color: #fcd34d; }
         [data-bs-theme="dark"] .onb-doc-prev-pill { background: rgba(245,158,11,0.16); border-color: rgba(245,158,11,0.40); color: #fcd34d; }
         [data-bs-theme="dark"] .onb-doc-comp-doc-icon { background: rgba(245,158,11,0.16); color: #fcd34d; }
@@ -1687,18 +1310,15 @@
         [data-bs-theme="dark"] .onb-doc-comp-count { background: rgba(245,158,11,0.20); color: #fcd34d; }
         [data-bs-theme="dark"] .onb-doc-comp-section { color: #fcd34d; }
 
-        /* Footer outline + ghost buttons */
         [data-bs-theme="dark"] .onb-init-btn-outline { background: var(--vz-card-bg); color: var(--vz-body-color); border-color: var(--vz-border-color); }
         [data-bs-theme="dark"] .onb-init-btn-outline:hover:not(:disabled) { background: rgba(124,58,237,0.14); border-color: #a78bfa; color: #c4b5fd; transform: translateY(-1px); box-shadow: 0 6px 14px rgba(124,58,237,0.30); }
         [data-bs-theme="dark"] .onb-init-btn-ghost:hover:not(:disabled) { color: var(--vz-body-color); border-color: rgba(255,255,255,0.40); background: rgba(255,255,255,0.06); }
 
-        /* Banner state pill text */
         [data-bs-theme="dark"] .onb-init-banner-state { color: #c4b5fd; }
         [data-bs-theme="dark"] .onb-init-banner-state .dot { background: #c4b5fd; }
         [data-bs-theme="dark"] .onb-init-banner-state.pending { color: #fcd34d; }
         [data-bs-theme="dark"] .onb-init-banner-state.pending .dot { background: #f59e0b; }
 
-        /* Pay/Pol/Doc count + percentage chips */
         [data-bs-theme="dark"] .onb-pay-progress-count { color: #fcd34d; }
         [data-bs-theme="dark"] .onb-pol-progress-count,
         [data-layout-mode="dark"] .onb-pol-progress-count,
@@ -1708,7 +1328,6 @@
         [data-bs-theme="dark"] .onb-pol-doc-status,
         [data-layout-mode="dark"] .onb-pol-doc-status { background: rgba(255,255,255,0.08); color: var(--vz-body-color); }
 
-        /* Stage cards — keep solid pill backgrounds readable */
         [data-bs-theme="dark"] .onb-init-section-step.basic   { background: rgba(124,92,252,0.20); color: #c4b5fd; }
         [data-bs-theme="dark"] .onb-init-section-step.job     { background: rgba(59,130,246,0.20); color: #93c5fd; }
         [data-bs-theme="dark"] .onb-init-section-step.work    { background: rgba(10,179,156,0.20); color: #4dd4be; }
@@ -1739,11 +1358,6 @@
         [data-bs-theme="dark"] .onb-doc-tag                  { background: rgba(124,92,252,0.22); color: #c4b5fd; }
 
 
-        /* Invalid state — use !important to outrank Bootstrap's
-           .form-control.is-invalid icon/background. Light mode gets a
-           soft peach tile; dark mode gets a translucent coral wash so
-           the error reads against the dark card surface instead of
-           glowing as a bright white box. */
         .onb-init-input.is-invalid {
           border-color: #f06548 !important;
           background-color: #fff8f7 !important;
@@ -1775,8 +1389,6 @@
   margin-left: 2px;
 }
 
-/* Same shape as the validation summary below, in amber rather than red: this
-   is a standing condition of the visit, not something the reader did wrong. */
 .onb-readonly-banner {
   background: #fffbeb;
   border-left: 3px solid #f59e0b;
@@ -1813,11 +1425,6 @@
   font-size: 18px;
 }
 
-/* ── Dark mode — second pass over the badges/pills that still had hard-coded
-       light-mode colours, so the wizard reads cleanly in dark surfaces.
-       Each rule below targets a specific element seen in screenshots: sidebar
-       %, stage card states, status dots/text, profile bar text, doc/category
-       chips. Without these, the chips render dark-on-dark and disappear. ── */
 [data-bs-theme="dark"] .onb-init-side-pct { color: #c4b5fd; }
 [data-bs-theme="dark"] .onb-init-side-bar { background: rgba(255,255,255,0.10); }
 [data-bs-theme="dark"] .onb-init-stage-card:hover {
@@ -1848,24 +1455,18 @@
 [data-bs-theme="dark"] .onb-init-profile-label { color: #c4b5fd; }
 [data-bs-theme="dark"] .onb-init-profile-pct { color: #fb923c; }
 
-/* Step 1 status chip used in screenshot top right banner */
 [data-bs-theme="dark"] .onb-init-banner-state.pending { color: #fcd34d; }
 [data-bs-theme="dark"] .onb-init-banner-state.pending .dot { background: #fcd34d; }
 
-/* Stage 2 document chips + counters */
 [data-bs-theme="dark"] .onb-doc-progress-count { color: #c4b5fd; }
 [data-bs-theme="dark"] .onb-doc-progress-help { color: #c4b5fd; }
 [data-bs-theme="dark"] .onb-doc-cat-pct { background: rgba(255,255,255,0.10); color: var(--vz-body-color); }
 [data-bs-theme="dark"] .onb-doc-comp-count { background: rgba(245,158,11,0.22); color: #fcd34d; }
 [data-bs-theme="dark"] .onb-doc-prev-pill { background: rgba(245,158,11,0.18); border-color: rgba(245,158,11,0.45); color: #fcd34d; }
 [data-bs-theme="dark"] .onb-doc-row-icon { background: rgba(124,92,252,0.20); color: #c4b5fd; }
-/* Dark colours now handled by the per-status --pending/--uploaded/... rules
-   above; the old brightness filter just lightened the pastel and is removed. */
 
-/* Profile completion bar — track + fill still readable on dark card */
 [data-bs-theme="dark"] .onb-init-profile-track { background: rgba(255,255,255,0.10); }
 
-/* Validation summary banner */
 [data-bs-theme="dark"] .onb-validation-summary {
   background: rgba(240,101,72,0.12);
   color: #fca5a5;
@@ -1874,25 +1475,10 @@
 [data-bs-theme="dark"] .onb-error-msg { color: #fca5a5; }
 [data-bs-theme="dark"] .req { color: #fca5a5; }
 
-/* Sub-group section heading + label text colors */
 [data-bs-theme="dark"] .onb-init-label { color: var(--vz-body-color); }
 [data-bs-theme="dark"] .onb-init-subgroup { color: var(--vz-secondary-color); }
 
-/* ============================================================
-   Employee Onboarding Hub — mobile / tablet responsive (≤ 767.98px)
-   ------------------------------------------------------------
-   Scoped to .onb-page so the shared header strip (.frm-cstrip)
-   and toolbar styles don't leak into other modules.
-   - Header: title block on top, "Onboarding Checklist" button
-     drops full-width below it (was squeezing the title into a
-     narrow 3-line column).
-   - Toolbar: the two long-labelled status tabs and the search
-     box each take a full row instead of a cramped 50/50 split.
-   - KPI cards already tier via reactstrap Cols; the list table
-     already scrolls inside .rec-list-scroll — no change needed.
-   ============================================================ */
 @media (max-width: 767.98px) {
-  /* ── Header strip ── stack title above a full-width CTA. */
   .onb-page .frm-cstrip {
     flex-direction: column;
     align-items: stretch;
@@ -1904,8 +1490,6 @@
     justify-content: center;
   }
 
-  /* ── Toolbar ── tabs + search each break onto their own full-width row.
-     !important overrides the inline `flex:1 1 0` set in the JSX. */
   .onb-page .rec-req-filter-row {
     padding: 12px 14px;
   }
@@ -1915,27 +1499,12 @@
     min-width: 0;
     width: 100%;
   }
-  /* Two long-labelled tabs ("Onboarding Pending (New Joiners)" / "Completed")
-     stack full-width instead of squashing into 50% slivers. Overrides the
-     inline `flex:1` on each tab button. */
   .onb-page .rec-req-filter-row .rec-tab {
     flex: 1 1 100% !important;
   }
 }
 
-/* ============================================================
-   Initiate Onboarding modal — responsive (mobile / tablet)
-   ------------------------------------------------------------
-   The modal is portalled to <body>, so these rules are global
-   (not .onb-page scoped). The body is a fixed two-column flex
-   (270px stages rail + flexible detail); on a phone the detail
-   column was crushed to a sliver with overlapping text. Below
-   768px the columns stack: the stages rail on top (capped +
-   scrollable), the stage detail beneath, with the modal's own
-   scroll handling the overflow.
-   ============================================================ */
 @media (max-width: 991.98px) {
-  /* Tablet — trim the rail so the detail column keeps usable width. */
   .onb-init-side { width: 230px; }
 }
 @media (max-width: 767.98px) {
@@ -1954,20 +1523,11 @@
     padding: 12px 14px;
   }
   [data-bs-theme="dark"] .onb-init-side { border-bottom-color: var(--vz-border-color); }
-  /* Detail column flows naturally and the modal body scrolls the whole thing
-     (drop the nested auto-scroll so there's no double scrollbar). */
   .onb-init-main { width: 100%; padding: 14px; overflow: visible; }
 
-  /* The salary breakup row (value → value → value) is a fixed 5-column grid
-     that overflows on a phone — stack it into one column. The Basic-Details
-     form fields already use responsive reactstrap Cols, so they reflow. */
   .onb-init-breakup-grid { grid-template-columns: 1fr; }
-  /* The salary-breakup rows keep a desktop row height — 30px, the only fields
-     in the wizard under a comfortable tap size on a phone, and the ones most
-     likely to be retyped. */
   .onb-init-input { min-height: 34px; }
 }
-/* Annual CTC breakup check (Employee form + Onboarding setup), light and dark. */
 .ctc-verdict { border: 1px solid; border-radius: 10px; font-size: 12px; font-weight: 600; }
 .ctc-verdict i { font-size: 15px; }
 .ctc-verdict--ok  { background: #ecfdf5; border-color: #a7f3d0; color: #0a8754; }
@@ -1977,16 +1537,11 @@
 [data-bs-theme="dark"] .ctc-verdict--err { background: rgba(177,64,29,0.16); border-color: rgba(240,101,72,0.34); color: #fda192; }
 [data-bs-theme="dark"] .btn.ctc-verdict-fix { background: transparent; border-color: rgba(240,101,72,0.45); color: #fda192; }
 
-/* Salary structure version beside "Salary Breakup" (Employee form + Onboarding). */
 .salary-version-badge { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: none; background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; white-space: nowrap; }
 .salary-version-badge i { font-size: 12px; }
 .salary-version-badge-date { font-weight: 500; opacity: .8; }
 [data-bs-theme="dark"] .salary-version-badge { background: rgba(124,92,252,0.18); color: #c4b5fd; border-color: rgba(124,92,252,0.38); }
 
-/* #43-adjacent — the busy veil over the onboarding popup body.
-   A dimmed form with no loader reads as frozen, not as working. The veil keeps
-   blocking every pointer interaction (the disabled <fieldset> under it kills
-   keyboard edits) and now also says what is happening. */
 .onb-busy-veil {
   position: absolute;
   inset: 0;
