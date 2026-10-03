@@ -63,6 +63,37 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
     document.head.appendChild(link);
   }, []);
 
+  /* The scale follows the SCREEN, not the zoomed viewport.
+   *
+   * Every size here is a multiple of --u, and --u came from the viewport in CSS
+   * pixels. Zooming shrinks that viewport by exactly the factor each CSS pixel
+   * grows on screen, so the two cancelled: the card and the text held the same
+   * size on screen at every zoom. That is not what zoom is for — zoom is a
+   * request to make everything bigger — and it fought the browser, which
+   * enforces a minimum font size: past about 300% our type fell under that
+   * floor and got pushed back up, so the text grew while the card did not.
+   *
+   * Multiplying by the zoom puts the unit back in the screen's terms. The
+   * window still decides how big the composition is, but zooming now magnifies
+   * all of it together, text and card alike, and the page scrolls when it no
+   * longer fits — which is what every other page does.
+   *
+   * The zoom is devicePixelRatio measured against its value at load, so a
+   * Retina display (which starts at 2) is not read as 200% zoom. */
+  useEffect(() => {
+    const base = window.devicePixelRatio || 1;
+    const apply = () => {
+      const zoom = (window.devicePixelRatio || 1) / base;
+      document.documentElement.style.setProperty('--kx-zoom', String(zoom > 0 ? zoom : 1));
+    };
+    apply();
+    window.addEventListener('resize', apply);
+    return () => {
+      window.removeEventListener('resize', apply);
+      document.documentElement.style.removeProperty('--kx-zoom');
+    };
+  }, []);
+
   return (
     <div className="kx-shell">
       <div className="kx-bg" />
@@ -73,7 +104,9 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
 
         {/* Left: brand + pitch — desktop only (≥1024px). */}
         <section className="kx-left">
-          <KxLogo w={LOGO.w} className="kx-logo--hero" />
+          {/* 460, not the render's 521: with the headline and tiles brought
+              down, the wordmark was the one thing still at full size. */}
+          <KxLogo w={460} className="kx-logo--hero" />
           <div className="kx-tagline">UNIFIED ENTERPRISE OPERATIONS PLATFORM</div>
           <span className="kx-accent" />
 

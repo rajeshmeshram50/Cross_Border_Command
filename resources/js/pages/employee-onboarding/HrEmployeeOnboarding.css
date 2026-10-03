@@ -1588,3 +1588,21 @@
   .onb-busy-spin { animation-duration: 2s; }
   .onb-busy-veil { backdrop-filter: none; }
 }
+
+/* ── Salary breakup headings and their Add buttons, in dark mode ──────────
+   Both take their colour from a light-theme accent, so on the dark card the
+   green and red sat at 2.4:1 against the surface — present, but reading as
+   absent. Lighter ink on a slightly stronger tint of the same hue, so the two
+   columns stay told apart at a glance. ── */
+[data-bs-theme="dark"] .onb-breakup-head--earn { color: #5ee9a4 !important; }
+[data-bs-theme="dark"] .onb-breakup-head--ded  { color: #fca5a5 !important; }
+[data-bs-theme="dark"] .onb-breakup-add--earn {
+  color: #5ee9a4 !important;
+  background: rgba(16, 133, 72, 0.20) !important;
+  border-color: rgba(94, 233, 164, 0.45) !important;
+}
+[data-bs-theme="dark"] .onb-breakup-add--ded {
+  color: #fca5a5 !important;
+  background: rgba(185, 28, 28, 0.20) !important;
+  border-color: rgba(252, 165, 165, 0.45) !important;
+}
