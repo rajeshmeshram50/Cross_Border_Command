@@ -1339,7 +1339,10 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
       })()}
 
       {ovTrack && (
-        <SigningTrackerModal sigId={ovTrack.id} code={ovTrack.code} onClose={() => setOvTrack(null)} />
+        <SigningTrackerModal sigId={ovTrack.id} code={ovTrack.code} onClose={() => setOvTrack(null)}
+          /* Opening the tracker records the finished status, so the overview
+             behind it has to be re-read or it keeps its stale "Pending". */
+          onSettled={() => { void reloadVault(); void reloadSignatures(); }} />
       )}
 
       {ovUpload && (<>
@@ -2003,6 +2006,11 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           sigId={doc.signature_request_id}
           code={doc.doc_code || doc.name || `Doc #${doc.db_id ?? ''}`}
           onClose={() => setTrackerOpen(false)}
+          /* The tracker asks Zoho and saves the answer, so a request that
+             finished since this list was drawn is already recorded by the time
+             the timeline renders. Reload on that, or the row keeps saying
+             "Pending" beside a tracker saying "Signed & completed". */
+          onSettled={() => { void onReload(); }}
         />
       )}
       <Tooltip label={!canViewOrDownload ? 'No attachment yet' : viewBlocked ? 'Another document is still opening' : `View ${clipFileName(doc.attachment ?? '')}`}>

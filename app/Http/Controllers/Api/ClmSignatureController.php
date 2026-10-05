@@ -19,6 +19,7 @@ use App\Support\CtcAuditTime;
 use Illuminate\Database\Eloquent\Model;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use App\Support\PdfHtml;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -90,17 +91,34 @@ class ClmSignatureController extends Controller
             ? Lead::where('client_id', $user->client_id)->find($data['lead_id'])
             : null;
 
-        $bytes = $this->renderPdf(
-            $doc,
-            $party,
-            $modelName,
-            Str::uuid()->toString(),
-            null,
-            $data['header_config_override'] ?? null,
-            $data['footer_config_override'] ?? null,
-            $data['content_override'] ?? null,
-            $lead,
-        );
+        /* A document the renderer cannot lay out is a fact about THIS document,
+           not a broken server, and the modal has nothing to act on while the
+           only thing it is told is "Server Error". Name the document and say
+           what happened; the stack trace still goes to the log. */
+        try {
+            $bytes = $this->renderPdf(
+                $doc,
+                $party,
+                $modelName,
+                Str::uuid()->toString(),
+                null,
+                $data['header_config_override'] ?? null,
+                $data['footer_config_override'] ?? null,
+                $data['content_override'] ?? null,
+                $lead,
+            );
+        } catch (\Throwable $e) {
+            Log::error('Trade-doc preview render failed', [
+                'doc_id'    => $doc->id,
+                'doc_code'  => $doc->code ?? null,
+                'party_id'  => $data['party_id'],
+                'lead_id'   => $data['lead_id'] ?? null,
+                'exception' => $e,
+            ]);
+            return response()->json([
+                'message' => 'This document could not be rendered as a PDF. Open it in the editor and check its tables — a row or cell left outside a table is the usual cause.',
+            ], 422);
+        }
 
         return response($bytes, 200, [
             'Content-Type'        => 'application/pdf',
@@ -281,18 +299,48 @@ class ClmSignatureController extends Controller
         // don't change who signs) and they must all collapse to the same key.
         // When the lead's consignee IS the customer, Consignee is read as Buyer:
         // the same person signs every document, so there is no mix to split.
+        /* Keyed on WHO SIGNS, not on how the party column is spelled.
+         *
+         * Comparing the CSVs asked the wrong question. The rule exists to stop
+         * one envelope routing different papers to different signers, so the
+         * only thing that matters is the set of people each document resolves
+         * to ON THIS LEAD. Three selections were being refused that route to
+         * exactly one person:
+         *   · consignee IS the customer — "Buyer" and "Buyer,Consignee" are the
+         *     same company and the same mailbox (QA #68);
+         *   · the lead has no consignee at all, so a Consignee token resolves
+         *     to nobody and cannot be a second destination;
+         *   · a document whose party names no signing side at all (Supplier-*),
+         *     which collapsed to an empty key and then counted as its own
+         *     party group against everything else.
+         * A genuinely different consignee still resolves to a second mailbox
+         * and is still refused, which is the case the rule was written for. */
+        $leadCustomer  = $lead && $lead->customer_id  ? Customer::query()->forUser($user)->find($lead->customer_id)   : null;
+        $leadConsignee = $lead && $lead->consignee_id ? Consignee::query()->forUser($user)->find($lead->consignee_id) : null;
         $sameAsCustomer = $this->leadConsigneeIsCustomer($lead, $user);
-        $normaliseParty = function (?string $p) use ($sameAsCustomer): string {
-            return collect(explode(',', (string) $p))
+        $signerKeyOf = function (?string $p) use ($leadCustomer, $leadConsignee, $party, $modelName, $sameAsCustomer): string {
+            $tokens = collect(explode(',', (string) $p))
                 ->map(fn($s) => strtolower(trim($s)))
-                ->filter(fn($t) => in_array($t, ['buyer', 'consignee'], true))
-                ->map(fn($t) => $sameAsCustomer ? 'buyer' : $t)
-                ->unique()
-                ->sort()
-                ->values()
-                ->implode(',');
+                ->filter(fn($t) => in_array($t, ['buyer', 'consignee'], true));
+            // Falls back to the party this send is addressed to when the lead
+            // carries no record of that side — the same party resolveSigners
+            // would use, so the key matches where the paper actually goes.
+            $buyerId = $leadCustomer?->primary_email
+                ?: ($modelName === 'Customer' ? ($party->primary_email ?? null) : null);
+            $consId  = $sameAsCustomer
+                ? $buyerId
+                : ($leadConsignee?->primary_email
+                    ?: ($modelName === 'Consignee' ? ($party->primary_email ?? null) : null));
+            return $tokens
+                ->map(fn($t) => $t === 'buyer' ? $buyerId : $consId)
+                ->filter()                       // a side the lead cannot route to is not a destination
+                ->map(fn($e) => strtolower(trim((string) $e)))
+                ->unique()->sort()->values()->implode(',');
         };
-        $partyKeys = $orderedDocs->map(fn($d) => $normaliseParty($d->party))->unique()->values();
+        /* Documents addressed to nobody resolvable carry no destination of
+           their own, so they ride with whatever else is in the envelope
+           instead of counting as a separate group. */
+        $partyKeys = $orderedDocs->map(fn($d) => $signerKeyOf($d->party))->filter()->unique()->values();
         if ($partyKeys->count() > 1) {
             return response()->json([
                 'status'  => false,
@@ -2226,6 +2274,12 @@ class ClmSignatureController extends Controller
         $processedHtml = $this->replacePlaceholders($sourceHtml, $party, $modelName, $allParties);
         // Expand the {{product.*}} table into one row per opportunity product.
         $processedHtml = $this->expandProductTable($processedHtml, $lead);
+        /* A `<td>` left outside its `<table>` makes dompdf throw "Parent table
+           not found for table cell" and the whole render 500s — the editor shows
+           such an orphan exactly like a browser does, so nobody can see it
+           coming. Repaired here, after the tokens and the product table have
+           been expanded, so generated markup is covered too. (QA #67) */
+        $processedHtml = PdfHtml::repairTableMarkup($processedHtml);
         $client        = Client::find($agreement->client_id);
 
         // Read the row's saved page-shell config (Stage 2 wizard) so the
@@ -3185,6 +3239,12 @@ class ClmSignatureController extends Controller
         $processedHtml = $this->replacePlaceholders($sourceHtml, $party, $modelName, $allParties);
         // Expand the {{product.*}} table into one row per opportunity product.
         $processedHtml = $this->expandProductTable($processedHtml, $lead);
+        /* A `<td>` left outside its `<table>` makes dompdf throw "Parent table
+           not found for table cell" and the whole render 500s — the editor shows
+           such an orphan exactly like a browser does, so nobody can see it
+           coming. Repaired here, after the tokens and the product table have
+           been expanded, so generated markup is covered too. (QA #67) */
+        $processedHtml = PdfHtml::repairTableMarkup($processedHtml);
         $client = Client::find($doc->client_id);
 
         // Saved Stage 2 page-shell config — drives the PDF's header/footer

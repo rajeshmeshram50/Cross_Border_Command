@@ -1765,6 +1765,10 @@ class CtcContractController extends Controller
             return response()->download($disk->path($cachePath), $fileName, ['Content-Type' => 'application/pdf']);
         }
 
+        /* Same dompdf trap as the trade-doc renderer: a table cell left
+           outside its table aborts the whole render. The agreement editor
+           shows the orphan normally, so it only surfaces here. (QA #67) */
+        $processedHtml = \App\Support\PdfHtml::repairTableMarkup($processedHtml);
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.clm-signature-document', [
             'document'         => $row,
             'party'            => null,
@@ -1916,6 +1920,10 @@ class CtcContractController extends Controller
             // fall through and render
         }
 
+        /* Same dompdf trap as the trade-doc renderer: a table cell left
+           outside its table aborts the whole render. The agreement editor
+           shows the orphan normally, so it only surfaces here. (QA #67) */
+        $processedHtml = \App\Support\PdfHtml::repairTableMarkup($processedHtml);
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.clm-signature-document', [
             'document'         => $document,
             'party'            => null,

@@ -1557,8 +1557,11 @@ function Stage1(p: {
             )}
           </div>
 
-          {/* sticky footer nav */}
-          <div style={{ flexShrink: 0, padding: '10px 18px', borderTop: `1px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, background: t.dark ? 'rgba(255,255,255,.03)' : 'rgba(255,255,255,.85)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          {/* sticky footer nav. Raised above the editor column for the same
+              reason as Stage 2's bar below — and this one needs it more, since
+              its fill is only 85% opaque, so content sliding underneath shows
+              through it even before anything paints on top. */}
+          <div style={{ position: 'relative', zIndex: 2, flexShrink: 0, padding: '10px 18px', borderTop: `1px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, background: t.dark ? 'rgba(255,255,255,.03)' : 'rgba(255,255,255,.85)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
             {midStep > 1 ? (
               <button onClick={midBack} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, background: t.dark ? 'rgba(124,58,237,.16)' : '#F8F6FF', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.8" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
@@ -1847,8 +1850,15 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
             </div>
             )}
           </div>
-          {/* footer nav */}
-          <div style={{ flexShrink: 0, padding: '10px 16px', background: t.surface, borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+          {/* footer nav.
+              position + z-index: the agreement sheet above is position:relative,
+              so it paints over any STATIC sibling the moment the scroller above
+              stops clipping — and that scroller only clips while every ancestor
+              in the flex-column chain keeps a definite height. When it slipped,
+              the sheet ran straight down over this bar and buried the action
+              button under the page text. Raising the bar makes that impossible
+              however the column above behaves. */}
+          <div style={{ position: 'relative', zIndex: 2, flexShrink: 0, padding: '10px 16px', background: t.surface, borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {/* Signed & locked — viewing an earlier stage of a completed
                   agreement. No re-send / resubmit; just a view-only notice. */}

@@ -98,6 +98,76 @@ class SalesVisibility
             ->exists();
     }
 
+    /** Per-request memo: user id => user ids of everyone below them. */
+    private static array $reportCache = [];
+
+    /**
+     * Every user id that reports to this user, however far down.
+     *
+     * A reporting manager could not see the leads their own people created:
+     * the tiers above answer "what is this person's designation", and a manager
+     * whose designation is not Director/HOD landed on 'self' like anyone else,
+     * so their team's work was invisible to them. Designation and line
+     * management are different questions — an Executive with three juniors
+     * under them is still their manager. (QA #65)
+     *
+     * Walked transitively, so a manager two levels up sees the whole branch of
+     * the tree beneath them rather than only their direct reports. A manager is
+     * named either by Employee id (`reporting_manager_id`) or by login user id
+     * (`reporting_manager_user_id`, used when the manager is a Branch User
+     * rather than an employee), so both are followed.
+     *
+     * @return int[]
+     */
+    public static function reportUserIds(User $user): array
+    {
+        if (isset(self::$reportCache[$user->id])) return self::$reportCache[$user->id];
+
+        $rows = Employee::query()
+            ->when($user->client_id, fn ($q) => $q->where('client_id', $user->client_id))
+            ->get(['id', 'user_id', 'reporting_manager_id', 'reporting_manager_user_id']);
+
+        // Children indexed by whichever handle their manager is recorded under.
+        $byManagerEmployee = [];
+        $byManagerUser     = [];
+        foreach ($rows as $r) {
+            if ($r->reporting_manager_id)      $byManagerEmployee[(int) $r->reporting_manager_id][] = $r;
+            if ($r->reporting_manager_user_id) $byManagerUser[(int) $r->reporting_manager_user_id][] = $r;
+        }
+
+        $myEmployeeId = (int) ($rows->firstWhere('user_id', $user->id)?->id ?? 0);
+
+        $out        = [];
+        $seen       = [];                       // employee ids already walked — also the cycle guard
+        $frontierE  = $myEmployeeId ? [$myEmployeeId] : [];
+        $frontierU  = [(int) $user->id];
+
+        while ($frontierE || $frontierU) {
+            $children = [];
+            foreach ($frontierE as $eid) foreach ($byManagerEmployee[$eid] ?? [] as $c) $children[] = $c;
+            foreach ($frontierU as $uid) foreach ($byManagerUser[$uid] ?? [] as $c) $children[] = $c;
+
+            $frontierE = [];
+            $frontierU = [];
+            foreach ($children as $c) {
+                $eid = (int) $c->id;
+                /* A tree the data allows to be cyclic — somebody set two people
+                   as each other's manager — would otherwise loop forever. */
+                if ($eid === 0 || isset($seen[$eid])) continue;
+                $seen[$eid]  = true;
+                $frontierE[] = $eid;
+                if ($c->user_id) {
+                    $out[]       = (int) $c->user_id;
+                    $frontierU[] = (int) $c->user_id;
+                }
+            }
+        }
+
+        // Never report yourself as your own subordinate.
+        $out = array_values(array_diff(array_unique($out), [(int) $user->id]));
+        return self::$reportCache[$user->id] = $out;
+    }
+
     /**
      * Resolve a user's lead-visibility scope.
      *
@@ -237,6 +307,34 @@ class SalesVisibility
         return self::employeeIsInDepartment($user, ['sales']);
     }
 
+    /**
+     * True when this user is an EMPLOYEE who has been posted to a department
+     * that is not Sales — the state behind QA #25, where a lead assigned before
+     * the transfer stayed editable afterwards.
+     *
+     * Deliberately narrow on both sides. Only employees are tested: every other
+     * account type (Super Admin, Client Admin, Client User, Branch Admin) has
+     * no department and must not be swept up by this. And an employee with NO
+     * department recorded is left alone rather than treated as "not Sales" —
+     * an incomplete record is not a transfer, and locking those people out of
+     * their own leads would be a bug of its own.
+     */
+    public static function movedOutOfSales($user): bool
+    {
+        if (!$user || ($user->user_type ?? null) !== 'employee') return false;
+
+        $userId = (int) $user->id;
+        if (!array_key_exists($userId, self::$userDeptCache)) {
+            self::$userDeptCache[$userId] = Employee::where('user_id', $userId)->value('department_id');
+        }
+        $deptId = self::$userDeptCache[$userId];
+        if ($deptId === null) return false;              // no department on file — not a transfer
+
+        $salesIds = self::salesDepartmentIds();
+        if (empty($salesIds)) return false;              // no Sales department defined at all
+        return !in_array((int) $deptId, $salesIds, true);
+    }
+
     /** Is this user an employee posted to one of the named departments? */
     private static function employeeIsInDepartment($user, array $names): bool
     {
@@ -290,6 +388,19 @@ class SalesVisibility
      */
     public static function applyToLeads($q, User $user, string $salespersonColumn = 'salesperson_id'): void
     {
+        /* Moved out of Sales → nothing is editable any more.
+         *
+         * Leads already assigned to an employee stayed fully editable after
+         * that employee was transferred to another department: the assignment
+         * is a row on the lead, and nothing re-checked whether the person it
+         * names is still on the Sales team. They keep SEEING their leads — the
+         * read path below leaves them in place, flagged read-only, so handover
+         * and history are not lost — but a non-Sales employee may no longer
+         * change one. (QA #25) */
+        if (self::movedOutOfSales($user)) {
+            $q->whereRaw('1 = 0');
+            return;
+        }
         $scope = self::resolveScope($user);
         if ($scope === null) return;
         [$ids, $unassigned] = $scope;
@@ -316,13 +427,25 @@ class SalesVisibility
         $scope = self::resolveScope($user);
         if ($scope === null) return;
         [$ids, $unassigned] = $scope;
-        $q->where(function ($w) use ($ids, $unassigned, $salespersonColumn, $user, $idColumn) {
+        /* A manager's own people's leads, by either handle: the report may be
+           the lead's salesperson, or merely the one who created it before it
+           was handed on. The report says "leads created by", and an employee's
+           lead is normally both, so matching either covers it. (QA #65)
+           Read-only, like a former-owned lead — isReadOnlyLead() keys on the
+           owner scope above, which these ids deliberately stay out of, so this
+           widens what a manager can SEE and never what they can change. */
+        $reports = self::reportUserIds($user);
+        $q->where(function ($w) use ($ids, $unassigned, $salespersonColumn, $user, $idColumn, $reports) {
             $w->whereIn($salespersonColumn, $ids);
             if ($unassigned) $w->orWhereNull($salespersonColumn);
             $w->orWhereIn($idColumn, function ($sub) use ($user) {
                 $sub->select('lead_id')->from('lead_assignment_histories')
                     ->where('previous_user_id', $user->id);
             });
+            if ($reports) {
+                $w->orWhereIn($salespersonColumn, $reports);
+                $w->orWhereIn('created_by', $reports);
+            }
         });
     }
 
@@ -333,6 +456,8 @@ class SalesVisibility
      */
     public static function isReadOnlyLead(User $user, ?int $salespersonId): bool
     {
+        // An employee no longer posted to Sales reads every lead, owns none.
+        if (self::movedOutOfSales($user)) return true;
         $scope = self::resolveScope($user);
         if ($scope === null) return false;              // unrestricted tier → can edit
         [$ids, $unassigned] = $scope;
@@ -351,10 +476,13 @@ class SalesVisibility
         $scope = self::resolveScope($user);
         if ($scope === null) return;
         $q->where(function ($w) use ($user, $oppColumn, $creatorColumn) {
-            // (a) the doc's opportunity is one of the user's visible leads
+            /* (a) the doc's opportunity is one of the user's visible leads.
+               The READ scope, not the owner scope: a manager who can open a
+               report's lead but finds its quotations and PIs missing has been
+               shown half a deal. (QA #65) */
             $w->whereIn($oppColumn, function ($sub) use ($user) {
                 $sub->select('id')->from('leads');
-                self::applyToLeads($sub, $user);
+                self::applyToLeadsIncludingFormerOwned($sub, $user);
             });
             // (b) general no-opp docs the user created themselves
             $w->orWhere(function ($g) use ($user, $oppColumn, $creatorColumn) {
