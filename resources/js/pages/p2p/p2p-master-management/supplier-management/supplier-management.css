@@ -289,6 +289,10 @@
 .sup-fig .sl-refine-grid{display:grid;gap:7px;}
 .sup-fig .sl-refine-grid--4{grid-template-columns:repeat(4,minmax(0,1fr));}
 .sup-fig .sl-refine-grid--2{grid-template-columns:repeat(2,minmax(0,1fr));}
+/* 3-up. Missing until Refine Templates needed it, and a missing variant does
+   not fall back to something sensible — the grid stayed single-column, every
+   tile went full width and the panel grew tall enough to scroll. */
+.sup-fig .sl-refine-grid--3{grid-template-columns:repeat(3,minmax(0,1fr));}
 
 /* Tile — frosted glass at rest, lit with its OWN colour when picked. Four
    categories that mean four different things must not all light up the same. */
