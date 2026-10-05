@@ -299,18 +299,48 @@ class ClmSignatureController extends Controller
         // don't change who signs) and they must all collapse to the same key.
         // When the lead's consignee IS the customer, Consignee is read as Buyer:
         // the same person signs every document, so there is no mix to split.
+        /* Keyed on WHO SIGNS, not on how the party column is spelled.
+         *
+         * Comparing the CSVs asked the wrong question. The rule exists to stop
+         * one envelope routing different papers to different signers, so the
+         * only thing that matters is the set of people each document resolves
+         * to ON THIS LEAD. Three selections were being refused that route to
+         * exactly one person:
+         *   · consignee IS the customer — "Buyer" and "Buyer,Consignee" are the
+         *     same company and the same mailbox (QA #68);
+         *   · the lead has no consignee at all, so a Consignee token resolves
+         *     to nobody and cannot be a second destination;
+         *   · a document whose party names no signing side at all (Supplier-*),
+         *     which collapsed to an empty key and then counted as its own
+         *     party group against everything else.
+         * A genuinely different consignee still resolves to a second mailbox
+         * and is still refused, which is the case the rule was written for. */
+        $leadCustomer  = $lead && $lead->customer_id  ? Customer::query()->forUser($user)->find($lead->customer_id)   : null;
+        $leadConsignee = $lead && $lead->consignee_id ? Consignee::query()->forUser($user)->find($lead->consignee_id) : null;
         $sameAsCustomer = $this->leadConsigneeIsCustomer($lead, $user);
-        $normaliseParty = function (?string $p) use ($sameAsCustomer): string {
-            return collect(explode(',', (string) $p))
+        $signerKeyOf = function (?string $p) use ($leadCustomer, $leadConsignee, $party, $modelName, $sameAsCustomer): string {
+            $tokens = collect(explode(',', (string) $p))
                 ->map(fn($s) => strtolower(trim($s)))
-                ->filter(fn($t) => in_array($t, ['buyer', 'consignee'], true))
-                ->map(fn($t) => $sameAsCustomer ? 'buyer' : $t)
-                ->unique()
-                ->sort()
-                ->values()
-                ->implode(',');
+                ->filter(fn($t) => in_array($t, ['buyer', 'consignee'], true));
+            // Falls back to the party this send is addressed to when the lead
+            // carries no record of that side — the same party resolveSigners
+            // would use, so the key matches where the paper actually goes.
+            $buyerId = $leadCustomer?->primary_email
+                ?: ($modelName === 'Customer' ? ($party->primary_email ?? null) : null);
+            $consId  = $sameAsCustomer
+                ? $buyerId
+                : ($leadConsignee?->primary_email
+                    ?: ($modelName === 'Consignee' ? ($party->primary_email ?? null) : null));
+            return $tokens
+                ->map(fn($t) => $t === 'buyer' ? $buyerId : $consId)
+                ->filter()                       // a side the lead cannot route to is not a destination
+                ->map(fn($e) => strtolower(trim((string) $e)))
+                ->unique()->sort()->values()->implode(',');
         };
-        $partyKeys = $orderedDocs->map(fn($d) => $normaliseParty($d->party))->unique()->values();
+        /* Documents addressed to nobody resolvable carry no destination of
+           their own, so they ride with whatever else is in the envelope
+           instead of counting as a separate group. */
+        $partyKeys = $orderedDocs->map(fn($d) => $signerKeyOf($d->party))->filter()->unique()->values();
         if ($partyKeys->count() > 1) {
             return response()->json([
                 'status'  => false,
