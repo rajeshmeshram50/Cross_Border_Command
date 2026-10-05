@@ -1008,7 +1008,18 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                 onClick={() => void saveDraft()}
                 disabled={saving || !draft.product_id}
               >
-                {saving ? 'Saving…' : (
+                {saving ? (
+                  /* A word swapping to "Saving…" was the only sign the save had
+                     started, and on a fast glance it reads as a label rather
+                     than as progress — the button looked dead. The spinner is
+                     the thing that moves. (QA #287) */
+                  <>
+                    <svg className="pdm-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+                      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                    </svg>
+                    Saving…
+                  </>
+                ) : (
                   <>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
                       <circle cx="18" cy="5"  r="3" />
@@ -1507,6 +1518,10 @@ const SCOPED_CSS = `
   padding: 16px;
   animation: pdmFormFade .15s ease-out;
 }
+/* Save-in-progress spinner on the form's primary button. */
+.pdm-spin { animation: pdmSpin .8s linear infinite; flex: 0 0 auto; }
+@keyframes pdmSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pdm-spin { animation-duration: 2.4s; } }
 @keyframes pdmFormFade { from { opacity: 0; } to { opacity: 1; } }
 .pdm-form-modal {
   width: min(620px, 100%); max-height: 90vh;

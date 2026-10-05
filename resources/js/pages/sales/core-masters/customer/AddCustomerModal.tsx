@@ -2885,7 +2885,20 @@ function GstScrutinyManagePopup(props: {
               </div>
               <div className="acm-gst-form-actions">
                 <button type="button" className="acm-btn-ghost" onClick={closeForm} disabled={busy}>Cancel</button>
-                <button type="button" className="acm-btn-primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+                {/* The word alone changing to "Saving…" reads as a label, not as
+                    progress, so the button looked unresponsive while the entry
+                    was being posted. The spinner is what shows it is working.
+                    (QA #90) */}
+                <button type="button" className="acm-btn-primary" onClick={save} disabled={busy}>
+                  {busy ? (
+                    <>
+                      <svg className="acm-loading-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                      </svg>
+                      Saving…
+                    </>
+                  ) : 'Save'}
+                </button>
               </div>
             </div>
           </div>
@@ -5550,8 +5563,10 @@ const SCOPED_CSS = `
 @keyframes acmPillFade { from { opacity: 0; transform: translateY(-2px) } to { opacity: 1; transform: none } }
 .acm-loading-spinner {
   display: inline-flex; width: 12px; height: 12px;
+  flex: 0 0 auto;
   animation: acmSpin .8s linear infinite;
 }
+@media (prefers-reduced-motion: reduce) { .acm-loading-spinner { animation-duration: 2.4s; } }
 @keyframes acmSpin { to { transform: rotate(360deg); } }
 
 
@@ -6065,7 +6080,8 @@ const SCOPED_CSS = `
 .acm-gst-card .acm-field input.acm-input-error { background: #fff; }
 .acm-btn-ghost { padding: 8px 18px; border-radius: 9px; border: 1.5px solid #c4b5fd; background: #fff; color: #6d28d9; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
 .acm-btn-ghost:hover:not(:disabled) { background: #ede9fe; }
-.acm-btn-primary { padding: 8px 18px; border-radius: 9px; border: none; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+/* inline-flex + gap so a spinner can sit beside the label while saving. */
+.acm-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 18px; border-radius: 9px; border: none; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
 .acm-btn-primary:disabled, .acm-btn-ghost:disabled { opacity: 0.6; cursor: not-allowed; }
 .acm-gst-table-wrap { border: 1px solid #ece9f6; border-radius: 12px; overflow: hidden; }
 /* Pager lives INSIDE the table card — flush footer strip, no gap, corners
