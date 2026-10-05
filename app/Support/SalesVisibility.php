@@ -307,6 +307,34 @@ class SalesVisibility
         return self::employeeIsInDepartment($user, ['sales']);
     }
 
+    /**
+     * True when this user is an EMPLOYEE who has been posted to a department
+     * that is not Sales — the state behind QA #25, where a lead assigned before
+     * the transfer stayed editable afterwards.
+     *
+     * Deliberately narrow on both sides. Only employees are tested: every other
+     * account type (Super Admin, Client Admin, Client User, Branch Admin) has
+     * no department and must not be swept up by this. And an employee with NO
+     * department recorded is left alone rather than treated as "not Sales" —
+     * an incomplete record is not a transfer, and locking those people out of
+     * their own leads would be a bug of its own.
+     */
+    public static function movedOutOfSales($user): bool
+    {
+        if (!$user || ($user->user_type ?? null) !== 'employee') return false;
+
+        $userId = (int) $user->id;
+        if (!array_key_exists($userId, self::$userDeptCache)) {
+            self::$userDeptCache[$userId] = Employee::where('user_id', $userId)->value('department_id');
+        }
+        $deptId = self::$userDeptCache[$userId];
+        if ($deptId === null) return false;              // no department on file — not a transfer
+
+        $salesIds = self::salesDepartmentIds();
+        if (empty($salesIds)) return false;              // no Sales department defined at all
+        return !in_array((int) $deptId, $salesIds, true);
+    }
+
     /** Is this user an employee posted to one of the named departments? */
     private static function employeeIsInDepartment($user, array $names): bool
     {
@@ -360,6 +388,19 @@ class SalesVisibility
      */
     public static function applyToLeads($q, User $user, string $salespersonColumn = 'salesperson_id'): void
     {
+        /* Moved out of Sales → nothing is editable any more.
+         *
+         * Leads already assigned to an employee stayed fully editable after
+         * that employee was transferred to another department: the assignment
+         * is a row on the lead, and nothing re-checked whether the person it
+         * names is still on the Sales team. They keep SEEING their leads — the
+         * read path below leaves them in place, flagged read-only, so handover
+         * and history are not lost — but a non-Sales employee may no longer
+         * change one. (QA #25) */
+        if (self::movedOutOfSales($user)) {
+            $q->whereRaw('1 = 0');
+            return;
+        }
         $scope = self::resolveScope($user);
         if ($scope === null) return;
         [$ids, $unassigned] = $scope;
@@ -415,6 +456,8 @@ class SalesVisibility
      */
     public static function isReadOnlyLead(User $user, ?int $salespersonId): bool
     {
+        // An employee no longer posted to Sales reads every lead, owns none.
+        if (self::movedOutOfSales($user)) return true;
         $scope = self::resolveScope($user);
         if ($scope === null) return false;              // unrestricted tier → can edit
         [$ids, $unassigned] = $scope;
