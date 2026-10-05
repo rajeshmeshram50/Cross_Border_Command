@@ -659,7 +659,13 @@
 .kx-input::placeholder { color: #9aa3b5 !important; }
 /* Masked password: the render's nine small dots, ~9.5px apart */
 .kx-input[type="password"] { letter-spacing: .33em; }
-.kx-input[type="password"]::placeholder { letter-spacing: .33em; color: #dbe2f0 !important; }
+/* The placeholder keeps the render's nine dots but NOT its near-white ink.
+   At #dbe2f0 an untouched field was indistinguishable from a filled one —
+   the same glyphs in near enough the same colour as real masked input — so
+   people arrived believing a password had already been entered for them.
+   The dots stay; the ink is now exactly the Email hint's (line 591), so the
+   two placeholders read alike and neither can pass for content. */
+.kx-input[type="password"]::placeholder { letter-spacing: .33em; color: rgba(226, 232, 240, .45) !important; }
 /* Edge injects its own reveal/clear buttons on password inputs; the field
    carries its own eye button. */
 .kx-input::-ms-reveal,
