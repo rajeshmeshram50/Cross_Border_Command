@@ -927,11 +927,17 @@ function CreateAnnouncementModal({
                 maxWidth={420}
                 position="left"
               >
+                {/* Scrolls inside the card instead of being cut off. (#5)
+                    The six-line clamp ended a long description in an ellipsis
+                    with no way to read the rest — the preview is there to show
+                    what the announcement will look like, and a third of it was
+                    unreachable. A max height keeps the card its shape and the
+                    overflow becomes a scrollbar of its own. */}
                 <div
                   style={{
                     fontSize: 12, color: 'var(--vz-secondary-color, #475569)', minHeight: 18,
                     wordBreak: 'break-word', overflowWrap: 'anywhere', whiteSpace: 'pre-wrap',
-                    display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                    maxHeight: 128, overflowY: 'auto', overscrollBehavior: 'contain',
                   }}
                 >
                   {description || 'Description appears here…'}

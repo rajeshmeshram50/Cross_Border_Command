@@ -470,6 +470,53 @@ class HrDocumentTemplateController extends Controller
     }
 
     /**
+     * The template as a PDF, with its letterhead. (#30)
+     *
+     * The Actions column offered View, Edit, Deprecate and Delete, and the only
+     * way to get a file out was the DOCX button buried in the wizard's Word
+     * tab — so the people who review templates had no way to take one away and
+     * read it.
+     *
+     * Rendered through the SAME blade as the live preview, from the template's
+     * own content and header/footer config, so what downloads is what the
+     * preview shows. Tokens are left as {{Placeholders}}: this is the template,
+     * not a generated document for an employee — resolving them here would
+     * need a subject employee and would quietly produce a document for nobody.
+     */
+    public function downloadPdf(Request $request, $id)
+    {
+        $this->authorize($request, 'can_view');
+        @ini_set('memory_limit', '512M');
+        @set_time_limit(60);
+
+        $row = $this->resolveRow($request, (int) $id);
+
+        $headerCfg = is_array($row->header_config) ? $row->header_config : [];
+        $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
+
+        $html = (string) ($row->content_html ?? '');
+        if (trim(strip_tags($html)) === '' && !str_contains($html, '<img')) {
+            $html = '<p style="color:#9ca3af">(empty template)</p>';
+        }
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.signed-document', [
+            'row'         => $row,
+            'header'      => $headerCfg,
+            'footer'      => $footerCfg,
+            'logoDataUri' => $this->previewLogoDataUri($headerCfg, $request->user()),
+            'companyName' => (string) (
+                $request->user()?->branch?->name
+                ?: $request->user()?->client?->org_name
+                ?: ''
+            ),
+            // DomPDF runs headless and cannot fetch /storage over HTTP.
+            'bodyHtml'    => $this->inlineLocalImages($html),
+        ])->setPaper('A4');
+
+        return $pdf->download(($row->code ?: 'template') . '.pdf');
+    }
+
+    /**
      * Upload a revised DOCX. We store it as-is for later re-download and
      * also parse its HTML for the web editor so the user can keep editing
      * inline after uploading.

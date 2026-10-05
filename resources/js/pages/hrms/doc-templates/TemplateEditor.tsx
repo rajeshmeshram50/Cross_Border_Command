@@ -392,6 +392,19 @@ export default function TemplateEditor({
                           type="button"
                           className="tpl-token-btn"
                           onClick={() => insertToken(f.token)}
+                          /* Draggable as well as clickable. (#31) Clicking
+                             inserts at the caret, which is wrong when the
+                             caret is not where you want the token — dragging
+                             puts it exactly where it is dropped. ProseMirror
+                             handles a text/plain drop natively and inserts at
+                             the drop position, so no drop handler is needed on
+                             the editor side. */
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('text/plain', f.token + ' ');
+                            e.dataTransfer.effectAllowed = 'copy';
+                          }}
+                          title={`Click to insert, or drag into the document — ${f.token}`}
                         >
                           <span className="tpl-token-label">{f.label}</span>
                           <span className="tpl-token-pill">{f.token}</span>
@@ -570,6 +583,10 @@ export default function TemplateEditor({
             transition: background 120ms ease;
           }
           .tpl-editor-root .tpl-token-btn:hover { background: #f3f4f6; }
+          /* The chip is draggable, so say so with the cursor — otherwise the
+             only hint is a tooltip nobody waits for. (#31) */
+          .tpl-editor-root .tpl-token-btn { cursor: grab; }
+          .tpl-editor-root .tpl-token-btn:active { cursor: grabbing; }
           /* The label gives way first: it is prose and reads fine clipped, while
              the token is what you came to copy. */
           .tpl-editor-root .tpl-token-label {

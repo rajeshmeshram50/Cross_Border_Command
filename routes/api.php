@@ -1042,6 +1042,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
 
     Route::get ('/hr-document-templates/match',                [HrDocumentTemplateController::class, 'matchForEmployee']);
     Route::get ('/hr-document-templates/{id}/download',        [HrDocumentTemplateController::class, 'downloadDocx']);
+    Route::get ('/hr-document-templates/{id}/download-pdf',    [HrDocumentTemplateController::class, 'downloadPdf']);
 
     Route::get ('/hr-document-templates/{id}/generate',        [HrDocumentTemplateController::class, 'generateForEmployee']);
 
