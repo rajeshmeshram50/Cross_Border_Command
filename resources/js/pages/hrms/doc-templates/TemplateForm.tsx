@@ -1175,7 +1175,9 @@ function Toggle({ on, setOn, title, sub, icon }: { on: boolean; setOn: (v: boole
     <label className="tpl-toggle" style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '8px 10px', border: '1px solid #e5e7eb', borderRadius: 8, marginBottom: 6, background: '#fff', cursor: 'pointer' }}>
       <input type="checkbox" checked={on} onChange={e => setOn(e.target.checked)}
         style={{ width: 17, height: 17, marginTop: 2, accentColor: '#6366f1', flex: '0 0 auto' }} />
-      <span style={{ width: 27, height: 27, borderRadius: 8, background: '#f5f3ff', color: '#6366f1', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, flex: '0 0 auto' }}>
+      {/* Classed, not just inline-styled: the lavender fill is a white patch in
+          dark mode and an inline style is unreachable from CSS without a hook. */}
+      <span className="tpl-toggle-tile" style={{ width: 27, height: 27, borderRadius: 8, background: '#f5f3ff', color: '#6366f1', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, flex: '0 0 auto' }}>
         <i className={icon} />
       </span>
       <div style={{ minWidth: 0 }}>
@@ -2075,6 +2077,12 @@ function TplFormDarkStyles() {
       }
       [data-bs-theme="dark"] .tpl-form-page .tpl-toggle-sub {
         color: rgba(255,255,255,0.55) !important;
+      }
+      /* Same treatment as the pick-card tile above — the lavender fill is the
+         one light patch left in the Settings column. */
+      [data-bs-theme="dark"] .tpl-form-page .tpl-toggle-tile {
+        background: rgba(99,102,241,0.22) !important;
+        color: #c4b5fd !important;
       }
 
       [data-bs-theme="dark"] .tpl-form-page .tpl-sign-card {
