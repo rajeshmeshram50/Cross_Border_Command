@@ -225,7 +225,7 @@ const fmtWorkHm = (m: number) => m > 0
    reading here uses; this is only the fallback for a payload that predates it.
    The number itself lives in Attendance::LATE_GRACE_MINUTES — one policy, read
    by the roster, the log, the payslip and the captions below (#22). */
-const LATE_GRACE_MINUTES = 10;
+const LATE_GRACE_MINUTES = 0;
 
 /* Leave portion labels. A half-day leave is shown on an otherwise normal
    working row (the employee worked the other half), so the label has to say

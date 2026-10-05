@@ -2297,7 +2297,7 @@ class EmployeeController extends Controller
      *           It used to be cleared, which made a Standard basis last only as
      *           long as PF stayed on: off, save, on again, and the employee was
      *           silently back on Statutory — ~1,200/yr less deducted for someone
-     *           on a basic above the 15,000 ceiling, with no message on either
+     *           on a basic above the EPF ceiling, with no message on either
      *           screen and nothing in Salary History to point at. Payroll reads
      *           the column only while PF is on, so carrying it through an off
      *           spell costs nothing and is what keeps Compensation and Revise
@@ -2794,7 +2794,7 @@ class EmployeeController extends Controller
             'annual_salary',
             'enable_payroll',
             'pf_eligible',
-            /* PF Type picks the PF base (Statutory caps at 15,000, Standard
+            /* PF Type picks the PF base (Statutory caps at PF_WAGE_CEILING, Standard
                charges full Basic), so changing it alone changes what the
                payslip deducts — it belongs here exactly as pf_eligible does.
                Without it, switching Statutory <-> Standard left every draft

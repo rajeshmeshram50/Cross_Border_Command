@@ -5,6 +5,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { MasterDatePicker, MasterFormStyles } from '../pages/master/masterFormKit';
 import { pfDeduction, seedBreakup, reseedSplit, absorbIntoSpecial, SPLIT_CODES } from '../utils/salaryBreakup';
+import { PF_WAGE_CEILING_LABEL, PF_MAX_LABEL } from '../constants';
 
 export interface SalaryComponent { code: string; label: string; amount: number }
 
@@ -72,7 +73,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   const [deductions, setDeductions] = useState<SalaryComponent[]>([]);
   const [pfApplicable, setPfApplicable] = useState(false);
   /* PF Type decides the base PF is charged on — Statutory caps the basic at the
-     ₹15,000 EPF ceiling, Standard uses the full basic. The Employee form has
+     EPF ceiling (PF_WAGE_CEILING), Standard uses the full basic. The Employee form has
      always offered it; Revise Salary only ever displayed its effect, so HR
      revising a salary here could not correct a wrong PF Type without leaving
      for the employee record. Same two values, same lowercase storage. (#127) */
@@ -247,7 +248,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
 
   /* Live PF estimate — 12% of BASIC on the statutory basis, mirroring
      PayrollService::computeForEmployee(): `pf_type` Statutory (or unset) caps
-     the basic at the ₹15,000 EPF ceiling, Standard uses the full basic.
+     the basic at the EPF ceiling (PF_WAGE_CEILING), Standard uses the full basic.
      Shares pfDeduction() with the employee form and the onboarding wizard so
      all three quote the one figure payroll will deduct. */
   const basicAmt = useMemo(() => Number(earnings.find(c => c.code === 'basic')?.amount) || 0, [earnings]);
@@ -651,7 +652,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                   className="ssm-input ssm-input--amount"
                   value={c.amount}
                   readOnly={amountLocked}
-                  title={amountLocked ? 'Auto — 12% of Basic Salary (capped at the ₹15,000 EPF ceiling unless PF Type is Standard)' : undefined}
+                  title={amountLocked ? `Auto — 12% of Basic Salary (capped at the ${PF_WAGE_CEILING_LABEL} EPF ceiling unless PF Type is Standard)` : undefined}
                   onChange={e => updateRow(list, setList, i, 'amount', e.target.value, kind)}
                 />
               </div>
@@ -877,7 +878,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                       value={pfType}
                       onChange={e => setPfType(e.target.value === 'Standard' ? 'Standard' : 'Statutory')}
                     >
-                      <option value="Statutory">Statutory (₹15k cap)</option>
+                      <option value="Statutory">Statutory (₹25k cap)</option>
                       <option value="Standard">Standard (full basic)</option>
                     </select>
                   </div>
@@ -912,8 +913,8 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                   <div className="ssm-rule">
                     <b>PF Deduction</b>
                     <span>
-                      12% of Basic Salary. <em>Statutory</em> caps the basic at the ₹15,000 EPF ceiling
-                      (max ₹1,800/mo); <em>Standard</em> uses the full basic. ESI / PT are the fixed-deduction
+                      12% of Basic Salary. <em>Statutory</em> caps the basic at the {PF_WAGE_CEILING_LABEL} EPF ceiling
+                      (max {PF_MAX_LABEL}/mo); <em>Standard</em> uses the full basic. ESI / PT are the fixed-deduction
                       rows you enter, and they are deducted <b>in full</b> each cycle — never scaled down for a
                       part-month or loss of pay.
                     </span>

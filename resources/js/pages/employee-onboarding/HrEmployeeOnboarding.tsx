@@ -11,6 +11,7 @@ import {
   seedBreakup, absorbIntoSpecial, reseedSplit, planEarningRemoval, statutoryPt, pfDeduction, breakupSignature, validateBreakup,
   CTC_ROUNDING_SLACK,
 } from '../../utils/salaryBreakup';
+import { PF_WAGE_CEILING, PF_WAGE_CEILING_LABEL } from '../../constants';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
@@ -3890,7 +3891,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                           <ul style={{ fontSize: 11, color: '#6b7280', lineHeight: 1.7, paddingLeft: 16, marginBottom: 10 }}>
                             <li><strong>Basic Salary</strong> — the whole monthly gross by default; any allowance you add is taken out of it (must stay at least 50%, Code on Wages 2019).</li>
                             <li><strong>Allowances (HRA, Special…)</strong> — added by you. Special Allowance, when present, carries the balance so the gross stays on the CTC.</li>
-                            <li><strong>PF Deduction</strong> — 12% of basic; capped at <strong>₹15,000</strong> for <strong>Statutory</strong>, or on the <strong>full basic</strong> for <strong>Standard</strong> (set by <em>PF Type</em> above).</li>
+                            <li><strong>PF Deduction</strong> — 12% of basic; capped at <strong>{PF_WAGE_CEILING_LABEL}</strong> for <strong>Statutory</strong>, or on the <strong>full basic</strong> for <strong>Standard</strong> (set by <em>PF Type</em> above).</li>
                           </ul>
                           <div className="d-flex align-items-center gap-3 flex-wrap mb-3">
                             <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12.5, cursor: 'pointer' }}>
@@ -3946,7 +3947,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                                   <span className="text-muted">
                                     Provident Fund (PF) — {s1.pf_type === 'Standard'
                                       ? '12% of full basic'
-                                      : `12% of ₹${Math.min(obBasic, 15000).toLocaleString('en-IN')} (capped at ₹15,000)`}
+                                      : `12% of ₹${Math.min(obBasic, PF_WAGE_CEILING).toLocaleString('en-IN')} (capped at ${PF_WAGE_CEILING_LABEL})`}
                                   </span>
                                   <span className="fw-semibold" style={{ color: '#b91c1c' }}>− {fmt(obPfAmt)}/mo</span>
                                 </div>

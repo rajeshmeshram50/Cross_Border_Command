@@ -127,7 +127,7 @@ const fmtWorkHm = (m: number) => m > 0
 // mirrors the server rule in AttendanceController (`minutesBetween > 10`). Below
 // this an arrival is on-time; at/above it we show the minutes-late measured from
 // the shift start time (e.g. 9:30 start, arrive 9:47 → 17 min late).
-const LATE_GRACE_MINUTES = 10;
+const LATE_GRACE_MINUTES = 0;
 
 /* Leave portion labels. A half-day leave is shown on an otherwise normal
    working row (the employee worked the other half), so the label has to say
