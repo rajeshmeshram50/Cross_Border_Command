@@ -762,7 +762,8 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
             ? <ShipmentTable rows={dealRows} kind="both" filter={shipmentFilter}
                              onSend={(leadId, doc, party) => { if (doc.pi_id) setPiSend({ leadId, doc }); else setShipSend({ leadId, doc, party }); }}
                              onBulkSend={(leadId, docs, party) => { if (docs.length) setShipSend({ leadId, doc: docs[0], docs, party }); }}
-                             activeSend={shipSend ?? (piSend ? { ...piSend, party: 'buyer' } : null)} />
+                             activeSend={shipSend ?? (piSend ? { ...piSend, party: 'buyer' } : null)}
+                             onSigSettled={() => { void reloadVault(); void reloadSignatures(); }} />
             : <DocsTable rows={docsForTab} tab={tab} ownerType="customer" ownerId={customer?.db_id ?? null} onReload={reloadVault}
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
                          onRemindTradeDoc={handleRemind} onRowBusyChange={onRowBusyChange} />}
@@ -949,6 +950,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                   onSend={(doc, party) => { if (doc.pi_id) setPiSend({ leadId: activeShip.id, doc }); else setShipSend({ leadId: activeShip.id, doc, party }); }}
                   onBulkSend={(docs, party) => { if (docs.length) setShipSend({ leadId: activeShip.id, doc: docs[0], docs, party }); }}
                   pendingSend={shipSend && shipSend.leadId === activeShip.id ? { doc: shipSend.doc, party: shipSend.party } : null}
+                  onSigSettled={() => { void reloadVault(); void reloadSignatures(); }}
                 />
               </div>
               ) : (
@@ -1616,6 +1618,11 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           sigId={doc.signature_request_id}
           code={doc.doc_code || doc.name || `Doc #${doc.db_id ?? ''}`}
           onClose={() => setTrackerOpen(false)}
+          /* The tracker asks Zoho and saves the answer, so a request that
+             finished since this list was drawn is already recorded by the time
+             the timeline renders. Reload on that, or the row keeps saying
+             "Pending" beside a tracker saying "Signed & completed". */
+          onSettled={() => { void onReload(); }}
         />
       )}
       <Tooltip label={!canViewOrDownload ? 'No attachment yet' : viewBlocked ? 'Another document is still opening' : `View ${doc.attachment}`}>
@@ -1703,7 +1710,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   );
 }
 
-function ShipmentTable({ rows, kind, filter, onSend, onBulkSend, activeSend }: {
+function ShipmentTable({ rows, kind, filter, onSend, onBulkSend, activeSend, onSigSettled }: {
   rows: VaultShipmentRow[];
   kind: 'trade' | 'agreement' | 'both';
   /* The Customer =/≠ Consignee switch now lives above the tab row, next to the
@@ -1712,6 +1719,8 @@ function ShipmentTable({ rows, kind, filter, onSend, onBulkSend, activeSend }: {
   onSend?: (leadId: number, doc: VaultShipmentDoc, party: ShipmentSendParty) => void;
   onBulkSend?: (leadId: number, docs: VaultShipmentDoc[], party: ShipmentSendParty) => void;
   activeSend?: { leadId: number; doc: VaultShipmentDoc; party: ShipmentSendParty } | null;
+  /** Passed through to the expanded panel — see ShipmentDocPanel. */
+  onSigSettled?: () => void;
 }) {
   const [openId, setOpenId] = useState<number | null>(null);
   /* Flipping the switch swaps the whole row set, so a row left expanded from
@@ -1805,6 +1814,7 @@ function ShipmentTable({ rows, kind, filter, onSend, onBulkSend, activeSend }: {
                           onSend={onSend ? (doc, party) => onSend(r.id, doc, party) : undefined}
                           onBulkSend={onBulkSend ? (docs, party) => onBulkSend(r.id, docs, party) : undefined}
                           pendingSend={activeSend && activeSend.leadId === r.id ? { doc: activeSend.doc, party: activeSend.party } : null}
+                          onSigSettled={onSigSettled}
                         />
                       </td>
                     </tr>
@@ -1843,7 +1853,7 @@ export function ShipmentStatusPill({ status }: { status: VaultShipmentDoc['statu
   );
 }
 
-export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, onBulkSend, primaryParty = 'buyer', hideBuyerTab = false, pendingSend, showType = false }: {
+export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, onBulkSend, primaryParty = 'buyer', hideBuyerTab = false, pendingSend, showType = false, onSigSettled }: {
   /* No party name here: the shipment row this panel expands from already names
      the customer and the consignee, and the tabs below say whose documents are
      on screen, so repeating it was noise. */
@@ -1857,6 +1867,10 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
   hideBuyerTab?: boolean;
   pendingSend?: { doc: VaultShipmentDoc; party: ShipmentSendParty } | null;
   showType?: boolean;
+  /** Called when the signing tracker reports a request that is no longer open,
+   *  so the vault can re-read these rows. Optional — a vault that passes
+   *  nothing behaves exactly as before. */
+  onSigSettled?: () => void;
 }) {
   const toast = useToast();
   const [party, setParty] = useState<'buyer' | 'consignee' | 'both'>(primaryParty);
@@ -2092,7 +2106,11 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
         </div>
       )}
       {trackSig && (
-        <SigningTrackerModal sigId={trackSig.id} code={trackSig.code} onClose={() => setTrackSig(null)} />
+        <SigningTrackerModal sigId={trackSig.id} code={trackSig.code} onClose={() => setTrackSig(null)}
+          /* Same as the standard-document rows: opening the tracker records the
+             finished status, so the per-deal row has to be re-read or it keeps
+             the "Pending" it was drawn with. */
+          onSettled={() => onSigSettled?.()} />
       )}
     </div>
   );

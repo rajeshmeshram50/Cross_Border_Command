@@ -19,6 +19,7 @@ use App\Support\CtcAuditTime;
 use Illuminate\Database\Eloquent\Model;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use App\Support\PdfHtml;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -90,17 +91,34 @@ class ClmSignatureController extends Controller
             ? Lead::where('client_id', $user->client_id)->find($data['lead_id'])
             : null;
 
-        $bytes = $this->renderPdf(
-            $doc,
-            $party,
-            $modelName,
-            Str::uuid()->toString(),
-            null,
-            $data['header_config_override'] ?? null,
-            $data['footer_config_override'] ?? null,
-            $data['content_override'] ?? null,
-            $lead,
-        );
+        /* A document the renderer cannot lay out is a fact about THIS document,
+           not a broken server, and the modal has nothing to act on while the
+           only thing it is told is "Server Error". Name the document and say
+           what happened; the stack trace still goes to the log. */
+        try {
+            $bytes = $this->renderPdf(
+                $doc,
+                $party,
+                $modelName,
+                Str::uuid()->toString(),
+                null,
+                $data['header_config_override'] ?? null,
+                $data['footer_config_override'] ?? null,
+                $data['content_override'] ?? null,
+                $lead,
+            );
+        } catch (\Throwable $e) {
+            Log::error('Trade-doc preview render failed', [
+                'doc_id'    => $doc->id,
+                'doc_code'  => $doc->code ?? null,
+                'party_id'  => $data['party_id'],
+                'lead_id'   => $data['lead_id'] ?? null,
+                'exception' => $e,
+            ]);
+            return response()->json([
+                'message' => 'This document could not be rendered as a PDF. Open it in the editor and check its tables — a row or cell left outside a table is the usual cause.',
+            ], 422);
+        }
 
         return response($bytes, 200, [
             'Content-Type'        => 'application/pdf',
@@ -2226,6 +2244,12 @@ class ClmSignatureController extends Controller
         $processedHtml = $this->replacePlaceholders($sourceHtml, $party, $modelName, $allParties);
         // Expand the {{product.*}} table into one row per opportunity product.
         $processedHtml = $this->expandProductTable($processedHtml, $lead);
+        /* A `<td>` left outside its `<table>` makes dompdf throw "Parent table
+           not found for table cell" and the whole render 500s — the editor shows
+           such an orphan exactly like a browser does, so nobody can see it
+           coming. Repaired here, after the tokens and the product table have
+           been expanded, so generated markup is covered too. (QA #67) */
+        $processedHtml = PdfHtml::repairTableMarkup($processedHtml);
         $client        = Client::find($agreement->client_id);
 
         // Read the row's saved page-shell config (Stage 2 wizard) so the
@@ -3185,6 +3209,12 @@ class ClmSignatureController extends Controller
         $processedHtml = $this->replacePlaceholders($sourceHtml, $party, $modelName, $allParties);
         // Expand the {{product.*}} table into one row per opportunity product.
         $processedHtml = $this->expandProductTable($processedHtml, $lead);
+        /* A `<td>` left outside its `<table>` makes dompdf throw "Parent table
+           not found for table cell" and the whole render 500s — the editor shows
+           such an orphan exactly like a browser does, so nobody can see it
+           coming. Repaired here, after the tokens and the product table have
+           been expanded, so generated markup is covered too. (QA #67) */
+        $processedHtml = PdfHtml::repairTableMarkup($processedHtml);
         $client = Client::find($doc->client_id);
 
         // Saved Stage 2 page-shell config — drives the PDF's header/footer

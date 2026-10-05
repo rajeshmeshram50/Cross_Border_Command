@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useScrollLock } from '../../../hooks/useScrollLock';
@@ -390,7 +390,21 @@ const UNDELIVERED_STATUSES = [
   'BOUNCED', 'MAILBOUNCED', 'MAIL_BOUNCED', 'EMAILBOUNCED', 'EMAIL_BOUNCED',
 ];
 
-export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; code: string; onClose: () => void }) {
+export function SigningTrackerModal({ sigId, code, onClose, onSettled }: {
+  sigId: number;
+  code: string;
+  onClose: () => void;
+  /** Fired once when the request turns out to be finished — signed, declined,
+   *  recalled or expired.
+   *
+   *  Opening this modal is not a read-only act: `show()` asks Zoho for the
+   *  current state and WRITES it back, so by the time the timeline says
+   *  "Signed & completed" the stored status has already moved. The list behind
+   *  kept whatever it rendered with, which is why the row still read "Pending"
+   *  next to a tracker saying it was done. Callers hang their own reload off
+   *  this so the two agree. */
+  onSettled?: (status: string) => void;
+}) {
   const [data, setData]       = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr]         = useState<string | null>(null);
@@ -400,13 +414,27 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
   // Freeze background page scroll while this modal is open (locks html + body).
   useScrollLock();
 
+  /* Announced at most once per request, so a re-render — or the user pressing
+     Refresh on a request that was already finished — cannot start a reload
+     loop in the list behind. */
+  const settledSent = useRef(false);
+  useEffect(() => { settledSent.current = false; }, [sigId]);
+
   const load = useCallback(() => {
     setLoading(true); setErr(null);
     return api.get(`/clm/signature-requests/${sigId}`)
-      .then(r => setData(r.data?.data ?? null))
+      .then(r => {
+        const row = r.data?.data ?? null;
+        setData(row);
+        const st = String(row?.status ?? '').toLowerCase();
+        if (st && st !== 'inprogress' && !settledSent.current) {
+          settledSent.current = true;
+          onSettled?.(st);
+        }
+      })
       .catch(e => setErr(e?.response?.data?.message ?? 'Could not load signing status.'))
       .finally(() => setLoading(false));
-  }, [sigId]);
+  }, [sigId, onSettled]);
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {

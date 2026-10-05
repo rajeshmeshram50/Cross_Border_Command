@@ -1053,7 +1053,8 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
             ? <ShipmentTable rows={dealRows} kind="both"
                              onSend={(leadId, doc, party) => { if (doc.pi_id) setPiSend({ leadId, doc }); else setShipSend({ leadId, doc, party }); }}
                              activeSend={shipSend ?? (piSend ? { ...piSend, party: 'consignee' as const } : null)}
-                             onBulkSend={(leadId, docs, party) => { if (docs.length) setShipSend({ leadId, doc: docs[0], docs, party }); }} />
+                             onBulkSend={(leadId, docs, party) => { if (docs.length) setShipSend({ leadId, doc: docs[0], docs, party }); }}
+                             onSigSettled={() => { void reloadVault(); void reloadSignatures(); }} />
             : <DocsTable rows={docsForTab} tab={tab} ownerType="consignee" ownerId={consignee?.db_id ?? null} onReload={reloadVault}
                          sameAsCustomer={!!vault.same_as_customer}
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
@@ -1590,6 +1591,11 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           sigId={ovTrack.id}
           code={ovTrack.code}
           onClose={() => setOvTrack(null)}
+          /* The tracker asks Zoho and saves the answer, so a request that
+             finished since this list was drawn is already recorded by the time
+             the timeline renders. Reload on that, or the row keeps saying
+             "Pending" beside a tracker saying "Signed & completed". */
+          onSettled={() => { void reloadVault(); void reloadSignatures(); }}
         />
       )}
 
@@ -2114,6 +2120,11 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           sigId={doc.signature_request_id}
           code={doc.doc_code || doc.name || `Doc #${doc.db_id ?? ''}`}
           onClose={() => setTrackerOpen(false)}
+          /* The tracker asks Zoho and saves the answer, so a request that
+             finished since this list was drawn is already recorded by the time
+             the timeline renders. Reload on that, or the row keeps saying
+             "Pending" beside a tracker saying "Signed & completed". */
+          onSettled={() => { void onReload(); }}
         />
       )}
       <Tooltip label={!canViewOrDownload ? 'No attachment yet' : viewBlocked ? 'Another document is still opening' : `View ${doc.attachment}`}>
@@ -2206,7 +2217,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   );
 }
 
-function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend }: {
+function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend, onSigSettled }: {
   rows: VaultShipmentRow[];
   kind: 'trade' | 'agreement' | 'both';
   /** Sends every ticked document on one deal in a single action. Passing it is
@@ -2218,6 +2229,8 @@ function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend }: {
    *  never wired here (the customer vault has always passed it), so clicking
    *  Send in the consignee vault left the button looking untouched. */
   activeSend?: { leadId: number; doc: VaultShipmentDoc; party: ShipmentSendParty } | null;
+  /** Passed through to the expanded panel — see ShipmentDocPanel. */
+  onSigSettled?: () => void;
 }) {
   const [openId, setOpenId] = useState<number | null>(null);
   /* Consignee vault shows ALL shipments — no Buyer = / ≠ Consignee split at the
@@ -2323,6 +2336,7 @@ function ShipmentTable({ rows, kind, onSend, onBulkSend, activeSend }: {
                              co-signs are still one tab away under Both. */
                           hideBuyerTab
                           onBulkSend={onBulkSend ? (docs, party) => onBulkSend(r.id, docs, party) : undefined}
+                          onSigSettled={onSigSettled}
                         />
                       </td>
                     </tr>
