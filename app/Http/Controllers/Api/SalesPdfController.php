@@ -1265,6 +1265,12 @@ class SalesPdfController extends Controller
         $orgName = trim((string) ($branch?->name ?? '')) ?: trim((string) ($branch?->code ?? ''));
         $barcodeValue = $branchWebsite !== '' ? $branchWebsite : $orgName;
 
+        [$poTncGlobal, $poTncSegment] = $this->dedupeTncLayers(
+            $po->terms ?? null,
+            $this->fetchGlobalTncs($po->client_id, $po->branch_id, $this->poTncCategory($po)),
+            $this->fetchPoTncs($po),
+        );
+
         return [
             'pdf_title' => 'PURCHASE ORDER',
             'signature' => $withSignature ? 'Yes' : 'No',
@@ -1291,8 +1297,9 @@ class SalesPdfController extends Controller
             // Master T&Cs auto-matched by the document category (Domestic /
             // International Purchase Order) + supplier party (Material / FFD /
             // Services) + each line product's segment & tier. Rendered on the PDF.
-            'globalTermsConditions'  => $this->fetchGlobalTncs($po->client_id, $po->branch_id, $this->poTncCategory($po)),
-            'segmentTermsConditions' => $this->fetchPoTncs($po),
+            // Deduped across all three layers — see dedupeTncLayers().
+            'globalTermsConditions'  => $poTncGlobal,
+            'segmentTermsConditions' => $poTncSegment,
         ];
     }
 
@@ -2169,6 +2176,12 @@ class SalesPdfController extends Controller
             'currency'       => $q->currency               ?? 'INR',
         ]);
 
+        [$tncGlobal, $tncSegment] = $this->dedupeTncLayers(
+            $q->terms_and_conditions ?? null,
+            $this->fetchGlobalTncs($q->client_id ?? null, $q->branch_id ?? null, $this->salesTncCategory($q)),
+            $this->fetchSegmentTncs($q, $docLabelShort),
+        );
+
         return [
             // Caller-driven so this builder serves both Quotation
             // ('QUOTATION DOCUMENT' / 'QT') and PI ('PROFORMA INVOICE' / 'PI').
@@ -2192,8 +2205,9 @@ class SalesPdfController extends Controller
             // Auto-fetched from the T&C Library: matched by the document's
             // type (International/Domestic) + kind (Quotation/PI) + each
             // product's segment & regulatory tier. Rendered on the PDF only.
-            'globalTermsConditions'  => $this->fetchGlobalTncs($q->client_id ?? null, $q->branch_id ?? null, $this->salesTncCategory($q)),
-            'segmentTermsConditions' => $this->fetchSegmentTncs($q, $docLabelShort),
+            // Deduped across all three layers — see dedupeTncLayers().
+            'globalTermsConditions'  => $tncGlobal,
+            'segmentTermsConditions' => $tncSegment,
             'base_currency_total'    => $grandTotal,
             'exchange_rate'          => $q->exchange_rate ? (float) $q->exchange_rate : null,
         ];
@@ -2218,6 +2232,62 @@ class SalesPdfController extends Controller
      *
      * Returns a de-duplicated list of ['code','category','segment','content'].
      */
+    /**
+     * Drop any Terms & Conditions block whose text has already been printed.
+     *
+     * A document's terms arrive in three independent layers — what the user
+     * typed on the form, the category's global T&C, and the segment-matched
+     * ones — and nothing compared them. Where the same clauses existed in more
+     * than one layer the PDF simply printed them again, and again: a proforma
+     * invoice came out six pages long, the same six numbered clauses repeating
+     * down each one.
+     *
+     * Two things put the same text in two layers. A global-scope row also
+     * satisfies the segment matcher, which has no scope filter of its own, so
+     * it is emitted twice over. And the clauses a user pastes into the form's
+     * own box are usually the master text they were reading beside it.
+     *
+     * Compared on the visible words — tags, entities, case and runs of
+     * whitespace normalised away — so the same clauses in different markup are
+     * still recognised as the same clauses.
+     *
+     * @param  string  $typed   the form's own Terms & Conditions box
+     * @param  array<int, string>  $global
+     * @param  array<int, array>   $segment  rows carrying a 'content' key
+     * @return array{0: array<int, string>, 1: array<int, array>}
+     */
+    private function dedupeTncLayers(?string $typed, array $global, array $segment): array
+    {
+        $key = static function (?string $html): string {
+            $text = html_entity_decode(strip_tags((string) $html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            // Non-breaking space included: pasted clauses are full of them.
+            $text = preg_replace('/[\s\x{00A0}]+/u', ' ', $text) ?? $text;
+            return mb_strtolower(trim($text));
+        };
+
+        $seen = [];
+        $t = $key($typed);
+        if ($t !== '') $seen[$t] = true;
+
+        $keptGlobal = [];
+        foreach ($global as $g) {
+            $k = $key($g);
+            if ($k === '' || isset($seen[$k])) continue;
+            $seen[$k] = true;
+            $keptGlobal[] = $g;
+        }
+
+        $keptSegment = [];
+        foreach ($segment as $row) {
+            $k = $key($row['content'] ?? null);
+            if ($k === '' || isset($seen[$k])) continue;
+            $seen[$k] = true;
+            $keptSegment[] = $row;
+        }
+
+        return [$keptGlobal, $keptSegment];
+    }
+
     /**
      * The GLOBAL Terms & Conditions of one document category: a single entry that
      * applies to every document of that category, whatever segments it carries.

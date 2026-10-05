@@ -1074,6 +1074,27 @@ export default function SalesMatrixDetail() {
    * what's already mapped on the lead. Picker = unmapped, Edit form
    * = already mapped. */
   const onCustomerClick = async () => {
+    /* A lead that already carries a customer never sees the picker.
+     *
+     * The test used to require the eager-loaded row as well as the id, and
+     * when that row was missing the handler fell through to the picker — which
+     * is a list of every customer, and choosing one REBINDS the opportunity.
+     * So an opportunity that already had its customer could be pointed at a
+     * different company in two clicks, after products, prices and quotations
+     * had been built on the first one. (QA #290)
+     *
+     * The id alone decides now. Where the row did not come back, the form is
+     * opened from what the header already shows, so the user still edits their
+     * customer rather than being offered a swap. */
+    if (serverHeader.customerId && !serverHeader.customerRow) {
+      setCustomerEditing({
+        company: header.customer || '',
+        id: header.customerCode || `C-${String(serverHeader.customerId).padStart(3, '0')}`,
+        db_id: serverHeader.customerId,
+      } as unknown as EditCustomer);
+      setCustomerAddOpen(true);
+      return;
+    }
     if (serverHeader.customerId && serverHeader.customerRow) {
       // Eager-loaded server row has `id` (the DB pk) but no `db_id`
       // (the public-API field name). Shim it here so AddCustomerModal,
@@ -1718,7 +1739,20 @@ export default function SalesMatrixDetail() {
           // open the Edit form directly. db_id is the row's primary key
           // (set in fetchCustomers); the public_id stays for display.
           const dbId = (row as EditCustomer & { db_id?: number }).db_id;
-          if (resolvedLeadId && dbId) {
+          /* Bind only while the opportunity is still unclaimed. The handler
+             above no longer opens this picker once a customer is mapped, and
+             this is the matching rule on the write: reaching the list by any
+             other route still cannot repoint a deal at a different company.
+             Picking the one already linked is harmless and just opens it. */
+          const alreadyLinked = !!serverHeader.customerId && serverHeader.customerId !== dbId;
+          if (alreadyLinked) {
+            toast.error(
+              'Customer already linked',
+              'This opportunity is already mapped to a customer. Open it from the Customer button to edit it.',
+            );
+            return;
+          }
+          if (resolvedLeadId && dbId && !serverHeader.customerId) {
             try {
               await api.put(`/sales/leads/${resolvedLeadId}`, { customer_id: dbId });
               toast.success('Customer mapped', `Linked to this opportunity`);

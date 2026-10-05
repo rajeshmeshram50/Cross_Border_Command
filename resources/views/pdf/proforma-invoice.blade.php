@@ -1141,8 +1141,8 @@
                                 @if(!empty(trim(strip_tags($tnc['content'] ?? ''))))
                                     @if(($tnc['segment'] ?? null) !== $lastTncSeg)
                                         @php($lastTncSeg = $tnc['segment'] ?? null)
-                                        <div style="font-size: 9px; font-weight: 700; color: #000; margin-top: 8px; word-wrap: break-word; overflow-wrap: break-word;">
-                                            {{ $tnc['segment'] }}
+                                        <div style="font-size: 9px; font-weight: 700; color: {{ $companyDetails->primary_text_color ?? '#ffffff' }}; background-color: {{ $companyDetails->primary_color ?? '#7CB342' }}; padding: 4px 8px; margin-top: 10px; margin-bottom: 2px; word-wrap: break-word; overflow-wrap: break-word;">
+                                            Segment: {{ $tnc['segment'] }}
                                         </div>
                                     @endif
                                     <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 4px;">
@@ -1366,8 +1366,8 @@
                                         @if(!empty(trim(strip_tags($tnc['content'] ?? ''))))
                                             @if(($tnc['segment'] ?? null) !== $lastTncSeg2)
                                                 @php($lastTncSeg2 = $tnc['segment'] ?? null)
-                                                <div style="font-size: 9px; font-weight: 700; color: #000; margin-top: 8px; word-wrap: break-word; overflow-wrap: break-word;">
-                                                    {{ $tnc['segment'] }}
+                                                <div style="font-size: 9px; font-weight: 700; color: {{ $companyDetails->primary_text_color ?? '#ffffff' }}; background-color: {{ $companyDetails->primary_color ?? '#7CB342' }}; padding: 4px 8px; margin-top: 10px; margin-bottom: 2px; word-wrap: break-word; overflow-wrap: break-word;">
+                                                    Segment: {{ $tnc['segment'] }}
                                                 </div>
                                             @endif
                                             <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 4px;">
