@@ -32,6 +32,7 @@ import {
   type SalBreakComp, SPLIT_CODES, MAX_COMP_AMOUNT, MAX_COMP_LABEL, CTC_ROUNDING_SLACK,
   seedBreakup, absorbIntoSpecial, reseedSplit, planEarningRemoval, statutoryPt, pfDeduction, breakupSignature, validateBreakup,
 } from '../../utils/salaryBreakup';
+import { PF_WAGE_CEILING, PF_WAGE_CEILING_LABEL, PF_MAX_LABEL } from '../../constants';
 import { resolveProbation } from '../../utils/probation';
 import { useModulePermission } from '../../hooks/useModulePermission';
 import '../../../css/recruitment.css';
@@ -1716,7 +1717,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
      payroll and had no field on screen to turn it back off with. */
   const pfActive = eEnablePayroll && ePfEligible;
   /* PF = 12% of BASIC on the statutory basis — Statutory (or unset) caps the
-     basic at the ₹15,000 EPF ceiling, so ₹1,800/mo; Standard uses the full
+     basic at the EPF ceiling (PF_WAGE_CEILING); Standard uses the full
      basic. Mirrors PayrollService::computeForEmployee(); the figure shown here
      has to be the one payroll actually deducts. Shares pfDeduction() with the
      onboarding wizard and SalaryStructureModal so the three screens cannot
@@ -1729,11 +1730,11 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
   /* The wage PF is actually charged on — the same base pfDeduction() applies,
      so the explanation on screen and the rupee beside it cannot disagree. */
   const pfWageCapped = useMemo(
-    () => String(ePfType ?? '').trim().toLowerCase() !== 'standard' && breakupBasic > 15000,
+    () => String(ePfType ?? '').trim().toLowerCase() !== 'standard' && breakupBasic > PF_WAGE_CEILING,
     [breakupBasic, ePfType],
   );
   const pfWageBase = useMemo(
-    () => (pfWageCapped ? 15000 : breakupBasic),
+    () => (pfWageCapped ? PF_WAGE_CEILING : breakupBasic),
     [pfWageCapped, breakupBasic],
   );
   // Net = Gross − PF estimate − fixed deductions. ESI / PT are NOT
@@ -5637,7 +5638,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                             <MasterSelect
                               value={ePfType || 'Statutory'}
                               onChange={(v) => setEPfType(v)}
-                              options={[{ value: 'Statutory', label: 'Statutory (₹15k cap)' }, { value: 'Standard', label: 'Standard (full basic)' }]}
+                              options={[{ value: 'Statutory', label: 'Statutory (₹25k cap)' }, { value: 'Standard', label: 'Standard (full basic)' }]}
                             />
                           </Col>
                         )}
@@ -5760,7 +5761,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                         <ul className="mb-3 ps-3" style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', lineHeight: 1.7 }}>
                           <li><strong>Basic Salary</strong> — the whole monthly gross by default; any allowance you add is taken out of it (must stay at least 50%, Code on Wages, 2019).</li>
                           <li><strong>Allowances (HRA, Special…)</strong> — added by you. Special Allowance, when present, carries the balance so the gross stays on the CTC.</li>
-                          <li><strong>PF Deduction</strong> — <strong>12% of Basic Salary</strong>; <em>Statutory</em> caps the basic at the ₹15,000 EPF ceiling (max ₹1,800/mo), <em>Standard</em> uses the full basic. Toggle PF on/off via <em>PF Applicable</em> above.</li>
+                          <li><strong>PF Deduction</strong> — <strong>12% of Basic Salary</strong>; <em>Statutory</em> caps the basic at the {PF_WAGE_CEILING_LABEL} EPF ceiling (max {PF_MAX_LABEL}/mo), <em>Standard</em> uses the full basic. Toggle PF on/off via <em>PF Applicable</em> above.</li>
                           <li><strong>ESI / Professional Tax</strong> — whatever you enter here is deducted <strong>in full</strong> each cycle; they are not scaled down for a part-month or for loss of pay.</li>
                         </ul>
                         <div className="d-flex align-items-center gap-3 flex-wrap mb-3">
@@ -5837,7 +5838,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                                       miscalculating PF. (#133) */}
                                   Provident Fund (PF) — 12% of Basic Salary
                                   (₹{pfWageBase.toLocaleString('en-IN')}
-                                  {pfWageCapped ? ', capped at the ₹15,000 EPF ceiling' : ''})
+                                  {pfWageCapped ? `, capped at the ${PF_WAGE_CEILING_LABEL} EPF ceiling` : ''})
                                 </span>
                                 <span className="fw-semibold" style={{ color: '#b91c1c' }}>− ₹{breakupPf.toLocaleString('en-IN')}/mo</span>
                               </div>

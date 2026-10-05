@@ -12,6 +12,8 @@
  * screen owns its own state and markup.
  */
 
+import { PF_WAGE_CEILING, PF_RATE } from '../constants';
+
 export interface SalBreakComp { code: string; label: string; amount: number }
 
 /** The three components the auto-split owns — everything else in Earnings was
@@ -160,23 +162,23 @@ export const statutoryPt = (monthlyGross: number, gender: string): number => {
   return 200;
 };
 
-/** PF at 12% of basic — Statutory caps the basic at the ₹15,000 EPF wage
- *  ceiling (max ₹1,800/month), Standard uses the full basic.
+/** PF at 12% of basic — Statutory caps the basic at the EPF wage
+ *  ceiling (see PF_WAGE_CEILING), Standard uses the full basic.
  *
  *  The type is matched case-INSENSITIVELY so this agrees with payroll, which
  *  reads it as `strtolower($employee->pf_type) === 'standard'`. The old exact
  *  `=== 'Standard'` comparison only lined up because the Employee form happens
  *  to write the value capitalised; a row stored as "standard" by an import, a
  *  seeder or an API client fell through to the capped branch here while payroll
- *  took the uncapped one. On a basic above ₹15,000 that is the screen quoting
- *  ₹1,800 against a payslip deducting 12% of the whole basic — the two
+ *  took the uncapped one. On a basic above the ceiling that is the screen quoting
+ *  a capped figure against a payslip deducting 12% of the whole basic — the two
  *  disagreeing about the same employee, with nothing on either to explain it. */
 export const pfDeduction = (basic: number, pfType: string, eligible: boolean): number => {
   if (!eligible) return 0;
   const base = String(pfType ?? '').trim().toLowerCase() === 'standard'
     ? basic
-    : Math.min(basic, 15000);
-  return Math.round(Math.max(0, base) * 0.12);
+    : Math.min(basic, PF_WAGE_CEILING);
+  return Math.round(Math.max(0, base) * PF_RATE);
 };
 
 /** Largest annual gap that is pure rounding rather than a real mismatch.
@@ -194,7 +196,7 @@ export const CTC_ROUNDING_SLACK = 6;
 /** Identity of a breakup, for skipping a POST that would save nothing new. */
 /* `pfType` is part of the signature even though it is not a component and not
    a structure column.
-   It decides the PF BASE — Statutory caps the basic at the 15,000 ceiling,
+   It decides the PF BASE — Statutory caps the basic at PF_WAGE_CEILING,
    Standard charges the full basic — so switching it changes what is deducted.
    The PF row is deliberately excluded from `deductions` (payroll recomputes it),
    so a type-only change moved nothing else in here: the signature matched, the

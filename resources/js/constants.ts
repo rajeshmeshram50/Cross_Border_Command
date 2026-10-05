@@ -30,6 +30,24 @@ export const FEATURE_FLAGS = {
  * session for the web routes. NOTE that Sanctum tokens are separate and do
  * not expire (config/sanctum.php → 'expiration' => null); this timer is what
  * actually ends an idle session in the SPA. */
+/* EPF wage ceiling — PF is 12% of basic, capped at this for PF type Statutory.
+ *
+ * The single source for every screen that quotes it: Salary Setup, the Employee
+ * form, Onboarding and the shared salaryBreakup helper. The SERVER's copy is
+ * PayrollService::PF_WAGE_CEILING — the two are not linked by anything but this
+ * comment, so moving one means moving the other, or a screen will quote a
+ * figure the payslip does not use.
+ *
+ * Raised from 15,000 to 25,000 in Oct 2026 by business decision; the statutory
+ * EPF figure is 15,000 and this is the company's own, higher ceiling.
+ */
+export const PF_WAGE_CEILING = 25000;
+export const PF_RATE = 0.12;
+/** "₹25,000" — for labels, so the number is never typed out by hand. */
+export const PF_WAGE_CEILING_LABEL = `₹${PF_WAGE_CEILING.toLocaleString('en-IN')}`;
+/** "₹3,000" — the most PF can be under the ceiling. */
+export const PF_MAX_LABEL = `₹${Math.round(PF_WAGE_CEILING * PF_RATE).toLocaleString('en-IN')}`;
+
 export const SESSION_TIMEOUT_HOURS = 2;
 export const SESSION_TIMEOUT_MS    = SESSION_TIMEOUT_HOURS * 60 * 60 * 1000;
 export const SESSION_TIMEOUT_LABEL = `${SESSION_TIMEOUT_HOURS} hours`;

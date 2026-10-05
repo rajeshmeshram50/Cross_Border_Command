@@ -103,7 +103,18 @@ class Attendance extends Model
      * the payslip all called it on time (#22). Changing the policy is changing
      * this line.
      */
-    public const LATE_GRACE_MINUTES = 10;
+    /* ZERO — a minute past the shift start is late. (Business decision, Oct
+     * 2026.) It was 10, which is a concession the policy does not actually
+     * grant: an employee on a 10:00 shift punching at 10:05 was filed under
+     * On Time and the card read "5m within 10m grace".
+     *
+     * Zero is a supported value everywhere this is used — every reading is
+     * `minutes > LATE_GRACE_MINUTES`, so it becomes "any minute late is late"
+     * rather than a special case, and the "within Nm grace" caption simply
+     * stops being reachable. Measured before the change: of the attendance
+     * rows carrying a shift stamp, none sat in the 1–10 minute band, so no
+     * historical day changes its verdict. */
+    public const LATE_GRACE_MINUTES = 0;
 
     /** Grace after the employee's shift ends before an unclosed day is
      *  auto-checked-out. A morning shift of 08:00–14:00 auto-closes at 15:00. */

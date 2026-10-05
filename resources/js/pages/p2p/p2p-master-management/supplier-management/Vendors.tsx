@@ -313,6 +313,32 @@ function RefineSuppliers(props: {
     };
   }, [open, onOpenChange]);
 
+  /* How tall the facet area may be before the panel runs off the bottom of the
+     screen. (#37)
+     The body already scrolled, but at a FIXED cap — min(56vh, 420px) — which
+     takes no account of where the button sits. On a page scrolled down, or a
+     short window, the panel opened below the fold: the top of it was visible
+     and Done was not, so it read as "hidden until you scroll the page".
+     Measured from the button instead, the panel always ends above the viewport
+     edge and the tiles scroll inside it. */
+  const [bodyMax, setBodyMax] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    if (!open) { setBodyMax(undefined); return; }
+    const measure = () => {
+      const r = wrapRef.current?.getBoundingClientRect();
+      if (!r) return;
+      // 11 arrow gap + ~44 head + ~58 foot + 14 breathing room
+      setBodyMax(Math.max(170, window.innerHeight - r.bottom - 127));
+    };
+    measure();
+    window.addEventListener('scroll', measure, true);
+    window.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('scroll', measure, true);
+      window.removeEventListener('resize', measure);
+    };
+  }, [open]);
+
   const grand = facets?.grand_total ?? 0;
   const pct = grand > 0 ? Math.round((Math.min(props.shown, grand) / grand) * 100) : 100;
 
@@ -356,7 +382,7 @@ function RefineSuppliers(props: {
               </button>
             </div>
 
-            <div className="sl-refine-body">
+            <div className="sl-refine-body" style={bodyMax ? { maxHeight: bodyMax } : undefined}>
               <div className="sl-refine-group">
                 <div className="sl-refine-k"><span>Category</span></div>
                 <div className="sl-refine-grid sl-refine-grid--4">

@@ -638,7 +638,7 @@ class SalaryStructureController extends Controller
              * basis survived only as long as PF stayed on: switch PF off, save,
              * switch it back on, and the employee silently came back on
              * Statutory — a real change to the deduction (full basic vs the
-             * 15,000 ceiling) that nothing on either screen announced. Payroll
+             * EPF ceiling) that nothing on either screen announced. Payroll
              * never reads the column while PF is off, so keeping it is inert;
              * keeping it is what makes the setting survive the round trip. (#36) */
             if (array_key_exists('pf_type', $data) && $created->pf_applicable) {

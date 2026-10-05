@@ -61,8 +61,21 @@ class PayrollService
             ??= ($this->hasTable($table) && Schema::hasColumn($table, $column));
     }
 
-    // EPF statutory wage ceiling — PF is 12% of basic capped at this.
-    private const PF_WAGE_CEILING = 15000;
+    /* EPF wage ceiling — PF is 12% of basic capped at this.
+     *
+     * RAISED FROM 15,000 TO 25,000 (Oct 2026, business decision). The statutory
+     * EPF figure is 15,000; this is the company's own, higher ceiling, so more
+     * of an employee's basic is covered. Every screen that quotes the number —
+     * Salary Setup, the Employee form, Onboarding — reads it from
+     * PF_WAGE_CEILING on the frontend, so the two sides cannot drift.
+     *
+     * Measured before changing it: 19 of 428 active structures are affected
+     * (basic between 20,834 and 56,327, PF applicable, PF type Statutory), for
+     * +22,300 a month in employee share. Anyone whose basic is at or below
+     * 15,000 is unaffected, and PF type 'standard' ignores the ceiling
+     * entirely.
+     */
+    private const PF_WAGE_CEILING = 25000;
     private const PF_RATE         = 0.12;
     // ESI applies only when gross is at/under this; employee share 0.75%.
     private const ESI_GROSS_LIMIT = 21000;
@@ -2300,8 +2313,35 @@ class PayrollService
          * one answer to "does this person get PF" instead of two that can
          * disagree. */
         $pfManual = $this->structureDeduction($structDeductions, 'pf');
+
+        /* The share of the month the employee was actually paid for. Needed by
+           BOTH branches below, so it is resolved once up here rather than
+           inside the computed one. */
+        $pfDayBasis = $calDays > 0
+            ? min(1, max(0, $paidDaysForPay) / $calDays)
+            : null;
+
         if ($pfManual > 0) {
-            $pf = $pfManual;
+            /* A TYPED PF FIGURE IS A MONTHLY ONE, AND STILL RIDES ON PAID DAYS.
+             *
+             * It used to be deducted exactly as entered — so a mid-month joiner
+             * with a stored 3,000 paid a FULL month's PF on ten paid days of a
+             * fourteen-day window, while an employee with no stored line had
+             * the same PF pro-rated. Two employees on the same salary, the same
+             * attendance and different PF, decided by whether a number happened
+             * to be saved on the structure.
+             *
+             * PF is a percentage of wages by nature: if the wages are a part
+             * month, so is the PF. The figure HR typed is honoured as the
+             * WHOLE-MONTH amount and scaled by the same day basis the computed
+             * branch uses, so the two agree by construction.
+             *
+             * This is deliberately NOT what ESI and PT do — those are flat
+             * monthly levies and are taken as entered (decided Aug 2026). PF is
+             * the exception because it is a rate on wages, not a fee. */
+            $pf = $pfDayBasis === null
+                ? round($pfManual, 2)
+                : round($pfManual * $pfDayBasis, 2);
         } elseif ($pfApplicable && $earnedBasic > 0) {
             /* PF WAGES ARE MEASURED ON WORKING DAYS, NOT PAID CALENDAR DAYS.
              *
@@ -2352,9 +2392,6 @@ class PayrollService
              *   31/31 = 1.0000  → a full month is unaffected, exactly as before
              *   29/31 = 0.9355  → 2 days of LOP pro-rate PF, as they always did
              *    6/31 = 0.1935  → an exit window charges its own share */
-            $pfDayBasis = $calDays > 0
-                ? min(1, max(0, $paidDaysForPay) / $calDays)
-                : null;
             $pfEarnedBasic = $pfDayBasis === null
                 ? $earnedBasic
                 : round($basic * $pfDayBasis, 2);
@@ -2362,13 +2399,13 @@ class PayrollService
             /* THE CEILING PRO-RATES WITH THE WAGES. (#142)
              *
              * The statutory ceiling is a MONTHLY figure: PF is charged on at
-             * most 15,000 of wages for a whole month. Capping a pro-rated
+             * most 25,000 of wages for a whole month. Capping a pro-rated
              * basic against the whole-month ceiling compared two different
              * periods, and PF then stopped responding to paid days for anyone
-             * whose pro-rated basic still cleared 15,000:
+             * whose pro-rated basic still cleared the ceiling:
              *
              *   basic 400,000, 1 paid day of 26  ->  pro-rated basic 15,384
-             *   capped at the full 15,000        ->  PF 1,800
+             *   capped at the full 25,000        ->  PF 3,000
              *
              * which is exactly the PF of a full month worked. One day's pay,
              * a full month's deduction. Below the ceiling the number tracked
@@ -2378,7 +2415,7 @@ class PayrollService
              * Pro-rating the ceiling by the same day basis as the wages puts
              * both sides on the same period. A month with every working day
              * paid is unchanged — the basis is 1.0, so the cap is the whole
-             * 15,000 exactly as before and the payslip does not move by a
+             * full ceiling exactly as before and the payslip does not move by a
              * paisa. A month carrying LOP now charges PF on the share actually
              * paid, which is the correction this ticket asks for.
              *
