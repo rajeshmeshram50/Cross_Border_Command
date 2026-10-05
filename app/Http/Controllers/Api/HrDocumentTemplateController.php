@@ -400,7 +400,6 @@ class HrDocumentTemplateController extends Controller
         // After resolveRow, because the rule depends on the row: the author of
         // an unpublished draft may finish it with can_add alone (QA #36).
         $this->authorizeTemplateWrite($request, $row);
-        $this->guardHierarchicalAction($request->user(), $row, 'edit');
 
         $data = $this->validatePayload($request, $row->id);
 
@@ -429,7 +428,6 @@ class HrDocumentTemplateController extends Controller
     {
         $this->authorize($request, 'can_delete');
         $row = $this->resolveRow($request, (int) $id);
-        $this->guardHierarchicalAction($request->user(), $row, 'delete');
 
         if ($row->docx_path && Storage::disk('public')->exists($row->docx_path)) {
             Storage::disk('public')->delete($row->docx_path);
@@ -1653,6 +1651,29 @@ class HrDocumentTemplateController extends Controller
         return $q->findOrFail($id);
     }
 
+    /**
+     * Creator-rank gate — NO LONGER APPLIED to templates.
+     *
+     * It used to run on update() and destroy(), refusing an edit or a delete
+     * when the template's creator outranked the actor: "You cannot delete this
+     * template — created by a higher-privileged user." The effect was that a
+     * user who had been granted Edit and Delete on the Document Template module
+     * still could not use them on most of the library, because the seeded and
+     * administrator-authored templates are exactly the ones created by the
+     * higher rank. A permission that cannot be exercised is not a permission.
+     *
+     * Templates are now governed by the MODULE PERMISSION alone — can_edit for
+     * update, can_delete for destroy, plus the tenant scope in resolveRow()
+     * which still prevents reaching another client's or branch's rows. Whoever
+     * holds the permission can act on any template they can see. (Decided by
+     * the product owner, Oct 2026.)
+     *
+     * Kept rather than deleted: the same rule still applies to employees,
+     * announcements, candidates, hiring requests and custom fields, where the
+     * record is ABOUT a person rather than a shared piece of configuration, and
+     * the argument for it is much stronger. If templates ever need it back,
+     * this is the method to call again.
+     */
     private function guardHierarchicalAction($user, HrDocumentTemplate $row, string $verb): void
     {
         if (!$user || $user->user_type === 'super_admin' || !$row->created_by) return;

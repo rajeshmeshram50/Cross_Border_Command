@@ -420,6 +420,38 @@ export default function AddProductModal(props: {
       ].some(s => String(s ?? '').toLowerCase().includes(q)));
   }, [vendors, vendorOpts, supSearch]);
   const supPages = Math.max(1, Math.ceil(supRows.length / SUP_PAGE_SIZE));
+
+  /* Suppliers already mapped to this product are not offered again. (#14)
+   *
+   * Picking one was already refused on save, with an "Already mapped" toast —
+   * but only after the user had chosen a supplier, typed a purchase price and
+   * pressed the button. Offering a choice that can only be rejected is the
+   * wrong half of the fix; the save guard stays as defence in depth.
+   *
+   * The row BEING EDITED is excluded from the exclusion, or editing a mapping
+   * would drop its own supplier out of the dropdown and leave the field blank.
+   *
+   * Matched on id AND code because `vendors` rows carry whichever the source
+   * gave them — a freshly mapped row has the id, one loaded from the server may
+   * only carry the code.
+   */
+  const mappedVendorKeys = useMemo(() => {
+    const ids = new Set<string>();
+    const codes = new Set<string>();
+    vendors.forEach(row => {
+      if (vendorEditingId && row.id === vendorEditingId) return;
+      if (row.vendorId) ids.add(String(row.vendorId));
+      if (row.vendorCode) codes.add(String(row.vendorCode));
+    });
+    return { ids, codes };
+  }, [vendors, vendorEditingId]);
+
+  const vendorPickOpts = useMemo(
+    () => vendorOpts.filter(v =>
+      !mappedVendorKeys.ids.has(String(v.id))
+      && !(v.code && mappedVendorKeys.codes.has(String(v.code)))),
+    [vendorOpts, mappedVendorKeys],
+  );
   const supPageSafe = Math.min(supPage, supPages);
   const supStart = (supPageSafe - 1) * SUP_PAGE_SIZE;
 
@@ -1779,7 +1811,7 @@ export default function AddProductModal(props: {
                         >
                           <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select Supplier Name"
                             disabled={saving}
-                            options={vendorOpts.map(v => {
+                            options={vendorPickOpts.map(v => {
                               const segOpts = (v.segmentIds ?? [])
                                 .map(id => optSegments.find(o => o.value === String(id)))
                                 .filter((o): o is MasterOpt => !!o);

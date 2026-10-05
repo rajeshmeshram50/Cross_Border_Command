@@ -1,15 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Col, Modal, ModalBody, Row } from 'reactstrap';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
-import { MasterSelect } from '../../components/ui/MasterSelect';
 import DataTable, { ActionCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import { TemplateRow, EmployeeCategory, RoleType, DocStatus, ROLE_TYPES } from './doc-templates/TemplateForm';
 import CtcLivePreview from '../clm/operations/CtcLivePreview';
 import '../../../css/recruitment.css';
+/* The .sl-refine-* panel styles, borrowed from Refine Suppliers rather than
+   re-drawn here. One filter popover in the product, one look. The classes are
+   namespaced, so importing them carries nothing else across. */
+import '../p2p/p2p-master-management/supplier-management/supplier-management.css';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const CATEGORIES: { key: EmployeeCategory; label: string; icon: string }[] = [
@@ -41,6 +45,11 @@ export default function HrDocumentTemplates() {
   const [roleType, setRoleType] = useState<RoleType>(ROLE_TYPES[5].value); // 'Intern / Trainee'
   const [search, setSearch] = useState('');
   const [triggerFilter, setTriggerFilter] = useState('');
+  /* Status moved OUT of a column header and INTO the filter panel beside
+     Trigger — two pickers eating toolbar width was what pushed the role rail
+     into a scroll in the first place. */
+  const [statusFilter, setStatusFilter] = useState<DocStatus | ''>('');
+  const [filterOpen, setFilterOpen] = useState(false);
 
   // Lookups — used to populate the trigger filter dropdown
   const [triggerPoints, setTriggerPoints] = useState<Array<{ id: number; module_name: string }>>([]);
@@ -164,6 +173,7 @@ export default function HrDocumentTemplates() {
       .filter(r => r.employee_category === category)
       .filter(r => r.role_type === roleType)
       .filter(r => !triggerFilter || String(r.trigger_point_id) === triggerFilter)
+      .filter(r => !statusFilter || r.status === statusFilter)
       .filter(r => {
         if (!needle) return true;
         return (
@@ -172,7 +182,7 @@ export default function HrDocumentTemplates() {
           (r.description || '').toLowerCase().includes(needle)
         );
       });
-  }, [rows, category, roleType, triggerFilter, search]);
+  }, [rows, category, roleType, triggerFilter, statusFilter, search]);
 
   /* Per-level counts for the Level tab badges. Everything EXCEPT the level
      itself is applied, so the active tab's badge equals the visible row count
@@ -183,6 +193,7 @@ export default function HrDocumentTemplates() {
     const base = rows
       .filter(r => r.employee_category === category)
       .filter(r => !triggerFilter || String(r.trigger_point_id) === triggerFilter)
+      .filter(r => !statusFilter || r.status === statusFilter)
       .filter(r => {
         if (!needle) return true;
         return (
@@ -194,7 +205,47 @@ export default function HrDocumentTemplates() {
     const out: Record<string, number> = {};
     base.forEach(r => { out[r.role_type] = (out[r.role_type] || 0) + 1; });
     return out;
-  }, [rows, category, triggerFilter, search]);
+  }, [rows, category, triggerFilter, statusFilter, search]);
+
+  /* Counts for the filter panel's tiles.
+     Each facet is counted with the OTHER filters applied but not its own, so a
+     tile says what you would get by choosing it rather than what you have —
+     the same rule the Level tab badges follow. */
+  const facetBase = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return rows
+      .filter(r => r.employee_category === category)
+      .filter(r => r.role_type === roleType)
+      .filter(r => {
+        if (!needle) return true;
+        return (
+          (r.name || '').toLowerCase().includes(needle) ||
+          (r.code || '').toLowerCase().includes(needle) ||
+          (r.description || '').toLowerCase().includes(needle)
+        );
+      });
+  }, [rows, category, roleType, search]);
+
+  const triggerCounts = useMemo(() => {
+    const out: Record<string, number> = {};
+    facetBase
+      .filter(r => !statusFilter || r.status === statusFilter)
+      .forEach(r => {
+        const k = String(r.trigger_point_id ?? '');
+        if (k) out[k] = (out[k] || 0) + 1;
+      });
+    return out;
+  }, [facetBase, statusFilter]);
+
+  const statusCounts = useMemo(() => {
+    const out: Record<string, number> = {};
+    facetBase
+      .filter(r => !triggerFilter || String(r.trigger_point_id) === triggerFilter)
+      .forEach(r => { out[r.status] = (out[r.status] || 0) + 1; });
+    return out;
+  }, [facetBase, triggerFilter]);
+
+  const activeFilterCount = (triggerFilter ? 1 : 0) + (statusFilter ? 1 : 0);
 
   /* Paging lives in <DataTable> (components/ui/DataTable) now. */
 
@@ -571,17 +622,21 @@ export default function HrDocumentTemplates() {
                 {/* Compact: with six role tabs the rail needs every pixel, and
                     a 170px-wide "All" dropdown plus a roomy button pushed the
                     last tab onto a second line inside the rail. */}
-                <div className="d-flex align-items-center gap-1">
-                  <span className="dtm-filter-label" style={{ fontSize: 10, fontWeight: 800, color: '#9ca3af', letterSpacing: 0.3, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Trigger</span>
-                  <div style={{ minWidth: 118, maxWidth: 150 }}>
-                    <MasterSelect
-                      value={triggerFilter}
-                      onChange={setTriggerFilter}
-                      options={[{ value: '', label: 'All' }, ...triggerPoints.map(t => ({ value: String(t.id), label: t.module_name }))]}
-                      placeholder="All"
-                    />
-                  </div>
-                </div>
+                <RefineTemplates
+                  open={filterOpen}
+                  onOpenChange={setFilterOpen}
+                  triggerPoints={triggerPoints}
+                  triggerCounts={triggerCounts}
+                  statusCounts={statusCounts}
+                  triggerFilter={triggerFilter}
+                  statusFilter={statusFilter}
+                  onTrigger={setTriggerFilter}
+                  onStatus={setStatusFilter}
+                  onClear={() => { setTriggerFilter(''); setStatusFilter(''); }}
+                  active={activeFilterCount}
+                  shown={filtered.length}
+                  total={facetBase.length}
+                />
                 {/* Status picker removed — the Status column sorts from its own
                     header now, and the KPI tiles above already break the totals
                     down by Active / Draft / Deprecated.
@@ -842,6 +897,240 @@ function TemplateViewModal({
    inverts to a solid gradient of the same hue on hover. The local flat-pastel
    version had no hover identity. `primary`/`dark` map onto the table's accent
    so callers don't have to change. */
+/* ── Refine Templates ───────────────────────────────────────────────────────
+ *
+ * Trigger and Status used to sit in the toolbar as controls of their own, and
+ * between them they took enough width that the six role tabs could not fit —
+ * the rail scrolled and clipped the last tab mid-word. Behind one Filter button
+ * they cost ~90px instead of ~300, the rail fits, and the search keeps its room.
+ *
+ * Deliberately the SAME panel as Refine Suppliers (its .sl-refine-* classes),
+ * so a filter looks and behaves identically wherever it appears.
+ */
+function RefineTemplates(props: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  triggerPoints: Array<{ id: number; module_name: string }>;
+  triggerCounts: Record<string, number>;
+  statusCounts: Record<string, number>;
+  triggerFilter: string;
+  statusFilter: DocStatus | '';
+  onTrigger: (v: string) => void;
+  onStatus: (v: DocStatus | '') => void;
+  onClear: () => void;
+  active: number;
+  shown: number;
+  total: number;
+}) {
+  const { open, onOpenChange } = props;
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+
+  /* Close on an outside click and on Escape — the panel overlays the table it
+     filters, so leaving it open sits in front of the result it produced.
+     The panel lives in a PORTAL, so an outside click has to miss BOTH the
+     button and the panel — they are no longer in the same subtree. */
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (wrapRef.current?.contains(t) || popRef.current?.contains(t)) return;
+      onOpenChange(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onOpenChange(false); };
+    document.addEventListener('mousedown', onDown, true);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown, true);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, onOpenChange]);
+
+  /* WHY A PORTAL, AND NOT A BIGGER z-index.
+   *
+   * Two things were burying this panel, and only one of them is a z-index:
+   *
+   *   1. .dt-toolbar carries `position: relative; z-index: 1`, which makes it a
+   *      STACKING CONTEXT. Everything inside it — including a child asking for
+   *      z-index: 80 — is flattened to the toolbar's own level of 1, and the
+   *      sticky table header sits at 3. No number on the panel can win that.
+   *   2. .dt-root has `border-radius: 16px; overflow: hidden`, so the part of
+   *      the panel that reached past the card's bottom edge was simply cut off.
+   *
+   * Rendering into document.body escapes both. The anchor below is a zero-size
+   * fixed box pinned over the button, so the panel's own CSS (`top: calc(100% +
+   * 11px); right: 0`) still places it exactly where it was designed to sit —
+   * including the little arrow — without that CSS knowing anything changed.
+   */
+  const [anchor, setAnchor] = useState<{ top: number; left: number; width: number; height: number; vh: number } | null>(null);
+  useEffect(() => {
+    if (!open) { setAnchor(null); return; }
+    const measure = () => {
+      const r = wrapRef.current?.getBoundingClientRect();
+      if (r) setAnchor({ top: r.top, left: r.left, width: r.width, height: r.height, vh: window.innerHeight });
+    };
+    measure();
+    // `true` captures scrolls on inner containers too — the table scrolls, and
+    // a panel left behind at an old position reads as a rendering bug.
+    window.addEventListener('scroll', measure, true);
+    window.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('scroll', measure, true);
+      window.removeEventListener('resize', measure);
+    };
+  }, [open]);
+
+  /* How tall the tile area may be before the footer falls off the screen.
+     The panel is fixed-positioned under the button, so on a short viewport —
+     or with the toolbar low on a long page — it ran past the bottom edge and
+     took Done and the N/M meter with it. The HEAD and FOOT are never the thing
+     that scrolls; the body between them gives way instead. */
+  const bodyMax = anchor
+    ? Math.max(170, anchor.vh - (anchor.top + anchor.height) - 11 /* arrow gap */ - 44 /* head */ - 58 /* foot */ - 14 /* breathing room */)
+    : undefined;
+
+  const pct = props.total > 0 ? Math.round((Math.min(props.shown, props.total) / props.total) * 100) : 100;
+  const STATUS_TILES: Array<{ key: DocStatus; label: string; tone: string; glyph: string }> = [
+    { key: 'Active', label: 'Active', tone: 'ok', glyph: 'ri-checkbox-circle-line' },
+    { key: 'Draft', label: 'Draft', tone: 'medal', glyph: 'ri-draft-line' },
+    { key: 'Deprecated', label: 'Deprecated', tone: 'ban', glyph: 'ri-forbid-2-line' },
+  ];
+
+  return (
+    /* .sup-fig is carried deliberately: every .sl-refine-* rule in
+       supplier-management.css is scoped under it, so without this class the
+       panel renders completely unstyled — a page-filling raw SVG where the
+       button should be. The class brings the styles; the inline layout
+       replaces what .sup-fig itself would impose (a flex COLUMN), and
+       position:relative is what the popover anchors to, since
+       `.sup-fig .sl-refine` cannot match an element carrying both. */
+    <div
+      className="sup-fig sl-refine"
+      ref={wrapRef}
+      style={{ position: 'relative', display: 'flex', alignItems: 'center', flexShrink: 0, gap: 0 }}
+    >
+      <button
+        type="button"
+        className={`sl-refine-btn${open ? ' is-open' : ''}${props.active ? ' has-active' : ''}`}
+        onClick={() => onOpenChange(!open)}
+        aria-expanded={open}
+        /* Icon only. The word cost ~45px on a row that had none to spare, and
+           a funnel is one of the few glyphs that needs no label. The name lives
+           on the tooltip and on aria-label so it is still announced and still
+           discoverable on hover. */
+        aria-label={props.active > 0 ? `Filter — ${props.active} applied` : 'Filter'}
+        title={props.active > 0 ? `Filter — ${props.active} applied` : 'Filter'}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+        </svg>
+        {props.active > 0 && <span className="sl-refine-badge">{props.active}</span>}
+      </button>
+
+      {open && anchor && createPortal(
+        /* Zero-size box over the button. The panel positions itself against it
+           exactly as it did against the inline wrapper. */
+        <div
+          className="sup-fig"
+          style={{ position: 'fixed', top: anchor.top, left: anchor.left, width: anchor.width, height: anchor.height, zIndex: 4000, pointerEvents: 'none' }}
+        >
+        <div className="sl-refine-pop" role="dialog" aria-label="Refine Templates" ref={popRef} style={{ pointerEvents: 'auto' }}>
+          <div className="sl-refine-sheet">
+            <div className="sl-refine-head">
+              <span className="sl-refine-head-ico">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                </svg>
+              </span>
+              <span className="sl-refine-title">Refine Templates</span>
+              {props.active > 0 && <span className="sl-refine-badge">{props.active}</span>}
+              <span className="sl-refine-sp" />
+              {props.active > 0 && (
+                <button type="button" className="sl-refine-reset" onClick={props.onClear}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7" /><polyline points="3 3 3 9 9 9" /></svg>
+                  Reset
+                </button>
+              )}
+              <button type="button" className="sl-refine-x" onClick={() => onOpenChange(false)} aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+
+            <div className="sl-refine-body" style={bodyMax ? { maxHeight: bodyMax } : undefined}>
+              <div className="sl-refine-group">
+                <div className="sl-refine-k"><span>Trigger</span></div>
+                {/* Three across: the trigger list is tenant-defined and can run
+                    to a dozen, so narrower tiles keep the panel from becoming a
+                    column of full-width buttons. */}
+                <div className="sl-refine-grid sl-refine-grid--3">
+                  {props.triggerPoints.map(t => {
+                    const key = String(t.id);
+                    const n = props.triggerCounts[key] ?? 0;
+                    const on = props.triggerFilter === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        /* Clicking the selected tile again clears it — the panel
+                           has no "All" tile, so the choice must be its own undo
+                           or Reset becomes the only way back. */
+                        className={`sl-refine-tile sl-refine-tile--star${on ? ' is-on' : ''}${n === 0 ? ' is-empty' : ''}`}
+                        onClick={() => props.onTrigger(on ? '' : key)}
+                        aria-pressed={on}
+                        title={t.module_name}
+                      >
+                        <span className="sl-refine-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></span>
+                        {/* The tile expects an icon slot; without it these sit
+                            shorter than the Status row below and the two groups
+                            stop reading as one panel. */}
+                        <span className="sl-refine-tile-ico"><i className="ri-flashlight-line" /></span>
+                        <span className="sl-refine-tile-lbl">{t.module_name}</span>
+                        <span className="sl-refine-tile-n">{n}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="sl-refine-group">
+                <div className="sl-refine-k"><span>Status</span></div>
+                <div className="sl-refine-grid sl-refine-grid--3">
+                  {STATUS_TILES.map(t => {
+                    const n = props.statusCounts[t.key] ?? 0;
+                    const on = props.statusFilter === t.key;
+                    return (
+                      <button
+                        key={t.key}
+                        type="button"
+                        className={`sl-refine-tile sl-refine-tile--${t.tone}${on ? ' is-on' : ''}${n === 0 ? ' is-empty' : ''}`}
+                        onClick={() => props.onStatus(on ? '' : t.key)}
+                        aria-pressed={on}
+                      >
+                        <span className="sl-refine-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></span>
+                        <span className="sl-refine-tile-ico"><i className={t.glyph} /></span>
+                        <span className="sl-refine-tile-lbl">{t.label}</span>
+                        <span className="sl-refine-tile-n">{n}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="sl-refine-foot">
+              <div className="sl-refine-res"><b>{props.shown}</b><i>/{props.total}</i></div>
+              <div className="sl-refine-meter"><span style={{ width: `${pct}%` }} /></div>
+              <button type="button" className="sl-refine-done" onClick={() => onOpenChange(false)}>Done</button>
+            </div>
+          </div>
+        </div>
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
 function ActionBtn({ icon, tone, onClick, title }: { icon: string; tone: 'primary' | 'info' | 'success' | 'danger' | 'dark'; onClick: () => void; title: string }) {
   const mapped = tone === 'primary' || tone === 'dark' ? 'accent' : tone;
   return <ActionCell title={title} icon={icon} tone={mapped} onClick={onClick} />;
@@ -950,7 +1239,20 @@ function DtmDarkStyles() {
          The search field is the control people actually use here, and the
          Trigger picker sat taller than everything beside it — so the strip read
          as mismatched heights with a small search box wedged in. */
-      .dtm-page .dt-search { flex: 0 4 320px; max-width: 320px; }
+      /* The search gives way before the tabs do.
+         Six role tabs are the page's primary navigation and every one of them
+         has to be readable; a search box is still perfectly usable at 220px.
+         With the search holding 320px the rail was pushed into a scroll and
+         "Director / CEO" sat off the left edge — the first tab, invisible. */
+      /* flex-grow 0 is the point of this rule.
+         At 1 the search took every spare pixel on a wide screen — half the
+         toolbar — while the rail beside it stayed at its content width and
+         clipped "Intern / Trainee" against the search's left edge. The search
+         now keeps 220px and never claims more; the tabs take the slack. */
+      .dtm-page .dt-search { flex: 0 1 220px; min-width: 150px; max-width: 260px; }
+      /* …and the rail takes what the search gave up, rather than staying at its
+         content width and scrolling anyway. */
+      .dtm-page .dt-toolbar > .dt-tabrail { flex: 1 1 auto; min-width: 0; }
       .dtm-page .master-select-toggle { min-height: 34px; height: 34px; padding-top: 0; padding-bottom: 0; }
       /* The Trigger picker is capped inline at 150px, which read as a cramped
          afterthought beside a 400px search. Overridden rather than edited in
@@ -985,8 +1287,18 @@ function DtmDarkStyles() {
          two ragged rows with one lone tab underneath. It scrolls sideways
          instead — at every width, not just phones, because the wrap started
          well above the phone breakpoint. */
-      .dtm-page .dt-tabrail { overflow-x: auto; scrollbar-width: none; }
-      .dtm-page .dt-tabrail::-webkit-scrollbar { display: none; }
+      /* A THIN scrollbar, not a hidden one. Hiding it meant the rail clipped
+         the last tab mid-word with nothing on screen to say more existed —
+         "Emplo…" simply read as broken. A 4px bar appears only when the tabs
+         actually overflow, which is the whole message. */
+      .dtm-page .dt-tabrail { overflow-x: auto; scrollbar-width: thin; scrollbar-color: rgba(124,92,252,.35) transparent; }
+      /* Room under the tabs for the bar, so it sits BELOW them rather than
+         over the last tab's lower edge. Only costs height when it shows. */
+      .dtm-page .dt-toolbar > .dt-tabrail { padding-bottom: 2px; }
+      .dtm-page .dt-tabrail::-webkit-scrollbar { height: 5px; }
+      .dtm-page .dt-tabrail::-webkit-scrollbar-track { background: transparent; }
+      .dtm-page .dt-tabrail::-webkit-scrollbar-thumb { background: rgba(124,92,252,.35); border-radius: 999px; }
+      .dtm-page .dt-tabrail:hover::-webkit-scrollbar-thumb { background: rgba(124,92,252,.55); }
       .dtm-page .dt-tabs { flex-wrap: nowrap; }
       /* The pill hugs its tabs; only the RAIL takes the full line.
          DataTable's own @media (max-width: 1100px) sets .dt-tabs to
@@ -999,6 +1311,39 @@ function DtmDarkStyles() {
          centred, which is the right call there. */
       @media (min-width: 761px) {
         .dtm-page .dt-toolbar .dt-tabs { flex: 0 0 auto; width: fit-content; max-width: 100%; }
+      }
+      /* …and at EVERY width above that, the strip has to be able to give up
+         room and to say when it has run out.
+         The rule above pins it to its content width with a max-width of 100%,
+         which does not scroll — it CLIPS. On a wide screen that cut "Employee"
+         in half and hid "Intern / Trainee" entirely, with nothing on screen to
+         suggest either existed. (The 1200–1700px block below already did this;
+         above 1700px nothing did, which is exactly where it was reported.)
+         Scoped to the toolbar, so the category rail in the header strip — which
+         wraps instead — is untouched. */
+      @media (min-width: 761px) {
+        .dtm-page .dt-toolbar .dt-tabs {
+          flex: 0 1 auto;
+          width: auto;
+          min-width: 0;
+          overflow-x: auto;
+          /* VISIBLE, unlike the hidden bar this page used before. A rail that
+             clips with no scrollbar reads as a broken layout rather than as
+             something you can scroll. */
+          scrollbar-width: thin;
+          scrollbar-color: rgba(124, 92, 252, .45) transparent;
+        }
+        .dtm-page .dt-toolbar .dt-tabs::-webkit-scrollbar { height: 5px; }
+        .dtm-page .dt-toolbar .dt-tabs::-webkit-scrollbar-track { background: transparent; }
+        .dtm-page .dt-toolbar .dt-tabs::-webkit-scrollbar-thumb { background: rgba(124, 92, 252, .45); border-radius: 999px; }
+        .dtm-page .dt-toolbar .dt-tabs:hover::-webkit-scrollbar-thumb { background: rgba(124, 92, 252, .7); }
+        .dtm-page .dt-toolbar .dt-tab { flex: 0 0 auto; }
+        /* A shorter, tighter row. Six tabs at 37px tall with 9px of side
+           padding is more toolbar than six short words need, and the height
+           was the reason the strip dominated the card. */
+        .dtm-page .dt-toolbar .dt-tab { height: 31px; padding: 0 9px; font-size: 11.5px; }
+        .dtm-page .dt-toolbar .dt-tab-count { min-width: 17px; height: 16px; font-size: 9.5px; padding: 0 4px; }
+        .dtm-page .dt-toolbar .dt-tabs { padding: 3px; }
       }
       /* ...but NOT the category rail in the header strip. Sideways scrolling
          suits the six Level tabs, where any one of them is a short word. These
@@ -1276,6 +1621,54 @@ function DtmDarkStyles() {
       /* Add Template button — hover feedback (BUG-039). Applies in both themes. */
       .dtm-page .dtm-add-tpl-btn:hover { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 7px 20px rgba(99,102,241,0.45) !important; }
       .dtm-page .dtm-add-tpl-btn:active { transform: translateY(0); }
+
+      /* ── Toolbar: two rows, fixed ─────────────────────────────────────────
+         Row 1   tabs ............................................... Filter
+         Row 2   search ...................................... + Add Template
+
+         Everything before this tried to make one row fit, and the loser was
+         always the tab strip: it clipped "Employee" and swallowed
+         "Intern / Trainee" with no way to tell either was there. Six tabs are
+         the page's primary navigation and cannot be the thing that gives way,
+         so they get a row to themselves and the question stops arising.
+
+         A GRID, not flex-wrap: wrapping cannot put Filter on the first line and
+         Add Template on the second, because they are siblings inside
+         .dt-toolbar-actions. display:contents dissolves that wrapper so its
+         two buttons become grid items in their own right and can be placed on
+         different rows. Flex properties set by the rules above are simply
+         ignored once the container is a grid; the width caps are not, so they
+         are reset here. */
+      @media (min-width: 761px) {
+        .dtm-page .dt-toolbar {
+          display: grid;
+          /* tabs | search | filter | add — the tabs cell is the only elastic
+             one, so everything else keeps its size and the strip gives way
+             first. minmax(0, …) lets it shrink BELOW its content, which is what
+             turns the overflow into a scroll instead of a blown-out row. */
+          grid-template-columns: minmax(0, 1fr) auto auto auto;
+          align-items: center;
+          gap: 12px;
+        }
+        .dtm-page .dt-toolbar-actions { display: contents; }
+
+        .dtm-page .dt-toolbar .dt-tabs {
+          grid-column: 1; grid-row: 1;
+          justify-self: start;
+          width: auto; max-width: 100%;
+        }
+        .dtm-page .dt-toolbar .dt-search {
+          grid-column: 2; grid-row: 1;
+          justify-self: end;
+          width: 100%; max-width: 300px; min-width: 150px;
+        }
+        .dtm-page .dt-toolbar .sl-refine { grid-column: 3; grid-row: 1; justify-self: end; }
+        .dtm-page .dt-toolbar .dtm-add-tpl-btn { grid-column: 4; grid-row: 1; justify-self: end; }
+        /* Square-ish now that the label is gone — the text padding left it a
+           wide pill wrapped around a 15px glyph. */
+        .dtm-page .sl-refine-btn { padding: 0 11px; gap: 5px; }
+      }
+      }
     `}</style>
   );
 }

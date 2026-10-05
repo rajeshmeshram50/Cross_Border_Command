@@ -1073,14 +1073,36 @@ function Step1Basic({
             {description.length} / {DESC_MAX}
           </span>
         </label>
-        <textarea
-          rows={5}
-          className={`rec-input rec-textarea${errors.description ? ' is-invalid' : ''}`}
-          placeholder="Describe this announcement in detail…"
-          value={description}
-          maxLength={DESC_MAX}
-          onChange={e => setDescription(e.target.value.slice(0, DESC_MAX))}
-        />
+        {/* In View mode this is a DIV, not a disabled <textarea>.
+            The wizard sits inside <fieldset disabled>, which disables every form
+            control within it and carries pointerEvents:'none' — so a long
+            description could not be scrolled, read or selected, and the only
+            text that mattered was the part that happened to fit. Chrome does not
+            dispatch mouse events to a disabled control at all, so restoring
+            pointer-events on the textarea would not have been enough.
+            A div is not a form control, so the fieldset leaves it alone. */}
+        {readOnly ? (
+          <div
+            className="rec-input rec-textarea"
+            tabIndex={0}
+            style={{
+              height: 118, overflowY: 'auto', overscrollBehavior: 'contain',
+              whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflowWrap: 'anywhere',
+              pointerEvents: 'auto', cursor: 'text', userSelect: 'text',
+            }}
+          >
+            {description || '—'}
+          </div>
+        ) : (
+          <textarea
+            rows={5}
+            className={`rec-input rec-textarea${errors.description ? ' is-invalid' : ''}`}
+            placeholder="Describe this announcement in detail…"
+            value={description}
+            maxLength={DESC_MAX}
+            onChange={e => setDescription(e.target.value.slice(0, DESC_MAX))}
+          />
+        )}
         {errors.description && <div className="rec-error"><i className="ri-error-warning-line" />{errors.description}</div>}
       </div>
 
@@ -1515,16 +1537,30 @@ function Step4Review({
         </Tooltip>
         <div className="text-muted" style={{ fontSize: 13, ...wrapStyle }}>{shownDesc || '—'}</div>
         {(longTitle || longDesc) && (
-          <button
-            type="button"
+          /* A <span role="button">, not a <button> — the same fix the attachment
+             View link needed. (#37)
+             In View mode this step sits inside <fieldset disabled>, and the
+             browser disables every <button> within it: the click is swallowed
+             before any handler runs, so Read more did nothing and the rest of a
+             long announcement could not be read at all — which is precisely
+             when a reader most needs it. The fieldset leaves non-form elements
+             alone, and pointerEvents:'auto' undoes the 'none' the fieldset sets
+             on the whole group. Keyboard activation is wired by hand, since a
+             span does not get Enter/Space for free. */
+          <span
+            role="button"
+            tabIndex={0}
             onClick={() => setShowFullText(v => !v)}
-            className="p-0 mt-1"
-            style={{ background: 'none', border: 0, color: '#0ea5e9', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowFullText(v => !v); }
+            }}
+            className="p-0 mt-1 d-inline-block"
+            style={{ background: 'none', border: 0, color: '#0ea5e9', fontSize: 12, fontWeight: 600, cursor: 'pointer', pointerEvents: 'auto' }}
           >
             {showFullText
               ? 'Show less'
               : `Read more (${(fullTitle.length + fullDesc.length).toLocaleString()} characters)`}
-          </button>
+          </span>
         )}
 
         <div style={{ height: 18 }} />

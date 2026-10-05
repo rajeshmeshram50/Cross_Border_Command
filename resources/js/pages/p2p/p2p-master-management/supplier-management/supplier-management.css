@@ -1,25 +1,6 @@
-/* ────────────────────────────────────────────────────────────────────────
-   Supplier Management (Procure-to-Pay → Vendors) — page styles.
-
-   Extracted from the inline <style> block that used to live in
-   Vendors.tsx (co-located in this folder) so the rules are bundled and
-   cached once by Vite instead of being rebuilt as a string and re-injected
-   on every React render. Everything is scoped to .sup-fig / .vendors-surface
-   (plus the .sc-* contact-persons popup, which portals to <body>), so it can
-   never leak into other pages.
-
-   Figma "Supplier Management" purple theme — ported verbatim from the
-   P2P_Sourcing prototype: header strip (cstrip), the collapsible 4-step
-   "What We Are Doing Here" box (bref), and the purple supplier table (sl-*).
-   ──────────────────────────────────────────────────────────────────────── */
-
-/* 8px, the app-wide page gap (.page-content sets the same 8px on the other
-   three sides). The stack was 6px with a -6px pull on top, so the strip sat
-   2px under the menu while the page edges were 8px away. */
 .sup-fig{font-family: var(--font-sans);display:flex;flex-direction:column;gap:8px;margin:0;min-width:0;}
 @media(max-width:640px){.sup-fig{margin:0;}}
 
-/* HEADER STRIP */
 .sup-fig .cstrip{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;min-height:58px;padding:0 20px;border:1px solid #c4b5fd;border-radius:16px;background:linear-gradient(110deg,#faf5ff 0%,#f3e8ff 25%,#ede9fe 55%,#ddd6fe 85%,#c4b5fd 100%);box-shadow:0 2px 0 rgba(255,255,255,.85) inset,0 8px 28px rgba(139,92,246,.2),0 2px 8px rgba(0,0,0,.06);}
 .sup-fig .cstrip__accent{position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(180deg,#a78bfa,#7c3aed,#5b21b6);border-radius:16px 0 0 16px;}
 .sup-fig .cstrip__glow{position:absolute;inset:0;pointer-events:none;background-image:radial-gradient(ellipse at 10% 50%,rgba(196,181,253,.45) 0%,transparent 50%),radial-gradient(ellipse at 90% 50%,rgba(167,139,250,.25) 0%,transparent 55%);}
@@ -35,7 +16,6 @@
 .sup-fig .cstrip__action-btn:hover{background:linear-gradient(135deg,#7c3aed 0%,#5b21b6 50%,#4c1d95 100%);transform:translateY(-1.5px);box-shadow:0 8px 24px rgba(124,58,237,.6),0 2px 6px rgba(91,33,182,.35),0 1px 0 rgba(255,255,255,.2) inset;}
 .sup-fig .cstrip__action-btn-sheen{position:absolute;top:0;left:0;right:0;height:50%;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.18),transparent);border-radius:12px 12px 0 0;}
 
-/* WHAT WE ARE DOING HERE — collapsible stepper */
 .sup-fig .bref-box{background:#fff;border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;position:relative;box-shadow:0 2px 0 rgba(255,255,255,.9) inset,0 8px 28px rgba(139,92,246,.2),0 2px 8px rgba(0,0,0,.06);}
 .sup-fig .bref-box::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(180deg,#a78bfa,#7c3aed,#5b21b6);border-radius:16px 0 0 16px;z-index:10;}
 .sup-fig .bref-box__header{position:relative;overflow:hidden;display:flex;align-items:center;gap:12px;padding:7px 12px;background:linear-gradient(110deg,#faf5ff 0%,#f3e8ff 25%,#ede9fe 55%,#ddd6fe 85%,#c4b5fd 100%);border-bottom:1px solid #c4b5fd;cursor:pointer;user-select:none;min-height:48px;}
@@ -49,49 +29,23 @@
 .sup-fig .bref-box__header-sep{width:1px;height:13px;background:#C4B5FD;flex-shrink:0;}
 .sup-fig .bref-box__header-title{font-size:11px;font-weight:600;color:#3b0764;letter-spacing:-.2px;line-height:1;white-space:nowrap;}
 .sup-fig .bref-box__header-sub{font-size:9.5px;font-weight:500;color:#6d28d9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-/* Scope tabs on the strip (All / Domestic / International) — ported from the
-   Sourcing Tracker header in the P2P prototype (.c2c-scope), recoloured from
-   its cyan into the violet this page runs on. Sits left of the collapse
-   chevron, inside .bref-box__header-right. */
+
 .sup-fig .sup-scope{height:var(--sl-tab-h,44px);display:inline-flex;align-items:stretch;gap:3px;padding:3px;margin:4px 0;background:rgba(255,255,255,.62);border:1px solid rgba(124,58,237,.28);border-radius:10px;box-shadow:0 1px 3px rgba(91,33,182,.12) inset;flex-shrink:0;}
-/* Inactive tab: a white pill with its own border, per Figma — not transparent.
-   Transparent let the tab dissolve into the strip, so the control read as one
-   pill with a label floating beside it rather than as two choices, and the
-   unselected side did not look pressable. The border is carried on BOTH states
-   (the active one just paints it transparent) so selecting a tab cannot change
-   its width and shunt the other one sideways. */
+
 .sup-fig .sup-scope__tab{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:inherit;font-size:12px;font-weight:800;letter-spacing:-.1px;color:#6d28d9;background:linear-gradient(135deg,#f5f1fe,#ede9fe);border:1px solid rgba(124,58,237,.22);border-radius:8px;padding:6px 11px;cursor:pointer;white-space:nowrap;transition:all .18s cubic-bezier(.22,1,.36,1);}
-/* font-weight:400 is the fix for "the icons look too bold".
-   The tab sets font-weight:800 for its LABEL, and the icon, being a font glyph,
-   inherited it. Remix Icon ships a single weight, so the browser had nothing to
-   switch to and SYNTHESISED the bold — smearing each stroke a fraction wider.
-   Resetting the weight on the glyph turns that off and gives the icon back its
-   real outline; the label keeps its 800. Antialiasing is Remix Icon's own
-   recommendation and stops the thin strokes rendering chunky on Windows. */
+
 .sup-fig .sup-scope__tab i{
   font-size:12px;flex-shrink:0;font-weight:400;
   -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
 }
 .sup-fig .sup-scope__tab:hover{color:#5b21b6;background:rgba(124,58,237,.10);border-color:rgba(124,58,237,.38);}
-/* Active fill: an even violet, not the old #a78bfa→#5b21b6 ramp. That ramp ran
-   from a light lilac to near-black across 120px, so the pill read as two
-   different purples with the label sitting over the join; Figma's is one
-   colour with only enough gradient to keep it from looking flat. The shadow
-   comes down with it — a tab is a selection, not a raised button. */
+
 .sup-fig .sup-scope__tab.is-active{color:#fff;background:linear-gradient(135deg,#8b5cf6,#7c3aed);border-color:transparent;box-shadow:0 2px 6px -2px rgba(91,33,182,.45);}
 .sup-fig .sup-scope__tab.is-active:hover{color:#fff;}
 @media(max-width:1200px){.sup-fig .sup-scope__tab{padding:6px 9px;font-size:11px;}}
-/* Below this the strip's own text already wraps; the labels lose their nouns
-   rather than the group losing its place. */
+
 @media(max-width:900px){.sup-fig .sup-scope__tab{padding:6px 8px;}}
-/* Below this the strip's own title and the tab group stop fitting on one line.
-   They were sharing it anyway — .bref-box__header-mid is flex:1 while the tab
-   group is flex-shrink:0, so on a phone the group kept its width and simply
-   sat ON TOP of "…What We Are Doing Here".
-   Wrapping the header and giving the right-hand block a full-width line of its
-   own puts the tabs under the title instead of over it; the collapse chevron
-   rides along and ends up at the far right of that line, which is where a
-   thumb expects it. */
+
 @media(max-width:820px){
   .sup-fig .bref-box__header{flex-wrap:wrap;row-gap:8px;}
   .sup-fig .bref-box__header-mid{min-width:0;}
@@ -100,47 +54,27 @@
   .sup-fig .sup-scope::-webkit-scrollbar{display:none;}
   .sup-fig .sup-scope__tab{flex:1 1 auto;justify-content:center;}
 }
-/* "Domestic Suppliers" / "International Suppliers" do not both fit a 390px
-   phone. The noun is the same on both tabs and the adjective is the whole
-   distinction, so the noun is what goes. */
+
 @media(max-width:560px){
   .sup-fig .sup-scope__word{display:none;}
   .sup-fig .bref-box__header-sub{display:none;}
-  /* "Supplier Management │ What We Are Doing Here" is a desktop breadcrumb:
-     the left half repeats the page header sitting directly above it, and the
-     separator only earns its keep when both halves fit comfortably. On a
-     phone the two together left neither readable, so the repeat goes and the
-     heading gets the row to itself. */
+
   .sup-fig .bref-box__header-label,
   .sup-fig .bref-box__header-sep{display:none;}
   .sup-fig .bref-box__header{gap:10px;padding:8px 10px;min-height:0;}
   .sup-fig .bref-box__header-ico{width:32px;height:32px;border-radius:9px;}
   .sup-fig .bref-box__header-title{font-size:12.5px;}
-  /* Breathing room between the two tabs and the collapse chevron — they were
-     touching, which read as one control. */
+
   .sup-fig .bref-box__header-right{gap:10px;}
   .sup-fig .sup-scope{margin:0;}
   .sup-fig .sup-scope__tab{padding:8px 10px;font-size:12px;}
 }
 [data-bs-theme="dark"] .sup-fig .sup-scope,
 [data-layout-mode="dark"] .sup-fig .sup-scope{background:rgba(255,255,255,.06);border-color:rgba(167,139,250,.34);}
-/* :not(.is-active) is load-bearing. These rules sit below .is-active in the
-   file and carry the same specificity, so without it the dark theme would win
-   on source order and repaint the SELECTED tab with the inactive surface —
-   losing the violet fill exactly where it carries the meaning. */
-/* CS-172: the unselected tab is WHITE at rest, not on hover.
-   It was #c4b5fd — a mid violet on a near-black pill, which left "Domestic
-   Supplier" looking disabled beside the white text of the selected tab, and
-   only resolved to something readable once the pointer was on it. A label the
-   user has to hover to read is a label they cannot scan, and hover does not
-   exist on touch at all.
-   The pair is still unambiguous: the SELECTED tab is white on a violet
-   gradient, the unselected one white on the strip's own surface. The fill is
-   what marks the selection — the text does not have to be dimmed as well. */
+
 [data-bs-theme="dark"] .sup-fig .sup-scope__tab:not(.is-active),
 [data-layout-mode="dark"] .sup-fig .sup-scope__tab:not(.is-active){color:#fff;background:rgba(255,255,255,.05);border-color:rgba(167,139,250,.30);}
-/* Hover now moves the SURFACE, not the text — the text has nowhere brighter to
-   go, so the feedback comes from the background and border lifting. */
+
 [data-bs-theme="dark"] .sup-fig .sup-scope__tab:not(.is-active):hover,
 [data-layout-mode="dark"] .sup-fig .sup-scope__tab:not(.is-active):hover{color:#fff;background:rgba(167,139,250,.22);border-color:rgba(167,139,250,.55);}
 
@@ -160,18 +94,10 @@
 @media(max-width:1100px){.sup-fig .bref-box__body{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:700px){.sup-fig .bref-box__body{grid-template-columns:repeat(2,1fr)}}
 
-/* TABLE WRAP — purple-bordered card holding toolbar + table + footer */
 .sup-fig .sl-wrap{display:flex;flex-direction:column;margin-top:4px;border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-shadow:0 2px 0 rgba(255,255,255,.85) inset,0 8px 28px rgba(139,92,246,.16),0 2px 8px rgba(0,0,0,.05);min-width:0;}
 
-/* A refetch dims the rows in place rather than swapping them for a skeleton.
-   The skeleton is for arriving at the page; once rows are on screen, replacing
-   them changes the table's height, which moves everything below it and yanks
-   the ground out from under whatever control started the refetch. */
 .sup-fig .sl-table-scroll.is-refetching{opacity:.5;pointer-events:none;transition:opacity .14s ease;}
 
-/* .sl-search is a FLEX ROW, so the spinner is a flex item in the magnifier's
-   place — same 16px box, same flex-shrink — and swapping the two does not move
-   the input text by a pixel. */
 .sup-fig .sl-search-spin{
   flex-shrink:0;display:block;
   width:16px;height:16px;border-radius:50%;
@@ -180,23 +106,10 @@
 }
 @keyframes slSearchSpin{to{transform:rotate(360deg);}}
 @media (prefers-reduced-motion:reduce){
-  /* Still shows a pending state, without the movement. */
+
   .sup-fig .sl-search-spin{animation:none;border-top-color:rgba(139,92,246,.75);}
 }
 
-/* REFINE SUPPLIERS — Filter button + facet popover
- *
- * Ported from the P2P prototype's .slf-* panel, values kept rather than
- * re-derived: the surface is ONE dark gradient sheet with two radial light
- * sources behind it, not a bright title bar over a dark body. The glows are
- * what stop a dark panel reading as a heavy flat block, so they are the part
- * that must not be dropped.
- *
- * Type is one step up from the prototype's (7.5–10px), which is sized for a
- * 366px mock rather than this app's 13px body text.
- *
- * Anchored with position:absolute rather than portalled — .sl-toolbar has no
- * overflow clipping, so the panel escapes the card on its own. */
 .sup-fig .sl-refine{position:relative;flex-shrink:0;}
 .sup-fig .sl-refine-btn{
   display:inline-flex;align-items:center;gap:7px;
@@ -210,8 +123,7 @@
 .sup-fig .sl-refine-btn:hover{box-shadow:0 7px 18px rgba(124,58,237,.5),0 1px 0 rgba(255,255,255,.4) inset;}
 .sup-fig .sl-refine-btn:active{transform:translateY(1px);}
 .sup-fig .sl-refine-btn.is-open{box-shadow:0 0 0 3px rgba(139,92,246,.3),0 5px 14px rgba(124,58,237,.42);}
-/* A count, not a dot: "which filters are on" is answerable at a glance only if
-   the number is actually there. */
+
 .sup-fig .sl-refine-badge{
   display:inline-flex;align-items:center;justify-content:center;
   min-width:18px;height:18px;padding:0 5px;border-radius:8px;
@@ -228,8 +140,7 @@
   box-shadow:0 26px 54px -20px rgba(30,10,74,.75),0 8px 20px rgba(30,10,74,.3),
              0 1px 0 rgba(255,255,255,.14) inset;
 }
-/* Two soft light sources behind the glass — the panel reads as lit rather than
-   flat, which is what keeps a dark surface from feeling heavy. */
+
 .sup-fig .sl-refine-sheet::before{
   content:'';position:absolute;top:-70px;right:-50px;width:210px;height:210px;border-radius:50%;
   background:radial-gradient(circle,rgba(167,139,250,.4),transparent 68%);pointer-events:none;
@@ -238,7 +149,7 @@
   content:'';position:absolute;bottom:-90px;left:-60px;width:220px;height:220px;border-radius:50%;
   background:radial-gradient(circle,rgba(236,72,153,.2),transparent 70%);pointer-events:none;
 }
-/* Takes the sheet's TOP-left colour, since that is the surface it grows out of. */
+
 .sup-fig .sl-refine-pop::before{
   content:'';position:absolute;top:-6px;right:26px;width:13px;height:13px;
   background:#3b1078;border-left:1px solid rgba(196,181,253,.22);
@@ -246,8 +157,6 @@
   transform:rotate(45deg);border-radius:3px;z-index:1;
 }
 
-/* Header — one compact row ON the dark surface, divided by a hairline that
-   fades out at both ends. No separate coloured bar. */
 .sup-fig .sl-refine-head{position:relative;z-index:1;display:flex;align-items:center;gap:8px;padding:12px 13px 11px;}
 .sup-fig .sl-refine-head::after{
   content:'';position:absolute;left:12px;right:12px;bottom:0;height:1px;
@@ -278,7 +187,6 @@
 .sup-fig .sl-refine-x:hover{background:rgba(255,255,255,.9);color:#4c1d95;}
 .sup-fig .sl-refine-x svg{width:10px;height:10px;}
 
-/* Body — fixed-column grids, so the four categories always sit on one line. */
 .sup-fig .sl-refine-body{position:relative;z-index:1;padding:11px 13px 5px;max-height:min(56vh,420px);overflow-y:auto;}
 .sup-fig .sl-refine-group{margin-bottom:11px;}
 .sup-fig .sl-refine-k{
@@ -290,8 +198,8 @@
 .sup-fig .sl-refine-grid--4{grid-template-columns:repeat(4,minmax(0,1fr));}
 .sup-fig .sl-refine-grid--2{grid-template-columns:repeat(2,minmax(0,1fr));}
 
-/* Tile — frosted glass at rest, lit with its OWN colour when picked. Four
-   categories that mean four different things must not all light up the same. */
+.sup-fig .sl-refine-grid--3{grid-template-columns:repeat(3,minmax(0,1fr));}
+
 .sup-fig .sl-refine-tile{
   position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:4px;
   padding:9px 4px 8px;border-radius:12px;cursor:pointer;font-family:inherit;
@@ -324,10 +232,9 @@
 }
 .sup-fig .sl-refine-tick svg{width:8px;height:8px;}
 .sup-fig .sl-refine-tile.is-on .sl-refine-tick{opacity:1;transform:none;}
-/* A zero facet still answers "are there any?", so it is dimmed rather than
-   removed — but it must not read as an equal choice beside a live one. */
+
 .sup-fig .sl-refine-tile.is-empty{opacity:.38;}
-/* Resting glyph glows in its own colour against the dark glass. */
+
 .sup-fig .sl-refine-tile--star  .sl-refine-tile-ico{background:rgba(167,139,250,.24);color:#ddd6fe;}
 .sup-fig .sl-refine-tile--medal .sl-refine-tile-ico{background:rgba(251,191,36,.2);color:#fcd34d;}
 .sup-fig .sl-refine-tile--warn  .sl-refine-tile-ico{background:rgba(251,146,60,.2);color:#fdba74;}
@@ -346,7 +253,6 @@
 .sup-fig .sl-refine-tile--no.is-on   {background:linear-gradient(155deg,#f87171,#dc2626);box-shadow:0 0 0 1px rgba(252,165,165,.5),0 6px 18px -6px rgba(248,113,113,.8);}
 .sup-fig .sl-refine-tile--ok.is-on   {background:linear-gradient(155deg,#4ade80,#16a34a);box-shadow:0 0 0 1px rgba(134,239,172,.5),0 6px 18px -6px rgba(74,222,128,.8);}
 
-/* Footer — result count, fill bar and a light-on-dark primary action. */
 .sup-fig .sl-refine-foot{
   position:relative;z-index:1;display:flex;align-items:center;gap:10px;padding:10px 13px;
   border-top:1px solid rgba(196,181,253,.2);background:rgba(0,0,0,.16);
@@ -369,12 +275,11 @@
 .sup-fig .sl-refine-done:hover{filter:brightness(1.04);transform:translateY(-1px);}
 
 @media (max-width:720px){
-  /* Right-anchored would run off a narrow screen; pin it to the viewport. */
+
   .sup-fig .sl-refine-pop{position:fixed;left:12px;right:12px;top:auto;width:auto;max-width:none;}
   .sup-fig .sl-refine-pop::before{display:none;}
 }
 
-/* TOOLBAR — purple tabs + search (Figma sl-toolbar) */
 .sup-fig .sl-toolbar{--sl-tab-h:44px;--sl-ctrl-h:38px;display:flex;align-items:center;gap:14px;padding:12px 14px;border-bottom:1px solid #e2d4fa;background:linear-gradient(110deg,#faf5ff 0%,#f3e8ff 35%,#ede9fe 70%,#ddd6fe 100%);}
 .sup-fig .sl-tabs{display:flex;gap:8px;flex-shrink:0;background:rgba(255,255,255,.55);border:1px solid rgba(139,92,246,.22);border-radius:11px;padding:4px;}
 .sup-fig .sl-tab{display:inline-flex;align-items:center;gap:7px;font-family:inherit;font-size:12.5px;font-weight:700;color:#6d28d9;background:linear-gradient(135deg,#f5f1fe,#ede9fe);border:1px solid rgba(139,92,246,.2);border-radius:8px;padding:8px 14px;cursor:pointer;white-space:nowrap;transition:background .16s,color .16s,box-shadow .16s,border-color .16s;}
@@ -384,12 +289,7 @@
 .sup-fig .sl-tab svg,.sup-fig .sl-tab span{position:relative;z-index:1;}
 .sup-fig .sl-tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:18px;padding:0 7px;border-radius:99px;font-size:10px;font-weight:800;color:#7c3aed;background:#fff;border:1px solid #ddd0f7;}
 .sup-fig .sl-tab.is-active .sl-tab-count{color:#7c3aed;background:#fff;border-color:transparent;}
-/* Capped, not flex:1. Filling the toolbar edge-to-edge made the field read as
-   a page header rather than a control. 660px is the middle ground asked for:
-   long enough to reach back across the table (roughly to the Contact No
-   column) without swallowing the whole strip. flex-basis with shrink lets it
-   give way on narrow screens; margin-left:auto keeps it at the right end,
-   where the Filter button used to sit. */
+
 .sup-fig .sl-search{height:var(--sl-ctrl-h,38px);flex:0 1 660px;margin-left:auto;display:flex;align-items:center;gap:9px;min-width:0;background:rgba(255,255,255,.8);border:1.5px solid rgba(139,92,246,.28);border-radius:11px;padding:0 12px 0 14px;box-shadow:0 1px 0 rgba(255,255,255,.95) inset;transition:border-color .16s,box-shadow .16s;}
 .sup-fig .sl-search:focus-within{border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.18);}
 .sup-fig .sl-search-ico{flex-shrink:0;}
@@ -398,17 +298,10 @@
 .sup-fig .sl-search-clear{flex-shrink:0;width:24px;height:24px;display:flex;align-items:center;justify-content:center;border:none;border-radius:6px;background:rgba(139,92,246,.12);color:#7c3aed;cursor:pointer;transition:background .14s,color .14s;}
 .sup-fig .sl-search-clear:hover{background:#7c3aed;color:#fff;}
 
-/* TABLE — purple gradient header + purple chrome (Figma sl-table) */
-/* Soft purple glow at the top + faint gradient so the table area
-   never reads as flat white, even with only a couple of rows. */
 .sup-fig .sl-table-scroll{display:flex;flex-direction:column;overflow-x:auto;max-width:100%;background:radial-gradient(130% 360px at 50% -50px,rgba(167,139,250,.12),transparent 70%),linear-gradient(180deg,#ffffff 0%,#fdfbff 100%);}
-/* Pager pinned to the bottom of the stretched card (no gap on short lists),
-   and sticky-left so it stays put when the table scrolls horizontally. */
+
 .sup-fig .sl-table-scroll > .wl-pager{margin-top:auto;position:sticky;left:0;width:100%;box-sizing:border-box;}
-/* Responsive compacting — on narrower laptops shrink the cell padding + font so
-   more columns fit before the contained horizontal scroll kicks in. The
-   min-width:0 chain (.sup-fig / .sl-wrap) keeps the scroll INSIDE the table card
-   so the whole page never overflows / needs zooming. */
+
 @media(max-width:1500px){
   .sup-fig .sl-table{font-size:11px;}
   .sup-fig .sl-table thead th{padding:8px 9px;}
@@ -422,48 +315,24 @@
 .sup-fig .sl-table{width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap;}
 .sup-fig .sl-table thead tr{background:linear-gradient(110deg,#8b5cf6 0%,#7c3aed 45%,#6d28d9 75%,#5b21b6 100%);}
 .sup-fig .sl-table thead th{color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;text-align:center;padding:9px 9px;}
-/* Headers centre with their cells. Only the two free-text columns stay
-   left-aligned: a supplier name and an email are read left-to-right and are the
-   widest values in the row, so centring them makes the column ragged on both
-   edges instead of lining up down one. Everything else — codes, badges, counts,
-   dates — is a short token that sits under a centred header cleanly. */
+
 .sup-fig .sl-table thead th:nth-child(3),
 .sup-fig .sl-table thead th.sl-th-left{text-align:left;}
 .sup-fig .sl-table thead th.sl-td-email{text-align:left;}
 .sup-fig .sl-table thead th.sl-th-email{text-align:left;}
-/* Two-line headers (SR NO, SUPPLIER CODE, GST STATE CODE, MAPPED PRODUCTS).
-   The table-wide `white-space:nowrap` above meant each of these labels set its
-   column's width from the whole phrase, which is far wider than the short
-   value underneath (a number pill, a code chip, a 2-digit GST code, a count
-   badge). Stacking them halves those columns.
 
-   The break is forced STRUCTURALLY — one <span> per line, each a nowrap block
-   — rather than by handing the browser a width and hoping it wraps there.
-   Auto table layout treats a width as a preference it may overrule when it
-   distributes leftover space, so a width-driven wrap silently un-wraps on a
-   wide viewport. With blocks the column width is simply the widest span, at
-   any table width. The nowrap on the span is what keeps "GST STATE" together
-   rather than letting it break again into three lines. */
-   Centred rather than left-aligned like the one-line headers: the two spans
-   are different widths, so flush-left leaves a ragged right edge that reads as
-   a mistake in a narrow column. */
 .sup-fig .sl-table thead th.sl-th-2line{white-space:normal;line-height:1.22;text-align:center;}
 .sup-fig .sl-table thead th.sl-th-2line span{display:block;white-space:nowrap;}
-/* Centred columns — Country, State, GST State Code, Contact No. These hold
-   short values of roughly uniform width (a country, a state, a 2-digit code,
-   a phone number) sitting in columns whose HEADER is the wider of the two, so
-   flush-left leaves the value stranded against a long heading. Header and cell
-   are centred together — centring only one of them just moves the problem.
-   Beats `th:nth-child()` because the column order is still in flux. */
+
 .sup-fig .sl-table thead th.sl-col-c,
 .sup-fig .sl-table tbody td.sl-col-c{text-align:center;}
 .sup-fig .sl-table tbody td.sl-td-email{text-align:left;}
 .sup-fig .sl-table thead th:last-child{text-align:center;}
 .sup-fig .sl-table tbody td{padding:7px 9px;border-bottom:1px solid #F1ECFB;color:#334155;vertical-align:middle;}
 .sup-fig .sl-table tbody tr{transition:background .18s ease,box-shadow .18s ease;}
-/* Gentle zebra so rows are easier to scan. */
+
 .sup-fig .sl-table tbody tr:nth-child(even){background:rgba(139,92,246,.035);}
-/* Hover = soft purple sweep + a sliding left accent + lifted SR chip. */
+
 .sup-fig .sl-table tbody tr:hover{background:linear-gradient(90deg,rgba(124,58,237,.11),rgba(167,139,250,.05) 55%,transparent);box-shadow:inset 3px 0 0 #7c3aed,0 1px 0 rgba(124,58,237,.06);}
 .sup-fig .sl-table tbody tr:hover .sl-sr{transform:scale(1.08) rotate(-3deg);box-shadow:0 5px 12px rgba(124,58,237,.5);}
 .sup-fig .sl-table tbody tr:hover .sl-code{border-color:#c4b5fd;background:#efe7fe;}
@@ -475,41 +344,28 @@
 .sup-fig .sl-sr{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:7px;font-size:10.5px;font-weight:800;color:#fff;background:linear-gradient(135deg,#8b5cf6,#7c3aed);box-shadow:0 2px 5px rgba(124,58,237,.3);}
 .sup-fig .sl-code{display:inline-flex;align-items:center;font-family:inherit;font-feature-settings:"tnum";font-size:10.5px;font-weight:700;letter-spacing:.01em;color:#5b21b6;background:#F5F1FE;border:1px solid #E2D4FA;border-radius:6px;padding:2px 8px;}
 .sup-fig .sl-name{font-weight:700;font-size:12px;color:#1E293B;letter-spacing:-.1px;}
-/* Truncate long values so they never stretch the column / break the row.
-   Explicit per-field caps because table cells auto-size to content. */
+
 .sup-fig .sl-trunc{display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;}
-.sup-fig .sl-name.sl-trunc{max-width:145px;}   /* ~20 chars, then ellipsis (full name in tooltip) */
-/* Cap lives on .sl-contact-wrap now (see below) — the name just shrinks. */
+.sup-fig .sl-name.sl-trunc{max-width:145px;}
+
 .sup-fig .sl-contact.sl-trunc{max-width:none;min-width:0;flex:0 1 auto;}
-.sup-fig .sl-email.sl-trunc{max-width:110px;}   /* ~15 chars, then ellipsis (full email in tooltip) */
+.sup-fig .sl-email.sl-trunc{max-width:110px;}
 .sup-fig .sl-state,.sup-fig .sl-country,.sup-fig .sl-contact{font-weight:600;color:#475569;}
-/* State code in brackets — dark + bold so it stands out from the muted name. */
+
 .sup-fig .sl-state strong{font-weight:800;color:#1e293b;}
-/* ── GST State Code / Supplier Flag / Compliant Status / Mapped Products ──
-   The four Figma list columns. Palettes lifted from the prototype
-   (.sl-gstcode / .sl-flag / .sl-compliant / .sl-prodcount) so the ported table
-   matches it exactly. Two additions the prototype has no equivalent for:
-     • .sl-flag--medium — the Risk Level master is user-editable, so a client
-       who adds a "Medium" level between Low and High gets its own tone rather
-       than being lumped in with High Risk.
-     • .sl-compliant--pending — Compliance Behaviour is a 10-value master, not
-       a boolean; "Under Review" / "Pending" are neither green nor red. */
+
 .sup-fig .sl-gstcode{display:inline-flex;align-items:center;justify-content:center;min-width:26px;padding:2px 8px;font-size:11px;font-weight:700;color:#6d28d9;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:7px;}
 .sup-fig .sl-flag,.sup-fig .sl-compliant{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:20px;border:1px solid;white-space:nowrap;}
 .sup-fig .sl-flag--genuine{color:#15803d;background:#F0FDF4;border-color:#BBF7D0;}
 .sup-fig .sl-flag--medium{color:#a16207;background:#FEFCE8;border-color:#FEF08A;}
 .sup-fig .sl-flag--highrisk{color:#b45309;background:#FFFBEB;border-color:#FDE68A;}
-/* Supplier Category badges — one class per value so each reads at a glance
-   rather than by its wording. Star is the reward colour (violet), General the
-   commendation amber, High Risk warning amber, Blacklisted the only red:
-   red is reserved for the one state that stops business. */
+
 .sup-fig .sl-cat{display:inline-flex;align-items:center;justify-content:center;gap:5px;font-size:10.5px;font-weight:700;padding:4px 12px;border-radius:20px;border:1px solid;white-space:nowrap;}
 .sup-fig .sl-cat--star{color:#6d28d9;background:#F5F3FF;border-color:#DDD6FE;}
 .sup-fig .sl-cat--general{color:#a16207;background:#FEFCE8;border-color:#FDE68A;}
 .sup-fig .sl-cat--risk{color:#b45309;background:#FFFBEB;border-color:#FCD34D;}
 .sup-fig .sl-cat--black{color:#b91c1c;background:#FEF2F2;border-color:#FECACA;}
-/* The column is a single badge per row — centre it so the pills form a column
-   instead of ragging against the left edge. */
+
 .sup-fig .sl-col-cat{text-align:center;}
 .sup-fig .sl-compliant--yes{color:#15803d;background:#F0FDF4;border-color:#BBF7D0;}
 .sup-fig .sl-compliant--pending{color:#b45309;background:#FFFBEB;border-color:#FDE68A;}
@@ -517,32 +373,18 @@
 .sup-fig .sl-prodcount{display:inline-flex;align-items:center;justify-content:center;min-width:32px;height:26px;padding:0 9px;font-family:inherit;font-size:12px;font-weight:800;color:#fff;background:linear-gradient(135deg,#a78bfa,#7c3aed);border-radius:8px;box-shadow:0 2px 6px -1px rgba(124,58,237,.4);border:none;cursor:pointer;transition:transform .14s,box-shadow .14s;}
 .sup-fig .sl-prodcount:hover{transform:translateY(-1px);box-shadow:0 4px 10px -1px rgba(124,58,237,.55);}
 .sup-fig .sl-prodcount:active{transform:translateY(0);}
-/* Zero mappings — flat, muted and not a button. Nothing to open. */
+
 .sup-fig .sl-prodcount--zero{background:#f1f5f9;color:#94a3b8;box-shadow:none;cursor:default;border:1px solid #e2e8f0;}
 .sup-fig .sl-prodcount--zero:hover{transform:none;box-shadow:none;}
-/* The "+N" badge hangs off the END OF THE NAME, not in a reserved slot.
-   The width cap used to sit on the name span itself, so the name always
-   claimed its full 140px and the badge started at that fixed offset — on a
-   short name that left an obvious gap, and the badge read as its own little
-   column rather than as part of the name. Moving the cap to the WRAPPER makes
-   the name a shrinkable flex item: it takes only the width it needs (or
-   ellipsises when it can't), and the badge is always immediately after the
-   last visible character. min-width:0 is what allows that shrink — a flex
-   item's default min-width:auto refuses to go below min-content and would
-   push the badge out of the cell instead. */
+
 .sup-fig .sl-contact-wrap{display:inline-flex;align-items:center;gap:4px;max-width:186px;min-width:0;}
-/* flex:none — the badge must never be the thing that shrinks; a squashed
-   "+1" is unreadable, and the name is what has an ellipsis to fall back on. */
+
 .sup-fig .sl-contact-more{flex:none;font-family:inherit;font-size:10px;font-weight:800;color:#7c3aed;background:#f1eafe;border:1px solid #ddd0f7;border-radius:999px;padding:2px 7px;cursor:pointer;line-height:1;transition:all .15s;}
 .sup-fig .sl-contact-more:hover{background:#e6d9fb;transform:translateY(-1px);}
-/* Cap lives on .sl-seg-wrap now — same reasoning as .sl-contact above:
-   the label shrinks so the "+N" badge sits against its last visible
-   character instead of at a fixed offset. Scoped to .sl-trunc so the
-   segment PILLS in the overflow popover (plain .sl-seg) are untouched. */
+
 .sup-fig .sl-seg.sl-trunc{
   max-width:none;min-width:0;flex:0 1 auto;
-  /* inline-block, NOT inline-flex: .sl-trunc relies on it for text-overflow,
-     and a flex box has no ellipsis. */
+
   display:inline-block;
   padding:3px 9px;border-radius:20px;
   background:#F5F3FF;border:1px solid #DDD6FE;color:#5B21B6;
@@ -552,15 +394,14 @@
 [data-layout-mode="dark"] .sup-fig .sl-seg.sl-trunc{
   background:rgba(139,92,246,.16);border-color:rgba(167,139,250,.34);color:#ddd6fe;
 }
-/* Pill carrying the Reg badge: flex, so the NAME truncates and the badge stays whole. */
+
 .sup-fig .sl-seg.sl-seg--withbadge{display:inline-flex;align-items:center;gap:5px;max-width:210px;}
 .sup-fig .sl-seg-name{display:inline-block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .sup-fig .sl-seg{font-weight:600;color:#475569;}
-.sup-fig .sl-seg-wrap{display:inline-flex;align-items:center;gap:4px;max-width:230px;min-width:0;} /* +64px for the Reg badge */
+.sup-fig .sl-seg-wrap{display:inline-flex;align-items:center;gap:4px;max-width:230px;min-width:0;}
 .sup-fig .sl-seg-more{flex:none;font-family:inherit;font-size:10px;font-weight:800;color:#7c3aed;background:#f1eafe;border:1px solid #ddd0f7;border-radius:999px;padding:2px 7px;cursor:pointer;line-height:1;transition:all .15s;}
 .sup-fig .sl-seg-more:hover{background:#e6d9fb;transform:translateY(-1px);}
-/* Segment "+N" anchored popover — small white card at the badge (mirrors the
-   Customer list's segment overflow popover: titled list of segment pills). */
+
 .sup-fig .sl-seg-pop-backdrop{position:fixed;inset:0;z-index:3000;}
 .sup-fig .sl-seg-pop{position:fixed;z-index:3001;background:#fff;border:1.5px solid #ddd6fe;border-radius:12px;box-shadow:0 16px 40px rgba(76,29,149,.22);padding:8px;}
 .sup-fig .sl-seg-pop-title{font-size:8px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#6d28d9;padding:4px 8px 7px;}
@@ -577,36 +418,23 @@
 [data-bs-theme="dark"] .sup-fig .sl-seg-pop-row.alt{background:rgba(255,255,255,.04);}
 [data-bs-theme="dark"] .sup-fig .sl-seg-pop-row .sl-seg{background:rgba(124,58,237,.2);border-color:rgba(124,58,237,.4);color:#ddd6fe;}
 
-/* Segments modal — reuses the Contact Persons popup shell (.sc-*); only the
-   chip grid inside the body is bespoke. Narrower than the contacts modal. */
 .sup-fig .sc-pop.seg-modal{max-width:470px;}
-/* Slimmer header for the Segments modal (shorter than the Contact Persons one). */
+
 .sup-fig .sc-pop.seg-modal .sc-head{padding:11px 16px;gap:11px;}
 .sup-fig .sc-pop.seg-modal .sc-head-ico{width:34px;height:34px;border-radius:9px;}
 .sup-fig .sc-pop.seg-modal .sc-title{font-size:15px;}
-/* Count pill sits at the right, just left of the close button (so the title
-   stays clean and the segment count reads on one line). */
+
 .sup-fig .sc-pop.seg-modal .seg-count-badge{margin-left:auto;font-size:11px;font-weight:700;color:#fff;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.30);padding:4px 11px;border-radius:999px;white-space:nowrap;}
 .sup-fig .sc-pop.seg-modal .sc-close{margin-left:0;}
-/* Fixed 3-column grid so the chips line up in a tidy 3xN layout instead of
-   an uneven wrap. Each chip fills its cell and centres its label; a long
-   segment name truncates with an ellipsis (full text on hover via title). */
+
 .sup-fig .seg-modal-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;}
 .sup-fig .seg-modal-chip{display:block;text-align:center;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:600;color:#5b21b6;background:linear-gradient(135deg,#f6f1ff,#eee5fe);border:1px solid #e2d5fb;border-radius:999px;padding:7px 12px;transition:transform .12s,box-shadow .12s,border-color .12s;}
 .sup-fig .seg-modal-chip:hover{transform:translateY(-1px);box-shadow:0 4px 11px rgba(124,58,237,.22);border-color:#c4a9f5;}
 [data-bs-theme="dark"] .sup-fig .seg-modal-chip{background:linear-gradient(135deg,rgba(124,58,237,.24),rgba(139,92,246,.18));color:#d7c8fb;border-color:rgba(167,139,250,.32);}
 [data-bs-theme="dark"] .sup-fig .seg-modal-chip:hover{border-color:rgba(167,139,250,.6);box-shadow:0 4px 11px rgba(0,0,0,.4);}
 
-/* Contact Persons popup */
-/* Backdrop matched to the P2P prototype: a neutral slate at 55% with a 5px
-   blur, not the violet tint this page was using. A coloured scrim reads as
-   part of the page's own palette, so the dialog looked tinted rather than
-   lifted off it; neutral is what makes the popup the only thing in focus. */
 .sc-ov{position:fixed;inset:0;z-index:1200;background:rgba(15,23,42,.55);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;padding:20px;font-family: var(--font-sans);}
-/* No border. The 1.5px rgba(255,255,255,.65) ring that used to be here was
-   drawn OUTSIDE the overflow clip, so it traced the whole box — including the
-   purple header — and read as a pale hairline inset around the gradient. The
-   Figma .sc-pop has no border at all; the shadow alone lifts it off the page. */
+
 .sc-pop{width:100%;max-width:480px;background:#F7F7FA;border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.45);}
 .sc-head{display:flex;align-items:center;gap:12px;padding:16px 18px;background:linear-gradient(115deg,#4c1d95 0%,#5b21b6 28%,#6d28d9 55%,#7c3aed 80%,#8b5cf6 100%);color:#fff;}
 .sc-head-ico{width:38px;height:38px;border-radius:11px;flex-shrink:0;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;}
@@ -615,7 +443,7 @@
 .sc-close{margin-left:auto;width:30px;height:30px;border-radius:9px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.12);color:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;}
 .sc-close:hover{background:rgba(255,255,255,.22);}
 .sc-body{padding:8px 14px 14px;max-height:60vh;overflow-y:auto;}
-/* Contact Persons pager — 5 per page */
+
 .sc-pager{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 16px;border-top:1px solid #f1ecfb;background:#FBF9FF;}
 .sc-pg-info{font-size:11.5px;font-weight:600;color:#6d28d9;}
 .sc-pg-info b{color:#5b21b6;}
@@ -655,20 +483,13 @@
 .sup-fig .sl-act-btn:hover{transform:translateY(-1px);}
 .sup-fig .sl-act-btn--edit{color:#7c3aed;background:linear-gradient(135deg,#faf8ff,#f1ebfe);border-color:#DDD6FE;box-shadow:0 1px 3px rgba(124,58,237,.12),0 1px 0 rgba(255,255,255,.7) inset;}
 .sup-fig .sl-act-btn--edit:hover{background:linear-gradient(135deg,#8b5cf6,#7c3aed);color:#fff;border-color:transparent;box-shadow:0 5px 13px rgba(124,58,237,.45),0 1px 0 rgba(255,255,255,.3) inset;}
-/* Narrower than the Figma original: at 17px side padding + an 8px icon gap
-   this button was the widest thing in the Actions column, and the four new
-   Figma columns left it far less room. Trimmed on padding, gap and type size
-   rather than by shortening the label — "Evidence Vault" is the name of the
-   thing it opens. Trimmed twice: the 15-column table still overflowed into a
-   horizontal scrollbar, and this button was the widest cell driving it.
-   Height drops to 30px in step with .sl-act-btn above so the edit icon beside
-   it stays the same size and the two still align. */
+
 .sup-fig .sl-evault-btn{position:relative;overflow:hidden;width:auto;height:30px;gap:5px;padding:0 8px;font-family:inherit;font-size:10.5px;font-weight:700;letter-spacing:0;color:#fff;border:none;border-radius:9px;background:linear-gradient(135deg,#a78bfa 0%,#8b5cf6 38%,#7c3aed 70%,#6d28d9 100%);box-shadow:0 4px 12px rgba(124,58,237,.4),0 1px 0 rgba(255,255,255,.4) inset,0 -2px 6px rgba(91,33,182,.3) inset;text-shadow:0 1px 2px rgba(76,29,149,.4);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
 .sup-fig .sl-evault-btn::before{content:'';position:absolute;top:0;left:0;right:0;height:50%;background:linear-gradient(180deg,rgba(255,255,255,.28),transparent);pointer-events:none;}
 .sup-fig .sl-evault-btn svg{width:12px;height:12px;flex:none;position:relative;z-index:1;}
 .sup-fig .sl-evault-btn span{position:relative;z-index:1;}
 .sup-fig .sl-evault-btn:hover{background:linear-gradient(135deg,#8b5cf6 0%,#7c3aed 45%,#6d28d9 100%);box-shadow:0 7px 18px rgba(124,58,237,.52),0 1px 0 rgba(255,255,255,.45) inset,0 -2px 6px rgba(76,29,149,.35) inset;transform:translateY(-1px);}
-/* Book Entry — teal icon button (name shown via tooltip), same size as the edit icon button. */
+
 .sup-fig .sl-act-btn--book{color:#0d9488;background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border-color:#99f6e4;box-shadow:0 1px 3px rgba(13,148,136,.12),0 1px 0 rgba(255,255,255,.7) inset;}
 .sup-fig .sl-act-btn--book:hover{background:linear-gradient(135deg,#2dd4bf,#0d9488);color:#fff;border-color:transparent;box-shadow:0 5px 13px rgba(13,148,136,.45),0 1px 0 rgba(255,255,255,.3) inset;}
 .sup-fig .sl-empty{text-align:center;color:#94A3B8;font-weight:600;padding:24px 16px;}
@@ -684,10 +505,6 @@
 .vendors-surface { background: #fff; }
 [data-bs-theme="dark"] .vendors-surface { background: #1c2531; }
 
-/* Match the Clients master table — plain Velzon table-light thead
-   with 13px cells. No coloured gradient on the header. The explicit
-   background is here because some parent rules in this page neutralise
-   Bootstrap's --bs-table-bg variable on the thead. */
 .vendors-surface .table thead th,
 .vendors-surface .table tbody td {
   font-size: 13px;
@@ -708,7 +525,6 @@
   color: #ced4da;
 }
 
-/* Status tab pill strip — same look as the Products page */
 .v-status-tabs {
   display: inline-flex; gap: 4px; padding: 4px;
   background: #f8fafc;
@@ -746,7 +562,6 @@
 [data-bs-theme="dark"] .v-status-tab:hover { background: rgba(64,81,137,.22); color: #ede9fe; }
 [data-bs-theme="dark"] .v-status-count { background: rgba(255,255,255,0.08); color: #ced4da; }
 
-/* Type chip — coloured by vendor classification */
 .v-type-chip {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 2px 10px; border-radius: 99px;
@@ -754,15 +569,9 @@
 }
 .v-type-chip .ri-checkbox-circle-fill { font-size: 13px; }
 
-/* Action button row in the last column */
 .v-actions { display: inline-flex; gap: 4px; }
 .v-actions .btn { padding: .25rem .5rem; line-height: 1; }
 
-/* Add Supplier — primary CTA. Hover lift + brighter gradient +
- * shadow glow so the button actively responds to the cursor
- * instead of feeling like a static decal. Dark mode keeps the
- * same elevation curve with a deeper shadow that reads against
- * the near-black surface. */
 .v-add-btn {
   background: linear-gradient(120deg, #405189 0%, #6691e7 100%);
   border: none;
@@ -791,11 +600,6 @@
   filter: brightness(1.12);
 }
 
-/* Search bar — Velzon's default .search-box leaves the input
- * borderless until focus, which looked flat in default state
- * and then suddenly snapped into a heavy outline on focus.
- * Scope a consistent visible border at rest, a soft hover
- * lift, and a smooth focus ring transition. */
 .vendors-surface .search-box .form-control {
   border: 1.5px solid #e2e8f0;
   background: #f8fafc;
@@ -833,56 +637,29 @@
   box-shadow: 0 0 0 3px rgba(124,58,237,.25);
 }
 
-/* Responsive — stack the toolbar (tabs + search) on narrow screens;
-   the table itself already scrolls horizontally via .sl-table-scroll. */
 @media (max-width: 640px) {
   .sup-fig .sl-toolbar { flex-direction: column; align-items: stretch; }
-  /* Stacked toolbar: the cap and the right-push both have to go, or the auto
-     margin overrides align-items:stretch and leaves a short field floated
-     right instead of a full-width one. */
+
   .sup-fig .sl-search { flex-basis: auto; margin-left: 0; }
-  /* The three nowrap tabs don't fit a phone, so the strip MUST scroll.
-     `justify-content: center` (what this used to be) is the trap: when flex
-     content overflows a centred container the spill goes to BOTH ends and the
-     leading one is unreachable — "All Suppliers" was clipped to just "A" with
-     no way to scroll back to it. flex-start keeps the first tab at the origin
-     and overflow-x makes the rest reachable by swipe. */
+
   .sup-fig .sl-tabs {
     justify-content: flex-start;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    /* The strip is short and self-evidently swipeable — a scrollbar here just
-       eats vertical space and cuts into the pills. */
+
     scrollbar-width: none;
   }
   .sup-fig .sl-tabs::-webkit-scrollbar { display: none; }
-  /* Without this the pills squash instead of overflowing, so the labels
-     collide with their count badges. */
+
   .sup-fig .sl-tab { flex-shrink: 0; }
   .sup-fig .cstrip { flex-direction: column; align-items: flex-start; gap: 10px; }
 }
 
-/* Below this the page scrolls normally instead of fitting itself to the
-   viewport — see the recompute() bail-out in Vendors.tsx. The card must be
-   free to be as tall as its rows, so nothing here may cap or stretch it. */
 @media (max-width: 820px) {
   .sup-fig .sl-table-scroll { min-height: 0 !important; }
-  /* Only the auto margin goes. With a content-height card there is no bottom
-     for margin-top:auto to push the pager to, so it just opened a gap after
-     the last row.
-     `position: sticky; left: 0` STAYS. The pager lives inside the
-     horizontally-scrolling table box, and sticky-left is the only thing
-     holding it against the card's left edge while the table is swiped
-     sideways — dropping it let the pager ride along with the columns and
-     tear out past the card's rounded edge. */
+
   .sup-fig .sl-table-scroll > .wl-pager { margin-top: 0; }
-  /* "Showing 1-10 of 21" + "Rows per page" + the page pill + two arrows is
-     more than a 390px card can hold on one line. .wl-pager already sets
-     flex-wrap, but its two halves are single flex children with nothing
-     forcing them onto separate lines, so the right half simply overflowed the
-     card's rounded edge instead of dropping below.
-     Each half takes a full row here, centred, and the right half is allowed to
-     wrap within itself for the narrowest phones. */
+
   .sup-fig .wl-pager { justify-content: center; padding: 10px 12px; }
   .sup-fig .wl-pager > .tc-wl-info { flex: 1 1 100%; text-align: center; }
   .sup-fig .wl-pager > .tc-wl-right {
@@ -890,16 +667,10 @@
     display: flex; flex-wrap: wrap;
     align-items: center; justify-content: center; gap: 8px;
   }
-  /* The step guide is four cards of prose above the list. On a phone it costs
-     most of the first screen before a single supplier is visible — collapsed
-     by default there, still one tap away. */
+
   .sup-fig .bref-box__body { grid-template-columns: 1fr; }
 }
 
-/* ───── Dark mode for the purple Figma supplier list ─────
-   Translucent purple accents on a deep surface (matches the app's
-   dark-mode recipe). Light-mode values above are untouched. */
-/* Flat solid panels in dark — no gradient sweeps; clean + clear. */
 [data-bs-theme="dark"] .sup-fig .cstrip{background:#34216b;border-color:rgba(167,139,250,.28);box-shadow:0 8px 28px rgba(0,0,0,.4);}
 [data-bs-theme="dark"] .sup-fig .cstrip__glow,
 [data-bs-theme="dark"] .sup-fig .cstrip__sheen{display:none;}
@@ -923,12 +694,10 @@
 [data-bs-theme="dark"] .sup-fig .sl-wrap{background:#141a2b;border-color:rgba(167,139,250,.2);box-shadow:0 8px 28px rgba(0,0,0,.45);}
 [data-bs-theme="dark"] .sup-fig .sl-toolbar{background:#1f1838;border-bottom-color:rgba(167,139,250,.22);}
 [data-bs-theme="dark"] .sup-fig .sl-tabs{background:rgba(124,58,237,.10);border-color:rgba(167,139,250,.22);}
-/* Inactive tab → flat & dim (no fill) so it clearly reads as "off". */
+
 [data-bs-theme="dark"] .sup-fig .sl-tab{color:#9b8fc4;background:transparent;border-color:transparent;box-shadow:none;}
 [data-bs-theme="dark"] .sup-fig .sl-tab:hover{color:#fff;background:rgba(124,58,237,.28);border-color:transparent;}
-/* Active tab → vivid violet pill + glow + light ring so the selected one
-   stands out clearly in dark mode (previously it inherited the light style and
-   blended with the faint inactive fill). */
+
 [data-bs-theme="dark"] .sup-fig .sl-tab.is-active{color:#fff;background:linear-gradient(135deg,#a78bfa,#8b5cf6,#7c3aed,#5b21b6);border-color:transparent;box-shadow:0 4px 16px rgba(124,58,237,.6),0 0 0 1.5px rgba(196,181,253,.45),0 1px 0 rgba(255,255,255,.4) inset;}
 [data-bs-theme="dark"] .sup-fig .sl-tab svg{opacity:.95;}
 [data-bs-theme="dark"] .sup-fig .sl-search{background:rgba(255,255,255,.07);border-color:rgba(167,139,250,.32);}
@@ -938,13 +707,11 @@
 [data-bs-theme="dark"] .sup-fig .sl-tab-count{background:rgba(255,255,255,.14);color:#e2d6fb;border-color:transparent;}
 
 [data-bs-theme="dark"] .sup-fig .sl-table tbody td{color:#cbd5e1;border-bottom-color:rgba(167,139,250,.10);}
-/* Clean flat surface in dark — no glow/gradient; the premium feel comes
-   from the crisp zebra + interactive hover, not a hazy background. */
+
 [data-bs-theme="dark"] .sup-fig .sl-table-scroll{background:#141a2b;}
 [data-bs-theme="dark"] .sup-fig .sl-table thead tr{background:#4c1d95;}
 [data-bs-theme="dark"] .sup-fig .sl-table tbody tr:nth-child(even){background:rgba(124,58,237,.055);}
-/* Clean flat hover — CLM gold-standard recipe. No gradient sweep, no
-   accent bar, no chip bounce; just a calm translucent purple fill. */
+
 [data-bs-theme="dark"] .sup-fig .sl-table tbody tr:hover{background:rgba(124,58,237,.16);box-shadow:none;}
 [data-bs-theme="dark"] .sup-fig .sl-table tbody tr:hover .sl-sr{transform:none;box-shadow:0 2px 5px rgba(124,58,237,.35);}
 [data-bs-theme="dark"] .sup-fig .sl-table tbody tr:hover .sl-code{background:rgba(124,58,237,.24);border-color:rgba(167,139,250,.4);}
@@ -957,9 +724,7 @@
 [data-bs-theme="dark"] .sup-fig .sl-phone{color:#9a93b3;}
 [data-bs-theme="dark"] .sup-fig .sl-code{background:rgba(124,58,237,.18);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
 [data-bs-theme="dark"] .sup-fig .sl-contact-more{background:rgba(124,58,237,.2);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
-/* Figma list columns in dark — the light palettes are near-white washes that
-   glare on the dark table, so each is restated as a translucent tint of the
-   same hue with a lifted text colour. */
+
 [data-bs-theme="dark"] .sup-fig .sl-gstcode{background:rgba(124,58,237,.18);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
 [data-bs-theme="dark"] .sup-fig .sl-flag--genuine,
 [data-bs-theme="dark"] .sup-fig .sl-compliant--yes{background:rgba(34,197,94,.14);color:#86efac;border-color:rgba(34,197,94,.32);}
@@ -967,10 +732,7 @@
 [data-bs-theme="dark"] .sup-fig .sl-flag--highrisk,
 [data-bs-theme="dark"] .sup-fig .sl-compliant--pending{background:rgba(245,158,11,.14);color:#fcd34d;border-color:rgba(245,158,11,.32);}
 [data-bs-theme="dark"] .sup-fig .sl-compliant--no{background:rgba(239,68,68,.14);color:#fca5a5;border-color:rgba(239,68,68,.32);}
-/* Supplier Category was left out of this pass, so its four near-white washes
-   stayed white on the dark table. Same tints as the badges beside it, keeping
-   each category's own hue: violet star, yellow general, amber risk, red
-   blacklisted — red still the only one that means business stops. */
+
 [data-bs-theme="dark"] .sup-fig .sl-cat--star{background:rgba(139,92,246,.14);color:#c4b5fd;border-color:rgba(139,92,246,.32);}
 [data-bs-theme="dark"] .sup-fig .sl-cat--general{background:rgba(234,179,8,.14);color:#fde047;border-color:rgba(234,179,8,.32);}
 [data-bs-theme="dark"] .sup-fig .sl-cat--risk{background:rgba(245,158,11,.14);color:#fcd34d;border-color:rgba(245,158,11,.32);}
@@ -979,27 +741,24 @@
 [data-bs-theme="dark"] .sup-fig .sl-seg{color:#adb5bd;}
 [data-bs-theme="dark"] .sup-fig .sl-seg-more{background:rgba(124,58,237,.2);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
 [data-bs-theme="dark"] .sup-fig .sl-seg-pop{background:#1a1430;border-color:#3b2a6b;box-shadow:0 18px 46px rgba(0,0,0,.55);}
-/* Head keeps the gradient (from the base rule) — only the text stays white. */
+
 [data-bs-theme="dark"] .sup-fig .sl-seg-pop-head{color:#fff;}
 [data-bs-theme="dark"] .sup-fig .sl-seg-chip{background:linear-gradient(135deg,rgba(124,58,237,.24),rgba(139,92,246,.18));color:#d7c8fb;border-color:rgba(167,139,250,.32);}
 [data-bs-theme="dark"] .sup-fig .sl-seg-chip:hover{border-color:rgba(167,139,250,.6);box-shadow:0 4px 11px rgba(0,0,0,.4);}
-/* Type + WhatsApp pills — translucent dark-tinted variants so they read
-   crisp on the dark surface instead of washing out in their light bg. */
+
 [data-bs-theme="dark"] .sup-fig .sl-pill--material{color:#c4b5fd;background:rgba(124,58,237,.20);border-color:rgba(167,139,250,.38);}
 [data-bs-theme="dark"] .sup-fig .sl-pill--logistics{color:#67e8f9;background:rgba(8,145,178,.20);border-color:rgba(34,211,238,.38);}
 [data-bs-theme="dark"] .sup-fig .sl-pill--services{color:#fcd34d;background:rgba(217,119,6,.22);border-color:rgba(251,191,36,.38);}
 [data-bs-theme="dark"] .sup-fig .sl-wa--yes{color:#86efac;background:rgba(22,163,74,.20);border-color:rgba(74,222,128,.38);}
 [data-bs-theme="dark"] .sup-fig .sl-wa--no{color:#fca5a5;background:rgba(220,38,38,.20);border-color:rgba(248,113,113,.38);}
 [data-bs-theme="dark"] .sup-fig .sl-email{color:#c4b5fd;}
-/* Edit action button — was a bright white square in dark; make it a
-   translucent purple chip that fills on hover (like the Evidence btn). */
+
 [data-bs-theme="dark"] .sup-fig .sl-act-btn--edit{color:#c4b5fd;background:rgba(124,58,237,.18);border-color:rgba(167,139,250,.38);box-shadow:none;}
 [data-bs-theme="dark"] .sup-fig .sl-act-btn--edit:hover{background:linear-gradient(135deg,#8b5cf6,#7c3aed);color:#fff;border-color:transparent;box-shadow:0 5px 13px rgba(124,58,237,.5);}
 [data-bs-theme="dark"] .sup-fig .sl-act-btn--book{color:#5eead4;background:rgba(13,148,136,.20);border-color:rgba(45,212,191,.4);box-shadow:none;}
 [data-bs-theme="dark"] .sup-fig .sl-act-btn--book:hover{background:linear-gradient(135deg,#2dd4bf,#0d9488);color:#fff;border-color:transparent;box-shadow:0 5px 13px rgba(13,148,136,.5);}
 [data-bs-theme="dark"] .sup-fig .sl-footer{background:rgba(255,255,255,.03);border-top-color:rgba(255,255,255,.07);}
 
-/* Contact Persons popup — dark surface */
 [data-bs-theme="dark"] .sup-fig .sc-pop{background:#1c2531;}
 [data-bs-theme="dark"] .sup-fig .sc-row{border-bottom-color:rgba(255,255,255,.06);}
 [data-bs-theme="dark"] .sup-fig .sc-pager{background:rgba(255,255,255,.03);border-top-color:rgba(255,255,255,.07);}
@@ -1010,7 +769,6 @@
 [data-bs-theme="dark"] .sup-fig .sc-name{color:#f3e8ff;}
 [data-bs-theme="dark"] .sup-fig .sc-meta span{color:#adb5bd;}
 
-/* ── Facet filter (mirrors the Customer list's PartyFilterModal button/chips) ── */
 .sl-filter-btn { display:inline-flex; align-items:center; gap:7px; padding:9px 16px; border:1.5px solid #c4b5fd; border-radius:11px; background:#faf5ff; color:#6d28d9; font-size:12.5px; font-weight:700; cursor:pointer; white-space:nowrap; position:relative; transition:background .15s,border-color .15s; }
 .sl-filter-btn:hover { background:#f3e8ff; border-color:#a78bfa; }
 .sl-filter-btn.on { background:linear-gradient(135deg,#8b5cf6,#7c3aed); color:#fff; border-color:transparent; }
@@ -1026,7 +784,6 @@
 [data-bs-theme="dark"] .sl-filterchip { background:#1e1b3a; border-color:#3b326b; color:#c4b5fd; }
 [data-bs-theme="dark"] .sl-filterbar-lbl,[data-bs-theme="dark"] .sl-filterbar-clear { color:#c4b5fd; }
 
-/* ── Domestic / International (Supplier Type) badge in the list ── */
 .sl-trade { display:inline-flex; align-items:center; font-size:10.5px; font-weight:700; letter-spacing:.02em; padding:2px 10px; border-radius:20px; white-space:nowrap; }
 .sl-trade--dom { color:#0f766e; background:#ecfdf5; border:1px solid #99f6e4; }
 .sl-trade--intl { color:#3730a3; background:#eef2ff; border:1px solid #c7d2fe; }
