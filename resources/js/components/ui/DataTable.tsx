@@ -448,6 +448,33 @@ export default function DataTable<T extends object>({
      * inside .dt-scroll (flex:1), so the body and the pager run down to the
      * footer instead of stopping mid-page — and it stays plain whitespace, not
      * the filler rows deliberately removed from <tbody> below. */
+    /** Height the card needs before any row is hidden: everything that is not
+     *  the scrolling rows area (toolbar, chip bar, pager, padding, the
+     *  horizontal scrollbar) plus the column header and the rows on this page.
+     *
+     *  Measured rather than guessed, and measured off the parts whose height
+     *  does NOT move when the card is resized — `.dt-scroll` is `flex: 1`, so
+     *  it absorbs every pixel the card gains or loses and its own height says
+     *  nothing about what the rows need. Subtracting it from the card leaves
+     *  exactly the fixed chrome, which holds whatever height is in force.
+     *
+     *  Only applied under `autoFitRows`, where the row count is this
+     *  component's own decision and is bounded by `minAutoRows`. A table with a
+     *  free-standing page size keeps the flat floor and its inner scrollbar —
+     *  pinning 50 rows open would turn a short window into a very long page. */
+    const rowFloor = (): number => {
+      if (!autoFitRows) return 240;
+      const scrollBox = el.querySelector('.dt-scroll') as HTMLElement | null;
+      const rowEl = el.querySelector('.dt-table tbody tr:not(.dt-empty-row)') as HTMLElement | null;
+      if (!scrollBox || !rowEl) return 240;
+      const chrome = el.offsetHeight - scrollBox.offsetHeight;
+      const hBar = Math.max(0, scrollBox.offsetHeight - scrollBox.clientHeight);
+      const headH = (el.querySelector('.dt-table thead') as HTMLElement | null)?.offsetHeight || 0;
+      const rowH = rowEl.offsetHeight || 44;
+      const onPage = el.querySelectorAll('.dt-table tbody tr:not(.dt-empty-row)').length;
+      return Math.max(240, chrome + hBar + headH + onPage * rowH);
+    };
+
     const size = () => {
       /* On a phone the PAGE scrolls, not the card.
        *
@@ -474,7 +501,26 @@ export default function DataTable<T extends object>({
         return;
       }
       const top = el.getBoundingClientRect().top;
-      const h = `${Math.max(240, window.innerHeight - top - bottomReserve())}px`;
+      /* The shortest the card may be.
+       *
+       * A flat 240px assumed the rows would always get a usable share of it,
+       * and under `autoFitRows` + `minAutoRows` they do not. The two props pull
+       * in opposite directions: minAutoRows floors the row COUNT, this effect
+       * pins the card's HEIGHT to the space left below it, and when that space
+       * is smaller than the floored count needs, the count wins and the height
+       * does not. Expense Claims floors at 8 under a hero strip, five KPI
+       * tiles, a Spend Analytics panel and a two-line toolbar: on a 711px
+       * window the card came out 300px, the chrome took 187 of it, and eight
+       * rows were stuffed into the remaining 153 — two and a half rows visible,
+       * the rest behind an inner scrollbar. (QA #17)
+       *
+       * So the floor carries the rows with it: whatever is not the rows area,
+       * plus room for the rows actually on the page. Where they already fit,
+       * the space below the card is the larger number and nothing changes;
+       * where they do not, the card grows past the viewport and the PAGE
+       * scrolls — the same resolution the manual branch below already relies
+       * on when a picked size is taller than the window. */
+      const h = `${Math.max(rowFloor(), window.innerHeight - top - bottomReserve())}px`;
       if (manualSize !== null) {
         if (el.style.minHeight === h && !el.style.height) return;
         el.style.flex = 'none';
@@ -502,7 +548,7 @@ export default function DataTable<T extends object>({
       window.clearTimeout(t);
       ro?.disconnect();
     };
-  }, [fitToViewport, loading, manualSize]);
+  }, [fitToViewport, loading, manualSize, autoFitRows, pageSize]);
 
   useEffect(() => {
     if (!autoFitRows) return;

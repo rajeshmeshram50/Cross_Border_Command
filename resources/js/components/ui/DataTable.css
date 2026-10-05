@@ -1164,6 +1164,20 @@
   border-color: rgba(var(--dt-a-rgb), .30);
   color: var(--dt-a-300);
 }
+/* The ACTIVE tab's count. The light rule fills it 90% white, which is right on
+   a white toolbar and wrong on a dark one: the strip, the tabs and the table
+   around it are all dark, so a near-white disc is the brightest thing on the
+   page and the eye goes to a counter instead of to the data. (Document
+   Templates, dark mode — the whole family of HRMS lists shares this rule, so
+   the white dot was on every one of them.)
+   Recessed instead of raised: a dark chip sunk into the accent pill, which also
+   buys the numeral white-on-dark contrast rather than dark-on-near-white. */
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.on .dt-tab-count,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.on .dt-tab-count {
+  background: rgba(0, 0, 0, .28);
+  border-color: rgba(255, 255, 255, .22);
+  color: #fff;
+}
 [data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search-icon,
 [data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search-icon { color: var(--dt-a-300); }
 [data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-table thead th,
