@@ -56,13 +56,67 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
   const initials = `${client.org_name.charAt(0)}${client.org_name.split(' ')[1]?.charAt(0) || ''}`.toUpperCase();
 
   return (
-    <>
+    /* One wrapper, and it is load-bearing. app.css zeroes the gutters on the
+       page's OUTERMOST row so content sits flush at the 8px page edge; the side
+       effect, documented there as #213, is that two cards sharing that row end
+       up touching — which is what every pair on this page was doing. Nesting
+       the rows one level deeper restores Bootstrap's gutters so .cv-page below
+       can set them to the page's own 8px. */
+    <div className="cv-page">
       {/* Compact info-table + dark-mode-friendly card surfaces.
           Labels shrink to their own content width so the value sits right
           next to the label instead of being pushed to the far right by
           auto column-sizing. All colors use Velzon CSS vars so the cards
           look correct in both light and dark themes. */}
       <style>{`
+        /* ── One gap on this page: 8px ──────────────────────────────────────
+           The page edge is 8px, so every gap inside it is 8px too. Before this
+           the vertical gaps were 16px and the side-by-side cards had NO gap at
+           all — they touched, which is the #213 side effect noted in app.css.
+           Vertical gutter is pinned to 0 on purpose: Bootstrap spends it as a
+           negative margin on the row plus matching padding on the columns, so
+           between two sibling rows it cancels to nothing and an explicit margin
+           has to fight it. At 0, the margin below is the only number in play.
+           --vz-, not --bs-: the Velzon build renames the grid variables and
+           ignores the Bootstrap names entirely. */
+        .cv-page > .row {
+          --vz-gutter-x: 8px;
+          --vz-gutter-y: 0;
+          --bs-gutter-x: 8px;
+          --bs-gutter-y: 0;
+        }
+        .cv-page > * + * { margin-top: 8px; }
+        /* Back is an ACTION, so it has to look like one. As a reactstrap
+           light-coloured button it rendered white-on-white against this strip
+           with no border — indistinguishable from the page title beside it.
+           This is the outlined counterpart to the solid Edit Profile pill: same
+           38px height, white fill, violet hairline and label. */
+        .cv-back-btn {
+          display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+          height: 38px; padding: 0 18px;
+          border-radius: 999px;
+          border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
+          background: #fff; color: #6d28d9;
+          font-family: inherit; font-size: 13px; font-weight: 600;
+          white-space: nowrap; cursor: pointer; flex-shrink: 0;
+          transition: background .15s, border-color .15s, transform .15s;
+        }
+        .cv-back-btn i { font-size: 15px; line-height: 1; }
+        .cv-back-btn:hover { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
+        [data-bs-theme="dark"] .cv-back-btn,
+        [data-layout-mode="dark"] .cv-back-btn {
+          background: var(--vz-card-bg); color: #c4b5fd;
+          border-color: rgba(167, 139, 250, 0.40);
+        }
+        [data-bs-theme="dark"] .cv-back-btn:hover,
+        [data-layout-mode="dark"] .cv-back-btn:hover { background: rgba(139, 92, 246, 0.14); }
+
+        /* Below xl the pairs stack, so the gap that was horizontal becomes
+           vertical — same 8px. */
+        @media (max-width: 1199.98px) {
+          .cv-page > .row > [class*="col"] + [class*="col"] { margin-top: 8px; }
+        }
+
         .cv-info-table { font-size: 13px; line-height: 1.4; }
         .cv-info-table th,
         .cv-info-table td {
@@ -158,13 +212,16 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
       <Row>
         <Col xs={12}>
           <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0 d-flex align-items-center gap-2">
-              <button className="btn btn-sm btn-soft-secondary rounded-circle d-inline-flex align-items-center justify-content-center" style={{ width: 32, height: 32 }} onClick={onBack}>
+            <h4 className="mb-sm-0">Client Profile</h4>
+            {/* Back sits on the RIGHT, beside Edit Profile. It used to be a
+                circle tucked in front of the title, which read as part of the
+                heading rather than as an action — and left the page's two
+                actions split across opposite ends of the strip. */}
+            <div className="page-title-right d-flex align-items-center gap-2">
+              <button type="button" className="cv-back-btn" onClick={onBack}>
                 <i className="ri-arrow-left-line"></i>
+                Back
               </button>
-              Client Profile
-            </h4>
-            <div className="page-title-right">
               <Button
                 color="secondary"
                 className="btn-label waves-effect waves-light rounded-pill"
@@ -741,6 +798,6 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
               </>
               );
             })()}
-    </>
+    </div>
   );
 }

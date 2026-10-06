@@ -4,17 +4,16 @@ import {
   Modal, ModalHeader, ModalBody, ModalFooter, Form, Label,
   FormText,
 } from 'reactstrap';
-import TableContainer from '../velzon/Components/Common/TableContainerReactTable';
+import DataTable from '../components/ui/DataTable';
 import DeleteConfirmModal from '../components/ui/DeleteConfirmModal';
 import Tooltip from '../components/ui/Tooltip';
-import { Shimmer, ShimmerTable } from '../components/ui/Shimmer';
+import { Shimmer } from '../components/ui/Shimmer';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
-import SearchClear from '../components/ui/SearchClear';
 
 interface Payment {
   id: number; client_id: number; plan_id: number | null;
@@ -227,14 +226,6 @@ export default function Payments() {
 
   const columns = useMemo(() => [
     {
-      // Center both the header and the cell — serial numbers read best
-      // centered above each other so the eye doesn't have to track left
-      // edges of variable-width digits.
-      header: () => <div className="text-center">Sr No</div>,
-      accessorKey: 'index',
-      cell: (info: any) => <div className="text-center"><span className="text-muted fs-13">{info.row.index + 1}</span></div>,
-    },
-    {
       header: 'Invoice',
       accessorKey: 'invoice_number',
       cell: (info: any) => (
@@ -260,7 +251,8 @@ export default function Payments() {
     {
       // Method is a chip — centered so the pill sits balanced under
       // the header label instead of hugging the left edge.
-      header: () => <div className="text-center">Method</div>,
+      header: 'Method',
+      meta: { align: 'center' },
       accessorKey: 'method',
       cell: (info: any) => (
         <div className="text-center">
@@ -273,7 +265,8 @@ export default function Payments() {
     {
       // Right-align numeric currency so the rupee figures line up at the
       // decimal — easier to scan magnitudes down the column.
-      header: () => <div className="text-end">Amount</div>,
+      header: 'Amount',
+      meta: { align: 'right' },
       accessorKey: 'total',
       cell: (info: any) => (
         <div className="text-end">
@@ -296,7 +289,8 @@ export default function Payments() {
     {
       // Centered — pills look better visually balanced against a centered
       // header label than left-hugging the column edge.
-      header: () => <div className="text-center">Status</div>,
+      header: 'Status',
+      meta: { align: 'center' },
       accessorKey: 'status',
       cell: (info: any) => {
         const raw = String(info.row.original.status || 'pending');
@@ -332,7 +326,8 @@ export default function Payments() {
       },
     },
     {
-      header: () => <div className="text-center">Actions</div>,
+      header: 'Actions',
+      meta: { align: 'center' },
       id: 'actions',
       cell: (info: any) => {
         const p: Payment = info.row.original;
@@ -405,7 +400,18 @@ export default function Payments() {
     },
   ];
 
-  const STATUS_FILTERS = ['', 'success', 'pending', 'failed', 'refunded'];
+  // Tabs for the shared table's toolbar. The empty key the page uses for
+  // "no filter" becomes 'all' here, because a tab needs a key to be selected by.
+  const statusTabs = useMemo(() => {
+    const n = (st: string) => payments.filter(p => p.status === st).length;
+    return [
+      { key: 'all',      label: 'All',      count: payments.length },
+      { key: 'success',  label: 'Success',  count: n('success') },
+      { key: 'pending',  label: 'Pending',  count: n('pending') },
+      { key: 'failed',   label: 'Failed',   count: n('failed') },
+      { key: 'refunded', label: 'Refunded', count: n('refunded') },
+    ];
+  }, [payments]);
 
   return (
     <>
@@ -482,71 +488,34 @@ export default function Payments() {
             </Row>
 
             {/* ── Search + filters + Table — one bordered frame ── */}
-            <div className="pmt-list-frame">
-              <div className="pmt-frame-filter p-3">
-                <Row className="g-2 align-items-center mb-0">
-                  <Col lg={4} md={6} sm={12}>
-                    <div className="search-box">
-                      <Input
-                        type="text"
-                        className="form-control"
-                        autoComplete="off"
-                        placeholder="Search by txn ID, invoice, client..."
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                      />
-                      <SearchClear show={search} onClear={() => { setSearch(''); }} />
-                      <i className="ri-search-line search-icon"></i>
-                    </div>
-                  </Col>
-
-                  <Col lg md={12} sm={12} className="d-flex flex-wrap gap-1">
-                    {STATUS_FILTERS.map(s => {
-                      const isActive = statusFilter === s;
-                      return (
-                        <Button
-                          key={s || 'all'}
-                          color={isActive ? 'primary' : 'light'}
-                          size="sm"
-                          onClick={() => setStatusFilter(s)}
-                          className="rounded-pill px-3 text-capitalize pmt-status-tab"
-                        >
-                          {s || 'All'}
-                        </Button>
-                      );
-                    })}
-                  </Col>
-                </Row>
-              </div>
-
-              {/* ── Table ── */}
-              <div className="p-3 pt-2">
-                {loading ? (
-                  <ShimmerTable rows={6} cols={8} />
-                ) : (
-                  <>
-                    <TableContainer
-                      columns={columns}
-                      data={filteredPayments}
-                      isGlobalFilter={false}
-                      customPageSize={10}
-                      worklistPagination
-                      pageSizeOptions={[10, 25, 50, 100]}
-                      tableClass="align-middle table-nowrap mb-0"
-                      theadClass="table-light"
-                      divClass="table-responsive"
-                      SearchPlaceholder="Search by txn ID, invoice, client..."
-                    />
-                    {filteredPayments.length === 0 && (
-                      <div className="text-center text-muted py-5">
-                        <i className="ri-bill-line display-4 d-block text-muted mb-2"></i>
-                        No payments found
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
+            {/* The shared list table (components/ui/DataTable), as Clients and
+                Branches use. It puts the tabs on the LEFT of the toolbar and the
+                search on the RIGHT — this page had them the other way round —
+                and `fitToViewport` stretches the table to the footer instead of
+                stopping at the last row. */}
+            <DataTable<any>
+              data={filteredPayments}
+              columns={columns}
+              serial
+              className="hr-dt"
+              accent="violet"
+              minWidth={1500}
+              fitToViewport
+              autoFitRows
+              loading={loading}
+              tabs={statusTabs}
+              activeTab={statusFilter || 'all'}
+              onTabChange={k => setStatusFilter(k === 'all' ? '' : k)}
+              searchValue={search}
+              onSearchChange={setSearch}
+              searchPlaceholder="Search by txn ID, invoice, client..."
+              emptyMessage={
+                <>
+                  <i className="ri-bill-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                  No payments found
+                </>
+              }
+            />
           </div>
         </Col>
       </Row>

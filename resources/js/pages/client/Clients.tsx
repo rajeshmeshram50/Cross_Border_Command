@@ -1,17 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Col, Row, Spinner, Input } from 'reactstrap';
+import { Col, Row, Spinner } from 'reactstrap';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
-import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
+import DataTable from '../../components/ui/DataTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
-import { Shimmer, ShimmerTable } from '../../components/ui/Shimmer';
+import { Shimmer } from '../../components/ui/Shimmer';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import type { Client, PaginatedResponse } from '../../types';
 import { readClientFormBundle, writeClientFormBundle } from './clientFormBundleCache';
-import SearchClear from '../../components/ui/SearchClear';
 
 interface Props {
   onNavigate: (page: string, data?: any) => void;
@@ -25,7 +24,6 @@ interface ClientStats {
   plan_breakdown: { plan_name: string; count: number }[];
 }
 
-const AVATAR_COLORS = ['#405189', '#0ab39c', '#f7b84b', '#f06548', '#299cdb', '#9b72cf'];
 
 export default function Clients({ onNavigate }: Props) {
   const toast = useToast();
@@ -151,6 +149,14 @@ export default function Clients({ onNavigate }: Props) {
   // Reusable action button — outline icon pill with hover color.
   // Wrapped in <Tooltip> so the dark pill tooltip from the design
   // system shows on hover/focus instead of the native browser title.
+  // The shared row-action button (.dt-act in DataTable.css) — a tinted square
+  // with a coloured border and icon that fills in and lifts on hover, the same
+  // one every list built on DataTable uses. This page drew its own: a flat grey
+  // square that only took colour on hover, so the actions read as disabled.
+  const DT_ACT_TONE: Record<string, string> = {
+    primary: 'accent', info: 'info', success: 'success',
+    warning: 'warning', danger: 'danger', secondary: 'accent',
+  };
   const ActionBtn = ({
     title, icon, color, onClick, disabled,
   }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
@@ -159,80 +165,33 @@ export default function Clients({ onNavigate }: Props) {
         type="button"
         aria-label={title}
         disabled={disabled}
-        className="btn p-0 d-inline-flex align-items-center justify-content-center"
-        style={{
-          width: 30, height: 30, borderRadius: 8,
-          background: 'var(--vz-secondary-bg)',
-          border: '1px solid var(--vz-border-color)',
-          color: 'var(--vz-secondary-color)',
-          transition: 'all .15s ease',
-        }}
-        onMouseEnter={e => {
-          const el = e.currentTarget as HTMLButtonElement;
-          el.style.background = `var(--vz-${color}-bg-subtle, ${color === 'primary' ? '#40518918' : color === 'danger' ? '#f0654818' : color === 'success' ? '#0ab39c18' : color === 'info' ? '#299cdb18' : color === 'warning' ? '#f7b84b18' : 'var(--vz-secondary-bg)'})`;
-          el.style.borderColor = `var(--vz-${color})`;
-          el.style.color = `var(--vz-${color})`;
-        }}
-        onMouseLeave={e => {
-          const el = e.currentTarget as HTMLButtonElement;
-          el.style.background = 'var(--vz-secondary-bg)';
-          el.style.borderColor = 'var(--vz-border-color)';
-          el.style.color = 'var(--vz-secondary-color)';
-        }}
+        className={`dt-act dt-act-${DT_ACT_TONE[color] || 'accent'}`}
         onClick={onClick}
       >
-        <i className={`${icon} fs-14`} />
+        <i className={icon} />
       </button>
     </Tooltip>
   );
 
-  // Table columns for TableContainer
+  // Columns for the shared DataTable. No "Sr No" column here — `serial` on the
+  // table renders the product's numbered puck, the same one every other list has.
   const columns = [
-    {
-      header: 'Sr No',
-      accessorKey: 'index',
-      cell: (info: any) => <span className="text-muted fs-13">{(page - 1) * 15 + info.row.index + 1}</span>,
-    },
     {
       header: 'Organization',
       accessorKey: 'org_name',
-      cell: (info: any) => {
-        const photo = info.row.original.profile_photo_url || info.row.original.profile_photo;
-        return (
-          // Cap the cell at 240px and truncate long org names with ellipsis
-          // — the full name lives in `title` so hovering shows it as a
-          // native tooltip.
-          <div className="d-flex align-items-center gap-2" style={{ maxWidth: 240, minWidth: 0 }}>
-            {photo ? (
-              <img
-                src={photo}
-                alt={info.row.original.org_name}
-                className="rounded-circle flex-shrink-0"
-                style={{ width: 34, height: 34, objectFit: 'cover', border: '1px solid rgba(128,128,128,0.2)' }}
-              />
-            ) : (
-              <div
-                className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                style={{
-                  width: 34, height: 34, fontSize: 12,
-                  background: `linear-gradient(135deg, ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}, ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}cc)`,
-                  boxShadow: `0 2px 6px ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}40`,
-                }}
-              >
-                {info.row.original.org_name.charAt(0)}{info.row.original.org_name.split(' ')[1]?.charAt(0) || ''}
-              </div>
-            )}
-            <Tooltip label={info.row.original.org_name}>
-              <span
-                className="fw-semibold fs-13 text-truncate"
-                style={{ minWidth: 0 }}
-              >
-                {info.row.original.org_name}
-              </span>
-            </Tooltip>
-          </div>
-        );
-      },
+      cell: (info: any) => (
+        // Name only. The avatar circle that used to sit in front of it was a
+        // second identity marker in a row that already carries the Unique ID,
+        // and it pushed the name off the column's left edge.
+        // Capped at 240px and truncated; the full name lives in `title`.
+        <div className="d-flex align-items-center" style={{ maxWidth: 240, minWidth: 0 }}>
+          <Tooltip label={info.row.original.org_name}>
+            <span className="fw-semibold fs-13 text-truncate" style={{ minWidth: 0 }}>
+              {info.row.original.org_name}
+            </span>
+          </Tooltip>
+        </div>
+      ),
     },
     {
       header: 'Unique ID',
@@ -247,10 +206,19 @@ export default function Clients({ onNavigate }: Props) {
       header: 'Email',
       accessorKey: 'email',
       cell: (info: any) => (
-        <a href={`mailto:${info.row.original.email}`} className="text-body text-decoration-none d-inline-flex align-items-center gap-1">
-          <i className="ri-mail-line text-muted fs-13"></i>
-          <span className="fs-13">{info.row.original.email}</span>
-        </a>
+        // The cell clips at the column edge, so without this the full address
+        // was simply unreachable — no tooltip and no title attribute either.
+        // Organization already does this; Email had been missed.
+        <Tooltip label={info.row.original.email}>
+          <a
+            href={`mailto:${info.row.original.email}`}
+            className="text-body text-decoration-none d-inline-flex align-items-center gap-1"
+            style={{ maxWidth: '100%', minWidth: 0 }}
+          >
+            <i className="ri-mail-line text-muted fs-13"></i>
+            <span className="fs-13 text-truncate">{info.row.original.email}</span>
+          </a>
+        </Tooltip>
       ),
     },
     {
@@ -334,10 +302,20 @@ export default function Clients({ onNavigate }: Props) {
       },
     },
     {
-      header: () => <div className="text-center">Actions</div>,
+      header: 'Actions',
       id: 'actions',
+      // 228px: seven 28px buttons and their 4px gaps need 220, and every column
+      // here was an even 153 — so the row overflowed 46px on BOTH sides into a
+      // cell that clips, eating the eye and the gear. Left-aligned so the group
+      // sits against the status column instead of floating in the middle of a
+      // wide cell.
+      meta: { width: 238, align: 'left' },
       cell: (info: any) => (
-        <div className="d-flex gap-1 justify-content-center">
+        // No `gap-1`: DataTable.css already spaces these with
+        // `.dt-act + .dt-act { margin-left: 4px }`, and carrying both put 4px
+        // twice between every pair — 244px of buttons in what I had sized as a
+        // 220px row, so the last one still fell off the edge.
+        <div className="d-flex justify-content-start">
           <ActionBtn title="View"        icon="ri-eye-line"         color="primary" onClick={() => onNavigate('client-view',        { clientId: info.row.original.id })} />
           <ActionBtn title="Edit"        icon="ri-pencil-line"      color="info"    onClick={() => onNavigate('client-form',        { editId:   info.row.original.id })} />
           <ActionBtn title="Delete"      icon="ri-delete-bin-line"  color="danger"  disabled={deleting === info.row.original.id} onClick={() => handleDeleteClick(info.row.original)} />
@@ -638,7 +616,7 @@ export default function Clients({ onNavigate }: Props) {
                         {loading ? (
                           <Shimmer width={72} height={26} radius={6} style={{ marginTop: 2 }} />
                         ) : (
-                          <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                          <h3 style={{ fontSize: 26, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
                             {k.value.toLocaleString()}
                           </h3>
                         )}
@@ -681,7 +659,7 @@ export default function Clients({ onNavigate }: Props) {
                       <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
                         Plan Distribution
                       </p>
-                      <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                      <h3 style={{ fontSize: 26, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
                         {stats.plans_count.toLocaleString()}
                       </h3>
                       <small style={{ fontSize: 11, color: 'var(--vz-secondary-color)' }}>
@@ -690,11 +668,15 @@ export default function Clients({ onNavigate }: Props) {
                     </div>
 
                     {/* Donut with custom controlled tooltip */}
-                    <div style={{ width: 76, height: 76, flexShrink: 0, position: 'relative' }}>
+                    {/* 44px, the size of the icon tile on the other three KPI cards. The
+    donut was 76px — the cards all measure the same height, but an
+    ornament nearly twice the size of its neighbours made this one
+    read as the bigger card. Radii scale with it. */}
+                    <div style={{ width: 44, height: 44, flexShrink: 0, position: 'relative' }}>
                       {stats.plan_breakdown.length === 0 ? (
                         <div style={{
-                          width: 76, height: 76, borderRadius: '50%',
-                          border: '7px solid var(--vz-secondary-bg)',
+                          width: 44, height: 44, borderRadius: '50%',
+                          border: '4px solid var(--vz-secondary-bg)',
                         }} />
                       ) : (
                         <ResponsiveContainer width="100%" height="100%">
@@ -705,8 +687,8 @@ export default function Clients({ onNavigate }: Props) {
                               nameKey="plan_name"
                               cx="50%"
                               cy="50%"
-                              innerRadius={22}
-                              outerRadius={36}
+                              innerRadius={13}
+                              outerRadius={21}
                               paddingAngle={2}
                               stroke="none"
                               isAnimationActive
@@ -774,55 +756,37 @@ export default function Clients({ onNavigate }: Props) {
               </Col>
             </Row>
 
-            {/* ── Search + Table — one bordered frame (matches the
-                Recruitment list frame: search row on top, table below) ── */}
-            <div className="clients-list-frame">
-              <div className="clients-frame-filter p-3">
-                <div className="search-box">
-                  {/* Autofill guard — Chrome ignores autocomplete="off" on a field it
-                      classifies as contact info and drops an email / address into it
-                      (QA #8 on Customers, QA #25 on Consignee). An explicit name,
-                      autocomplete="new-password" and the LastPass / Dashlane opt-outs
-                      keep it out of this one. */}
-                  <Input
-                    type="search"
-                    className="form-control"
-                    name="client-list-search"
-                    autoComplete="new-password"
-                    data-lpignore="true"
-                    data-form-type="other"
-                    placeholder="Search by name or ID..."
-                    value={searchInput}
-                    onChange={e => setSearchInput(e.target.value)}
-                  />
-                  <SearchClear show={searchInput} onClear={() => { setSearchInput(''); }} />
-                  <i className="ri-search-line search-icon"></i>
-                </div>
-              </div>
-
-              {/* ── Table ── */}
-              <div className="p-3 pt-2">
-                {loading ? (
-                  <ShimmerTable rows={6} cols={9} />
-                ) : (
-                  <>
-                    <TableContainer
-                      columns={columns}
-                      data={clients}
-                      isGlobalFilter={false}
-                      customPageSize={10}
-                      worklistPagination
-                      pageSizeOptions={[10, 25, 50, 100]}
-                      tableClass="align-middle table-nowrap mb-0"
-                      theadClass="table-light"
-                      divClass="table-responsive"
-                      SearchPlaceholder="Search by name or ID..."
-                    />
-                    {clients.length === 0 && <div className="text-center text-muted py-5">No clients found</div>}
-                  </>
-                )}
-              </div>
-            </div>
+            {/* The shared list table (components/ui/DataTable), as Branches
+                already uses on the page next door. Velzon's TableContainer sized
+                itself to its rows, so with one client the table stopped a third
+                of the way down and left the rest of the window blank; `fitToViewport`
+                measures the gap to the footer and `autoFitRows` fills it with as
+                many rows as fit. The toolbar also brings the product's search box,
+                so the hand-rolled one above it is gone. */}
+            <DataTable<any>
+              data={clients}
+              columns={columns}
+              serial
+              /* `hr-dt` is the table's second skin — the pale recessed header
+                 and tab rail HRMS uses — rather than the default solid violet
+                 band. The super-admin pages take it so the platform side reads
+                 as one product with the modules, not as a louder cousin. */
+              className="hr-dt"
+              accent="violet"
+              minWidth={1400}
+              fitToViewport
+              autoFitRows
+              loading={loading}
+              searchValue={searchInput}
+              onSearchChange={setSearchInput}
+              searchPlaceholder="Search by name or ID..."
+              emptyMessage={
+                <>
+                  <i className="ri-building-2-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                  No clients found
+                </>
+              }
+            />
           </div>
         </Col>
       </Row>

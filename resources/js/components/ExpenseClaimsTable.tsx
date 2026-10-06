@@ -287,7 +287,7 @@ const ACTION_W = (mode: 'mine' | 'team' | 'hr') => (mode === 'hr' || mode === 't
 
 /** Sum of every column width below, including DataTable's 56px serial column. */
 export const expenseClaimsMinWidth = (mode: 'mine' | 'team' | 'hr' = 'mine') =>
-  56 + 104 + 170 + 130 + 150 + 110 + 120 + 110 + 150 + 110 + 130 + 120 + ACTION_W(mode);
+  56 + 124 + 170 + 130 + 150 + 110 + 120 + 110 + 150 + 110 + 130 + 120 + ACTION_W(mode);
 
 export function expenseClaimColumns({
   accent = '#7c5cfc', fallbackName, fallbackInitials,
@@ -308,11 +308,14 @@ export function expenseClaimColumns({
         const an = numOf(av), bn = numOf(bv);
         return an !== bn ? an - bn : String(av).localeCompare(String(bv));
       },
-      // Fixed width sized to the "EXP-0000" pill + `wrap` so the cell opts
-      // out of the table's default ellipsis clipping — the ID used to render
-      // as "EXP-0002…" in an 8% column even though it fits. `title` still
-      // gives the full ID on hover as a safety net.
-      meta: { width: 104, wrap: true, align: 'center' },
+      // Wide enough for the LONGEST id in use, not the shortest: 104px fitted
+      // "EXP-0000" but a prefixed one like "EXP-TEST-0007" made a 107px pill
+      // that ran 12px into the Employee column, because `wrap` deliberately
+      // turns off the table's ellipsis clipping. Measured against the product
+      // mono (JetBrains Mono 11px), which is a little wider than the OS mono
+      // this column was originally sized against. `title` still gives the full
+      // id on hover.
+      meta: { width: 124, wrap: true, align: 'center' },
       cell: info => {
         const id = info.row.original.claim_no || `#${info.row.original.id}`;
         return (

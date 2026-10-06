@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import api from '../../api';
 import LoadTesting from './LoadTesting';
-import WorklistPager from '../../components/ui/WorklistPager';
+import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import { useAuth } from '../../contexts/AuthContext';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import '../developers/shipment-360.css';
-import SearchClear from '../../components/ui/SearchClear';
 
 /**
  * Dev Tools — a read-only inspector for the Zoho Books data we STORE in our DB
@@ -129,8 +128,6 @@ export default function DevTools() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState('');
-  const [page, setPage] = useState(1);
-  const [rpp, setRpp] = useState(10);
 
   const tab = useMemo(() => TABS.find(t => t.key === active) ?? TABS[0], [active]);
   const cols = useMemo<Col[]>(
@@ -148,7 +145,7 @@ export default function DevTools() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { setQ(''); setPage(1); load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [active]);
+  useEffect(() => { setQ(''); load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [active]);
 
   // Simple client-side filter over the visible values.
   const filtered = useMemo(() => {
@@ -157,11 +154,17 @@ export default function DevTools() {
     return rows.filter(r => Object.values(r).some(v => v != null && String(v).toLowerCase().includes(needle)));
   }, [rows, q]);
 
-  // Client-side pagination over the filtered rows.
-  const totalPages = Math.max(1, Math.ceil(filtered.length / rpp));
-  const safePage = Math.min(page, totalPages);
-  const pageRows = filtered.slice((safePage - 1) * rpp, safePage * rpp);
-  const srBase = (safePage - 1) * rpp;
+  // Paging belongs to the table now — it owns the pager and the page size.
+
+  // The tab's own `cols`, as DataTable columns — the cell renderer below is
+  // unchanged, so every value still draws exactly as it did.
+  const dtColumns = useMemo<DataTableColumn<Row>[]>(() => cols.map(c => ({
+    id: c.key,
+    header: c.label,
+    accessorFn: (r: Row) => r[c.key] ?? '',
+    cell: (info: any) => cell(info.row.original as Row, c),
+    meta: { align: (c.kind === 'money' ? 'right' : c.kind === 'status' ? 'center' : 'left') as any },
+  })), [cols]);
 
   const cell = (row: Row, c: Col) => {
     const v = row[c.key];
@@ -229,57 +232,38 @@ export default function DevTools() {
       {/* ── List shell ── */}
       {section === 'zoho' && (
       <div className="s360-list s360-panel">
-        <div className="s360-toolbar">
-          <div className="s360-tabs">
-            {TABS.map(t => (
-              <button key={t.key} className={`s360-tab ${active === t.key ? 'is-active' : ''}`} onClick={() => setActive(t.key)}>
-                {t.label}
-                {active === t.key && <span className="s360-tab__cnt">{loading ? '…' : filtered.length}</span>}
-              </button>
-            ))}
-          </div>
-          <div className="s360-search">
-            <IcoSearch />
-            <input autoComplete="off" value={q} onChange={e => { setQ(e.target.value); setPage(1); }} placeholder={`Search ${tab.label.toLowerCase()}…`} />
-            <SearchClear show={q} onClear={() => { setQ(''); setPage(1); }} />
-          </div>
-        </div>
-
-        <div className="rvtbl-wrap">
-          <table className="rvtbl">
-            <thead>
-              <tr>
-                <th className="rvtbl-sr">SR&nbsp;NO</th>
-                {cols.map(c => <th key={c.key}>{c.label}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td className="rvtbl-empty" colSpan={cols.length + 1}>Loading…</td></tr>
-              ) : error ? (
-                <tr><td className="rvtbl-empty" colSpan={cols.length + 1} style={{ color: '#dc2626' }}>{error}</td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td className="rvtbl-empty" colSpan={cols.length + 1}>No {tab.label.toLowerCase()} synced to Zoho Books yet.</td></tr>
-              ) : pageRows.map((row, i) => (
-                <tr className="rvtbl-row" key={srBase + i}>
-                  <td className="rvtbl-sr">{srBase + i + 1}</td>
-                  {cols.map(c => <td key={c.key} className={c.kind ? '' : 'rvtbl-txt'}>{cell(row, c)}</td>)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {!loading && !error && filtered.length > 0 && (
-          <WorklistPager
-            total={filtered.length}
-            page={safePage}
-            pageSize={rpp}
-            onPage={setPage}
-            onPageSize={n => { setRpp(n); setPage(1); }}
-            pageSizeOptions={[10, 25, 50, 100]}
-          />
-        )}
+        {/* The shared list table, as Clients, Payments and Client Branches use.
+            It owns the tab rail, the search box, sorting and the pager, and
+            fitToViewport stretches it to the footer — this panel used to stop
+            at its last row and leave ~520px of the window empty. */}
+        <DataTable<Row>
+          data={filtered}
+          columns={dtColumns}
+          serial
+          className="hr-dt"
+          accent="teal"
+          fitToViewport
+          autoFitRows
+          loading={loading}
+          tabs={TABS.map(t => ({
+            key: t.key,
+            label: t.label,
+            count: t.key === active ? filtered.length : undefined,
+          }))}
+          activeTab={active}
+          onTabChange={k => setActive(k as typeof active)}
+          searchValue={q}
+          onSearchChange={setQ}
+          searchPlaceholder={`Search ${tab.label.toLowerCase()}…`}
+          emptyMessage={
+            error
+              ? <span style={{ color: '#dc2626' }}>{error}</span>
+              : <>
+                  <i className="ri-database-2-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                  No {tab.label.toLowerCase()} synced to Zoho Books yet.
+                </>
+          }
+        />
       </div>
       )}
     </div>
