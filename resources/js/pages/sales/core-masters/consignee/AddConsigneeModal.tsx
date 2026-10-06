@@ -4243,7 +4243,11 @@ const Stage2 = ({
   const segRefDocs = sub === 'company-dd' ? (segmentDocs.dd || []).filter(segMatch)
                    : sub === 'trade-licence' ? (segmentDocs.tl || []).filter(segMatch)
                    : [];
-  const showingOwnerRefs = isOwners && filteredOwners.length === 0 && (segmentDocs.kyc?.length ?? 0) > 0;
+  /* No segmentDocs.kyc requirement (#91). A segment with no standard KYC docs
+     used to fall through to the owners table, so the same tab showed Owner
+     Name / Designation / ID Proof headers when empty and document headers once
+     docs existed. Same fix as AddCustomerModal. */
+  const showingOwnerRefs = isOwners && filteredOwners.length === 0;
   const totalRows = isOwners
     ? (showingOwnerRefs ? segKyc.length : filteredOwners.length)
     : (hasRealDocs ? filteredDocs.length : segRefDocs.length);
@@ -4323,7 +4327,7 @@ const Stage2 = ({
             />
           </div>
           <div className="acm-kyc-count">
-            {totalRows} {(isOwners && !(filteredOwners.length === 0 && segmentDocs.kyc.length > 0)) ? `owner${totalRows === 1 ? '' : 's'}` : `document${totalRows === 1 ? '' : 's'}`}
+            {totalRows} {(isOwners && !showingOwnerRefs) ? `owner${totalRows === 1 ? '' : 's'}` : `document${totalRows === 1 ? '' : 's'}`}
           </div>
         </div>
 
@@ -4350,7 +4354,7 @@ const Stage2 = ({
                 </thead>
                 <tbody><ShimmerTableRows rows={4} cols={isOwners ? 9 : 7} /></tbody>
               </table>
-            ) : isOwners && filteredOwners.length === 0 && segmentDocs.kyc.length > 0 ? (
+            ) : showingOwnerRefs ? (
               /* Owner KYC sub-tab — segment-rule reference table.
                  Mirrors the Trade Licence + Company DD layout when the
                  segment's rule defines required KYC documents and no
@@ -4366,7 +4370,7 @@ const Stage2 = ({
                 </thead>
                 <tbody>
                   {segKyc.length === 0 && (
-                    <tr className="acm-loc-empty"><td colSpan={7}>No documents match your search.</td></tr>
+                    <tr className="acm-loc-empty"><td colSpan={7}>{q ? 'No documents match your search.' : 'No standard documents are configured for this segment yet.'}</td></tr>
                   )}
                   {segKyc.map((d: any, i: number) => {
                     const refKey = `owner-kyc::${d.code}`;

@@ -36,7 +36,7 @@ return new class extends Migration {
                 'support_email'  => 'support@cbc.com',
                 'admin_email'    => 'admin@cbc.com',
                 'contact_phone'  => '+91 9876543210',
-                'website_url'    => 'https://cbc.com',
+                'website_url'    => 'https://kryptone.ai',
             ],
             'security' => [
                 'tfa'         => true,
@@ -66,7 +66,7 @@ return new class extends Migration {
                 'actLog'             => true,
                 'retention'          => false,
                 'cookie'             => true,
-                'privacy_policy_url' => 'https://cbc.com/privacy',
+                'privacy_policy_url' => 'https://kryptone.ai/privacy',
             ],
             'help' => [
                 'faqs' => [
@@ -80,7 +80,7 @@ return new class extends Migration {
             'contact' => [
                 'support_email'   => 'support@cbc.com',
                 'support_phone'   => '+91 9876543210',
-                'website'         => 'https://cbc.com',
+                'website'         => 'https://kryptone.ai',
                 'status_page'     => 'status.cbc.com',
                 'emergency_phone' => '+91 98765 00000',
             ],

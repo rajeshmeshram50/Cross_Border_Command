@@ -2178,6 +2178,19 @@ export default function HrPayroll() {
               disabled={busy}
             />
           </div>
+          {/* The reason has to sit on a WRAPPER, not on the button. Bootstrap
+              gives `.btn:disabled` pointer-events:none, so a disabled button
+              never receives hover and its own title can never appear — the
+              button just greyed out with no explanation. The span is not
+              disabled, so it does. */}
+          <Tooltip label={loading
+            ? 'Loading this cycle — the run button unlocks once its figures are on screen.'
+            : canReopenCycle
+              ? `${cycle.label} is already ${cycle.run_status} but not disbursed — reopen it to run payroll again.`
+              : busy
+                ? 'Payroll is being generated for this cycle…'
+                : (cycleLockReason ?? 'Generate payslips for every eligible employee in this cycle.')}>
+          <span className="d-inline-flex">
           <Button
             className="rounded-pill fw-bold d-inline-flex align-items-center pay-hero-run"
             onClick={canReopenCycle ? reopenCycle : runPayroll}
@@ -2185,11 +2198,6 @@ export default function HrPayroll() {
                because the Reopen branch escapes cycleLocked — and reopening on
                a half-loaded cycle is the same mistake as running on one. */
             disabled={busy || loading || (cycleLocked && !canReopenCycle)}
-            title={loading
-              ? 'Loading this cycle — the run button unlocks once its figures are on screen.'
-              : canReopenCycle
-                ? `${cycle.label} is already ${cycle.run_status} but not disbursed — reopen it to run payroll again.`
-                : cycleLockReason}
             style={{
               padding: '10px 18px',
               fontSize: 13,
@@ -2214,6 +2222,8 @@ export default function HrPayroll() {
                 ? <><i className="ri-lock-unlock-line me-2" style={{ fontSize: 16 }} /> Reopen Cycle</>
                 : <><i className="ri-play-circle-line me-2" style={{ fontSize: 16 }} /> Run Payroll</>}
           </Button>
+          </span>
+          </Tooltip>
           <Dropdown isOpen={exportOpen} toggle={() => { if (!downloading) setExportOpen(v => !v); }}>
             <DropdownToggle
               caret

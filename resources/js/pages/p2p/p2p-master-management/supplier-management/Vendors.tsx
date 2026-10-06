@@ -321,14 +321,39 @@ function RefineSuppliers(props: {
      and Done was not, so it read as "hidden until you scroll the page".
      Measured from the button instead, the panel always ends above the viewport
      edge and the tiles scroll inside it. */
-  const [bodyMax, setBodyMax] = useState<number | undefined>(undefined);
+  /* The panel is position:fixed, so it needs real coordinates. Below 720px the
+     stylesheet pins it edge-to-edge itself, so leave it alone there.
+     maxHeight caps the whole SHEET rather than the body: the head and foot are
+     flex:0 0 auto and the body takes the remainder, so the Done bar is on
+     screen whatever is left. Capping the body instead meant guessing the head
+     and foot heights, and the guess pushed Done past the bottom. */
+  const [popPos, setPopPos] = useState<React.CSSProperties | undefined>(undefined);
+  const [popUp, setPopUp] = useState(false);
   useEffect(() => {
-    if (!open) { setBodyMax(undefined); return; }
+    if (!open) { setPopPos(undefined); setPopUp(false); return; }
     const measure = () => {
       const r = wrapRef.current?.getBoundingClientRect();
       if (!r) return;
-      // 11 arrow gap + ~44 head + ~58 foot + 14 breathing room
-      setBodyMax(Math.max(170, window.innerHeight - r.bottom - 127));
+      if (window.innerWidth <= 720) { setPopPos(undefined); setPopUp(false); return; }
+      /* The viewport bottom is NOT the usable bottom: the horizontal shell
+         pins .footer there, and the panel ran underneath it. Stop at whichever
+         comes first. */
+      const footTop = document.querySelector('.footer')?.getBoundingClientRect().top;
+      const floorY = Math.min(window.innerHeight, footTop && footTop > r.bottom ? footTop : window.innerHeight);
+      const ceilY = (document.querySelector('#page-topbar')?.getBoundingClientRect().bottom ?? 0) + 8;
+
+      const right = Math.max(12, window.innerWidth - r.right);
+      const below = floorY - (r.bottom + 11) - 10;
+      const above = (r.top - 11) - ceilY - 10;
+
+      /* Flip above the button when there isn't room below. Zoomed in, or on a
+         short window, the toolbar sits near the footer and no cap can make a
+         downward panel fit — it just loses its bottom. */
+      const flip = below < 260 && above > below;
+      setPopUp(flip);
+      setPopPos(flip
+        ? { bottom: window.innerHeight - r.top + 11, right, maxHeight: Math.max(200, above) }
+        : { top: r.bottom + 11, right, maxHeight: Math.max(200, below) });
     };
     measure();
     window.addEventListener('scroll', measure, true);
@@ -358,7 +383,7 @@ function RefineSuppliers(props: {
       </button>
 
       {open && (
-        <div className="sl-refine-pop" role="dialog" aria-label="Refine Suppliers">
+        <div className={popUp ? 'sl-refine-pop is-up' : 'sl-refine-pop'} role="dialog" aria-label="Refine Suppliers" style={popPos}>
           <div className="sl-refine-sheet">
             <div className="sl-refine-head">
               <span className="sl-refine-head-ico">
@@ -382,7 +407,7 @@ function RefineSuppliers(props: {
               </button>
             </div>
 
-            <div className="sl-refine-body" style={bodyMax ? { maxHeight: bodyMax } : undefined}>
+            <div className="sl-refine-body">
               <div className="sl-refine-group">
                 <div className="sl-refine-k"><span>Category</span></div>
                 <div className="sl-refine-grid sl-refine-grid--4">

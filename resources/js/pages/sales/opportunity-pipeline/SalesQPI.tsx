@@ -1502,9 +1502,9 @@ export default function SalesQPI() {
                   disabled={readOnly || convertingId === r.id || oppHasPi(r)}
                   onClick={() => { if (oppHasPi(r)) { toast.error('Locked', 'This opportunity already has a Proforma Invoice. No more PIs can be created from its quotations.'); return; } openConvert(r); }}
                 >
-                  <IconRepeatSm />
+                  {convertingId === r.id ? <span className="qpi-convert-spinner" aria-hidden /> : <IconRepeatSm />}
                   <span className="qpi-convert-btn-label">
-                    {convertingId === r.id ? 'Converting…' : 'Convert to PI'}
+                    {convertingId === r.id ? 'Converting' : 'Convert to PI'}
                   </span>
                 </button>
               </Tooltip>
@@ -6406,6 +6406,15 @@ const SCOPED_CSS = `
   box-shadow: 0 0 0 3px rgba(124,58,237,.25), 0 3px 10px rgba(124,58,237,.30);
 }
 .qpi-convert-btn:disabled { opacity: .65; cursor: wait; }
+/* Replaces the repeat icon while converting — white, because this button
+   carries a filled accent background. */
+.qpi-convert-spinner {
+  width: 13px; height: 13px; flex: 0 0 auto; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.35); border-top-color: #fff;
+  animation: qpi-convert-spin .7s linear infinite;
+}
+@keyframes qpi-convert-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .qpi-convert-spinner { animation-duration: 2s; } }
 .qpi-convert-btn svg { width: 12px; height: 12px; }
 
 /* "Already converted" locked state — green pill, no hover lift. */

@@ -54,6 +54,16 @@ export default function ConvertToPiModal({
     <div className="cv2pi-backdrop" onClick={() => { if (!converting) onCancel(); }}>
       <style>{SCOPED_CSS}</style>
       <div className="cv2pi-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        {/* The wait is the POST plus a full refetch, so it covers the whole
+            dialog rather than sitting on the button — a label that reads
+            "Converting…" with nothing moving looks like a hung page. */}
+        {converting && (
+          <div className="cv2pi-busy" role="status" aria-live="polite">
+            <span className="cv2pi-spin" aria-hidden />
+            <div className="cv2pi-busy-title">Converting to Proforma Invoice</div>
+            <div className="cv2pi-busy-sub">Creating {newPiCode || 'the PI'} and copying items…</div>
+          </div>
+        )}
         <div className="cv2pi-head">
           <div className="cv2pi-head-left">
             <div className="cv2pi-head-icon"><i className="ri-arrow-left-right-line" /></div>
@@ -99,11 +109,7 @@ export default function ConvertToPiModal({
         <div className="cv2pi-foot">
           <button type="button" className="cv2pi-cancel" onClick={onCancel} disabled={converting}>Cancel</button>
           <button type="button" className="cv2pi-confirm" onClick={onConfirm} disabled={converting}>
-            {converting ? (
-              <>Converting…</>
-            ) : (
-              <><i className="ri-check-line" /> Yes, Convert to PI</>
-            )}
+            <i className="ri-check-line" /> Yes, Convert to PI
           </button>
         </div>
       </div>
@@ -200,9 +206,39 @@ const SCOPED_CSS = `
   background: var(--vz-card-bg, #fff);
   border-radius: 18px;
   overflow: hidden;
+  position: relative;
   box-shadow: 0 24px 60px rgba(0,0,0,0.35);
   font-family: inherit;
   animation: cv2pi-pop .18s ease;
+}
+
+/* Busy overlay — covers the dialog while the PI is created. */
+.cv2pi-busy {
+  position: absolute; inset: 0; z-index: 5;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  background: rgba(255,255,255,0.86);
+  backdrop-filter: blur(2px);
+  animation: cv2pi-fade .14s ease;
+}
+@keyframes cv2pi-fade { from { opacity: 0; } to { opacity: 1; } }
+.cv2pi-spin {
+  width: 38px; height: 38px; margin-bottom: 6px;
+  border-radius: 50%;
+  border: 3px solid rgba(13,148,136,0.22);
+  border-top-color: #0d9488;
+  animation: cv2pi-rot .7s linear infinite;
+}
+@keyframes cv2pi-rot { to { transform: rotate(360deg); } }
+.cv2pi-busy-title { font-size: 14.5px; font-weight: 800; color: #0f172a; }
+.cv2pi-busy-sub   { font-size: 12.5px; color: #64748b; }
+[data-bs-theme="dark"] .cv2pi-busy,
+[data-layout-mode="dark"] .cv2pi-busy { background: rgba(33,31,46,0.88); }
+[data-bs-theme="dark"] .cv2pi-busy-title,
+[data-layout-mode="dark"] .cv2pi-busy-title { color: #e2e8f0; }
+[data-bs-theme="dark"] .cv2pi-busy-sub,
+[data-layout-mode="dark"] .cv2pi-busy-sub { color: #94a3b8; }
+@media (prefers-reduced-motion: reduce) {
+  .cv2pi-spin { animation-duration: 2s; }
 }
 @keyframes cv2pi-pop { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
 

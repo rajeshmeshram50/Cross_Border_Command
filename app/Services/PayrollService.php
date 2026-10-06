@@ -534,8 +534,28 @@ class PayrollService
      */
     public function earnedSalaryForExitMonth(Employee $employee, Carbon $lwd, $resignationDate = null): array
     {
-        $start = $lwd->copy()->startOfMonth();
-        $end   = $lwd->copy()->endOfMonth();
+        /* A LAST WORKING DAY IN THE FUTURE IS NOT SETTLED — IT IS FORECAST.
+         *
+         * The month was taken from the stored LWD whatever its date, so an exit
+         * dated 5 Nov settled NOVEMBER while it was still October. November has
+         * no attendance yet, and computeForEmployee deliberately never charges a
+         * day that has not happened as loss of pay — so all five days came back
+         * PAID, and the panel showed a confident settlement for a month nobody
+         * had worked. Attendance already on the books (the October absences)
+         * never entered it, which is what read as "attendance not calculated".
+         *
+         * Settling stops at TODAY. The window closes on the earlier of the last
+         * working day and today, so the figure is what has actually been earned
+         * — the heading this panel already carries. Re-run after the real last
+         * working day to settle the remainder.
+         *
+         * Only the clamp is passed down; the stored last_working_day is left
+         * alone, so the exit record still says when the employee leaves. */
+        $today  = Carbon::today();
+        $effLwd = $lwd->gt($today) ? $today->copy() : $lwd->copy();
+
+        $start = $effLwd->copy()->startOfMonth();
+        $end   = $effLwd->copy()->endOfMonth();
 
         /* EARLY EXIT — resigned/left within ProbationGuard::EARLY_EXIT_DAYS of
          * joining. Such an employee "is not put through payroll at all": the
@@ -563,7 +583,9 @@ class PayrollService
                 'working_days' => $this->defaultWorkingDays($start, $end),
             ]);
 
-        $slip = $this->computeForEmployee($employee, $period);
+        /* The clamped date is handed down too, so the pay window closes on it
+           rather than running to month end on a cycle still in progress. */
+        $slip = $this->computeForEmployee($employee, $period, [], [$employee->id => $effLwd->toDateString()]);
 
         $amount = round((float) $slip['net_pay'] + (float) ($slip['advance_recovery'] ?? 0), 2);
 
@@ -633,7 +655,16 @@ class PayrollService
         );
 
         return [
-            'cycle'         => $lwd->format('F Y'),
+            // $effLwd, not $lwd — the label has to name the month that was
+            // actually priced, or the caption says November over October's
+            // figures.
+            'cycle'         => $effLwd->format('F Y'),
+            /* What the caption needs to be honest about a future exit: the day
+               pricing stops, the day the employee actually leaves, and whether
+               the two differ. */
+            'priced_to'         => $effLwd->toDateString(),
+            'last_working_day'  => $lwd->toDateString(),
+            'is_provisional'    => $effLwd->lt($lwd),
             'salary_version'      => $ver['version'],
             'salary_version_from' => $ver['from'],
             'salary_versions'     => $ver['all'],
