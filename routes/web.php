@@ -60,6 +60,18 @@ Route::middleware('throttle:120,1')->group(function () {
 // cached under a .js URL. resources/js/utils/lazyPage.ts does the recovery.
 Route::get('/build/{path}', fn () => abort(404))->where('path', '.*');
 
+// Public legal pages. Google's OAuth consent screen requires a reachable
+// privacy policy + terms URL, so these must render without auth or JS.
+// MUST sit above the SPA catch-all below or the fallback view would swallow them.
+Route::get('/privacy', fn () => view('legal.privacy', [
+    'updated' => '6 October 2026',
+    'contact' => config('legal.contact_email'),
+]));
+Route::get('/terms', fn () => view('legal.terms', [
+    'updated' => '6 October 2026',
+    'contact' => config('legal.contact_email'),
+]));
+
 // SPA Fallback - serve index.html for all non-API routes
 // This enables proper URL routing for React Router
 // The route order ensures API routes (handled in api.php) take precedence
