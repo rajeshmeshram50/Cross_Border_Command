@@ -1091,7 +1091,7 @@ const SCOPED_CSS = `
 .cps-prods-table td:nth-child(2) { max-width: 300px; overflow: hidden; }
 .cps-prods-table thead th {
   padding: 10px 12px; text-align: left;
-  font-size: 9.5px; font-weight: 700; letter-spacing: .1em; color: #0c4a6e;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #0c4a6e;
   background: linear-gradient(180deg, #cffafe, #ecfeff);
   border-bottom: 1px solid #a5f3fc; white-space: nowrap;
 }

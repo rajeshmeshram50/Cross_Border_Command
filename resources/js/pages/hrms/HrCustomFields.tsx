@@ -337,9 +337,9 @@ export default function HrCustomFields() {
             vertical-align: middle;
             background: linear-gradient(180deg, #fafbfc 0%, #f4f5f8 100%);
             color: var(--vz-secondary-color);
-            font-size: 10.5px;
-            font-weight: 700;
-            letter-spacing: 0.08em;
+            font-size: 9.5px;
+            font-weight: 800;
+            letter-spacing: .07em;
             text-transform: uppercase;
             border-bottom: 1px solid #ececf2;
           }

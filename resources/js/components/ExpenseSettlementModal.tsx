@@ -3602,7 +3602,7 @@ textarea.esm-in{resize:vertical;}
 [data-bs-theme="dark"] .esm-tblwrap{border-color:#173947;box-shadow:none;}
 .esm-tbl{width:100%;border-collapse:collapse;font-size:12px;background:transparent;}
 .esm-tbl thead tr{background:linear-gradient(90deg,#0e7490 0%,#0891b2 45%,#22d3ee 100%);}
-.esm-tbl thead th{text-align:left;vertical-align:middle;background:#0e8aa6;color:#fff;font-size:9.5px;font-weight:700;letter-spacing:.04em;line-height:1.25;padding:11px 12px;white-space:nowrap;position:sticky;top:0;z-index:1;}
+.esm-tbl thead th{text-align:left;vertical-align:middle;background:#0e8aa6;color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;line-height:1.25;padding:11px 12px;white-space:nowrap;position:sticky;top:0;z-index:1;}
 [data-bs-theme="dark"] .esm-tbl thead th{background:#0b6f85;}
 [data-bs-theme="dark"] .esm-tbl thead tr{background:linear-gradient(90deg,#0e5566,#0b6f85 55%,#0e7f97);}
 .esm-tbl tbody tr,.esm-tbl tbody td{background:#fff;}

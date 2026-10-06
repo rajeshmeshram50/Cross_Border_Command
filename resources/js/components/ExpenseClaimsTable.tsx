@@ -142,6 +142,18 @@ function paymentStatusOf(c: ExpenseClaimRow): 'paid' | 'partial' | 'pending' | n
    never injected there and every pill stayed light in dark mode. The page
    now mounts this itself. */
 export const EXPENSE_CLAIM_BADGE_CSS = `
+/* The EXP ID chip is the same object as every other table's id chip, so it uses
+   the same face: JetBrains Mono at 11px. It was written with Bootstrap's
+   .font-monospace utility instead, which resolves to the OS stack
+   (SFMono-Regular on this machine) — a visibly different mono from the
+   JetBrains Mono that .dt-id-chip uses on Customers, Employees and the rest.
+   !important because .font-monospace carries its own. */
+.exp-id-badge {
+  font-family: 'JetBrains Mono', ui-monospace, monospace !important;
+  font-size: 11px;
+  letter-spacing: .02em;
+}
+
 /* Column alignment — header + data line up per column. Text columns stay
    left; Amount is right-aligned (currency convention); Status & Action are
    centred. The th.<class> selectors out-rank the blanket "thead th left"

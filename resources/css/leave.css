@@ -408,15 +408,22 @@
   padding: 16px;
   display: flex; flex-direction: column; gap: 12px;
 }
-.lp-search-box { position: relative; height: 36px; }
+/* The product's one search field, as .smc-search on Customers and .dt-search in
+   every DataTable toolbar define it: 42px tall, 11px radius, 13px/500 text, and
+   a 16px icon inset 14px from the left edge. This was a 36px box with 12.5px
+   text, so the two Leave pages read a size smaller than the rest of HRMS. */
+.lp-search-box { position: relative; height: 42px; }
 .lp-search-box i {
-  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-  color: var(--vz-secondary-color, #9ca3af); font-size: 14px; pointer-events: none;
+  position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+  color: var(--vz-secondary-color, #9ca3af); font-size: 16px; pointer-events: none;
 }
 .lp-search-box input {
-  width: 100%; height: 100%; padding: 0 12px 0 34px;
-  border-radius: 10px; border: 1px solid var(--vz-border-color, #e5e7eb);
-  background: #fff; font-size: 12.5px;
+  width: 100%; height: 100%; padding: 0 14px 0 38px;
+  border-radius: 11px; border: 1.5px solid rgba(139, 92, 246, .28);
+  background: rgba(255, 255, 255, .8);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .95) inset;
+  font-family: inherit; font-size: 13px; font-weight: 500;
+  color: var(--vz-body-color);
 }
 .lp-search-box input:focus {
   outline: none; border-color: #a78bfa;

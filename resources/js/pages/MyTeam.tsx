@@ -445,7 +445,9 @@ export default function MyTeam() {
               {(e.display_name || e.first_name || 'E').split(/\s+/).slice(0, 2).map(s => s[0]).join('').toUpperCase()}
             </span>
             <div className="min-w-0">
-              <div style={{ fontWeight: 700 }}>{nm}</div>
+              {/* 600, the weight every other list gives its primary line —
+                  HRMS's employee name and the Customers company name both. */}
+              <div style={{ fontWeight: 600 }}>{nm}</div>
               <div style={{ fontSize: 11.5, color: '#6b7280' }}>{e.email || '—'}</div>
             </div>
           </div>
@@ -498,8 +500,12 @@ export default function MyTeam() {
         <Col xs={12}>
           <div className="rec-page myteam-page">
             <MyTeamDarkStyles />
-            {/* Header strip — same shape as the Clients / Branches module headers. */}
-            <div className="frm-cstrip mb-3">
+            {/* Header strip — the HRMS one. `hr-cstrip` is an opt-in: it paints
+                the purple banner AND, through `.page-content:has(.hr-cstrip)
+                .dt-root`, switches this page's DataTable to the HRMS header and
+                tab rail. My Team is an HR page, so it follows HRMS rather than
+                the plain Clients / Branches strip it used to copy. */}
+            <div className="frm-cstrip hr-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
                 <div className="frm-cstrip-icon"><i className="ri-team-line" /></div>
@@ -1193,7 +1199,7 @@ function MyTeamDarkStyles() {
          that matches the violet brand wash. */
       .myteam-page .myteam-table tbody td {
         padding: 12px 12px;
-        font-size: 12.75px;
+        font-size: 11.5px; font-weight: 500;
         vertical-align: middle;
         border-bottom: 1px solid var(--vz-border-color, #f3f4f6);
       }

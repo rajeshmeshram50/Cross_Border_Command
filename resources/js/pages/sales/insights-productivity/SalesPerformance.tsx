@@ -326,7 +326,7 @@ const SCOPED_CSS = `
 .perf-card-title { font-size: 14px; font-weight: 700; color: #0f172a; margin-bottom: 16px; }
 .perf-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .perf-table thead tr { background: #f8fafc; }
-.perf-table thead th { padding: 9px 12px; text-align: left; font-size: 10.5px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid #f1f5f9; }
+.perf-table thead th { padding: 9px 12px; text-align: left; font-size: 9.5px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: .07em; border-bottom: 1px solid #f1f5f9; }
 .perf-table tbody tr { border-bottom: 1px solid #f8fafc; }
 .perf-table tbody td { padding: 9px 12px; color: #1e293b; }
 .perf-status-pill { padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }

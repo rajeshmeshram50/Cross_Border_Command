@@ -977,7 +977,7 @@
    "9px DM Sans" which is weight 400 (normal). The general rule above uses 800,
    so even at the same 9px the dev headers read heavier/larger. Match the Figma
    weight here; scoped to avm-kyc-table so contacts and mapped tables keep theirs. */
-.avm-modal .table.avm-kyc-table thead th { font-weight: 400; letter-spacing: 0.04em; }
+.avm-modal .table.avm-kyc-table thead th { font-weight: 800; letter-spacing: .07em; }
 .avm-modal .table tbody td {
   font-size: 13px;
   font-weight: 400;

@@ -985,7 +985,7 @@ body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
 .pop-tbl-wrap{overflow-x:auto;overflow-y:hidden;border-radius:12px;border:1px solid #dbeef4;box-shadow:0 2px 8px rgba(15,23,42,.05);}
 .pop-tbl{width:100%;border-collapse:collapse;font-size:12px;min-width:760px;}
 .pop-tbl thead tr{background:linear-gradient(90deg,#0e7490 0%,#0891b2 45%,#22d3ee 100%);}
-.pop-tbl thead th{text-align:left;vertical-align:middle;padding:11px 12px;background:transparent;color:#fff;font-size:9.5px;font-weight:700;letter-spacing:.04em;line-height:1.25;white-space:nowrap;}
+.pop-tbl thead th{text-align:left;vertical-align:middle;padding:11px 12px;background:transparent;color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.07em;line-height:1.25;white-space:nowrap;}
 .pop-tbl thead th.pop-th-r{text-align:right;} .pop-tbl thead th.pop-th-c{text-align:center;}
 .pop-tbl-c thead th,.pop-tbl-c tbody td{text-align:center;}
 .pop-tbl-c .pop-in{text-align:center;}

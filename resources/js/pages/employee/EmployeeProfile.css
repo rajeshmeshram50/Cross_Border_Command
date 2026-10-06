@@ -1517,7 +1517,7 @@
           color: #dbe2ea;
           border-bottom: 1px solid rgba(255, 255, 255, 0.14);
         }
-        .ep-att-table th { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--vz-secondary-color); font-weight: 700; padding: 10px 12px; border-bottom: 1px solid var(--vz-border-color); white-space: nowrap; }
+        .ep-att-table th { font-size: 9.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--vz-secondary-color); font-weight: 800; padding: 10px 12px; border-bottom: 1px solid var(--vz-border-color); white-space: nowrap; }
         .ep-att-table td { padding: 10px 12px; border-bottom: 1px solid var(--vz-border-color); vertical-align: middle; white-space: nowrap; }
         .ep-att-table tbody tr:last-child td { border-bottom: none; }
         .ep-att-table tbody tr { transition: background-color .15s ease; }

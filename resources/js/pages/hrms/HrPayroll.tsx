@@ -2546,9 +2546,11 @@ export default function HrPayroll() {
             style={{
               background: 'var(--vz-secondary-bg)',
               border: '1px solid var(--vz-border-color)',
-              borderRadius: 10,
+              /* The shared rail: 11px radius, 4px track, 8px between tabs —
+                 34px tab + 4px twice = the 42px every toolbar uses. */
+              borderRadius: 11,
               padding: 4,
-              gap: 4,
+              gap: 8,
             }}
           >
             {[
@@ -2575,9 +2577,16 @@ export default function HrPayroll() {
                   onClick={() => setTab(t.key)}
                   className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
                   style={{
+                    /* The product's tab box — 34px on 14px of side padding at
+                       12.5px/650, as .dt-tab sets it everywhere else. This ran
+                       13px text on 8px of vertical padding, which made the rail
+                       37px tall and a different object from every other one. */
                     borderRadius: 8,
-                    padding: '8px 14px',
-                    fontSize: 13,
+                    height: 34,
+                    padding: '0 14px',
+                    fontSize: 12.5,
+                    fontWeight: 650,
+                    letterSpacing: 0,
                     background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'transparent',
                     color: on ? '#fff' : 'var(--vz-secondary-color)',
                     border: 'none',

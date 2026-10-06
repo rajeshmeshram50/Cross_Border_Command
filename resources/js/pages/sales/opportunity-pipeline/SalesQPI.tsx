@@ -6029,10 +6029,10 @@ const SCOPED_CSS = `
 .qpi-table-host .table tbody td {
   --bs-table-bg: transparent !important;
   background: transparent !important;
-  /* 12px vertical padding + 13px font + 500 weight + 1.45 line-height
-   * mirrors .smc-table-wrap so rows have the same density. */
+  /* Padding mirrors .smc-table-wrap so rows have the same density; the type
+   * is the Customers table's, as everywhere else. */
   padding: 12px 14px !important;
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 500;
   color: var(--vz-body-color);
   border-bottom: 1px solid rgba(124,58,237,0.08) !important;

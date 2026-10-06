@@ -475,12 +475,16 @@ export default function Branches({ onNavigate }: Props) {
            Clients list). */
         .branches-surface .table thead th,
         .branches-surface .table tbody td {
-          font-size: 13px;
+          font-size: 11.5px; font-weight: 500;
           vertical-align: middle;
         }
         .branches-surface .table thead th {
-          font-weight: 600;
-          letter-spacing: 0.01em;
+          /* The Customers header strip's type, used on every module's
+             header strip so the tables read as one product. */
+          font-size: 9.5px;
+          font-weight: 800;
+          letter-spacing: .07em;
+          text-transform: uppercase;
         }
 
         /* KPI cards — haptic hover lift, identical feel to the Clients /

@@ -2276,7 +2276,7 @@
   border-bottom-color: var(--vz-border-color) !important;
 }
 .rec-req-table tbody td {
-  font-size: 12.5px;
+  font-size: 11.5px; font-weight: 500;
   padding-top: 11px; padding-bottom: 11px;
   border-bottom: 1px solid #f1f0f7 !important;
   vertical-align: middle;
@@ -4330,7 +4330,7 @@
    font — because the Candidates table carries far more columns. */
 .cand-page-table.rec-list-table tbody td {
   padding: 12px 12px;
-  font-size: 12.75px;
+  font-size: 11.5px; font-weight: 500;
   line-height: 1.45;
   vertical-align: middle;
   white-space: nowrap;
@@ -7454,8 +7454,10 @@
   border: 0;
   border-bottom: 2px solid transparent;
   color: var(--vz-secondary-color);
+  /* The Customers tab strip's type (.smc-pill), at HRMS's 650. */
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 650;
+  letter-spacing: 0;
   cursor: pointer;
   transition: color .15s ease, border-color .15s ease;
 }
@@ -8336,7 +8338,8 @@
 }
 [data-bs-theme="dark"] .att-emplist { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
 .att-emplist-tabs {
-  display: flex; gap: 4px;
+  /* 8px between tabs, like every other rail in the product. */
+  display: flex; gap: 8px;
   padding: 8px;
   border-bottom: 1px solid #f1f2f4;
   background: #ffffff;
@@ -8351,13 +8354,17 @@
 [data-bs-theme="dark"] .att-emplist-tabs::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.20); }
 .att-emplist-tab {
   flex: 0 0 auto;
-  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-  padding: 6px 12px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  /* The product's tab box: 34px tall on 14px of side padding, as .dt-tab and
+     .smc-pill. This was a 6px/12px pad with no height, so it landed at 31px. */
+  height: 34px; padding: 0 14px;
   border-radius: 999px;
   background: transparent;
   border: 0;
   color: var(--vz-secondary-color);
-  font-size: 11px; font-weight: 700;
+  /* The Customers tab strip's type (.smc-pill), at HRMS's 650 — see the HRMS
+     .dt-tab rule in DataTable.css. */
+  font-size: 12.5px; font-weight: 650; letter-spacing: 0;
   cursor: pointer;
   transition: background .18s ease, color .18s ease, box-shadow .18s ease, transform .12s ease;
   white-space: nowrap;
@@ -8376,7 +8383,8 @@
   min-width: 20px; height: 16px; padding: 0 5px;
   border-radius: 999px;
   background: #e5e7eb; color: var(--vz-secondary-color);
-  font-size: 9.5px; font-weight: 800;
+  /* 700 to match the HRMS .dt-tab-count — beside a 650 label, 800 shouted. */
+  font-size: 9.5px; font-weight: 700;
   transition: background .18s ease, color .18s ease;
 }
 .att-emplist-tab.is-active .att-emplist-tab-count {
@@ -8964,7 +8972,7 @@
 }
 .reg-req-table tbody td {
   padding: 10px 9px;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 500;
   background: transparent;
   box-shadow: none;
@@ -9185,12 +9193,18 @@
 .att-logs-table {
   width: 100%;
   border-collapse: collapse;
+  /* This table is hand-rolled, not a DataTable, so it never picked up the
+     font-family the shared component sets and rendered in Velzon's Rubik while
+     every other table on the page was DM Sans. */
+  font-family: var(--font-sans);
   font-size: 12px;
 }
 .att-logs-table thead th {
   background: #f9fafb;
   padding: 8px 12px;
-  font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em;
+  /* The product's header type: 9.5px / 800 at .07em, as .dt-table and
+     .smc-table set it. This ran 10.5px at .06em. */
+  font-size: 9.5px; font-weight: 800; letter-spacing: 0.07em;
   color: var(--vz-secondary-color); text-transform: uppercase;
   border-bottom: 1px solid #f1f2f4;
   text-align: left;
@@ -9201,6 +9215,9 @@
   padding: 10px 12px;
   border-bottom: 1px solid #f1f2f4;
   color: var(--vz-body-color);
+  /* 11.5px / 500, the cell type every list in the product uses. The row height
+     stays at this table's own 10px padding — only the type is shared. */
+  font-size: 11.5px; font-weight: 500;
   white-space: nowrap;
 }
 [data-bs-theme="dark"] .att-logs-table tbody td { border-bottom-color: var(--vz-border-color); color: #ffffff; }
@@ -9923,7 +9940,7 @@
   background: transparent;
   padding: 10px 12px;
 }
-.att-logs-table--clean tbody td { padding: 12px 12px; font-size: 12.5px; }
+.att-logs-table--clean tbody td { padding: 12px 12px; font-size: 11.5px; font-weight: 500; }
 
 .att-shift-pill {
   display: inline-flex; align-items: center;
@@ -10543,7 +10560,7 @@
 }
 .att-logs-table--v2 tbody td {
   padding: 10px 9px;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 500;
   color: var(--vz-body-color);
   vertical-align: middle;
@@ -12589,7 +12606,7 @@
            Clients / Branches lists). */
         .hr-employees-surface .table thead th,
         .hr-employees-surface .table tbody td {
-          font-size: 13px;
+          font-size: 11.5px; font-weight: 500;
           vertical-align: middle;
         }
         .hr-employees-surface .table thead th {

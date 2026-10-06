@@ -509,7 +509,7 @@ export default function Payments() {
                           color={isActive ? 'primary' : 'light'}
                           size="sm"
                           onClick={() => setStatusFilter(s)}
-                          className="rounded-pill px-3 text-capitalize"
+                          className="rounded-pill px-3 text-capitalize pmt-status-tab"
                         >
                           {s || 'All'}
                         </Button>

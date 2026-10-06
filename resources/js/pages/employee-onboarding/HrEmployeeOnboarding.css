@@ -28,7 +28,7 @@
 .onb-list-table thead th:first-child { border-top-left-radius: 14px; }
 .onb-list-table thead th:last-child  { border-top-right-radius: 14px; }
 .onb-list-table tbody td {
-  font-size: 13px;
+  font-size: 11.5px; font-weight: 500;
   color: var(--vz-body-color);
   padding-top: 10px;
   padding-bottom: 10px;
@@ -253,7 +253,8 @@
         .onb-cl-filters { padding: 14px 20px 0; }
         .onb-cl-filter-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.78); margin: 0 0 8px; }
         .onb-cl-pillrow { display: flex; flex-wrap: wrap; gap: 8px; }
-        .onb-cl-pill { display: inline-flex; align-items: center; gap: 7px; padding: 7px 16px; border-radius: 999px; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: all .15s ease; background: transparent; color: rgba(255,255,255,0.92); border: 1px solid rgba(255,255,255,0.32); }
+        /* Type follows the Customers tab strip (.smc-pill) at HRMS's 650. */
+        .onb-cl-pill { display: inline-flex; align-items: center; gap: 7px; padding: 7px 16px; border-radius: 999px; font-size: 12.5px; font-weight: 650; letter-spacing: 0; cursor: pointer; transition: all .15s ease; background: transparent; color: rgba(255,255,255,0.92); border: 1px solid rgba(255,255,255,0.32); }
         .onb-cl-pill i { font-size: 14px; opacity: 0.95; }
         .onb-cl-pill:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.55); }
         .onb-cl-pill.is-active { background: #ffffff; color: #4c1d95; border-color: #ffffff; box-shadow: 0 4px 10px rgba(0,0,0,0.14); font-weight: 700; }
@@ -396,7 +397,7 @@
         .vault-kpi-card .vault-kpi-icon i { color: #fff; font-size: 20px; }
         .vault-kpi-card .vault-kpi-label { font-size: 11px; font-weight: 700; color: var(--vz-secondary-color); letter-spacing: 0.06em; text-transform: uppercase; margin: 0 0 10px; }
         .vault-kpi-card .vault-kpi-num { font-size: 28px; font-weight: 800; line-height: 1; margin: 0; color: var(--vz-heading-color, var(--vz-body-color)); }
-        .vault-tab-btn { background: transparent; border: none; padding: 12px 18px; font-size: 13.5px; font-weight: 600; color: var(--vz-secondary-color); display: inline-flex; align-items: center; gap: 6px; border-bottom: 2px solid transparent; transition: color .15s ease, border-color .15s ease; }
+        .vault-tab-btn { background: transparent; border: none; padding: 12px 18px; font-size: 12.5px; font-weight: 700; letter-spacing: 0; color: var(--vz-secondary-color); display: inline-flex; align-items: center; gap: 6px; border-bottom: 2px solid transparent; transition: color .15s ease, border-color .15s ease; }
         .vault-tab-btn:hover { color: #5a3fd1; }
         .vault-tab-btn.is-active { color: #5a3fd1; border-bottom-color: #7c5cfc; }
         .vault-tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 18px; padding: 0 6px; border-radius: 999px; background: var(--vz-light); color: var(--vz-secondary-color); font-size: 10.5px; font-weight: 700; }

@@ -1012,7 +1012,7 @@
 .smc-table thead th.ta-c { text-align: center; }
 .smc-table tbody td {
   padding: 12px 12px;
-  font-size: 12px;
+  font-size: 11.5px; font-weight: 500;
   border-bottom: 1px solid #e8e0ff;
   vertical-align: middle;
   white-space: nowrap;

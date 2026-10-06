@@ -159,15 +159,19 @@
    accent gradient. Reads as ONE grouped switch rather than a row of separate
    buttons — which is what a tab strip is. The active fill uses the accent vars,
    so a teal- or blue-accented table gets its own hue. */
+/* Toolbar geometry is the Customers toolbar's, which is the product reference:
+   one 42px row, reached as a 34px tab in 4px of rail padding, beside a 42px
+   search field. See .smc-pill-group / .smc-pill / .smc-search in
+   SalesCustomers.css — the numbers here are those, verbatim. */
 .dt-tabs {
-  display: inline-flex; align-items: center; gap: 4px;
+  display: inline-flex; align-items: center; gap: 8px;
   /* A recessed trough: the tabs standing in it are the white ones. The other
      way round — white rail, tinted tabs — collapses wherever the toolbar band
      behind it is already tinted (the Expense status row), leaving the tabs as
      bare outlines on a wash of the same colour. */
   background: rgba(var(--dt-a-rgb), .10);
   border: 1px solid rgba(var(--dt-a-rgb), .16);
-  border-radius: 10px;
+  border-radius: 11px;
   padding: 4px;
   /* Shrinkable (was flex-shrink: 0) with min-width: 0, so as the window narrows
      the rail gives up width and wraps its own tabs onto a second line INSIDE the
@@ -185,17 +189,23 @@
   flex-wrap: wrap;
 }
 .dt-tab {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  /* 11px (was 14) — across a six-tab rail that's ~36px reclaimed, which is the
-     difference between the last tab fitting the row and wrapping under it. */
-  padding: 0 9px; height: 37px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  /* 34px + the rail's 4px twice = the 42px search beside it. The rail used to
+     run 37px tabs on 9px of padding to claw back width on a six-tab row; it
+     scrolls or wraps for that now, because a rail that sizes itself to its
+     contents is why no two modules lined up. */
+  padding: 0 14px; height: 34px;
   /* Transparent on the active tab rather than absent, so switching tabs does
      not move the rail by a pixel. */
   border: 1px solid transparent; border-radius: 8px;
 
   background: transparent;
   font-family: inherit;
-  font-size: 12px; font-weight: 600;
+  /* The Customers tab strip's type, which is the reference for every tab rail
+     in the product. Tracking is declared, not left to inherit: a rail dropped
+     inside a page-title strip picked the strip's up and rendered tighter than
+     the same rail in a table toolbar. */
+  font-size: 12.5px; font-weight: 700; letter-spacing: 0;
   white-space: nowrap;
   cursor: pointer;
   transition: background .16s, color .16s, box-shadow .16s;
@@ -225,7 +235,8 @@
 }
 .dt-tab-count {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 18px; height: 17px; padding: 0 5px;
+  /* .smc-pill-count verbatim. */
+  min-width: 20px; height: 18px; padding: 0 7px;
   border-radius: 999px;
   font-size: 10px; font-weight: 800; line-height: 1;
 }
@@ -339,15 +350,17 @@
      first place. A smaller basis means the rail gets its natural width before
      the search asks for anything beyond what a query needs. (#24) */
   flex: 1 1 260px; min-width: 150px; max-width: 420px;
-  /* Exactly the selected tab pill's height (.dt-tab = 37px) so the search box
-     and the highlighted tab read as one strip — the rail's own padding is not
-     counted, the eye lines the pill up with the field, not the rail's edge. */
-  height: 37px;
+  /* The full height of the rail beside it — 34px tab + 4px padding twice — not
+     the height of the tab alone. Lining the field up with the pill inside the
+     rail left it 5px short of the rail's own edge, which is the mismatch you
+     see the moment a Filter button (42px) joins the row. .smc-search is 42px
+     for exactly this reason. */
+  height: 42px;
   display: flex; align-items: center;
-  padding: 0 8px 0 36px;
+  padding: 0 14px 0 38px;
   background: rgba(255, 255, 255, .80);
   border: 1.5px solid rgba(var(--dt-a-rgb), .28);
-  border-radius: 10px;
+  border-radius: 11px;
   box-shadow: 0 1px 0 rgba(255, 255, 255, .95) inset;
   transition: border-color .16s, box-shadow .16s;
 }
@@ -365,11 +378,11 @@
   box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .18);
 }
 .dt-search-icon {
-  /* 13px to match the 36px left padding above — the icon was set against the
-     old 38px inset and drifted right of centre when the field was tightened. */
-  position: absolute; left: 13px;
+  /* 14px / 16px — .smc-search-icon's inset and size, against the 38px padding
+     the field now carries. */
+  position: absolute; left: 14px;
   color: var(--vz-secondary-color);
-  font-size: 15px;
+  font-size: 16px;
 }
 .dt-search input {
   flex: 1; border: 0; outline: 0; background: transparent;
@@ -497,6 +510,11 @@
 .dt-table {
   width: 100%;
   margin: 0;
+  /* The app's own face. Velzon sets Rubik on the body, and nothing here used to
+     override it, so every DataTable — header and cells — rendered in Rubik while
+     the Customers table beside it rendered in DM Sans: same sizes, same weights,
+     different letters. One declaration on the table fixes both rows and header. */
+  font-family: var(--font-sans);
   /* SEPARATE + zero spacing, not `collapse`. (#140)
      `thead th` below is `position: sticky`, and sticky positioning on table
      sections is unreliable under `border-collapse: collapse` — the collapsed
@@ -612,6 +630,18 @@
    Non-sortable right headers have no arrow and already lined up — unaffected. */
 .dt-table thead th[data-align="right"] .dt-sort { order: -1; }
 
+/* The row's primary line — the name — at the Customers table's 600, which is
+   what .smc-company uses. The markup already asks for it with Bootstrap's
+   .fw-semibold, but the theme redefines that utility app-wide to
+   `font-weight: 500 !important`, so the intent has to be restated here and with
+   the same weapon. Switching these tables from Velzon's Rubik to DM Sans is what
+   made it visible: at the same 500, DM Sans reads lighter than Rubik did.
+   div AND span: Employees writes the name as a div, Expense as a span, and a
+   rule that named only one of them left the other at 500. Elements that are not
+   a line of text — the id chip, the status pills, the row buttons — carry their
+   own size and colour, so taking the same 600 only makes them agree with the
+   .dt-id-chip standard rather than changing their character. */
+.dt-table tbody td :is(div, span).fw-semibold { font-weight: 600 !important; }
 .dt-table tbody td {
   padding: 7px 9px;
   font-size: 11.5px; font-weight: 500;
@@ -1038,22 +1068,21 @@
   border-bottom: 0;
 }
 /* Tab track */
+/* HRMS keeps its own COLOURS — a pale recessed track instead of the default
+   tinted one — but no longer its own sizes. Geometry lives once, on the base
+   rules above, so a rail is the same object in every module. */
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tabs {
-  gap: 4px;
-  padding: 5px;
   border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
-  border-radius: 14px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
 }
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab {
-  height: 42px;
-  padding: 0 12px;
-  gap: 7px;
   border: 0;
-  border-radius: 11px;
-  font-size: 12.5px; font-weight: 800;
-  letter-spacing: -.2px;
+  /* 650, a half-step down from the 700 every other rail uses. DM Sans is loaded
+     as a variable face (wght 300..800 — see the @import in app.css), so this is
+     a real weight and not a value the browser rounds up to 700. */
+  font-weight: 650;
 }
+.hr-cstrip .dt-tabrail .dt-tab { font-weight: 650; }
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off { background: transparent; color: var(--dt-a-700); }
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off:hover { background: rgba(var(--dt-a-rgb), .06); color: var(--dt-a-600); }
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.on {
@@ -1062,11 +1091,12 @@
   box-shadow: 0 6px 16px -5px rgba(var(--dt-a-rgb), .55), inset 0 1px 0 rgba(255, 255, 255, .25);
 }
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab-count {
-  min-width: 18px; height: auto;
-  padding: 2px 7px;
+  /* Size comes from the base rule; the hairline and the weight are this
+     variant's. 700, not the base 800: beside a 650 label an 800 number read as
+     the loudest thing in the rail. It stays a step above the label so the count
+     still registers as a count. */
   border: 1px solid var(--dt-a-200);
-  border-radius: 20px;
-  font-size: 10.5px; font-weight: 800; line-height: 1.1;
+  font-weight: 700;
 }
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off .dt-tab-count { background: var(--dt-a-100); color: var(--dt-a-700); }
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.on .dt-tab-count {
@@ -1074,17 +1104,17 @@
   background: rgba(255, 255, 255, .9);
   color: var(--dt-a-800);
 }
-/* Search: grows into the row the tabs leave, the PO list's 52px field. */
+/* Search: grows into the row the tabs leave. Only how much WIDTH it claims is
+   this variant's business — the height, radius and inset are the product's one
+   search field, on the base rule. This used to force 52px with a 14px radius,
+   which is where the HRMS toolbar stopped matching Customers. */
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search {
   flex: 1 1 460px; min-width: 260px; max-width: 594px;
-  height: 52px;
   /* No margin-left:auto here. The base rules already pin the search right
      when the row has no actions group; forcing it ALWAYS also pushed it away
      from the left edge on rows that have actions but no tabs (Broadcast
      Centre), leaving it floating mid-row with a dead band on its left. */
-  padding: 0 16px 0 41px;
   border: 1.5px solid color-mix(in srgb, var(--dt-a-200) 55%, #fff);
-  border-radius: 14px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
   box-shadow: none;
 }
@@ -1099,8 +1129,9 @@
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-table thead th {
   background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 50%, #fff), color-mix(in srgb, var(--dt-a-50) 40%, var(--dt-a-150)));
   color: color-mix(in srgb, var(--dt-a-800) 55%, #64748b);
-  font-size: 9.5px;
-  letter-spacing: .04em;
+  /* Size, face and tracking all come from the base header rule now — this
+     variant only repaints it. It used to set .04em, which read visibly tighter
+     than the .07em every other header in the product uses. */
   text-shadow: none;
   /* Hairline above and a firmer line below, drawn as shadows so they stay with
      the sticky header as rows scroll — the band reads as one straight row. */
@@ -1126,15 +1157,10 @@
 }
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-sort { opacity: .55; }
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-sort.on { opacity: 1; color: var(--dt-a-600); }
-/* 52px only lines up with the 54px tab track. Next to the 42px selects and
-   buttons of an actions group, or with no tabs at all, it stood taller than
-   everything around it — so there it takes their 42px. */
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar:not(:has(.dt-tabs)) .dt-search,
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar:has(.dt-toolbar-actions) .dt-search,
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar:has(.dt-filter-btn) .dt-search {
-  height: 42px;
-  border-radius: 11px;
-}
+/* The search field is 42px for every module now, on the base rule — it used to
+   be 42px here only when an actions group or Filter button was present, and
+   37px otherwise, so a plain tabs-and-search toolbar sat 5px short of its own
+   rail. Nothing HRMS-specific is left to say about it. */
 @media (max-width: 1100px) {
   :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search { flex: 1 1 220px; max-width: none; }
 }

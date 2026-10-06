@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=Geist+Mono:wght@400;500;600;700&family=Rubik:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300..800&family=Geist+Mono:wght@400;500;600;700&family=Rubik:wght@300;400;500;600;700;800;900&display=swap');
 @import 'tailwindcss';
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
@@ -263,20 +263,62 @@ div.frm-cstrip {
 .frm-cstrip+.row.mb-3,
 .hr-employees-surface>.row.mb-3 {
   margin-bottom: 8px !important;
-  /* …and the gap BETWEEN the cards, which is deliberately TIGHTER than the 8px
-     everywhere else: 16px (Bootstrap's `g-3`) first, then 8px, and both still
-     read as a wide channel. Tiles carry a 14px radius and a drop shadow, so the
-     eye measures from where the shadow fades rather than from the border — the
-     gap always looks a few pixels wider than it is. 4px, the same value the KPI rows now carry as `g-1` in their own
-     markup, so whichever of the two wins the result is identical. The pages
-     that still write `g-3` (Exit, Leave, Broadcast) get it from here.
+  /* …and the gap BETWEEN the cards: 8px, the page's one number. It was tuned to
+     4px once, on the argument that a tile's 14px radius and drop shadow make a
+     gap look wider than it is — but a KPI strip that is tighter than every other
+     gap on the page is exactly what reads as "uneven" when you look at the
+     module as a whole, which is the complaint this now answers.
      Set as gutter variables rather than as margins so the row's negative margin
      and the columns' padding stay in step — halving one without the other would
      knock the first and last card out of line with the header strip above them.
-     Overriding `.g-3` (0,1,0) needs the compound selectors above; a bare class
+     --vz-, NOT --bs-. The Velzon build renames Bootstrap's grid variables, so
+     a row here reads --vz-gutter-x and ignores the Bootstrap name completely.
+     This block set only the --bs- names for a long time, which is why the KPI
+     gap stayed at whatever `g-1` / `g-3` said in the markup however this rule
+     was tuned. Both names are set now so it holds under either build.
+     Overriding `.g-1` (0,1,0) needs the compound selectors above; a bare class
      would only tie and lose on load order, as the strip's margin did. */
-  --bs-gutter-x: 4px !important;
-  --bs-gutter-y: 4px !important;
+  --vz-gutter-x: 8px !important;
+  --vz-gutter-y: 8px !important;
+  --bs-gutter-x: 8px !important;
+  --bs-gutter-y: 8px !important;
+}
+
+/* ── 8px inside an HRMS page, not just around it ─────────────────────────────
+   The page edge is 8px and the header strip leaves 8px below itself, but the
+   blocks BELOW the strip each wrote their own number: Leave's today-card and
+   Payroll's filter row carry `mb-3` (16px), Custom Fields' banner 12px, and
+   Overview stacks `g-3` rows whose 16px gutter shows up twice over — once
+   between the cards side by side and once between the rows.
+   Stated once for the module instead of edited into each page's markup, so a page
+   written after this comment inherits it. Keyed on `.hr-cstrip`, the same
+   opt-in the HRMS table and tab rails already use, so nothing outside HRMS
+   moves.
+   The gutter is set as --vz-, not --bs-: the Velzon build renames Bootstrap's
+   grid variables and ignores the --bs- names entirely. */
+/* Written as `:has(> …)` rather than as a path from .container-fluid because
+   the block container sits at a different depth on every page — Leave is
+   container-fluid > row > col > .rec-page, Overview is container-fluid > div,
+   Attendance is container-fluid > row > col. The one thing they share is that
+   the element DIRECTLY holding the header strip is the page's block container.
+   Payroll is named too: it tucks the strip inside its own .pay-top, so the
+   :has() lands a level too deep there and misses the page row below it. */
+:is(.page-content :has(>.frm-cstrip.hr-cstrip), .page-content .pay-page)>* {
+  margin-bottom: 8px !important;
+}
+
+:is(.page-content :has(>.frm-cstrip.hr-cstrip), .page-content .pay-page)>*:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* A row's gutter pays for BOTH the gap between its cards and, through the
+   negative top margin it pairs with, the gap above the row. Halving one without
+   the other knocks the first and last card out of line with the strip above. */
+:is(.page-content :has(>.frm-cstrip.hr-cstrip), .page-content .pay-page)>.row {
+  --vz-gutter-x: 8px !important;
+  --vz-gutter-y: 8px !important;
+  --bs-gutter-x: 8px !important;
+  --bs-gutter-y: 8px !important;
 }
 
 .footer {
@@ -1405,6 +1447,15 @@ tbody tr:nth-child(10) {
   padding: 20px;
 }
 
+/* The status rail is a tab rail, so it takes the Customers tab strip's type
+   (.smc-pill — 12.5px / 700). Only the type: the Bootstrap button colours and
+   the pill shape are left as they are. */
+.pmt-status-tab.btn {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
 .pmt-cstrip {
   position: relative;
   overflow: hidden;
@@ -1560,6 +1611,11 @@ tbody tr:nth-child(10) {
   border: 1px solid #c4b5fd;
   border-radius: 16px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+  /* The app's own face, as the Customers strip already sets on itself.
+     Without it the strip inherits Velzon's body font (Rubik) while
+     Customers renders in DM Sans, so one page's header read in a
+     different typeface from every other page's. */
+  font-family: var(--font-sans);
 }
 
 .frm-cstrip-accent {
@@ -1627,10 +1683,6 @@ tbody tr:nth-child(10) {
   height: 38px;
   border-radius: 10px;
   font-size: 18px;
-}
-
-.att-page .frm-cstrip-title {
-  font-size: 16px;
 }
 
 .att-page .frm-cstrip-sub {
@@ -1744,9 +1796,9 @@ tbody tr:nth-child(10) {
 }
 
 .hr-cstrip .frm-cstrip-title {
-  font-size: 17px;
+  /* Size and tracking left to the base rule so every module's strip title
+     reads at the Customers size; only the colour is this variant's own. */
   color: #2e1065;
-  letter-spacing: -.4px;
 }
 
 .hr-cstrip .frm-cstrip-sub {

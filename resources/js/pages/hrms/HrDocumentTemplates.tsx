@@ -1338,12 +1338,12 @@ function DtmDarkStyles() {
         .dtm-page .dt-toolbar .dt-tabs::-webkit-scrollbar-thumb { background: rgba(124, 92, 252, .45); border-radius: 999px; }
         .dtm-page .dt-toolbar .dt-tabs:hover::-webkit-scrollbar-thumb { background: rgba(124, 92, 252, .7); }
         .dtm-page .dt-toolbar .dt-tab { flex: 0 0 auto; }
-        /* A shorter, tighter row. Six tabs at 37px tall with 9px of side
-           padding is more toolbar than six short words need, and the height
-           was the reason the strip dominated the card. */
-        .dtm-page .dt-toolbar .dt-tab { height: 31px; padding: 0 9px; font-size: 11.5px; }
-        .dtm-page .dt-toolbar .dt-tab-count { min-width: 17px; height: 16px; font-size: 9.5px; padding: 0 4px; }
-        .dtm-page .dt-toolbar .dt-tabs { padding: 3px; }
+        /* This rail used to shrink itself — 31px tabs in a 3px track — so six
+           short words would not dominate the card. It now keeps the product's
+           one toolbar size (34px tab, 4px track, 42px overall, as on Customers)
+           and scrolls sideways instead; the overflow rules above already do
+           that. A page that sizes its own tabs is the reason HRMS and Sales
+           never lined up. */
       }
       /* ...but NOT the category rail in the header strip. Sideways scrolling
          suits the six Level tabs, where any one of them is a short word. These
@@ -1456,8 +1456,8 @@ function DtmDarkStyles() {
         }
         .dtm-page .dt-toolbar .dt-tabs::-webkit-scrollbar { display: none; }
         .dtm-page .dt-toolbar .dt-tab { flex: 0 0 auto; }
-        .dtm-page .dt-tab { padding-left: 10px; padding-right: 10px; font-size: 11.5px; }
-        .dtm-page .dt-tab-count { min-width: 17px; height: 17px; font-size: 9.5px; padding: 0 4px; }
+        /* Tab and count sizes are the product standard at every width now —
+           the rail scrolls rather than shrinking its own tabs. */
         .dtm-page .dt-search { flex: 0 3 240px; max-width: 240px; }
         .dtm-page .dtm-filter-label { font-size: 10px; }
         .dtm-page .dtm-filter-label + div { min-width: 130px !important; max-width: 150px !important; }
@@ -1497,7 +1497,6 @@ function DtmDarkStyles() {
         .dtm-page .dtm-kpi-tile > div:first-child { height: 3px !important; }
         .dtm-page .frm-cstrip-sub { display: none; }
         .dtm-page .dt-table tbody td { padding: 4px 8px; font-size: 11px; }
-        .dtm-page .dt-tab { padding-top: 5px; padding-bottom: 5px; }
         .dtm-page .dt-table tbody .dt-serial { width: 20px; height: 20px; font-size: 9.5px; }
         .dtm-page .dtm-gen-btn { padding: 4px 9px !important; font-size: 11px !important; }
       }
@@ -1558,9 +1557,9 @@ function DtmDarkStyles() {
         vertical-align: middle;
         background: linear-gradient(180deg, #fafbfc 0%, #f4f5f8 100%);
         color: var(--vz-secondary-color);
-        font-size: 10.5px;
-        font-weight: 700;
-        letter-spacing: 0.08em;
+        font-size: 9.5px;
+        font-weight: 800;
+        letter-spacing: .07em;
         text-transform: uppercase;
         border-bottom: 1px solid #ececf2;
         box-shadow: none;

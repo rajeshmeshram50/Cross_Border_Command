@@ -478,12 +478,16 @@ export default function Clients({ onNavigate }: Props) {
            of differently-sized labels. */
         .clients-surface .table thead th,
         .clients-surface .table tbody td {
-          font-size: 13px;
+          font-size: 11.5px; font-weight: 500;
           vertical-align: middle;
         }
         .clients-surface .table thead th {
-          font-weight: 600;
-          letter-spacing: 0.01em;
+          /* The Customers header strip's type, used on every module's
+             header strip so the tables read as one product. */
+          font-size: 9.5px;
+          font-weight: 800;
+          letter-spacing: .07em;
+          text-transform: uppercase;
         }
 
         /* KPI cards — clear lift on hover with a layered shadow so the

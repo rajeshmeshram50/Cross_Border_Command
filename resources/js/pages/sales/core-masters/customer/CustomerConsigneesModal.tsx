@@ -614,7 +614,7 @@ const SCOPED_CSS = `
 .ccm-table thead th {
   padding: 11px 9px;
   text-align: left;
-  font-weight: 700; font-size: 10px; letter-spacing: .08em;
+  font-weight: 800; font-size: 9.5px; letter-spacing: .07em;
   color: #ffffff; text-transform: uppercase;
   white-space: nowrap;
   border-bottom: 0;

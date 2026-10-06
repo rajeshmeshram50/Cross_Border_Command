@@ -837,7 +837,7 @@
 .smcg-table thead th.ta-c { text-align: center; }
 .smcg-table tbody td {
   padding: 9px 8px;
-  font-size: 12px;
+  font-size: 11.5px; font-weight: 500;
   border-bottom: 1px solid #d1fae5;
   vertical-align: middle;
   white-space: nowrap;

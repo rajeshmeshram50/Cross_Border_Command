@@ -271,7 +271,7 @@ const SCOPED_CSS = `
 .rc-table-wrap { overflow-x: auto; border: 1px solid #f1f5f9; border-radius: 8px; }
 .rc-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 800px; }
 .rc-table thead tr { background: #f8fafc; }
-.rc-table thead th { padding: 9px 12px; text-align: left; font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid #f1f5f9; }
+.rc-table thead th { padding: 9px 12px; text-align: left; font-size: 9.5px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: .07em; border-bottom: 1px solid #f1f5f9; }
 .rc-table tbody tr { border-bottom: 1px solid #f8fafc; cursor: pointer; }
 .rc-table tbody tr:hover { background: #fafbff; }
 .rc-table tbody td { padding: 9px 12px; color: #475569; }

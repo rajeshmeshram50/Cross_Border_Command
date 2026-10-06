@@ -902,7 +902,14 @@ export default function Profile() {
   }
 
   return (
-    <>
+    /* One wrapper, and it is load-bearing. app.css zeroes the gutters on the
+       page's OUTERMOST row so content sits flush at the 8px page edge; the
+       side effect, documented there as #213, is that two cards sharing that
+       row end up touching. This div puts every row one level deeper, so
+       Bootstrap's gutters work again and .pf-page below can set them to the
+       page's own 8px. The rows carry no spacing utilities now — the rhythm is
+       declared once, in CSS, instead of per row in the markup. */
+    <div className="pf-page">
       {/* ── Hero banner ── */}
       <Card className="overflow-hidden mb-0 border-0" style={{ borderRadius: 20 }}>
         <div
@@ -1042,6 +1049,34 @@ export default function Profile() {
 
       {/* ── Shared form styles (Personal Information + Change Password) ── */}
       <style>{`
+        /* ── One gap on this page: 8px ──────────────────────────────────────
+           The page's own edge is 8px (.page-content), so every gap inside it is
+           8px too and the whole thing reads on one grid. Before this, the side
+           gutters were 8px, the vertical gaps 16px, and the two cards sharing a
+           row had NO gap at all — they touched, which is the #213 side effect
+           noted in app.css.
+           Vertical gutter is pinned to 0 on purpose. Bootstrap spends it as a
+           negative margin on the row plus matching padding on the columns, so
+           between two sibling rows it cancels to nothing and an explicit margin
+           has to fight it. With it at 0, the margin below is the only number in
+           play and it means exactly what it says. */
+        /* --vz-, not --bs-. The Velzon build renames Bootstrap's gutter
+           variables, so a row here reads --vz-gutter-x and ignores the Bootstrap
+           name entirely — set the wrong one and the row silently keeps the 1.5rem
+           default. Both are set so the rule survives either build. */
+        .pf-page > .row {
+          --vz-gutter-x: 8px;
+          --vz-gutter-y: 0;
+          --bs-gutter-x: 8px;
+          --bs-gutter-y: 0;
+        }
+        .pf-page > * + * { margin-top: 8px; }
+        /* Below xl the pairs stack, so the gap that was horizontal becomes
+           vertical — same 8px. */
+        @media (max-width: 1199.98px) {
+          .pf-page > .row > [class*="col"] + [class*="col"] { margin-top: 8px; }
+        }
+
         .pf-wrap .pf-label {
           font-size: 11.5px;
           font-weight: 600;
@@ -1082,26 +1117,26 @@ export default function Profile() {
       `}</style>
 
       {/* ── Row 1: compact pair ── */}
-      <Row className="mt-0 g-3 align-items-stretch">
+      <Row className="align-items-stretch">
         <Col xl={4}>{row1LeftCard}</Col>
         <Col xl={8}>{personalInfoCard}</Col>
       </Row>
 
       {/* ── Row 2: tall pair (or Change Password full width if no left card) ── */}
       {row2LeftCard ? (
-        <Row className="mt-0 g-3 align-items-stretch">
+        <Row className="align-items-stretch">
           <Col xl={4}>{row2LeftCard}</Col>
           <Col xl={8}>{changePasswordCard}</Col>
         </Row>
       ) : (
-        <Row className="mt-0 g-3">
+        <Row>
           <Col xs={12}>{changePasswordCard}</Col>
         </Row>
       )}
 
       {/* ── Branding (tenant users only; employees excluded) ── */}
       {!isSuperAdmin && !isEmployee && (
-        <Row className="mt-3">
+        <Row>
           <Col xs={12}>
             <Card className="mb-0" style={cardStyle}>
               <CardBody>
@@ -1236,7 +1271,7 @@ export default function Profile() {
 
       {/* ── Row 3: Permissions (full width) ── */}
       {!isSuperAdmin && user.permissions && Object.keys(user.permissions).length > 0 && (
-        <Row className="mt-3">
+        <Row>
           <Col xs={12}>
             <Card className="mb-0" style={cardStyle}>
               <CardBody>
@@ -1421,6 +1456,6 @@ export default function Profile() {
         onCancel={() => { setCropOpen(false); setCropSrc(null); }}
         onConfirm={handleCropConfirm}
       />
-    </>
+    </div>
   );
 }
