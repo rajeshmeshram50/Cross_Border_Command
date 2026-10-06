@@ -193,6 +193,26 @@ export default function DocGenerateModal({
   const displayName = template?.name || templateName || 'Document';
   const displayCode = template?.code || templateCode || '';
 
+  /* Every custom field is required (#145). A blank one reaches the finished
+     document as a literal {{Token}} — the preview chips it, but nothing stopped
+     the operator sending it for signature or downloading it. Both exits are
+     guarded, because each one produces a document somebody then relies on.
+     Whitespace counts as empty, or a single space would pass and render blank. */
+  const [showErrors, setShowErrors] = useState(false);
+  const missingFields = customFields
+    .filter(cf => !String(values[cf.name] ?? '').trim())
+    .map(cf => cf.name);
+  const fieldsFilled = () => {
+    if (!missingFields.length) { setShowErrors(false); return true; }
+    setShowErrors(true);
+    toast.error(
+      `Fill all ${customFields.length} field${customFields.length === 1 ? '' : 's'} first`,
+      missingFields.slice(0, 4).join(', ') + (missingFields.length > 4 ? ` +${missingFields.length - 4} more` : ''),
+    );
+    return false;
+  };
+  const isBlank = (name: string) => showErrors && !String(values[name] ?? '').trim();
+
   const setVal = (name: string, val: string) => {
     valuesTouched.current = true;   // arms the debounced preview below
     setValues(prev => ({ ...prev, [name]: val }));
@@ -260,6 +280,7 @@ export default function DocGenerateModal({
       toast.error('Not active', 'Only Active templates can be generated. Publish this template first.');
       return;
     }
+    if (!fieldsFilled()) return;
     setSaving(true);
     try {
       const { data } = await api.post('/hr-generated-documents', {
@@ -292,6 +313,7 @@ export default function DocGenerateModal({
       toast.error('Not active', 'Only Active templates can be sent for signing. Publish this template first.');
       return;
     }
+    if (!fieldsFilled()) return;
     sendingRef.current = true;
     setSending(true);
     try {
@@ -404,18 +426,23 @@ export default function DocGenerateModal({
                           <span className="dgm-label-name">{truncateLabel(cf.name)}</span>
                         </Tooltip>
                         {' '}<span className="dgm-label-type">({cf.type})</span>
+                        {' '}<span style={{ color: '#ef4444', fontWeight: 700 }} title="Required">*</span>
                       </label>
                       {cf.type === 'textarea' ? (
-                        <textarea className="dgm-input" rows={2}
+                        <textarea className={isBlank(cf.name) ? 'dgm-input is-blank' : 'dgm-input'} rows={2}
                           value={values[cf.name] || ''}
                           onChange={e => setVal(cf.name, e.target.value)}
                           placeholder={cf.description || ''} style={{ resize: 'vertical' }} />
                       ) : cf.type === 'date' ? (
-                        <MasterDatePicker value={values[cf.name] || ''}
-                          onChange={(v: string) => setVal(cf.name, v)}
-                          placeholder={cf.description || 'Select date'} />
+                        /* The picker renders its own input, so the flag goes on
+                           a wrapper and the CSS reaches in. */
+                        <div className={isBlank(cf.name) ? 'dgm-cell is-blank' : undefined}>
+                          <MasterDatePicker value={values[cf.name] || ''}
+                            onChange={(v: string) => setVal(cf.name, v)}
+                            placeholder={cf.description || 'Select date'} />
+                        </div>
                       ) : (
-                        <input className="dgm-input"
+                        <input className={isBlank(cf.name) ? 'dgm-input is-blank' : 'dgm-input'}
                           type={cf.type === 'number' ? 'number' : 'text'}
                           value={values[cf.name] || ''}
                           onChange={e => setVal(cf.name, e.target.value)}
@@ -687,6 +714,20 @@ function ScopedStyles() {
         transition: border-color .15s ease, box-shadow .15s ease;
       }
       .dgm-input:hover:not(:focus) { border-color: #d7dce4; }
+      /* Left blank when Send or Download was refused. .dgm-cell reaches the
+         date picker, which renders an input we cannot class directly. */
+      .dgm-input.is-blank,
+      .dgm-cell.is-blank input {
+        border-color: #f87171 !important;
+        background: #fef2f2 !important;
+      }
+      [data-bs-theme="dark"] .dgm-input.is-blank,
+      [data-bs-theme="dark"] .dgm-cell.is-blank input,
+      [data-layout-mode="dark"] .dgm-input.is-blank,
+      [data-layout-mode="dark"] .dgm-cell.is-blank input {
+        border-color: rgba(248,113,113,0.7) !important;
+        background: rgba(239,68,68,0.12) !important;
+      }
       /* The date fields are the shared MasterDatePicker, which brings its own
          38px shell, 10px radius and card background. Sitting in the same grid
          as a 34px text input it read as a bigger, greyer, differently-shaped
