@@ -448,7 +448,18 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
             longer matched the form. Same guard the other CLM masters use
             (ClmKycPage, ClmSegmentPage, ClmClauseLibraryPage …) — the buttons
             keep their own `disabled` as the real lock. */}
-        {saving && <div className="clm-saving-veil" aria-hidden />}
+        {/* The veil alone was invisible — it blocked the card but showed nothing,
+            so a slow save read as a dead modal (#27). Same overlay the Word
+            import already uses, minus the click-to-dismiss. */}
+        {saving && (
+          <div className="tnw-importing" role="status" aria-live="polite">
+            <span className="tnw-importing__ring" />
+            <span className="tnw-importing__t">Saving T&amp;C…</span>
+            <span className="tnw-importing__s">
+              {isGlobal ? 'Storing the global terms for this document type' : 'Storing the terms and their content'}
+            </span>
+          </div>
+        )}
         {/* Reading a Word file is a round trip; the modal waits rather than
             looking idle while the document is converted. */}
         {importing && (
@@ -1666,7 +1677,12 @@ const TNW_CSS = `
    transparent track read as no scrollbar at all, and a draft that runs past the
    frame looked cut off rather than scrollable. A track of its own, a wider
    thumb and a solid teal give it an edge to grab. */
-.tnw-editor-area { scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: #0891b2 #e2f5fa; }
+/* 'auto', not 'thin' (#26). Chrome 121+ honours the standard scrollbar-*
+   properties and then IGNORES the ::-webkit-scrollbar rules below, so 'thin'
+   shrank the bar to a hairline the custom width never reached — on the dark
+   draft it read as no scrollbar at all. The webkit block stays for engines
+   that don't support the standard properties. */
+.tnw-editor-area { scrollbar-gutter: stable; scrollbar-width: auto; scrollbar-color: #0891b2 #e2f5fa; }
 .tnw-editor-area::-webkit-scrollbar { width: 12px; }
 .tnw-editor-area::-webkit-scrollbar-track { background: #e2f5fa; border-left: 1px solid rgba(8,145,178,.18); }
 .tnw-editor-area::-webkit-scrollbar-thumb { background: #38bdd8; border-radius: 8px; border: 3px solid #e2f5fa; background-clip: content-box; min-height: 40px; }

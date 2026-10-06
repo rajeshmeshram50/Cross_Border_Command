@@ -3941,7 +3941,23 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                             ];
                             if (b.lop_days > 0)       parts.push(`LOP ${b.lop_days}d`);
                             if (b.overtime_hours > 0) parts.push(`overtime ${b.overtime_hours}h`);
-                            return `${parts.join(' · ')}. Computed on the payroll basis — this employee was skipped in that cycle's run.`;
+                            /* A last working day still ahead means these figures
+                               are earned-to-date, not a final settlement — say so
+                               here rather than leaving a confident total next to
+                               a month nobody has finished. */
+                            const dmy = (iso?: string | null) => {
+                              if (!iso) return '—';
+                              try {
+                                return new Date(iso + 'T00:00:00')
+                                  .toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                              } catch { return String(iso); }
+                            };
+                            const tail = p.is_provisional
+                              ? ` Priced up to today (${dmy(p.priced_to)}) — the last working day is ${dmy(p.last_working_day)},`
+                                + ' so these are earnings so far, not the final settlement.'
+                                + " Re-run after that date to settle the remaining days."
+                              : " Computed on the payroll basis — this employee was skipped in that cycle's run.";
+                            return `${parts.join(' · ')}.${tail}`;
                           })()} />
                   {/* Payslip-style component breakdown for the line above, so
                       Finance can see WHICH heads make up the exit-month figure
@@ -5562,6 +5578,13 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
      screen of payroll detail. It is opened when somebody is checking the
      figure, which is not most of the time. */
   const [open, setOpen] = useState(false);
+  const fmtDmy = (iso?: string | null) => {
+    if (!iso) return '—';
+    try {
+      return new Date(iso + 'T00:00:00')
+        .toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch { return String(iso); }
+  };
   const b = payroll?.breakdown;
   /* Only a genuinely absent payroll basis hides this — an employee who never
      ran through a cycle at all, where there is nothing to tabulate.
@@ -5908,9 +5931,29 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
       </div>
 
       <div className="ep-fnf-bd-net">
-        <span>Earned up to the last working day — gross {fmtMoney(totalEarnings)} − deductions {fmtMoney(totalDeductions)}</span>
+        <span>
+          {payroll?.is_provisional
+            ? <>Earned up to <strong>today</strong> — gross {fmtMoney(totalEarnings)} − deductions {fmtMoney(totalDeductions)}</>
+            : <>Earned up to the last working day — gross {fmtMoney(totalEarnings)} − deductions {fmtMoney(totalDeductions)}</>}
+        </span>
         <strong>{fmtMoney(totalEarnings - totalDeductions)}</strong>
       </div>
+
+      {/* Sits directly under the total it qualifies: the figure above is
+          earnings SO FAR, because the last working day has not arrived. Amber,
+          not the usual grey note — a number that looks final but isn't is the
+          one thing on this card worth interrupting for. */}
+      {payroll?.is_provisional && (
+        <div className="ep-fnf-bd-note is-warn">
+          <i className="ri-time-line" />
+          <span>
+            <strong>Not the final settlement.</strong> Priced up to <strong>today ({fmtDmy(payroll.priced_to)})</strong>;
+            the last working day is <strong>{fmtDmy(payroll.last_working_day)}</strong>. Days between
+            the two have not happened yet, so they are not in this figure — re-open and re-run
+            the Full &amp; Final on or after that date to settle the remainder.
+          </span>
+        </div>
+      )}
 
       {/* Why the table above closes on zero. Without this the Early Exit
           Recovery line reads as an unexplained deduction the size of the whole

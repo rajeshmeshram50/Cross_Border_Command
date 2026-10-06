@@ -1406,6 +1406,14 @@ class DashboardController extends Controller
 
             $announcements = Announcement::query()
                 ->where('client_id', $clientId)
+                /* Branch scope (#38). This query filtered on client_id alone, so
+                   every branch's announcements reached every employee in the
+                   tenant — the Inbox was scoped (AnnouncementController::
+                   applyScope) but the dashboard card was not. A NULL branch_id
+                   means client-wide, same meaning as there. */
+                ->when($branchId, fn($q) => $q->where(function ($w) use ($branchId) {
+                    $w->whereNull('branch_id')->orWhere('branch_id', $branchId);
+                }))
                 ->whereRaw('LOWER(status) = ?', ['active'])
                 ->orderByDesc('created_at')
                 ->get(['id', 'title', 'description', 'created_at', 'audience_type', 'audience_role_ids', 'audience_designation_ids', 'exclude_employee_ids'])

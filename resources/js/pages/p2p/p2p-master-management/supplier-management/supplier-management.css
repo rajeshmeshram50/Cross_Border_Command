@@ -134,8 +134,17 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 }
 .sup-fig .sl-refine-btn .sl-refine-badge{color:#6d28d9;background:#fff;border-color:transparent;margin-left:2px;}
 
-.sup-fig .sl-refine-pop{position:absolute;top:calc(100% + 11px);right:0;z-index:80;width:366px;max-width:calc(100vw - 24px);}
+/* position:FIXED, not absolute (#132 follow-up). .main-content sets
+   overflow-x:hidden, and a hidden axis makes the other one clip too, so an
+   absolutely-positioned panel was cut off at the scroller edge — it looked
+   like the footer was covering it. Fixed escapes the clip; top/right come
+   from the button rect in JS. */
+.sup-fig .sl-refine-pop{position:fixed;z-index:1200;width:366px;max-width:calc(100vw - 24px);}
+/* Column layout so the body absorbs whatever height is left after the head
+   and the foot — the Done bar is then always on screen, whatever the panel
+   is capped to. */
 .sup-fig .sl-refine-sheet{
+  display:flex;flex-direction:column;max-height:100%;
   position:relative;border-radius:18px;overflow:hidden;
   background:linear-gradient(158deg,#3b1078 0%,#2e1065 45%,#1f0a4a 100%);
   border:1px solid rgba(196,181,253,.22);
@@ -159,7 +168,7 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
   transform:rotate(45deg);border-radius:3px;z-index:1;
 }
 
-.sup-fig .sl-refine-head{position:relative;z-index:1;display:flex;align-items:center;gap:8px;padding:12px 13px 11px;}
+.sup-fig .sl-refine-head{flex:0 0 auto;position:relative;z-index:1;display:flex;align-items:center;gap:8px;padding:12px 13px 11px;}
 .sup-fig .sl-refine-head::after{
   content:'';position:absolute;left:12px;right:12px;bottom:0;height:1px;
   background:linear-gradient(90deg,transparent,rgba(196,181,253,.28) 20%,rgba(196,181,253,.28) 80%,transparent);
@@ -189,7 +198,7 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .sup-fig .sl-refine-x:hover{background:rgba(255,255,255,.9);color:#4c1d95;}
 .sup-fig .sl-refine-x svg{width:10px;height:10px;}
 
-.sup-fig .sl-refine-body{position:relative;z-index:1;padding:11px 13px 5px;max-height:min(56vh,420px);overflow-y:auto;}
+.sup-fig .sl-refine-body{position:relative;z-index:1;padding:11px 13px 5px;flex:1 1 auto;min-height:0;overflow-y:auto;}
 .sup-fig .sl-refine-group{margin-bottom:11px;}
 .sup-fig .sl-refine-k{
   display:flex;align-items:center;gap:7px;margin-bottom:7px;
@@ -256,7 +265,7 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .sup-fig .sl-refine-tile--ok.is-on   {background:linear-gradient(155deg,#4ade80,#16a34a);box-shadow:0 0 0 1px rgba(134,239,172,.5),0 6px 18px -6px rgba(74,222,128,.8);}
 
 .sup-fig .sl-refine-foot{
-  position:relative;z-index:1;display:flex;align-items:center;gap:10px;padding:10px 13px;
+  flex:0 0 auto;position:relative;z-index:1;display:flex;align-items:center;gap:10px;padding:10px 13px;
   border-top:1px solid rgba(196,181,253,.2);background:rgba(0,0,0,.16);
 }
 .sup-fig .sl-refine-res{flex-shrink:0;display:flex;align-items:baseline;gap:1px;line-height:1;}
@@ -691,7 +700,7 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 [data-bs-theme="dark"] .sup-fig .bref-item__title{color:#ede9fe;}
 [data-bs-theme="dark"] .sup-fig .bref-item__desc,
 [data-bs-theme="dark"] .sup-fig .bref-item__num{color:#a89fc7;}
-[data-bs-theme="dark"] .sup-fig .bref-box__toggle{background:rgba(255,255,255,.08);border-color:rgba(167,139,250,.25);color:#c4b5fd;}
+[data-bs-theme="dark"] .sup-fig .bref-box__toggle{background:rgba(255,255,255,.08);border-color:rgba(167,139,250,.25);color:#c4b5fd;box-shadow:none;}
 
 [data-bs-theme="dark"] .sup-fig .sl-wrap{background:#141a2b;border-color:rgba(167,139,250,.2);box-shadow:0 8px 28px rgba(0,0,0,.45);}
 [data-bs-theme="dark"] .sup-fig .sl-toolbar{background:#1f1838;border-bottom-color:rgba(167,139,250,.22);}
@@ -702,7 +711,11 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 
 [data-bs-theme="dark"] .sup-fig .sl-tab.is-active{color:#fff;background:linear-gradient(135deg,#a78bfa,#8b5cf6,#7c3aed,#5b21b6);border-color:transparent;box-shadow:0 4px 16px rgba(124,58,237,.6),0 0 0 1.5px rgba(196,181,253,.45),0 1px 0 rgba(255,255,255,.4) inset;}
 [data-bs-theme="dark"] .sup-fig .sl-tab svg{opacity:.95;}
-[data-bs-theme="dark"] .sup-fig .sl-search{background:rgba(255,255,255,.07);border-color:rgba(167,139,250,.32);}
+/* box-shadow must be reset too (#132). The light rule paints a near-opaque
+   white inset line along the top edge as a bevel; on the dark surface it read
+   as a stray white border. */
+[data-bs-theme="dark"] .sup-fig .sl-search{background:rgba(255,255,255,.07);border-color:rgba(167,139,250,.32);box-shadow:0 1px 0 rgba(255,255,255,.05) inset;}
+[data-bs-theme="dark"] .sup-fig .sl-search:focus-within{border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.22);}
 [data-bs-theme="dark"] .sup-fig .sl-search input{color:#f3effe;}
 [data-bs-theme="dark"] .sup-fig .sl-search input::placeholder{color:#a89ad8;}
 [data-bs-theme="dark"] .sup-fig .sl-search-clear{background:rgba(167,139,250,.22);color:#d6c9f5;}
@@ -791,3 +804,14 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .sl-trade--intl { color:#3730a3; background:#eef2ff; border:1px solid #c7d2fe; }
 [data-bs-theme="dark"] .sl-trade--dom { color:#5eead4; background:rgba(20,184,166,.15); border-color:#134e4a; }
 [data-bs-theme="dark"] .sl-trade--intl { color:#a5b4fc; background:rgba(99,102,241,.15); border-color:#312e81; }
+
+/* Panel flipped above the Filter button (no room below): the arrow moves to
+   the bottom edge and points down, and the gradient end that was the sheet's
+   bottom now reads as its top. */
+.sup-fig .sl-refine-pop.is-up::before{
+  top:auto;bottom:-6px;
+  border-left:none;border-top:none;
+  border-right:1px solid rgba(196,181,253,.22);
+  border-bottom:1px solid rgba(196,181,253,.22);
+  background:#1f0a4a;
+}

@@ -6,6 +6,8 @@ import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
+import AnimatedNumber from '../../components/ui/AnimatedNumber';
+import { Shimmer } from '../../components/ui/Shimmer';
 import DataTable, { ActionCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import { TemplateRow, EmployeeCategory, RoleType, DocStatus, ROLE_TYPES } from './doc-templates/TemplateForm';
 import CtcLivePreview from '../clm/operations/CtcLivePreview';
@@ -498,12 +500,13 @@ export default function HrDocumentTemplates() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [navigate, pdfBusyId]);
 
-  // KPI strip
+  /* KPI strip — same shape as the Employee / Employee Onboarding tiles
+     (Bug #62): label above value, flat top strip, gradient icon. */
   const KPI = [
-    { label: 'Total Templates', value: stats.total,       icon: 'ri-file-text-line',         deep: '#4338ca', gradient: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)' },
-    { label: 'Active',          value: stats.active,      icon: 'ri-checkbox-circle-fill',   deep: '#089d7a', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)' },
-    { label: 'Draft',           value: stats.draft,       icon: 'ri-draft-line',             deep: '#a4661c', gradient: 'linear-gradient(135deg,#f7b84b 0%,#fbc763 100%)' },
-    { label: 'Deprecated',      value: stats.deprecated,  icon: 'ri-forbid-2-line',          deep: '#b1401d', gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)' },
+    { label: 'Total Templates', value: stats.total,       icon: 'ri-file-text-line',       strip: '#6366f1', gradient: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)' },
+    { label: 'Active',          value: stats.active,      icon: 'ri-checkbox-circle-fill', strip: '#0ab39c', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)' },
+    { label: 'Draft',           value: stats.draft,       icon: 'ri-draft-line',           strip: '#f7b84b', gradient: 'linear-gradient(135deg,#f7b84b 0%,#fbc763 100%)' },
+    { label: 'Deprecated',      value: stats.deprecated,  icon: 'ri-forbid-2-line',        strip: '#f06548', gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)' },
   ];
 
   return (
@@ -562,24 +565,41 @@ export default function HrDocumentTemplates() {
           {/* mb-4 (24px), not mb-3 — the table card sat almost against the KPI
               tiles, and the two are separate blocks: the tiles summarise, the
               card below is the list. 8px more is enough to read as a break. */}
-          <div className="row g-2 mb-4">
+          <Row className="g-1 mb-4 align-items-stretch">
             {KPI.map(k => (
-              <div key={k.label} className="col-md-3 col-sm-6">
-                <div className="dtm-kpi-tile" style={{ borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', overflow: 'hidden' }}>
-                  <div style={{ height: 4, background: k.gradient }} />
-                  <div className="d-flex align-items-center justify-content-between" style={{ padding: '12px 14px' }}>
-                    <div>
-                      <div className="dtm-kpi-num" style={{ fontSize: 22, fontWeight: 800, color: k.deep, lineHeight: 1 }}>{k.value}</div>
-                      <div className="dtm-kpi-label" style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 4 }}>{k.label}</div>
+              <Col key={k.label} xl={true} md={3} sm={6} xs={12}>
+                <div
+                  className="dtm-kpi-tile"
+                  style={{
+                    borderRadius: 14,
+                    border: '1px solid var(--vz-border-color)',
+                    borderTopWidth: 0,
+                    background: 'var(--vz-card-bg, #fff)',
+                    boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
+                    padding: '16px 18px',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    height: '100%',
+                  }}
+                >
+                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.strip }} />
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
+                    <div className="min-w-0">
+                      <p className="dtm-kpi-label" style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                        {k.label}
+                      </p>
+                      <h3 className="dtm-kpi-num" style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                        {loading ? <Shimmer height={26} width={64} /> : <AnimatedNumber value={k.value ?? 0} />}
+                      </h3>
                     </div>
-                    <span style={{ width: 38, height: 38, borderRadius: 10, background: k.gradient, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
-                    </span>
+                    <div className="dtm-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
+                    </div>
                   </div>
                 </div>
-              </div>
+              </Col>
             ))}
-          </div>
+          </Row>
 
           {/* Shared list table (components/ui/DataTable) — the designation LEVEL
               tabs now ride in its toolbar next to the search box (they select
@@ -1478,7 +1498,8 @@ function DtmDarkStyles() {
         .dtm-page .frm-cstrip-icon { width: 38px; height: 38px; font-size: 18px; }
         .dtm-page .frm-cstrip-title { font-size: 16px; }
         .dtm-page .frm-cstrip-sub { font-size: 11.5px; margin-top: 2px; }
-        .dtm-page .dtm-kpi-tile .d-flex { padding: 8px 12px !important; }
+        .dtm-page .dtm-kpi-tile { padding: 12px 14px !important; }
+        .dtm-page .dtm-kpi-icon { width: 38px !important; height: 38px !important; }
         /* !important throughout this block: the tiles and the Generate button
            carry INLINE styles (fontSize / padding on the JSX), and an inline
            declaration beats any stylesheet rule short of !important. Without
@@ -1492,9 +1513,10 @@ function DtmDarkStyles() {
       @media (max-height: 740px) {
         /* The KPI row is the biggest single block that is not the table. It
            keeps its numbers, on one line, at half the height. */
-        .dtm-page .dtm-kpi-tile .d-flex { padding: 6px 10px !important; }
+        .dtm-page .dtm-kpi-tile { padding: 10px 12px !important; }
+        .dtm-page .dtm-kpi-icon { width: 34px !important; height: 34px !important; }
         .dtm-page .dtm-kpi-num { font-size: 16px !important; }
-        .dtm-page .dtm-kpi-tile > div:first-child { height: 3px !important; }
+        
         .dtm-page .frm-cstrip-sub { display: none; }
         .dtm-page .dt-table tbody td { padding: 4px 8px; font-size: 11px; }
         .dtm-page .dt-table tbody .dt-serial { width: 20px; height: 20px; font-size: 9.5px; }
@@ -1511,15 +1533,19 @@ function DtmDarkStyles() {
         .dtm-page .frm-cstrip-icon { width: 38px; height: 38px; font-size: 18px; }
       }
 
+      /* Matches .onb-kpi-card on Employee Onboarding (Bug #62). Cursor stays
+         default — these tiles are not filters, unlike the onboarding ones. */
       .dtm-page .dtm-kpi-tile {
-        transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+        transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
         cursor: default;
       }
       .dtm-page .dtm-kpi-tile:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 22px rgba(15,23,42,0.10);
-        border-color: rgba(124,92,252,0.45) !important;
+        transform: translateY(-3px);
+        box-shadow: 0 12px 32px rgba(18,38,63,0.12) !important;
+        border-color: rgba(124,92,252,0.30) !important;
       }
+      .dtm-page .dtm-kpi-tile .dtm-kpi-icon { transition: transform .25s ease; }
+      .dtm-page .dtm-kpi-tile:hover .dtm-kpi-icon { transform: scale(1.08); }
       [data-bs-theme="dark"] .dtm-page .dtm-kpi-tile:hover,
       [data-layout-mode="dark"] .dtm-page .dtm-kpi-tile:hover{
         box-shadow: 0 10px 22px rgba(0,0,0,0.45);

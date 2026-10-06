@@ -157,6 +157,8 @@ export default function GenerateDocument() {
    *  endpoint. Replaces the template's placeholder letterhead. (#126) */
   const [letterheads, setLetterheads] = useState<Record<number, Letterhead>>({});
   const [previewing, setPreviewing] = useState(false);
+  // Set once Next is refused on step 2, so the blank cells turn red (#64).
+  const [showFieldErrors, setShowFieldErrors] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
@@ -274,6 +276,30 @@ export default function GenerateDocument() {
       return;
     }
     if (step === 2) {
+      /* Every custom field is required (#64). A blank one reaches the document
+         as a literal {{Token}} — the preview flags it, but nothing stopped the
+         operator generating and sending it. */
+      const missing: string[] = [];
+      for (const emp of selectedEmployees) {
+        const vals = customByEmp[emp.id] || {};
+        const blanks = templateCustomFields
+          .filter(cf => !String(vals[cf.name] ?? '').trim())
+          .map(cf => cf.name);
+        if (blanks.length) {
+          const who = `${emp.first_name ?? ''} ${emp.last_name ?? ''}`.trim() || `Employee #${emp.id}`;
+          missing.push(`${who}: ${blanks.join(', ')}`);
+        }
+      }
+      if (missing.length) {
+        setShowFieldErrors(true);
+        toast.error(
+          `Fill all ${templateCustomFields.length} field${templateCustomFields.length === 1 ? '' : 's'} for every recipient`,
+          missing.slice(0, 3).join(' · ') + (missing.length > 3 ? ` · +${missing.length - 3} more` : ''),
+        );
+        return;
+      }
+      setShowFieldErrors(false);
+
       // Fetch a preview render per selected employee before showing step 3.
       setPreviewing(true);
       try {
@@ -576,6 +602,7 @@ export default function GenerateDocument() {
               selectedEmployees={selectedEmployees}
               customByEmp={customByEmp}
               setCustomByEmp={setCustomByEmp}
+              showErrors={showFieldErrors}
             />
           )}
           {step === 3 && (
@@ -643,6 +670,7 @@ export default function GenerateDocument() {
 // ── Step indicator — connector-line stepper on a white strip ─────────────────
 function StepStrip({ step }: { step: number }) {
   return (
+    <div className="gd-stepper-strip">
     <div className="gd-stepper">
       {STEPS.map((s, i) => {
         const active = step === s.key;
@@ -663,6 +691,7 @@ function StepStrip({ step }: { step: number }) {
           </div>
         );
       })}
+    </div>
     </div>
   );
 }
@@ -883,8 +912,37 @@ function Step2(props: {
   selectedEmployees: EmployeeRow[];
   customByEmp: Record<number, Record<string, string>>;
   setCustomByEmp: (next: Record<number, Record<string, string>>) => void;
+  /** Next was refused — outline the cells that are still blank. */
+  showErrors?: boolean;
 }) {
-  const { customFields, selectedEmployees, customByEmp, setCustomByEmp } = props;
+  const { customFields, selectedEmployees, customByEmp, setCustomByEmp, showErrors } = props;
+
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 5;
+  // Shut by default once the apply-to-all block would be taller than the table.
+  const [applyOpen, setApplyOpen] = useState(customFields.length <= 4);
+
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return selectedEmployees;
+    return selectedEmployees.filter(e => {
+      const name = `${e.first_name ?? ''} ${e.last_name ?? ''}`.toLowerCase();
+      return name.includes(needle)
+        || (e.emp_code || '').toLowerCase().includes(needle)
+        || (e.email || '').toLowerCase().includes(needle);
+    });
+  }, [selectedEmployees, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = filtered.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+
+  /* Sr No + Employee, then one column per custom field. minWidth keeps the
+     inputs usable when a template carries several fields — the wrapper
+     scrolls sideways rather than squeezing every column to nothing. */
+  const gridCols = `56px minmax(200px, 1.6fr) ${customFields.map(() => 'minmax(160px, 1fr)').join(' ')}`;
+  const gridMinWidth = 56 + 200 + customFields.length * 160 + (customFields.length + 2) * 12 + 28;
 
   const setVal = (empId: number, name: string, val: string) => {
     setCustomByEmp({
@@ -924,13 +982,31 @@ function Step2(props: {
         <>
           {/* Apply-to-all bar — one input per custom field, value fans out to every recipient */}
           {selectedEmployees.length > 1 && (
-            <section style={{ borderRadius: 12, border: '1px solid #e5e7eb', background: '#fafaff', padding: 14, marginBottom: 16 }} className="gd-apply-all">
-              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.4, color: '#6b7280', textTransform: 'uppercase', marginBottom: 8 }}>
-                Apply to all recipients ({selectedEmployees.length})
-              </div>
-              <div className="row g-2">
+            <section style={gdCard} className="gd-apply-all">
+              {/* Collapsible, and shut by default past four fields: fourteen of
+                  them filled the screen and pushed the recipient table, which
+                  is the actual work, below the fold. */}
+              <button type="button" onClick={() => setApplyOpen(o => !o)}
+                style={{ ...gdCardHead, width: '100%', border: 0, textAlign: 'left', cursor: 'pointer' }}
+                className="gd-card-head" aria-expanded={applyOpen}>
+                <span style={gdHeadTile}><i className="ri-stack-line" /></span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="gd-card-head-title" style={{ fontSize: 14.5, fontWeight: 800, lineHeight: 1.25 }}>
+                    Apply to all recipients
+                  </div>
+                  <div className="gd-card-head-sub" style={{ fontSize: 11.5, color: '#9ca3af' }}>
+                    Set a value once and it fans out to all {selectedEmployees.length} recipients
+                  </div>
+                </div>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: '#6b7280', whiteSpace: 'nowrap' }}>
+                  {customFields.length} field{customFields.length === 1 ? '' : 's'}
+                </span>
+                <i className={applyOpen ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'}
+                  style={{ fontSize: 20, color: '#6b7280' }} />
+              </button>
+              <div className="row g-2 gd-card-body" style={{ ...gdCardBody, display: applyOpen ? undefined : 'none' }}>
                 {customFields.map(cf => (
-                  <div key={cf.id} className="col-md-6">
+                  <div key={cf.id} className="col-xl-3 col-lg-4 col-md-6">
                     <label style={fieldLabel}>{cf.name}</label>
                     {cf.type === 'date' ? (
                       <MasterDatePicker
@@ -948,41 +1024,102 @@ function Step2(props: {
             </section>
           )}
 
-          {/* Per-employee forms */}
-          {selectedEmployees.map(emp => {
-            const name = `${emp.first_name ?? ''} ${emp.last_name ?? ''}`.trim() || `Employee #${emp.id}`;
-            const values = customByEmp[emp.id] || {};
-            return (
-              <section key={emp.id} style={{ borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', padding: 14, marginBottom: 12 }} className="gd-emp-card">
-                <div className="d-flex align-items-center justify-content-between mb-2">
-                  <div>
-                    <div style={{ fontWeight: 700, color: '#1f2937' }} className="gd-emp-name">{name}</div>
-                    <div style={{ fontSize: 11.5, color: '#6b7280' }} className="gd-emp-sub">{emp.emp_code || ''} · {emp.email || ''}</div>
-                  </div>
-                </div>
-                <div className="row g-2">
+          {/* Per-employee values — a table, not a stack of cards. One card per
+              recipient meant a 100-person run was a 100-screen scroll with no
+              way to find anyone; this is the same grid + pager as Step 1. */}
+          <div className="ui-search-abs" style={{ position: 'relative', marginBottom: 12, maxWidth: 360 }}>
+            <i className="ri-search-line" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+            <Input autoComplete="off" type="text" placeholder="Search by name, code, email…" value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1); }} style={{ paddingLeft: 32, height: 36 }} className="gd-search" />
+            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
+          </div>
+
+          <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }} className="gd-table-wrap gd-vars-table">
+            <div style={{ overflowX: 'auto' }}>
+              <div style={{ minWidth: gridMinWidth }}>
+                <div style={{ background: '#f5f3ff', padding: '10px 14px', display: 'grid', gridTemplateColumns: gridCols, gap: 12, fontSize: 11, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase' }} className="gd-table-head">
+                  <div>Sr No</div>
+                  <div>Employee</div>
                   {customFields.map(cf => (
-                    <div key={cf.id} className="col-md-6">
-                      <label style={fieldLabel}>{cf.name} <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>({cf.type})</span></label>
-                      {cf.type === 'textarea' ? (
-                        <textarea value={values[cf.name] || ''} onChange={e => setVal(emp.id, cf.name, e.target.value)}
-                          rows={2} placeholder={cf.description || ''} style={{ ...inputStyle, resize: 'vertical' }} className="gd-input" />
-                      ) : cf.type === 'date' ? (
-                        <MasterDatePicker value={values[cf.name] || ''}
-                          onChange={v => setVal(emp.id, cf.name, v)}
-                          placeholder={cf.description || 'Select date'} />
-                      ) : (
-                        <input type={inputTypeFor(cf.type)} value={values[cf.name] || ''}
-                          onChange={e => setVal(emp.id, cf.name, e.target.value)}
-                          placeholder={cf.description || ''}
-                          style={inputStyle} className="gd-input" />
-                      )}
+                    <div key={cf.id}>
+                      {cf.name} <span style={{ color: '#ef4444' }}>*</span>{' '}
+                      <span style={{ fontWeight: 600, color: '#9ca3af' }}>({cf.type})</span>
                     </div>
                   ))}
                 </div>
-              </section>
-            );
-          })}
+                <div>
+                  {filtered.length === 0 ? (
+                    <div style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
+                      <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 6 }} />
+                      No recipients match your search.
+                    </div>
+                  ) : pageRows.map((emp, i) => {
+                    const name = `${emp.first_name ?? ''} ${emp.last_name ?? ''}`.trim() || `Employee #${emp.id}`;
+                    const values = customByEmp[emp.id] || {};
+                    return (
+                      <div key={emp.id} className="gd-row"
+                        style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 12, padding: '10px 14px',
+                          borderTop: i === 0 ? 'none' : '1px solid #f1f5f9', background: '#fff', alignItems: 'center' }}>
+                        <div className="gd-row-cell" style={{ fontSize: 12.5, fontWeight: 700, color: '#6b7280' }}>
+                          {(safePage - 1) * PER_PAGE + i + 1}
+                        </div>
+                        <div className="d-flex align-items-center" style={{ gap: 10, minWidth: 0 }}>
+                          <span style={gdAvatarTile} className="gd-emp-avatar">{initialsOf(name)}</span>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 13 }} className="gd-emp-name">{name}</div>
+                            <div style={{ fontSize: 11.5, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                              className="gd-emp-sub" title={emp.email || undefined}>
+                              {emp.emp_code || '—'} · {emp.email || '—'}
+                            </div>
+                          </div>
+                        </div>
+                        {customFields.map(cf => (
+                          <div key={cf.id} style={{ minWidth: 0 }}
+                            className={showErrors && !String(values[cf.name] ?? '').trim() ? 'gd-cell gd-cell--err' : 'gd-cell'}>
+                            {cf.type === 'textarea' ? (
+                              <textarea value={values[cf.name] || ''} onChange={e => setVal(emp.id, cf.name, e.target.value)}
+                                rows={2} placeholder={cf.description || ''} style={{ ...inputStyle, resize: 'vertical' }} className="gd-input" />
+                            ) : cf.type === 'date' ? (
+                              <MasterDatePicker value={values[cf.name] || ''}
+                                onChange={v => setVal(emp.id, cf.name, v)}
+                                placeholder={cf.description || 'Select date'} />
+                            ) : (
+                              <input type={inputTypeFor(cf.type)} value={values[cf.name] || ''}
+                                onChange={e => setVal(emp.id, cf.name, e.target.value)}
+                                placeholder={cf.description || ''}
+                                style={inputStyle} className="gd-input" />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            {filtered.length > PER_PAGE && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderTop: '1px solid #f1f5f9', background: '#fafafa' }} className="gd-pagination">
+                <span style={{ fontSize: 12, color: '#6b7280' }}>
+                  {(safePage - 1) * PER_PAGE + 1}–{Math.min(safePage * PER_PAGE, filtered.length)} of {filtered.length}
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage <= 1}
+                    aria-label="Previous page"
+                    style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', cursor: safePage <= 1 ? 'not-allowed' : 'pointer', opacity: safePage <= 1 ? 0.5 : 1 }}>
+                    <i className="ri-arrow-left-s-line" />
+                  </button>
+                  <span style={{ minWidth: 44, textAlign: 'center', fontSize: 12.5, fontWeight: 700, color: '#4338ca' }}>
+                    {safePage} / {totalPages}
+                  </span>
+                  <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages}
+                    aria-label="Next page"
+                    style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', cursor: safePage >= totalPages ? 'not-allowed' : 'pointer', opacity: safePage >= totalPages ? 0.5 : 1 }}>
+                    <i className="ri-arrow-right-s-line" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>
@@ -1213,6 +1350,30 @@ function inputTypeFor(t: string): string {
   return t === 'date' ? 'date' : (t === 'number' ? 'number' : 'text');
 }
 
+/* Card shell for the step bodies — the tinted head band + white body of the
+   Add / Edit Template sections, so the two wizards read as one product. */
+const gdCard: React.CSSProperties = {
+  borderRadius: 12, border: '1px solid #e5e7eb', marginBottom: 12, overflow: 'hidden',
+};
+const gdCardHead: React.CSSProperties = {
+  padding: '10px 14px', background: '#f5f3ff', borderBottom: '1px solid #e9e7f5',
+  color: '#111827', display: 'flex', alignItems: 'center', gap: 12,
+};
+const gdCardBody: React.CSSProperties = { padding: 12, background: '#fff', margin: 0 };
+const gdHeadTile: React.CSSProperties = {
+  width: 36, height: 36, borderRadius: 10, flex: '0 0 auto',
+  background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff',
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  fontSize: 17, boxShadow: '0 2px 6px rgba(99,102,241,.35)',
+};
+const gdAvatarTile: React.CSSProperties = {
+  ...gdHeadTile, fontSize: 13, fontWeight: 800, letterSpacing: 0.3,
+};
+
+function initialsOf(name: string): string {
+  return name.trim().split(/\s+/).slice(0, 2).map(p => p[0] ?? '').join('').toUpperCase() || '?';
+}
+
 // Dark-mode + page-scoped CSS. Light mode is byte-for-byte unchanged.
 function ScopedStyles() {
   return (
@@ -1307,23 +1468,33 @@ function ScopedStyles() {
       }
 
       /* Stepper — circle-and-line wizard indicator. White strip below header. */
-      /* Half the row (6 of 12), as the Add / Edit Template stepper is: across
-         the full width the rails grew longer than the steps they join. */
+      /* max-width, not width:50% + min-width:580px (Bug #63). Between the
+         992px breakpoint and ~1160px, 50% resolved BELOW the 580px floor, so
+         the strip overflowed its own column while the items refused to shrink
+         — the rail then ran under the next step's label. A max-width can only
+         ever be smaller than the space available, so it cannot overflow. */
+      /* The strip spans the card; the steps inside it take their natural width
+         and sit left, so the rails stay short however wide the screen gets. */
+      .gd-page .gd-stepper-strip { background: #fff; border-top: 1px solid #f1f5f9; }
       .gd-page .gd-stepper {
-        display: flex; align-items: center; padding: 14px 22px;
-        width: 50%; min-width: 580px;
-        background: #fff; border-top: 1px solid #f1f5f9;
+        display: flex; align-items: flex-start; padding: 14px 22px;
       }
-      @media (max-width: 991.98px) {
-        .gd-page .gd-stepper { width: 100%; min-width: 0; }
-      }
-      .gd-page .gd-stepper-frag { display: flex; align-items: center; flex: 1 1 0; min-width: 0; }
-      .gd-page .gd-stepper-frag:last-child { flex: 0 0 auto; }
+      /* Natural width, not flex:1 1 0. Equal columns stretched the strip to
+         whatever the page was wide and left the rails stranded in open space;
+         the steps should sit together and the slack belongs on the right. */
+      .gd-page .gd-stepper-frag { display: flex; align-items: flex-start; flex: 0 1 auto; min-width: 0; }
+      /* flex 0 1 auto + min-width 0 lets a step give way when the strip is
+         tight; flex-shrink:0 is what forced the overflow above. */
       .gd-page .gd-stepper-item {
-        display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+        display: flex; align-items: center; gap: 10px; flex: 0 1 auto; min-width: 0;
+      }
+      .gd-page .gd-stepper-label { min-width: 0; }
+      .gd-page .gd-stepper-title,
+      .gd-page .gd-stepper-sub {
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
       .gd-page .gd-stepper-circle {
-        width: 32px; height: 32px; border-radius: 50%;
+        width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
         display: inline-flex; align-items: center; justify-content: center;
         background: #e5e7eb; color: #9ca3af;
         font-size: 13px; font-weight: 800;
@@ -1352,11 +1523,22 @@ function ScopedStyles() {
          the eye reads the rails, not the columns, so the strip looked
          crooked. A fixed 30px rail with auto margins is identical between
          every pair, and the slack goes to the margins instead. */
+      /* margin-top 15px pins the rail to the CIRCLE's centre (32/2 − 1 for the
+         rail's own height) instead of centring it on the whole item. The item
+         is circle + two lines of label, so a label that wraps dragged the rail
+         downward into the neighbouring step's text — the overlap in Bug #63. */
       .gd-page .gd-stepper-line {
-        flex: 0 0 30px; height: 2px; margin: 0 auto; background: #e5e7eb;
+        flex: 0 0 40px; height: 2px; margin: 15px 18px 0; background: #e5e7eb;
         transition: background 200ms ease; border-radius: 2px;
       }
       .gd-page .gd-stepper-line.is-done { background: #818cf8; }
+      /* Below 768px three steps plus their captions cannot share a row without
+         truncating to nothing, so the captions go and the titles get the room. */
+      @media (max-width: 767.98px) {
+        .gd-page .gd-stepper { padding: 12px 14px; }
+        .gd-page .gd-stepper-sub { display: none; }
+        .gd-page .gd-stepper-line { flex-basis: 16px; }
+      }
 
       /* Action button polish — match TemplateForm hover treatment */
       .gd-page .gd-cancel,
@@ -1364,6 +1546,57 @@ function ScopedStyles() {
       .gd-page .gd-cancel:hover:not(:disabled),
       .gd-page .gd-back:hover:not(:disabled) {
         background: #f9fafb !important; border-color: #c7d2fe !important; color: #4338ca !important;
+      }
+
+      /* A cell left blank when Next was refused. Targets the inner control so
+         the date picker, which renders its own input, is covered too. */
+      .gd-page .gd-cell--err input,
+      .gd-page .gd-cell--err textarea {
+        border-color: #f87171 !important;
+        background: #fef2f2 !important;
+      }
+      [data-bs-theme="dark"] .gd-page .gd-cell--err input,
+      [data-bs-theme="dark"] .gd-page .gd-cell--err textarea,
+      [data-layout-mode="dark"] .gd-page .gd-cell--err input,
+      [data-layout-mode="dark"] .gd-page .gd-cell--err textarea {
+        border-color: rgba(248,113,113,0.7) !important;
+        background: rgba(239,68,68,0.10) !important;
+      }
+
+      /* Sr No + Employee stay put while the field columns scroll — a template
+         with ten custom fields is ~2000px wide, and without this you end up
+         typing into a row with no idea whose it is. */
+      .gd-page .gd-vars-table .gd-table-head > *:nth-child(1),
+      .gd-page .gd-vars-table .gd-row > *:nth-child(1) { position: sticky; left: 0; z-index: 2; }
+      .gd-page .gd-vars-table .gd-table-head > *:nth-child(2),
+      .gd-page .gd-vars-table .gd-row > *:nth-child(2) { position: sticky; left: 56px; z-index: 2; }
+      .gd-page .gd-vars-table .gd-table-head > *:nth-child(1),
+      .gd-page .gd-vars-table .gd-table-head > *:nth-child(2) { background: #f5f3ff; }
+      .gd-page .gd-vars-table .gd-row > *:nth-child(1),
+      .gd-page .gd-vars-table .gd-row > *:nth-child(2) { background: #fff; }
+      /* The shadow only appears once there is something scrolled under it. */
+      .gd-page .gd-vars-table .gd-table-head > *:nth-child(2),
+      .gd-page .gd-vars-table .gd-row > *:nth-child(2) { box-shadow: 6px 0 8px -6px rgba(15,23,42,0.12); }
+      [data-bs-theme="dark"] .gd-page .gd-vars-table .gd-row > *:nth-child(1),
+      [data-bs-theme="dark"] .gd-page .gd-vars-table .gd-row > *:nth-child(2),
+      [data-layout-mode="dark"] .gd-page .gd-vars-table .gd-row > *:nth-child(1),
+      [data-layout-mode="dark"] .gd-page .gd-vars-table .gd-row > *:nth-child(2) { background: #1f2937; }
+
+      /* Without this the browser's own focus ring shows — a hard black outline
+         that looked like a validation error on a field the user just clicked. */
+      .gd-page .gd-input {
+        transition: border-color 140ms ease, box-shadow 140ms ease;
+      }
+      .gd-page .gd-input:focus,
+      .gd-page .gd-input:focus-visible {
+        outline: none;
+        border-color: #a5b4fc !important;
+        box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
+      }
+      [data-bs-theme="dark"] .gd-page .gd-input:focus,
+      [data-layout-mode="dark"] .gd-page .gd-input:focus {
+        border-color: rgba(167,139,250,0.65) !important;
+        box-shadow: 0 0 0 3px rgba(139,92,246,0.22);
       }
 
       /* Dark-mode stepper */
@@ -1404,8 +1637,8 @@ function ScopedStyles() {
       [data-layout-mode="dark"] .gd-page .gd-step-head .gd-title {
         color: rgba(255,255,255,0.88) !important;
       }
-      [data-bs-theme="dark"] .gd-page .gd-stepper,
-      [data-layout-mode="dark"] .gd-page .gd-stepper {
+      [data-bs-theme="dark"] .gd-page .gd-stepper-strip,
+      [data-layout-mode="dark"] .gd-page .gd-stepper-strip {
         background: #1f2937 !important; border-top-color: rgba(255,255,255,0.06) !important;
       }
       [data-bs-theme="dark"] .gd-page .gd-stepper-circle,
@@ -1484,6 +1717,19 @@ function ScopedStyles() {
       [data-layout-mode="dark"] .gd-page .gd-apply-all {
         background: #1f2937 !important; border-color: rgba(255,255,255,0.08) !important;
       }
+      /* Head band + body of the step cards. */
+      [data-bs-theme="dark"] .gd-page .gd-card-head,
+      [data-layout-mode="dark"] .gd-page .gd-card-head {
+        background: rgba(99,102,241,0.14) !important;
+        border-bottom-color: rgba(255,255,255,0.08) !important;
+        color: #f1f5f9 !important;
+      }
+      [data-bs-theme="dark"] .gd-page .gd-card-head-title,
+      [data-layout-mode="dark"] .gd-page .gd-card-head-title { color: #f1f5f9 !important; }
+      [data-bs-theme="dark"] .gd-page .gd-card-head-sub,
+      [data-layout-mode="dark"] .gd-page .gd-card-head-sub { color: rgba(255,255,255,0.55) !important; }
+      [data-bs-theme="dark"] .gd-page .gd-card-body,
+      [data-layout-mode="dark"] .gd-page .gd-card-body { background: #1f2937 !important; }
       /* Custom-variables empty/content box — was a hardcoded light #fafaff (BUG-114). */
       [data-bs-theme="dark"] .gd-page .gd-empty,
       [data-layout-mode="dark"] .gd-page .gd-empty {

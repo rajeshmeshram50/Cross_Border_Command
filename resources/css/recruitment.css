@@ -7161,6 +7161,24 @@
   font-size: 10.5px; line-height: 1.45; color: var(--vz-secondary-color);
 }
 .ep-fnf-bd-note i { font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+/* The provisional-settlement warning. Called out rather than left grey: a
+   total that looks final but is not is the one note on this card that must
+   not be skimmed past. */
+.ep-fnf-bd-note.is-warn {
+  margin-top: 10px; padding: 9px 11px; border-radius: 9px;
+  font-size: 11.5px; color: #92400e;
+  background: #fffbeb; border: 1px solid #fde68a;
+}
+.ep-fnf-bd-note.is-warn i { color: #d97706; font-size: 14px; }
+.ep-fnf-bd-note.is-warn strong { color: #78350f; }
+[data-bs-theme="dark"] .ep-fnf-bd-note.is-warn,
+[data-layout-mode="dark"] .ep-fnf-bd-note.is-warn {
+  background: rgba(245,158,11,.12); border-color: rgba(251,191,36,.35); color: #fcd34d;
+}
+[data-bs-theme="dark"] .ep-fnf-bd-note.is-warn strong,
+[data-layout-mode="dark"] .ep-fnf-bd-note.is-warn strong { color: #fde68a; }
+[data-bs-theme="dark"] .ep-fnf-bd-note.is-warn i,
+[data-layout-mode="dark"] .ep-fnf-bd-note.is-warn i { color: #fbbf24; }
 
 [data-bs-theme="dark"] .ep-fnf-bd-card-head.is-earn { color: #34d399; }
 [data-bs-theme="dark"] .ep-fnf-bd-card-head.is-ded  { color: #f87171; }

@@ -3914,10 +3914,16 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
    * Trade Licence docs vanished from the Edit screen — they exist in
    * customer_documents (kind='tl') but were hidden behind the static
    * segmentRef reference rows. */
+  /* Owner KYC carries NO segmentDocs.kyc requirement (#91). It used to, and a
+     segment with no standard KYC docs then fell through to the owners table —
+     a different thing entirely, with Owner Name / Designation / ID Proof
+     headers. So the same tab showed one set of columns when empty and another
+     once documents existed. Document columns are the canonical ones; the
+     owners table is only right when there are actually owners to show. */
   const showSegmentRef =
        (isTradeLegacy            && filteredDocs.length === 0 && (segmentDocs.tl?.length ?? 0) > 0)
     || (sub === 'company-dd'     && filteredDocs.length === 0 && (segmentDocs.dd?.length ?? 0) > 0)
-    || (sub === 'owner-kyc'      && owners.length === 0       && (segmentDocs.kyc?.length ?? 0) > 0);
+    || (sub === 'owner-kyc'      && owners.length === 0);
 
   const totalRows = showSegmentRef ? filteredTradeLegacy.length
                   : isOwners       ? filteredOwners.length
@@ -4012,7 +4018,11 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                 </tr></thead>
                 <tbody>
                   {totalRows === 0 ? (
-                    <tr className="acm-empty-row"><td colSpan={8}>No reference documents match your search.</td></tr>
+                    <tr className="acm-empty-row"><td colSpan={8}>
+                      {q
+                        ? 'No reference documents match your search.'
+                        : 'No standard documents are configured for this segment yet.'}
+                    </td></tr>
                   ) : legacySlice.map((dl, i) => {
                     const sr = start + i + 1;
                     const srPad = String(sr).padStart(2, '0');

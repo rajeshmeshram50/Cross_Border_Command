@@ -2797,6 +2797,51 @@ const SCOPED_CSS = `
   color: #f0fdfa; border-color: rgba(34,211,238,0.28);
 }
 
+/* ── One toolbar colour ──────────────────────────────────────────────────
+   Every action wears Add New Lead's gradient. The five variants above were
+   five steps of the same teal, which read as a hierarchy that doesn't exist
+   — Assign, Distribute, Sync, Filter and Export are peers, not a ranked set.
+   Placed after them so it wins without editing each rule, and repeated under
+   the dark selector because the dark block re-colours them individually. */
+.lwp-root .lwp-bact-assign,
+.lwp-root .lwp-bact-assigned,
+.lwp-root .lwp-bact-sync,
+.lwp-root .lwp-bact-filter,
+.lwp-root .lwp-bact-export,
+[data-bs-theme="dark"] .lwp-root .lwp-bact-assign,
+[data-bs-theme="dark"] .lwp-root .lwp-bact-assigned,
+[data-bs-theme="dark"] .lwp-root .lwp-bact-sync,
+[data-bs-theme="dark"] .lwp-root .lwp-bact-filter,
+[data-bs-theme="dark"] .lwp-root .lwp-bact-export {
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 16px rgba(6,182,212,.45), 0 2px 6px rgba(8,145,178,.25), 0 1px 0 rgba(255,255,255,.22) inset;
+  text-shadow: 0 1px 2px rgba(0,0,0,.15);
+  /* The Filter button pulsed on a 2.5s loop; with every button the same
+     colour the pulse was the only thing still singling it out. */
+  animation: none;
+}
+.lwp-root .lwp-bact-assign:hover,
+.lwp-root .lwp-bact-assigned:hover,
+.lwp-root .lwp-bact-sync:hover,
+.lwp-root .lwp-bact-filter:hover,
+.lwp-root .lwp-bact-export:hover,
+[data-bs-theme="dark"] .lwp-root .lwp-bact-assign:hover,
+[data-bs-theme="dark"] .lwp-root .lwp-bact-assigned:hover,
+[data-bs-theme="dark"] .lwp-root .lwp-bact-sync:hover,
+[data-bs-theme="dark"] .lwp-root .lwp-bact-filter:hover,
+[data-bs-theme="dark"] .lwp-root .lwp-bact-export:hover {
+  background: linear-gradient(135deg, #22d3ee 0%, #06b6d4 55%, #0891b2 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(6,182,212,.55), 0 3px 8px rgba(8,145,178,.3), 0 1px 0 rgba(255,255,255,.22) inset;
+}
+/* Active filters still need a signal — a yellow ring, not a different fill. */
+.lwp-root .lwp-bact-filter-active,
+[data-bs-theme="dark"] .lwp-root .lwp-bact-filter-active {
+  box-shadow: 0 0 0 2px #facc15, 0 6px 20px rgba(6,182,212,.45);
+}
+
 /* Tab pills */
 [data-bs-theme="dark"] .lwp-root .lwp-tabs { background: rgba(8, 145, 178, 0.10); border-color: rgba(34,211,238,0.18); }
 [data-bs-theme="dark"] .lwp-root .lwp-tab { color: #94a3b8; }
@@ -2806,8 +2851,26 @@ const SCOPED_CSS = `
 }
 
 /* Search bar */
+/* box-shadow has to be reset with the rest: the light rule paints a
+   near-opaque white inset line along the top edge as a bevel, and on the dark
+   surface it read as a stray white border (same defect as QA #132 on the
+   supplier search). */
 [data-bs-theme="dark"] .lwp-root .lwp-search {
   background: #1e293b; border-color: #334155;
+  box-shadow: 0 2px 10px rgba(0,0,0,.35), 0 1px 0 rgba(255,255,255,.05) inset;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-search:focus-within {
+  border-color: #0891b2;
+  box-shadow: 0 0 0 3px rgba(8,145,178,.28), 0 4px 16px rgba(0,0,0,.35);
+}
+/* Same white-bevel leak on the other three that re-colour in dark but never
+   restated box-shadow. (.lwp-pills and .lwp-subtabs already handle their own.) */
+[data-bs-theme="dark"] .lwp-root .lwp-banner {
+  box-shadow: 0 2px 0 rgba(255,255,255,.04) inset, 0 4px 16px rgba(0,0,0,.35), 0 1px 4px rgba(0,0,0,.25);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-pag-info,
+[data-bs-theme="dark"] .lwp-root .lwp-rows-sel {
+  box-shadow: 0 1px 4px rgba(0,0,0,.3), 0 1px 0 rgba(255,255,255,.05) inset;
 }
 [data-bs-theme="dark"] .lwp-root .lwp-search input { color: #e2e8f0; }
 [data-bs-theme="dark"] .lwp-root .lwp-search input::placeholder { color: #64748b; }

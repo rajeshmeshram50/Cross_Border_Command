@@ -76,20 +76,29 @@ export default function ClmTncPage() {
   };
   useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* Each pill says what its tab holds (#28) — the three names read as near
+     synonyms and nothing explained how Global differs from Segment Wise
+     until you opened them. */
   const pillSwitcher = (
     <div className="clm-pill-group">
-      <button className={`clm-pill ${tab === 'cat' ? 'active' : ''}`} onClick={() => setTab('cat')}>
-        <span className="clm-pill-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>
-        Document Category
-      </button>
-      <button className={`clm-pill ${tab === 'lib' ? 'active' : ''}`} onClick={() => setTab('lib')}>
-        <span className="clm-pill-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>
-        T&amp;C Segment Wise
-      </button>
-      <button className={`clm-pill ${tab === 'glob' ? 'active' : ''}`} onClick={() => setTab('glob')}>
-        <span className="clm-pill-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"/></svg></span>
-        T&amp;C Global
-      </button>
+      <Tooltip label="The document categories a T&C can be written for">
+        <button className={`clm-pill ${tab === 'cat' ? 'active' : ''}`} onClick={() => setTab('cat')}>
+          <span className="clm-pill-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>
+          Document Category
+        </button>
+      </Tooltip>
+      <Tooltip label="Terms that apply to one business segment only — used when that segment's documents need their own wording">
+        <button className={`clm-pill ${tab === 'lib' ? 'active' : ''}`} onClick={() => setTab('lib')}>
+          <span className="clm-pill-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>
+          T&amp;C Segment Wise
+        </button>
+      </Tooltip>
+      <Tooltip label="One T&C per document category, printed on every document of that category regardless of segment">
+        <button className={`clm-pill ${tab === 'glob' ? 'active' : ''}`} onClick={() => setTab('glob')}>
+          <span className="clm-pill-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"/></svg></span>
+          T&amp;C Global
+        </button>
+      </Tooltip>
     </div>
   );
 
