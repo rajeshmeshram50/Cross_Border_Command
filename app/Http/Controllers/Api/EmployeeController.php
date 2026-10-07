@@ -1580,7 +1580,7 @@ class EmployeeController extends Controller
     {
         $parts = array_values(array_filter(
             [trim((string) $name), trim((string) $designation), trim((string) $department)],
-            fn ($v) => $v !== '',
+            fn($v) => $v !== '',
         ));
 
         return $parts === [] ? 'Employee' : implode(' — ', $parts);
@@ -1745,16 +1745,18 @@ class EmployeeController extends Controller
         }
         $clientId = $clientId === null ? null : (int) $clientId;
 
-        /* Every scope a person's address can already be sitting in. `person`
-           covers logins and employee records, `candidate` the pipeline, and
-           `organisation` the client/branch contact addresses — the three that
-           produced the duplicates this ticket is about. The trade-party scopes
-           are included too: the instruction is that one address is used once,
-           full stop. */
+        $selfRows = [];
+        if ($excludeId !== null) {
+            $selfRows[] = ['table' => 'employees', 'id' => $excludeId];
+            $userId = Employee::withTrashed()->where('id', $excludeId)->value('user_id');
+            if ($userId) $selfRows[] = ['table' => 'users', 'id' => (int) $userId];
+            foreach (\App\Models\EmployeeOnboardingInvite::where('employee_id', $excludeId)->pluck('id') as $inviteId) {
+                $selfRows[] = ['table' => 'employee_onboarding_invites', 'id' => (int) $inviteId];
+            }
+        }
+
         foreach (['person', 'candidate', 'organisation', 'customer', 'consignee', 'vendor'] as $scope) {
-            $ignore = ($scope === 'person' && $excludeId !== null)
-                ? ['table' => 'employees', 'id' => $excludeId]
-                : [];
+            $ignore = $selfRows;
 
             $conflict = \App\Support\EmailGuard::conflict($scope, $email, $clientId, $ignore);
             if ($conflict) {
@@ -2660,8 +2662,10 @@ class EmployeeController extends Controller
                     ? strtolower((string) $row->esi_applicable) === 'yes'
                     : (bool) $activeStructure->esi_applicable;
 
-                if ($wantPf !== (bool) $activeStructure->pf_applicable
-                    || $wantEsi !== (bool) $activeStructure->esi_applicable) {
+                if (
+                    $wantPf !== (bool) $activeStructure->pf_applicable
+                    || $wantEsi !== (bool) $activeStructure->esi_applicable
+                ) {
 
                     /* PF off drops a MANUAL 'pf' deduction line, same rule the
                        in-place patch below applies — payroll reads a structure's
@@ -2671,7 +2675,7 @@ class EmployeeController extends Controller
                     if (!$wantPf) {
                         $newDeductions = array_values(array_filter(
                             $newDeductions,
-                            fn ($d) => strtolower((string) (((array) $d)['code'] ?? '')) !== 'pf'
+                            fn($d) => strtolower((string) (((array) $d)['code'] ?? '')) !== 'pf'
                         ));
                     }
 
@@ -2720,11 +2724,11 @@ class EmployeeController extends Controller
             }
 
             $openFrom = \App\Models\Payslip::where('employee_id', $row->id)
-                ->whereHas('run', fn ($q) => $q->whereIn('status', ['draft', 'generated'])
-                    ->whereHas('period', fn ($p) => $p->where('status', '!=', 'locked')))
+                ->whereHas('run', fn($q) => $q->whereIn('status', ['draft', 'generated'])
+                    ->whereHas('period', fn($p) => $p->where('status', '!=', 'locked')))
                 ->with('run.period')
                 ->get()
-                ->map(fn ($s) => $s->run?->period?->period_start)
+                ->map(fn($s) => $s->run?->period?->period_start)
                 ->filter()
                 ->min();
 
@@ -2733,11 +2737,11 @@ class EmployeeController extends Controller
                reaches the row payroll will actually read for that period. */
             $openingVersionId = $openFrom
                 ? \App\Models\SalaryStructure::where('employee_id', $row->id)
-                    ->whereIn('status', ['active', 'superseded'])
-                    ->whereDate('effective_from', '<=', $openFrom)
-                    ->orderByDesc('effective_from')
-                    ->orderByDesc('version')
-                    ->value('id')
+                ->whereIn('status', ['active', 'superseded'])
+                ->whereDate('effective_from', '<=', $openFrom)
+                ->orderByDesc('effective_from')
+                ->orderByDesc('version')
+                ->value('id')
                 : null;
 
             $structures = \App\Models\SalaryStructure::where('employee_id', $row->id)
@@ -2774,7 +2778,7 @@ class EmployeeController extends Controller
                         $deductions = (array) ($structure->deductions ?? []);
                         $kept = array_values(array_filter(
                             $deductions,
-                            fn ($d) => strtolower((string) ($d['code'] ?? '')) !== 'pf'
+                            fn($d) => strtolower((string) ($d['code'] ?? '')) !== 'pf'
                         ));
                         if (count($kept) !== count($deductions)) {
                             $patch['deductions'] = $kept;
@@ -2826,10 +2830,10 @@ class EmployeeController extends Controller
                 app(\App\Services\PayrollService::class)->recomputeEmployeePayslips((int) $row->id);
 
                 $frozenCycles = \App\Models\Payslip::where('employee_id', $row->id)
-                    ->whereHas('run', fn ($q) => $q->whereNotIn('status', ['draft', 'generated']))
+                    ->whereHas('run', fn($q) => $q->whereNotIn('status', ['draft', 'generated']))
                     ->with('run.period')
                     ->get()
-                    ->map(fn ($s) => $s->run?->period?->label)
+                    ->map(fn($s) => $s->run?->period?->label)
                     ->filter()
                     ->unique()
                     ->values();
@@ -2936,8 +2940,10 @@ class EmployeeController extends Controller
          * but silently it reads as the change not having taken, so the save
          * says which day it starts on. */
         $shiftNote = '';
-        if (array_key_exists('shift', $data) && $shiftChangedFrom !== null
-            && strcasecmp((string) $shiftChangedFrom, (string) ($row->shift ?? '')) !== 0) {
+        if (
+            array_key_exists('shift', $data) && $shiftChangedFrom !== null
+            && strcasecmp((string) $shiftChangedFrom, (string) ($row->shift ?? '')) !== 0
+        ) {
             $todayIso  = \Carbon\Carbon::now(\App\Models\Attendance::WORK_TZ)->toDateString();
             $workedToday = \App\Models\Attendance::where('employee_id', $row->id)
                 ->whereDate('attendance_date', $todayIso)
@@ -2954,8 +2960,8 @@ class EmployeeController extends Controller
             'message'  => 'Updated' . $shiftNote
                 . ($frozenCycles->isNotEmpty()
                     ? ' — note: already-approved payroll (' . $frozenCycles->implode(', ')
-                        . ') keeps its original figures, so this change will not appear there.'
-                        . ' Run a fresh cycle, or post an adjustment, to apply it.'
+                    . ') keeps its original figures, so this change will not appear there.'
+                    . ' Run a fresh cycle, or post an adjustment, to apply it.'
                     : ''),
             'employee' => (clone $row)->setRelations([])->setAppends([]),
         ]);
@@ -3752,7 +3758,7 @@ class EmployeeController extends Controller
          * config/email_uniqueness.php so the two columns now participate, and
          * applied to BOTH address fields. Tenant-scoped like everything else
          * here: another organisation's address is not a clash. (#221) */
-         /* Applied whether or not the row has a tenant. The scope is system-wide
+        /* Applied whether or not the row has a tenant. The scope is system-wide
             now (#221), so EmailGuard ignores the client id entirely and a
             platform-level employee is checked against the same single list of
             addresses as everybody else. */
@@ -3837,10 +3843,10 @@ class EmployeeController extends Controller
 
                 $fail($blocked === null
                     ? "This email belongs to {$who}{$code}, who exited{$left}. Rehire them from Exit Management "
-                        . 'instead of creating a new employee — a rehire keeps their history, service and documents. '
-                        . 'If this is a different person, use a different email address.'
+                    . 'instead of creating a new employee — a rehire keeps their history, service and documents. '
+                    . 'If this is a different person, use a different email address.'
                     : "This email belongs to {$who}{$code}, who exited{$left} and cannot be rehired — {$blocked}. "
-                        . 'The address stays associated with that record, so a new employee needs their own email.');
+                    . 'The address stays associated with that record, so a new employee needs their own email.');
             };
         }
 
@@ -3879,7 +3885,7 @@ class EmployeeController extends Controller
          * one that blanks it) still has to provide it. */
         $storedSalary = $employeeId
             ? Employee::withTrashed()->whereKey($employeeId)
-                ->first(['annual_salary', 'salary_frequency', 'salary_effective_from'])
+            ->first(['annual_salary', 'salary_frequency', 'salary_effective_from'])
             : null;
         /* The stored ANNUAL CTC is the test, not all three columns. The gate
          * exists so payroll has a salary to pay, and that is this figure;

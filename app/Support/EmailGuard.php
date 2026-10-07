@@ -82,7 +82,10 @@ final class EmailGuard
      * @param  int|null    $clientId  tenant, for a scope declared tenant-scoped
      * @param  array       $ignore    ['table' => 'employees', 'id' => 12] — the
      *                                row being edited, so a record never
-     *                                collides with itself
+     *                                collides with itself. A list of such
+     *                                pairs is accepted too, for an identity
+     *                                spread over several rows (an employee
+     *                                and their own login).
      * @return array|null  ['label' => 'another employee', 'table' => ..., 'id' => ...]
      */
     public static function conflict(string $scope, ?string $email, ?int $clientId = null, array $ignore = []): ?array
@@ -94,6 +97,8 @@ final class EmailGuard
         if (!is_array($cfg) || empty($cfg['sources'])) return null;
 
         $tenant = (bool) ($cfg['tenant'] ?? true);
+
+        $ignores = isset($ignore['table']) ? [$ignore] : $ignore;
 
         foreach ($cfg['sources'] as $src) {
             $table  = $src['table'];
@@ -133,8 +138,10 @@ final class EmailGuard
                 });
             }
             // Never collide with the row being edited.
-            if (($ignore['table'] ?? null) === $table && !empty($ignore['id'])) {
-                $q->where('id', '!=', $ignore['id']);
+            foreach ($ignores as $ig) {
+                if (($ig['table'] ?? null) === $table && !empty($ig['id'])) {
+                    $q->where('id', '!=', $ig['id']);
+                }
             }
 
             $hit = $q->limit(1)->value('id');
