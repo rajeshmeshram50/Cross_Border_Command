@@ -134,24 +134,35 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
         /* Back is an ACTION, so it looks like one — the outlined counterpart to
            the solid buttons elsewhere, matching Client Profile's .cv-back-btn.
            NOTE: no backticks in these comments, the block is a template literal. */
-        .cb-back-btn {
-          display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-          height: 38px; padding: 0 18px;
+        /* The close X replaces the old Back pill and its breadcrumb. This page
+           has no hero banner to hang it on, so it sits top-right of the surface
+           card — and the card needs a band for it. At 12px from the top it hung
+           26px down over the first KPI card, because the surface's own 20px of
+           padding is less than the button is tall. 52px is the button plus its
+           insets: far less than the 70px title strip this replaced, and nothing
+           overlaps.
+           NOTE: no backticks in these comments; the block is a template literal. */
+        .branches-surface { position: relative; padding-top: 52px !important; }
+        .cb-close-btn {
+          position: absolute; top: 12px; right: 12px; z-index: 3;
+          display: inline-flex; align-items: center; justify-content: center;
+          width: 34px; height: 34px;
           border-radius: 999px;
-          border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
-          background: #fff; color: #6d28d9;
-          font-family: inherit; font-size: 13px; font-weight: 600;
-          white-space: nowrap; cursor: pointer; flex-shrink: 0;
-          transition: background .15s, border-color .15s, transform .15s;
+          border: 1px solid var(--vz-border-color);
+          background: var(--vz-secondary-bg);
+          color: var(--vz-secondary-color);
+          cursor: pointer;
+          transition: background .15s, border-color .15s, color .15s, transform .15s;
         }
-        .cb-back-btn i { font-size: 15px; line-height: 1; }
-        .cb-back-btn:hover { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
-        [data-bs-theme="dark"] .cb-back-btn,
-        [data-layout-mode="dark"] .cb-back-btn {
-          background: var(--vz-card-bg); color: #c4b5fd; border-color: rgba(167, 139, 250, 0.40);
+        .cb-close-btn i { font-size: 18px; line-height: 1; }
+        .cb-close-btn:hover {
+          background: #f5f3ff; border-color: #c4b5fd; color: #6d28d9;
+          transform: translateY(-1px);
         }
-        [data-bs-theme="dark"] .cb-back-btn:hover,
-        [data-layout-mode="dark"] .cb-back-btn:hover { background: rgba(139, 92, 246, 0.14); }
+        [data-bs-theme="dark"] .cb-close-btn:hover,
+        [data-layout-mode="dark"] .cb-close-btn:hover {
+          background: rgba(139, 92, 246, 0.14); color: #c4b5fd; border-color: rgba(167, 139, 250, 0.40);
+        }
 
         /* 8px between the blocks inside the surface, the page's own number. The
            KPI row carried g-3 (16px gutters) and mb-3, so the strip, the cards
@@ -197,28 +208,9 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
         }
       `}</style>
 
-      <Row>
-        <Col xs={12}>
-          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0">Branches</h4>
-            {/* Back is an action, so it sits on the right with the other page
-                chrome and carries a label — as a bare circle in front of the
-                title it read as part of the heading. Matches Client Profile. */}
-            <div className="page-title-right d-flex align-items-center gap-3">
-              <button type="button" className="cb-back-btn" onClick={onBack}>
-                <i className="ri-arrow-left-line"></i>
-                Back
-              </button>
-              <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item">
-                  <a href="#" onClick={(e) => { e.preventDefault(); navigate('/clients'); }}>Client</a>
-                </li>
-                <li className="breadcrumb-item active">{clientName || 'Branches'}</li>
-              </ol>
-            </div>
-          </div>
-        </Col>
-      </Row>
+      {/* No page-title strip. The heading repeated the menu item that opened
+          this page, and Back plus the breadcrumb said the same thing twice;
+          the close X on the card below does the job in one glyph. */}
 
       <Row>
         <Col xs={12}>
@@ -231,6 +223,10 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
               padding: '20px',
             }}
           >
+            <button type="button" className="cb-close-btn" onClick={onBack} aria-label="Close">
+              <i className="ri-close-line" />
+            </button>
+
             {/* ── KPI cards (single row, equal height) ── */}
             <Row className="g-3 mb-3 align-items-stretch">
               {/* md=4, not md=3: there are three KPIs, and a four-up grid left

@@ -244,6 +244,57 @@ body {
 /* The platform pages name their strip per page rather than sharing
    .frm-cstrip, so each one is listed or it keeps whatever `mb-*` the markup
    wrote (16px on all of them). */
+/* Master lays its KPI tiles out with `g-3` and its master cards with `gx-3`,
+   which is Bootstrap's 24px — so both grids sat on 16px channels while every
+   other page on this menu runs 8px. Scoped by the page's own strip class. */
+.page-content:has(.ms-cstrip) .row {
+  --vz-gutter-x: 8px !important;
+  --vz-gutter-y: 8px !important;
+  --bs-gutter-x: 8px !important;
+  --bs-gutter-y: 8px !important;
+}
+
+.page-content:has(.ms-cstrip) .row.mb-3 {
+  margin-bottom: 8px !important;
+}
+
+/* ── Every header strip reads the same ───────────────────────────────────────
+   Measured across the platform pages against the HRMS strip (.frm-cstrip),
+   which is the reference: title DM Sans 18px/800 at -0.3px, subtitle DM Sans
+   12px/500. Plans and Payments were rendering in Velzon's RUBIK — the body
+   font leaking in, the same way it did in the HRMS tables — and Clients,
+   Master, Plans and Payments all set their subtitle at weight 400 against the
+   reference's 500, so the second line sat a shade lighter than everywhere else.
+   Set on the title/sub classes rather than the strip, because each page names
+   its strip differently but they all follow the same `-title` / `-sub` pair. */
+/* Each selector names the strip as well as the line inside it. That is not
+   decoration: these pages inject their own <style> at render, which lands after
+   this file, so a bare `.cl-cstrip-sub` would only tie on specificity and lose
+   on order — which is exactly what happened on the first pass, and the
+   subtitles stayed at 400. Two classes settle it without !important. */
+:is(.frm-cstrip .frm-cstrip-title, .cl-cstrip .cl-cstrip-title,
+    .pl-cstrip .pl-cstrip-title, .pmt-cstrip .pmt-cstrip-title,
+    .br-cstrip .br-cstrip-title, .ms-cstrip .ms-cstrip-title,
+    .mp-cstrip .mp-cstrip-title, .ap-cstrip .ap-cstrip-title,
+    .pm-cstrip .pm-cstrip-title, .smc-cstrip .smc-cstrip-title,
+    .smcg-cstrip .smcg-cstrip-title) {
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -.3px;
+}
+
+:is(.frm-cstrip .frm-cstrip-sub, .cl-cstrip .cl-cstrip-sub,
+    .pl-cstrip .pl-cstrip-sub, .pmt-cstrip .pmt-cstrip-sub,
+    .br-cstrip .br-cstrip-sub, .ms-cstrip .ms-cstrip-sub,
+    .mp-cstrip .mp-cstrip-sub, .ap-cstrip .ap-cstrip-sub,
+    .pm-cstrip .pm-cstrip-sub, .smc-cstrip .smc-cstrip-sub,
+    .smcg-cstrip .smcg-cstrip-sub) {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+}
+
 div.frm-cstrip,
 div.cl-cstrip,
 div.pl-cstrip,
@@ -439,6 +490,47 @@ button.ms-cstrip-add {
 
 .footer {
   position: static;
+}
+
+/* ── The footer auto-hides, like a taskbar set to auto-hide ──────────────────
+   Hidden on arrival and after a moment's stillness; it slides back on any
+   scroll (from the window OR a nested scroller — see Footer.tsx) and when the
+   pointer reaches the bottom edge.
+   It only TRANSFORMS. The element keeps its place in the flow and its 40px of
+   height either way, because DataTable sizes every fitted table from this
+   element's offsetHeight (`bottomReserve`) — a footer that really collapsed
+   would grow every table on the page and jump them back when it returned.
+   `pointer-events: none` while hidden so the strip it leaves behind cannot
+   swallow a click meant for the row above it. */
+.footer.app-footer-auto {
+  /* The band is reclaimed by `bottomReserve()` in DataTable.tsx, which skips
+     this footer entirely — a fitted table now runs to the bottom edge and the
+     bar slides up OVER it. Sliding it while the table still reserved its 40px
+     only hid the text and left an empty white strip in its place, which is no
+     better than showing it.
+     Nothing here needs `position: fixed`: #layout-wrapper is `100dvh` with
+     `overflow: hidden`, so the footer's own 40px falls off the bottom and is
+     clipped rather than adding height. Measured: removing the element from the
+     DOM leaves document.scrollHeight at 950 either way. A `position: fixed`
+     was tried here first and changed nothing, so it is not carried. */
+  z-index: 3;
+  transform: translateY(100%);
+  opacity: 0;
+  transition: transform .22s cubic-bezier(.22, 1, .36, 1), opacity .18s ease;
+  will-change: transform;
+  /* Never interactive, shown or not. It holds nothing but a copyright line, and
+     it comes back OVER the table's pager — passing clicks through means the
+     pager stays usable even while the bar is on screen. */
+  pointer-events: none;
+}
+
+.footer.app-footer-auto.is-visible {
+  transform: none;
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .footer.app-footer-auto { transition: none; }
 }
 
 .wl-pager {
@@ -1983,7 +2075,13 @@ tbody tr:nth-child(10) {
   letter-spacing: .02em;
   text-shadow: 0 1px 2px rgba(0, 0, 0, .2);
   background: linear-gradient(135deg, #5b21b6 0%, #7c3aed 50%, #8b5cf6 100%);
-  box-shadow: 0 4px 16px rgba(124, 58, 237, .45), 0 1px 3px rgba(91, 33, 182, .3), inset 0 1px 0 rgba(255, 255, 255, .2);
+  /* Same glow geometry as the outlined buttons beside it (4px/14px), at .22
+     rather than .45. All three strip buttons are 42px tall — measured, with
+     identical top and bottom — but at .45 over 16px of blur this one's glow
+     bled about 4px past the pill on every side, so the row read as a tall
+     button between two short ones. The fill alone is enough to say which
+     action is primary; it does not also need three times the shadow. */
+  box-shadow: 0 4px 14px rgba(124, 58, 237, .22), 0 1px 3px rgba(91, 33, 182, .16), inset 0 1px 0 rgba(255, 255, 255, .2);
   transition: transform .14s, box-shadow .14s;
 }
 
@@ -1991,7 +2089,9 @@ tbody tr:nth-child(10) {
   transform: translateY(-2px);
   color: #fff;
   background: linear-gradient(135deg, #4c1d95 0%, #5b21b6 55%, #7c3aed 100%);
-  box-shadow: 0 8px 22px rgba(124, 58, 237, .45), 0 2px 5px rgba(91, 33, 182, .35), inset 0 1px 0 rgba(255, 255, 255, .25);
+  /* Matches the outlined buttons' hover glow, so the lift reads the same
+     across the row. */
+  box-shadow: 0 8px 22px rgba(124, 58, 237, .28), 0 2px 5px rgba(91, 33, 182, .18), inset 0 1px 0 rgba(255, 255, 255, .25);
 }
 
 .hr-cstrip>.d-flex .btn-label::after {

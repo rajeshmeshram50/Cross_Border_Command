@@ -86,6 +86,40 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
           --bs-gutter-y: 0;
         }
         .cv-page > * + * { margin-top: 8px; }
+        /* The page's own <style> is an element child, so the sibling rule was handing the
+           FIRST visible block an 8px top margin on top of the page's 8px
+           padding — a 16px gap where every other page starts at 8. */
+        .cv-page > style + * { margin-top: 0; }
+        /* Page actions, on the hero. They sit top-right of the banner, over the
+           gradient, so they are translucent white rather than a card colour — a
+           solid pill would read as a chip floating on the artwork.
+           NOTE: no backticks in these comments; the block is a template literal. */
+        /* One control: the close X. Edit lives on the Clients list, as the
+           pencil on each row — a second entry point here only split the action
+           across two screens. */
+        .cv-hero-actions {
+          position: absolute; top: 16px; right: 16px; z-index: 3;
+          display: inline-flex; align-items: center;
+        }
+        /* The close X replaces Back: on a detail view opened from a list, the
+           action is "shut this", and a cross says that in one glyph. */
+        .cv-hero-close {
+          display: inline-flex; align-items: center; justify-content: center;
+          width: 36px; height: 36px;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.38);
+          background: rgba(255, 255, 255, 0.16);
+          color: #fff; cursor: pointer;
+          backdrop-filter: blur(6px);
+          transition: background .15s, border-color .15s, transform .15s;
+        }
+        .cv-hero-close:hover {
+          background: rgba(255, 255, 255, 0.30);
+          border-color: rgba(255, 255, 255, 0.6);
+          transform: translateY(-1px);
+        }
+        .cv-hero-close i { font-size: 18px; line-height: 1; }
+
         /* Back is an ACTION, so it has to look like one. As a reactstrap
            light-coloured button it rendered white-on-white against this strip
            with no border — indistinguishable from the page title beside it.
@@ -209,31 +243,9 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
       `}</style>
 
       {/* ── Page title + back button + Edit Profile ── */}
-      <Row>
-        <Col xs={12}>
-          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0">Client Profile</h4>
-            {/* Back sits on the RIGHT, beside Edit Profile. It used to be a
-                circle tucked in front of the title, which read as part of the
-                heading rather than as an action — and left the page's two
-                actions split across opposite ends of the strip. */}
-            <div className="page-title-right d-flex align-items-center gap-2">
-              <button type="button" className="cv-back-btn" onClick={onBack}>
-                <i className="ri-arrow-left-line"></i>
-                Back
-              </button>
-              <Button
-                color="secondary"
-                className="btn-label waves-effect waves-light rounded-pill"
-                onClick={() => onNavigate('client-form', { editId: clientId })}
-              >
-                <i className="ri-pencil-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-                Edit Profile
-              </Button>
-            </div>
-          </div>
-        </Col>
-      </Row>
+      {/* No page-title strip. It repeated the heading the hero already carries
+          and parked the page's two actions in a band of their own above it;
+          they now sit ON the hero, where the eye already is. */}
 
       {/* ── Hero banner — velzon-style profile cover with all hero content inside ── */}
       <Card className="overflow-hidden mb-0 border-0" style={{ borderRadius: 20 }}>
@@ -241,6 +253,11 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
           className="position-relative overflow-hidden cv-hero"
           style={{ padding: '32px 32px 28px' }}
         >
+          <div className="cv-hero-actions">
+            <button type="button" className="cv-hero-close" onClick={onBack} aria-label="Close">
+              <i className="ri-close-line" />
+            </button>
+          </div>
           <Row className="g-4 align-items-center position-relative flex-nowrap">
             <Col xs="auto">
               {(() => {

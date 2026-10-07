@@ -1070,7 +1070,18 @@ export default function Profile() {
           --bs-gutter-x: 8px;
           --bs-gutter-y: 0;
         }
-        .pf-page > * + * { margin-top: 8px; }
+        /* 8px between consecutive VISIBLE blocks. The style tag is skipped on
+           BOTH sides, because the page's own style element renders nothing:
+           with the adjacent-sibling form it absorbed one gap and then handed
+           the block after it a margin, and the paired reset that zeroed the
+           element after the style assumed the style came first.
+           It does not — the hero banner is the
+           first child and the <style> the second — so that reset was zeroing
+           ROW 1's margin and the hero sat flush against the cards below it.
+           The general-sibling form is order-independent: the first visible block
+           has no non-style sibling before it, so it takes no top margin wherever
+           the <style> ends up. */
+        .pf-page > *:not(style) ~ *:not(style) { margin-top: 8px; }
         /* Below xl the pairs stack, so the gap that was horizontal becomes
            vertical — same 8px. */
         @media (max-width: 1199.98px) {
