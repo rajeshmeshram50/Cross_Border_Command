@@ -313,6 +313,22 @@ function RefineSuppliers(props: {
     };
   }, [open, onOpenChange]);
 
+  /* Freeze the page behind the panel while it is open, the same way the
+     Segments and Contact Persons overlays do. The panel is position:fixed and
+     the Filter button is not, so any scroll pulls the two apart — and which
+     element does the scrolling varies with the shell, so there is no one scroll
+     event to catch. Nothing moves, nothing comes apart.
+     BOTH <html> and <body>: a body-only lock still lets the html element
+     scroll on some layouts. */
+  useEffect(() => {
+    if (!open) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [open]);
+
   /* How tall the facet area may be before the panel runs off the bottom of the
      screen. (#37)
      The body already scrolled, but at a FIXED cap — min(56vh, 420px) — which
@@ -356,13 +372,36 @@ function RefineSuppliers(props: {
         : { top: r.bottom + 11, right, maxHeight: Math.max(200, below) });
     };
     measure();
-    window.addEventListener('scroll', measure, true);
-    window.addEventListener('resize', measure);
-    return () => {
-      window.removeEventListener('scroll', measure, true);
-      window.removeEventListener('resize', measure);
+
+    /* Scrolling the page closes it rather than dragging it along: the panel is
+       fixed, so it used to hang over a table that had moved on underneath,
+       anchored to a Filter button no longer beside it.
+       Watched by the button's own position rather than by scroll events. Which
+       element scrolls depends on the shell — window, .main-content, or a
+       wrapper inside it — and listening for the one that fires meant guessing.
+       If the button has moved, the page scrolled, whatever did the scrolling.
+       The facet list scrolls inside the panel without moving the button, so it
+       is unaffected. */
+    let anchor = wrapRef.current?.getBoundingClientRect().top ?? 0;
+    let raf = 0;
+    const watch = () => {
+      const r = wrapRef.current?.getBoundingClientRect();
+      if (r && Math.abs(r.top - anchor) > 2) { onOpenChange(false); return; }
+      raf = requestAnimationFrame(watch);
     };
-  }, [open]);
+    raf = requestAnimationFrame(watch);
+
+    // A resize re-anchors instead of closing — the user has not scrolled away.
+    const onResize = () => {
+      measure();
+      anchor = wrapRef.current?.getBoundingClientRect().top ?? anchor;
+    };
+    window.addEventListener('resize', onResize);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [open, onOpenChange]);
 
   const grand = facets?.grand_total ?? 0;
   const pct = grand > 0 ? Math.round((Math.min(props.shown, grand) / grand) * 100) : 100;
