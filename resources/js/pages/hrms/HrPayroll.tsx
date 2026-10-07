@@ -1491,16 +1491,6 @@ export default function HrPayroll() {
         const r = info.row.original;
         return (
           <div className="d-flex align-items-center gap-2">
-            <div
-              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-              style={{
-                width: 34, height: 34, fontSize: 12,
-                background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)`,
-                boxShadow: `0 2px 6px ${r.accent}40`,
-              }}
-            >
-              {r.initials}
-            </div>
             <div className="min-w-0">
               <div className="fw-semibold fs-13 text-truncate">{r.name}</div>
               <div className="text-muted" style={{ fontSize: 11.5 }}>CTC ₹{fmtINR(r.ctc)}/mo</div>
@@ -1692,12 +1682,6 @@ export default function HrPayroll() {
         const r = info.row.original;
         return (
           <div className="d-flex align-items-center gap-2">
-            <div
-              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-              style={{ width: 30, height: 30, fontSize: 11, background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)` }}
-            >
-              {r.initials}
-            </div>
             <div className="min-w-0">
               <div className="fw-semibold fs-13 text-truncate">{r.name}</div>
               <div className="text-muted" style={{ fontSize: 11 }}>{r.empId}</div>
@@ -1817,12 +1801,6 @@ export default function HrPayroll() {
           const r = info.row.original;
           return (
             <div className="d-flex align-items-center gap-2">
-              <div
-                className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                style={{ width: 30, height: 30, fontSize: 11, background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)` }}
-              >
-                {r.initials}
-              </div>
               <div className="fw-semibold fs-13 text-truncate">{r.name}</div>
             </div>
           );
@@ -1962,10 +1940,6 @@ export default function HrPayroll() {
         const initials = (emp.name || 'NA').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
         return (
           <div className="d-flex align-items-center gap-2">
-            <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-              style={{ width: 32, height: 32, fontSize: 11, background: `linear-gradient(135deg, ${accent}, ${accent}cc)` }}>
-              {initials}
-            </div>
             <div className="min-w-0">
               <div className="fw-semibold fs-13 text-truncate">{emp.name}</div>
               {/* An exit under way leaves employees.status on 'Active' until it

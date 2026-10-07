@@ -5,8 +5,9 @@
   background: transparent;
   padding: 0;
   margin: 0;
-  /* 6px between strips, as on the Supplier list. */
-  display: flex; flex-direction: column; gap: 6px;
+  /* 8px between strips — the page standard, and what the Supplier list
+     this comment points at actually uses. */
+  display: flex; flex-direction: column; gap: 8px;
   color: var(--vz-body-color);
 }
 .smcg-root *, .smcg-root *::before, .smcg-root *::after { box-sizing: border-box; }

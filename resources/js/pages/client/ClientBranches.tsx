@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Col, Row, Input } from 'reactstrap';
+import { Col, Row } from 'reactstrap';
+import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import api from '../../api';
-import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
-import SearchClear from '../../components/ui/SearchClear';
+import { Shimmer } from '../../components/ui/Shimmer';
 
 interface Props {
   clientId: number;
@@ -36,6 +36,88 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
     return b.name?.toLowerCase().includes(q) || b.code?.toLowerCase().includes(q) || b.city?.toLowerCase().includes(q);
   });
 
+  // Same cells the hand-rolled table rendered, as DataTable columns. The code
+  // chip uses .dt-id-chip so it matches the id chip on every other list.
+  const columns: DataTableColumn<Branch>[] = [
+    {
+      header: 'Branch Name',
+      accessorKey: 'name',
+      meta: { width: 320, wrap: true },
+      cell: (info: any) => {
+        const b = info.row.original;
+        return (
+          // Name only. The avatar square in front of it repeated the Code
+          // column's first two characters, so it carried nothing the row did
+          // not already say, and it pushed the name off the column's edge.
+          <div style={{ minWidth: 0 }}>
+            <div className="fw-semibold text-truncate">{b.name}</div>
+            {b.description && (
+              <div className="text-muted fs-12 text-truncate" style={{ maxWidth: 260 }}>{b.description}</div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Code',
+      accessorKey: 'code',
+      meta: { width: 120, align: 'center' },
+      cell: (info: any) => info.row.original.code
+        ? <span className="dt-id-chip">{info.row.original.code}</span>
+        : <span className="text-muted">—</span>,
+    },
+    {
+      header: 'Type',
+      accessorKey: 'branch_type',
+      meta: { width: 150 },
+      cell: (info: any) => {
+        const b = info.row.original;
+        if (!b.branch_type) return <span className="text-muted">—</span>;
+        const typeIcon = typeIconMap[b.branch_type] || 'ri-git-branch-line';
+        return (
+          <span className="d-inline-flex align-items-center gap-1">
+            <i className={`${typeIcon} text-muted`}></i>
+            <span className="text-capitalize">{b.branch_type}</span>
+          </span>
+        );
+      },
+    },
+    {
+      header: 'Location',
+      accessorKey: 'city',
+      meta: { width: 220 },
+      cell: (info: any) => {
+        const b = info.row.original;
+        return b.city ? <span>{b.city}{b.state ? `, ${b.state}` : ''}</span> : <span className="text-muted">—</span>;
+      },
+    },
+    {
+      header: 'Users',
+      accessorKey: 'users_count',
+      meta: { width: 110, align: 'center' },
+      cell: (info: any) => (
+        <span className="d-inline-flex align-items-center gap-1">
+          <i className="ri-user-3-line text-muted"></i>
+          <span className="fw-semibold">{info.row.original.users_count ?? 0}</span>
+        </span>
+      ),
+    },
+    {
+      header: 'Status',
+      accessorKey: 'status',
+      meta: { width: 130, align: 'center' },
+      cell: (info: any) => {
+        const isActive = info.row.original.status === 'active';
+        const color = isActive ? 'success' : 'danger';
+        return (
+          <span className={`badge rounded-pill bg-${color}-subtle text-${color} fw-semibold px-3 py-2`}>
+            {isActive ? 'Active' : 'Inactive'}
+          </span>
+        );
+      },
+    },
+  ];
+
   const totalUsers = branches.reduce((s: number, b: any) => s + (b.users_count || 0), 0);
   const activeBranches = branches.filter(b => b.status === 'active').length;
 
@@ -49,6 +131,34 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
     <>
       <style>{`
         .branches-surface { background: #ffffff; }
+        /* Back is an ACTION, so it looks like one — the outlined counterpart to
+           the solid buttons elsewhere, matching Client Profile's .cv-back-btn.
+           NOTE: no backticks in these comments, the block is a template literal. */
+        .cb-back-btn {
+          display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+          height: 38px; padding: 0 18px;
+          border-radius: 999px;
+          border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
+          background: #fff; color: #6d28d9;
+          font-family: inherit; font-size: 13px; font-weight: 600;
+          white-space: nowrap; cursor: pointer; flex-shrink: 0;
+          transition: background .15s, border-color .15s, transform .15s;
+        }
+        .cb-back-btn i { font-size: 15px; line-height: 1; }
+        .cb-back-btn:hover { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
+        [data-bs-theme="dark"] .cb-back-btn,
+        [data-layout-mode="dark"] .cb-back-btn {
+          background: var(--vz-card-bg); color: #c4b5fd; border-color: rgba(167, 139, 250, 0.40);
+        }
+        [data-bs-theme="dark"] .cb-back-btn:hover,
+        [data-layout-mode="dark"] .cb-back-btn:hover { background: rgba(139, 92, 246, 0.14); }
+
+        /* 8px between the blocks inside the surface, the page's own number. The
+           KPI row carried g-3 (16px gutters) and mb-3, so the strip, the cards
+           and the table all sat on different spacings. */
+        .branches-surface > .row { --vz-gutter-x: 8px; --vz-gutter-y: 8px; --bs-gutter-x: 8px; --bs-gutter-y: 8px; }
+        .branches-surface > .row.mb-3 { margin-bottom: 8px !important; }
+
         [data-bs-theme="dark"] .branches-surface { background: #1c2531; }
 
         /* KPI hover — mirrors the lift/shadow/icon-rotate used on the
@@ -90,13 +200,15 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
       <Row>
         <Col xs={12}>
           <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0 d-flex align-items-center gap-2">
-              <button className="btn btn-sm btn-soft-secondary rounded-circle d-inline-flex align-items-center justify-content-center" style={{ width: 32, height: 32 }} onClick={onBack}>
+            <h4 className="mb-sm-0">Branches</h4>
+            {/* Back is an action, so it sits on the right with the other page
+                chrome and carries a label — as a bare circle in front of the
+                title it read as part of the heading. Matches Client Profile. */}
+            <div className="page-title-right d-flex align-items-center gap-3">
+              <button type="button" className="cb-back-btn" onClick={onBack}>
                 <i className="ri-arrow-left-line"></i>
+                Back
               </button>
-              Branches
-            </h4>
-            <div className="page-title-right">
               <ol className="breadcrumb m-0">
                 <li className="breadcrumb-item">
                   <a href="#" onClick={(e) => { e.preventDefault(); navigate('/clients'); }}>Client</a>
@@ -121,8 +233,10 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
           >
             {/* ── KPI cards (single row, equal height) ── */}
             <Row className="g-3 mb-3 align-items-stretch">
+              {/* md=4, not md=3: there are three KPIs, and a four-up grid left
+                  the last quarter of the row empty. */}
               {KPI_CARDS.map(k => (
-                <Col key={k.label} md={3} sm={6} xs={12}>
+                <Col key={k.label} md={4} sm={6} xs={12}>
                   <div
                     className="branches-surface cb-kpi"
                     style={{
@@ -144,7 +258,7 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
                         {loading ? (
                           <Shimmer width={72} height={26} radius={6} style={{ marginTop: 2 }} />
                         ) : (
-                          <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                          <h3 style={{ fontSize: 26, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
                             {k.value.toLocaleString()}
                           </h3>
                         )}
@@ -158,107 +272,31 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
               ))}
             </Row>
 
-            {/* ── Search row ── */}
-            <Row className="g-2 align-items-center mb-3">
-              <Col xs={12}>
-                <div className="search-box w-100">
-                  {/* Autofill guard — Chrome ignores autocomplete="off" on a field it
-                      classifies as contact info and drops an email / address into it
-                      (QA #8 on Customers, QA #25 on Consignee). An explicit name,
-                      autocomplete="new-password" and the LastPass / Dashlane opt-outs
-                      keep it out of this one. */}
-                  <Input
-                    type="search"
-                    className="form-control"
-                    name="branch-list-search"
-                    autoComplete="new-password"
-                    data-lpignore="true"
-                    data-form-type="other"
-                    placeholder="Search by name, code, city..."
-                    value={searchInput}
-                    onChange={e => setSearchInput(e.target.value)}
-                  />
-                  <SearchClear show={searchInput} onClear={() => { setSearchInput(''); }} />
-                  <i className="ri-search-line search-icon"></i>
-                </div>
-              </Col>
-            </Row>
-
-            {/* ── Table ── */}
-            <div className="table-responsive  border rounded Borderradius-20">
-              <table className="table align-middle table-nowrap mb-0 ">
-                <thead className="table-light">
-                  <tr>
-                    <th scope="col">Branch Name</th>
-                    <th scope="col">Code</th>
-                    <th scope="col">Type</th>
-                    <th scope="col">Location</th>
-                    <th scope="col">Users</th>
-                    <th scope="col">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <ShimmerTableRows rows={5} cols={6} />
-                  ) : filtered.length === 0 ? (
-                    <tr><td colSpan={6} className="text-center text-muted py-5">No branches found</td></tr>
-                  ) : filtered.map(b => {
-                    const typeIcon = typeIconMap[b.branch_type || ''] || 'ri-git-branch-line';
-                    const isActive = b.status === 'active';
-                    const color = isActive ? 'success' : 'danger';
-                    return (
-                      <tr key={b.id}>
-                        <td>
-                          <div className="d-flex align-items-center gap-2">
-                            <div
-                              className="avatar-xs rounded d-flex align-items-center justify-content-center text-white fw-bold bg-info"
-                              style={{ fontSize: 10 }}
-                            >
-                              {b.code?.substring(0, 2) || b.name.charAt(0)}
-                            </div>
-                            <div>
-                              <div className="fw-semibold d-flex align-items-center gap-1">
-                                {b.name}
-                              </div>
-                              {b.description && <div className="text-muted fs-12 text-truncate" style={{ maxWidth: 220 }}>{b.description}</div>}
-                            </div>
-                          </div>
-                        </td>
-                        <td>
-                          {b.code ? (
-                            <span className="fw-medium text-primary font-monospace fs-13">{b.code}</span>
-                          ) : <span className="text-muted">—</span>}
-                        </td>
-                        <td>
-                          {b.branch_type ? (
-                            <span className="d-inline-flex align-items-center gap-1 fs-13">
-                              <i className={`${typeIcon} text-muted`}></i>
-                              <span className="text-capitalize">{b.branch_type}</span>
-                            </span>
-                          ) : <span className="text-muted">—</span>}
-                        </td>
-                        <td>
-                          {b.city ? (
-                            <span className="fs-13">{b.city}{b.state ? `, ${b.state}` : ''}</span>
-                          ) : <span className="text-muted">—</span>}
-                        </td>
-                        <td>
-                          <span className="d-inline-flex align-items-center gap-1 fs-13">
-                            <i className="ri-user-3-line text-muted"></i>
-                            <span className="fw-semibold">{b.users_count ?? 0}</span>
-                          </span>
-                        </td>
-                        <td>
-                          <span className={`badge rounded-pill bg-${color}-subtle text-${color} fw-semibold px-3 py-2`}>
-                            {isActive ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            {/* The shared list table, as Clients, Branches and Payments use.
+                It brings the toolbar search, the violet-on-pale header and
+                fitToViewport, which stretches the table to the footer instead
+                of ending at the last row. The hand-rolled <table> it replaces
+                had a grey Velzon header and its own full-width search row. */}
+            <DataTable<Branch>
+              data={filtered}
+              columns={columns}
+              serial
+              className="hr-dt"
+              accent="violet"
+              minWidth={1100}
+              fitToViewport
+              autoFitRows
+              loading={loading}
+              searchValue={searchInput}
+              onSearchChange={setSearchInput}
+              searchPlaceholder="Search by name, code, city..."
+              emptyMessage={
+                <>
+                  <i className="ri-git-branch-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                  No branches found
+                </>
+              }
+            />
           </div>
         </Col>
       </Row>

@@ -437,19 +437,14 @@ export default function MyTeam() {
         const e = info.row.original;
         const nm = e.display_name || `${e.first_name || ''} ${e.last_name || ''}`.trim() || '—';
         return (
-          <div className="d-flex align-items-center gap-2">
-            {/* Same classes the legacy table's cells carry, so one dark rule
-                covers both surfaces — these were style-only and had nothing a
-                theme could hook onto. (CBC #15) */}
-            <span className="myteam-avatar" style={{ width: 32, height: 32, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12, flexShrink: 0 }}>
-              {(e.display_name || e.first_name || 'E').split(/\s+/).slice(0, 2).map(s => s[0]).join('').toUpperCase()}
-            </span>
-            <div className="min-w-0">
-              {/* 600, the weight every other list gives its primary line —
-                  HRMS's employee name and the Customers company name both. */}
-              <div style={{ fontWeight: 600 }}>{nm}</div>
-              <div style={{ fontSize: 11.5, color: '#6b7280' }}>{e.email || '—'}</div>
-            </div>
+          // Name over email, no avatar. The circle in front of them held the
+          // initials of the name right beside it, so it repeated the cell and
+          // pushed both lines off the column's edge.
+          <div className="min-w-0">
+            {/* 600, the weight every other list gives its primary line —
+                HRMS's employee name and the Customers company name both. */}
+            <div style={{ fontWeight: 600 }}>{nm}</div>
+            <div style={{ fontSize: 11.5, color: '#6b7280' }}>{e.email || '—'}</div>
           </div>
         );
       },
@@ -457,8 +452,24 @@ export default function MyTeam() {
     { header: 'Code', accessorFn: r => r.emp_code || '', meta: { width: '9%' }, cell: info => <code className="myteam-code-pill" style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4 }}>{info.row.original.emp_code || '—'}</code> },
     { header: 'Designation', accessorFn: r => r.designation?.name || '', cell: info => { const e = info.row.original; return <div><div style={{ fontWeight: 600 }}>{e.designation?.name || '—'}</div>{e.designation?.level && <div style={{ fontSize: 11.5, color: '#6b7280' }}>{e.designation.level}</div>}</div>; } },
     { header: 'Department', accessorFn: r => r.department?.name || '—' },
-    { header: 'Branch', accessorFn: r => r.branch?.name || '—' },
-    { header: 'Reports To', accessorFn: r => r.reports_to || r.reportingManager?.display_name || '—' },
+    // Branch and Reports To both run past the column, so each needs a way to
+    // read the rest — without one the full value was simply unreachable.
+    {
+      header: 'Branch',
+      accessorFn: (r: any) => r.branch?.name || '—',
+      cell: info => {
+        const v = info.getValue() as string;
+        return <Tooltip label={v}><span className="d-block text-truncate">{v}</span></Tooltip>;
+      },
+    },
+    {
+      header: 'Reports To',
+      accessorFn: (r: any) => r.reports_to || r.reportingManager?.display_name || '—',
+      cell: info => {
+        const v = info.getValue() as string;
+        return <Tooltip label={v}><span className="d-block text-truncate">{v}</span></Tooltip>;
+      },
+    },
     { header: 'Status', accessorFn: r => r.status || 'Active', meta: { align: 'center' }, cell: info => <span className="myteam-status-pill" style={{ padding: '2px 9px', borderRadius: 999, fontSize: 11.5, fontWeight: 700 }}>{info.row.original.status || 'Active'}</span> },
   ], []);
 

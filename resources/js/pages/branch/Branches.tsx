@@ -669,6 +669,8 @@ export default function Branches({ onNavigate }: Props) {
               data={filtered}
               columns={columns}
               serial
+              /* Same pale skin as Clients and the HRMS lists — see the note there. */
+              className="hr-dt"
               accent="violet"
               minWidth={1400}
               fitToViewport

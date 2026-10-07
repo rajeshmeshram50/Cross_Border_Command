@@ -96,8 +96,10 @@
   text-overflow: clip;
 }
 .rec-page-kpis .rec-kpi-num {
+  /* 700, not 800. At 20-26px an 800 numeral is the heaviest thing on the
+     page and the KPI row shouted over the list it introduces. */
   font-size: 24px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: -0.02em;
   margin-top: 0;
   color: var(--vz-heading-color, var(--vz-body-color));

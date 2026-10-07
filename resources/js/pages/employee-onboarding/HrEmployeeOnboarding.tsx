@@ -823,7 +823,7 @@ export default function HrEmployeeOnboarding() {
                   <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
                     {k.label}
                   </p>
-                  <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                  <h3 style={{ fontSize: 26, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
                     {loadingRows
                       ? <Shimmer height={26} width={64} />
                       : <AnimatedNumber value={(counts as any)[k.key] ?? 0} />}

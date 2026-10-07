@@ -215,9 +215,11 @@
   background: transparent;
   padding: 0;
   margin: 0;
-  /* 6px between the strips, as on the Supplier list (.sup-fig). 16px was
-     three separate 16px gaps stacked above the table. */
-  display: flex; flex-direction: column; gap: 6px;
+  /* 8px between the strips — the page's own number, the same one
+     .page-content leaves around the whole page. This said "6px, as on the
+     Supplier list"; the Supplier list (.sup-fig) is 8px, so the comment had
+     outlived the value and these two pages were the only ones at 6. */
+  display: flex; flex-direction: column; gap: 8px;
   color: var(--vz-body-color);
 }
 .smc-root *, .smc-root *::before, .smc-root *::after { box-sizing: border-box; }

@@ -290,11 +290,24 @@
 .hrexp-page .hrexp-scoperow > div:first-child {
   background: var(--vz-secondary-bg) !important;
   border: 1px solid var(--vz-border-color) !important;
-  border-radius: 10px !important;
+  border-radius: 11px !important;
   padding: 4px !important;
+  gap: 8px !important;
 }
-/* Match .dt-tab's 40px so both rails line up across the two rows. */
-.hrexp-page .hrexp-scoperow > div:first-child .btn { height: 40px !important; }
+/* The shared tab box: 34px on 14px of side padding at 12.5px/650. This said
+   "match .dt-tab's 40px" and was true when it was written — .dt-tab is 34px
+   now, so the toggle stood a head taller than the status rail right below it.
+   !important throughout: these buttons carry .fw-semibold, which the theme
+   redefines as `font-weight: 500 !important`, and an !important declaration
+   beats an inline style — so the weight cannot be set from the markup. */
+.hrexp-page .hrexp-scoperow > div:first-child .btn {
+  height: 34px !important;
+  padding: 0 14px !important;
+  font-size: 12.5px !important;
+  font-weight: 650 !important;
+  letter-spacing: 0 !important;
+  border-radius: 8px !important;
+}
 .hrexp-page .hrexp-scoperow .hrexp-cta { height: 40px; padding: 0 18px; }
 @media (max-height: 900px) {
   .hrexp-page .hrexp-scoperow .hrexp-cta { height: 40px; padding: 0 14px; }

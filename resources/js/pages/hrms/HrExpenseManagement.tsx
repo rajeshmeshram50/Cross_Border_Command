@@ -162,7 +162,7 @@ function KpiTile({
             {label}
           </p>
           <h3 style={{
-            fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))',
+            fontSize: 26, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))',
             margin: 0, lineHeight: 1, fontVariantNumeric: 'tabular-nums',
           }}>
             {value}
@@ -916,7 +916,7 @@ export default function HrExpenseManagement() {
   // read as two different screens depending on which half was chosen.
   const USED_FOR_ACTIVE = '#8b5cf6';
   const usedForToggle = (
-    <div className="d-inline-flex" style={{ background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 10, padding: 4, gap: 4 }}>
+    <div className="d-inline-flex" style={{ background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 11, padding: 4, gap: 8 }}>
       {[
         { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company, active: USED_FOR_ACTIVE },
         { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self,    active: USED_FOR_ACTIVE },
@@ -929,7 +929,11 @@ export default function HrExpenseManagement() {
             onClick={() => { if (advUsedFor !== t.key) flashSwitch(); setAdvUsedFor(t.key); setFilter('all'); }}
             className="btn d-inline-flex align-items-center gap-2 fw-semibold"
             style={{
-              fontSize: 13, height: 48, padding: '0 16px', borderRadius: 8, border: 'none',
+              /* The product's tab box, as .dt-tab sets it: 34px on 14px of side
+                 padding at 12.5px/650. This ran 13px text in a 48px button,
+                 which made the toggle a head taller than the status rail it
+                 sits beside and read as a different kind of control. */
+              fontSize: 12.5, fontWeight: 650, height: 34, padding: '0 14px', borderRadius: 8, border: 'none',
               background: on ? t.active : 'transparent',
               color: on ? '#fff' : 'var(--vz-secondary-color)',
               boxShadow: on ? `0 4px 10px ${t.active}55` : 'none',
@@ -939,7 +943,8 @@ export default function HrExpenseManagement() {
             <span
               className="d-inline-flex align-items-center justify-content-center rounded-pill"
               style={{
-                minWidth: 22, height: 20, fontSize: 11, padding: '0 6px',
+                /* .dt-tab-count: a 20x18 puck at 10px/700. */
+                minWidth: 20, height: 18, fontSize: 10, fontWeight: 700, padding: '0 7px',
                 background: on ? 'rgba(255,255,255,0.28)' : 'var(--vz-secondary-bg)',
                 color: on ? '#fff' : 'var(--vz-secondary-color)',
               }}

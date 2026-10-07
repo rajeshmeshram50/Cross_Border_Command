@@ -3919,7 +3919,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                         <p className="hr-emp-kpi-label" style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.05em', textTransform: 'uppercase', margin: '0 0 8px' }}>
                           {k.label}
                         </p>
-                        <h3 className="hr-emp-kpi-value" style={{ fontSize: 24, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                        <h3 className="hr-emp-kpi-value" style={{ fontSize: 24, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
                           {loadingEmployees
                             ? <Shimmer height={24} width={56} />
                             : <AnimatedNumber value={(counts as any)[k.key]} />}

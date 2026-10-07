@@ -241,8 +241,64 @@ body {
    the element makes it (0,1,1) and settles it on specificity instead.
    Nothing here can beat a Bootstrap utility on order alone — raise
    specificity, do not move the rule. */
-div.frm-cstrip {
+/* The platform pages name their strip per page rather than sharing
+   .frm-cstrip, so each one is listed or it keeps whatever `mb-*` the markup
+   wrote (16px on all of them). */
+div.frm-cstrip,
+div.cl-cstrip,
+div.pl-cstrip,
+div.pmt-cstrip,
+div.br-cstrip,
+div.ms-cstrip,
+div.mp-cstrip {
   margin-bottom: 8px !important;
+}
+
+/* The primary "Add" button is one button across the product: .smc-add-btn on
+   Customers — 42px tall, a full pill, 13px/600 on 22px of side padding. Each
+   platform page had drawn its own (Clients, Plans and Branches at 44px with a
+   14px radius and weight 700), and every one of them carries a comment saying
+   it matches Customers. It does now.
+   !important because these rules live in <style> tags the pages inject at
+   render, which land after this file and would otherwise win on order. */
+button.cl-cstrip-add,
+button.pl-cstrip-add,
+button.pmt-cstrip-add,
+button.br-cstrip-add,
+button.ms-cstrip-add {
+  height: 42px !important;
+  padding: 0 22px !important;
+  border-radius: 999px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+}
+
+/* …and the same for EVERY action in a page header strip, not just the "Add"
+   one. Measured across HRMS and the client pages, these buttons ran 36, 37,
+   38, 40, 42, 43, 44 and 46px, with six different radii and seven different
+   type settings — Payroll alone had a 38px select beside a 46px Run Payroll
+   beside a 43px Export.
+   42px is the Customers primary (.smc-add-btn). It is deliberately NOT the
+   34px of a tab: Customers itself runs 34px tabs beside a 42px button, because
+   a call to action that matches the tab rail reads as another tab.
+   `:not()` guards what is not an action: a tab rail dropped into a strip keeps
+   its own 34px, and the row-action squares and the search's clear button are
+   their own sizes. `.page-title-box` is the same strip on the client and
+   branch DETAIL pages, which name it differently. */
+:is(.frm-cstrip, .cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .mp-cstrip, .page-title-box)
+  :is(button, a.btn):not(.dt-tab):not(.dt-act):not(.dt-search-clear):not(.dt-tabrail *) {
+  height: 42px !important;
+  border-radius: 999px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+}
+
+/* The selects that sit in the same row (All Dates, the payroll month) line up
+   with the buttons beside them rather than standing 4px short. */
+:is(.frm-cstrip, .cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .mp-cstrip, .page-title-box)
+  :is(select, .form-select) {
+  height: 42px !important;
+  border-radius: 999px !important;
 }
 
 /* KPI strip → the list below it. Matched three ways because the KPI row is
@@ -258,7 +314,11 @@ div.frm-cstrip {
    the next page that laid its header out differently — which is why the gap
    kept "not changing" while the CSS said it had.
    Specificity (0,4,0): `:has()` contributes its most specific argument. */
-.row.mb-3:has(> [class*="col"] > [class*="kpi-card"]),
+/* `kpi`, not `kpi-card`: the platform pages name their tiles .clients-kpi and
+   .plan-stat-box, so a selector written around the word "card" skipped them and
+   those two rows kept Bootstrap's 24px gutter. */
+.row.mb-3:has(> [class*="col"] > [class*="kpi"]),
+.row.mb-3:has(> [class*="col"] > [class*="stat-box"]),
 .rec-page-kpis.mb-3:not(.ep-doc-kpis),
 .frm-cstrip+.row.mb-3,
 .hr-employees-surface>.row.mb-3 {
@@ -320,6 +380,62 @@ div.frm-cstrip {
   --bs-gutter-x: 8px !important;
   --bs-gutter-y: 8px !important;
 }
+
+/* ── The platform pages take the same standard ───────────────────────────────
+   Clients, Plans, Payments, Branches and Users each grew their own look: tables
+   in Velzon's Rubik on a grey band with black caps, a 40px search, and 16px
+   between every block. Master, on the same menu, uses the shared DataTable and
+   already looks right — which is what made the inconsistency obvious.
+   Scoped by each page's own header strip, the way the HRMS rules are scoped by
+   .hr-cstrip, so nothing outside these pages moves. */
+.page-content:has(:is(.cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip)) :is(table.table, .table) thead th {
+  font-family: var(--font-sans);
+  /* The product's header: 9.5px / 800 at .07em, white on the accent band —
+     .dt-table and .smc-table both. This ran 9.5px/800 black on #f3f6f9, and on
+     Payments 13.2px/500, which is not a header at all. */
+  font-size: 9.5px !important;
+  font-weight: 800 !important;
+  letter-spacing: .07em !important;
+  text-transform: uppercase;
+  padding: 9px !important;
+  color: #fff !important;
+  background: #6d28d9 !important;
+  border-bottom: 0 !important;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.page-content:has(:is(.cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip)) :is(table.table, .table) tbody td {
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 7px 9px;
+  vertical-align: middle;
+}
+
+/* The one search field: 42px tall, 11px radius, 13px/500, icon inset 14px —
+   .smc-search and .dt-search. Velzon's .search-box ships 10px radius, a 40px
+   left inset and the browser's own input weight. */
+.page-content:has(:is(.cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip)) .search-box .form-control {
+  height: 42px;
+  border-radius: 11px;
+  padding-left: 38px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.page-content:has(:is(.cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip)) .search-box .search-icon {
+  left: 14px;
+  font-size: 16px;
+}
+
+/* NOT the `:has(> strip) > *` shape used for HRMS. These pages do not put the
+   strip beside their other blocks — Clients gives the strip a row of its own
+   and keeps everything else in .clients-surface below it — so that selector
+   matched a container holding ONLY the strip and, through its :last-child
+   exception, zeroed the very margin it was meant to set. The strip's 8px is set
+   on the strip itself above, and the rows get theirs from the KPI rule. */
 
 .footer {
   position: static;
@@ -2493,8 +2609,10 @@ tbody tr:nth-child(10) {
 }
 
 .pmt-kpi-value {
+  /* 700, not 800. At 20-26px an 800 numeral is the heaviest thing on the
+     page and the KPI row shouted over the list it introduces. */
   font-size: 20px;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--vz-heading-color, var(--vz-body-color));
   margin: 0;
   line-height: 1;
