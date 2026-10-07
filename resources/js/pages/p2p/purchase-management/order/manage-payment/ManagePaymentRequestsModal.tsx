@@ -11,7 +11,7 @@ import {
   initials, moneyIn, rowBreakdown, shortDate,
 } from './payment-shared';
 
-import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../../p2p-detail.css';
 import './manage-payment-requests.css';
 
 const DeductTdsModal = lazy(() => import('./DeductTdsModal'));

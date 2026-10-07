@@ -106,14 +106,6 @@ Route::get('/sales/quotations/{id}/view',        [SalesPdfController::class, 'pu
 Route::get('/sales/proforma-invoices/{id}/view', [SalesPdfController::class, 'publicViewProformaInvoice'])
     ->middleware(['signed', 'tenant.document:proforma_invoices'])
     ->name('sales.pi.view');
-Route::get('/p2p/purchase-orders/{id}/view',     [SalesPdfController::class, 'publicViewPurchaseOrder'])
-    ->middleware(['signed', 'tenant.document:purchase_orders'])
-    ->whereNumber('id')
-    ->name('p2p.po.view');
-Route::get('/p2p/debit-notes/{id}/view',         [SalesPdfController::class, 'publicViewDebitNote'])
-    ->middleware(['signed', 'tenant.document:debit_notes'])
-    ->whereNumber('id')
-    ->name('p2p.dn.view');
 
 // Broadcast (announcement) email attachment — streamed through the app so the
 // link in the emailed announcement works on BOTH local and Azure (public or
@@ -423,7 +415,12 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         $doc = \App\Http\Controllers\Api\P2p\PurchaseOrderDocumentController::class;
         $ins = \App\Http\Controllers\Api\P2p\PurchaseOrderInspectionController::class;
 
-        // Lookups (shipment and supplier dropdowns reuse /p2p/purchase-orders/shipments and /suppliers)
+        // Lookups. These three reads used to be served by the legacy
+        // /p2p/purchase-orders controller; PoLookupController owns them now.
+        $lk = \App\Http\Controllers\Api\P2p\PoLookupController::class;
+        Route::get   ('/suppliers',                      [$lk, 'suppliers']);
+        Route::get   ('/suppliers/{id}',                 [$lk, 'supplier'])->whereNumber('id');
+        Route::get   ('/shipments',                      [$lk, 'shipments']);
         Route::get   ('/next-code',                      [$po, 'nextCode']);
         Route::get   ('/shipments/{shipment}/pi-lines',  [$po, 'piLines'])->whereNumber('shipment');
 
@@ -689,20 +686,6 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::get   ('/procurements/{id}',        [ProcurementController::class, 'show'])->whereNumber('id');
 
     // ── Purchase Orders (P2P) ──
-    Route::get   ('/p2p/purchase-orders/preview-code',            [PurchaseOrderController::class, 'previewCode']);
-    Route::post  ('/p2p/purchase-orders/preview-pdf',             [PurchaseOrderController::class, 'previewPdf']);
-    Route::get   ('/p2p/purchase-orders/suppliers',               [PurchaseOrderController::class, 'suppliers']);
-    Route::get   ('/p2p/purchase-orders/suppliers/{id}',          [PurchaseOrderController::class, 'supplier'])->whereNumber('id');
-    Route::get   ('/p2p/purchase-orders/suppliers/{id}/trade-documents', [PurchaseOrderController::class, 'supplierTradeDocs'])->whereNumber('id');
-    Route::get   ('/p2p/purchase-orders/shipments',               [PurchaseOrderController::class, 'shipments']);
-    Route::get   ('/p2p/purchase-orders/shipments/{id}/pi-products', [PurchaseOrderController::class, 'shipmentPiProducts'])->whereNumber('id');
-    Route::get   ('/p2p/purchase-orders',                         [PurchaseOrderController::class, 'index']);
-    Route::post  ('/p2p/purchase-orders',                         [PurchaseOrderController::class, 'store']);
-    Route::get   ('/p2p/purchase-orders/{id}',                    [PurchaseOrderController::class, 'show'])->whereNumber('id');
-    Route::put   ('/p2p/purchase-orders/{id}',                    [PurchaseOrderController::class, 'update'])->whereNumber('id');
-    Route::delete('/p2p/purchase-orders/{id}',                    [PurchaseOrderController::class, 'destroy'])->whereNumber('id');
-    Route::post  ('/p2p/purchase-orders/{id}/sync',               [PurchaseOrderController::class, 'sync'])->whereNumber('id');
-    Route::post  ('/p2p/purchase-orders/{id}/sync-payment',       [PurchaseOrderController::class, 'syncPayment'])->whereNumber('id');
 
     // Dev Tools — read-only Zoho Books data inspector (admin-only; gated inside).
     // Dev Tools → Load Testing: which module/page combinations can be profiled.
@@ -718,68 +701,17 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::get   ('/dev-tools/profile/{id}',                      [\App\Http\Controllers\Api\DevToolsController::class, 'profileDetail']);
     Route::get   ('/dev-tools/zoho/{type}',                       [\App\Http\Controllers\Api\DevToolsController::class, 'zoho'])
         ->whereIn('type', ['items', 'vendors', 'purchase-orders', 'vendor-credits', 'bills', 'payments']);
-    Route::get   ('/p2p/purchase-orders/{id}/attachment-status',  [PurchaseOrderController::class, 'attachmentStatus'])->whereNumber('id');
-    Route::post  ('/p2p/purchase-orders/{id}/reattach',           [PurchaseOrderController::class, 'reattach'])->whereNumber('id');
-    Route::post  ('/p2p/purchase-orders/{id}/send-for-signature', [PurchaseOrderController::class, 'sendForSignature'])->whereNumber('id');
-    Route::get   ('/p2p/purchase-orders/{id}/zoho-pdf',           [PurchaseOrderController::class, 'zohoPdf'])->whereNumber('id');
-    Route::post  ('/p2p/purchase-orders/{id}/email',              [SalesPdfController::class, 'emailPurchaseOrder'])->whereNumber('id');
-    Route::get   ('/p2p/purchase-orders/{id}/pdf',                [SalesPdfController::class, 'viewPurchaseOrderPdf'])->whereNumber('id');
     // Payment Summary Against PO — payments always subtract from the PO balance,
     // reachable from both the PO and SPI screens.
-    Route::get   ('/p2p/purchase-orders/{po}/payment-summary',     [PoPaymentController::class, 'summary'])->whereNumber('po');
-    Route::post  ('/p2p/purchase-orders/{po}/payment-summary/tds', [PoPaymentController::class, 'saveTds'])->whereNumber('po');
-    Route::post  ('/p2p/purchase-orders/{po}/payments',            [PoPaymentController::class, 'store'])->whereNumber('po');
-    Route::delete('/p2p/purchase-orders/{po}/payments/{payment}',  [PoPaymentController::class, 'destroy'])->whereNumber('po')->whereNumber('payment');
 
     // ── Supplier Purchase Invoices (P2P) ──
-    Route::get   ('/p2p/supplier-purchase-invoices/preview-code',        [SupplierPurchaseInvoiceController::class, 'previewCode']);
-    Route::get   ('/p2p/supplier-purchase-invoices/purchase-orders',     [SupplierPurchaseInvoiceController::class, 'purchaseOrders']);
-    Route::get   ('/p2p/supplier-purchase-invoices/purchase-orders/{id}',[SupplierPurchaseInvoiceController::class, 'purchaseOrder'])->whereNumber('id');
-    Route::get   ('/p2p/supplier-purchase-invoices/suppliers',           [SupplierPurchaseInvoiceController::class, 'suppliers']);
-    Route::get   ('/p2p/supplier-purchase-invoices/suppliers/{id}',       [SupplierPurchaseInvoiceController::class, 'supplier'])->whereNumber('id');
-    Route::post  ('/p2p/supplier-purchase-invoices/upload',              [SupplierPurchaseInvoiceController::class, 'upload']);
-    Route::get   ('/p2p/supplier-purchase-invoices/download',            [SupplierPurchaseInvoiceController::class, 'download']);
-    Route::get   ('/p2p/supplier-purchase-invoices',                     [SupplierPurchaseInvoiceController::class, 'index']);
-    Route::post  ('/p2p/supplier-purchase-invoices',                     [SupplierPurchaseInvoiceController::class, 'store']);
-    Route::get   ('/p2p/supplier-purchase-invoices/{id}',                [SupplierPurchaseInvoiceController::class, 'show'])->whereNumber('id');
-    Route::put   ('/p2p/supplier-purchase-invoices/{id}',                [SupplierPurchaseInvoiceController::class, 'update'])->whereNumber('id');
-    Route::delete('/p2p/supplier-purchase-invoices/{id}',                [SupplierPurchaseInvoiceController::class, 'destroy'])->whereNumber('id');
-    Route::post  ('/p2p/supplier-purchase-invoices/{id}/sync',           [SupplierPurchaseInvoiceController::class, 'sync'])->whereNumber('id');
-    Route::post  ('/p2p/supplier-purchase-invoices/{id}/sync-payment',   [SupplierPurchaseInvoiceController::class, 'syncPayment'])->whereNumber('id');
-    Route::post  ('/p2p/supplier-purchase-invoices/{id}/sync-attachment',[SupplierPurchaseInvoiceController::class, 'syncAttachment'])->whereNumber('id');
-    Route::get   ('/p2p/supplier-purchase-invoices/{id}/zoho-pdf',        [SupplierPurchaseInvoiceController::class, 'zohoPdf'])->whereNumber('id');
     // Direct-SPI payments ("Payment Summary Against SPI") — mirrors the PO flow.
-    Route::get   ('/p2p/supplier-purchase-invoices/{spi}/payment-summary',     [SpiPaymentController::class, 'summary'])->whereNumber('spi');
-    Route::post  ('/p2p/supplier-purchase-invoices/{spi}/payment-summary/tds', [SpiPaymentController::class, 'saveTds'])->whereNumber('spi');
-    Route::post  ('/p2p/supplier-purchase-invoices/{spi}/payments',            [SpiPaymentController::class, 'store'])->whereNumber('spi');
-    Route::delete('/p2p/supplier-purchase-invoices/{spi}/payments/{payment}',  [SpiPaymentController::class, 'destroy'])->whereNumber('spi')->whereNumber('payment');
 
     // ── Debit Note Types (P2P master lookup) ──
-    Route::get   ('/p2p/debit-note-types',        [DebitNoteTypeController::class, 'index']);
-    Route::post  ('/p2p/debit-note-types',        [DebitNoteTypeController::class, 'store']);
-    Route::put   ('/p2p/debit-note-types/{id}',   [DebitNoteTypeController::class, 'update'])->whereNumber('id');
-    Route::delete('/p2p/debit-note-types/{id}',   [DebitNoteTypeController::class, 'destroy'])->whereNumber('id');
 
     // ── Debit Notes (P2P) ──
-    Route::get   ('/p2p/debit-notes/preview-code',                       [DebitNoteController::class, 'previewCode']);
-    Route::get   ('/p2p/debit-notes/supplier-purchase-invoices',        [DebitNoteController::class, 'supplierPurchaseInvoices']);
-    Route::get   ('/p2p/debit-notes/supplier-purchase-invoices/{id}',   [DebitNoteController::class, 'supplierPurchaseInvoice'])->whereNumber('id');
-    Route::get   ('/p2p/debit-notes',                                   [DebitNoteController::class, 'index']);
-    Route::post  ('/p2p/debit-notes',                                   [DebitNoteController::class, 'store']);
-    Route::get   ('/p2p/debit-notes/{id}',                              [DebitNoteController::class, 'show'])->whereNumber('id');
-    Route::get   ('/p2p/debit-notes/{id}/pdf',                          [SalesPdfController::class, 'viewDebitNotePdf'])->whereNumber('id');
-    Route::post  ('/p2p/debit-notes/{id}/email',                        [SalesPdfController::class, 'emailDebitNote'])->whereNumber('id');
-    Route::put   ('/p2p/debit-notes/{id}',                              [DebitNoteController::class, 'update'])->whereNumber('id');
-    Route::delete('/p2p/debit-notes/{id}',                             [DebitNoteController::class, 'destroy'])->whereNumber('id');
-    Route::post  ('/p2p/debit-notes/{id}/sync',                         [DebitNoteController::class, 'sync'])->whereNumber('id');
-    Route::get   ('/p2p/debit-notes/{id}/attachment-status',            [DebitNoteController::class, 'attachmentStatus'])->whereNumber('id');
-    Route::post  ('/p2p/debit-notes/{id}/reattach',                     [DebitNoteController::class, 'reattach'])->whereNumber('id');
-    Route::get   ('/p2p/debit-notes/{id}/zoho-pdf',                     [DebitNoteController::class, 'zohoPdf'])->whereNumber('id');
     // Payment Recovery against a debit note — recovered amounts subtract from the
     // DN balance and drive its Unpaid → Partially/Fully Paid / Overdue status.
-    Route::get   ('/p2p/debit-notes/{dn}/payment-summary',              [DebitNotePaymentController::class, 'summary'])->whereNumber('dn');
-    Route::post  ('/p2p/debit-notes/{dn}/payments',                     [DebitNotePaymentController::class, 'store'])->whereNumber('dn');
-    Route::delete('/p2p/debit-notes/{dn}/payments/{payment}',           [DebitNotePaymentController::class, 'destroy'])->whereNumber('dn')->whereNumber('payment');
 
 
     Route::get   ('/sales/reminders',                 [SalesTodoController::class, 'listReminders']);

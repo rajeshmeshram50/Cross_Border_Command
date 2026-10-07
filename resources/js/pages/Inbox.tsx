@@ -83,12 +83,11 @@ export default function Inbox() {
   const [poNewCount, setPoNewCount] = useState(0);
   const [poHistCount, setPoHistCount] = useState(0);
   // PO approvals belong to the Purchase Order module, so the section (and its
-  // counts) only appear for users who can view it — 'p2p.order' (the Order
-  // module the approval flow lives in) or the legacy 'p2p.po' leaf. An
-  // HRMS-only user no longer sees an empty PO table in their Inbox (QA #11).
+  // counts) only appear for users who can view it. An HRMS-only user no longer
+  // sees an empty PO table in their Inbox (QA #11). The legacy 'p2p.po' leaf
+  // was dropped with that screen; its grants were carried over to 'p2p.order'.
   const canSeePo = user?.user_type === 'super_admin'
-    || !!user?.permissions?.['p2p.order']?.can_view
-    || !!user?.permissions?.['p2p.po']?.can_view;
+    || !!user?.permissions?.['p2p.order']?.can_view;
   // The history section mounts only on its tab; its count is needed for the tab badge now.
   // One row is enough — meta.total is the count. A failure just leaves the badge at 0;
   // the section itself shows the error when opened.

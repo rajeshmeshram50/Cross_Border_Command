@@ -23,7 +23,7 @@ const CancelPoModal = lazy(() => import('../cancel-po/CancelPoModal'));
 const ZohoTrackerModal = lazy(() => import('./ZohoTrackerModal'));
 const PoEvidenceVaultModal = lazy(() => import('../evidence-vault/PoEvidenceVaultModal'));
 const ManagePaymentRequestsModal = lazy(() => import('../manage-payment/ManagePaymentRequestsModal'));
-import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../../p2p-detail.css';
 import './order.css';
 
 type GuideStep = { num: string; title: string; desc: string; icon: ReactNode };

@@ -4,7 +4,7 @@ import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker'
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import type { ReleasePayment } from './MakePoPaymentModal';
 import { Chip, ICON_X, ccySymbol, moneyIn } from './payment-shared';
-import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../../p2p-detail.css';
 import './manage-payment-requests.css';
 import './add-payment.css';
 

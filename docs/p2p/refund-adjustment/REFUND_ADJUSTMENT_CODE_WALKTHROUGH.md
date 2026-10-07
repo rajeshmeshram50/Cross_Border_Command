@@ -286,17 +286,50 @@ removeRecovery() exists for the administrative path
 
 ```
 AdvanceRefundAdjustment.tsx
-  GET /refund-adjustments?tab&q&page
-  "Raise"  → RefundPoPickerModal
-               GET /refund-adjustments/eligible-pos
-             → RefundAdjustmentForm
-               POST /refund-adjustments  (multipart)
-  row     → detail
-               AddRecoveryModal → POST /{id}/recoveries
-               EvidenceVaultModal → proofs
-  Zoho column → POST /{id}/zoho-sync
-                POST /{id}/recoveries/{rec}/zoho-sync
+  GET /refund-adjustments?tab=&search=&page=     ← "search", not "q"
+       tab = all | pending | recovered
+  "+ Create Advance Receipt Refund Adjustment"
+           → RefundPoPickerModal
+               GET /refund-adjustments/eligible-pos?search=
+             → RefundAdjustmentForm   (STEP 01 OF 01 — one step, no draft)
+               POST /refund-adjustments           (multipart)
+               POST /refund-adjustments/{id}      (multipart — edit, not PUT)
+  row actions
+       ✏️ / 👁  RefundAdjustmentForm   ← icon decided by isSettled, below
+       Evidence Vault  → EvidenceVaultModal
+       PO Timeline     → the PO list's ZohoTrackerModal, not a second one
+       Manage Recovery → RecoverPaymentModal / AddRecoveryModal
+                           POST   /{id}/recoveries
+                           POST   /{id}/recoveries/{rec}        (edit)
+                           DELETE /{id}/recoveries/{rec}
+       Zoho Sync       → POST /{id}/zoho-sync
+                         POST /{id}/recoveries/{rec}/zoho-sync
 ```
+
+### Edit or view — `isSettled`, and what is NOT in it
+
+```ts
+// refund-data.ts
+export const isSettled = (r: RefundAdjustment) =>
+  r.status === 'recovered' || r.recovered > 0 || r.recoveriesCount > 0;
+```
+
+The first row action renders a pencil when this is false and an eye when it is
+true — *"Recovery has started — opens to be read"*. The **Zoho sync state is not
+part of it**, so the icons deliberately do not track the Zoho column: a synced
+refund with no recoveries is still editable, and an unsynced one with a single
+recovery is not.
+
+It mirrors lock 2 of `update()` (see the Technical document), so the screen and
+the server agree about when the figures close.
+
+### Money on this screen
+
+Every figure binds one formatter from the PO's currency —
+`moneyIn(row.currency)`, defaulting to `INR`. Both the symbol **and the digit
+grouping** change: `en-IN` for rupees, `en-US` for everything else, so the same
+number prints `₹14,37,829` or `A$1,437,829`. An unmapped currency prints its own
+code rather than guessing a symbol.
 
 `RefundAdjustmentForm` mirrors the Full-vs-Partial rules client-side for instant
 feedback. The server re-checks every one — the client's copy is a convenience,
@@ -320,6 +353,17 @@ never the authority.
 ---
 
 ## 11. Symptom → file
+
+| Symptom | Look in |
+|---|---|
+| A PO is missing from the picker | `eligiblePos()` — paid, not cancelled, no existing adjustment. Only those three |
+| The row shows an eye, not a pencil | `isSettled` — a recovery exists. Not about Zoho |
+| An edit is refused | `update()` has **three** locks; the recovery one fires long before the Zoho one |
+| A reason or attachment cannot be changed on a synced refund | It can — lock 3 only covers the amount and retained reason. Check `$amountsChanged` |
+| A recovery sync "failed" but the credit went across | `zohoSyncRecovery()` runs the whole chain, then checks `zoho_refund_id` after |
+| Zoho sync complains about the bill when you pressed sync on a refund | Both buttons run `syncAll()` — the failure is upstream in the chain |
+| Amounts print with the wrong grouping | `moneyIn()` — `en-IN` only for INR |
+| Anyone can raise one | There is no permission check, only `tenantUser()` |
 
 | Symptom | Look in |
 |---|---|

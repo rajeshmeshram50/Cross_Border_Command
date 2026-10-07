@@ -20,7 +20,7 @@ import {
 import EvidenceVaultModal from './EvidenceVaultModal';
 import { REFUND_TYPES, RETAIN_REASONS, isSettled, toPoInfo, toRefund, todayIso, type RefundAdjustment, type RefundPoInfo } from './refund-data';
 import { useEscapeClose } from './useEscapeClose';
-import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../p2p-detail.css';
 import './advance-refund.css';
 
 /* The live camera. A hidden <input type="file" capture="environment">

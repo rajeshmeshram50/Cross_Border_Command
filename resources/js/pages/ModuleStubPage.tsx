@@ -54,14 +54,7 @@ const STUB_META: Record<string, { title: string; group: string; blurb: string; s
     title: 'Case to Case Procurement Management', group: 'Procure to Pay (P2P)', slug: 'p2p.case_to_case',
     blurb: 'Manage request-based, one-off procurement sourcing.',
   },
-  'p2p/purchase-order': {
-    title: 'Purchase Order (PO)', group: 'Procure to Pay (P2P)', slug: 'p2p.po',
-    blurb: 'Create & track purchase orders from approval to fulfilment.',
-  },
-  'p2p/supplier-purchase-invoice': {
-    title: 'Supplier Purchase Invoice (SPI)', group: 'Procure to Pay (P2P)', slug: 'p2p.spi',
-    blurb: 'Process supplier invoices, taxes and three-way matching.',
-  },
+
 };
 
 export default function ModuleStubPage() {

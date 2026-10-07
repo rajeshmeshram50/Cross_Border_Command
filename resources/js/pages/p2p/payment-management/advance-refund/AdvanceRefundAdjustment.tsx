@@ -20,7 +20,7 @@ import RefundAdjustmentForm from './RefundAdjustmentForm';
 import RecoverPaymentModal from './RecoverPaymentModal';
 import EvidenceVaultModal from './EvidenceVaultModal';
 import { TYPE_VARIANT, isSettled, refundFigures, toRefund, typeLabel, type RefundAdjustment } from './refund-data';
-import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../p2p-detail.css';
 import '../../purchase-management/order/po-list/order.css';
 import './advance-refund.css';
 

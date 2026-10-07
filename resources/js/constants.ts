@@ -341,10 +341,10 @@ export const P2P_GROUPS: MenuGroup[] = [
     label: 'Purchase Management',
     icon: 'FileText',
     children: [
-      { id: 'p2p.po', icon: 'FileText', label: 'Purchase Order (PO)' },
-      { id: 'p2p.spi', icon: 'CreditCard', label: 'Supplier Purchase Invoice (SPI)' },
-      { id: 'p2p.debit_note', icon: 'FileText', label: 'Debit Note' },
-      { id: 'p2p.order', icon: 'FileText', label: 'Order' },
+      /* The slug stays `p2p.order` so existing permission grants keep working;
+         only the label changed, now that the screen it was distinguished from
+         is gone along with SPI and Debit Note. */
+      { id: 'p2p.order', icon: 'FileText', label: 'Purchase Order' },
       // Temporary placement under Purchase Management until the P2P nav redesign lands.
       { id: 'p2p.payment_request', icon: 'IndianRupee', label: 'Payment Request Management' },
       { id: 'p2p.advance_refund', icon: 'FileInput', label: 'Advance Receipt Refund Adjustment' },

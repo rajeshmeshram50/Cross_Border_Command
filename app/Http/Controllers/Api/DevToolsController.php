@@ -3,10 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\DebitNote;
 use App\Models\Product;
-use App\Models\PurchaseOrder;
-use App\Models\SupplierPurchaseInvoice;
+use App\Models\P2p\PoRefundAdjustment;
+use App\Models\P2p\PurchaseOrder;
 use App\Models\Vendor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -385,7 +384,7 @@ class DevToolsController extends Controller
     /** Debit Notes pushed to Zoho as Vendor Credits (carry zoho_vendorcredit_id). */
     private function vendorCredits(callable $scope): array
     {
-        return $scope(DebitNote::query()->whereNotNull('zoho_vendorcredit_id'))
+        return $scope(PoRefundAdjustment::query()->whereNotNull('zoho_vendorcredit_id'))
             ->latest('id')->limit(500)
             ->get(['id', 'client_id', 'code', 'supplier_name', 'zoho_vendorcredit_id', 'zoho_vendorcredit_number', 'zoho_applied_amount', 'zoho_synced_at'])
             ->map(fn ($dn) => [
@@ -403,7 +402,7 @@ class DevToolsController extends Controller
     /** Supplier Purchase Invoices pushed to Zoho as Bills (carry zoho_bill_id). */
     private function bills(callable $scope): array
     {
-        return $scope(SupplierPurchaseInvoice::query()->whereNotNull('zoho_bill_id'))
+        return $scope(PurchaseOrder::query()->whereNotNull('zoho_bill_id'))
             ->latest('id')->limit(500)
             ->get(['id', 'client_id', 'code', 'invoice_no', 'supplier_name', 'zoho_bill_id', 'zoho_bill_number', 'zoho_status', 'zoho_synced_at', 'zoho_pdf_path'])
             ->map(fn ($spi) => [
@@ -427,15 +426,15 @@ class DevToolsController extends Controller
      */
     private function payments(callable $scope): array
     {
-        $po = $scope(\App\Models\PoPayment::query()->whereNotNull('zoho_payment_id'))
+        /* One payment table now. The SPI half was dropped with that module, and
+           the legacy po_payments with the Purchase Order screen it belonged to. */
+        $po = $scope(\App\Models\P2p\PoPayment::query()->whereNotNull('zoho_payment_id'))
             ->latest('id')->limit(500)
             ->get(['id', 'client_id', 'purchase_order_id', 'amount', 'bank_name', 'utr_cheque_number', 'utr_cheque_date', 'status', 'zoho_payment_id', 'zoho_applied_amount']);
-        $spi = $scope(\App\Models\SpiPayment::query()->whereNotNull('zoho_payment_id'))
-            ->latest('id')->limit(500)
-            ->get(['id', 'client_id', 'supplier_purchase_invoice_id', 'amount', 'bank_name', 'utr_cheque_number', 'utr_cheque_date', 'status', 'zoho_payment_id', 'zoho_applied_amount']);
+        $spi = collect();
 
         $poCodes  = PurchaseOrder::whereIn('id', $po->pluck('purchase_order_id')->filter()->unique())->pluck('code', 'id');
-        $spiCodes = SupplierPurchaseInvoice::whereIn('id', $spi->pluck('supplier_purchase_invoice_id')->filter()->unique())->pluck('code', 'id');
+        $spiCodes = collect();
 
         $rows = [];
         foreach ($po as $p) {

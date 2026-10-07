@@ -118,15 +118,12 @@ const P2P_LEAF: Record<string, string> = {
   '/p2p/diagnosis': 'p2p.diagnosis',
   '/p2p/bulk-sourcing': 'p2p.bulk_sourcing',
   '/p2p/case-to-case': 'p2p.case_to_case',
-  '/p2p/purchase-order': 'p2p.po',
-  '/p2p/supplier-purchase-invoice': 'p2p.spi',
-  '/p2p/debit-note': 'p2p.debit_note',
-  // New Order module (static frontend data, no DB module row of its own) —
-  // rides on the Purchase Order grant, same pattern as sales.sign_tracker.
   '/p2p/order': 'p2p.order',
-  // Same for the new Payment Request module — no module row of its own yet.
   '/p2p/payment-request': 'p2p.payment_request',
-  '/p2p/advance-refund-adjustment': 'p2p.po',
+  /* Advance Refund has no module row of its own, so it rode on the legacy
+     p2p.po grant. That module is gone and its grants were carried over to
+     p2p.order, which this now follows — the same seven people keep it. */
+  '/p2p/advance-refund-adjustment': 'p2p.order',
 };
 
 // Known module prefixes — a path under any of these that fails to resolve to a

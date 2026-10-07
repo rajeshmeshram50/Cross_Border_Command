@@ -30,7 +30,7 @@ const AddVendorModal = lazy(() => import('../../../p2p-master-management/supplie
 const SupplierEvidenceVaultModal = lazy(() => import('../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 import { PoApiError, poApi, poLookupApi, type PiHolder, type PoDetail, type ShipmentOption, type TaxMode } from '../api/po-api';
 import { useToast } from '../../../../../contexts/ToastContext';
-import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../../p2p-detail.css';
 import './create-po.css';
 import { IcoCheck, IcoChevronL, IcoLock, IcoChevronR, IcoDoc, IcoLines, IcoShield, IcoShip, IcoTarget, IcoX } from '../shared/icons';
 
