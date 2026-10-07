@@ -523,6 +523,9 @@ class HrDocumentSignatureController extends Controller
                 )),
             ]);
             $row->save();
+            /* A finished run waits on nobody — its "waiting on you" bell rows
+               would otherwise point the signer at an Inbox that has let it go. */
+            if ($row->status === 'Completed') $this->clearTurnNotifications($row);
             $row->load(self::WITH);
 
             return response()->json($row);
@@ -564,6 +567,7 @@ class HrDocumentSignatureController extends Controller
             $signers[$idx] = $current;
             $row->signers = $signers;
             $row->status  = 'Rejected';
+            $this->clearTurnNotifications($row);
             $row->audit_log = array_merge($row->audit_log ?? [], [
                 $this->event($user, 'rejected', "Rejected by {$user?->name}: {$data['reason']}"),
             ]);
@@ -585,6 +589,7 @@ class HrDocumentSignatureController extends Controller
             $this->event($user, 'cancelled', "Cancelled by {$user?->name}"),
         ]);
         $row->save();
+        $this->clearTurnNotifications($row);
         $row->load(self::WITH);
         return response()->json($row);
     }
@@ -713,6 +718,35 @@ class HrDocumentSignatureController extends Controller
      * send must not leave a notification behind. A failed insert is logged,
      * never surfaced — the Inbox still carries the document either way.
      */
+    /**
+     * Drop the "waiting for you to Sign" bell rows of a run that is no longer
+     * waiting on anyone — cancelled, rejected, or finished.
+     *
+     * Without this the bell kept advertising a document the Inbox had already
+     * let go: a signer saw "waiting for you to Sign", opened the Inbox and
+     * found nothing there, because inbox() only lists Pending / In Progress
+     * runs. Re-sending a document made it worse — the superseded run's
+     * notification sat beside the live one, indistinguishable.
+     *
+     * Only this run's rows go, matched on document_id inside the payload, and
+     * only the ones still unread: a notification someone has already read is
+     * their history, not a stale prompt.
+     */
+    private function clearTurnNotifications(HrDocumentSignature $row): void
+    {
+        try {
+            DB::table('notifications')
+                ->where('type', 'App\Notifications\HrSignatureRequest')
+                ->whereNull('read_at')
+                ->whereRaw("data::text LIKE ?", ['%"document_id":' . (int) $row->id . '%'])
+                ->delete();
+        } catch (\Throwable $e) {
+            Log::warning('[hr-document-signatures] could not clear stale signer notifications', [
+                'id' => $row->id, 'err' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function notifySignersOfTurn(HrDocumentSignature $row, array $userIds, ?string $senderName): void
     {
         $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds))));

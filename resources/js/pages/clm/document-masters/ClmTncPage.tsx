@@ -229,6 +229,20 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
   );
 }
 
+/**
+ * The editor's HTML as one line of readable text for the list cell.
+ *
+ * The whitespace collapse used to read /s+/ — no backslash — so it replaced
+ * every letter "s" with a space: "message" printed as "me age", "&nbsp;" as
+ * "&nb p;". Entities are decoded too, otherwise a paragraph of ordinary prose
+ * reads as "T&amp;C" and "&nbsp;" in the preview.
+ */
+function tncPreviewText(html: string | null | undefined): string {
+  const el = document.createElement('div');
+  el.innerHTML = String(html ?? '').replace(/<(br|\/p|\/div|\/li|\/h[1-6])>/gi, ' ');
+  return (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
+
 /* The global T&C: one entry per document category, printed on every document of
    that category whatever segments it carries. The list is the category list, so a
    category with nothing written yet is still shown, ready to fill. */
@@ -306,7 +320,7 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
             <tbody>
               {loading && <ClmSkeletonRows cols={5} />}
               {!loading && filtered.map((r, i) => {
-                const plain = (r.content ?? '').replace(/<[^>]*>/g, ' ').replace(/s+/g, ' ').trim();
+                const plain = tncPreviewText(r.content);
                 return (
                   <tr key={r.category_id}>
                     <td className="clm-td-num">{i + 1}</td>
@@ -316,8 +330,14 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
                         : <span style={{ color: '#94a3b8' }}>—</span>}
                     </td>
                     <td className="clm-td-name">{r.category}</td>
+                    {/* Clipped to the column; the whole clause reads on hover,
+                        itself capped so a long T&C cannot cover the page. */}
                     <td style={{ color: plain ? undefined : '#94a3b8' }}>
-                      {plain ? (plain.length > 110 ? `${plain.slice(0, 110)}…` : plain) : 'Not written yet'}
+                      {plain ? (
+                        <Tooltip label={plain.length > 700 ? `${plain.slice(0, 700)}…` : plain}>
+                          <span>{plain.length > 110 ? `${plain.slice(0, 110)}…` : plain}</span>
+                        </Tooltip>
+                      ) : 'Not written yet'}
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <Tooltip label={plain ? `Edit the global T&C for ${r.category}` : `Write the global T&C for ${r.category}`}>
