@@ -1,0 +1,259 @@
+/* ── ComingSoon ──────────────────────────────────────────────────────────────
+   A module placeholder in the KRYPTONE.AI sign-in screen's language. The
+   cyan-to-violet accent bar, the gradient headline and the wave mesh all come
+   from layouts/AuthCardLayout.css so the two surfaces read as one product.
+
+   Decisions worth keeping, and what they replaced:
+
+   · IT FOLLOWS THE THEME. The panel is light on a light app and takes the dark
+     aurora only in dark mode. A pass that was dark in both modes put a black
+     slab in the middle of a white app — it looked like the page had failed to
+     load its own styling.
+
+   · THE MARK SITS ON A DARK PLATE IN LIGHT MODE. The KRYPTONE wordmark is white
+     on transparent and has no dark-ink variant, so on a light surface it needs
+     its own ground. It is NOT filter-inverted: invert() turns the white type
+     black but also flips the blue-violet K to yellow-green.
+
+   · THE MARK IS KRYPTONE.AI, not a tenant logo. A placeholder for an unbuilt
+     module is the product speaking, not the customer. An earlier pass used the
+     tenant's IGC mark, which was the wrong voice.
+
+   · NO ICON TILE, NO PILL BADGE. A gradient squircle with a glowing ring is the
+     stock "coming soon" graphic every admin template ships. Two earlier passes
+     used one and it read as decoration bolted onto the page.
+
+   · THE FONT IS THE ONE THE APP SERVES. AuthCardLayout.css asks for Montserrat,
+     but Montserrat is loaded nowhere — not welcome.blade.php, not app.css — so
+     that screen already falls back. No point repeating the mistake here.
+
+   Namespaced `.kcs-`.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+.kcs {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Stops where a fitted table stops — 15px clear of the viewport foot, the
+     same reserve DataTable's bottomReserve() uses. */
+  min-height: calc(100dvh - 133px);
+  padding: 56px 24px;
+  border-radius: 20px;
+  /* Light: the app's own card, washed with the brand's cyan and violet in the
+     lower corners — the aurora at a whisper rather than full strength. */
+  background:
+    radial-gradient(34% 26% at 0% 100%, rgba(60, 130, 255, .09), transparent 72%),
+    radial-gradient(34% 26% at 100% 100%, rgba(160, 80, 255, .09), transparent 72%),
+    radial-gradient(38% 22% at 94% 4%, rgba(255, 175, 120, .08), transparent 75%),
+    var(--vz-card-bg, #fff);
+  border: 1px solid var(--vz-border-color, #e9ebec);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .05);
+  color: var(--vz-body-color, #212529);
+}
+
+/* Blue light pooling along the foot, under the mesh. */
+.kcs::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 190px;
+  z-index: 0;
+  opacity: .10;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 40% at 50% 100%, rgba(60, 120, 255, .55), transparent 75%),
+    linear-gradient(0deg, rgba(0, 40, 120, .55) 0%, rgba(0, 29, 76, .25) 45%, transparent 100%);
+}
+
+/* The wave mesh, as on the sign-in card. Wider than the panel so it runs into
+   the rounded lower corners; the panel's overflow clips it to the curve. It is
+   a transparent cut-out of glowing blue lines, so it carries on a light
+   surface too — just turned right down, or it shouts. */
+.kcs-waves {
+  position: absolute;
+  left: -4%;
+  bottom: -6px;
+  width: 108%;
+  height: 150px;
+  z-index: 0;
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+  opacity: .30;
+  filter: saturate(.9);
+}
+
+.kcs-inner {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 660px;
+  text-align: center;
+}
+
+/* ── The mark ─────────────────────────────────────────────────────────────────
+   display:block + auto margins, not text-align. An earlier pass centred the
+   mark with inherited text-align and it rendered off-centre; margins do not
+   depend on what any ancestor does to inline flow.
+
+   The mark sits on nothing in either mode. An earlier pass gave it a dark
+   navy plate in light mode so the white wordmark would read; the plate was a
+   black box in the middle of a white page. Instead there are two files — the
+   white mark and a re-inked one (see logo-ink.png) — swapped here. */
+.kcs-logo {
+  display: block;
+  width: 288px;
+  max-width: 76%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.kcs-logo--white { display: none; }
+
+.kcs-tagline {
+  margin: 20px 0 0;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: .175em;
+  /* Tracking pads only the right of the last glyph, so a centred letterspaced
+     line sits a few px left without this. */
+  text-indent: .175em;
+  text-transform: uppercase;
+  color: var(--vz-secondary-color, #878a99);
+}
+
+/* The cyan-into-violet bar, straight off the sign-in hero. */
+.kcs-accent {
+  display: block;
+  width: 70px;
+  height: 5px;
+  margin: 26px auto 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #05cdf9 0%, #6f66f7 50%, #a93af2 78%);
+}
+
+.kcs-title {
+  margin: 24px 0 0;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: clamp(26px, 2.7vw, 38px);
+  font-weight: 800;
+  line-height: 1.18;
+  letter-spacing: -.0155em;
+  color: var(--vz-heading-color, #1f2937);
+}
+
+.kcs-line { display: block; }
+
+/* inline-block, not block: a block-width span stretches the gradient across
+   the whole column, so the text only ever reaches its blue end. */
+.kcs-grad {
+  display: inline-block;
+  margin-top: 2px;
+  background: linear-gradient(90deg, #08abfb 0%, #3f8ffa 30%, #6a72f8 60%, #8a46f7 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.kcs-sub {
+  margin: 18px auto 0;
+  max-width: 48ch;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 13.5px;
+  font-weight: 400;
+  line-height: 1.65;
+  color: var(--vz-secondary-color, #6b7280);
+}
+
+/* ── Dark: the sign-in screen's aurora at full strength ───────────────────────
+   Warm light at the top right, blue and violet pooling in the lower corners,
+   near-black navy through the middle — measured values lifted from
+   AuthCardLayout's .kx-card. */
+[data-bs-theme="dark"] .kcs,
+[data-layout-mode="dark"] .kcs {
+  background:
+    radial-gradient(38% 22% at 94% 4%, rgba(255, 175, 120, .26), transparent 75%),
+    radial-gradient(34% 26% at 0% 100%, rgba(60, 130, 255, .34), transparent 75%),
+    radial-gradient(34% 26% at 100% 100%, rgba(160, 80, 255, .36), transparent 75%),
+    radial-gradient(42% 48% at 52% 62%, rgba(255, 138, 54, .12), transparent 70%),
+    linear-gradient(180deg, #08142b 0%, #0b1a35 45%, #1a1424 78%, #0c0a14 100%);
+  border-color: transparent;
+  box-shadow:
+    /* light creeping in from every edge; the middle stays near-black */
+    inset 0 0 46px rgba(120, 135, 175, .16),
+    /* coloured light hugging the rim, blue left and violet right */
+    inset 2px 0 7px rgba(110, 160, 255, .20),
+    inset -2px 0 7px rgba(180, 130, 255, .22),
+    0 18px 44px -18px rgba(0, 0, 0, .45);
+  color: #fff;
+}
+
+/* The rim: a thin semi-transparent line that takes on the colour behind it —
+   the mask-composite trick from AuthCardLayout, which paints a gradient only in
+   the 1px border band. Dark only; in light the panel has a real border. */
+[data-bs-theme="dark"] .kcs::before,
+[data-layout-mode="dark"] .kcs::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  padding: 1px;
+  background:
+    radial-gradient(30% 16% at 0% 100%, rgba(150, 170, 225, .9), transparent 80%),
+    radial-gradient(30% 16% at 100% 100%, rgba(185, 170, 215, .9), transparent 80%),
+    linear-gradient(180deg,
+      rgba(200, 212, 240, .26) 0%,
+      rgba(225, 232, 248, .55) 12%,
+      rgba(225, 232, 248, .50) 85%,
+      rgba(200, 210, 240, .42) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+}
+
+[data-bs-theme="dark"] .kcs::after,
+[data-layout-mode="dark"] .kcs::after { opacity: .25; }
+
+[data-bs-theme="dark"] .kcs-waves,
+[data-layout-mode="dark"] .kcs-waves {
+  opacity: 1;
+  filter: brightness(1.25) saturate(1.1);
+}
+
+/* On the aurora it is the white mark that reads. */
+[data-bs-theme="dark"] .kcs-logo--ink,
+[data-layout-mode="dark"] .kcs-logo--ink { display: none; }
+
+[data-bs-theme="dark"] .kcs-logo--white,
+[data-layout-mode="dark"] .kcs-logo--white {
+  display: block;
+  filter: drop-shadow(0 0 14px rgba(40, 150, 255, .28));
+}
+
+[data-bs-theme="dark"] .kcs-tagline,
+[data-layout-mode="dark"] .kcs-tagline { color: #c6cbdd; font-weight: 400; }
+
+[data-bs-theme="dark"] .kcs-title,
+[data-layout-mode="dark"] .kcs-title { color: #fff; }
+
+[data-bs-theme="dark"] .kcs-sub,
+[data-layout-mode="dark"] .kcs-sub { color: #c4c9d6; }
+
+/* ── Narrow ───────────────────────────────────────────────────────────────── */
+@media (max-width: 575.98px) {
+  .kcs { min-height: calc(100dvh - 120px); padding: 36px 16px; border-radius: 16px; }
+  .kcs-logo { width: 196px; padding: 12px 18px; border-radius: 14px; }
+  .kcs-tagline { font-size: 10px; letter-spacing: .14em; text-indent: .14em; }
+  .kcs-accent { margin-top: 20px; }
+  .kcs-waves { height: 104px; }
+}

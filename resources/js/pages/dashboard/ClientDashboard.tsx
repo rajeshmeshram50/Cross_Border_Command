@@ -1,5 +1,6 @@
 import { useState, useEffect, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
+import ComingSoon from '../../components/ui/ComingSoon';
 import { Card, CardBody, Col, Row } from 'reactstrap';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from 'recharts';
 import api from '../../api';
@@ -93,7 +94,18 @@ const methodLabels: Record<string, string> = {
 };
 
 
+/* The dashboard proper is still being designed, so the route shows the shared
+ * ComingSoon placeholder for now. The real implementation is left intact below
+ * as `ClientDashboardAnalytics` — delete this wrapper and re-export it to bring
+ * the analytics back; nothing else has to change. Same pattern as
+ * BranchDashboard and AdminDashboard. */
 export default function ClientDashboard() {
+  return (
+    <ComingSoon title="Your dashboard is being rebuilt" />
+  );
+}
+
+function ClientDashboardAnalytics() {
   const navigate = useNavigate();
   const { selectedBranchId } = useBranchSwitcher();
   const [data, setData] = useState<any>(null);

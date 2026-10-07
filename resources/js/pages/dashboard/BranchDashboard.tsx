@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import ComingSoon from '../../components/ui/ComingSoon';
 import { Card, CardBody, Col, Row } from 'reactstrap';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../../api';
@@ -18,7 +19,17 @@ const methodLabels: Record<string, string> = {
   net_banking: 'Net Banking', wallet: 'Wallet', cash: 'Cash', cheque: 'Cheque',
 };
 
+/* The dashboard proper is still being designed, so the route shows the shared
+ * ComingSoon placeholder for now. The real implementation is left intact below
+ * as `BranchDashboardAnalytics` — delete this wrapper and re-export it to bring
+ * the analytics back; nothing else has to change. */
 export default function BranchDashboard() {
+  return (
+    <ComingSoon title="Your dashboard is being rebuilt" />
+  );
+}
+
+function BranchDashboardAnalytics() {
   const { selectedBranchId } = useBranchSwitcher();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);

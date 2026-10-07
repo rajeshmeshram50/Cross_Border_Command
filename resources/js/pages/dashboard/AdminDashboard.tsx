@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import ComingSoon from '../../components/ui/ComingSoon';
 import { Card, CardBody, Col, Row, Badge, Modal, ModalBody } from 'reactstrap';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -169,7 +170,18 @@ const cardHeaderStyle: React.CSSProperties = {
 
 type DetailModal = 'clients' | 'payments' | 'revenue' | null;
 
+/* The dashboard proper is still being designed, so the route shows the shared
+ * ComingSoon placeholder for now. The real implementation is left intact below
+ * as `AdminDashboardAnalytics` — delete this wrapper and re-export it to bring
+ * the analytics back; nothing else has to change. Same pattern as
+ * BranchDashboard and ClientDashboard. */
 export default function AdminDashboard() {
+  return (
+    <ComingSoon title="The platform dashboard is being rebuilt" />
+  );
+}
+
+function AdminDashboardAnalytics() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [openModal, setOpenModal] = useState<DetailModal>(null);

@@ -181,7 +181,9 @@ export default function DevTools() {
   };
 
   return (
-    <div className="s360m">
+    /* `dvt` marks this page specifically: Shipment 360 shares the s360m root
+       and its stylesheet, so page-only rules need a second hook. */
+    <div className="s360m dvt">
       <style>{EXTRA}</style>
 
       {/* ── Hero strip ── */}

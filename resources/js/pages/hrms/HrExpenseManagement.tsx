@@ -1089,58 +1089,40 @@ export default function HrExpenseManagement() {
           <div className="d-flex align-items-center gap-2 flex-wrap">
             {/* Date-range filter lives in the header (left of the module toggle). */}
             {dateFilterEl}
-            {/* Module toggle (Expense Claims / Advance Requests) in the header's
-                top-right corner — mirrors the Customer Profile CLM toggle. */}
-            <div
-              className="d-inline-flex"
-              style={{
-                background: 'var(--vz-secondary-bg)',
-                border: '1px solid var(--vz-border-color)',
-                borderRadius: 10,
-                padding: 4,
-                gap: 4,
-              }}
-            >
-              {[
-                { key: 'expense' as const, label: 'Expense Claims',   total: counts.all,         icon: 'ri-file-list-3-line',        accent: '#7c5cfc', shadow: 'rgba(124,92,252,0.25)' },
-                { key: 'advance' as const, label: 'Advance Requests', total: advanceCounts.all,  icon: 'ri-money-dollar-circle-line', accent: '#4338ca', shadow: 'rgba(67,56,202,0.25)'  },
-              ].map(m => {
-                const on = module === m.key;
-                return (
-                  <button
-                    key={m.key}
-                    type="button"
-                    onClick={() => {
-                      if (module !== m.key) flashSwitch();
-                      setModule(m.key);
-                      setFilter('all');
-                    }}
-                    className="btn d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
-                    style={{
-                      borderRadius: 8,
-                      padding: '8px 16px',
-                      fontSize: 13,
-                      background: on ? `linear-gradient(135deg,${m.accent},#a78bfa)` : 'transparent',
-                      color: on ? '#fff' : 'var(--vz-secondary-color)',
-                      border: 'none',
-                      boxShadow: on ? `0 4px 12px ${m.shadow}` : 'none',
-                    }}
-                  >
-                    <i className={m.icon} style={{ fontSize: 14 }} />
-                    {m.label}
-                    <span
-                      className="badge rounded-pill"
-                      style={{
-                        fontSize: 11,
-                        background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
-                        color: on ? '#fff' : 'var(--vz-secondary-color)',
+            {/* Module toggle (Expense Claims / Advance Requests).
+                The shared .dt-tabrail / .dt-tabs / .dt-tab rail, as every other
+                module uses — not the hand-rolled one this had, whose 8/16px
+                padding, radius-8 pills and Bootstrap count badges made it the
+                one tab strip in the app that matched nothing else. The rail is
+                the standalone variant DataTable.css documents for exactly this
+                case: a toggle dropped into a page header, outside any table. */}
+            <div className="dt-tabrail flex-shrink-0">
+              <div className="dt-tabs" role="tablist">
+                {[
+                  { key: 'expense' as const, label: 'Expense Claims',   total: counts.all,        icon: 'ri-file-list-3-line' },
+                  { key: 'advance' as const, label: 'Advance Requests', total: advanceCounts.all, icon: 'ri-money-dollar-circle-line' },
+                ].map(m => {
+                  const on = module === m.key;
+                  return (
+                    <button
+                      key={m.key}
+                      type="button"
+                      role="tab"
+                      aria-selected={on}
+                      onClick={() => {
+                        if (module !== m.key) flashSwitch();
+                        setModule(m.key);
+                        setFilter('all');
                       }}
+                      className={`dt-tab ${on ? 'on' : 'off'}`}
                     >
-                      {m.total}
-                    </span>
-                  </button>
-                );
-              })}
+                      <i className={m.icon} />
+                      {m.label}
+                      <span className="dt-tab-count">{m.total}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             {exportOpen && exportPos && createPortal(
               <div
