@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Col, Row, Spinner } from 'reactstrap';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
-import DataTable from '../../components/ui/DataTable';
+import DataTable, { ActionCell } from '../../components/ui/DataTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
 import { Shimmer } from '../../components/ui/Shimmer';
@@ -146,32 +146,16 @@ export default function Clients({ onNavigate }: Props) {
     }
   };
 
-  // Reusable action button — outline icon pill with hover color.
-  // Wrapped in <Tooltip> so the dark pill tooltip from the design
-  // system shows on hover/focus instead of the native browser title.
-  // The shared row-action button (.dt-act in DataTable.css) — a tinted square
-  // with a coloured border and icon that fills in and lifts on hover, the same
-  // one every list built on DataTable uses. This page drew its own: a flat grey
-  // square that only took colour on hover, so the actions read as disabled.
-  const DT_ACT_TONE: Record<string, string> = {
-    primary: 'accent', info: 'info', success: 'success',
-    warning: 'warning', danger: 'danger', secondary: 'accent',
-  };
-  const ActionBtn = ({
-    title, icon, color, onClick, disabled,
-  }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
-    <Tooltip label={title}>
-      <button
-        type="button"
-        aria-label={title}
-        disabled={disabled}
-        className={`dt-act dt-act-${DT_ACT_TONE[color] || 'accent'}`}
-        onClick={onClick}
-      >
-        <i className={icon} />
-      </button>
-    </Tooltip>
-  );
+  // Row actions use the shared <ActionCell> from DataTable, as every other list
+  // does. This page had its own ActionBtn wrapper: it painted the right .dt-act
+  // classes, so the squares looked close, but it diverged in three ways —
+  //   · Edit drew `ri-pencil-line`, a bare pencil, where ActionIcon renders the
+  //     product's edit glyph (`edit-svg`, a pencil on a page). That is the
+  //     difference you can actually see in the row.
+  //   · it did not stopPropagation, so an action also fired the row click.
+  //   · it wrapped DISABLED buttons in a Tooltip, which never shows — a disabled
+  //     button emits no pointer events.
+  // Nothing page-specific was being added, so the wrapper is gone.
 
   // Columns for the shared DataTable. No "Sr No" column here — `serial` on the
   // table renders the product's numbered puck, the same one every other list has.
@@ -316,13 +300,16 @@ export default function Clients({ onNavigate }: Props) {
         // twice between every pair — 244px of buttons in what I had sized as a
         // 220px row, so the last one still fell off the edge.
         <div className="d-flex justify-content-start">
-          <ActionBtn title="View"        icon="ri-eye-line"         color="primary" onClick={() => onNavigate('client-view',        { clientId: info.row.original.id })} />
-          <ActionBtn title="Edit"        icon="ri-pencil-line"      color="info"    onClick={() => onNavigate('client-form',        { editId:   info.row.original.id })} />
-          <ActionBtn title="Delete"      icon="ri-delete-bin-line"  color="danger"  disabled={deleting === info.row.original.id} onClick={() => handleDeleteClick(info.row.original)} />
-          <ActionBtn title="Branches"    icon="ri-git-branch-line"  color="primary" onClick={() => onNavigate('client-branches',    { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
-          <ActionBtn title="Permissions" icon="ri-shield-check-line" color="success" onClick={() => onNavigate('client-permissions', { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
-          <ActionBtn title="Payments"    icon="ri-bank-card-line"   color="warning" onClick={() => onNavigate('client-payments',    { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
-          <ActionBtn title="Settings"    icon="ri-settings-3-line"  color="secondary" onClick={() => toast.info('Coming Soon', 'Client settings will be available in a future update.')} />
+          <ActionCell title="View"        icon="ri-eye-line"          tone="accent"  onClick={() => onNavigate('client-view',        { clientId: info.row.original.id })} />
+          {/* `edit-svg`, not ri-pencil-line — ActionIcon maps it to the product's
+              edit glyph, the same one Biometric Devices and Document Templates
+              show. A bare pencil reads as "draw", not "edit this record". */}
+          <ActionCell title="Edit"        icon="edit-svg"             tone="info"    onClick={() => onNavigate('client-form',        { editId:   info.row.original.id })} />
+          <ActionCell title="Delete"      icon="ri-delete-bin-line"   tone="danger"  disabled={deleting === info.row.original.id} onClick={() => handleDeleteClick(info.row.original)} />
+          <ActionCell title="Branches"    icon="ri-git-branch-line"   tone="accent"  onClick={() => onNavigate('client-branches',    { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
+          <ActionCell title="Permissions" icon="ri-shield-check-line" tone="success" onClick={() => onNavigate('client-permissions', { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
+          <ActionCell title="Payments"    icon="ri-bank-card-line"    tone="warning" onClick={() => onNavigate('client-payments',    { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
+          <ActionCell title="Settings"    icon="ri-settings-3-line"   tone="accent"  onClick={() => toast.info('Coming Soon', 'Client settings will be available in a future update.')} />
         </div>
       ),
     },

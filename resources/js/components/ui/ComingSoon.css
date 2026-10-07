@@ -131,6 +131,8 @@
 
 /* The cyan-into-violet bar, straight off the sign-in hero. */
 .kcs-accent {
+  position: relative;
+  overflow: hidden;
   display: block;
   width: 70px;
   height: 5px;
@@ -157,6 +159,8 @@
   display: inline-block;
   margin-top: 2px;
   background: linear-gradient(90deg, #08abfb 0%, #3f8ffa 30%, #6a72f8 60%, #8a46f7 100%);
+  /* Twice the width, so there is gradient left to travel through. */
+  background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -172,6 +176,70 @@
   line-height: 1.65;
   color: var(--vz-secondary-color, #6b7280);
 }
+
+/* ── Motion ───────────────────────────────────────────────────────────────────
+   Four things move, and all of them slowly. The brief was "animated, but it
+   should still suit the company" — so this is an enterprise placeholder, not a
+   landing page: nothing bounces, nothing springs, nothing loops fast enough to
+   catch the eye of someone working in the next tab.
+
+     1. The stack arrives once, bottom-weighted, 90ms apart.
+     2. The headline's gradient pans, 9s a cycle.
+     3. A sheen crosses the accent bar every 6s.
+     4. The wave mesh drifts, 24s a cycle.
+
+   Durations are long on purpose: the slowest thing on screen reads as composed,
+   the fastest reads as a loading spinner — and this is not loading.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+@keyframes kcs-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* `both` so each element is hidden BEFORE its delay elapses — without it they
+   all paint at full opacity first and then restart, which flashes. */
+.kcs-logo,
+.kcs-tagline,
+.kcs-accent,
+.kcs-title,
+.kcs-sub {
+  animation: kcs-rise .62s cubic-bezier(.22, .61, .36, 1) both;
+}
+.kcs-logo    { animation-delay: .04s; }
+.kcs-tagline { animation-delay: .13s; }
+.kcs-accent  { animation-delay: .22s; }
+.kcs-title   { animation-delay: .31s; }
+.kcs-sub     { animation-delay: .40s; }
+
+/* The headline's gradient travels through itself. `alternate` rather than a
+   wrap-around, so the colour never jumps at the loop point. */
+@keyframes kcs-pan {
+  from { background-position: 0% 50%; }
+  to   { background-position: 100% 50%; }
+}
+.kcs-grad { animation: kcs-pan 9s ease-in-out infinite alternate; }
+
+/* A light crossing the accent bar. The bar clips it (overflow: hidden), so the
+   sheen appears and leaves inside the 70px rather than sliding past it. */
+@keyframes kcs-sheen {
+  0%        { transform: translateX(-120%); }
+  55%, 100% { transform: translateX(120%); }
+}
+.kcs-accent::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .85), transparent);
+  animation: kcs-sheen 6s ease-in-out infinite;
+}
+
+/* The mesh breathes sideways. 1.5% of 108% width, so it never uncovers an edge. */
+@keyframes kcs-drift {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-1.5%); }
+}
+.kcs-waves { animation: kcs-drift 24s ease-in-out infinite alternate; }
 
 /* ── Dark: the sign-in screen's aurora at full strength ───────────────────────
    Warm light at the top right, blue and violet pooling in the lower corners,
@@ -252,8 +320,29 @@
 /* ── Narrow ───────────────────────────────────────────────────────────────── */
 @media (max-width: 575.98px) {
   .kcs { min-height: calc(100dvh - 120px); padding: 36px 16px; border-radius: 16px; }
-  .kcs-logo { width: 196px; padding: 12px 18px; border-radius: 14px; }
+  /* Width only. The padding and radius here were the dark plate's, which went
+     when the mark stopped needing a ground of its own. */
+  .kcs-logo { width: 196px; }
   .kcs-tagline { font-size: 10px; letter-spacing: .14em; text-indent: .14em; }
   .kcs-accent { margin-top: 20px; }
   .kcs-waves { height: 104px; }
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────────────────
+   Nothing here is information, so none of it needs to move. The entrance is
+   cancelled rather than removed — `animation: none` on a rule that carries
+   `both` would otherwise leave the stack stuck at its from-state, invisible. */
+@media (prefers-reduced-motion: reduce) {
+  .kcs-logo,
+  .kcs-tagline,
+  .kcs-accent,
+  .kcs-title,
+  .kcs-sub,
+  .kcs-grad,
+  .kcs-waves {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .kcs-accent::after { animation: none; opacity: 0; }
 }
