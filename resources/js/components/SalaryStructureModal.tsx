@@ -5,7 +5,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { MasterDatePicker, MasterFormStyles } from '../pages/master/masterFormKit';
 import { pfDeduction, seedBreakup, reseedSplit, absorbIntoSpecial, SPLIT_CODES } from '../utils/salaryBreakup';
-import { PF_WAGE_CEILING_LABEL, PF_MAX_LABEL } from '../constants';
+import { PF_WAGE_CEILING_LABEL, PF_MAX_LABEL, PF_TYPE_OPTIONS } from '../constants';
 
 export interface SalaryComponent { code: string; label: string; amount: number }
 
@@ -878,8 +878,9 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                       value={pfType}
                       onChange={e => setPfType(e.target.value === 'Standard' ? 'Standard' : 'Statutory')}
                     >
-                      <option value="Statutory">Statutory (₹25k cap)</option>
-                      <option value="Standard">Standard (full basic)</option>
+                      {PF_TYPE_OPTIONS.map(o => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
                     </select>
                   </div>
                 )}

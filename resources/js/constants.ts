@@ -48,6 +48,17 @@ export const PF_WAGE_CEILING_LABEL = `₹${PF_WAGE_CEILING.toLocaleString('en-IN
 /** "₹3,000" — the most PF can be under the ceiling. */
 export const PF_MAX_LABEL = `₹${Math.round(PF_WAGE_CEILING * PF_RATE).toLocaleString('en-IN')}`;
 
+/* The PF Type choice, for the three screens that offer it: the Employee
+   compensation form, the Salary Structure modal and Onboarding Stage 1. All
+   three used to spell their own options, and Onboarding's said plain
+   "Statutory" / "Standard" while the other two explained themselves — the same
+   field reading differently depending on where you met it (#146). The cap
+   comes off PF_WAGE_CEILING, so the label cannot be left behind the number. */
+export const PF_TYPE_OPTIONS = [
+  { value: 'Statutory', label: `Statutory (₹${Math.round(PF_WAGE_CEILING / 1000)}k cap)` },
+  { value: 'Standard',  label: 'Standard (full basic)' },
+];
+
 export const SESSION_TIMEOUT_HOURS = 2;
 export const SESSION_TIMEOUT_MS    = SESSION_TIMEOUT_HOURS * 60 * 60 * 1000;
 export const SESSION_TIMEOUT_LABEL = `${SESSION_TIMEOUT_HOURS} hours`;

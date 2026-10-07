@@ -32,7 +32,7 @@ import {
   type SalBreakComp, SPLIT_CODES, MAX_COMP_AMOUNT, MAX_COMP_LABEL, CTC_ROUNDING_SLACK,
   seedBreakup, absorbIntoSpecial, reseedSplit, planEarningRemoval, statutoryPt, pfDeduction, breakupSignature, validateBreakup,
 } from '../../utils/salaryBreakup';
-import { PF_WAGE_CEILING, PF_WAGE_CEILING_LABEL, PF_MAX_LABEL } from '../../constants';
+import { PF_WAGE_CEILING, PF_WAGE_CEILING_LABEL, PF_MAX_LABEL, PF_TYPE_OPTIONS } from '../../constants';
 import { resolveProbation } from '../../utils/probation';
 import { useModulePermission } from '../../hooks/useModulePermission';
 import '../../../css/recruitment.css';
@@ -1424,7 +1424,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
   const [eSalaryFrom, setESalaryFrom] = useState('');
   const [eBonusInAnnual, setEBonusInAnnual] = useState(false);
   const [ePfEligible, setEPfEligible] = useState(false);
-  const [ePfType, setEPfType] = useState('Statutory'); // 'Statutory' (₹15k cap) | 'Standard' (full basic)
+  const [ePfType, setEPfType] = useState('Statutory'); // Statutory (capped at PF_WAGE_CEILING) | Standard (full basic)
   /* Detailed breakup is ON by default. The collapsed "Regular + Bonus = CTC"
      summary restates the CTC field directly above it and nothing else, so the
      section opened with no information in it and every user's first act was to
@@ -5638,7 +5638,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                             <MasterSelect
                               value={ePfType || 'Statutory'}
                               onChange={(v) => setEPfType(v)}
-                              options={[{ value: 'Statutory', label: 'Statutory (₹25k cap)' }, { value: 'Standard', label: 'Standard (full basic)' }]}
+                              options={PF_TYPE_OPTIONS}
                             />
                           </Col>
                         )}
