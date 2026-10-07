@@ -200,7 +200,9 @@
    48px tab rail; the four tabs (All/Pending/Approved/Rejected) still fit on one
    line. Scoped to .hrexp-page so other tables keep the standard 40px tabs. */
 .hrexp-page .dt-toolbar { padding: 8px; row-gap: 8px; }
-.hrexp-page .dt-tabs { padding: 4px; }
+/* No .dt-tabs padding override: it restated the base at the old 4px, so when the
+   base dropped to 3px (to land the rail on the search box's 42px) this page
+   would have been the only one still at 44. */
 /* Vertical divider between the Company/Self toggle (leadingToolbar) and the
    status tabs, so the two groups read as separate. */
 .hrexp-page .dt-lead { position: relative; padding-right: 14px; margin-right: 4px; }
@@ -291,7 +293,9 @@
   background: var(--vz-secondary-bg) !important;
   border: 1px solid var(--vz-border-color) !important;
   border-radius: 11px !important;
-  padding: 4px !important;
+  /* 3px, matching .dt-tabs — with the 1px border that puts this toggle at the
+     same 42px as the rail below it and the search beside it. */
+  padding: 3px !important;
   gap: 8px !important;
 }
 /* The shared tab box: 34px on 14px of side padding at 12.5px/650. This said
@@ -304,6 +308,8 @@
   height: 34px !important;
   padding: 0 14px !important;
   font-size: 12.5px !important;
+  /* 650, matching the .dt-tab rail on the row above — HRMS's weight, not the
+     base 700. See the HRMS .dt-tab rule in DataTable.css. */
   font-weight: 650 !important;
   letter-spacing: 0 !important;
   border-radius: 8px !important;

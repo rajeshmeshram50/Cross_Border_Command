@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import ComingSoon from '../../components/ui/ComingSoon';
 import { Card, CardBody, Col, Row } from 'reactstrap';
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
@@ -119,7 +120,18 @@ function fmtDate(s: string | null): string {
   } catch { return s; }
 }
 
+/* The dashboard proper is still being designed, so the route shows the shared
+ * ComingSoon placeholder for now. The real implementation is left intact below
+ * as `HrOverviewAnalytics` — delete this wrapper and re-export it to bring the
+ * analytics back; nothing else has to change. Same pattern as AdminDashboard,
+ * ClientDashboard and BranchDashboard. */
 export default function HrOverview() {
+  return (
+    <ComingSoon title="The HRMS dashboard is being rebuilt" />
+  );
+}
+
+function HrOverviewAnalytics() {
   const { selectedBranchId } = useBranchSwitcher();
   const [data, setData]     = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);

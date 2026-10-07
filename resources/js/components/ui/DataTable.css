@@ -172,7 +172,12 @@
   background: rgba(var(--dt-a-rgb), .10);
   border: 1px solid rgba(var(--dt-a-rgb), .16);
   border-radius: 11px;
-  padding: 4px;
+  /* 3px, not 4. The rail has no explicit height, so its outer box is
+     34 (tab) + padding x2 + border x2. At 4px that is 44px against a 42px
+     search box — the rail stood 2px proud of the search beside it on every
+     page. At 3px it is 34 + 6 + 2 = 42 exactly. (The note on .dt-tab about
+     "4px twice" predates the border and no longer adds up.) */
+  padding: 3px;
   /* Shrinkable (was flex-shrink: 0) with min-width: 0, so as the window narrows
      the rail gives up width and wraps its own tabs onto a second line INSIDE the
      rail. Before, an unshrinkable rail forced the whole search + actions group
@@ -190,17 +195,24 @@
 }
 .dt-tab {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  /* 34px + the rail's 4px twice = the 42px search beside it. The rail used to
-     run 37px tabs on 9px of padding to claw back width on a six-tab row; it
-     scrolls or wraps for that now, because a rail that sizes itself to its
-     contents is why no two modules lined up. */
+  /* 34px. With the rail's 3px of padding and 1px border on each side that is
+     the 42px search beside it — see .dt-tabs. The rail used to run 37px tabs on
+     9px of padding to claw back width on a six-tab row; it scrolls or wraps for
+     that now, because a rail that sizes itself to its contents is why no two
+     modules lined up. */
   padding: 0 14px; height: 34px;
   /* Transparent on the active tab rather than absent, so switching tabs does
      not move the rail by a pixel. */
   border: 1px solid transparent; border-radius: 8px;
 
   background: transparent;
-  font-family: inherit;
+  /* The app's own face, NOT `inherit`. Velzon sets Rubik on the body, so an
+     inherited tab rendered in Rubik on every page that does not set a family of
+     its own — while Customers' .smc-pill resolved to DM Sans. Same 12.5px, same
+     weight, different letters, and Rubik carries noticeably more ink at the same
+     number, which is why the HRMS rail kept reading "too bold".
+     This is the same fix already applied to .dt-table for rows and headers. */
+  font-family: var(--font-sans);
   /* The Customers tab strip's type, which is the reference for every tab rail
      in the product. Tracking is declared, not left to inherit: a rail dropped
      inside a page-title strip picked the strip's up and rendered tighter than
@@ -1077,9 +1089,14 @@
 }
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab {
   border: 0;
-  /* 650, a half-step down from the 700 every other rail uses. DM Sans is loaded
-     as a variable face (wght 300..800 — see the @import in app.css), so this is
-     a real weight and not a value the browser rounds up to 700. */
+  /* 650, a half-step below the 700 of Customers' .smc-pill and the base rule.
+     This has been tried both ways: at 700 the HRMS rail reads heavier than
+     Customers' even though the numbers match, because an HRMS tab is violet
+     (--dt-a-700) on a pale track while Customers' sits on a tinted one — the
+     same weight carries more ink here. 650 is the deliberate exception, and
+     the only thing HRMS overrides besides its colours.
+     DM Sans is loaded as a variable face (wght 300..800 — see the @import in
+     app.css), so this is a real weight, not one the browser rounds to 700. */
   font-weight: 650;
 }
 .hr-cstrip .dt-tabrail .dt-tab { font-weight: 650; }
