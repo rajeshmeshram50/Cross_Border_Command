@@ -383,7 +383,7 @@ class HolidayController extends Controller
         $user = $request->user();
         if (!$user) abort(401, 'Authentication required');
 
-        $employee = Employee::where('user_id', $user->id)->first();
+        $employee = Employee::find($user->employee_id);
         $groupId = $employee?->holiday_group_id;
         if (!$groupId) {
             return response()->json([]);

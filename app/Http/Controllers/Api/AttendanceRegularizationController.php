@@ -42,7 +42,7 @@ class AttendanceRegularizationController extends Controller
         // employee_id; otherwise fall back to the caller's own employee row.
         $employeeId = $request->integer('employee_id') ?: null;
         if (!$employeeId) {
-            $own = Employee::where('user_id', $user->id)->first();
+            $own = Employee::find($user->employee_id);
             if (!$own) return response()->json(['data' => []]);
             $employeeId = $own->id;
         }
@@ -66,7 +66,7 @@ class AttendanceRegularizationController extends Controller
         ) {
             $targetBranchId = Employee::withTrashed()->where('id', $employeeId)->value('branch_id');
             if ((int) $targetBranchId !== (int) $user->branch_id) {
-                $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
+                $myEmployeeId = $user->employee_id;
                 $isOwn = $myEmployeeId && (int) $employeeId === (int) $myEmployeeId;
                 $reportsToMe = Employee::where('id', $employeeId)
                     ->where(function ($w) use ($user, $myEmployeeId) {
@@ -139,7 +139,7 @@ class AttendanceRegularizationController extends Controller
                 abort(422, 'That employee no longer exists — the regularization was not filed.');
             }
         } else {
-            $employee = Employee::where('user_id', $user->id)->first();
+            $employee = Employee::find($user->employee_id);
             if (!$employee) {
                 abort(422, 'Could not resolve target employee for this regularization request.');
             }
@@ -530,7 +530,7 @@ class AttendanceRegularizationController extends Controller
         $isAdminScope = $this->hasAttendanceGrant($user, 'can_view');
         $myEmployeeId = null;
         if (!$isAdminScope) {
-            $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
+            $myEmployeeId = $user->employee_id;
 
             /* Reporting-manager matching has to cover BOTH links, exactly as
              * isReportingManager() and snapshotApprovalChain() already do.
@@ -887,7 +887,7 @@ class AttendanceRegularizationController extends Controller
          * so for them "their own request" stays unapprovable, both ways it can
          * be theirs: being the SUBJECT, and having RAISED it. */
         if (!$isAdminScope && $next === 'Approved') {
-            $ownEmployeeId = (int) (Employee::where('user_id', $user->id)->value('id') ?? 0);
+            $ownEmployeeId = (int) ($user->employee_id ?? 0);
             if ($ownEmployeeId && (int) $row->employee_id === $ownEmployeeId) {
                 abort(403, 'You cannot approve your own regularization request.');
             }
@@ -1844,7 +1844,7 @@ class AttendanceRegularizationController extends Controller
             return true;
         }
         if ($emp->reporting_manager_id) {
-            $myEmpId = Employee::where('user_id', $user->id)->value('id');
+            $myEmpId = $user->employee_id;
             if ($myEmpId && (int) $emp->reporting_manager_id === (int) $myEmpId) return true;
         }
         return false;
@@ -1884,7 +1884,7 @@ class AttendanceRegularizationController extends Controller
                 ->value('branch_id');
 
             if ((int) $empBranchId !== (int) $user->branch_id) {
-                $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
+                $myEmployeeId = $user->employee_id;
                 $isOwn = $myEmployeeId && (int) $row->employee_id === (int) $myEmployeeId;
                 if (!$isOwn && !$this->isReportingManager($user, $row)) {
                     abort(404);

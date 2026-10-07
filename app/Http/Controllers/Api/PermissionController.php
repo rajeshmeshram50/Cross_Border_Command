@@ -18,7 +18,7 @@ class PermissionController extends Controller
 
     private function subordinateUserIds(User $granter): array
     {
-        $granterEmpId = Employee::where('user_id', $granter->id)->value('id');
+        $granterEmpId = $granter->employee_id;
 
         // Level 0: reports of the granter, by either manager column.
         $frontier = Employee::query()

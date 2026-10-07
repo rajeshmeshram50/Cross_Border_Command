@@ -208,7 +208,7 @@ class FaceBiometricController extends Controller
         // Self-link: employees.user_id → users.id (there is NO users.employee_id
         // column — /me synthesizes that field from this lookup). When the
         // caller doesn't pass an explicit employee_id we act on their own row.
-        $ownEmployee = Employee::where('user_id', $user->id)->first();
+        $ownEmployee = Employee::find($user->employee_id);
 
         $employeeId = $request->input('employee_id');
 

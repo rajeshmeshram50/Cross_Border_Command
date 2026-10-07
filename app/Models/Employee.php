@@ -372,6 +372,33 @@ class Employee extends Model
         return $this->belongsTo(User::class, 'user_id');
     }
 
+    /**
+     * The login behind this employee, by either route.
+     *
+     * `employees.user_id` is the intended link, but it is nullable and is NOT
+     * written when an account is created from the code alone — a whole tenant
+     * can have logins that work while every employee row still reads null.
+     * Everything that asks "is this person me?" went through that column only,
+     * so on such a tenant an approver could never be recognised: leave sat
+     * Pending with can_act_now false, and a signature role resolved to nobody.
+     * `users.employee_code` is the second route, and it is the one populated
+     * in that case.
+     */
+    public function getResolvedUserIdAttribute(): ?int
+    {
+        if ($this->user_id) return (int) $this->user_id;
+        if (empty($this->emp_code)) return null;
+
+        if (!array_key_exists('resolvedUserId', $this->relations)) {
+            $id = User::where('employee_code', $this->emp_code)
+                ->when($this->client_id, fn ($q) => $q->where('client_id', $this->client_id))
+                ->value('id');
+            $this->relations['resolvedUserId'] = $id ? (int) $id : null;
+        }
+
+        return $this->relations['resolvedUserId'];
+    }
+
     /** Passport-size photo doc uploaded during onboarding. The
      *  `employee_documents` row with document_key='photo' is the canonical
      *  source — also doubles as the employee's profile picture across the

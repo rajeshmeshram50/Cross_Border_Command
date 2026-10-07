@@ -655,7 +655,7 @@ class AdvanceRequestController extends Controller
     private function currentEmployeeId($user): ?int
     {
         if (!$user) return null;
-        return Employee::where('user_id', $user->id)->value('id');
+        return $user->employee_id;
     }
 
   
