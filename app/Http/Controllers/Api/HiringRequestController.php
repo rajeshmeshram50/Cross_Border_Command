@@ -200,7 +200,7 @@ class HiringRequestController extends Controller
         if (!$auth || !Settings::shouldSendMail()) return;
 
         try {
-            $creatorEmp = Employee::where('user_id', $auth->id)->first();
+            $creatorEmp = Employee::find($auth->employee_id);
             if (!$creatorEmp || !$creatorEmp->reporting_manager_id) return;
 
             $manager = Employee::with('user:id,email,name')

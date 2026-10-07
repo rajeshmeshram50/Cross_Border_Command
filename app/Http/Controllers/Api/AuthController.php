@@ -261,7 +261,7 @@ class AuthController extends Controller
         $matches = [];
 
         foreach ($accounts as $candidate) {
-            $emp = \App\Models\Employee::where('user_id', $candidate->id)->first();
+            $emp = \App\Models\Employee::find($candidate->employee_id);
             if (!$emp || empty($emp->face_descriptor) || $emp->face_registered_at === null) {
                 continue;
             }
@@ -749,7 +749,21 @@ class AuthController extends Controller
         // Both id (numeric) and emp_code (EMP-### string) are surfaced so the
         // frontend can detect "is this my own profile?" regardless of which
         // form the URL slug carries — without an extra round-trip.
-        $linkedEmployee = \App\Models\Employee::where('user_id', $user->id)
+        /* employees.user_id is the intended link but is nullable and often
+           never written; users.employee_code is then the only route. Reading
+           one of them left a logged-in employee with no profile, no approvals
+           and no documents wherever that back-link was missing. */
+        $linkedEmployee = \App\Models\Employee::where(function ($w) use ($user) {
+                $w->where('user_id', $user->id);
+                if (!empty($user->employee_code)) {
+                    $w->orWhere(function ($c) use ($user) {
+                        $c->where('emp_code', $user->employee_code)
+                          ->when($user->client_id, fn ($q) => $q->where('client_id', $user->client_id));
+                    });
+                }
+            })
+            // A real link wins over a code match when both exist.
+            ->orderByRaw('CASE WHEN user_id = ? THEN 0 ELSE 1 END', [$user->id])
             ->select(['id', 'emp_code', 'onboarding_stage_completed', 'department_id', 'designation_id'])
             ->with(['photoDocument:id,employee_id,document_key,file_path', 'department:id,name', 'designation:id,name'])
             ->first();

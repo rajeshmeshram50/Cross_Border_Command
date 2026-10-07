@@ -63,7 +63,7 @@ class SalesTodoController extends Controller
         $data = $this->validateReminderPayload($request);
 
         [$clientId, $branchId] = $this->resolveOwnership($user);
-        $employeeId = Employee::where('user_id', $user->id)->value('id');
+        $employeeId = $user->employee_id;
 
         // Move the uploaded attachment to permanent storage AFTER row
         // creation so the relative path can include the new id.
@@ -210,7 +210,7 @@ class SalesTodoController extends Controller
 
         return DB::transaction(function () use ($user, $data) {
             [$clientId, $branchId] = $this->resolveOwnership($user);
-            $employeeId = Employee::where('user_id', $user->id)->value('id');
+            $employeeId = $user->employee_id;
 
             // Reject overlapping meetings for the same opportunity + time slot.
             $this->assertNoScheduleConflict($data, $clientId, $branchId);

@@ -94,7 +94,7 @@ class HrDocumentSignatureController extends Controller
          * on the HR grant now, which is the thing that actually distinguishes
          * the two cases. Anyone without it is still pinned to themselves. */
         if ($viewer && $viewer->user_type === 'employee' && !$this->mayReadOthersDocuments($viewer)) {
-            $q->where('employee_id', Employee::where('user_id', $viewer->id)->value('id') ?: 0);
+            $q->where('employee_id', $viewer->employee_id ?: 0);
         } elseif ($request->has('employee_id')) {
             /* An employee_id that is PRESENT but not a positive integer must
              * narrow to nothing, never widen to everything. `$request->integer()`
@@ -1088,7 +1088,7 @@ class HrDocumentSignatureController extends Controller
          * open it" can never disagree (CBC #25). */
         if ($this->mayReadOthersDocuments($user)) return;
 
-        $ownEmployeeId = Employee::where('user_id', $user->id)->value('id');
+        $ownEmployeeId = $user->employee_id;
         if ($ownEmployeeId && (int) $row->employee_id === (int) $ownEmployeeId) return;
 
         foreach ((is_array($row->signers) ? $row->signers : []) as $s) {

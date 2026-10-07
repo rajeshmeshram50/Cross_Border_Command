@@ -3168,7 +3168,7 @@ class EmployeeController extends Controller
     {
         $user = $request->user();
         if ($user && $employeeId > 0) {
-            $ownId = Employee::where('user_id', $user->id)->value('id');
+            $ownId = $user->employee_id;
             if ($ownId && (int) $ownId === $employeeId) return;
         }
         $this->authorize($request, 'can_view');

@@ -37,7 +37,7 @@ class LeaveRequestController extends Controller
         // to the user's linked employee record (employees.user_id = users.id).
         $employeeId = $request->integer('employee_id') ?: null;
         if (!$employeeId) {
-            $own = Employee::where('user_id', $user->id)->first();
+            $own = Employee::find($user->employee_id);
             if (!$own) {
                 return response()->json(['data' => []]);
             }
@@ -117,7 +117,7 @@ class LeaveRequestController extends Controller
             $employee = Employee::find($data['employee_id']);
         }
         if (!$employee) {
-            $employee = Employee::where('user_id', $user->id)->first();
+            $employee = Employee::find($user->employee_id);
         }
         if (!$employee) {
             abort(422, 'Could not resolve target employee for this leave request.');
@@ -467,7 +467,7 @@ class LeaveRequestController extends Controller
         // someone) and fall back to the authenticated user's own linked employee
         // (the normal self-service flow). Mirrors how store() resolves the applicant.
         $selfId = $request->integer('employee_id')
-            ?: Employee::where('user_id', $user->id)->value('id');
+            ?: $user->employee_id;
         if ($selfId) {
             $q->where('id', '!=', $selfId);
         }
@@ -599,7 +599,7 @@ class LeaveRequestController extends Controller
         $isAdminScope = in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true);
         $myEmployeeId = null;
         if (!$isAdminScope) {
-            $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
+            $myEmployeeId = $user->employee_id;
             if (!$myEmployeeId) {
                 return response()->json(['data' => []]);
             }
@@ -1064,7 +1064,7 @@ class LeaveRequestController extends Controller
 
         // LV-11: no one may APPROVE their own leave — not even via the admin
         // override. (Rejecting your own is harmless and handled by /cancel.)
-        $ownEmployeeId = (int) (Employee::where('user_id', $user->id)->value('id') ?? 0);
+        $ownEmployeeId = (int) ($user->employee_id ?? 0);
         if ($next === 'Approved' && $ownEmployeeId && (int) $row->employee_id === $ownEmployeeId) {
             abort(403, 'You cannot approve your own leave request.');
         }
@@ -1450,7 +1450,7 @@ class LeaveRequestController extends Controller
             return true;
         }
         if (!empty($entry['approver_employee_id'])) {
-            $myEmpId = Employee::where('user_id', $user->id)->value('id');
+            $myEmpId = $user->employee_id;
             if ($myEmpId && (int)$entry['approver_employee_id'] === (int)$myEmpId) {
                 return true;
             }
@@ -1469,7 +1469,7 @@ class LeaveRequestController extends Controller
             if ($role === 'reporting_manager' && $request) {
                 $emp = Employee::find($request->employee_id);
                 if ($emp && $emp->reporting_manager_id) {
-                    $myEmpId = Employee::where('user_id', $user->id)->value('id');
+                    $myEmpId = $user->employee_id;
                     if ($myEmpId && (int)$emp->reporting_manager_id === (int)$myEmpId) return true;
                 }
             }
@@ -1477,7 +1477,7 @@ class LeaveRequestController extends Controller
         if (($entry['approver_kind'] ?? '') === 'reporting_manager' && $request) {
             $emp = Employee::find($request->employee_id);
             if ($emp && $emp->reporting_manager_id) {
-                $myEmpId = Employee::where('user_id', $user->id)->value('id');
+                $myEmpId = $user->employee_id;
                 if ($myEmpId && (int)$emp->reporting_manager_id === (int)$myEmpId) return true;
             }
         }
