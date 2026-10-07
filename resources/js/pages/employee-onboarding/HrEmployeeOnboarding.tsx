@@ -2998,7 +2998,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   const stage2IsDone = stage2Done && macroCompleted >= 2;
   const stage3IsDone = stage3Done || macroCompleted >= 3;
   const stage4IsDone = stage4Done || macroCompleted >= 4;
-  const stage5AllSigned = stage5Loaded && stage5Signed >= stage5Sent;
+  /* `signed >= sent` alone is 0 >= 0 when nothing was ever dispatched, so an
+     employee with no policy documents at all used to clear this stage. Every
+     applicable template must be out as well as signed. */
+  const stage5AllSigned = stage5Loaded && stage5Sent >= stage5Total && stage5Signed >= stage5Sent;
   const stage5IsDone = macroCompleted >= 5 && stage5AllSigned;
   const allPriorStagesDone =
     stage1IsDone && stage2IsDone && stage3IsDone && stage4IsDone && stage5IsDone;
@@ -4123,6 +4126,19 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
             );
             return;
           }
+        }
+        /* Stage 5 shared this branch without a check of its own, so the
+           policies could be skipped entirely (#145). A template still to go
+           out is one whose custom fields were never filled. */
+        if (activeStage === 5 && !stage5AllSigned) {
+          const notSent = Math.max(0, stage5Total - stage5Sent);
+          toast.error(
+            'Policies & Agreements — incomplete',
+            !stage5Loaded      ? 'Still loading the document list — try again in a moment.'
+            : notSent > 0      ? `${notSent} of ${stage5Total} document${stage5Total === 1 ? '' : 's'} not generated yet. Fill its custom fields and send it for signature first.`
+                               : `${stage5Sent - stage5Signed} of ${stage5Sent} sent and awaiting signature.`,
+          );
+          return;
         }
         setNextLoading(true);
         setFormLocked(true);

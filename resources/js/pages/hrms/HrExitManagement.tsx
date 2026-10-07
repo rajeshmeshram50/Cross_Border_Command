@@ -19,6 +19,17 @@ import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import '../../../css/recruitment.css';
 import { downloadFile } from '../../utils/downloadFile';
 
+/** A blob-typed request gets its JSON error as a Blob, so a 422 must be read
+ *  back before `custom_fields` can be seen. Null = not that refusal. */
+async function blobCustomFields(err: any): Promise<string[] | null> {
+  const body = err?.response?.data;
+  try {
+    const json = body instanceof Blob ? JSON.parse(await body.text()) : body;
+    const fields = json?.custom_fields;
+    return Array.isArray(fields) && fields.length ? fields.map(String) : null;
+  } catch { return null; }
+}
+
 type ExitStatus = 'Active' | 'Exit In Progress' | 'Exited' | 'Missing Details';
 type DesigLevel = 'all' | 'hod' | 'lead' | 'exec' | 'employee' | 'intern';
 type EmpType    = 'all' | 'it' | 'nonit';
@@ -1989,7 +2000,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       URL.revokeObjectURL(url);
       toast.success('Document generated', `${tpl.code || tpl.name || 'Document'} downloaded.`);
     } catch (err: any) {
-      toast.error('Could not generate', err?.response?.data?.message || 'Please try again.');
+      /* This route resolves employee data only. A template that also asks for
+         custom fields is refused, and the modal is where they get entered. */
+      const fields = await blobCustomFields(err);
+      if (fields) {
+        toast.error(`Fill ${fields.length} custom field${fields.length === 1 ? '' : 's'} first`, fields.join(', '));
+        setGenTpl(tpl);
+      } else {
+        toast.error('Could not generate', err?.response?.data?.message || 'Please try again.');
+      }
     } finally {
       setGenerating(false);
     }

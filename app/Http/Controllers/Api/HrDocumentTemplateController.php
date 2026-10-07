@@ -744,6 +744,18 @@ class HrDocumentTemplateController extends Controller
         $context = $this->buildTokenContext($emp, $row->signers ?? []);
         $resolvedHtml = $this->resolveTokens((string) $row->content_html, $context);
 
+        /* This route carries no custom-field values — it resolves employee data
+           only — so a template asking for them would render {{Token}} into a
+           real letter. Refused here rather than in each caller (#145). */
+        if ($unfilled = $this->unfilledCustomFields($request, $resolvedHtml)) {
+            return response()->json([
+                'status'        => false,
+                'message'       => 'Fill the custom fields first: ' . implode(', ', $unfilled)
+                                   . '. Use Generate Document so the values can be entered.',
+                'custom_fields' => $unfilled,
+            ], 422);
+        }
+
         // Reuse the existing DOCX builder by temporarily swapping
         // content_html on a non-persisted clone so we don't have to
         // duplicate the header/footer + table emission code.
@@ -975,6 +987,26 @@ class HrDocumentTemplateController extends Controller
      *   exactly that, mirroring HrGeneratedDocumentController::
      *   rawHtmlTokenNames().
      */
+    /**
+     * Custom-field tokens still left in already-resolved HTML, by their real
+     * name. Only tokens that match a custom field of this tenant count — an
+     * unknown {{Token}} is the template author's problem, not a blank value.
+     */
+    private function unfilledCustomFields(Request $request, string $resolvedHtml): array
+    {
+        if (!preg_match_all('/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/', $resolvedHtml, $m)) return [];
+        $left = array_unique(array_map('mb_strtolower', $m[1]));
+        if (!$left) return [];
+
+        $user = $request->user();
+        $names = \App\Models\HrCustomField::query()
+            ->when($user?->client_id, fn ($q) => $q->where(fn ($w) => $w->whereNull('client_id')->orWhere('client_id', $user->client_id)))
+            ->pluck('name');
+
+        return $names->filter(fn ($n) => in_array(mb_strtolower((string) $n), $left, true))
+            ->values()->all();
+    }
+
     private function resolveTokens(
         string $html,
         array $ctx,
