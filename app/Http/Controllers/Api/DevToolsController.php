@@ -10,6 +10,10 @@ use App\Models\SupplierPurchaseInvoice;
 use App\Models\Vendor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Dev Tools — a read-only inspector for the Zoho Books data we STORE in our DB
@@ -30,6 +34,28 @@ class DevToolsController extends Controller
      */
     private function guardDevTools(Request $request): void
     {
+        $this->guardPermission($request);
+        /* The password is a second gate, not a replacement for the first: the
+           page ships in the bundle and these endpoints answer on their own, so
+           a check in the browser alone would gate nothing. */
+        $key = $this->unlockKey($request);
+        if (!Cache::get($key)) {
+            abort(423, 'Dev Tools is locked — enter the developer password to continue.');
+        }
+        /* Slide the idle window forward. Using the module keeps it open; the
+           countdown only runs while nothing is being asked for, so stepping
+           away is what re-locks it, not the clock since you unlocked. */
+        Cache::put($key, true, now()->addMinutes($this->idleMinutes()));
+    }
+
+    private function idleMinutes(): int
+    {
+        return max(1, (int) config('devtools.idle_minutes'));
+    }
+
+    /** Who may ask for the password at all. */
+    private function guardPermission(Request $request): void
+    {
         $user = $request->user();
         if (!$user) abort(401);
         if (in_array($user->user_type, ['super_admin', 'client_admin'], true)) {
@@ -41,6 +67,145 @@ class DevToolsController extends Controller
         if (!$ok) {
             abort(403, 'You do not have permission to view Dev Tools.');
         }
+    }
+
+    /* Per access token, not per user: unlocking on your laptop must not unlock
+       the session someone left open elsewhere. */
+    private function unlockKey(Request $request): string
+    {
+        $user = $request->user();
+        $token = method_exists($user, 'currentAccessToken') ? $user->currentAccessToken() : null;
+        return 'devtools:unlocked:' . $user->id . ':' . ($token->id ?? 'session');
+    }
+
+    /**
+     * Does this answer match? Three sources, most specific first: a file on
+     * this server, a hash in config, then the plain password in config. The
+     * file lets one machine differ without a code change; the hash keeps the
+     * plaintext out of git. None set means nothing matches — a gate with no
+     * password must not read as a gate that is off.
+     */
+    private function passwordMatches(string $given): bool
+    {
+        if ($given === '') return false;
+
+        $file = (string) config('devtools.password_file');
+        if ($file !== '' && Storage::disk('local')->exists($file)) {
+            $onDisk = trim((string) Storage::disk('local')->get($file));
+            if ($onDisk !== '') return hash_equals($onDisk, $given);
+        }
+
+        $hash = (string) config('devtools.password_hash');
+        if ($hash !== '') return Hash::check($given, $hash);
+
+        $plain = (string) config('devtools.password');
+        return $plain !== '' && hash_equals($plain, $given);
+    }
+
+    /** Whether anything at all can open the door — for the "not configured" notice. */
+    private function passwordConfigured(): bool
+    {
+        $file = (string) config('devtools.password_file');
+        if ($file !== '' && Storage::disk('local')->exists($file)
+            && trim((string) Storage::disk('local')->get($file)) !== '') {
+            return true;
+        }
+        return filled(config('devtools.password_hash')) || filled(config('devtools.password'));
+    }
+
+    /** Attempts are counted per user AND per IP, so neither alone is the way round it. */
+    private function throttleKey(Request $request): string
+    {
+        return 'devtools:unlock:' . ($request->user()?->id ?? 'guest') . ':' . $request->ip();
+    }
+
+    /**
+     * GET /api/dev-tools/lock-state
+     *
+     * Whether this session still needs the password, and how long any lockout
+     * has left. Answers for anyone who may ask — being told "locked" reveals
+     * nothing the menu item did not already.
+     */
+    public function lockState(Request $request): JsonResponse
+    {
+        $this->guardPermission($request);
+        $seconds = RateLimiter::availableIn($this->throttleKey($request));
+        $locked  = RateLimiter::tooManyAttempts($this->throttleKey($request), config('devtools.max_attempts'));
+
+        return response()->json(['status' => true, 'data' => [
+            'unlocked'         => (bool) Cache::get($this->unlockKey($request)),
+            'locked_out'       => $locked,
+            'retry_in_seconds' => $locked ? $seconds : 0,
+            /* The instant the lockout ends, not a duration. A countdown that
+               decrements its own number drifts — browsers throttle timers in a
+               background tab — so the client ticks against this instead. */
+            'retry_at'         => $locked ? now()->addSeconds($seconds)->toIso8601String() : null,
+            'configured'       => $this->passwordConfigured(),
+            'idle_minutes'     => $this->idleMinutes(),
+        ]]);
+    }
+
+    /**
+     * POST /api/dev-tools/unlock   { password }
+     *
+     * Three wrong answers and the door shuts for 30 minutes. The counter is
+     * server-side: a client-side one resets with the page.
+     */
+    public function unlock(Request $request): JsonResponse
+    {
+        $this->guardPermission($request);
+        $request->validate(['password' => 'required|string|max:200']);
+
+        $key     = $this->throttleKey($request);
+        $max     = max(1, (int) config('devtools.max_attempts'));
+        $lockout = max(1, (int) config('devtools.lockout_minutes'));
+
+        if (RateLimiter::tooManyAttempts($key, $max)) {
+            return $this->lockedOut($key);
+        }
+
+        /* No password configured locks everyone out rather than letting
+           everyone in. A wrong answer costs an attempt either way, so the
+           response cannot be used to probe whether one is set. */
+        if (!$this->passwordMatches((string) $request->input('password'))) {
+            RateLimiter::hit($key, $lockout * 60);
+            $left = $max - RateLimiter::attempts($key);
+            if ($left <= 0) return $this->lockedOut($key);
+
+            return response()->json([
+                'status'  => false,
+                'message' => 'That password is not right. ' . $left . ' attempt' . ($left === 1 ? '' : 's') . ' left.',
+                'attempts_left' => $left,
+            ], 422);
+        }
+
+        RateLimiter::clear($key);
+        Cache::put($this->unlockKey($request), true, now()->addMinutes($this->idleMinutes()));
+
+        return response()->json(['status' => true, 'data' => [
+            'unlocked'     => true,
+            'idle_minutes' => $this->idleMinutes(),
+        ]]);
+    }
+
+    /** POST /api/dev-tools/lock — hand the key back early. */
+    public function lock(Request $request): JsonResponse
+    {
+        $this->guardPermission($request);
+        Cache::forget($this->unlockKey($request));
+        return response()->json(['status' => true, 'data' => ['unlocked' => false]]);
+    }
+
+    private function lockedOut(string $key): JsonResponse
+    {
+        $seconds = RateLimiter::availableIn($key);
+        return response()->json([
+            'status'  => false,
+            // The screen counts it down; the message only has to say what happened.
+            'message' => 'Too many wrong passwords.',
+            'retry_in_seconds' => $seconds,
+            'retry_at'         => now()->addSeconds($seconds)->toIso8601String(),
+        ], 429);
     }
 
     /**
@@ -135,18 +300,12 @@ class DevToolsController extends Controller
     /** GET /api/dev-tools/zoho/{type} — one Zoho entity type per tab. */
     public function zoho(Request $request, string $type): JsonResponse
     {
+        /* Was its own inline copy of the permission check, which is exactly the
+           drift guardDevTools() was extracted to prevent: the copy never
+           learned about the password, so this endpoint stayed open while every
+           other one was locked. */
+        $this->guardDevTools($request);
         $user = $request->user();
-        if (!$user) abort(401);
-        // Permission-gated. super_admin / client_admin always have access; any other
-        // user needs the 'dev-tools' module can_view grant (Permissions module).
-        if (!in_array($user->user_type, ['super_admin', 'client_admin'], true)) {
-            $moduleId = \App\Models\Module::where('slug', 'dev-tools')->value('id');
-            $ok = $moduleId && \App\Models\Permission::where('user_id', $user->id)
-                ->where('module_id', $moduleId)->where('can_view', true)->exists();
-            if (!$ok) {
-                return response()->json(['status' => false, 'message' => 'You do not have permission to view Dev Tools.'], 403);
-            }
-        }
 
         // client_admin → own client only; super_admin (client_id null) → all clients.
         $clientId = $user->client_id ?: null;

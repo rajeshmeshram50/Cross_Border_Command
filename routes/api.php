@@ -708,6 +708,11 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     // Dev Tools → Load Testing: which module/page combinations can be profiled.
     // Gated inside the controller (same rule as the Zoho tab) and refused
     // outside local/staging.
+    // The password gate itself. These three answer before the unlock, so they
+    // check the permission only — everything below them needs both.
+    Route::get   ('/dev-tools/lock-state',                         [\App\Http\Controllers\Api\DevToolsController::class, 'lockState']);
+    Route::post  ('/dev-tools/unlock',                             [\App\Http\Controllers\Api\DevToolsController::class, 'unlock']);
+    Route::post  ('/dev-tools/lock',                               [\App\Http\Controllers\Api\DevToolsController::class, 'lock']);
     Route::get   ('/dev-tools/profile-targets',                   [\App\Http\Controllers\Api\DevToolsController::class, 'profileTargets']);
     Route::get   ('/dev-tools/api-usage',                          [\App\Http\Controllers\Api\DevToolsController::class, 'apiUsage']);
     Route::get   ('/dev-tools/profile/{id}',                      [\App\Http\Controllers\Api\DevToolsController::class, 'profileDetail']);

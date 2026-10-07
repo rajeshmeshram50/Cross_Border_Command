@@ -1,0 +1,66 @@
+/* Dev Tools password gate. Covers the page rather than sitting on it — the
+   screen behind is not meant to be read while this is up. */
+/* `top` is set inline from the measured header height; it covers the content
+   area only, never the nav. z-index sits below Bootstrap's dropdown (1000) and
+   the topbar (1002) so a menu opened from the nav still lands on top. */
+.dtl-backdrop{
+  position:fixed;top:0;left:0;right:0;bottom:0;z-index:900;
+  display:flex;align-items:center;justify-content:center;
+  padding:24px;background:rgba(15,23,42,.55);backdrop-filter:blur(6px);
+}
+.dtl-box{
+  width:100%;max-width:420px;padding:28px 26px 24px;border-radius:18px;
+  background:var(--vz-card-bg,#fff);border:1px solid rgba(148,163,184,.28);
+  box-shadow:0 24px 60px rgba(2,6,23,.28);text-align:center;
+}
+.dtl-ico{
+  width:52px;height:52px;margin:0 auto 14px;border-radius:14px;
+  display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,#0ea5e9,#0369a1);color:#fff;
+}
+.dtl-ico svg{width:24px;height:24px;}
+.dtl-title{margin:0 0 8px;font-size:18px;font-weight:800;letter-spacing:-.3px;color:var(--vz-heading-color,var(--vz-body-color));}
+.dtl-sub{margin:0 0 18px;font-size:13px;line-height:1.55;color:var(--vz-text-muted,#64748b);}
+.dtl-warn{
+  margin:0 0 14px;padding:9px 11px;border-radius:10px;font-size:12.5px;text-align:left;
+  background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.4);color:#b45309;
+}
+.dtl-warn code{font-size:12px;}
+.dtl-label{display:block;margin-bottom:6px;font-size:12px;font-weight:700;text-align:left;color:var(--vz-text-muted,#64748b);text-transform:uppercase;letter-spacing:.4px;}
+.dtl-input{
+  width:100%;padding:11px 13px;border-radius:11px;font-size:14px;
+  background:var(--vz-input-bg,#fff);color:var(--vz-body-color,#0f172a);
+  border:1px solid rgba(148,163,184,.45);outline:none;transition:border-color .15s,box-shadow .15s;
+}
+.dtl-input:focus{border-color:#0ea5e9;box-shadow:0 0 0 3px rgba(14,165,233,.18);}
+.dtl-input.is-bad{border-color:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.15);}
+.dtl-input:disabled{opacity:.6;cursor:not-allowed;}
+.dtl-hint{margin:9px 0 0;font-size:12px;color:var(--vz-text-muted,#94a3b8);}
+.dtl-err{margin:9px 0 0;font-size:12.5px;font-weight:600;color:#ef4444;}
+.dtl-btn{
+  width:100%;margin-top:16px;padding:11px 14px;border:0;border-radius:11px;
+  font-size:14px;font-weight:700;color:#fff;cursor:pointer;
+  background:linear-gradient(135deg,#0ea5e9,#0369a1);transition:opacity .15s;
+}
+.dtl-btn:disabled{opacity:.5;cursor:not-allowed;}
+
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .dtl-box{background:#1e293b;border-color:rgba(148,163,184,.2);}
+  :root:not([data-theme="light"]) .dtl-input{background:#0f172a;color:#e2e8f0;}
+}
+:root[data-theme="dark"] .dtl-box{background:#1e293b;border-color:rgba(148,163,184,.2);}
+:root[data-theme="dark"] .dtl-input{background:#0f172a;color:#e2e8f0;}
+
+
+/* The lockout countdown. Tabular figures so the digits do not jiggle as the
+   seconds roll over. */
+.dtl-timer{
+  display:block;margin-top:5px;font-size:26px;font-weight:800;letter-spacing:-.5px;
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum";
+  /* Flat red first: if background-clip:text is not honoured the digits still
+     read, rather than painting themselves out. */
+  color:#ef4444;
+  background:linear-gradient(135deg,#f87171 0%,#ef4444 45%,#b91c1c 100%);
+  -webkit-background-clip:text;background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
