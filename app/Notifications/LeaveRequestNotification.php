@@ -48,11 +48,9 @@ class LeaveRequestNotification extends Notification implements ShouldQueue
 
     public function via(object $notifiable): array
     {
-        // 'database' powers the in-app bell-icon inbox; 'mail' goes
-        // through SMTP. AnonymousNotifiable (employees with no User row)
-        // only supports mail — Laravel skips the database channel for
-        // those automatically.
-        return ['mail', 'database'];
+        // Bell row first, SMTP second, so a mail failure can't cost the bell.
+        // Laravel skips 'database' for AnonymousNotifiable (no User row).
+        return ['database', 'mail'];
     }
 
     /**
@@ -80,7 +78,7 @@ class LeaveRequestNotification extends Notification implements ShouldQueue
             'days'           => (float) $r->days,
             'status'         => $r->status,
             'comment'        => $this->extraComment,
-            'action_url'     => $this->actionUrl(),
+            'action_url'     => $this->actionPath(),
             'subject'        => $this->subjectFor($employeeName ?? 'An employee', $type?->name ?? 'Leave'),
         ];
     }
@@ -180,14 +178,20 @@ class LeaveRequestNotification extends Notification implements ShouldQueue
      * Deep link the recipient should follow. Currently a generic /hr/leave
      * destination — once we have stable per-request URLs we'll wire those.
      */
-    private function actionUrl(): string
+    private function actionPath(): string
     {
-        $base = rtrim(config('app.url') ?? '', '/');
-        $path = match ($this->kind) {
+        return match ($this->kind) {
             'submitted_to_approver', 'escalated_to_hr', 'cancelled' => '/hr/leave-approvals',
             default                              => '/hr/leave',
         };
-        return $base . $path;
+    }
+
+    // Mail needs the absolute URL; the bell needs the bare path. APP_URL can
+    // carry a sub-folder (/Cross_Border_Command/public) the SPA router has no
+    // route for, so an absolute URL in the payload lands on the 404 → dashboard.
+    private function actionUrl(): string
+    {
+        return rtrim(config('app.url') ?? '', '/') . $this->actionPath();
     }
 
     /**

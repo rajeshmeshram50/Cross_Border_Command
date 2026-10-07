@@ -26,22 +26,37 @@ export interface InAppNotification {
 }
 
 /** Unread count for a bell badge, refreshed every 60s and on tab focus. */
-export function useUnreadNotifications(): { count: number; refresh: () => void } {
+export function useUnreadNotifications(): { count: number; total: number; refresh: () => void } {
   const [count, setCount] = useState(0);
+  /* The bell prints the TOTAL, so there is always a number to see, and colours
+     it by the unread count. A badge that vanishes the moment everything is read
+     left people unsure whether the bell was empty or simply not working. */
+  const [total, setTotal] = useState(0);
   const refresh = useCallback(() => {
     if (document.hidden) return;
     api.get('/notifications/unread-count')
-      .then((r) => setCount(r.data?.data?.count ?? 0))
+      .then((r) => {
+        setCount(r.data?.data?.count ?? 0);
+        setTotal(r.data?.data?.total ?? r.data?.data?.count ?? 0);
+      })
       .catch(() => { /* a badge is not worth a toast */ });
   }, []);
   useEffect(() => {
     refresh();
+    /* Every minute, and on the way back to the window. 'focus' as well as
+       visibilitychange: alt-tabbing to another app leaves the tab visible, so
+       visibilitychange never fires and the bell sat a full minute behind. */
     const t = window.setInterval(refresh, 60_000);
     const onVis = () => { if (!document.hidden) refresh(); };
     document.addEventListener('visibilitychange', onVis);
-    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis); };
+    window.addEventListener('focus', onVis);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('focus', onVis);
+    };
   }, [refresh]);
-  return { count, refresh };
+  return { count, total, refresh };
 }
 
 export default function NotificationsDrawer({ open, onClose, onCountChange }: {
@@ -89,8 +104,12 @@ export default function NotificationsDrawer({ open, onClose, onCountChange }: {
     }
     const url = n.data?.action_url ?? n.data?.url;
     if (!url) return;
-    // Strip scheme + host so the SPA router takes the path.
-    const path = String(url).replace(/^https?:\/\/[^/]+/, '') || '/';
+    /* Strip scheme + host so the SPA router takes the path, and the Laravel
+       sub-folder base too (APP_URL is .../Cross_Border_Command/public) — the
+       router has no route for it, so it 404s straight to the dashboard. */
+    const path = String(url)
+      .replace(/^https?:\/\/[^/]+/, '')
+      .replace(/^.*\/public(?=\/)/, '') || '/';
     /* A notification names a page its recipient may not be allowed to open.
        A reporting manager is asked to decide their team's leave, but the
        approvals page under HRMS needs an hr.leave_approvals grant they often

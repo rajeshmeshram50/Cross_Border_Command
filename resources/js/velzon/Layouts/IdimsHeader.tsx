@@ -825,7 +825,15 @@ export default function IdimsHeader() {
                 <button type="button" className="idims-action-btn" title="Notifications"
                   onClick={() => { closeMenus(); setNotifOpen(true); }}>
                   {IC.bell}
-                  {(!!notifCount.count || !!user?.inbox_count) && <span className="idims-action-badge" />}
+                  {/* Unread only, in red. A count that stayed on the bell after
+                      everything was read gave nothing to act on; the point of the
+                      badge is that something is waiting. */}
+                  {notifCount.count > 0 && (
+                    <span className="idims-action-count"
+                          title={`${notifCount.count} unread notification${notifCount.count === 1 ? '' : 's'}`}>
+                      {notifCount.count > 99 ? '99+' : notifCount.count}
+                    </span>
+                  )}
                 </button>
                 <button type="button" className="idims-action-btn idims-logout-btn" title="Logout" onClick={() => { closeMenus(); setLogoutOpen(true); }}>
                   {IC.logout}
@@ -1294,6 +1302,10 @@ const IDIMS_CSS = `
 .idims-logout-btn:hover { background: #FFF1F2; color: #E11D48; }
 .idims-action-btn svg { width: 18px; height: 18px; display: block; }
 .idims-action-badge { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: #7C3AED; border: 2px solid #fff; }
+/* Unread notifications, counted. Red and lifted off the icon, so it reads from
+   across the room rather than being mistaken for part of the bell. */
+.idims-action-count { position: absolute; top: 1px; right: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #E11D48; color: #fff; font-size: 9.5px; font-weight: 800; line-height: 1; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(225,29,72,.45); }
+[data-bs-theme="dark"] .idims-action-count { border-color: #1b2733; }
 .idims-action-sep { width: 1px; height: 20px; flex-shrink: 0; background: #E7EAF3; }
 
 /* Profile */

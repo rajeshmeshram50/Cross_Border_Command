@@ -65,7 +65,12 @@ class NotificationController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401);
-        return response()->json(['data' => ['count' => $user->unreadNotifications()->count()]]);
+        /* Both numbers in one call: the bell prints the total so there is always
+           something to see, and colours it by the unread count. */
+        return response()->json(['data' => [
+            'count' => $user->unreadNotifications()->count(),
+            'total' => $user->notifications()->count(),
+        ]]);
     }
 
     public function markRead(Request $request, string $id)

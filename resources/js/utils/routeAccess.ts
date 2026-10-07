@@ -59,7 +59,9 @@ const HR_LEAF: Record<string, string> = {
   '/hr/devices': 'hr.attendance',   // Biometric Devices rides on the attendance grant
   '/hr/leave': 'hr.leave',
   '/hr/leave-plans': 'hr.leave',
-  '/hr/leave-approvals': 'hr.leave_approvals',
+  // No hr.leave_approvals module exists, so that slug can never be granted and
+  // the page was unreachable. Approvals ride on the leave grant, like leave-plans.
+  '/hr/leave-approvals': 'hr.leave',
   '/hr/holiday': 'hr.holiday',
   '/hr/pip': 'hr.pip',
   '/hr/expense': 'hr.expense',

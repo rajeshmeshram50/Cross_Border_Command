@@ -1987,20 +1987,21 @@ class LeaveRequestController extends Controller
     private function safeSend(mixed $notifiable, LeaveRequestNotification $notif): void
     {
         if (!$notifiable) return;
-        try {
-            // LV-28: the notification implements ShouldQueue, but there is no
-            // queue worker — so a normal send()/notify() would sit undelivered
-            // forever. Force SYNCHRONOUS delivery so approval emails actually go.
-            if ($notifiable instanceof AnonymousNotifiable) {
-                Notification::sendNow($notifiable, $notif);
-            } else {
-                $notifiable->notifyNow($notif);
+
+        // LV-28: the notification implements ShouldQueue but there is no queue
+        // worker, so delivery is forced SYNCHRONOUS.
+        // One channel at a time, each in its own try: a single send() aborts the
+        // whole channel list on the first throw, so a dead SMTP server used to
+        // swallow the bell row too. The bell goes first and stands on its own.
+        foreach (['database', 'mail'] as $channel) {
+            try {
+                Notification::sendNow($notifiable, $notif, [$channel]);
+            } catch (\Throwable $e) {
+                Log::warning("[leave-notify] {$channel} dispatch failed: " . $e->getMessage(), [
+                    'request_id' => $notif->request->id ?? null,
+                    'kind'       => $notif->kind ?? null,
+                ]);
             }
-        } catch (\Throwable $e) {
-            Log::warning('[leave-notify] dispatch failed: ' . $e->getMessage(), [
-                'request_id' => $notif->request->id ?? null,
-                'kind'       => $notif->kind ?? null,
-            ]);
         }
     }
 }
