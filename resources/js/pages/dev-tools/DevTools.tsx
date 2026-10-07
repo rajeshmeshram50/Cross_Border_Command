@@ -4,7 +4,9 @@ import LoadTesting from './LoadTesting';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import { useAuth } from '../../contexts/AuthContext';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
+import DevToolsLock from './DevToolsLock';
 import '../developers/shipment-360.css';
+import './dev-tools-lock.css';
 
 /**
  * Dev Tools — a read-only inspector for the Zoho Books data we STORE in our DB
@@ -116,7 +118,9 @@ const IcoSearch = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
 );
 
-export default function DevTools() {
+/* Wrapped in DevToolsLock below: nothing here renders, and none of its
+   requests fire, until the developer password has been accepted server-side. */
+function DevToolsPage() {
   const { user } = useAuth();
   const isSuperAdmin = user?.user_type === 'super_admin';
   // Top-level section. Zoho Books is the original inspector; Load Testing is a
@@ -287,3 +291,12 @@ const EXTRA = `
 .dt-section.is-active{background:#fff;color:#0b5e73;text-shadow:none;font-weight:800;box-shadow:0 2px 8px rgba(8,47,73,.28);}
 @media (max-width:720px){.dt-sections{margin-right:0;}}
 `;
+
+/* The route renders this; the page itself only exists once unlocked. */
+export default function DevTools() {
+  return (
+    <DevToolsLock>
+      <DevToolsPage />
+    </DevToolsLock>
+  );
+}
