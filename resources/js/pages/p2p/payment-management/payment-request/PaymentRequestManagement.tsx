@@ -16,7 +16,7 @@ import {
   fetchPaymentRequests, STATUS_LABEL, SUPPLIER_TAG_LABEL,
   type DocRef, type PartyRef, type PaymentRequestRow, type RequestStatus, type SupplierTag,
 } from './paymentRequestData';
-import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../p2p-detail.css';
 import '../../purchase-management/order/po-list/order.css';
 import './payment-request.css';
 

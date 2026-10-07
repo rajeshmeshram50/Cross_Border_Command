@@ -145,6 +145,48 @@ that person can decide it. A client admin with every permission still cannot.
 At raise time the approver is validated three ways: active user of the client,
 not a `client_admin`, and in the PO's branch.
 
+### The browser checks something the server does not
+
+`PaymentRequestDetail.tsx`:
+
+```ts
+const canApprove = user?.user_type === "super_admin"
+  || !!user?.permissions?.["p2p.payment_request"]?.can_approve;
+```
+
+That flag gates whether the Approve / Reject buttons are **live**. The server
+never reads it — `recordDecision()` tests the addressee and nothing else. So
+the two answer different questions, and both have to pass:
+
+| | Decides |
+|---|---|
+| `can_approve` (browser) | Whether the buttons are offered |
+| `requested_to` (server) | Whether the decision is accepted |
+
+A user holding the permission but not named on the request gets a live button
+and a `403`. Worth recording as a finding rather than relying on it.
+
+### Row visibility is a third, separate rule
+
+`index()` narrows the list before any tab condition:
+
+```php
+if ($user->user_type === "branch_user" && $user->branch_id) {
+    $base->where(fn ($w) => $w->where("r.branch_id", $user->branch_id)
+                              ->orWhere("r.requested_to", $user->id));
+} elseif ($user->user_type !== "client_admin") {
+    $base->where("r.requested_to", $user->id);
+}
+```
+
+A client admin sees the company, a branch head their branch plus their own,
+everyone else only their own. This **is** server-side, so unlike `can_approve`
+it cannot be worked around.
+
+`scopedRequests()` underneath it joins the PO, vendor, both users, the shipment
+and the PI, and pins `r.client_id` to the caller's — tenancy is explicit here
+rather than coming from a global scope.
+
 ---
 
 ## 8. Validation constants

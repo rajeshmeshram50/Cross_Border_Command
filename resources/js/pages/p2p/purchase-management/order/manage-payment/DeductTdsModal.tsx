@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { PaymentWait } from './payment-shared';
-import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../../p2p-detail.css';
 import './manage-payment-requests.css';
 import './deduct-tds.css';
 

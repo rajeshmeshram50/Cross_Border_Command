@@ -193,6 +193,32 @@ Tabs are SQL fragments against the request alias `r`. `scopedRequests($user)`
 builds the base query with tenancy joined explicitly, so the tab condition can
 be appended without re-deriving scope.
 
+Note `declined` maps to the status `rejected`. The tab key and the stored
+status are different words; reach for the wrong one and the filter silently
+matches nothing.
+
+### The scope narrowing, which runs BEFORE the tab
+
+```php
+//  - client admin: every request of the company, to view
+//  - branch user (branch head): every request of their branch, plus any sent to them
+//  - everyone else: only the requests sent to them
+if ($user->user_type === "branch_user" && $user->branch_id) {
+    $base->where(fn ($w) => $w->where("r.branch_id", $user->branch_id)
+                              ->orWhere("r.requested_to", $user->id));
+} elseif ($user->user_type !== "client_admin") {
+    $base->where("r.requested_to", $user->id);
+}
+```
+
+This is the first thing to check when someone reports a missing row: the list
+is not the same for two people, by design. The counts are computed from the
+*same* narrowed base (`clone $base` with a `FILTER (WHERE …)` per tab), so the
+badges always agree with what that caller can actually open.
+
+Deciding stays separate — `can_decide` on the row, `recordDecision()` on the
+server (§5).
+
 ---
 
 ## 8. Zoho flow for one payment
@@ -236,6 +262,40 @@ PaymentRequestDetail.tsx
 
 ---
 
+## 9A. The request detail screen
+
+`payment-request/PaymentRequestDetail.tsx`, opened from a queue row.
+
+```
+PaymentRequestDetail
+  header   chips (PO · supplier · shipment · opportunity · procurement)
+           Evidence Vault · Approve Request · Reject / Decline Request
+  switch   Current Transaction  |  All Previous Transaction History
+  tabs     Supplier Details · Linked Payment Requests · Payment Summary
+           Physical Inspection · Current Transaction Status
+```
+
+Every tab but one is a reading surface — Supplier Details renders the Create PO
+supplier stage with each input `readOnly tabIndex={-1}`, so it cannot even be
+tabbed into.
+
+**Two different decision gates, which is the thing to know here:**
+
+```ts
+// header — the request you opened
+disabled={decided || !canApprove}
+
+// per row, inside Linked Payment Requests
+const canDecide = r.status === "awaiting" && canApprove && r.canDecide;
+```
+
+The row buttons carry the extra `r.canDecide`, so on a document with several
+requests you see them all and can only act on the ones addressed to you —
+*"This request was sent to someone else"*. An earlier request shown above the
+table is labelled `read-only` outright (CS-436).
+
+---
+
 ## 10. Patterns you will see in this code
 
 | Pattern | Why |
@@ -250,6 +310,15 @@ PaymentRequestDetail.tsx
 ---
 
 ## 11. Symptom → file
+
+| Symptom | Look in |
+|---|---|
+| A row is missing for one user but not another | `index()` — the scope narrowing runs before the tab, and is not the same per role |
+| Tab badge disagrees with the rows | It should not: counts come off the same narrowed base. Check `scopedRequests()` |
+| A search finds nothing | The parameter is `search`, not `q`; it covers only the request code, PO code and supplier names |
+| The Approve button is live but the call 403s | `can_approve` gates the button, `requested_to` gates the decision — different checks |
+| A payment cannot be edited | It is already in Zoho — frozen by design |
+| The `declined` tab looks empty | The tab key is `declined`, the stored status is `rejected` |
 
 | Symptom | Look in |
 |---|---|

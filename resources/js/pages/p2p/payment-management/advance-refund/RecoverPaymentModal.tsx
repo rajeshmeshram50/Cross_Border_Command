@@ -15,7 +15,7 @@ import { FitTip } from '../../purchase-management/order/create-po/form-fields';
 import AddRecoveryModal from './AddRecoveryModal';
 import { refundFigures, toRefund, type RefundAdjustment, type RefundRecovery } from './refund-data';
 import { useEscapeClose } from './useEscapeClose';
-import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../p2p-detail.css';
 import '../../purchase-management/order/manage-payment/manage-payment-requests.css';
 import '../../purchase-management/order/manage-payment/make-po-payment.css';
 import './advance-refund.css';

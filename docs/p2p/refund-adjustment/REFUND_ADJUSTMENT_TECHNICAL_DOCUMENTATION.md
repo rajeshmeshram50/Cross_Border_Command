@@ -207,8 +207,38 @@ private function zohoLockedRecovery(?PoRefundRecovery $r): ?JsonResponse
 `zoho_refund_id` is the hard evidence. If a sync succeeded but the status write
 failed, the id alone still locks the row — the ledger wins over our flag.
 
-The same principle applies to the adjustment: amounts are fixed once the vendor
-credit exists in Zoho.
+### The adjustment has three locks, and Zoho is the last of them
+
+> **Corrected.** This section previously said only that "amounts are fixed once
+> the vendor credit exists in Zoho". That is the third and narrowest lock; two
+> others fire earlier.
+
+`update()` tests them in this order, inside a `lockForUpdate()` on the row:
+
+```php
+if ($row->status === STATUS_RECOVERED)                        // 1
+    abort('Every rupee of this refund has been recovered — it can no longer be changed.');
+
+if ((float) $row->recovered_amount > 0.001                    // 2
+    || $row->recoveries()->exists())
+    abort('A recovery has already been recorded against this refund — its figures can no longer be changed.');
+
+if ($amountsChanged && $row->zoho_vendorcredit_id)            // 3
+    abort('The vendor credit is already in Zoho Books — the refund amount can no longer be changed.');
+```
+
+| # | Fires when | Freezes |
+|:-:|---|---|
+| 1 | Fully recovered | Everything |
+| 2 | **Any** recovery exists | Everything — *"recoveries are booked against these figures"* (CS-588) |
+| 3 | Credit in Zoho **and** the amount or retained reason changed | **Only** those fields |
+
+Lock 2 is the one that bites in practice, and it is why the list swaps the
+pencil for an eye: `isSettled` on the frontend is the same test, shown early.
+
+Lock 3 is deliberately narrow — `$amountsChanged` is computed first, so a
+synced adjustment with no recoveries can still have its reason, reference and
+attachment edited. "Synced" does not mean "frozen".
 
 ---
 
@@ -223,8 +253,23 @@ credit exists in Zoho.
 `creditPreview()` renders what *would* be sent, so the operator can check the
 lines before pushing.
 
-Ordering is enforced: a vendor credit refund cannot exist before its vendor
-credit, so `zohoSyncRecovery` requires `zoho_vendorcredit_id`.
+> **Corrected.** This previously said `zohoSyncRecovery` *requires*
+> `zoho_vendorcredit_id`. It does not test it at all.
+
+Ordering is guaranteed a different way: **both sync entry points call
+`syncAll()` on the parent PO**, which walks PO → bill → payments → vendor credit
+→ refunds in sequence. A refund therefore cannot be created before its credit
+because the same run creates the credit first.
+
+```php
+// zohoSyncRecovery(), after the chain
+if (empty($row->fresh()->zoho_refund_id))
+    return $this->fail('This refund was not posted to Zoho Books — try again.');
+```
+
+That post-check is the only recovery-specific test, and it runs **after** the
+chain, not before it — it reports a refund that did not land, rather than
+refusing to try.
 
 ---
 
@@ -248,6 +293,26 @@ credit, so `zohoSyncRecovery` requires `zoho_vendorcredit_id`.
 Scope is lifted for: code allocation, the one-per-PO check, the reference
 uniqueness sweep, and the pending-request closure — all four are client-wide
 questions.
+
+### Authorisation — there is none beyond the tenant
+
+```php
+private function tenantUser(Request $request) {
+    $user = $request->user();
+    if (!$user?->client_id) abort(/* 403 No tenant context */);
+    return $user;
+}
+```
+
+No role test, no module-permission test, and **no approval step** anywhere in
+this controller. Any authenticated user with a `client_id` can raise an
+adjustment, which cancels a purchase order and writes off money in one
+transaction. The menu leaf `p2p.advance_refund` is permission-gated in the UI,
+so visibility and capability diverge as they do across the rest of P2P.
+
+Worth recording as a finding rather than relying on it — of the three P2P
+modules this is the one where the gap matters most, because the action is both
+immediate and irreversible.
 
 ---
 

@@ -1,7 +1,7 @@
 /* ─────────────────────────────────────────────────────────────────────────
  * Create PO form — only the bits that differ from the shared P2P wizard.
  * Everything else (overlay, header strip, pills, stage cards, fields, footer)
- * comes from the shared spi-dt-* styles in supplier-purchase-invoice.css.
+ * comes from the shared spi-dt-* styles in p2p-detail.css.
  * ───────────────────────────────────────────────────────────────────────── */
 
 /* SPI has 2 stages, this form has 4. Row spacing follows the prototype's

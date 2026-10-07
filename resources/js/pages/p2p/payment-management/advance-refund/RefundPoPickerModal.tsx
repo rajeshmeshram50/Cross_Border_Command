@@ -11,7 +11,7 @@ import { moneyIn, fmtDate } from '../../purchase-management/order/manage-payment
 import { refundApi, type RefundEligiblePo } from '../../purchase-management/order/api/po-api';
 import { IcoCheck, IcoChevron, IcoChevronR, IcoSearch, IcoX } from '../../icons';
 import { useEscapeClose } from './useEscapeClose';
-import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../p2p-detail.css';
 import './advance-refund.css';
 
 type Props = {

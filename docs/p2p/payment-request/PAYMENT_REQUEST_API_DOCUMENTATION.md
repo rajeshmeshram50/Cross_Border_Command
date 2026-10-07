@@ -9,6 +9,21 @@ authenticated user, never from the body.
 Controller: `App\Http\Controllers\Api\P2p\PoPaymentRequestController`
 Prefix: **`/api/p2p/orders`** (shared with the PO module)
 
+**Authorisation.** Every method calls `tenantUser()`, which needs a `client_id`
+and otherwise returns `403 — No tenant context`. There is **no role test and no
+module-permission test** on raising a request, saving TDS, recording a payment
+or syncing. Two things are enforced by identity instead:
+
+| | |
+|---|---|
+| **Who may decide** | Only the user named in `requested_to`. A client admin with every permission cannot decide someone else's request |
+| **Which rows you see** | Scoped by role on the list — see §3 |
+
+The browser additionally checks `p2p.payment_request.can_approve` before
+offering the decision buttons. **The server never reads that flag**, so the
+permission decides what is *offered* and the addressee rule decides what is
+*accepted*.
+
 **Envelope**
 
 ```json
@@ -81,11 +96,38 @@ Every request on that PO, plus the PO's summary figures.
 
 ### `GET /p2p/orders/payment-requests`
 
-| Query | Meaning |
+| Query | Rule | Meaning |
+|---|---|---|
+| `tab` | one of the four below | Which tab |
+| `search` | ≤ 100 chars | **Not `q`.** Request code, PO code, supplier code / company / legal name |
+| `page` | 1-based | |
+| `per_page` | 1–**50**, default 10 | |
+
+| `tab` | SQL applied |
 |---|---|
-| `tab` | `all` · `awaiting` · `approved` · `declined` |
-| `q` | search |
-| `page`, `per_page` | paging |
+| `all` | `TRUE` |
+| `awaiting` | `r.status = 'pending'` |
+| `approved` | `r.status = 'approved'` |
+| `declined` | `r.status = 'rejected'` |
+
+Note the last one: the **tab** is `declined`, the **status** is `rejected`.
+Filtering by status and filtering by tab do not use the same word.
+
+#### Rows are scoped by role, before the tab is applied
+
+| Who | Sees |
+|---|---|
+| `client_admin` | Every request of the company |
+| `branch_user` | Every request of **their branch**, **plus** any sent to them personally |
+| Everyone else | **Only** requests where `requested_to` is them |
+
+So the same call returns different totals for different callers, and an
+ordinary user's `all` means "all of mine". Seeing a request is not deciding
+it — a branch head sees their branch's requests and can still only decide the
+ones addressed to them.
+
+`meta.counts` carries every tab's total alongside the page, so the tab badges
+need no extra call. `meta` also has `total`, `page`, `per_page`, `last_page`.
 
 ### `GET /p2p/orders/payment-requests/{req}`
 One request in full: PO, supplier, amounts, decision, payments.
@@ -117,7 +159,20 @@ One request in full: PO, supplier, amounts, decision, payments.
 of the PO's *other* approved requests.
 
 ### `PUT /p2p/orders/payment-requests/decisions`
-Bulk form of the above.
+
+| Field | Rule |
+|---|---|
+| `ids` | required array, **1–50** |
+| `decision` | `approved` · `rejected` |
+| `note` | required when rejecting (≤ 300); optional on approval (≤ 400) |
+
+There is **no `approved_amount`**: approving a batch approves each request **in
+full**, because a part-approval is an amount of its own and stays a
+single-request decision.
+
+Each id is put through the *same* `recordDecision()` as a single decision, on
+its own, so one refusal never holds up the rest — the response names what was
+decided, what was not, and why (CS-429 / CS-436).
 
 ---
 
@@ -144,6 +199,14 @@ multipart.
 
 Every one of these rebuilds `request.paid_amount`, `po.paid_amount` and
 `po.balance_amount` **inside the same transaction**.
+
+**A payment already in Zoho is frozen.** Editing or deleting one returns:
+
+> *This payment is already posted to Zoho Books — it can no longer be changed
+> or deleted.*
+
+Our row and Zoho's vendor payment would otherwise disagree, with nothing to
+say which is right.
 
 ---
 
@@ -200,6 +263,10 @@ curl -X POST https://host/api/p2p/orders/17/payment-requests/7/payments \
   -H "Authorization: Bearer $TOKEN" \
   -F amount=50000 -F bank_name=HDFC -F utr_cheque_number=1789632456987 \
   -F utr_cheque_date=2026-10-06 -F proof=@advice.pdf
+
+# 4b. The queue, as the approver sees it  ("search", not "q")
+curl "https://host/api/p2p/orders/payment-requests?tab=awaiting&search=PRQ-001&per_page=10" \
+  -H "Authorization: Bearer $TOKEN"
 
 # 5. Push to Zoho
 curl -X POST https://host/api/p2p/orders/17/payment-requests/7/payments/8/zoho-sync \
