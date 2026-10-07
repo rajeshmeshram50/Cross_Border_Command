@@ -66,6 +66,13 @@ export interface DataTableProps<T> {
   /** Rendered at the START of the toolbar, BEFORE the tabs (e.g. a date-range
    *  filter that should sit to the left of the status tabs). */
   leadingToolbar?: ReactNode;
+  /** Names the list, at the head of the toolbar. For tables with no tabs: the
+   *  toolbar's left half is otherwise empty, so the search floats alone on the
+   *  right and the band reads as unfinished. Sits before `leadingToolbar`. */
+  title?: ReactNode;
+  /** One line under `title`. Say what the rows ARE, not what the page does —
+   *  the page header strip above already says that. */
+  subtitle?: ReactNode;
   initialSort?: SortingState;
   disableSorting?: boolean;
   leading?: DataTableColumn<T>[];
@@ -180,6 +187,8 @@ export default function DataTable<T extends object>({
   onClearFilters,
   toolbarActions,
   leadingToolbar,
+  title,
+  subtitle,
   initialSort,
   disableSorting = false,
   leading,
@@ -636,7 +645,7 @@ export default function DataTable<T extends object>({
     </div>
   ) : null;
   const searchInToolbar = searchable && !searchHost;
-  const showToolbar = !!(tabs?.length || searchInToolbar || onFilterClick || toolbarActions || leadingToolbar);
+  const showToolbar = !!(tabs?.length || searchInToolbar || onFilterClick || toolbarActions || leadingToolbar || title);
   const start = pageIndex * pageSize;
   const shownFrom = filteredCount === 0 ? 0 : start + 1;
   const shownTo = paginate ? Math.min(start + pageSize, filteredCount) : filteredCount;
@@ -649,6 +658,12 @@ export default function DataTable<T extends object>({
     >
       {showToolbar && (
         <div className="dt-toolbar">
+          {title && (
+            <div className="dt-title">
+              <span className="dt-title-main">{title}</span>
+              {subtitle && <span className="dt-title-sub">{subtitle}</span>}
+            </div>
+          )}
           {leadingToolbar && <div className="dt-lead">{leadingToolbar}</div>}
           {!!tabs?.length && (
             <div className="dt-tabs" role="tablist">

@@ -163,6 +163,72 @@
    one 42px row, reached as a 34px tab in 4px of rail padding, beside a 42px
    search field. See .smc-pill-group / .smc-pill / .smc-search in
    SalesCustomers.css — the numbers here are those, verbatim. */
+/* ── Toolbar title ────────────────────────────────────────────────────────────
+   For lists with no tabs: without it the toolbar's left half is empty and the
+   search floats alone on the right, so the band reads as unfinished.
+
+   Sized to live INSIDE the 42px row the tabs and search already set — 17px/800
+   over 12px, on tight leading and a 3px gap, is ~35px of text, which still
+   clears the toolbar's padding without making the band taller than it is
+   elsewhere. (It started at 13.5/700 over 11.5 and read as a caption rather
+   than a heading; 17 is about the largest that fits beside a 42px search box.)
+   It shrinks before anything else does, because a truncated label costs less
+   than a search box that has run out of room. */
+.dt-title {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  /* 3px, not 1. At 1px and line-height 1.18 on both lines the title's
+     descenders ran into the subtitle and the pair read as one block of text
+     rather than a heading with a line under it. */
+  gap: 3px;
+  min-width: 0;
+  flex: 0 1 auto;
+  padding-left: 4px;
+  margin-right: 2px;
+}
+.dt-title-main {
+  font-family: var(--font-sans);
+  font-size: 17px;
+  /* 800 is the ceiling: app.css loads DM Sans as a variable face over
+     wght@300..800, so there is no heavier cut to ask for. Past this point the
+     only way to make the heading read stronger is size, which is why this went
+     13.5 -> 15 -> 17 rather than chasing a 900. */
+  font-weight: 800;
+  /* 1.1 — a single nowrap line never wraps, so the extra leading was only
+     padding the box and pushing the subtitle down. */
+  line-height: 1.1;
+  letter-spacing: -.3px;
+  color: var(--dt-a-800);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dt-title-sub {
+  font-family: var(--font-sans);
+  /* 12px at 500. It sat at 12.5 — the tab-label size — which against a 17px
+     title made the two lines read as equals rather than as a heading and its
+     caption. The hierarchy is carried by three things at once: size, weight,
+     and a colour mixed back toward the card so it reads quieter than ordinary
+     secondary text. */
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: .1px;
+  color: color-mix(in srgb, var(--vz-secondary-color) 82%, var(--vz-card-bg, #fff));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-bs-theme="dark"] .dt-title-main,
+[data-layout-mode="dark"] .dt-title-main { color: var(--dt-a-200); }
+
+/* The subtitle is the first thing to go when the row gets tight: the title
+   alone still names the list. */
+@media (max-width: 991.98px) {
+  .dt-title-sub { display: none; }
+}
+
 .dt-tabs {
   display: inline-flex; align-items: center; gap: 8px;
   /* A recessed trough: the tabs standing in it are the white ones. The other

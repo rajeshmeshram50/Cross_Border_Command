@@ -134,19 +134,20 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
         /* Back is an ACTION, so it looks like one — the outlined counterpart to
            the solid buttons elsewhere, matching Client Profile's .cv-back-btn.
            NOTE: no backticks in these comments, the block is a template literal. */
-        /* The close X replaces the old Back pill and its breadcrumb. This page
-           has no hero banner to hang it on, so it sits top-right of the surface
-           card — and the card needs a band for it. At 12px from the top it hung
-           26px down over the first KPI card, because the surface's own 20px of
-           padding is less than the button is tall. 52px is the button plus its
-           insets: far less than the 70px title strip this replaced, and nothing
-           overlaps.
+        /* The close X lives in the header strip now, as an ordinary flex item.
+           It used to float at top-right of the surface card, which needed
+           .branches-surface { padding-top: 52px } to clear it — and
+           .branches-surface is ALSO the class on each KPI card, so every KPI
+           tile was carrying 52px of dead space above its label. Removing the
+           float removed that too.
            NOTE: no backticks in these comments; the block is a template literal. */
-        .branches-surface { position: relative; padding-top: 52px !important; }
         .cb-close-btn {
-          position: absolute; top: 12px; right: 12px; z-index: 3;
           display: inline-flex; align-items: center; justify-content: center;
-          width: 34px; height: 34px;
+          flex-shrink: 0;
+          /* 42 square. app.css forces every button in a header strip to 42px
+             tall, so a 34px width would have made this an oval the moment it
+             moved into the strip. */
+          width: 42px; height: 42px;
           border-radius: 999px;
           border: 1px solid var(--vz-border-color);
           background: var(--vz-secondary-bg);
@@ -208,12 +209,32 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
         }
       `}</style>
 
-      {/* No page-title strip. The heading repeated the menu item that opened
-          this page, and Back plus the breadcrumb said the same thing twice;
-          the close X on the card below does the job in one glyph. */}
-
+      {/* Header strip, the shared .frm-cstrip from app.css — the same one every
+          HRMS page uses, so it brings the 18px/800 title, the 12px subtitle and
+          the 42px button sizing without this page restating any of them. It
+          replaces a bare 52px band that held nothing but the close X, and it
+          names the client, which the view otherwise only mentions in the
+          table's subtitle. */}
       <Row>
         <Col xs={12}>
+          <div className="frm-cstrip mb-2">
+            <span className="frm-cstrip-accent" />
+            <div className="frm-cstrip-left">
+              <div className="frm-cstrip-icon"><i className="ri-git-branch-line" /></div>
+              <div className="min-w-0">
+                <div className="frm-cstrip-title">Branches</div>
+                <div className="frm-cstrip-sub">
+                  {clientName
+                    ? `Offices, factories and divisions under ${clientName}`
+                    : 'Offices, factories and divisions under this client'}
+                </div>
+              </div>
+            </div>
+            <button type="button" className="cb-close-btn" onClick={onBack} aria-label="Close">
+              <i className="ri-close-line" />
+            </button>
+          </div>
+
           <div
             className="branches-surface"
             style={{
@@ -223,10 +244,6 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
               padding: '20px',
             }}
           >
-            <button type="button" className="cb-close-btn" onClick={onBack} aria-label="Close">
-              <i className="ri-close-line" />
-            </button>
-
             {/* ── KPI cards (single row, equal height) ── */}
             <Row className="g-3 mb-3 align-items-stretch">
               {/* md=4, not md=3: there are three KPIs, and a four-up grid left
@@ -279,6 +296,21 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
               serial
               className="hr-dt"
               accent="violet"
+              /* No tabs on this list, so the toolbar's left half was empty and
+                 the search sat alone on the right. The subtitle names the
+                 client, which this view otherwise never says now that the
+                 title strip and its breadcrumb are gone. */
+              title="Branch List"
+              subtitle={
+                loading
+                  ? 'Loading…'
+                  /* clientName arrives from the Clients list; opening this URL
+                     directly leaves it empty, which rendered a dangling "·". */
+                  : [
+                      `${filtered.length} ${filtered.length === 1 ? 'branch' : 'branches'}`,
+                      clientName,
+                    ].filter(Boolean).join(' · ')
+              }
               minWidth={1100}
               fitToViewport
               autoFitRows

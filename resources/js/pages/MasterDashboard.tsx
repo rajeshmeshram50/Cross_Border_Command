@@ -316,6 +316,53 @@ export default function MasterDashboard() {
       }
       .ms-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
       .ms-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; }
+      /* Search, in the strip rather than on a band of its own below the KPIs.
+         A full-width bar across the page had nothing to line up with — it was
+         the only element on the page that was neither a card nor a column, so
+         it read as a seam. In the strip it sits against the Back button at the
+         shared 42px.
+         Geometry is .dt-search's, verbatim: 42px tall, radius 11, 38px of left
+         padding for a 16px icon inset 14px. It cannot BE .dt-search — that
+         class lives in DataTable.css and carries the table's accent tokens —
+         but every number here is the same one. */
+      .ms-cstrip-search {
+        position: relative; z-index: 1;
+        display: flex; align-items: center; gap: 10px;
+        flex: 0 1 420px; min-width: 200px;
+        height: 42px; padding: 0 14px 0 38px;
+        border: 1px solid var(--vz-border-color);
+        border-radius: 11px;
+        background: var(--vz-card-bg, #fff);
+        transition: border-color .16s, box-shadow .16s;
+      }
+      .ms-cstrip-search:focus-within { border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
+      .ms-cstrip-search > .ri-search-line {
+        position: absolute; left: 14px; font-size: 16px; color: var(--vz-secondary-color);
+        pointer-events: none;
+      }
+      .ms-cstrip-search input {
+        flex: 1 1 auto; min-width: 0;
+        border: none; outline: none; background: transparent;
+        font-family: var(--font-sans); font-size: 13px; font-weight: 500;
+        color: var(--vz-body-color);
+      }
+      .ms-cstrip-search input::placeholder { color: var(--vz-secondary-color); }
+      .ms-cstrip-count {
+        flex-shrink: 0;
+        font-size: 11px; font-weight: 600; line-height: 1;
+        color: var(--vz-secondary-color);
+        background: var(--vz-secondary-bg);
+        border: 1px solid var(--vz-border-color);
+        border-radius: 999px; padding: 3px 9px;
+      }
+      .ms-cstrip-clear {
+        flex-shrink: 0; display: inline-flex; align-items: center;
+        border: none; background: transparent; cursor: pointer; padding: 2px;
+        color: var(--vz-secondary-color);
+      }
+      .ms-cstrip-clear:hover { color: var(--vz-body-color); }
+      [data-bs-theme="dark"] .ms-cstrip-search { background: var(--vz-card-bg); border-color: rgba(167,139,250,.28); }
+
       .ms-cstrip-back {
         display: inline-flex; align-items: center; justify-content: center; gap: 7px;
         padding: 0 18px; height: 44px; border-radius: 14px;
@@ -343,6 +390,29 @@ export default function MasterDashboard() {
             <div className="ms-cstrip-sub">Manage every master — companies, geography, trade, parties and more.</div>
           </div>
         </div>
+        {/* Search lives here, not on its own full-width band under the KPIs —
+            see .ms-cstrip-search for why. */}
+        <div className="ms-cstrip-search">
+          <i className="ri-search-line" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            autoComplete="off"
+            placeholder="Search masters — e.g. Company, GST, Bank…"
+          />
+          {hasSearch && (
+            <>
+              <span className="ms-cstrip-count">
+                {filteredGroups.reduce((s, g) => s + g.children.length, 0)} results
+              </span>
+              <button type="button" className="ms-cstrip-clear" onClick={() => setSearch('')} aria-label="Clear search">
+                <i className="ri-close-line" style={{ fontSize: 17 }} />
+              </button>
+            </>
+          )}
+        </div>
+
         {/* Back — history.back() when there's a prior entry, otherwise
             /dashboard so a direct-link visit still has somewhere to go. */}
         <button
@@ -450,28 +520,10 @@ export default function MasterDashboard() {
   ))}
 </Row>
 
-      {/* ── Search Bar ── */}
-      <div className="master-surface" style={{ border: '1px solid var(--vz-border-color)', borderRadius: 12, padding: '10px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <i className="ri-search-line" style={{ color: 'var(--vz-secondary-color)', fontSize: 17 }} />
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          autoComplete="off"
-          placeholder="Search masters — e.g. Company, GST, Bank, Warehouse…"
-          style={{ flexGrow: 1, border: 'none', outline: 'none', fontSize: 13, color: 'var(--vz-body-color)', background: 'transparent' }}
-        />
-        {hasSearch && (
-          <>
-            <span style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600, background: 'var(--vz-secondary-bg)', borderRadius: 20, padding: '2px 10px', border: '1px solid var(--vz-border-color)' }}>
-              {filteredGroups.reduce((s, g) => s + g.children.length, 0)} results
-            </span>
-            <button type="button" onClick={() => setSearch('')} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--vz-secondary-color)', padding: 2 }}>
-              <i className="ri-close-line" style={{ fontSize: 17 }} />
-            </button>
-          </>
-        )}
-      </div>
+      {/* The search bar used to sit here, full width across the page. It is in
+          the header strip now — it was the only element on the page that was
+          neither a card nor a column, so it read as a seam between the KPIs and
+          the groups. */}
 
       {/* No results */}
       {hasSearch && filteredGroups.length === 0 && (

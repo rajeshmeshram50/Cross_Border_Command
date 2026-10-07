@@ -760,6 +760,16 @@ export default function Clients({ onNavigate }: Props) {
                  as one product with the modules, not as a louder cousin. */
               className="hr-dt"
               accent="violet"
+              /* This list has no tabs, so without a title the toolbar's left
+                 half was empty and the search sat alone on the right. The
+                 subtitle counts the rows rather than repeating the strip's
+                 "Manage client organizations…" line above it. */
+              title="Client List"
+              subtitle={
+                loading
+                  ? 'Loading…'
+                  : `${clients.length} ${clients.length === 1 ? 'organization' : 'organizations'} on the platform`
+              }
               minWidth={1400}
               fitToViewport
               autoFitRows
