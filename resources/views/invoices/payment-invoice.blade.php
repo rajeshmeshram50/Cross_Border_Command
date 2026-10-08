@@ -318,7 +318,7 @@
                 <table class="meta-table" style="margin-top: 6px;">
                     <tr>
                         <td class="lbl" style="width: 45%;">Invoice Date:</td>
-                        <td class="val">{{ $payment->created_at->format('d - M - Y') }}</td>
+                        <td class="val">{{ $payment->created_at->copy()->timezone('Asia/Kolkata')->format('d - M - Y') }}</td>
                     </tr>
                     @if($payment->valid_from)
                     <tr>

@@ -86,7 +86,7 @@ class SendDatabaseBackupEmail extends Command
         try {
             Mail::to($recipients)->send(new DatabaseBackupMail(
                 databaseName: $dbName,
-                generatedAt: now()->format('d M Y, H:i'),
+                generatedAt: now('Asia/Kolkata')->format('d M Y, H:i'),
                 senderName: 'Scheduled backup',
                 gzPath: $gz['path'],
                 gzFilename: $gz['filename'],

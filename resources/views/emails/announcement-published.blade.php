@@ -146,7 +146,7 @@
   @endif
 
   {{-- ============ POSTED DATE STRIP ============ --}}
-  @php($postedAt = $announcement->created_at?->format('d M Y, h:i A'))
+  @php($postedAt = $announcement->created_at?->copy()->timezone('Asia/Kolkata')->format('d M Y, h:i A'))
   @if($postedAt)
   <tr><td style="padding:4px 32px 18px;text-align:center;">
     <span style="font-size:11px;color:#9ca3af;">Posted</span>

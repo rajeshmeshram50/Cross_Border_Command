@@ -9,16 +9,6 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-/**
- * Confirmation mail dispatched after a successful password reset via the
- * forgot-password OTP flow. Surfaces the NEW password in plaintext so QA /
- * end-users can recover it from the inbox if they didn't write it down — this
- * matches the existing WelcomeCredentialsMail pattern used at signup.
- *
- * Note: emailing a plaintext password is a deliberate product choice here, not
- * an oversight. If/when the policy tightens, drop the $newPassword field and
- * the matching Blade row.
- */
 class PasswordChangedMail extends Mailable
 {
     use Queueable, SerializesModels;
@@ -53,16 +43,16 @@ class PasswordChangedMail extends Mailable
         $this->userName    = $userName;
         $this->userEmail   = $userEmail;
         $this->newPassword = $newPassword;
-        $this->changedAt   = now()->format('M d, Y \· h:i A');
+        $this->changedAt   = now('Asia/Kolkata')->format('M d, Y \· h:i A');
         $this->loginUrl    = $loginUrl ?: self::defaultLoginUrl();
         $this->appName     = $branding['brandName'] ?? config('mail.from.name', 'Cross Border Command');
         // Keep empty strings — callers use '' to *intentionally suppress* a
         // template default (e.g. client orgs hiding the IGC subline). Only
         // drop true nulls.
-        $this->branding    = array_filter($branding, fn ($v) => $v !== null);
+        $this->branding    = array_filter($branding, fn($v) => $v !== null);
     }
 
-   
+
     public static function resolveLoginUrl(Request $request): string
     {
         $candidates = array_filter([

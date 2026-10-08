@@ -86,7 +86,7 @@
         @php($signerRole = $s['role_name'] ?? null)
         @php($action = $s['action'] ?? 'Sign')
         @php($done = ($s['status'] ?? '') === 'Done')
-        @php($actedAt = !empty($s['acted_at']) ? \Carbon\Carbon::parse($s['acted_at'])->format('d M Y') : null)
+        @php($actedAt = !empty($s['acted_at']) ? \Carbon\Carbon::parse($s['acted_at'])->timezone('Asia/Kolkata')->format('d M Y') : null)
         <tr>
           <td style="width:38px;padding:14px 0 14px 18px;vertical-align:middle;@if($i < count($signers) - 1)border-bottom:1px solid #f3f4f6;@endif">
             @if($done)

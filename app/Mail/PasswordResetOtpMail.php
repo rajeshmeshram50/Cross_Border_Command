@@ -38,7 +38,7 @@ class PasswordResetOtpMail extends Mailable
         $this->userName      = $userName;
         $this->userEmail     = $userEmail;
         $this->expiryMinutes = $expiryMinutes;
-        $this->requestedAt   = now()->format('M d, Y \· h:i A');
+        $this->requestedAt   = now('Asia/Kolkata')->format('M d, Y \· h:i A');
         // Keep empty strings — callers use '' to *intentionally suppress* a
         // template default (e.g. client orgs that don't want the IGC-specific
         // "GROUP OF COMPANIES" subline). Only drop true nulls.
