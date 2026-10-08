@@ -2,7 +2,7 @@
 // Only three cells are editable (PO product, Qty PO, Rate); everything else is
 // carried from the PI or calculated, which is what the legend line says.
 // Tax is worked out exactly as the server does on save, so the totals match.
-import { Fragment, lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { EditSelect, FitInput, FitText } from '../form-fields';
 import type { PoLineRow } from '../po-draft';
 import type { ProductOpt } from '../use-po-lookups';
@@ -11,16 +11,11 @@ import { inactiveProduct, piSegmentMismatch, segmentMismatch, type LineErrors } 
 import { IcoPencil, IcoPlus, IcoTrash } from '../../shared/icons';
 import { useToast } from '../../../../../../contexts/ToastContext';
 import { formatProductCode, productNameWithoutCode } from '../../../../../../utils/formatProductCode';
-// The Product Management detail view, opened by "Read more" on a description.
-const InspectionProductView = lazy(() => import('../../physical-inspection/InspectionProductView'));
+// The clamped description cell and the detail view its "Read more" opens. Both
+// live in shared/ because the supplier invoice's 3-way match shows the same cell.
+import Description, { ProductDetailView } from '../../shared/ProductDescription';
 // The product master's Add / Edit wizard, opened by the cell's two buttons.
 const AddProductModal = lazy(() => import('../../../../p2p-master-management/product-management/AddProductModal'));
-/* Hovering "Read more" starts the same downloads the click needs, so the view
-   is already in memory when the click lands. */
-const warmProductView = () => {
-  void import('../../physical-inspection/InspectionProductView');
-  void import('../../../../p2p-master-management/product-management/ProductView');
-};
 
 export type LineTotals = {
   base: number;
@@ -256,11 +251,7 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
         </div>
       )}
     <div className="cpd-scroll">
-      {detailId != null && (
-        <Suspense fallback={null}>
-          <InspectionProductView productId={detailId} onClose={() => setDetailId(null)} />
-        </Suspense>
-      )}
+      <ProductDetailView productId={detailId} onClose={() => setDetailId(null)} />
       {/* One wizard, two entry points: with an id it edits that product, with
           none it creates one. It saves to the product master itself. */}
       {(adding || editing != null) && (
@@ -527,31 +518,3 @@ export default function ProductTable({ rows, products, taxMode, onChange, onRemo
   );
 }
 
-/** Long trade descriptions are clipped to three lines; "Read more" opens the
-    product's own detail view rather than unfolding the cell. */
-function Description({ text, onOpen }: { text: string; onOpen?: () => void }) {
-  // Clamped only when the text really runs past 3 lines; then "Read more" ends the 3rd line.
-  const ref = useRef<HTMLSpanElement>(null);
-  const [clamped, setClamped] = useState(false);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const check = () => setClamped(el.scrollHeight > el.clientHeight + 1);
-    check();
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [text]);
-  return (
-    <div className="cpd-desc">
-      <span ref={ref} className={`cpd-desc__wrap${clamped ? ' is-clamped' : ''}`}>
-        {text}
-        {onOpen && (
-          <button type="button" className="cpd-more" onClick={onOpen} onPointerEnter={warmProductView} title="Open the product details">
-            {clamped ? '… Read more' : 'Read more'}
-          </button>
-        )}
-      </span>
-    </div>
-  );
-}

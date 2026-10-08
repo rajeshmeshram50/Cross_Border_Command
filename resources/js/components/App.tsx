@@ -123,6 +123,9 @@ const PurchaseOrder = lazyPage(() => import('../pages/p2p/procurement-management
 const DevTools = lazyPage(() => import('../pages/dev-tools/DevTools'));
 const SupplierPurchaseInvoice = lazyPage(() => import('../pages/p2p/purchase-management/supplier-purchase-invoice/SupplierPurchaseInvoice'));
 const DebitNote = lazyPage(() => import('../pages/p2p/purchase-management/debit-note/DebitNote'));
+/* Invoice — the rebuilt supplier purchase invoice. Independent of the
+   SupplierPurchaseInvoice module above; neither imports the other. */
+const Invoice = lazyPage(() => import('../pages/p2p/purchase-management/invoice/InvoiceList'));
 const Order = lazyPage(() => import('../pages/p2p/purchase-management/order/po-list/Order'));
 const PoGstApprovalReview = lazyPage(() => import('../pages/p2p/purchase-management/order/gst-approval/PoGstApprovalReview'));
 const PaymentRequestManagement = lazyPage(() => import('../pages/p2p/payment-management/payment-request/PaymentRequestManagement'));
@@ -955,6 +958,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/p2p/purchase-order" element={<PurchaseOrder />} />
               <Route path="/p2p/supplier-purchase-invoice" element={<SupplierPurchaseInvoice />} />
               <Route path="/p2p/debit-note" element={<DebitNote />} />
+              <Route path="/p2p/invoice" element={<Invoice />} />
               <Route path="/p2p/order" element={<Order />} />
               <Route path="/inbox/po-approval/:id" element={<PoGstApprovalReview />} />
               <Route path="/p2p/payment-request" element={<PaymentRequestManagement />} />

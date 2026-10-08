@@ -332,6 +332,10 @@ export const P2P_GROUPS: MenuGroup[] = [
     children: [
       { id: 'p2p.po', icon: 'FileText', label: 'Purchase Order (PO)' },
       { id: 'p2p.spi', icon: 'CreditCard', label: 'Supplier Purchase Invoice (SPI)' },
+      // The rebuilt supplier purchase invoice. Listed beside the old one while
+      // it is being built; it rides on the SPI permission (see PERM_ALIAS in
+      // IdimsHeader) so it needs no new grant.
+      { id: 'p2p.invoice', icon: 'Receipt', label: 'Invoice' },
       { id: 'p2p.debit_note', icon: 'FileText', label: 'Debit Note' },
       { id: 'p2p.order', icon: 'FileText', label: 'Order' },
       // Temporary placement under Purchase Management until the P2P nav redesign lands.

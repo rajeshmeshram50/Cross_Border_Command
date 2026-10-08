@@ -15,10 +15,18 @@
 }
 
 .spi-root {
-  margin: -6px 0 0;
+  /* No top pull. This was -6px, which cancelled most of .page-content's 8px
+     padding and left every P2P page with a 2px gap under the menu against 8px
+     down its sides — the strip read as pasted to the menu and floating away
+     from the edges. app.css removed the same -6px from .frm-cstrip for exactly
+     this reason; 8px on all four sides is the one number. */
+  margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  /* 8px, the app's block rhythm. The Order page already overrode the old 6px
+     to 8 in .ord-page; this makes every P2P page agree instead of one of them
+     correcting the shared default. */
+  gap: 8px;
 }
 
 /* ── Header banner ─────────────────────────────────────────────────────── */
@@ -866,6 +874,111 @@
   box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .9), 0 24px 60px rgba(8, 47, 73, .32);
   animation: spi-mdl-in .2s ease-out both;
 }
+
+/* ── Wide variant ─────────────────────────────────────────────────────────────
+   For choosers whose option cards carry a description line under the title.
+   The design's "Map Supplier Purchase Invoice" popup is 780px; at the shared
+   560px its card text wraps onto a third line and the dialog stops matching.
+
+   It sits AFTER the base rule on purpose: both selectors are specificity
+   (0,1,0), so if this came first the base width would simply win.
+
+   Three declarations, because that is genuinely all that differs — the base
+   already has the right padding, gap and type size. Scoped to the modifier, so
+   every existing dialog is untouched. Same approach .ord-cpo takes for the
+   Create PO popup, one level up.
+   ──────────────────────────────────────────────────────────────────────────── */
+.spi-mdl--wide {
+  width: min(780px, 100%);
+  /* The design's rim: a 1px cyan edge plus a matching ring, over a deeper
+     drop. The base dialog ships a plain white hairline, which disappears
+     against the page behind it. Measured off the prototype. */
+  border: 1px solid #a5f3fc;
+  box-shadow: 0 30px 80px rgba(8, 47, 73, .5), 0 0 0 1px rgba(165, 243, 252, .6);
+}
+.spi-mdl--wide .spi-mdl-title { font-weight: 800; }
+.spi-mdl--wide .spi-mdl-card {
+  border-radius: 16px;
+  /* Both needed by the accent strip below: `relative` to position it, and
+     `hidden` so a square 4px bar is clipped to the card's 16px corners. */
+  position: relative;
+  overflow: hidden;
+}
+/* The selected card's left edge. It is always present and always transparent,
+   so selecting a card fades the colour in rather than inserting an element and
+   shifting the text by 4px. */
+.spi-mdl--wide .spi-mdl-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+  background: transparent;
+  transition: background .18s;
+}
+.spi-mdl--wide .spi-mdl-card.is-sel.is-teal::before  { background: linear-gradient(180deg, #22d3ee, #0891b2); }
+.spi-mdl--wide .spi-mdl-card.is-sel.is-amber::before { background: linear-gradient(180deg, #fbbf24, #d97706); }
+
+/* The chosen option's icon tile turns SOLID — a white glyph on the filled
+   colour — instead of staying the pale resting tint. It is the strongest
+   signal on the card that this is the selected path, and without it the two
+   cards read as equally weighted even when one is chosen.
+   The transition is on the base tile so it fades both ways, not just on. */
+.spi-mdl--wide .spi-mdl-card-ico { transition: background .18s, color .18s, box-shadow .18s; }
+.spi-mdl--wide .spi-mdl-card.is-sel .spi-mdl-ico-teal {
+  background: linear-gradient(140deg, #22d3ee, #0891b2);
+  color: #fff;
+  box-shadow: 0 8px 18px -3px rgba(8, 145, 178, .55), inset 0 1px 0 rgba(255, 255, 255, .4);
+}
+.spi-mdl--wide .spi-mdl-card.is-sel .spi-mdl-ico-amber {
+  background: linear-gradient(140deg, #fbbf24, #d97706);
+  color: #fff;
+  box-shadow: 0 8px 18px -3px rgba(217, 119, 6, .55), inset 0 1px 0 rgba(255, 255, 255, .4);
+}
+/* 800, as the design sets the option titles. */
+.spi-mdl--wide .spi-mdl-card-title { font-weight: 800; letter-spacing: -.2px; }
+
+/* ── Footer ───────────────────────────────────────────────────────────────────
+   Measured off the prototype: both buttons 40px on a 13px radius at 800, and
+   the audit pill a quieter outlined chip than the shared one. */
+.spi-mdl--wide .spi-mdl-confirm,
+.spi-mdl--wide .spi-mdl-cancel {
+  height: 40px;
+  padding: 0 22px;
+  border-radius: 13px;
+  font-weight: 800;
+}
+.spi-mdl--wide .spi-mdl-cancel { padding: 0 20px; border: 1px solid #e2e8f0; }
+.spi-mdl--wide .spi-mdl-audit {
+  height: 29px;
+  padding: 0 12px;
+  gap: 7px;
+  border: 1px solid #e8eff3;
+  border-radius: 20px;
+  background: #f5f9fb;
+  font-size: 10px;
+  color: #8aa0af;
+}
+
+/* The validation hint. Confirm stays ENABLED with nothing chosen — as the
+   design has it — and says why on click instead of sitting dead with no
+   explanation. */
+.spi-mdl--wide .spi-mdl-err {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+  padding: 9px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 11px;
+  background: #fef2f2;
+  color: #ef4444;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.spi-mdl--wide .spi-mdl-err svg { flex-shrink: 0; }
+
 
 @keyframes spi-mdl-in {
   from {

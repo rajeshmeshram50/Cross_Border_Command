@@ -126,6 +126,7 @@ const LEAF_DESC: Record<string, string> = {
   "p2p.case_to_case": "Manage request-based sourcing.",
   "p2p.po": "Create & track purchase orders.",
   "p2p.spi": "Process supplier invoices & taxes.",
+  "p2p.invoice": "Capture supplier invoices, match against POs, and track payment.",
   "p2p.debit_note": "Issue & track supplier debit notes for returns & adjustments.",
   "p2p.order": "New purchase order module (in development).",
   "p2p.payment_request": "Review and action every pending PO payment request.",
@@ -236,6 +237,7 @@ const p2pLeafLink = (leafId: string): string => {
     case "p2p.case_to_case":  return "/p2p/case-to-case";
     case "p2p.po":            return "/p2p/purchase-order";
     case "p2p.spi":           return "/p2p/supplier-purchase-invoice";
+    case "p2p.invoice":       return "/p2p/invoice";
     case "p2p.debit_note":    return "/p2p/debit-note";
     case "p2p.order":         return "/p2p/order";
     case "p2p.payment_request": return "/p2p/payment-request";

@@ -11,8 +11,12 @@
   padding: 9px 16px;
   gap: 8px;
 }
-@media (max-width: 1280px) { .cpf-steps4 { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 760px) { .cpf-steps4 { grid-template-columns: 1fr; } }
+/* The cards still read at 220px, so one row holds down to 900. Folding at
+   1280 put steps 03 and 04 on a second row on an ordinary laptop, and on any
+   1920 screen at 125% or 150% zoom, where the viewport reports 1536 or exactly
+   1280 CSS pixels. It also worked against what the phone rules below already
+   say: all four steps in one row, so you can see where you are. */
+@media (max-width: 900px) { .cpf-steps4 { grid-template-columns: repeat(2, 1fr); } }
 
 /* .p2sc is 96px tall because its ACTIVE / DONE chip floats in the corner
    instead of sitting in the first line. */
@@ -48,11 +52,23 @@
 .cpf-form .spi-dt-btn-close { height: 42px; padding: 0 16px; }
 .cpf-form .spi-dt-btn-close { padding: 0 13px; }
 
-/* Supplier Details is a 5-field row (the shared grid is 4). */
-.cpf-grid5 { grid-template-columns: repeat(5, 1fr); }
-@media (max-width: 1400px) { .cpf-grid5 { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 1100px) { .cpf-grid5 { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 760px) { .cpf-grid5 { grid-template-columns: 1fr; } }
+/* Supplier Details is a 5-field row (the shared grid is 4).
+
+   Written with both classes. `.spi-dt-grid4` sets four columns at the same
+   single-class specificity, and every page carrying this row — the purchase
+   order, the supplier invoice and the payment request — loads
+   supplier-purchase-invoice.css after this file, so `.cpf-grid5` on its own
+   never won and Supplier Category dropped to a row of its own. The plain
+   selector stays for anywhere the row is used without the shared grid.
+
+   The fold moves from 1400 to 1150: five fields are still comfortable at
+   220px each, and folding at 1400 meant an ordinary laptop, or a 1920 screen
+   at 125% zoom, never saw the five-across row this rule exists to make. */
+.cpf-grid5,
+.spi-dt-grid4.cpf-grid5 { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 1150px) { .spi-dt-grid4.cpf-grid5 { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 900px) { .spi-dt-grid4.cpf-grid5 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px) { .spi-dt-grid4.cpf-grid5 { grid-template-columns: 1fr; } }
 
 /* ── Figma-exact trims, scoped to this form so SPI / Debit Note stay as they
    are. Measured against the prototype: labels 9.5px #5b7585, fields on a
@@ -191,8 +207,17 @@
 
 /* Card headers that collapse on click. */
 .cpf-clickable { cursor: pointer; }
-/* Pushes the badge + chevron to the right edge of a card header. */
-.cpf-push { margin-left: auto; }
+/* Pushes the badge + everything after it to the right edge of a card header.
+
+   The class is doubled to make it (0,2,0). It is applied alongside
+   `.spi-dt-legal-badge`, which sets `margin-left: 9px` at the same single-class
+   specificity from supplier-purchase-invoice.css — a file that loads after this
+   one wherever both are used. At (0,1,0) this rule lost, the badge kept its 9px
+   and the whole group (badge, vault button, progress bar, percentage, chevron)
+   stayed packed against the title with the right half of the header empty.
+   A utility whose entire job is one declaration has to outrank the component
+   rules it is meant to override. */
+.cpf-push.cpf-push { margin-left: auto; }
 /* Keeps the element's slot in the header while it has nothing to say. */
 .cpf-hide { visibility: hidden; }
 .cpf-chev {

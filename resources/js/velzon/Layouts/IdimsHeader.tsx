@@ -22,6 +22,26 @@ const getLucide = (name?: string): LucideIcon =>
 
 
 type Leaf = { id: string; label: string; icon?: string };
+
+/**
+ * Menu leaves that have no permission slug of their own and ride on another
+ * module's grant. Keep this the ONLY list of such aliases — see leafCanView.
+ *
+ *  · sign_tracker   — a read-only view of the same sign requests as Quotation Vs PI
+ *  · hr.devices     — biometric terminals, part of Attendance
+ *  · advance_refund — no DB module row; rides on the PO grant
+ *  · p2p.invoice    — the rebuilt supplier purchase invoice: the same business
+ *                     object as SPI, so whoever may see supplier invoices may
+ *                     see this one, and nobody has to be re-granted anything.
+ */
+const PERM_ALIAS: Record<string, string> = {
+  'sales.sign_tracker': 'sales.quotation_vs_pi',
+  'hr.devices': 'hr.attendance',
+  'p2p.advance_refund': 'p2p.po',
+  'p2p.invoice': 'p2p.spi',
+};
+
+const permSlugFor = (leafId: string): string => PERM_ALIAS[leafId] ?? leafId;
 type Group = { id: string; label: string; children: Leaf[] };
 
 const ROLE_LABEL: Record<string, string> = {
@@ -95,6 +115,7 @@ const LEAF_DESC: Record<string, string> = {
   'p2p.case_to_case': 'Manage request-based sourcing.',
   'p2p.po': 'Create & track purchase orders.',
   'p2p.spi': 'Process supplier invoices & taxes.',
+  'p2p.invoice': 'Capture supplier invoices, match against POs, and track payment.',
   'p2p.debit_note': 'Issue & track supplier debit notes for returns & adjustments.',
   'p2p.order': 'New purchase order module (in development).',
   'p2p.payment_request': 'Review and action every pending PO payment request.',
@@ -180,6 +201,7 @@ function p2pLeafPath(id: string): string {
     case 'p2p.case_to_case':  return '/p2p/case-to-case';
     case 'p2p.po':            return '/p2p/purchase-order';
     case 'p2p.spi':           return '/p2p/supplier-purchase-invoice';
+    case 'p2p.invoice':       return '/p2p/invoice';
     case 'p2p.debit_note':    return '/p2p/debit-note';
     case 'p2p.order':         return '/p2p/order';
     case 'p2p.payment_request': return '/p2p/payment-request';
@@ -548,8 +570,9 @@ export default function IdimsHeader() {
       if (item.dd) {
         colsFor(item.dd).flat().forEach(g => {
           g.children.forEach(leaf => {
-            // Payment Request has no DB module row — it rides on the PO grant.
-            const visible = isSuperAdmin || !!perms[leaf.id === 'p2p.advance_refund' ? 'p2p.po' : leaf.id]?.can_view;
+            // Same alias map the menu uses, so a leaf that is enabled in the
+            // dropdown is also findable in search.
+            const visible = isSuperAdmin || !!perms[permSlugFor(leaf.id)]?.can_view;
             if (!visible) return;
             out.push({ id: leaf.id, label: leaf.label, parent: item.label, path: leafPath(leaf.id, item.dd!), icon: item.icon });
           });
@@ -576,17 +599,16 @@ export default function IdimsHeader() {
   };
 
   // A leaf is visible when the user can_view its slug (super-admin sees all).
-  // Sign Document Tracker has no slug of its own — it's a read-only view of the
-  // same sign requests, so it rides on the Quotation Vs PI permission.
+  //
+  // Some leaves have no permission slug of their own and ride on another
+  // module's grant. The map is the single list of those — it used to be a
+  // ternary chain here AND a separate one-case ternary in the search index
+  // below, so Sign Document Tracker and Biometric Devices were correctly
+  // enabled in the menu but silently missing from search for anyone who was
+  // not a super-admin. One map, read by both.
   const leafCanView = (leaf: Leaf): boolean => {
     if (isSuperAdmin) return true;
-    // Biometric Devices has no permission slug of its own — it rides on the
-    // Attendance grant (same pattern as sales.sign_tracker).
-    const slug = leaf.id === 'sales.sign_tracker' ? 'sales.quotation_vs_pi'
-      : leaf.id === 'hr.devices' ? 'hr.attendance'
-      : leaf.id === 'p2p.advance_refund' ? 'p2p.po'   // no DB module row — rides on the PO grant
-      : leaf.id;
-    return !!perms[slug]?.can_view;
+    return !!perms[permSlugFor(leaf.id)]?.can_view;
   };
 
   const renderLeaf = (leaf: Leaf, kind: DD, accent: string, bg: string, variant = '') => {

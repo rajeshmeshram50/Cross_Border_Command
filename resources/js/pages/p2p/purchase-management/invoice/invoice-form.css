@@ -1,0 +1,1062 @@
+/* ── Supplier Purchase Invoice form — the only rules that differ ────────────
+   The form wears the shared spi-dt-* wizard chrome plus the Create PO form's
+   additions (it carries `.cpf-form`, so all 60 of those scoped rules apply).
+   This file holds what is deliberately different, and nothing else.
+
+   Everything is scoped under `.invf-gst` rather than the form root, so the
+   Create PO page — which shares both stylesheets — is untouched.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* Breathing room under the GST verdict.
+
+   `.cpf-form .spi-dt-card > .cpf-gst` sets `margin: 14px 14px 0` — a shorthand,
+   so the bottom margin is zeroed and the only separation from the first field
+   row is the grid's own 11px top padding. The green block then reads as glued
+   to the labels beneath it.
+
+   The selector has to match that rule's specificity (0,3,0) to beat it; a
+   plain `.cpf-form .invf-gst` is (0,2,0) and loses however late it loads.
+
+   The prototype measures the same 11px, so this is deliberately looser than
+   the design: the banner is a filled colour block and needs more air than the
+   design's lighter one. */
+.cpf-form .spi-dt-card > .invf-gst { margin-bottom: 6px; }
+
+/* ── The 3-way match table ──────────────────────────────────────────────────
+   The table itself is the shared `.cpd-tbl--pd`, the same one the Create PO
+   form uses. Only what a three-way match needs and a purchase order does not
+   is added here. The prototype's own note on these rules is worth repeating:
+   anything added that duplicates a `.cpd-tbl--pd` rule pulls the two designs
+   out of step, so don't.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* The 3-Way Product Mapping band opens on the pinned Product (PI) column, so
+   it is pinned to the same offset — otherwise the band's label and its left
+   divider would slide across a column that is standing still. */
+.spi-prodtbl thead .cpd-grp-stick {
+  position: sticky;
+  left: 42px;
+  z-index: 5;
+  background: #0e7490;
+  text-align: left;
+}
+
+/* Four step cards across, not two.
+
+   `.spi-dt-steps` lays the strip out in two columns because the old SPI wizard
+   has two stages, and `.cpf-steps4` overrides it to four. Both are a single
+   class, so the winner is whichever stylesheet lands later — and in the build
+   it is the SPI one, whatever order this file's imports are written in, since
+   supplier-purchase-invoice.css is pulled in by a dozen other modules too.
+   That is why the four cards were dropping onto a second row.
+
+   Carrying both classes makes this (0,2,0) and settles it by specificity
+   rather than by load order. Gap and padding come along because they lose the
+   same argument: the strip was sitting on SPI's roomier 12px rather than the
+   9px / 16px the design uses for a four-card row. */
+.spi-dt-steps.cpf-steps4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 9px 16px;
+}
+/* Every breakpoint the purchase order form has, restated at this specificity.
+
+   Not a different design — the same one. `.spi-dt-steps` holds the base rule
+   at (0,1,0), so the rule above has to be (0,2,0) to beat it, and a (0,2,0)
+   base rule then also beats every (0,1,0) rule inside a media query. Leave
+   these out and the strip would stay four-across at every width, including
+   the phone, where the form switches to compact tiles. So each of the PO's
+   breakpoints is repeated here with both classes and the same values; change
+   one side and the other has to follow. */
+@media (max-width: 900px) and (min-width: 761px) {
+  .spi-dt-steps.cpf-steps4 { grid-template-columns: repeat(2, 1fr); }
+}
+/* Phone: four compact tiles in one row, as create-po.css sets for .cpf-form. */
+@media (max-width: 760px) {
+  .spi-dt-steps.cpf-steps4 { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 8px; }
+}
+
+/* A purchase order has two quantity columns; the 3-way match has five, plus
+   five money columns. create-po.css holds every non-money header on one line
+   at a 64px minimum, which here adds up to a header far wider than the panel
+   and leaves the quantity labels sitting in a long thin strip.
+
+   So the quantity headers wrap onto two lines instead, the way the design
+   shows them. Written at (0,4,3) to beat the 64px rule rather than relying on
+   this file loading second — the money columns keep their own width, which is
+   why `.cpd-th-amt` stays excluded here exactly as it is there. */
+.cpd-tbl--pd.spi-prodtbl thead tr:last-child th:not(.cpd-th-left):not(.cpd-th-amt) {
+  min-width: 46px;
+  white-space: normal;
+}
+
+/* The PO figure being matched against: present, but quieter than the invoice's
+   own numbers beside it. */
+.spi-prodtbl td.spi-pocost { color: #4a6b7c; font-weight: 700; }
+
+/* Missing / Extra quantities — neutral until there is something to flag, so a
+   column of zeroes does not read as a column of warnings. */
+.cpd-qtypill {
+  display: inline-block;
+  min-width: 30px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #5b7585;
+  background: #f1f6f8;
+  border: 1px solid #e3edf1;
+  /* Figures line up column-wise however many digits they carry. */
+  font-variant-numeric: tabular-nums;
+}
+.cpd-qtypill--miss { color: #b45309; background: #fffbeb; border-color: #fde68a; }
+.cpd-qtypill--extra { color: #dc2626; background: #fef2f2; border-color: #fecaca; }
+
+/* The one figure the whole table is working towards. */
+.cpd-tbl--pd tfoot td.cpd-foot-final {
+  background: linear-gradient(110deg, #0e7490, #0891b2);
+  color: #fff;
+  font-weight: 800;
+}
+
+/* A label and its value never break across lines. */
+.cpd-kv { white-space: nowrap; }
+
+.spi-prodtbl .spi-delrow {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #dc2626;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.spi-prodtbl .spi-delrow:hover { background: #fee2e2; border-color: #fca5a5; }
+.spi-prodtbl .spi-delrow svg { width: 12px; height: 12px; }
+
+/* ── Step 03: Temporary Box Packaging ───────────────────────────────────────
+   Packaging scenarios and the SPI Box Generation System. Nothing in the
+   repo had these -- the stage is ported 1:1 from the prototype, which in
+   turn took it from the GRN module's own box generation screen. The two
+   namespaces are its own: `pkg-*` for the scenario cards and `vti-*` for
+   the product table.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.pkg-box { background: #fff; border: 1px solid #A5F3FC; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 16px rgba(6,182,212,.08), 0 1px 4px rgba(0,0,0,.04), inset 0 2px 0 rgba(255,255,255,.9); }
+.pkg-box__header { position: relative; overflow: hidden; display: flex; align-items: center; gap: 12px; padding: 10px 16px; cursor: pointer; background: linear-gradient(110deg, #f0fdff 0%, #e0f9fd 30%, #cafffd 60%, #b3f4fb 80%, #9deef9 100%); border-bottom: 1px solid #A5F3FC; transition: background .16s; }
+.pkg-box__header:hover { background: linear-gradient(110deg, #e4fbff 0%, #d4f6fb 30%, #bff8fc 60%, #aaeffa 100%); }
+.pkg-box__header::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(180deg, rgba(255,255,255,.65), transparent); pointer-events: none; }
+.pkg-box__header-ico { width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0; background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%); display: flex; align-items: center; justify-content: center; color: #fff; box-shadow: 0 0 0 3px rgba(6,182,212,.15), 0 3px 10px rgba(8,145,178,.30); position: relative; z-index: 1; }
+.pkg-box__header-text { flex: 1; min-width: 0; position: relative; z-index: 1; }
+.pkg-box__header-title { font-size: 13px; font-weight: 800; color: #0c4a6e; letter-spacing: -.3px; }
+.pkg-box__header-sub { font-size: 10.5px; font-weight: 500; color: #0891b2; margin-top: 2px; }
+.pkg-box__header-right { display:flex; align-items:center; gap:8px; position:relative; z-index:1; flex-shrink:0; }
+.pkg-box__header-badge { font-size: 10px; font-weight: 700; padding: 4px 12px; border-radius: 20px; background: rgba(255,255,255,.88); border: 1.5px solid rgba(8,145,178,.22); color: #0891b2; white-space: nowrap; box-shadow: 0 1px 4px rgba(8,145,178,.1), inset 0 1px 0 rgba(255,255,255,.95); }
+.pkg-toggle { width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; background: rgba(255,255,255,.8); border: 1.5px solid rgba(8,145,178,.2); display: flex; align-items: center; justify-content: center; color: #0891b2; transition: all .2s; box-shadow: inset 0 1px 0 rgba(255,255,255,.9); }
+.pkg-toggle svg { transition: transform .25s cubic-bezier(.22,1,.36,1); }
+.pkg-box.is-collapsed .pkg-toggle svg { transform: rotate(-90deg); }
+.pkg-box__body { display: grid; grid-template-columns: repeat(3, 1fr); overflow: hidden; max-height: 220px; transition: max-height .3s cubic-bezier(.22,1,.36,1), opacity .22s; opacity: 1; }
+.pkg-box.is-collapsed .pkg-box__body { max-height: 0; opacity: 0; }
+.pkg-card { padding: 12px 16px 14px; border-right: 1px solid #E4EEF4; position: relative; overflow: hidden; transition: background .18s; display: flex; flex-direction: column; }
+.pkg-card:last-child { border-right: none; }
+.pkg-card:hover { background: #F5FEFF; }
+.pkg-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #22d3ee, #0891b2); }
+.pkg-card__scenario { display: flex; align-items: center; gap: 8px; font-size: 9px; font-weight: 800; color: #0891b2; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 7px; }
+.pkg-card__scenario-line { width: 18px; height: 2.5px; border-radius: 2px; background: linear-gradient(90deg, #22d3ee, #0891b2); flex-shrink: 0; }
+.pkg-card__title { font-size: 13px; font-weight: 800; color: #0c4a6e; letter-spacing: -.3px; line-height: 1.3; margin-bottom: 6px; }
+.pkg-card__title span { color: #06b6d4; }
+.pkg-card__desc { font-size: 10.5px; font-weight: 500; color: #64748B; line-height: 1.6; margin-bottom: 0; }
+.pkg-card__tag { position: absolute; top: 12px; right: 14px; display: inline-flex; align-items: center; gap: 5px; font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; padding: 3px 10px; border-radius: 20px; background: #F0FDFF; color: #0891b2; border: 1.5px solid rgba(8,145,178,.25); box-shadow: 0 1px 3px rgba(6,182,212,.1), inset 0 1px 0 rgba(255,255,255,.9); z-index: 1; }
+.pkg-card__tag::before { content:''; width:5px; height:5px; border-radius:50%; background:#06b6d4; flex-shrink:0; }
+.vti-box { background: #fff; border: 1px solid #A5F3FC; border-radius: 14px; overflow: hidden; box-shadow: 0 2px 12px rgba(6,182,212,.08), 0 1px 3px rgba(0,0,0,.04); }
+.vti-header { display: flex; align-items: center; gap: 10px; padding: 9px 14px; background: linear-gradient(110deg,#f0fdff 0%,#e0f9fd 30%,#cafffd 60%,#b3f4fb 80%,#9deef9 100%); border-bottom: 1px solid #A5F3FC; position: relative; overflow: hidden; }
+.vti-header::after { content:''; position:absolute; top:0; left:0; right:0; height:50%; background: linear-gradient(180deg,rgba(255,255,255,.6),transparent); pointer-events: none; }
+.vti-header-ico { width:30px; height:30px; border-radius:9px; flex-shrink:0; background: linear-gradient(135deg,#06b6d4 0%,#0891b2 55%,#0e7490 100%); display:flex; align-items:center; justify-content:center; color:#fff; box-shadow: 0 0 0 2px rgba(6,182,212,.18), 0 2px 8px rgba(8,145,178,.28); position:relative; z-index:1; }
+.vti-header-text { flex:1; min-width:0; position:relative; z-index:1; }
+.vti-header-title { font-size:12.5px; font-weight:800; color:#0c4a6e; letter-spacing:-.3px; line-height:1.2; }
+.vti-header-sub   { font-size:9.5px; font-weight:500; color:#0891b2; margin-top:2px; opacity:.85; }
+.vti-header-stats { display:flex; align-items:center; gap:6px; position:relative; z-index:1; flex-shrink:0; }
+.vti-stat-pill { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; padding:3px 10px; border-radius:20px; white-space:nowrap; box-shadow: 0 1px 3px rgba(0,0,0,.06), inset 0 1px 0 rgba(255,255,255,.9); }
+.vti-stat-pill.boxed   { background:rgba(240,253,244,.95); border:1.5px solid rgba(34,197,94,.28); color:#15803d; }
+.vti-stat-pill.pending { background:rgba(255,247,237,.95); border:1.5px solid rgba(251,146,60,.28); color:#c2410c; }
+.vti-stat-pill.total   { background:rgba(240,249,255,.95); border:1.5px solid rgba(6,182,212,.28);  color:#0369a1; }
+.vti-stat-dot { width:5px; height:5px; border-radius:50%; flex-shrink:0; }
+.vti-stat-pill.boxed   .vti-stat-dot { background:#22c55e; }
+.vti-stat-pill.pending .vti-stat-dot { background:#f97316; }
+.vti-stat-pill.total   .vti-stat-dot { background:#06b6d4; }
+.vti-table-wrap { overflow-x:auto; }
+.vti-table { width:100%; border-collapse:collapse; font-size:11.5px; }
+.vti-table thead tr { background: linear-gradient(180deg,#F8FAFC,#F1F5F9); border-bottom: 1.5px solid #E4EEF4; }
+.vti-table th { padding: 7px 10px; text-align:center; font-size:9px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; color:#64748B; white-space:nowrap; }
+.vti-table th:first-child { padding-left:14px; width:32px; text-align:left; }
+.vti-table th:nth-child(2) { text-align:left; }
+.vti-table th:last-child  { padding-right:14px; }
+.vti-table td { padding: 8px 10px; vertical-align:middle; text-align:center; border-bottom: 1px solid #F1F5F9; }
+.vti-table td:first-child { padding-left:14px; text-align:left; }
+.vti-table td:nth-child(2) { text-align:left; }
+.vti-table td:last-child  { padding-right:14px; }
+.vti-actions { justify-content:center; }
+.vti-table tbody tr:last-child td { border-bottom:none; }
+.vti-table tbody tr { transition: background .12s; }
+.vti-table tbody tr:not(.vti-extra-section):not(.vti-extra-label-row):hover { background:#F5FEFF; }
+.vti-cb { width:14px; height:14px; border-radius:4px; border:1.5px solid #BAE6FD; cursor:pointer; display:flex; align-items:center; justify-content:center; background:#F0FDFF; transition:all .15s; flex-shrink:0; }
+.vti-cb:hover { border-color:#0891b2; background:#E0F9FD; }
+.vti-prod-cell { display:flex; align-items:center; gap:9px; }
+.vti-prod-name { font-size:11.5px; font-weight:700; color:#0F172A; letter-spacing:-.2px; line-height:1.2; }
+.vti-prod-sku  { font-size:9.5px; font-weight:500; color:#94A3B8; margin-top:1px; }
+.vti-code { font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace; font-size:10px; font-weight:600; color:#0891b2; background:#F0FDFF; border:1px solid #BAE6FD; border-radius:6px; padding:3px 7px; white-space:nowrap; letter-spacing:.02em; }
+.vti-qty-badge { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; border-radius:50%; font-size:12.5px; font-weight:800; color:#3730a3; background: #e0e7ff; border: none; padding:0 4px; }
+.vti-qty-badge.extra-qty { color:#d97706; background: transparent; font-size:14px; font-weight:800; box-shadow:none; }
+.vti-extra-badge { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; border-radius:50%; font-size:11px; font-weight:800; color:#d97706; background: transparent; border: 2px solid #F59E0B; padding:0 4px; }
+.vti-mode-sel { appearance:none; -webkit-appearance:none; border:1.5px solid #E2E8F0; border-radius:8px; padding:6px 20px; font-size:11.5px; font-weight:600; color:#64748B; background:#fff; min-width:86px; text-align:center; cursor:default; box-shadow: 0 1px 3px rgba(15,23,42,.06); letter-spacing:.01em; }
+.vti-mode-sel:disabled { opacity:1; cursor:default; background:#fff; color:#64748B; border-color:#E2E8F0; font-weight:600; }
+.vti-subbox-cell { display:flex; align-items:center; gap:6px; justify-content:center; width:100%; }
+.vti-subbox-inp { width:auto; min-width:60px; max-width:90px; border:1.5px solid #CBD5E1; border-radius:10px; padding:6px 10px; font-size:12px; color:#334155; font-weight:800; background:linear-gradient(135deg,#f8fafc,#f1f5f9); text-align:center; box-shadow: 0 2px 6px rgba(15,23,42,.06), inset 0 1px 0 rgba(255,255,255,.9); transition: all .18s; }
+.vti-subbox-inp:hover { border-color:#64748B; box-shadow: 0 3px 10px rgba(15,23,42,.1), inset 0 1px 0 rgba(255,255,255,.9); }
+.vti-subbox-inp:focus { outline:none; border-color:#475569; background:#fff; box-shadow: 0 0 0 3px rgba(100,116,139,.16), 0 2px 8px rgba(15,23,42,.08); }
+.vti-subbox-inp::placeholder { color:#64748B; font-weight:600; font-size:11.5px; }
+.vti-actions { display:flex; align-items:center; gap:5px; flex-wrap:nowrap; }
+.vti-btn-apply { padding:6px 18px; border-radius:9px; border:none; background: linear-gradient(160deg,#22d3ee 0%,#0891b2 50%,#0e7490 100%); color:#fff; font-size:11.5px; font-weight:800; letter-spacing:.02em; box-shadow: 0 3px 10px rgba(8,145,178,.32), inset 0 1px 0 rgba(255,255,255,.18); transition:all .16s; white-space:nowrap; cursor:pointer; }
+.vti-btn-apply:hover { background:linear-gradient(160deg,#38bdf8 0%,#0ea5e9 50%,#0891b2 100%); transform:translateY(-1px); box-shadow: 0 5px 16px rgba(8,145,178,.42), inset 0 1px 0 rgba(255,255,255,.22); }
+.vti-btn-single { padding:6px 14px; height:auto; border-radius:12px; border:1.5px solid #BAE6FD; background:#fff; color:#0891b2; font-size:11.5px; font-weight:700; transition:all .16s; white-space:nowrap; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow: 0 1px 6px rgba(6,182,212,.10), inset 0 1px 0 rgba(255,255,255,.95); letter-spacing:.01em; }
+.vti-btn-single:hover { border-color:#67E8F9; background:#F0FDFF; box-shadow:0 2px 10px rgba(6,182,212,.18), inset 0 1px 0 rgba(255,255,255,.95); color:#0369a1; }
+/* The same button squared off for an icon on its own. Only the box that holds
+   the icon changes — the border, fill, colour and hover all still come from
+   .vti-btn-single, so it stays the same button as the text ones beside it. */
+.vti-btn-single--ico { width:30px; height:30px; padding:0; border-radius:9px; }
+.vti-dash { color:#CBD5E1; font-size:13px; }
+.vti-prod-row { transition: background .18s, box-shadow .18s; }
+.vti-prod-row.is-expanded { background: linear-gradient(90deg,#f0f9ff,#fafeff) !important; box-shadow: inset 3px 0 0 #0ea5e9; }
+.vti-prod-row.is-expanded .vti-prod-name { color: #0369a1; font-weight: 700; }
+.vti-prod-row.is-expanded .vti-btn-single { background: #e0f2fe; border-color: #38bdf8; color: #0369a1; font-weight: 700; }
+.vti-cb.is-checked { background: linear-gradient(135deg, #06b6d4, #0891b2); border-color: #0891b2; box-shadow: 0 0 0 2px rgba(6,182,212,.2); }
+.vti-cb.is-checked::after { content: ''; position: absolute; left: 3px; top: 5px; width: 6px; height: 3.5px; border-left: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(-45deg); }
+.vti-cb { position: relative; }
+.vti-prod-row.is-selected { background: linear-gradient(98deg, #e6fafd 0%, #f0fdff 100%) !important; box-shadow: inset 3px 0 0 #06b6d4; }
+/* ── The per-box drawer ─────────────────────────────────────────────────────
+   Opens under the product row once a box exists on it: the teal identity
+   strip, the box's dimensions, its remark / condition / flags, and the
+   optional serial, lot and batch fields.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.vti-prod-hint { font-size:9px; color:#94A3B8; margin-top:2px; line-height:1.4; }
+.vti-drawer-row { background: transparent !important; }
+.vti-drawer-td { padding: 0 !important; border: none !important; border-bottom: none !important; }
+.vti-drawer-inner { max-height: 0; overflow: hidden; transition: max-height .44s cubic-bezier(.22,1,.36,1), opacity .28s ease; opacity: 0; }
+.vti-drawer-row.is-open .vti-drawer-inner { max-height: 1400px; opacity: 1; }
+.vti-sel-left { display: flex; align-items: center; gap: 10px; }
+.vti-sel-count { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: #fff; }
+.vti-sel-count-badge { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,.25); border: 1.5px solid rgba(255,255,255,.4); font-size: 11px; font-weight: 800; color: #fff; }
+.vti-sel-products { display: flex; gap: 5px; flex-wrap: nowrap; overflow: hidden; }
+.vti-sel-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 20px; background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25); font-size: 9.5px; font-weight: 600; color: rgba(255,255,255,.9); white-space: nowrap; }
+.vti-sel-chip-dot { width: 5px; height: 5px; border-radius: 50%; background: #22d3ee; flex-shrink: 0; }
+.vti-sel-right { display: flex; align-items: center; gap: 8px; }
+.vti-sel-clear { padding: 6px 14px; border-radius: 7px; font-size: 11px; font-weight: 600; border: 1.5px solid rgba(255,255,255,.3); background: rgba(255,255,255,.1); color: rgba(255,255,255,.8); cursor: pointer; transition: all .15s; }
+.vti-sel-clear:hover { background: rgba(255,255,255,.2); color: #fff; }
+.vti-sel-pack-btn { display: inline-flex; align-items: center; gap: 7px; padding: 8px 18px; border-radius: 9px; font-size: 12px; font-weight: 800; border: none; cursor: pointer; transition: all .18s; background: #fff; color: #0891b2; letter-spacing: .01em; box-shadow: 0 3px 12px rgba(0,0,0,.15), inset 0 1px 0 rgba(255,255,255,.9); }
+.vti-sel-pack-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,0,0,.2); background: #f0fdff; }
+.vti-drawer-content { margin: 0 3px 14px; border-radius: 0 0 18px 18px; background: linear-gradient(175deg, #e6fafd 0%, #eff9fc 8%, #f4fafd 20%, #f8fcfe 40%, #fbfdff 65%, #fdfeff 82%, #ffffff 100%); border: 1.5px solid rgba(6,182,212,.2); border-top: none; box-shadow: 0 16px 48px rgba(6,182,212,.1), 0 4px 12px rgba(6,182,212,.07), inset 0 1px 0 rgba(255,255,255,.95); overflow: hidden; padding-bottom: 16px; }
+.vti-dw-strip { display: flex; align-items: stretch; width: 100%; min-height: 0; background: linear-gradient(98deg, #0a5f75 0%, #0c6e87 30%, #0e7d9a 55%, #0891b2 75%, #0aa8cc 88%, #0fb8de 95%, #14c0e4 100%); border-bottom: none; box-shadow: 0 4px 20px rgba(8,145,178,.45), 0 2px 6px rgba(8,145,178,.3), inset 0 1px 0 rgba(255,255,255,.15); position: relative; overflow: hidden; box-sizing: border-box; }
+.vti-dw-strip::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 45%; z-index: 1; background: linear-gradient(180deg, rgba(255,255,255,.13) 0%, transparent 100%); pointer-events: none; }
+.vti-dw-strip::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px; z-index: 1; background: rgba(0,0,0,.15); pointer-events: none; }
+.vti-dw-strip-accent { width: 4px; flex-shrink: 0; align-self: stretch; z-index: 4; background: rgba(0,0,0,.2); }
+.vti-dw-strip-left { display: flex; align-items: center; flex: 1; width: 100%; min-width: 0; position: relative; z-index: 2; }
+.vti-dw-strip-sep { width: 1px; height: 26px; flex-shrink: 0; align-self: center; background: linear-gradient(180deg, transparent, rgba(255,255,255,.3) 25%, rgba(255,255,255,.4) 50%, rgba(255,255,255,.3) 75%, transparent); }
+.vti-dw-strip-item { flex: 0 0 auto; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 3px; padding: 9px 22px; min-width: 0; position: relative; transition: background .14s; }
+.vti-dw-strip-item:hover { background: rgba(0,0,0,.06); }
+.vti-dw-strip-item.strip-boxid { flex: 0 0 auto; min-width: 95px; background: transparent; border-right: 1px solid rgba(255,255,255,.25); padding: 9px 22px 9px 16px; }
+.vti-dw-strip-item.strip-boxid:hover { background: rgba(0,0,0,.06); }
+.vti-dw-strip-item:first-child { background: transparent; border-right: none; flex: 0 0 auto; }
+.vti-dw-strip-item.strip-product { flex: 0 0 auto; max-width: 400px; }
+.vti-dw-strip-lbl { display: flex; align-items: center; gap: 4px; font-size: 7.5px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; color: rgba(255,255,255,.65); line-height: 1; white-space: nowrap; }
+.vti-dw-strip-lbl::before { content: ''; width: 3px; height: 3px; border-radius: 50%; background: rgba(255,255,255,.6); flex-shrink: 0; }
+.vti-dw-strip-item:first-child .vti-dw-strip-lbl::before { display: none; }
+.vti-dw-strip-item.strip-boxid .vti-dw-strip-lbl::before { display: none; }
+.vti-dw-strip-val { font-size: 12.5px; font-weight: 700; color: #fff; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; letter-spacing: -.15px; text-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.vti-dw-strip-id { font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace; font-size: 17px; font-weight: 900; letter-spacing: .1em; line-height: 1; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,.15), 0 0 20px rgba(255,255,255,.3); background: none; -webkit-background-clip: unset; background-clip: unset; filter: none; }
+.vti-dw-strip-qty { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px 4px 8px; background: rgba(255,255,255,.18); border: 1.5px solid rgba(255,255,255,.4); border-radius: 20px; font-size: 12px; font-weight: 700; color: #fff; letter-spacing: -.1px; box-shadow: 0 1px 6px rgba(0,0,0,.1), inset 0 1px 0 rgba(255,255,255,.25); white-space: nowrap; backdrop-filter: blur(4px); }
+.vti-dw-strip-qty-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,.3), 0 0 8px rgba(255,255,255,.6); }
+.vti-dw-print-btn { display: none; }
+.vti-dw-sticker-btn { display: inline-flex; align-items: center; gap: 7px; margin: 0 16px 0 auto; flex-shrink: 0; align-self: center; padding: 7px 16px; border: 1.5px solid rgba(255,255,255,.55); border-radius: 8px; background: rgba(255,255,255,.18); color: #fff; font-family: inherit; font-size: 11.5px; font-weight: 700; letter-spacing: .02em; white-space: nowrap; cursor: pointer; transition: all .18s; box-shadow: 0 2px 8px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.25); position: relative; z-index: 2; }
+.vti-dw-sticker-btn svg { opacity: .9; flex-shrink: 0; }
+.vti-dw-sticker-btn:hover { background: rgba(255,255,255,.3); border-color: rgba(255,255,255,.75); box-shadow: 0 4px 14px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.35); transform: translateY(-1px); }
+.vti-dw-sticker-btn:active { transform: translateY(0); }
+.vti-dw-body { padding: 14px 14px 0; display: flex; flex-direction: column; gap: 10px; background: transparent; }
+.vti-dw-section, .vti-dw-advanced { background: #fff; border: 1.5px solid rgba(6,182,212,.22); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,1) inset, 0 2px 10px rgba(6,182,212,.08), 0 6px 24px rgba(6,182,212,.06); position: relative; }
+.vti-dw-section::before, .vti-dw-advanced::before { content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 3px; background: linear-gradient(180deg, #22d3ee 0%, #06b6d4 40%, #0891b2 70%, #0e7490 100%); border-radius: 14px 0 0 14px; }
+.vti-dw-section-hd, .vti-dw-adv-toggle { display: flex; align-items: center; padding: 11px 16px; background: linear-gradient(102deg, #e6fafd 0%, #edfbfe 25%, #f4fbfd 55%, #f9fdfe 78%, #ffffff 100%); border-bottom: 1px solid rgba(6,182,212,.18); }
+.vti-dw-section-hd { justify-content: space-between; }
+.vti-dw-section-title { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 800; color: #0c4a6e; letter-spacing: -.15px; }
+.vti-dw-section-title svg { color: #0891b2; flex-shrink: 0; }
+.vti-dw-toolbar { display: flex; align-items: center; gap: 7px; }
+.vti-dw-strip .vti-dw-toolbar { align-self: center; flex-shrink: 0; margin-left: auto; margin-right: 14px; gap: 9px; position: relative; z-index: 2; }
+.vti-dw-strip .vti-dw-strip-left { flex: 0 1 auto; }
+.vti-dw-strip .vti-dw-dim-label { color: rgba(255,255,255,.9); opacity: 1; text-shadow: 0 1px 2px rgba(0,0,0,.18); }
+.vti-dw-strip .vti-dw-unit-toggle { height: 40px; box-sizing: border-box; border-radius: 10px; margin-top: 0; margin-bottom: 0; flex-shrink: 0; }
+.vti-dw-strip .vti-dw-sticker-btn { display: inline-flex; align-items: center; gap: 7px; padding: 0 15px; font-family: inherit; font-size: 11.5px; font-weight: 700; letter-spacing: .01em; color: #fff; white-space: nowrap; cursor: pointer; background: linear-gradient(180deg, rgba(255,255,255,.22) 0%, rgba(255,255,255,.12) 100%); border: 1px solid rgba(255,255,255,.38); box-shadow: 0 2px 9px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.34); text-shadow: 0 1px 2px rgba(0,0,0,.2); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); transition: transform .16s ease, background .16s ease, box-shadow .16s ease, border-color .16s ease; }
+.vti-dw-strip .vti-dw-sticker-btn svg { opacity: .95; flex-shrink: 0; }
+.vti-dw-strip .vti-dw-sticker-btn:hover { background: linear-gradient(180deg, rgba(255,255,255,.34) 0%, rgba(255,255,255,.2) 100%); border-color: rgba(255,255,255,.66); box-shadow: 0 6px 18px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.45); transform: translateY(-1px); }
+.vti-dw-strip .vti-dw-sticker-btn:active { transform: translateY(0); box-shadow: 0 2px 7px rgba(0,0,0,.18); }
+.vti-dw-strip .vti-dw-sticker-btn { margin: 0 18px 0 2px; padding: 0 17px; font-weight: 800; background: linear-gradient(180deg, rgba(255,255,255,.3) 0%, rgba(255,255,255,.16) 100%); border-color: rgba(255,255,255,.55); }
+.vti-dw-strip .vti-dw-save-btn { display: inline-flex; align-items: center; gap: 7px; padding: 0 19px; border: none; font-family: inherit; font-size: 11.5px; font-weight: 800; letter-spacing: .01em; color: #0e7490; white-space: nowrap; cursor: pointer; background: linear-gradient(180deg, #ffffff 0%, #e9fbff 100%); box-shadow: 0 3px 12px rgba(2,40,54,.28), inset 0 1px 0 #ffffff, inset 0 0 0 1px rgba(255,255,255,.6); text-shadow: none; transition: transform .16s ease, background .16s ease, box-shadow .16s ease; }
+.vti-dw-strip .vti-dw-save-btn svg { color: #0891b2; opacity: 1; flex-shrink: 0; }
+.vti-dw-strip .vti-dw-save-btn:hover { background: linear-gradient(180deg, #ffffff 0%, #d3f4ff 100%); box-shadow: 0 6px 20px rgba(2,40,54,.34), inset 0 1px 0 #ffffff; transform: translateY(-1px); }
+.vti-dw-strip .vti-dw-save-btn:active { transform: translateY(0); }
+.vti-dw-strip .vti-dw-save-btn.is-saved { color: #fff; background: linear-gradient(180deg, #34d399 0%, #059669 100%); box-shadow: 0 3px 12px rgba(5,150,105,.4), inset 0 1px 0 rgba(255,255,255,.3); }
+.vti-dw-strip .vti-dw-save-btn.is-saved svg { color: #fff; }
+.vti-dw-strip .vti-dw-unit-toggle { display: inline-flex; align-items: stretch; overflow: hidden; padding: 3px; gap: 2px; background: linear-gradient(180deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.08) 100%); border: 1px solid rgba(255,255,255,.34); box-shadow: inset 0 1px 0 rgba(255,255,255,.24); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.vti-dw-strip .vti-dw-unit-opt { display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; min-width: 34px; border: none; border-radius: 7px; font-family: inherit; font-size: 10.5px; font-weight: 800; letter-spacing: .05em; color: rgba(255,255,255,.82); background: transparent; cursor: pointer; transition: all .14s ease; }
+.vti-dw-strip .vti-dw-unit-opt:hover:not(.is-active) { background: rgba(255,255,255,.16); color: #fff; }
+.vti-dw-strip .vti-dw-unit-opt.is-active { background: #fff; color: #0e7490; box-shadow: 0 1px 5px rgba(2,40,54,.25); }
+.vti-dw-dim-label { font-size: 9.5px; font-weight: 800; color: #0891b2; text-transform: uppercase; letter-spacing: .12em; white-space: nowrap; opacity: .8; }
+.vti-dw-unit-toggle { display: inline-flex; border-radius: 7px; overflow: hidden; border: 1.5px solid rgba(6,182,212,.4); background: linear-gradient(135deg, #e6fafd, #cff8fd); }
+.vti-dw-unit-opt { padding: 5px 11px; font-size: 10px; font-weight: 700; cursor: pointer; color: #0891b2; background: transparent; border: none; transition: all .14s; letter-spacing: .04em; line-height: 1; }
+.vti-dw-unit-opt.is-active { background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.2); }
+.vti-dw-unit-opt:hover:not(.is-active) { background: rgba(6,182,212,.15); }
+.vti-dw-icon-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 7px; font-size: 10.5px; font-weight: 600; border: 1.5px solid rgba(6,182,212,.22); background: linear-gradient(135deg, #fff 0%, #f4fbfd 100%); color: #0891b2; cursor: pointer; transition: all .14s; white-space: nowrap; box-shadow: 0 1px 4px rgba(6,182,212,.08); }
+.vti-dw-icon-btn svg { opacity: .7; }
+.vti-dw-icon-btn:hover { border-color: #06b6d4; color: #0e7490; background: linear-gradient(135deg, #e6fafd, #cff8fd); box-shadow: 0 3px 10px rgba(6,182,212,.18); transform: translateY(-1px); }
+.vti-dw-save-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 16px; border-radius: 8px; font-size: 11px; font-weight: 800; border: none; background: linear-gradient(135deg, #06b6d4 0%, #0891b2 50%, #0e7490 100%); color: #fff; cursor: pointer; letter-spacing: .02em; box-shadow: 0 3px 12px rgba(6,182,212,.4), inset 0 1px 0 rgba(255,255,255,.22); transition: all .16s; white-space: nowrap; }
+.vti-dw-save-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(6,182,212,.5); background: linear-gradient(135deg, #22d3ee 0%, #06b6d4 50%, #0891b2 100%); }
+.vti-dw-save-btn.is-saved { background: linear-gradient(135deg, #34d399, #059669); box-shadow: 0 3px 12px rgba(5,150,105,.38); }
+.vti-dw-fields { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; padding: 14px 16px 16px; background: transparent; }
+.vti-dw-field-sep { display: none; }
+.vti-dw-field { display: flex; flex-direction: column; gap: 6px; background: linear-gradient(145deg, #f5fbfd 0%, #edf8fb 100%); border: 1.5px solid rgba(6,182,212,.2); border-radius: 10px; padding: 10px 12px; transition: all .16s; cursor: text; box-shadow: 0 1px 4px rgba(6,182,212,.06), inset 0 1px 0 rgba(255,255,255,.95); }
+.vti-dw-field:hover { border-color: rgba(6,182,212,.5); background: #fff; box-shadow: 0 4px 14px rgba(6,182,212,.14), inset 0 1px 0 #fff; transform: translateY(-1px); }
+.vti-dw-field:focus-within { border-color: #06b6d4; background: #fff; box-shadow: 0 0 0 3px rgba(6,182,212,.15), 0 4px 14px rgba(6,182,212,.12); transform: translateY(-1px); }
+.vti-dw-field--auto { background: linear-gradient(145deg, #cffafe 0%, #a5f3fc 60%, #67e8f9 100%); border-color: #06b6d4; box-shadow: 0 2px 8px rgba(6,182,212,.2), inset 0 1px 0 rgba(255,255,255,.7); }
+.vti-dw-field--auto:hover { background: linear-gradient(145deg, #a5f3fc 0%, #67e8f9 100%); border-color: #0891b2; transform: translateY(-1px); }
+.vti-dw-field-lbl { font-size: 8px; font-weight: 800; color: #0891b2; opacity: .75; text-transform: uppercase; letter-spacing: .14em; display: flex; align-items: center; gap: 4px; white-space: nowrap; line-height: 1; }
+.vti-dw-unit-tag { font-size: 6.5px; font-weight: 800; color: #0891b2; background: rgba(6,182,212,.14); border-radius: 3px; padding: 1.5px 4px; text-transform: uppercase; border: 1px solid rgba(6,182,212,.25); }
+.vti-dw-auto-tag { font-size: 6.5px; font-weight: 800; color: #fff; letter-spacing: .04em; background: linear-gradient(135deg, #06b6d4, #0891b2); border-radius: 3px; padding: 2px 5px; text-transform: uppercase; box-shadow: 0 1px 4px rgba(6,182,212,.35); }
+.vti-dw-inp { border: none; padding: 0; background: transparent; width: 100%; outline: none; font-size: 13px; font-weight: 700; color: #0c4a6e; font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace; line-height: 1.3; }
+.vti-dw-inp::placeholder { color: rgba(6,182,212,.4); font-weight: 400; font-size: 12px; font-family:'DM Sans',system-ui,sans-serif; }
+.vti-dw-inp--auto { color: #0e7490; font-weight: 800; cursor: default; }
+.vti-dw-row2-inner { display: flex; align-items: stretch; gap: 0; border-top: 1px solid rgba(6,182,212,.15); padding: 0; background: linear-gradient(108deg, #f8fdff 0%, #fbfeff 50%, #ffffff 100%); }
+.vti-dw-mini-section { padding: 14px 18px; border-right: 1px solid rgba(6,182,212,.12); flex-shrink: 0; }
+.vti-dw-mini-section:last-child { border-right: none; flex: 1; }
+.vti-dw-mini-title { font-size: 8px; font-weight: 800; color: #0891b2; text-transform: uppercase; letter-spacing: .18em; margin-bottom: 12px; opacity: .7; }
+.vti-dw-flags { display: flex; gap: 8px; flex-wrap: nowrap; align-items: center; }
+.vti-flag-btn { display: inline-flex; align-items: center; gap: 7px; padding: 7px 16px; border-radius: 20px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all .18s; letter-spacing: .01em; position: relative; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.07), inset 0 1px 0 rgba(255,255,255,.8); }
+.vti-flag-btn::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(180deg, rgba(255,255,255,.45) 0%, transparent 100%); border-radius: 20px 20px 0 0; pointer-events: none; }
+.vti-flag-btn svg { flex-shrink: 0; transition: all .18s; }
+.vti-flag-btn.flag-hazardous { border: 1.5px solid rgba(245,158,11,.35); background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); color: #92400e; }
+.vti-flag-btn.flag-hazardous svg { color: #f59e0b; }
+.vti-flag-btn.flag-hazardous:hover { border-color: #f59e0b; background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); box-shadow: 0 4px 14px rgba(245,158,11,.28); transform: translateY(-2px); }
+.vti-flag-btn.flag-hazardous.is-active { border-color: #d97706; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #fff; font-weight: 700; box-shadow: 0 4px 16px rgba(245,158,11,.45), inset 0 1px 0 rgba(255,255,255,.2); }
+.vti-flag-btn.flag-hazardous.is-active svg { color: #fff; }
+.vti-flag-btn.flag-regulated { border: 1.5px solid rgba(99,102,241,.3); background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%); color: #3730a3; }
+.vti-flag-btn.flag-regulated svg { color: #6366f1; }
+.vti-flag-btn.flag-regulated:hover { border-color: #6366f1; background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%); box-shadow: 0 4px 14px rgba(99,102,241,.28); transform: translateY(-2px); }
+/* The drawer's remaining rules: flag tints, the stackable switch, and
+   the Advanced Details collapse. */
+
+.vti-flag-btn.flag-regulated.is-active { border-color: #4f46e5; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: #fff; font-weight: 700; box-shadow: 0 4px 16px rgba(99,102,241,.45), inset 0 1px 0 rgba(255,255,255,.2); }
+.vti-flag-btn.flag-regulated.is-active svg { color: #fff; }
+.vti-flag-btn.flag-coldchain { border: 1.5px solid rgba(6,182,212,.3); background: linear-gradient(135deg, #ecfeff 0%, #cffafe 100%); color: #0e7490; }
+.vti-flag-btn.flag-coldchain svg { color: #06b6d4; }
+.vti-flag-btn.flag-coldchain:hover { border-color: #06b6d4; background: linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%); box-shadow: 0 4px 14px rgba(6,182,212,.28); transform: translateY(-2px); }
+.vti-flag-btn.flag-coldchain.is-active { border-color: #0891b2; background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); color: #fff; font-weight: 700; box-shadow: 0 4px 16px rgba(6,182,212,.45), inset 0 1px 0 rgba(255,255,255,.2); }
+.vti-flag-btn.flag-coldchain.is-active svg { color: #fff; }
+.vti-flag-btn.flag-fragile { border: 1.5px solid rgba(244,63,94,.3); background: linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%); color: #9f1239; }
+.vti-flag-btn.flag-fragile svg { color: #f43f5e; }
+.vti-flag-btn.flag-fragile:hover { border-color: #f43f5e; background: linear-gradient(135deg, #ffe4e6 0%, #fecdd3 100%); box-shadow: 0 4px 14px rgba(244,63,94,.28); transform: translateY(-2px); }
+.vti-flag-btn.flag-fragile.is-active { border-color: #e11d48; background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%); color: #fff; font-weight: 700; box-shadow: 0 4px 16px rgba(244,63,94,.45), inset 0 1px 0 rgba(255,255,255,.2); }
+.vti-flag-btn.flag-fragile.is-active svg { color: #fff; }
+.vti-dw-mini-title-row { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.vti-dw-mini-title-row .vti-dw-mini-title { margin-bottom: 0; }
+.vti-flag-add-btn { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 5px; flex-shrink: 0; border: none; background: linear-gradient(135deg, #22d3ee, #0891b2); color: #fff; font-size: 12px; font-weight: 800; line-height: 1; padding: 0; cursor: pointer; transition: all .15s; box-shadow: 0 1px 4px rgba(8,145,178,.4), inset 0 1px 0 rgba(255,255,255,.3); }
+.vti-flag-add-btn:hover { background: linear-gradient(135deg, #0891b2, #0e7490); transform: scale(1.12) translateY(-1px); box-shadow: 0 3px 9px rgba(8,145,178,.5); }
+.vti-flag-btn.flag-custom-violet { border: 1.5px solid rgba(139,92,246,.3); background: linear-gradient(135deg,#f5f3ff,#ede9fe); color: #5b21b6; }
+.vti-flag-btn.flag-custom-violet:hover { border-color: #8b5cf6; background: linear-gradient(135deg,#ede9fe,#ddd6fe); box-shadow: 0 4px 14px rgba(139,92,246,.28); transform: translateY(-2px); }
+.vti-flag-btn.flag-custom-violet.is-active { border-color: #6d28d9; background: linear-gradient(135deg,#8b5cf6,#6d28d9); color: #fff; font-weight: 700; box-shadow: 0 4px 16px rgba(139,92,246,.45); }
+.vti-flag-btn.flag-custom-blue { border: 1.5px solid rgba(59,130,246,.3); background: linear-gradient(135deg,#eff6ff,#dbeafe); color: #1e40af; }
+.vti-flag-btn.flag-custom-blue:hover { border-color: #3b82f6; background: linear-gradient(135deg,#dbeafe,#bfdbfe); box-shadow: 0 4px 14px rgba(59,130,246,.28); transform: translateY(-2px); }
+.vti-flag-btn.flag-custom-blue.is-active { border-color: #1d4ed8; background: linear-gradient(135deg,#3b82f6,#1d4ed8); color: #fff; font-weight: 700; box-shadow: 0 4px 16px rgba(59,130,246,.45); }
+.vti-flag-btn.flag-custom-emerald { border: 1.5px solid rgba(16,185,129,.3); background: linear-gradient(135deg,#ecfdf5,#d1fae5); color: #065f46; }
+.vti-flag-btn.flag-custom-emerald:hover { border-color: #10b981; background: linear-gradient(135deg,#d1fae5,#a7f3d0); box-shadow: 0 4px 14px rgba(16,185,129,.28); transform: translateY(-2px); }
+.vti-flag-btn.flag-custom-emerald.is-active { border-color: #047857; background: linear-gradient(135deg,#10b981,#047857); color: #fff; font-weight: 700; box-shadow: 0 4px 16px rgba(16,185,129,.45); }
+.vti-flag-btn.flag-custom-orange { border: 1.5px solid rgba(249,115,22,.3); background: linear-gradient(135deg,#fff7ed,#ffedd5); color: #9a3412; }
+.vti-flag-btn.flag-custom-orange:hover { border-color: #f97316; background: linear-gradient(135deg,#ffedd5,#fed7aa); box-shadow: 0 4px 14px rgba(249,115,22,.28); transform: translateY(-2px); }
+.vti-flag-btn.flag-custom-orange.is-active { border-color: #c2410c; background: linear-gradient(135deg,#f97316,#c2410c); color: #fff; font-weight: 700; box-shadow: 0 4px 16px rgba(249,115,22,.45); }
+.vti-flag-btn.flag-custom-pink { border: 1.5px solid rgba(236,72,153,.3); background: linear-gradient(135deg,#fdf2f8,#fce7f3); color: #9d174d; }
+.vti-flag-btn.flag-custom-pink:hover { border-color: #ec4899; background: linear-gradient(135deg,#fce7f3,#fbcfe8); box-shadow: 0 4px 14px rgba(236,72,153,.28); transform: translateY(-2px); }
+.vti-flag-btn.flag-custom-pink.is-active { border-color: #be185d; background: linear-gradient(135deg,#ec4899,#be185d); color: #fff; font-weight: 700; box-shadow: 0 4px 16px rgba(236,72,153,.45); }
+.vti-flag-btn.flag-custom-slate { border: 1.5px solid rgba(100,116,139,.3); background: linear-gradient(135deg,#f8fafc,#f1f5f9); color: #334155; }
+.vti-flag-btn.flag-custom-slate:hover { border-color: #64748b; background: linear-gradient(135deg,#f1f5f9,#e2e8f0); box-shadow: 0 4px 14px rgba(100,116,139,.28); transform: translateY(-2px); }
+.vti-flag-btn.flag-custom-slate.is-active { border-color: #334155; background: linear-gradient(135deg,#64748b,#334155); color: #fff; font-weight: 700; box-shadow: 0 4px 16px rgba(100,116,139,.45); }
+.vti-flagcard { border: 1.5px solid #DEF1F7; border-radius: 15px; background: linear-gradient(180deg, #FBFEFF, #F3FBFD); box-shadow: 0 2px 10px -4px rgba(6,182,212,.12); padding: 17px 18px 18px; margin-bottom: 16px; }
+.vti-flagcard-hd { display: flex; align-items: center; gap: 9px; margin-bottom: 15px; }
+.vti-flagcard-hd-ico { width: 25px; height: 25px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #0891b2; background: linear-gradient(145deg, #EAF8FC, #D6F1F8); border: 1px solid rgba(8,145,178,.16); box-shadow: inset 0 1px 0 #fff; }
+.vti-flagcard-hd-t { font-size: 12.5px; font-weight: 800; color: #0c4a6e; letter-spacing: -.1px; }
+.vti-flagform-lbl { font-size: 9.5px; font-weight: 800; color: #5b94a8; text-transform: uppercase; letter-spacing: .09em; margin-bottom: 8px; }
+.vti-flagform-inpwrap { position: relative; margin-bottom: 16px; }
+.vti-flagform-inpwrap svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; }
+.vti-flagform-inp { width: 100%; height: 42px; padding: 0 14px 0 36px; border-radius: 11px; border: 1.5px solid #DEF1F7; font-family: inherit; font-size: 12.5px; font-weight: 600; color: #0f172a; background: #fff; transition: border-color .15s, box-shadow .15s; box-sizing: border-box; }
+.vti-flagform-inp:focus { outline: none; border-color: #06b6d4; box-shadow: 0 0 0 3px rgba(6,182,212,.14); }
+.vti-flagform-inp::placeholder { color: #b6c6cd; }
+.vti-flagclr-row { display: flex; gap: 11px; margin-bottom: 18px; }
+.vti-flagclr-sw { width: 29px; height: 29px; border-radius: 50%; border: 2px solid #fff; cursor: pointer; transition: all .18s cubic-bezier(.22,1,.36,1); box-shadow: 0 2px 6px rgba(0,0,0,.18), inset 0 1px 1px rgba(255,255,255,.4); display: flex; align-items: center; justify-content: center; padding: 0; position: relative; }
+.vti-flagclr-sw:hover { transform: scale(1.16) translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.25); }
+.vti-flagclr-sw.is-sel { box-shadow: 0 0 0 2px #fff, 0 0 0 4px currentColor, 0 4px 12px rgba(0,0,0,.25); transform: scale(1.08); }
+.vti-flagclr-sw svg { filter: drop-shadow(0 1px 1.5px rgba(0,0,0,.35)); }
+.vti-flagform-add { width: 100%; height: 40px; border-radius: 11px; border: none; display: inline-flex; align-items: center; justify-content: center; gap: 7px; background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%); color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer; letter-spacing: .01em; text-shadow: 0 1px 2px rgba(0,0,0,.15); box-shadow: 0 5px 18px rgba(6,182,212,.44), 0 1px 3px rgba(6,182,212,.2), inset 0 1px 0 rgba(255,255,255,.22); transition: all .18s; position: relative; overflow: hidden; }
+.vti-flagform-add::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(180deg, rgba(255,255,255,.2), transparent); border-radius: 11px 11px 0 0; }
+.vti-flagform-add:hover { background: linear-gradient(135deg, #0891b2 0%, #0e7490 50%, #155e75 100%); transform: translateY(-2px); box-shadow: 0 12px 30px rgba(6,182,212,.55), 0 2px 6px rgba(6,182,212,.2), inset 0 1px 0 rgba(255,255,255,.22); }
+.vti-flagrow-card { border: 1.5px solid #DEF1F7; border-radius: 15px; background: linear-gradient(180deg, #FBFEFF, #F3FBFD); box-shadow: 0 2px 10px -4px rgba(6,182,212,.12); overflow: hidden; }
+.vti-flagrow-list { display: flex; flex-direction: column; max-height: 230px; overflow-y: auto; }
+.vti-flagrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 15px; border-bottom: 1px solid #EAF5F9; }
+.vti-flagrow:last-child { border-bottom: none; }
+.vti-flagrow-chip { cursor: default; pointer-events: none; }
+.vti-flagrow-tag { font-size: 8.5px; font-weight: 800; color: #7a9aab; text-transform: uppercase; letter-spacing: .07em; flex-shrink: 0; background: #E7F5FA; padding: 3px 9px; border-radius: 999px; border: 1px solid #D5EBF2; }
+.vti-flagrow-del { display: inline-flex; align-items: center; justify-content: center; width: 25px; height: 25px; border-radius: 8px; border: 1.3px solid #fecaca; background: #fff; color: #dc2626; cursor: pointer; flex-shrink: 0; transition: all .15s; }
+.vti-flagrow-del:hover { background: #fef2f2; border-color: #dc2626; }
+.vti-flagrow-empty { padding: 20px 16px; text-align: center; font-size: 11.5px; font-weight: 600; color: #94a3b8; }
+.vti-stack-toggle { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px 6px 8px; border-radius: 20px; border: 1.5px solid #e2e8f0; background: #fff; font-size: 11px; font-weight: 700; color: #64748b; cursor: pointer; user-select: none; transition: all .18s; box-shadow: 0 1px 4px rgba(0,0,0,.06), inset 0 1px 0 rgba(255,255,255,.8); }
+.vti-stack-toggle:hover { border-color: #94a3b8; }
+.vti-stack-toggle .vti-stack-sw { width: 30px; height: 17px; border-radius: 999px; flex-shrink: 0; background: #cbd5e1; position: relative; transition: background .18s; }
+.vti-stack-toggle .vti-stack-knob { position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .18s; }
+.vti-stack-toggle.is-stack { border-color: #7dd3fc; color: #0369a1; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); }
+.vti-stack-toggle.is-stack .vti-stack-sw { background: linear-gradient(135deg, #38bdf8, #0284c7); }
+.vti-stack-toggle.is-stack .vti-stack-knob { transform: translateX(13px); }
+.vti-dw-conditions { display: flex; gap: 8px; align-items: stretch; flex-wrap: nowrap; }
+.vti-cond-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; flex: 0 0 auto; padding: 10px 28px; border-radius: 10px; font-size: 12px; font-weight: 700; border: 1.5px solid #e2e8f0; background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%); color: #94a3b8; cursor: pointer; transition: all .18s ease; white-space: nowrap; line-height: 1.25; box-shadow: 0 1px 4px rgba(15,23,42,.06), inset 0 1px 0 rgba(255,255,255,.95); position: relative; overflow: hidden; }
+.vti-cond-btn::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 45%; background: linear-gradient(180deg, rgba(255,255,255,.7) 0%, transparent 100%); border-radius: 10px 10px 0 0; pointer-events: none; }
+.vti-cond-btn-sub { font-size: 9.5px; font-weight: 500; opacity: .6; line-height: 1; }
+.vti-cond-perfect { border-color: rgba(34,197,94,.25); color: #15803d; }
+.vti-cond-perfect .vti-cond-btn-sub { color: #16a34a; opacity: .7; }
+.vti-cond-perfect:hover { border-color: #22c55e; color: #15803d; background: linear-gradient(145deg, #f0fdf4, #dcfce7); box-shadow: 0 5px 16px rgba(34,197,94,.18); transform: translateY(-2px); }
+.vti-cond-perfect.is-active { border-color: #16a34a; background: linear-gradient(145deg, #22c55e 0%, #16a34a 100%); color: #fff; font-weight: 800; box-shadow: 0 6px 20px rgba(34,197,94,.4), inset 0 1px 0 rgba(255,255,255,.25); }
+.vti-cond-perfect.is-active .vti-cond-btn-sub { opacity: .85; color: #bbf7d0; }
+.vti-cond-minor { border-color: rgba(234,179,8,.25); color: #854d0e; }
+.vti-cond-minor .vti-cond-btn-sub { color: #92400e; opacity: .7; }
+.vti-cond-minor:hover { border-color: #eab308; color: #854d0e; background: linear-gradient(145deg, #fefce8, #fef9c3); box-shadow: 0 5px 16px rgba(234,179,8,.18); transform: translateY(-2px); }
+.vti-cond-minor.is-active { border-color: #ca8a04; background: linear-gradient(145deg, #eab308 0%, #ca8a04 100%); color: #fff; font-weight: 800; box-shadow: 0 6px 20px rgba(234,179,8,.4), inset 0 1px 0 rgba(255,255,255,.25); }
+.vti-cond-minor.is-active .vti-cond-btn-sub { opacity: .85; color: #fef08a; }
+.vti-cond-major { border-color: rgba(249,115,22,.25); color: #9a3412; }
+.vti-cond-major .vti-cond-btn-sub { color: #c2410c; opacity: .7; }
+.vti-cond-major:hover { border-color: #f97316; color: #9a3412; background: linear-gradient(145deg, #fff7ed, #ffedd5); box-shadow: 0 5px 16px rgba(249,115,22,.18); transform: translateY(-2px); }
+.vti-cond-major.is-active { border-color: #ea580c; background: linear-gradient(145deg, #f97316 0%, #ea580c 100%); color: #fff; font-weight: 800; box-shadow: 0 6px 20px rgba(249,115,22,.4), inset 0 1px 0 rgba(255,255,255,.25); }
+.vti-cond-major.is-active .vti-cond-btn-sub { opacity: .85; color: #fed7aa; }
+.vti-cond-severe { border-color: rgba(239,68,68,.25); color: #991b1b; }
+.vti-cond-severe .vti-cond-btn-sub { color: #b91c1c; opacity: .7; }
+.vti-cond-severe:hover { border-color: #ef4444; color: #991b1b; background: linear-gradient(145deg, #fff1f2, #fee2e2); box-shadow: 0 5px 16px rgba(239,68,68,.18); transform: translateY(-2px); }
+.vti-cond-severe.is-active { border-color: #dc2626; background: linear-gradient(145deg, #ef4444 0%, #dc2626 100%); color: #fff; font-weight: 800; box-shadow: 0 6px 20px rgba(239,68,68,.4), inset 0 1px 0 rgba(255,255,255,.25); }
+.vti-cond-severe.is-active .vti-cond-btn-sub { opacity: .85; color: #fecaca; }
+.vti-dw-remarks { display: flex; gap: 8px; align-items: stretch; flex-wrap: nowrap; }
+.vti-rmk-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; flex: 1 1 0; min-width: 0; padding: 10px 10px; border-radius: 10px; font-size: 12px; font-weight: 700; border: 1.5px solid #e2e8f0; background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%); color: #94a3b8; cursor: pointer; transition: all .18s ease; text-align: center; line-height: 1.2; box-shadow: 0 1px 4px rgba(15,23,42,.06), inset 0 1px 0 rgba(255,255,255,.95); position: relative; overflow: hidden; }
+.vti-rmk-btn::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 45%; background: linear-gradient(180deg, rgba(255,255,255,.7) 0%, transparent 100%); border-radius: 10px 10px 0 0; pointer-events: none; }
+.vti-rmk-btn-sub { font-size: 9.5px; font-weight: 500; opacity: .6; line-height: 1; white-space: nowrap; }
+.vti-rmk-correct { border-color: rgba(34,197,94,.25); color: #15803d; }
+.vti-rmk-correct .vti-rmk-btn-sub { color:#16a34a; opacity:.7; }
+.vti-rmk-correct:hover { border-color:#22c55e; background:linear-gradient(145deg,#f0fdf4,#dcfce7); box-shadow:0 5px 16px rgba(34,197,94,.18); transform:translateY(-2px); }
+.vti-rmk-correct.is-active { border-color:#16a34a; background:linear-gradient(145deg,#22c55e 0%,#16a34a 100%); color:#fff; box-shadow:0 6px 20px rgba(34,197,94,.4), inset 0 1px 0 rgba(255,255,255,.25); }
+.vti-rmk-correct.is-active .vti-rmk-btn-sub { opacity:.85; color:#bbf7d0; }
+.vti-rmk-damaged { border-color: rgba(239,68,68,.25); color: #991b1b; }
+.vti-rmk-damaged .vti-rmk-btn-sub { color:#b91c1c; opacity:.7; }
+.vti-rmk-damaged:hover { border-color:#ef4444; background:linear-gradient(145deg,#fff1f2,#fee2e2); box-shadow:0 5px 16px rgba(239,68,68,.18); transform:translateY(-2px); }
+.vti-rmk-damaged.is-active { border-color:#dc2626; background:linear-gradient(145deg,#ef4444 0%,#dc2626 100%); color:#fff; box-shadow:0 6px 20px rgba(239,68,68,.4), inset 0 1px 0 rgba(255,255,255,.25); }
+.vti-rmk-damaged.is-active .vti-rmk-btn-sub { opacity:.85; color:#fecaca; }
+.vti-rmk-mismatch { border-color: rgba(249,115,22,.25); color: #9a3412; }
+.vti-rmk-mismatch .vti-rmk-btn-sub { color:#c2410c; opacity:.7; }
+.vti-rmk-mismatch:hover { border-color:#f97316; background:linear-gradient(145deg,#fff7ed,#ffedd5); box-shadow:0 5px 16px rgba(249,115,22,.18); transform:translateY(-2px); }
+.vti-rmk-mismatch.is-active { border-color:#ea580c; background:linear-gradient(145deg,#f97316 0%,#ea580c 100%); color:#fff; box-shadow:0 6px 20px rgba(249,115,22,.4), inset 0 1px 0 rgba(255,255,255,.25); }
+.vti-rmk-mismatch.is-active .vti-rmk-btn-sub { opacity:.85; color:#fed7aa; }
+.vti-rmk-extra { border-color: rgba(59,130,246,.28); color: #1e40af; }
+.vti-rmk-extra .vti-rmk-btn-sub { color:#2563eb; opacity:.7; }
+.vti-rmk-extra:hover { border-color:#3b82f6; background:linear-gradient(145deg,#eff6ff,#dbeafe); box-shadow:0 5px 16px rgba(59,130,246,.18); transform:translateY(-2px); }
+.vti-rmk-extra.is-active { border-color:#2563eb; background:linear-gradient(145deg,#3b82f6 0%,#2563eb 100%); color:#fff; box-shadow:0 6px 20px rgba(59,130,246,.4), inset 0 1px 0 rgba(255,255,255,.25); }
+.vti-rmk-extra.is-active .vti-rmk-btn-sub { opacity:.85; color:#bfdbfe; }
+.vti-dw-row2-inner > .vti-dw-mini-section { padding: 14px 16px; }
+.vti-dw-row2-inner > .vti-dw-mini-section:nth-child(1) { flex: 1.4 1 0; min-width: 0; }
+.vti-dw-row2-inner > .vti-dw-mini-section:nth-child(2) { flex: 1 1 0; min-width: 0; }
+.vti-dw-row2-inner > .vti-dw-mini-section:last-child  { flex: 0 0 auto; }
+.vti-dw-row2-inner .vti-dw-conditions .vti-cond-btn { flex: 1 1 0; min-width: 0; padding: 10px 6px; white-space: normal; }
+.vti-dw-adv-toggle .adv-chev { transition: transform .2s cubic-bezier(.22,1,.36,1); flex-shrink: 0; color: #06b6d4; opacity: .7; }
+.vti-dw-adv-toggle:hover { background: linear-gradient(102deg, #e6fafd 0%, #f4fbfd 50%, rgba(255,255,255,.7) 100%) !important; color: #0891b2; }
+.vti-dw-adv-toggle.is-open { background: linear-gradient(102deg, #e6fafd 0%, #f4fbfd 50%, rgba(255,255,255,.7) 100%) !important; color: #0891b2; border-bottom-color: rgba(6,182,212,.2); }
+.vti-dw-adv-toggle.is-open .adv-chev { transform: rotate(90deg); opacity: 1; }
+.vti-dw-adv-body { max-height: 0; overflow: hidden; transition: max-height .34s cubic-bezier(.22,1,.36,1); }
+.vti-dw-adv-body.is-open { max-height: 480px; }
+.vti-dw-adv-fields { padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 8px; background: transparent; }
+.vti-adv-line1 { display: grid; grid-template-columns: repeat(6,1fr); gap: 8px; }
+.vti-adv-line1 .vti-dw-field { padding: 10px 12px; }
+.vti-adv-line2 { display: flex; }
+.vti-adv-line2 .vti-dw-field { flex: 1; padding: 10px 12px; }
+.vti-s3-content .vti-dw-adv-fields { padding: 14px 18px 18px; }
+.vti-s3-content .vti-dw-adv-body.is-open { max-height: 480px; }
+.vti-dw-row2 { display: none; }
+.vti-btn-single.is-open { background:linear-gradient(135deg,#e0f9fd,#cffafe); border-color:#0891b2; color:#0891b2; box-shadow:0 2px 8px rgba(6,182,212,.22); }
+/* The scenario chip and lock states on a committed product row. */
+
+.vti-scn-lock { display:none; align-items:center; justify-content:center; gap:5px; margin:0 auto; width:fit-content; padding:5px 10px; border-radius:10px; border:1.5px dashed #CBD5E1; background:#F8FAFC; color:#94A3B8; font-size:10px; font-weight:800; letter-spacing:.02em; white-space:nowrap; cursor:not-allowed; user-select:none; transition:all .16s; }
+.vti-scn-lock.is-on { display:flex; }
+.vti-scn-lock svg { opacity:.7; flex-shrink:0; }
+.vti-scn-lock.is-cb { padding:4px 5px; border-radius:8px; }
+.vti-scn-lock:hover { border-color:#94A3B8; color:#64748B; background:#F1F5F9; }
+.vti-scn-lock.is-nudge { border-color:#F59E0B; color:#B45309; background:#FFFBEB; animation: vtiScnNudge .5s cubic-bezier(.36,.07,.19,.97); }
+.vti-scn-chip { display:none; align-items:center; gap:5px; margin-top:4px; padding:2px 7px 2px 6px; border-radius:20px; width:fit-content; cursor:pointer; background:linear-gradient(135deg,#ECFEFF,#DBF6FC); border:1px solid #A5E9F5; color:#0E7490; font-size:8.5px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; transition:all .16s; white-space:nowrap; }
+.vti-scn-chip.is-on { display:inline-flex; }
+.vti-scn-chip:hover { border-color:#0891B2; background:linear-gradient(135deg,#DBF6FC,#C6EFF8); }
+.vti-scn-chip-dot { width:4px; height:4px; border-radius:50%; background:#0891B2; flex-shrink:0; }
+.vti-scn-chip-x { font-size:10px; line-height:1; opacity:.55; font-weight:700; }
+.vti-scn-chip:hover .vti-scn-chip-x { opacity:1; }
+.vti-cb.is-indeterminate { background:linear-gradient(135deg,#22D3EE,#0891B2); border-color:#0891B2; box-shadow:0 0 0 2px rgba(6,182,212,.18); }
+.vti-cb.is-indeterminate::after { content:''; position:absolute; left:2.5px; top:5.2px; width:7px; height:0; border-bottom:2px solid #fff; border-left:none; transform:none; }
+.vti-cb.is-cb-disabled { opacity:.4; cursor:not-allowed; }
+.vti-cb.is-cb-disabled:hover { border-color:#BAE6FD; background:#F0FDFF; }
+/* ── Scenario 02: one product split across many boxes ───────────────────────
+   A scrollable strip of box tabs over one panel per box. The strip is the
+   piece that has to survive a large count: .vmb-tabs is a flex row with
+   overflow-x auto, so fifty tabs scroll rather than wrapping and pushing
+   the close button off the row.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.vmb-wrap { border: 1.5px solid rgba(6,182,212,.22); border-radius: 0 0 16px 16px; margin: 0 3px 14px; overflow: hidden; box-shadow: 0 8px 32px rgba(6,182,212,.12), 0 2px 8px rgba(0,0,0,.06); }
+.vmb-nav { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: linear-gradient(98deg, #0a5f75 0%, #0891b2 55%, #0fb8de 100%); border-bottom: 1px solid rgba(255,255,255,.1); flex-wrap: nowrap; }
+.vmb-nav-icon { width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0; background: rgba(255,255,255,.16); border: 1.5px solid rgba(255,255,255,.3); display: flex; align-items: center; justify-content: center; }
+.vmb-nav-left { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.vmb-nav-title { font-size: 12px; font-weight: 800; color: #fff; letter-spacing: -.2px; }
+.vmb-nav-sub { font-size: 9.5px; font-weight: 500; color: rgba(255,255,255,.65); margin-top: 2px; }
+.vmb-tabs { display: flex; gap: 4px; flex: 1; overflow-x: auto; scrollbar-width: none; padding: 2px 0; }
+.vmb-tabs::-webkit-scrollbar { display: none; }
+.vmb-tab { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 7px; flex-shrink: 0; border: 1.5px solid rgba(255,255,255,.2); background: rgba(255,255,255,.1); color: rgba(255,255,255,.75); font-size: 10.5px; font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap; }
+.vmb-tab:hover { background: rgba(255,255,255,.2); color: #fff; }
+.vmb-tab.is-active { background: rgba(255,255,255,.95); color: #0c4a6e; font-weight: 800; border-color: rgba(255,255,255,.9); box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.vmb-tab.is-saved { border-color: rgba(34,197,94,.6); }
+.vmb-tab-num { font-size: 10.5px; font-weight: 700; }
+.vmb-tab-qty { font-size: 9px; font-weight: 700; opacity: .7; background: rgba(255,255,255,.15); border-radius: 4px; padding: 1px 5px; }
+.vmb-tab.is-active .vmb-tab-qty { background: rgba(6,182,212,.12); color: #0891b2; opacity: 1; }
+.vmb-tab-chk { font-size: 9px; font-weight: 800; }
+.vmb-tab-chk.saved { color: #22c55e; }
+.vmb-tab.is-active .vmb-tab-chk.saved { color: #16a34a; }
+.vmb-close { flex-shrink: 0; padding: 5px 12px; border-radius: 7px; border: 1.5px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08); color: rgba(255,255,255,.75); font-size: 10.5px; font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap; }
+.vmb-close:hover { background: rgba(239,68,68,.3); border-color: rgba(239,68,68,.5); color: #fff; }
+.vmb-panel { display: none; }
+.vmb-panel.is-active { display: block; }
+.vmb-panel .vti-dw-body { padding-bottom: 16px; }
+/* Apply, once a split is committed. The prototype sets this inline from JS;
+   as a class it survives a re-render, which an inline style written onto the
+   DOM node does not. */
+.vti-btn-apply.is-done {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 3px 12px rgba(34, 197, 94, .32);
+}
+.vti-btn-apply.is-done:hover {
+  background: linear-gradient(135deg, #16a34a, #15803d);
+}
+
+/* ── Unlimited boxes ────────────────────────────────────────────────────────
+   The prototype refuses any count over 20, so it never meets this: a flex
+   item's automatic minimum size is its CONTENT size, so `flex: 1` with
+   `overflow-x: auto` does NOT shrink — at 96 tabs the strip measured 8075px
+   wide, pushed Close off the row and widened the whole table.
+
+   `min-width: 0` lets the item shrink below its content and lets the overflow
+   actually scroll. The nav and the wrap need it for the same reason: each is
+   a flex/table child that would otherwise be sized by what is inside it.
+   ──────────────────────────────────────────────────────────────────────── */
+.vmb-tabs { min-width: 0; }
+.vmb-nav { min-width: 0; }
+.vmb-nav-left { min-width: 0; flex-shrink: 0; }
+.vmb-close { flex-shrink: 0; }
+
+/* The panel sits in a <td>, and a table sizes itself to its cells. Without a
+   stated width the 96-tab strip would stretch the column it lives in. */
+.vti-multibox-container-row > td { max-width: 0; }
+.vmb-wrap { min-width: 0; }
+
+/* The Description column, carried over from step 02's 3-way match. The
+   prototype's box table has no such column, so this is its own rule rather
+   than a borrowed one.
+
+   The text is cut to 30 characters in the markup, not here: a CSS clamp cuts
+   at whatever happens to fit, so the column would say a different amount at
+   every viewport width. This only has to keep the one line on one line. */
+.vti-table td.vti-desc { text-align: left; }
+.vti-desc__wrap {
+  display: block;
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: #64748B;
+}
+
+/* Scenario 03: the selection bar above the table, and the count badge the
+   scenario card shows while products are picked. */
+
+.vti-selection-bar { display: none; align-items: center; justify-content: space-between; padding: 10px 18px; background: linear-gradient(98deg, #0a5f75 0%, #0891b2 55%, #0fb8de 100%); border-bottom: 1px solid rgba(6,182,212,.3); gap: 12px; animation: selBarIn .2s ease both; }
+.vti-selection-bar.is-visible { display: flex; }
+.pkg-card__use { display:none; align-items:center; gap:4px; margin-left:2px; padding:1px 7px; border-radius:20px; background:#ECFEFF; border:1px solid #A5E9F5; color:#0E7490; font-size:8.5px; font-weight:800; letter-spacing:.05em; }
+.pkg-card__use.is-on { display:inline-flex; }
+/* ── Packed Products ────────────────────────────────────────────────────────
+   The table a product moves into once its boxes are saved. It wears the same
+   vti-* chrome as the table above so a row reads identically after it moves;
+   only the three columns that are new to it are defined here.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* The table keeps the page's teal chrome. An all-green header was the first
+   attempt and it read as bolted on: every other surface in this wizard is
+   teal, so a second hue across a whole strip competes with the page rather
+   than placing this table inside it.
+
+   Completion is carried by the pieces that MEAN it — the tick in the icon,
+   the green "Packed" pill, and a thin accent along the card's top edge — so
+   the two tables are distinguishable at a glance without a second palette. */
+.invf-packed { margin-top: 10px; position: relative; }
+.invf-packed::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #34d399, #10b981 55%, #059669);
+  /* Sits above the header's own gradient but below its content. */
+  z-index: 1;
+  border-radius: 14px 14px 0 0;
+}
+/* A green tile on the teal strip: the one place the status is stated in
+   colour, where the tick already says it in shape. */
+.invf-packed .vti-header-ico {
+  background: linear-gradient(135deg, #34d399 0%, #10b981 55%, #059669 100%);
+  box-shadow: 0 0 0 2px rgba(16,185,129,.18), 0 2px 8px rgba(5,150,105,.28);
+}
+
+/* Which scenario produced the boxes: the number as a chip, the shape beside it. */
+.invf-scn-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 600; color: #0c4a6e; white-space: nowrap; }
+.invf-scn-tag__no { font-size: 8.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 20px; background: #F0FDFF; border: 1px solid rgba(8,145,178,.25); color: #0891b2; }
+
+/* The box list inside the More popup.
+
+   Each carton is a card the size of a Box Core Details field, not a pill:
+   the id and its unit count are two separate facts, and a pill crams them
+   onto one line small enough that a hundred of them read as noise.
+
+   A grid with a 148px floor rather than a flex wrap, so every card is the
+   same width and the rows line up as a table would -- with 124 boxes, ragged
+   rows are the difference between scanning and hunting. */
+.invf-boxlist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 8px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 2px;
+}
+.invf-boxchip {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1.5px solid rgba(6,182,212,.2);
+  background: linear-gradient(145deg, #f5fbfd 0%, #edf8fb 100%);
+  box-shadow: 0 1px 4px rgba(6,182,212,.06), inset 0 1px 0 rgba(255,255,255,.95);
+  transition: border-color .16s, box-shadow .16s, transform .16s;
+}
+.invf-boxchip:hover {
+  border-color: rgba(6,182,212,.5);
+  box-shadow: 0 4px 14px rgba(6,182,212,.14), inset 0 1px 0 #fff;
+  transform: translateY(-1px);
+}
+/* The id reads as the field's label; the count reads as its value. */
+.invf-boxchip__id {
+  font-size: 8px;
+  font-weight: 800;
+  color: #0891b2;
+  opacity: .75;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  line-height: 1;
+}
+.invf-boxchip__qty {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0c4a6e;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+/* An empty carton is drained of colour rather than tinted a warning one:
+   twenty-eight of them is a normal outcome of asking for more boxes than
+   units, not twenty-eight problems. */
+.invf-boxchip:has(.invf-boxchip__qty.is-empty) {
+  border-color: #E8EFF3;
+  background: linear-gradient(145deg, #fbfcfd 0%, #f5f7f9 100%);
+  box-shadow: none;
+}
+.invf-boxchip__qty.is-empty { color: #94A3B8; font-weight: 600; font-style: italic; }
+.invf-boxchip__shared { align-self: flex-start; font-size: 9px; font-weight: 800; padding: 2px 7px; border-radius: 20px; background: #FFF7ED; border: 1px solid #FED7AA; color: #c2410c; }
+
+/* ── Narrower screens ───────────────────────────────────────────────────────
+   The form is built for a wide desktop, but it is not usable only there. Each
+   rule below fixes something that genuinely breaks as the window narrows,
+   rather than restyling the page for small screens.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* The scenario card's count badge sits in the flow; its tag is positioned
+   absolutely at the top-right. With no room reserved for the tag the badge
+   runs straight under it, which is why "1 PRODUCT" and "STANDARD" collide.
+   The gutter is the tag's own width plus its offset. */
+.pkg-card__scenario { padding-right: 112px; }
+
+/* Three scenario cards need roughly 300px each. Below that they stop being
+   readable, so they stack -- and the body's fixed max-height has to grow with
+   them or the stack is clipped to the height of one row. */
+@media (max-width: 1080px) {
+  .pkg-box__body { grid-template-columns: 1fr; max-height: 620px; }
+  .pkg-card { border-right: none; border-bottom: 1px solid #E4EEF4; }
+  .pkg-card:last-child { border-bottom: none; }
+}
+
+/* The head strip wraps its reference pills onto a second line and pushes SPI
+   Payment and Close off the row. The pills scroll sideways instead: they are
+   reference, and the two actions must stay reachable. */
+@media (max-width: 1500px) {
+  .cpf-form .spi-dt-head { flex-wrap: nowrap; }
+  .cpf-form .spi-dt-pills {
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .cpf-form .spi-dt-pills::-webkit-scrollbar { display: none; }
+  .cpf-form .spi-dt-head-l,
+  .cpf-form .spi-dt-head-r { flex-shrink: 0; }
+}
+
+/* ── Table legibility ───────────────────────────────────────────────────────
+   Both box tables size their columns to content. A product name is the one
+   value long enough to wrap, and a wrapped name sets the height of the whole
+   row -- so it stays on one line and ends in an ellipsis instead.
+   ──────────────────────────────────────────────────────────────────────── */
+.vti-prod-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+/* The product column carries two or three lines of text in one cell, so it
+   needs a floor the other columns do not. */
+.vti-table th:nth-child(2),
+.vti-table td:nth-child(2) { min-width: 190px; }
+/* Packed Products has no checkbox, so its product column is the FIRST one. */
+.invf-packed .vti-table th:first-child,
+.invf-packed .vti-table td:first-child { min-width: 190px; }
+.invf-packed .vti-table th:nth-child(2),
+.invf-packed .vti-table td:nth-child(2) { min-width: 0; }
+/* Give the description room to earn its 30 characters in both tables. */
+.vti-table td.vti-desc { min-width: 210px; }
+
+/* The Description header must sit over its own text. Every other column in
+   this table is centred, and the description is the one left-aligned cell —
+   a centred header above left-aligned prose reads as a column out of step. */
+.vti-table th.vti-desc-h { text-align: left; }
+
+/* ── Product Flags dialog ───────────────────────────────────────────────────
+   Wears the shared .spi-mdl shell; only what a flag editor needs is here.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.invf-flags { width: 520px; max-width: calc(100vw - 32px); }
+.invf-flags__card { border: 1.5px solid #DEF1F7; border-radius: 14px; padding: 14px; background: linear-gradient(180deg, #FBFEFF, #F3FBFD); }
+.invf-flags__cardhd,
+.invf-flags__listhd { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 800; color: #0c4a6e; letter-spacing: -.2px; }
+.invf-flags__listhd { margin: 14px 0 8px; }
+.invf-flags__cardico { width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #0891b2; background: linear-gradient(145deg, #EAF8FC, #D6F1F8); border: 1px solid rgba(8,145,178,.14); }
+
+.invf-flags__lbl { display: block; margin: 12px 0 5px; font-size: 9.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #5b94a8; }
+.invf-flags__cardhd + .invf-flags__lbl { margin-top: 14px; }
+.invf-flags__field { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 10px; border: 1.5px solid #DEF1F7; background: #fff; transition: border-color .15s, box-shadow .15s; }
+.invf-flags__field:focus-within { border-color: #06b6d4; box-shadow: 0 0 0 3px rgba(6,182,212,.14); }
+.invf-flags__fieldico { color: #94A3B8; display: flex; flex-shrink: 0; }
+.invf-flags__inp { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-family: inherit; font-size: 12.5px; font-weight: 600; color: #0F172A; }
+.invf-flags__inp::placeholder { font-weight: 500; color: #94A3B8; }
+.invf-flags__err { margin-top: 6px; font-size: 10.5px; font-weight: 600; color: #dc2626; }
+
+.invf-flags__swatches { display: flex; gap: 10px; }
+.invf-flags__swatch { width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer; padding: 0; position: relative; transition: transform .15s, box-shadow .15s; }
+.invf-flags__swatch:hover { transform: scale(1.08); }
+/* The ring is the swatch's own colour, so the selected state reads at a
+   glance without a second hue competing with it. */
+.invf-flags__swatch.is-on { box-shadow: 0 0 0 3px #fff, 0 0 0 5.5px currentColor; }
+.invf-flags__swatch.is-on::after { content: ''; position: absolute; left: 12px; top: 10px; width: 7px; height: 12px; border-right: 2.5px solid #fff; border-bottom: 2.5px solid #fff; transform: rotate(45deg); }
+
+.invf-flags__add { width: 100%; margin-top: 14px; height: 42px; border: none; border-radius: 11px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: inherit; font-size: 12.5px; font-weight: 800; color: #fff; background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%); box-shadow: 0 5px 18px rgba(6,182,212,.4); transition: all .18s; }
+.invf-flags__add:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 10px 26px rgba(6,182,212,.5); }
+/* Dimmed rather than hidden: the button has to stay where it is, so its
+   position does not shift the moment a name is typed. */
+.invf-flags__add:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+
+.invf-flags__list { border: 1.5px solid #DEF1F7; border-radius: 14px; background: linear-gradient(180deg, #FBFEFF, #F3FBFD); padding: 10px 12px; max-height: 190px; overflow-y: auto; }
+.invf-flags__empty { padding: 16px 0; text-align: center; font-size: 11.5px; font-weight: 500; color: #94A3B8; }
+.invf-flags__row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.invf-flags__chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; border: 1.5px solid; font-size: 11px; font-weight: 700; }
+.invf-flags__del { margin-left: auto; width: 32px; height: 32px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; border: 1.5px solid #FECACA; background: #FEF2F2; color: #DC2626; transition: background .15s, border-color .15s; }
+.invf-flags__del:hover { background: #FEE2E2; border-color: #FCA5A5; }
+
+/* A custom flag on a box. The colour is inline because it is data. */
+.invf-flag-custom { border: 1.5px solid; }
+
+/* ── Uniform button height in the box drawer ────────────────────────────────
+   The prototype does this globally: a script tags every visible button whose
+   natural height falls between 22 and 52px and forces it to exactly 40px with
+   no vertical padding, skipping text links and on/off switches. That is why
+   every button in the design lines up.
+
+   Ported as CSS rather than a DOM pass — the same result without a
+   MutationObserver re-tagging nodes on every render — and scoped to the three
+   groups it actually governs, so the small icon buttons, the box tabs and the
+   Stackable switch keep the sizes they are meant to have. Measured against the
+   prototype: 40px for all three, where ours were 50 / 51 / 33.
+   ──────────────────────────────────────────────────────────────────────── */
+/* Three levels deep on purpose. The sheet already carries
+   ".vti-dw-row2-inner .vti-dw-conditions .vti-cond-btn" at (0,3,0) with its
+   own vertical padding; a (0,2,0) rule loses to it, leaving 10px top and
+   bottom inside a 40px box, which clips the button's second line. */
+.vti-dw-row2-inner .vti-dw-remarks .vti-rmk-btn,
+.vti-dw-row2-inner .vti-dw-conditions .vti-cond-btn,
+.vti-dw-row2-inner .vti-dw-flags .vti-flag-btn {
+  height: 40px;
+  min-height: 40px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* ── The drawer's identity strip, in full ───────────────────────────────────
+   An entire block the first CSS extraction missed: its selectors span several
+   lines, and the line-by-line scan only matched rules whose selector sat on
+   one line. Without it the toolbar buttons fell back to their base rules and
+   measured 28 / 17 / 19 / 32px against the design's uniform 40.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.vti-dw-strip { display: flex; align-items: stretch; width: 100%; min-height: 0; background: linear-gradient(98deg, #0a5f75 0%, #0c6e87 30%, #0e7d9a 55%, #0891b2 75%, #0aa8cc 88%, #0fb8de 95%, #14c0e4 100%); border-bottom: none; box-shadow: 0 4px 20px rgba(8,145,178,.45), 0 2px 6px rgba(8,145,178,.3), inset 0 1px 0 rgba(255,255,255,.15); position: relative; overflow: hidden; box-sizing: border-box; }
+.vti-dw-strip .vti-dw-toolbar { align-self: center; flex-shrink: 0; margin-left: auto; margin-right: 14px; gap: 9px; position: relative; z-index: 2; }
+.vti-dw-strip .vti-dw-strip-left { flex: 0 1 auto; }
+.vti-dw-strip .vti-dw-dim-label { color: rgba(255,255,255,.9); opacity: 1; text-shadow: 0 1px 2px rgba(0,0,0,.18); }
+.vti-dw-strip .vti-dw-icon-btn, .vti-dw-strip .vti-dw-save-btn, .vti-dw-strip .vti-dw-sticker-btn, .vti-dw-strip .vti-dw-unit-toggle { height: 40px; box-sizing: border-box; border-radius: 10px; margin-top: 0; margin-bottom: 0; flex-shrink: 0; }
+.vti-dw-strip .vti-dw-icon-btn, .vti-dw-strip .vti-dw-sticker-btn { display: inline-flex; align-items: center; gap: 7px; padding: 0 15px; font-family: inherit; font-size: 11.5px; font-weight: 700; letter-spacing: .01em; color: #fff; white-space: nowrap; cursor: pointer; background: linear-gradient(180deg, rgba(255,255,255,.22) 0%, rgba(255,255,255,.12) 100%); border: 1px solid rgba(255,255,255,.38); box-shadow: 0 2px 9px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.34); text-shadow: 0 1px 2px rgba(0,0,0,.2); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); transition: transform .16s ease, background .16s ease, box-shadow .16s ease, border-color .16s ease; }
+.vti-dw-strip .vti-dw-icon-btn svg, .vti-dw-strip .vti-dw-sticker-btn svg { opacity: .95; flex-shrink: 0; }
+.vti-dw-strip .vti-dw-icon-btn:hover, .vti-dw-strip .vti-dw-sticker-btn:hover { background: linear-gradient(180deg, rgba(255,255,255,.34) 0%, rgba(255,255,255,.2) 100%); border-color: rgba(255,255,255,.66); box-shadow: 0 6px 18px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.45); transform: translateY(-1px); }
+.vti-dw-strip .vti-dw-icon-btn:active, .vti-dw-strip .vti-dw-sticker-btn:active { transform: translateY(0); box-shadow: 0 2px 7px rgba(0,0,0,.18); }
+.vti-dw-strip .vti-dw-sticker-btn { margin: 0 18px 0 2px; padding: 0 17px; font-weight: 800; background: linear-gradient(180deg, rgba(255,255,255,.3) 0%, rgba(255,255,255,.16) 100%); border-color: rgba(255,255,255,.55); }
+.vti-dw-strip .vti-dw-toolbar + .vti-dw-sticker-btn { margin-left: 2px; margin-right: 18px; }
+.vti-dw-strip .vti-dw-save-btn { display: inline-flex; align-items: center; gap: 7px; padding: 0 19px; border: none; font-family: inherit; font-size: 11.5px; font-weight: 800; letter-spacing: .01em; color: #0e7490; white-space: nowrap; cursor: pointer; background: linear-gradient(180deg, #ffffff 0%, #e9fbff 100%); box-shadow: 0 3px 12px rgba(2,40,54,.28), inset 0 1px 0 #ffffff, inset 0 0 0 1px rgba(255,255,255,.6); text-shadow: none; transition: transform .16s ease, background .16s ease, box-shadow .16s ease; }
+.vti-dw-strip .vti-dw-save-btn svg { color: #0891b2; opacity: 1; flex-shrink: 0; }
+.vti-dw-strip .vti-dw-save-btn:hover { background: linear-gradient(180deg, #ffffff 0%, #d3f4ff 100%); box-shadow: 0 6px 20px rgba(2,40,54,.34), inset 0 1px 0 #ffffff; transform: translateY(-1px); }
+.vti-dw-strip .vti-dw-save-btn:active { transform: translateY(0); }
+.vti-dw-strip .vti-dw-save-btn.is-saved { color: #fff; background: linear-gradient(180deg, #34d399 0%, #059669 100%); box-shadow: 0 3px 12px rgba(5,150,105,.4), inset 0 1px 0 rgba(255,255,255,.3); }
+.vti-dw-strip .vti-dw-save-btn.is-saved svg { color: #fff; }
+.vti-dw-strip .vti-dw-unit-toggle { display: inline-flex; align-items: stretch; overflow: hidden; padding: 3px; gap: 2px; background: linear-gradient(180deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.08) 100%); border: 1px solid rgba(255,255,255,.34); box-shadow: inset 0 1px 0 rgba(255,255,255,.24); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.vti-dw-strip .vti-dw-unit-opt { display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; min-width: 34px; border: none; border-radius: 7px; font-family: inherit; font-size: 10.5px; font-weight: 800; letter-spacing: .05em; color: rgba(255,255,255,.82); background: transparent; cursor: pointer; transition: all .14s ease; }
+.vti-dw-strip .vti-dw-unit-opt:hover:not(.is-active) { background: rgba(255,255,255,.16); color: #fff; }
+.vti-dw-strip .vti-dw-unit-opt.is-active { background: #fff; color: #0e7490; box-shadow: 0 1px 5px rgba(2,40,54,.25); }
+/* ── Editable per-box quantity ──────────────────────────────────────────────
+   The strip's QUANTITY becomes a field on a split, so units can be moved
+   between cartons as they are filled.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.invf-qty-edit { gap: 4px; padding-right: 10px; }
+
+.invf-qty-inp {
+  width: 36px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+  text-align: right;
+  /* Figures keep their place as the count changes. */
+  font-variant-numeric: tabular-nums;
+  /* The browser's own spinner is replaced by the arrows beside it; left in,
+     it would sit on top of them. */
+  -moz-appearance: textfield;
+}
+.invf-qty-inp::-webkit-outer-spin-button,
+.invf-qty-inp::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.invf-qty-inp:focus { box-shadow: inset 0 -1.5px 0 rgba(255,255,255,.75); }
+
+/* Stacked arrows at the field's right edge, the shape of the Sub-Box Count
+   spinner. Drawn rather than left native: the browser's own is invisible
+   against this teal strip and shows only on hover. */
+.invf-qty-spin {
+  display: inline-flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 1px;
+  margin-right: 2px;
+}
+.invf-qty-spin__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 10px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: rgba(255,255,255,.72);
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.invf-qty-spin__btn:hover:not(:disabled) { background: rgba(255,255,255,.22); color: #fff; }
+/* Dimmed, not removed: an arrow that vanishes at zero moves the one above it
+   down under the cursor. */
+.invf-qty-spin__btn:disabled { opacity: .3; cursor: not-allowed; }
+.invf-qty-unit { flex-shrink: 0; }
+
+/* What is still unplaced, or placed twice over, said where the box count is.
+   Amber reads as "not finished"; red as "wrong", which over-allocating is. */
+.invf-alloc {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 20px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  color: #fff7ed;
+  background: rgba(251,146,60,.28);
+  border: 1px solid rgba(253,186,116,.55);
+}
+.invf-alloc.is-over { color: #fef2f2; background: rgba(239,68,68,.3); border-color: rgba(252,165,165,.6); }
+
+/* ── Temperature Range dialog ───────────────────────────────────────────────
+   Opened by the Cold Chain flag. Wears the shared .spi-mdl shell; only what a
+   temperature picker needs is here.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.invf-temp { width: 520px; max-width: calc(100vw - 32px); }
+.invf-temp__lbl { display: block; margin: 0 0 8px; font-size: 9.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #5b94a8; }
+.invf-temp__row + .invf-temp__lbl,
+.invf-temp__presets + .invf-temp__lbl { margin-top: 16px; }
+
+/* Two by two rather than a single row: four bands on one line leaves each too
+   narrow to show both its name and its limits. */
+.invf-temp__presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.invf-temp__preset {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 13px;
+  border-radius: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  border: 1.5px solid #CFFAFE;
+  background: #fff;
+  transition: border-color .15s, background .15s, transform .15s, box-shadow .15s;
+}
+.invf-temp__preset-name { font-size: 12px; font-weight: 800; }
+.invf-temp__preset-val { font-size: 10.5px; font-weight: 600; opacity: .72; font-variant-numeric: tabular-nums; }
+.invf-temp__preset:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(6,182,212,.18); }
+/* Cold to coldest, so the four bands are distinguishable at a glance rather
+   than by reading each one. */
+.invf-temp__preset--chilled { border-color: #A5F3FC; color: #0e7490; }
+.invf-temp__preset--cool    { border-color: #BAE6FD; color: #0369a1; }
+.invf-temp__preset--frozen  { border-color: #C7D2FE; color: #4338ca; }
+.invf-temp__preset--deep    { border-color: #DDD6FE; color: #6d28d9; }
+.invf-temp__preset.is-on { color: #fff; border-color: transparent; box-shadow: 0 5px 16px rgba(8,145,178,.3); }
+.invf-temp__preset--chilled.is-on { background: linear-gradient(135deg, #22d3ee, #0891b2); }
+.invf-temp__preset--cool.is-on    { background: linear-gradient(135deg, #38bdf8, #0284c7); }
+.invf-temp__preset--frozen.is-on  { background: linear-gradient(135deg, #818cf8, #4f46e5); }
+.invf-temp__preset--deep.is-on    { background: linear-gradient(135deg, #a78bfa, #7c3aed); }
+
+.invf-temp__row { display: flex; align-items: center; gap: 10px; }
+.invf-temp__to { font-size: 10.5px; font-weight: 700; color: #64748B; flex-shrink: 0; }
+.invf-temp__field {
+  display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0;
+  height: 40px; padding: 0 12px; border-radius: 10px;
+  border: 1.5px solid #DEF1F7; background: #fff;
+  transition: border-color .15s, box-shadow .15s;
+}
+.invf-temp__field:focus-within { border-color: #06b6d4; box-shadow: 0 0 0 3px rgba(6,182,212,.14); }
+.invf-temp__ico { color: #06b6d4; display: flex; flex-shrink: 0; }
+/* `min-width: 0` so the number can shrink inside the flex row rather than
+   forcing the field wider than its half of the line. */
+.invf-temp__inp {
+  flex: 1; min-width: 0; border: none; outline: none; background: transparent;
+  font-family: inherit; font-size: 12.5px; font-weight: 700; color: #0F172A;
+  font-variant-numeric: tabular-nums;
+}
+.invf-temp__inp::placeholder { font-weight: 500; color: #94A3B8; }
+.invf-temp__unit { font-size: 10.5px; font-weight: 700; color: #0891b2; flex-shrink: 0; }
+.invf-temp__err { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 10.5px; font-weight: 700; color: #dc2626; }
+.invf-temp__hint { margin-top: 10px; font-size: 10.5px; font-weight: 500; color: #64748B; }
+
+/* Dimmed rather than hidden, so the button does not move the moment a range
+   becomes valid. */
+.spi-mdl-confirm.is-off { opacity: .4; cursor: not-allowed; pointer-events: none; }
+
+/* ── Selected Products · the mixed carton's contents list ──────────────────
+   Eleven columns, because the identifiers are per product rather than per
+   box: a carton holding four SKUs holds four batches and four expiry dates.
+   It reuses the vti-* table wholesale; only the pieces that table has no
+   equivalent for are written here. */
+.invf-selprod { margin-top: 10px; }
+/* The row number: quiet, so it reads as an index and not as data. */
+.invf-selprod__no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+/* Narrow enough that eleven columns still fit, wide enough for "SN-00123". */
+.invf-selprod__in {
+  width: 100%;
+  min-width: 104px;
+  height: 28px;
+  padding: 4px 7px;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+/* A date input carries its own picker glyph, so it needs the extra room. */
+.invf-selprod__in[type="date"] { min-width: 122px; }
+/* Remarks is prose, not a code: room for a short sentence before it scrolls. */
+.invf-selprod__in--note { min-width: 190px; }
+.invf-selprod .vti-table td { vertical-align: middle; }
+
+.invf-selprod__clear,
+.invf-selprod__rm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all .14s;
+}
+/* Destructive, so it is outlined rather than filled — it empties the carton. */
+.invf-selprod__clear {
+  gap: 4px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  color: #dc2626;
+  background: #fff;
+  border: 1.5px solid #fecaca;
+  white-space: nowrap;
+}
+.invf-selprod__clear:hover { background: #fef2f2; border-color: #fca5a5; }
+.invf-selprod__rm {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: #dc2626;
+  background: #fff;
+  border: 1.5px solid #fecaca;
+}
+.invf-selprod__rm:hover { background: #fee2e2; border-color: #fca5a5; }

@@ -120,6 +120,11 @@ const P2P_LEAF: Record<string, string> = {
   '/p2p/case-to-case': 'p2p.case_to_case',
   '/p2p/purchase-order': 'p2p.po',
   '/p2p/supplier-purchase-invoice': 'p2p.spi',
+  // Invoice — the rebuilt supplier purchase invoice. It rides on the SPI grant
+  // rather than introducing a module row of its own: it is the same business
+  // object, so anyone who may see supplier invoices may see this one, and
+  // nobody has to be re-granted anything when it replaces the old page.
+  '/p2p/invoice': 'p2p.spi',
   '/p2p/debit-note': 'p2p.debit_note',
   // New Order module (static frontend data, no DB module row of its own) —
   // rides on the Purchase Order grant, same pattern as sales.sign_tracker.

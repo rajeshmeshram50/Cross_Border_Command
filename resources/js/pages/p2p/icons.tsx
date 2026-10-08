@@ -377,6 +377,41 @@ export const IcoBuilding = (p: IconProps) => (
   </Svg>
 );
 
+/** A pitched shed with a roller door — our own warehouse, not a generic building. */
+export const IcoWarehouse = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    <polyline points="9 22 9 12 15 12 15 22" />
+  </Svg>
+);
+
+/**
+ * A flight case whose divider runs the full height — a third-party logistics
+ * partner. Distinct from IcoBriefcase, whose handle sits only at the top; the
+ * two are used side by side, so the silhouettes have to differ at a glance.
+ */
+export const IcoCase = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="2" y="7" width="20" height="14" rx="2" />
+    <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+  </Svg>
+);
+
+/** A thermometer — a temperature a box or a zone has to hold. */
+export const IcoThermometer = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4 4 0 1 0 5 0z" />
+  </Svg>
+);
+
+/** A luggage tag with its eyelet — a reference this record hangs off. */
+export const IcoTag = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M20.59 13.41L13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+    <line x1="7" y1="7" x2="7.01" y2="7" />
+  </Svg>
+);
+
 /** A capital T — a reference / identifier field. */
 export const IcoText = (p: IconProps) => (
   <Svg {...p}>
