@@ -1369,6 +1369,8 @@ export default function AddProductModal(props: {
                         { label: 'Segment',      value: labelOf(optSegments, segmentId), node: (() => { const o = optSegments.find(x => x.value === segmentId); return o ? <SegmentBadgeLine label={String(o.extra?.name ?? o.label)} status={o.extra?.regulatory_status as string} /> : undefined; })() },
                         { label: 'Haz/Non-Haz',  value: hazType || '—' },
                         { label: 'UOM',          value: labelOf(optUoms, uomId) },
+                        { label: 'Cold Chain',   value: coldChain || '—' },
+                        { label: 'Temperature Range', value: coldChain === 'Yes' && coldChainMin !== '' && coldChainMax !== '' ? `${coldChainMin} to ${coldChainMax} °C` : '—' },
                       ],
                     },
                   ]}
