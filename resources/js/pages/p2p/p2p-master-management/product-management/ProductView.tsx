@@ -508,7 +508,7 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
                 Product Details
                 <Tooltip label={product.cold_chain ? 'Must be kept in cold chain within this temperature range' : 'Not a cold chain product'}>
                   <span className={`pv2pd-coldchain${product.cold_chain ? '' : ' pv2pd-coldchain--off'}`}>
-                    <i className="ri-snowflake-line" /> Cold chain {product.cold_chain && coldChainText !== 'Yes' ? coldChainText : '–'}
+                    <i className="ri-snowflake-line" /> {!product.cold_chain ? 'No cold chain' : `Cold chain${coldChainText !== 'Yes' ? ` ${coldChainText}` : ''}`}
                   </span>
                 </Tooltip>
               </div>

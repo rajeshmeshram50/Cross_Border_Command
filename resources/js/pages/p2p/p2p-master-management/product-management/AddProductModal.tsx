@@ -43,7 +43,6 @@ export type VendorEntry = {
 
 const HAZ_TYPES = ['Non-Haz', 'Haz'];
 const COLD_CHAIN_OPTIONS = ['No', 'Yes'];
-// Common cold-chain bands (°C) offered as one-click presets for the range.
 const COLD_CHAIN_PRESETS = [
   { label: 'Chilled',     min: 2,   max: 8 },
   { label: 'Cool',        min: 8,   max: 15 },
@@ -1520,16 +1519,11 @@ export default function AddProductModal(props: {
                             error={fieldErrors.coldChainTemp}
                             labelExtra={
                               <span className="apm-temp-presets">
+                                {/* Reference bands only — read-only, not clickable. */}
                                 {COLD_CHAIN_PRESETS.map(pr => (
-                                  <button
-                                    key={pr.label}
-                                    type="button"
-                                    className="apm-temp-chip"
-                                    disabled={coldChain !== 'Yes'}
-                                    onClick={() => { setColdChainMin(String(pr.min)); setColdChainMax(String(pr.max)); clearFieldError('coldChainTemp'); }}
-                                  >
+                                  <span key={pr.label} className="apm-temp-chip">
                                     <b>{pr.label}</b> {pr.min}…{pr.max}°C
-                                  </button>
+                                  </span>
                                 ))}
                               </span>
                             }
@@ -1571,7 +1565,7 @@ export default function AddProductModal(props: {
                         </div>
                       </div>
                       <div className="apm-coldchain-hint">
-                        Set whether this product needs cold chain and the minimum and maximum temperature it must be held at, or pick a preset.
+                        Set whether this product needs cold chain and the minimum and maximum temperature it must be held at.
                       </div>
                     </div>
                     <Field label="Confidential Info" icon={<i className="ri-lock-2-line" />}>
