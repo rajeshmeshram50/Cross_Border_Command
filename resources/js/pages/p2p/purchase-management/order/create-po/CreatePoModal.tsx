@@ -8,7 +8,7 @@ import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import type { PoLink } from './CreatePoForm';
 import { poLookupApi, type ShipmentOption } from '../api/po-api';
 import { useToast } from '../../../../../contexts/ToastContext';
-import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../../p2p-detail.css';
 import { IcoCheck, IcoChevronR, IcoDoc, IcoLink, IcoWarn, IcoX } from '../shared/icons';
 
 type PoMode = 'with' | 'without';

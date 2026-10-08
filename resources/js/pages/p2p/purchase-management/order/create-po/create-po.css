@@ -1,7 +1,7 @@
 /* ─────────────────────────────────────────────────────────────────────────
  * Create PO form — only the bits that differ from the shared P2P wizard.
  * Everything else (overlay, header strip, pills, stage cards, fields, footer)
- * comes from the shared spi-dt-* styles in supplier-purchase-invoice.css.
+ * comes from the shared spi-dt-* styles in p2p-detail.css.
  * ───────────────────────────────────────────────────────────────────────── */
 
 /* SPI has 2 stages, this form has 4. Row spacing follows the prototype's
@@ -57,7 +57,7 @@
    Written with both classes. `.spi-dt-grid4` sets four columns at the same
    single-class specificity, and every page carrying this row — the purchase
    order, the supplier invoice and the payment request — loads
-   supplier-purchase-invoice.css after this file, so `.cpf-grid5` on its own
+   p2p-detail.css after this file, so `.cpf-grid5` on its own
    never won and Supplier Category dropped to a row of its own. The plain
    selector stays for anywhere the row is used without the shared grid.
 
@@ -211,7 +211,7 @@
 
    The class is doubled to make it (0,2,0). It is applied alongside
    `.spi-dt-legal-badge`, which sets `margin-left: 9px` at the same single-class
-   specificity from supplier-purchase-invoice.css — a file that loads after this
+   specificity from p2p-detail.css — a file that loads after this
    one wherever both are used. At (0,1,0) this rule lost, the badge kept its 9px
    and the whole group (badge, vault button, progress bar, percentage, chevron)
    stayed packed against the title with the right half of the header empty.

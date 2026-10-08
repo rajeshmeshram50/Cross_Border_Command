@@ -8,7 +8,7 @@ import {
   Box, HeroRefChips, ICON_X, PoSummaryCards, TdsStrip, initials, moneyIn, rowBreakdown, shortDate,
 } from './payment-shared';
 import { FitTip } from '../create-po/form-fields';
-import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../../p2p-detail.css';
 import './manage-payment-requests.css';
 import './make-po-payment.css';
 

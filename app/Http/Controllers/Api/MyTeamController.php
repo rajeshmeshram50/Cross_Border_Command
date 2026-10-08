@@ -230,7 +230,7 @@ class MyTeamController extends Controller
      */
     private function pendingLeaveRequests($user): array
     {
-        $myEmployeeId = $user->employee_id ?: Employee::where('user_id', $user->id)->value('id');
+        $myEmployeeId = $user->employee_id;
 
         $q = LeaveRequest::query()
             ->with([
@@ -315,7 +315,7 @@ class MyTeamController extends Controller
      */
     private function pendingExpenseClaims($user): array
     {
-        $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
+        $myEmployeeId = $user->employee_id;
         $canHrApprove = $this->userCanHrApproveExpense($user);
         if (!$myEmployeeId && !$canHrApprove) return [];
 
@@ -435,7 +435,7 @@ class MyTeamController extends Controller
      */
     private function actedExpenseClaims($user): array
     {
-        $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
+        $myEmployeeId = $user->employee_id;
         $uid = (int) $user->id;
 
         // History = claims THIS user personally acted on — either as the
@@ -523,7 +523,7 @@ class MyTeamController extends Controller
      */
     private function pendingAdvanceRequests($user): array
     {
-        $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
+        $myEmployeeId = $user->employee_id;
         $canHrApprove = $this->userCanHrApproveExpense($user);
         if (!$myEmployeeId && !$canHrApprove) return [];
 
@@ -640,7 +640,7 @@ class MyTeamController extends Controller
      */
     private function actedAdvanceRequests($user): array
     {
-        $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
+        $myEmployeeId = $user->employee_id;
         $uid = (int) $user->id;
 
         // History = advances THIS user personally acted on (manager stage, or
@@ -728,7 +728,7 @@ class MyTeamController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
+        $myEmployeeId = $user->employee_id;
         if (!$myEmployeeId) {
             return response()->json(['updates' => []]);
         }
@@ -962,7 +962,7 @@ class MyTeamController extends Controller
             // `team_peers` query uses this same lookup, which is why the
             // dashboard rendered the team correctly while this surface
             // didn't.
-            $myEmpId = Employee::where('user_id', $user->id)->value('id');
+            $myEmpId = $user->employee_id;
             if (!$myEmpId) { $q->whereRaw('1=0'); return; }
             $q->where('reporting_manager_id', $myEmpId);
             return;

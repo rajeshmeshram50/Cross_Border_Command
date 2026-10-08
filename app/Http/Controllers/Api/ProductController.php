@@ -6,8 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\LeadProduct;
 use App\Models\ProformaInvoiceItem;
-use App\Models\PurchaseOrderItem;
-use App\Models\SupplierPurchaseInvoiceItem;
 use App\Models\Masters\Conditions;
 use App\Models\Masters\GstPercentage;
 use App\Models\Masters\HazClass;
@@ -276,9 +274,9 @@ class ProductController extends Controller
 
         return [
             'po' => $codes(
-                PurchaseOrderItem::query()->where('purchase_order_items.product_id', $product->id),
-                'purchase_orders',
-                'purchase_order_items.purchase_order_id',
+                \App\Models\P2p\PurchaseOrderItem::query()->where('p2p_purchase_order_items.product_id', $product->id),
+                'p2p_purchase_orders',
+                'p2p_purchase_order_items.purchase_order_id',
                 true,
             ),
             'pi' => $codes(
@@ -287,12 +285,11 @@ class ProductController extends Controller
                 'proforma_invoice_items.proforma_invoice_id',
                 false,
             ),
-            'spi' => $codes(
-                SupplierPurchaseInvoiceItem::query()->where('supplier_purchase_invoice_items.product_id', $product->id),
-                'supplier_purchase_invoices',
-                'supplier_purchase_invoice_items.supplier_purchase_invoice_id',
-                true,
-            ),
+            /* The Supplier Purchase Invoice module was removed, so nothing can
+               hold a product that way any more. The key stays and answers empty
+               rather than going, because the UI and the GST lock both read it
+               by name and an absent key would read as an error, not as none. */
+            'spi' => collect(),
         ];
     }
 
@@ -639,6 +636,9 @@ class ProductController extends Controller
             'condition_id'          => 'nullable|integer',
             'packaging_material_id' => 'nullable|integer',
             'confidential_info'     => 'nullable|string|max:2000',
+            'cold_chain'            => 'nullable|boolean',
+            'cold_chain_temp_min'   => 'nullable|required_if_accepted:cold_chain|numeric|between:-100,100',
+            'cold_chain_temp_max'   => 'nullable|required_if_accepted:cold_chain|numeric|between:-100,100|gte:cold_chain_temp_min',
             // GST is mapped at creation time now: a new product is only committed
             // once its GST % is chosen (the "Map GST" popup that opens on Save &
             // Next). Persisted here so the product is never listed without a GST.
@@ -694,6 +694,12 @@ class ProductController extends Controller
             $product->fill($ownership);
             $product->product_code = $this->nextProductCode($ownership['client_id'], $ownership['branch_id']);
             $product->status = 'draft';
+        }
+
+        if (array_key_exists('cold_chain', $data) && !$data['cold_chain']) {
+            $data['cold_chain'] = false;
+            $data['cold_chain_temp_min'] = null;
+            $data['cold_chain_temp_max'] = null;
         }
 
         // Apply scalar fields first (everything except the image inputs which

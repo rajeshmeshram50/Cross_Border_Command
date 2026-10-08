@@ -124,11 +124,8 @@ const LEAF_DESC: Record<string, string> = {
   "p2p.supplier": "Manage supplier onboarding & compliance.",
   "p2p.bulk_sourcing": "Manage bulk sourcing requests.",
   "p2p.case_to_case": "Manage request-based sourcing.",
-  "p2p.po": "Create & track purchase orders.",
-  "p2p.spi": "Process supplier invoices & taxes.",
+  "p2p.order": "Create & track purchase orders.",
   "p2p.invoice": "Capture supplier invoices, match against POs, and track payment.",
-  "p2p.debit_note": "Issue & track supplier debit notes for returns & adjustments.",
-  "p2p.order": "New purchase order module (in development).",
   "p2p.payment_request": "Review and action every pending PO payment request.",
   "p2p.advance_refund": "Adjust refunds against advances already released.",
 };
@@ -235,10 +232,7 @@ const p2pLeafLink = (leafId: string): string => {
     case "p2p.diagnosis":     return "/p2p/diagnosis";
     case "p2p.bulk_sourcing": return "/p2p/bulk-sourcing";
     case "p2p.case_to_case":  return "/p2p/case-to-case";
-    case "p2p.po":            return "/p2p/purchase-order";
-    case "p2p.spi":           return "/p2p/supplier-purchase-invoice";
     case "p2p.invoice":       return "/p2p/invoice";
-    case "p2p.debit_note":    return "/p2p/debit-note";
     case "p2p.order":         return "/p2p/order";
     case "p2p.payment_request": return "/p2p/payment-request";
     case "p2p.advance_refund":  return "/p2p/advance-refund-adjustment";
@@ -383,7 +377,7 @@ const Navdata = () => {
           // leaf) — same pattern as sales.sign_tracker.
           .filter((c) => isSuperAdmin || perms[c.id]?.can_view
             || (c.id === 'hr.devices' && !!perms['hr.attendance']?.can_view)
-            || (c.id === 'p2p.advance_refund' && !!perms['p2p.po']?.can_view))
+            || (c.id === 'p2p.advance_refund' && !!perms['p2p.order']?.can_view))
           .map((c) => ({
             id: c.id,
             label: c.label,
@@ -419,7 +413,7 @@ const Navdata = () => {
             // so it rides on the Quotation Vs PI permission.
             if (c.id === 'sales.sign_tracker') return !!perms['sales.quotation_vs_pi']?.can_view;
             // Order has no DB module row — it rides on the Purchase Order grant.
-            if (c.id === 'p2p.advance_refund') return !!perms['p2p.po']?.can_view;
+            if (c.id === 'p2p.advance_refund') return !!perms['p2p.order']?.can_view;
             return !!perms[c.id]?.can_view;
           })
           .map((c) => ({

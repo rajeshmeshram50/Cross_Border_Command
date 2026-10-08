@@ -45,7 +45,7 @@ const SupplierEvidenceVaultModal = lazy(() => import('../../p2p-master-managemen
 const AddVendorModal = lazy(() => import('../../p2p-master-management/supplier-management/AddVendorModal'));
 import PaymentRequestDecisionModal, { type DecisionMode } from './PaymentRequestDecisionModal';
 import type { PaymentRequestRow } from './paymentRequestData';
-import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../p2p-detail.css';
 import '../../purchase-management/order/po-list/order.css';
 import '../../purchase-management/order/create-po/create-po.css';
 import '../../purchase-management/order/physical-inspection/physical-inspection.css';

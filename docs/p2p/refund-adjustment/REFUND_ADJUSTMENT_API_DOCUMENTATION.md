@@ -8,6 +8,18 @@ scoped; identity fields come from the authenticated user, never the body.
 Controller: `App\Http\Controllers\Api\P2p\PoRefundAdjustmentController`
 Prefix: **`/api/p2p/orders/refund-adjustments`**
 
+**Authorisation.** Every method calls `tenantUser()`, which needs a `client_id`
+and otherwise returns `403 — No tenant context`. There is **no role test and no
+module-permission test** anywhere in this controller: any authenticated user
+inside the tenant can raise an adjustment, log recoveries, edit, delete and
+sync. The menu leaf `p2p.advance_refund` is permission-gated in the UI only, so
+hiding it does not stop these endpoints answering. Recorded as a finding.
+
+**There is no approval endpoint, because there is no approval step.** `POST
+/refund-adjustments` takes effect immediately — it cancels the PO, declines its
+pending payment requests and releases its PI lines in one transaction. No
+draft, no pending state, no undo.
+
 **Envelope**
 
 ```json
@@ -26,6 +38,26 @@ Saving **never** calls Zoho. Syncing is a separate, explicit action.
 ---
 
 ## 1. Picking a PO
+
+### `GET /p2p/orders/refund-adjustments/eligible-pos`
+
+Three conditions, all of them, and nothing else:
+
+```php
+paid_amount > 0                   // there is money to get back
+AND status <> 'cancelled'         // not already dead
+AND whereDoesntHave('refundAdjustment')   // one per PO, ever
+```
+
+| Query | Rule |
+|---|---|
+| `search` | ≤ 100 chars — PO code, or the supplier's company / legal name |
+
+Returns the **50 most recent** matches, newest first. Each row carries
+`paid_amount` **and `currency_code`**, because the paid figure is in the
+order's own currency and the picker has to say which.
+
+A PO absent from this list is absent for one of exactly those three reasons.
 
 ### `GET /p2p/orders/refund-adjustments/eligible-pos`
 POs that can take an adjustment: not cancelled, `paid_amount > 0`, and no
@@ -154,12 +186,49 @@ otherwise       → status = pending    → po.cancel_stage = initiated
 
 ## 6. Zoho Books
 
-### `POST /p2p/orders/refund-adjustments/{id}/zoho-sync`
-Pushes the adjustment as a **Vendor Credit**.
+> **Corrected.** An earlier version described these as pushing one record each,
+> and said the vendor credit "must exist first". Neither is how they behave.
 
+### `POST /p2p/orders/refund-adjustments/{id}/zoho-sync`
 ### `POST /p2p/orders/refund-adjustments/{id}/recoveries/{rec}/zoho-sync`
-Pushes one recovery as a **Vendor Credit Refund**. The vendor credit must exist
-first.
+
+**Both call `PoZohoService::syncAll()` on the parent PO.** They are the same
+operation reached from two places, and each walks the entire chain in order:
+
+```
+1. Purchase Order   →  Zoho Purchase Order
+2.                  →  Zoho Bill
+3. Payments         →  Vendor Payments applied to that bill
+4. The adjustment   →  Vendor Credit
+5. Each recovery    →  Vendor Credit Refund
+```
+
+> *"Same chain as every other Zoho Sync button, so this refund can never land
+> before the PO, its bill, its payments and the vendor credit are there."*
+
+So **ordering is automatic** — there is no need to sync the credit before the
+recoveries, and no endpoint requires `zoho_vendorcredit_id` to be present
+beforehand. Anything already carrying a Zoho id is skipped, so either call is
+safe to repeat.
+
+| Call | What is actually pushed |
+|---|---|
+| `{id}/zoho-sync` | The PO, its bill, its payments, the credit **and every recovery** |
+| `{id}/recoveries/{rec}/zoho-sync` | Exactly the same |
+
+The recovery route adds one check **after** the chain has run. If that
+particular refund still has no Zoho id, it reports failure rather than success:
+
+> *"This refund was not posted to Zoho Books — try again."*
+
+Both return `200` with the refreshed detail and a message built from
+`PoZohoService::summary()`. A `RuntimeException` from `preflight()` — missing
+vendor contact, missing GSTIN, a tax absent from Zoho, a currency mismatch —
+comes back as `422` with that message.
+
+**Because the whole chain runs, a failure anywhere stops the step you wanted.**
+A refund will not post if the PO's bill cannot be created, and the message will
+be about the bill.
 
 Both are driven from the list's **Zoho Sync** column. Saving never calls Zoho.
 

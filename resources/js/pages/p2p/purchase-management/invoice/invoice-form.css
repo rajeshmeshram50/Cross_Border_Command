@@ -47,7 +47,7 @@
    has two stages, and `.cpf-steps4` overrides it to four. Both are a single
    class, so the winner is whichever stylesheet lands later — and in the build
    it is the SPI one, whatever order this file's imports are written in, since
-   supplier-purchase-invoice.css is pulled in by a dozen other modules too.
+   p2p-detail.css is pulled in by a dozen other modules too.
    That is why the four cards were dropping onto a second row.
 
    Carrying both classes makes this (0,2,0) and settles it by specificity

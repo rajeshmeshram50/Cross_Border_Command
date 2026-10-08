@@ -29,16 +29,19 @@ type Leaf = { id: string; label: string; icon?: string };
  *
  *  · sign_tracker   — a read-only view of the same sign requests as Quotation Vs PI
  *  · hr.devices     — biometric terminals, part of Attendance
- *  · advance_refund — no DB module row; rides on the PO grant
- *  · p2p.invoice    — the rebuilt supplier purchase invoice: the same business
- *                     object as SPI, so whoever may see supplier invoices may
- *                     see this one, and nobody has to be re-granted anything.
+ *  · advance_refund — no DB module row; rides on the Purchase Order grant
+ *  · p2p.invoice    — the rebuilt supplier purchase invoice, part of the same
+ *                     business object, so nobody has to be re-granted anything
+ *
+ * The last two rode on p2p.po and p2p.spi until those modules were removed with
+ * the screens they belonged to; their grants were carried over to p2p.order, so
+ * both follow it now and the same people keep access.
  */
 const PERM_ALIAS: Record<string, string> = {
   'sales.sign_tracker': 'sales.quotation_vs_pi',
   'hr.devices': 'hr.attendance',
-  'p2p.advance_refund': 'p2p.po',
-  'p2p.invoice': 'p2p.spi',
+  'p2p.advance_refund': 'p2p.order',
+  'p2p.invoice': 'p2p.order',
 };
 
 const permSlugFor = (leafId: string): string => PERM_ALIAS[leafId] ?? leafId;
@@ -113,11 +116,9 @@ const LEAF_DESC: Record<string, string> = {
   'p2p.supplier': 'Manage supplier onboarding & compliance.',
   'p2p.bulk_sourcing': 'Manage bulk sourcing requests.',
   'p2p.case_to_case': 'Manage request-based sourcing.',
-  'p2p.po': 'Create & track purchase orders.',
-  'p2p.spi': 'Process supplier invoices & taxes.',
+  'p2p.order': 'Create & track purchase orders.',
   'p2p.invoice': 'Capture supplier invoices, match against POs, and track payment.',
-  'p2p.debit_note': 'Issue & track supplier debit notes for returns & adjustments.',
-  'p2p.order': 'New purchase order module (in development).',
+
   'p2p.payment_request': 'Review and action every pending PO payment request.',
   'p2p.advance_refund': 'Adjust refunds against advances already released.',
 };
@@ -199,10 +200,7 @@ function p2pLeafPath(id: string): string {
     case 'p2p.diagnosis':     return '/p2p/diagnosis';
     case 'p2p.bulk_sourcing': return '/p2p/bulk-sourcing';
     case 'p2p.case_to_case':  return '/p2p/case-to-case';
-    case 'p2p.po':            return '/p2p/purchase-order';
-    case 'p2p.spi':           return '/p2p/supplier-purchase-invoice';
     case 'p2p.invoice':       return '/p2p/invoice';
-    case 'p2p.debit_note':    return '/p2p/debit-note';
     case 'p2p.order':         return '/p2p/order';
     case 'p2p.payment_request': return '/p2p/payment-request';
     case 'p2p.advance_refund':  return '/p2p/advance-refund-adjustment';
@@ -571,7 +569,8 @@ export default function IdimsHeader() {
         colsFor(item.dd).flat().forEach(g => {
           g.children.forEach(leaf => {
             // Same alias map the menu uses, so a leaf that is enabled in the
-            // dropdown is also findable in search.
+            // dropdown is also findable in search. PERM_ALIAS carries every
+            // case the inline checks used to spell out, Advance Refund included.
             const visible = isSuperAdmin || !!perms[permSlugFor(leaf.id)]?.can_view;
             if (!visible) return;
             out.push({ id: leaf.id, label: leaf.label, parent: item.label, path: leafPath(leaf.id, item.dd!), icon: item.icon });
@@ -852,7 +851,15 @@ export default function IdimsHeader() {
                 <button type="button" className="idims-action-btn" title="Notifications"
                   onClick={() => { closeMenus(); setNotifOpen(true); }}>
                   {IC.bell}
-                  {(!!notifCount.count || !!user?.inbox_count) && <span className="idims-action-badge" />}
+                  {/* Unread only, in red. A count that stayed on the bell after
+                      everything was read gave nothing to act on; the point of the
+                      badge is that something is waiting. */}
+                  {notifCount.count > 0 && (
+                    <span className="idims-action-count"
+                          title={`${notifCount.count} unread notification${notifCount.count === 1 ? '' : 's'}`}>
+                      {notifCount.count > 99 ? '99+' : notifCount.count}
+                    </span>
+                  )}
                 </button>
                 <button type="button" className="idims-action-btn idims-logout-btn" title="Logout" onClick={() => { closeMenus(); setLogoutOpen(true); }}>
                   {IC.logout}
@@ -1321,6 +1328,10 @@ const IDIMS_CSS = `
 .idims-logout-btn:hover { background: #FFF1F2; color: #E11D48; }
 .idims-action-btn svg { width: 18px; height: 18px; display: block; }
 .idims-action-badge { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: #7C3AED; border: 2px solid #fff; }
+/* Unread notifications, counted. Red and lifted off the icon, so it reads from
+   across the room rather than being mistaken for part of the bell. */
+.idims-action-count { position: absolute; top: 1px; right: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #E11D48; color: #fff; font-size: 9.5px; font-weight: 800; line-height: 1; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(225,29,72,.45); }
+[data-bs-theme="dark"] .idims-action-count { border-color: #1b2733; }
 .idims-action-sep { width: 1px; height: 20px; flex-shrink: 0; background: #E7EAF3; }
 
 /* Profile */

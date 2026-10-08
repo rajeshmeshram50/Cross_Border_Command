@@ -119,12 +119,10 @@ const PublicOnboarding = lazyPage(() => import('../pages/PublicOnboarding'));
 const ClockIn = lazyPage(() => import('../pages/ClockIn'));
 const ModuleStubPage = lazyPage(() => import('../pages/ModuleStubPage'));
 const P2pBulkSourcing = lazyPage(() => import('../pages/p2p/procurement-management/bulk-sourcing/P2pBulkSourcing'));
-const PurchaseOrder = lazyPage(() => import('../pages/p2p/procurement-management/purchase-order/PurchaseOrder'));
 const DevTools = lazyPage(() => import('../pages/dev-tools/DevTools'));
-const SupplierPurchaseInvoice = lazyPage(() => import('../pages/p2p/purchase-management/supplier-purchase-invoice/SupplierPurchaseInvoice'));
-const DebitNote = lazyPage(() => import('../pages/p2p/purchase-management/debit-note/DebitNote'));
-/* Invoice — the rebuilt supplier purchase invoice. Independent of the
-   SupplierPurchaseInvoice module above; neither imports the other. */
+/* Invoice — the rebuilt supplier purchase invoice, and now the only one: the
+   screen it replaced was removed along with Debit Note and the old Purchase
+   Order page. */
 const Invoice = lazyPage(() => import('../pages/p2p/purchase-management/invoice/InvoiceList'));
 const Order = lazyPage(() => import('../pages/p2p/purchase-management/order/po-list/Order'));
 const PoGstApprovalReview = lazyPage(() => import('../pages/p2p/purchase-management/order/gst-approval/PoGstApprovalReview'));
@@ -955,9 +953,6 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/p2p/diagnosis" element={<ModuleStubPage />} />
               <Route path="/p2p/bulk-sourcing" element={<P2pBulkSourcing />} />
               <Route path="/p2p/case-to-case" element={<ModuleStubPage />} />
-              <Route path="/p2p/purchase-order" element={<PurchaseOrder />} />
-              <Route path="/p2p/supplier-purchase-invoice" element={<SupplierPurchaseInvoice />} />
-              <Route path="/p2p/debit-note" element={<DebitNote />} />
               <Route path="/p2p/invoice" element={<Invoice />} />
               <Route path="/p2p/order" element={<Order />} />
               <Route path="/inbox/po-approval/:id" element={<PoGstApprovalReview />} />

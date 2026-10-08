@@ -12,9 +12,9 @@ import AddProductModal from './AddProductModal';
 import ProductView from './ProductView';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../../../components/ui/Tooltip';
+import { formatProductCode } from '../../../../utils/formatProductCode';
 
-
-export type Product = {
+type Product = {
   apiId: number;
   id: string;
   name: string;
@@ -24,24 +24,11 @@ export type Product = {
   segmentReg?: string;
   price: number;
   currency: string;
-  rating: number;
-  reviews: number;
-  status: 'Active' | 'Inactive' | 'Draft';
   hsn: string;
-  uom: string;
   hazClass: 'HAZ' | 'NON HAZ';
   hazClassName: string;
   gstRate: number;
-  condition: string;
-  vendors: string[];
   vendorCount: number;
-  ownerId: number | null;
-  ownerName: string;
-  ownerBranchId: number | null;
-  ownerBranchName: string;
-  createdAt: string;
-  stepCompleted: number;
-  badge?: 'Best Seller' | 'New' | 'Trending' | 'Top Rated';
   thumb: string;
   images: string[];
 };
@@ -85,28 +72,13 @@ function averageImageColor(img: HTMLImageElement): string | null {
   }
 }
 
-function formatProductCode(raw: string): string {
-  const m = raw.match(/^(.*?)(\d+)\s*$/);
-  if (!m) return raw;
-  const prefix = m[1] || 'P-';
-  return `${prefix}${m[2].padStart(3, '0')}`;
-}
-
 function apiToCard(row: Record<string, unknown>): Product {
   const get = <T,>(k: string, fallback: T): T => (row[k] as T) ?? fallback;
   const segObj = row.segment as { title?: string; regulatory_status?: string } | null;
-  const uomObj = row.uom as { title?: string; short_code?: string } | null;
   const hsnObj = row.hsn as { hsn_code?: string } | null;
   const gstObj = row.gst_percentage as { percentage?: number | string } | null;
   const hazClassObj = row.haz_class as { name?: string } | null;
-  const condObj = row.condition as { title?: string } | null;
-  const vendorMaps = Array.isArray(row.vendor_maps) ? (row.vendor_maps as { vendor_name?: string }[]) : [];
-  const vendorNames = vendorMaps.map(v => v?.vendor_name ?? '').filter(Boolean);
-  const creator = row.creator as { id?: number; name?: string; branch_id?: number | null; branch?: { id?: number; name?: string } | null } | null;
-  const ownerBranch = creator?.branch ?? null;
-  const apiStatus = String(row.status ?? 'draft').toLowerCase();
-  const displayStatus: Product['status'] =
-    apiStatus === 'active' ? 'Active' : apiStatus === 'inactive' ? 'Inactive' : 'Draft';
+  const vendorMaps = Array.isArray(row.vendor_maps) ? row.vendor_maps : [];
   const idNum = Number(row.id) || 0;
   const primaryUrl = (row.primary_image_url as string | null) || (row.primary_image as string | null) || '';
   const secondaryUrls = Array.isArray(row.secondary_images_url)
@@ -123,23 +95,11 @@ function apiToCard(row: Record<string, unknown>): Product {
     segmentReg: segObj?.regulatory_status,
     price: Number(row.total_price ?? row.base_price ?? 0),
     currency: '₹',
-    rating: 0,
-    reviews: 0,
-    status: displayStatus,
     hsn: hsnObj?.hsn_code ?? '—',
-    uom: uomObj?.short_code ?? uomObj?.title ?? '—',
     hazClass: String(row.haz_type ?? '').toLowerCase().startsWith('haz') && !String(row.haz_type ?? '').toLowerCase().includes('non') ? 'HAZ' : 'NON HAZ',
     hazClassName: hazClassObj?.name ?? '',
     gstRate: Number(gstObj?.percentage ?? 0),
-    condition: condObj?.title ?? '',
-    vendors: vendorNames,
     vendorCount: row.vendor_count != null ? Number(row.vendor_count) : vendorMaps.length,
-    ownerId: creator?.id ?? null,
-    ownerName: creator?.name ?? '',
-    ownerBranchId: creator?.branch_id ?? ownerBranch?.id ?? null,
-    ownerBranchName: ownerBranch?.name ?? '',
-    createdAt: String(row.created_at ?? ''),
-    stepCompleted: Number(row.step_completed ?? 0),
     thumb: THUMB_GRADIENTS[idNum % THUMB_GRADIENTS.length],
     images,
   };
@@ -147,17 +107,11 @@ function apiToCard(row: Record<string, unknown>): Product {
 
 const SEGMENTS = ['All Segments', 'Dry Fruits', 'Rice & Grains', 'Spices', 'Coconut Oil', 'Seeds', 'Coffee Beans', 'Pulses', 'Mango Pulp', 'Millets', 'Chemicals'];
 
-/* Filter rows read "<code> - <description>". Descriptions in master_hsn_codes
-   run long, so they are clipped to this many characters — the full text stays
-   in the row's tooltip. */
 const HSN_DESC_MAX = 25;
 
 const HSN_CODES = ['08013100', '10063020', '09103030', '15131100', '12074090', '09011190', '07136000', '08045010', '09042120', '09041110', '10082930', '22072000'];
 const CONDITIONS = ['New', 'Refurbished', 'Open Box', 'Second Hand'];
 
-/* Creation date is picked as a relative window, not a calendar range. The keys
-   travel to the API as ?created_bucket[]= and OR together there. 'custom' is
-   the odd one out: it carries the typed day count and is sent as `last:<n>`. */
 const CREATED_BUCKETS: Array<{ key: string; label: string }> = [
   { key: 'last_7',  label: 'Last 7 days' },
   { key: 'last_30', label: 'Last 30 days' },
@@ -165,8 +119,6 @@ const CREATED_BUCKETS: Array<{ key: string; label: string }> = [
   { key: 'custom',  label: 'Custom' },
 ];
 
-/* Inward / invoice counts per product have no API behind them yet, so both
-   sections are frozen: fixed default buckets, shown but not selectable. */
 const INWARD_BUCKETS  = ['0', '1–5', '6–20', '21+'];
 const INVOICE_BUCKETS = ['0', '1–10', '11–50', '51+'];
 
@@ -176,7 +128,6 @@ type FilterState = {
   hazClass: string[];
   condition: string[];
   createdBucket: string[];
-  /* Days typed into the Custom row; only read while 'custom' is ticked. */
   createdCustomDays: string;
 };
 
@@ -186,9 +137,6 @@ const EMPTY_FILTERS: FilterState = {
 
 export default function Products() {
   const { user } = useAuth();
-  /* Sales can't see who the supplier is or the purchase price — the mapped
-     supplier list stays hidden for them, exactly as on the product detail
-     page (the API returns an empty list for Sales anyway). */
   const isSalesDept = (user?.department || '').trim().toLowerCase() === 'sales';
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -206,30 +154,19 @@ export default function Products() {
   const [sort, setSort] = useState<'recent' | 'price-asc' | 'price-desc' | 'rating'>('recent');
   const [addOpen, setAddOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  /* Mapped Suppliers is AddProductModal's own popup running in supplier-only
-     mode (same entry point ProductView uses), so this page owns no second
-     copy of the supplier list or the Map Supplier form. */
   const [supplierOnly, setSupplierOnly] = useState(false);
-  /* Which card control is waiting on the modal. The modal fetches the product
-     (and, cold, the master bundle) before it can show anything real, so the
-     control that was clicked spins until AddProductModal reports ready. */
   const [booting, setBooting] = useState<{ id: number; act: 'Edit' | 'Suppliers' } | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [brefOpen, setBrefOpen] = useState(false);
 
   const [filterOpen, setFilterOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
-  /* Which accordion section is expanded in the right-hand drawer — one at a
-     time. Segment opens by default: it is the first thing users narrow by. */
   const [openPanel, setOpenPanel] = useState<string | null>('segment');
 
   const [segmentOpts, setSegmentOpts]   = useState<string[]>(SEGMENTS);
   const [hsnOpts,     setHsnOpts]       = useState<string[]>(HSN_CODES);
   const [conditionOpts, setConditionOpts] = useState<string[]>(CONDITIONS);
   const [hazClassOpts, setHazClassOpts] = useState<string[]>([]);
-  /* HSN rows carry a description in the master bundle. The filter still sends
-     the bare code to the API, so the description is kept in a side map and
-     only joined in at render time. */
   const [hsnDescs, setHsnDescs] = useState<Record<string, string>>({});
 
   const hsnLabel = useCallback((code: string) => {
@@ -246,11 +183,8 @@ export default function Products() {
     type Bundle = {
       segments: Array<IdRow & { title?: string | null; name?: string | null }>;
       hsn_codes: Array<IdRow & { hsn_code?: string | null; description?: string | null }>;
-      uom: Array<IdRow & { title?: string | null; short_code?: string | null }>;
       conditions: Array<IdRow & { title?: string | null }>;
       haz_class: Array<IdRow & { name?: string | null }>;
-      gst_percentage: Array<IdRow & { percentage?: number | string | null }>;
-      vendors: Array<{ id: number | string; company_name?: string | null }>;
     };
 
     const dedupe = (arr: string[]): string[] => {
@@ -313,7 +247,6 @@ export default function Products() {
     });
   };
 
-  /* Opening a section closes whichever one was open. */
   const togglePanel = (key: string) =>
     setOpenPanel(prev => (prev === key ? null : key));
 
@@ -322,7 +255,6 @@ export default function Products() {
   const activeFilterCount = useMemo(() => {
     let n = 0;
     Object.entries(filters).forEach(([key, v]) => {
-      // The typed day count belongs to the Custom row, already counted above it.
       if (key === 'createdCustomDays') return;
       if (Array.isArray(v)) n += v.length;
       else if (typeof v === 'string' && v.trim()) n += 1;
@@ -425,8 +357,6 @@ export default function Products() {
     if (filters.hsn.length)          p.hsn          = filters.hsn;
     if (filters.condition.length)    p.condition    = filters.condition;
     if (filters.hazClass.length)     p.haz_class    = filters.hazClass;
-    /* 'custom' only means something once a day count is typed — it leaves as
-       last:<n> so the API treats it like any other relative window. */
     const buckets = filters.createdBucket.flatMap(key => {
       if (key !== 'custom') return [key];
       const days = parseInt(debouncedDays, 10);
@@ -436,8 +366,6 @@ export default function Products() {
     return p;
   }, [debouncedQ, debouncedDays, segment, statusFilter, filters, vendorFilterId]);
 
-  /* Ticking several boxes in a row is one intent, not three: collapse the
-     burst into a single fetch instead of firing (and cancelling) one each. */
   const [appliedParams, setAppliedParams] = useState(listParams);
   useEffect(() => {
     const t = setTimeout(() => setAppliedParams(listParams), 220);
@@ -445,10 +373,6 @@ export default function Products() {
   }, [listParams]);
 
   const listReqRef = useRef(0);
-  /* The in-flight list request. Ticking three boxes used to leave three
-     requests running; the last one's answer won but the server still worked
-     through all of them, and on a single-worker dev server that queue is what
-     you wait for. Superseded requests are now aborted. */
   const listAbortRef = useRef<AbortController | null>(null);
 
   const refresh = useCallback(async () => {
@@ -459,8 +383,6 @@ export default function Products() {
     listAbortRef.current = controller;
     setLoading(true);
     try {
-      /* One round trip carries both the rows and the tab badges — the counts
-         come back on the list response instead of a parallel /products/stats. */
       const res = await api.get<{
         data?: Record<string, unknown>[];
         total?: number;
@@ -484,7 +406,6 @@ export default function Products() {
         inactive: Number(body.counts?.inactive) || 0,
       });
     } catch (err) {
-      // A cancel means a newer request owns the screen; leave it alone.
       if (token !== listReqRef.current || isCanceled(err)) return;
       setProducts([]);
       setTotal(0);
@@ -497,22 +418,12 @@ export default function Products() {
 
   useEffect(() => () => listAbortRef.current?.abort(), []);
 
-  const reload = useCallback(() => { refresh(); }, [refresh]);
-
   useEffect(() => {
     if (detailId == null) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
   }, [detailId]);
-
-
-
-  /* Every remaining filter is applied server-side, so the page the API returns
-     is already the result set. */
-  const visible = products;
-
-  const resultsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setPage(1);
@@ -522,10 +433,6 @@ export default function Products() {
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
-
-  const paged = visible;
-
-  const resultCount = total;
 
   if (!allowed) {
     return (
@@ -541,10 +448,6 @@ export default function Products() {
     );
   }
 
-  const handleSaved = (_productId: number, _finalised: boolean) => {
-    reload();
-  };
-
   const handleEdit = (p: Product) => {
     setSupplierOnly(false);
     setBooting({ id: p.apiId, act: 'Edit' });
@@ -552,7 +455,6 @@ export default function Products() {
     setAddOpen(true);
   };
 
-  /* "N Suppliers" on a card → the Mapped Suppliers popup for that product. */
   const handleSuppliers = (p: Product) => {
     setSupplierOnly(true);
     setBooting({ id: p.apiId, act: 'Suppliers' });
@@ -574,7 +476,7 @@ export default function Products() {
       await api.delete(`/products/${deleteTarget.apiId}`);
       toast.success('Deleted', `${deleteTarget.name} moved to deleted state`);
       setDeleteTarget(null);
-      reload();
+      refresh();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Please try again';
       toast.error('Delete failed', msg);
@@ -673,11 +575,6 @@ export default function Products() {
         <div className="prd-toolbar-find">
         <div className="prd-search">
           <svg className="prd-search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-          {/* Autofill guard — Chrome ignores autocomplete="off" on a field it
-              classifies as contact info and drops an email / address into it
-              (QA #8 on Customers, QA #25 on Consignee). An explicit name,
-              autocomplete="new-password" and the LastPass / Dashlane opt-outs
-              keep it out of this one. */}
           <input
             type="text"
             name="product-list-search"
@@ -769,7 +666,7 @@ export default function Products() {
             {Array.from({ length: 6 }).map((_, i) => <ProductRowShimmer key={i} />)}
           </div>
         )
-      ) : paged.length === 0 ? (
+      ) : products.length === 0 ? (
         <div className="prd-empty">
           <div className="prd-empty-icon">
             <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg>
@@ -794,8 +691,8 @@ export default function Products() {
         </div>
       ) : view === 'grid' ? (
         <>
-          <div className="prd-grid" ref={resultsRef}>
-            {paged.map(p => (
+          <div className="prd-grid">
+            {products.map(p => (
               <ProductCard
                 key={p.apiId}
                 product={p}
@@ -815,8 +712,8 @@ export default function Products() {
         </>
       ) : (
         <>
-          <div className="prd-list" ref={resultsRef}>
-            {paged.map(p => (
+          <div className="prd-list">
+            {products.map(p => (
               <ProductRow
                 key={p.apiId}
                 product={p}
@@ -844,7 +741,7 @@ export default function Products() {
           onReady={() => setBooting(null)}
           onClose={() => { setAddOpen(false); setEditingId(null); setSupplierOnly(false); setBooting(null); }}
           onSaved={(id, finalised) => {
-            handleSaved(id, finalised);
+            refresh();
             if (finalised) { setAddOpen(false); setEditingId(null); setSupplierOnly(false); setBooting(null); }
             else           { setEditingId(id); }
           }}
@@ -856,7 +753,7 @@ export default function Products() {
           <div className="prd-detail-modal">
             <ProductView
               productId={detailId}
-              onClose={() => { setDetailId(null); reload(); }}
+              onClose={() => { setDetailId(null); refresh(); }}
             />
           </div>
         </div>
@@ -1050,7 +947,7 @@ export default function Products() {
             Reset
           </button>
           <button className="prd-fbtn primary" onClick={() => setFilterOpen(false)}>
-            Show Results ({resultCount})
+            Show Results ({total})
           </button>
         </div>
       </aside>
@@ -1093,9 +990,6 @@ function FrozenRows(props: { options: string[] }) {
 }
 
 function CheckRow(props: { label: string; checked: boolean; onChange: () => void; tip?: string; segment?: boolean }) {
-  /* `tip` is for rows whose visible label is already abbreviated (HSN codes
-     carry a clipped description) — those always get a tooltip with the full
-     text, not just the ones that overflow. */
   const tip = props.tip ?? props.label;
   const long = props.tip !== undefined || props.label.length > 28;
   const span = <span className="prd-filter-row-txt">{props.label}</span>;
@@ -1152,7 +1046,6 @@ function ProductPagination(props: {
 function ProductCard(props: {
   product: Product;
   canViewSuppliers?: boolean;
-  /** Which of this card's controls is waiting on its modal, if any. */
   busyAction?: 'Edit' | 'Suppliers' | null;
   onAction: (label: string) => void;
 }) {
@@ -1187,7 +1080,6 @@ function ProductCard(props: {
           return (
             <>
               {seg.length > 30 ? <Tooltip label={seg}>{badge}</Tooltip> : badge}
-              {/* Own corner, not inside the segment chip: that chip uppercases its text. */}
               <span className="prd-pcard-thumb-reg"><SegmentBadge status={product.segmentReg} style={{ background: '#fff' }} /></span>
             </>
           );
@@ -1354,8 +1246,6 @@ function ProductRow(props: {
             </span>
           )}
         </div>
-      </div>
-      <div className="prd-row-status">
       </div>
       <div className="prd-row-price">
         <div className="prd-card-price-label">Selling Price</div>

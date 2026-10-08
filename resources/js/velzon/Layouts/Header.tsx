@@ -256,10 +256,11 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
                                     <i className="bx bx-bell fs-22"></i>
                                     {/* What arrived is read in the drawer, so the badge counts the
                                         same two things the horizontal header counts. */}
-                                    {!!(notifCount.count || user?.inbox_count) && (
-                                        <span className="position-absolute topbar-badge fs-10 translate-middle badge rounded-pill bg-danger">
-                                            {notifCount.count || user?.inbox_count}
-                                            <span className="visually-hidden">unread messages</span>
+                                    {notifCount.count > 0 && (
+                                        <span className="position-absolute topbar-badge fs-10 translate-middle badge rounded-pill bg-danger"
+                                              title={`${notifCount.count} unread notification${notifCount.count === 1 ? '' : 's'}`}>
+                                            {notifCount.count > 99 ? '99+' : notifCount.count}
+                                            <span className="visually-hidden">unread notifications</span>
                                         </span>
                                     )}
                                 </button>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Input, Label, Spinner, Form } from 'reactstrap';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -12,6 +13,14 @@ import ImageCropperModal from '../components/ui/ImageCropperModal';
 export default function Profile() {
   const { user, logout, refresh } = useAuth();
   const toast = useToast();
+  const navigate = useNavigate();
+  const location = useLocation();
+  // Opened straight from the profile menu on a fresh load there is no history
+  // to go back to, and navigate(-1) would leave the app — fall back home.
+  const goBack = () => {
+    if (location.key && location.key !== 'default') navigate(-1);
+    else navigate('/dashboard');
+  };
   // Shimmer on every visit — the auth context keeps `user` hydrated
   // across navigations, so without this the profile page would flash
   // straight in with no loading state. Toggle true for the first paint
@@ -916,7 +925,7 @@ export default function Profile() {
           className="position-relative overflow-hidden"
           style={{
             background: 'linear-gradient(135deg, #405189 0%, #4a63a8 45%, #6691e7 100%)',
-            padding: '24px 28px',
+            padding: '34px 28px 24px',
           }}
         >
           <div
@@ -926,6 +935,18 @@ export default function Profile() {
               pointerEvents: 'none',
             }}
           />
+          {/* QA #20 — the profile is reachable from anywhere (profile menu,
+              deep link), so it needs its own way out. */}
+          <button
+            type="button"
+            onClick={goBack}
+            className="pf-close d-inline-flex align-items-center justify-content-center"
+            aria-label="Close"
+            title="Back"
+          >
+            <i className="ri-close-line" style={{ fontSize: 17 }} />
+          </button>
+
           <Row className="g-4 align-items-center position-relative">
             <Col xs="auto">
               {(() => {
@@ -1000,7 +1021,7 @@ export default function Profile() {
 
             {/* Hero stat pills */}
             <Col xs="12" lg="auto">
-              <div className="d-flex gap-2 flex-wrap justify-content-lg-end">
+              <div className="pf-pills d-flex gap-2 flex-wrap align-items-center justify-content-lg-end">
                 <div
                   className="text-center px-3 py-2"
                   style={{
@@ -1082,6 +1103,33 @@ export default function Profile() {
            has no non-style sibling before it, so it takes no top margin wherever
            the <style> ends up. */
         .pf-page > *:not(style) ~ *:not(style) { margin-top: 8px; }
+
+        /* Sits on the hero gradient, so it is glass rather than a Bootstrap
+           button — same treatment as the stat pills below it. */
+        .pf-close {
+          position: absolute;
+          top: 12px;
+          /* Lines up with the banner's own 28px gutter, so its right edge sits
+             flush with the Role pill below it. */
+          right: 28px;
+          z-index: 2;
+          width: 30px;
+          height: 30px;
+          color: #fff;
+          background: rgba(255, 255, 255, 0.16);
+          border: 1px solid rgba(255, 255, 255, 0.28);
+          border-radius: 999px;
+          backdrop-filter: blur(6px);
+          transition: background 0.15s ease, transform 0.15s ease;
+        }
+        .pf-close:hover  { background: rgba(255, 255, 255, 0.30); }
+        .pf-close:active { transform: translateY(1px); }
+
+        /* Clear the close button's column so the Role pill ends before it
+           starts, instead of sitting directly underneath. */
+        @media (min-width: 992px) {
+          .pf-pills { padding-right: 44px; }
+        }
         /* Below xl the pairs stack, so the gap that was horizontal becomes
            vertical — same 8px. */
         @media (max-width: 1199.98px) {

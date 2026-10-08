@@ -48,6 +48,17 @@ export const PF_WAGE_CEILING_LABEL = `₹${PF_WAGE_CEILING.toLocaleString('en-IN
 /** "₹3,000" — the most PF can be under the ceiling. */
 export const PF_MAX_LABEL = `₹${Math.round(PF_WAGE_CEILING * PF_RATE).toLocaleString('en-IN')}`;
 
+/* The PF Type choice, for the three screens that offer it: the Employee
+   compensation form, the Salary Structure modal and Onboarding Stage 1. All
+   three used to spell their own options, and Onboarding's said plain
+   "Statutory" / "Standard" while the other two explained themselves — the same
+   field reading differently depending on where you met it (#146). The cap
+   comes off PF_WAGE_CEILING, so the label cannot be left behind the number. */
+export const PF_TYPE_OPTIONS = [
+  { value: 'Statutory', label: `Statutory (₹${Math.round(PF_WAGE_CEILING / 1000)}k cap)` },
+  { value: 'Standard',  label: 'Standard (full basic)' },
+];
+
 export const SESSION_TIMEOUT_HOURS = 2;
 export const SESSION_TIMEOUT_MS    = SESSION_TIMEOUT_HOURS * 60 * 60 * 1000;
 export const SESSION_TIMEOUT_LABEL = `${SESSION_TIMEOUT_HOURS} hours`;
@@ -330,14 +341,14 @@ export const P2P_GROUPS: MenuGroup[] = [
     label: 'Purchase Management',
     icon: 'FileText',
     children: [
-      { id: 'p2p.po', icon: 'FileText', label: 'Purchase Order (PO)' },
-      { id: 'p2p.spi', icon: 'CreditCard', label: 'Supplier Purchase Invoice (SPI)' },
-      // The rebuilt supplier purchase invoice. Listed beside the old one while
-      // it is being built; it rides on the SPI permission (see PERM_ALIAS in
-      // IdimsHeader) so it needs no new grant.
+      /* The slug stays `p2p.order` so existing grants keep working; only the
+         label changed, now that the screen it was distinguished from is gone
+         along with SPI and Debit Note. */
+      { id: 'p2p.order', icon: 'FileText', label: 'Purchase Order' },
+      /* The rebuilt supplier purchase invoice. It rode on the SPI grant while
+         that screen existed; with SPI gone it rides on Purchase Order instead
+         (see PERM_ALIAS in IdimsHeader), so it still needs no module row. */
       { id: 'p2p.invoice', icon: 'Receipt', label: 'Invoice' },
-      { id: 'p2p.debit_note', icon: 'FileText', label: 'Debit Note' },
-      { id: 'p2p.order', icon: 'FileText', label: 'Order' },
       // Temporary placement under Purchase Management until the P2P nav redesign lands.
       { id: 'p2p.payment_request', icon: 'IndianRupee', label: 'Payment Request Management' },
       { id: 'p2p.advance_refund', icon: 'FileInput', label: 'Advance Receipt Refund Adjustment' },

@@ -24,6 +24,7 @@ class Product extends Model
         'product_code', 'name', 'generic_name', 'description', 'brand',
         'segment_id', 'haz_type', 'haz_class_id', 'uom_id', 'hsn_id',
         'condition_id', 'packaging_material_id', 'confidential_info',
+        'cold_chain', 'cold_chain_temp_min', 'cold_chain_temp_max',
         'primary_image', 'secondary_images', 'product_attachment',
         'base_price', 'gst_id', 'gst_amount', 'total_price', 'mark_bottom',
         'net_weight', 'gross_weight', 'length_cm', 'width_cm', 'height_cm',
@@ -42,6 +43,9 @@ class Product extends Model
         'width_cm'         => 'decimal:2',
         'height_cm'        => 'decimal:2',
         'step_completed'   => 'integer',
+        'cold_chain'       => 'boolean',
+        'cold_chain_temp_min' => 'decimal:2',
+        'cold_chain_temp_max' => 'decimal:2',
     ];
 
     /**

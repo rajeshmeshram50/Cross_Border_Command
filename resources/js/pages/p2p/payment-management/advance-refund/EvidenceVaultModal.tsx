@@ -12,7 +12,7 @@ import { fmtDate, moneyIn } from '../../purchase-management/order/manage-payment
 import { PoApiError, refundApi } from '../../purchase-management/order/api/po-api';
 import { toRefund, type RefundAdjustment } from './refund-data';
 import { useEscapeClose } from './useEscapeClose';
-import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../p2p-detail.css';
 import './advance-refund.css';
 
 type VaultFile = {

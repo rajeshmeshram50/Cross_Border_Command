@@ -1,33 +1,3 @@
-/**
- * Product master bundle — client-side cache (sessionStorage, 5-min TTL).
- *
- * Scope: PRODUCT MODULE ONLY. Nothing else in the app reads or writes this
- * cache, so changes here cannot break vendors, customers, or any other
- * module. The cache key is intentionally prefixed `product:` to make the
- * scope obvious to anyone grepping for it.
- *
- * Why sessionStorage and not localStorage:
- *   • Cleared automatically when the user closes the tab — bounded lifetime,
- *     no risk of an indefinitely stale dropdown after a long-lived session.
- *   • Per-tab isolation — if two tabs are open and one tab adds a new HSN
- *     code, the other tab will pick it up on its own next bust/TTL window
- *     rather than reading a stale shared store.
- *
- * Why a 5-minute TTL:
- *   • Masters change rarely (HSN/UOM/conditions are mostly set up once).
- *   • 5 min is short enough that another user's addition becomes visible
- *     to this user within a coffee break, even without explicit invalidation.
- *   • Combined with the inline-add cache bust (see `bustProductMasterBundle`),
- *     same-user changes show INSTANTLY.
- *
- * If sessionStorage is unavailable (private browsing on some browsers, or
- * SSR), all helpers degrade gracefully: read returns null, write is a no-op.
- */
-
-// v4 bump — vendor rows now carry `vendor_type_name` (Supplier Type) AND
-// `state` (supplier's state) for the Map Supplier popup. Bumping discards older
-// cached bundles that lack them so the fields fill immediately (no 5-min wait).
-// (v2 discarded pre-tenant-scope entries; v3 added vendor_type_name.)
 const KEY = 'product:master-bundle:v6';   // v6: segments carry regulatory_status
 const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -72,12 +42,6 @@ export function writeProductMasterBundle<T = unknown>(data: T): void {
   }
 }
 
-/**
- * Clear the cached bundle. Call this whenever the user takes an action that
- * makes the cached data stale — e.g. successfully creating a new HSN code /
- * segment / UOM / vendor from inside the Add Product modal. The next modal
- * open will then refetch the fresh bundle.
- */
 export function bustProductMasterBundle(): void {
   const storage = safeStorage();
   if (!storage) return;

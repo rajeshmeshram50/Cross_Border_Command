@@ -234,7 +234,7 @@ export type InspectionSummary = {
   }[];
 };
 
-// Existing shared endpoints (/p2p/purchase-orders/…) reused by the new PO.
+// Supplier and shipment lookups, served by PoLookupController.
 export type ShipmentOption = {
   id: number; code: string; customer: string | null; consignee: string | null;
   opportunity_id: number | null; opportunity_code: string | null;
@@ -510,17 +510,17 @@ export const poInspectionApi = {
 export const poLookupApi = {
   /** Shipment dropdown (existing endpoint). */
   shipments: () =>
-    call('PO shipments', () => api.get('/p2p/purchase-orders/shipments'), dataOf<ShipmentOption[]>),
+    call('PO shipments', () => api.get('/p2p/orders/shipments'), dataOf<ShipmentOption[]>),
 
   /** Supplier dropdown (existing endpoint). */
   suppliers: () =>
-    call('PO suppliers', () => api.get('/p2p/purchase-orders/suppliers'), dataOf<SupplierOption[]>),
+    call('PO suppliers', () => api.get('/p2p/orders/suppliers'), dataOf<SupplierOption[]>),
 
   /** Supplier detail for Stage 01 (existing endpoint). `refreshCurrencies` drops
    *  the server's hour-long cache of Zoho's currency list, for right after one
    *  has been added there. */
   supplier: (vendorId: number, refreshCurrencies = false) =>
-    call('PO supplier detail', () => api.get(`/p2p/purchase-orders/suppliers/${vendorId}`, {
+    call('PO supplier detail', () => api.get(`/p2p/orders/suppliers/${vendorId}`, {
       params: refreshCurrencies ? { refresh_currencies: 1 } : undefined,
     }), dataOf<SupplierDetail>),
 

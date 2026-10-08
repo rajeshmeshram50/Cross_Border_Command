@@ -26,22 +26,37 @@ export interface InAppNotification {
 }
 
 /** Unread count for a bell badge, refreshed every 60s and on tab focus. */
-export function useUnreadNotifications(): { count: number; refresh: () => void } {
+export function useUnreadNotifications(): { count: number; total: number; refresh: () => void } {
   const [count, setCount] = useState(0);
+  /* The bell prints the TOTAL, so there is always a number to see, and colours
+     it by the unread count. A badge that vanishes the moment everything is read
+     left people unsure whether the bell was empty or simply not working. */
+  const [total, setTotal] = useState(0);
   const refresh = useCallback(() => {
     if (document.hidden) return;
     api.get('/notifications/unread-count')
-      .then((r) => setCount(r.data?.data?.count ?? 0))
+      .then((r) => {
+        setCount(r.data?.data?.count ?? 0);
+        setTotal(r.data?.data?.total ?? r.data?.data?.count ?? 0);
+      })
       .catch(() => { /* a badge is not worth a toast */ });
   }, []);
   useEffect(() => {
     refresh();
+    /* Every minute, and on the way back to the window. 'focus' as well as
+       visibilitychange: alt-tabbing to another app leaves the tab visible, so
+       visibilitychange never fires and the bell sat a full minute behind. */
     const t = window.setInterval(refresh, 60_000);
     const onVis = () => { if (!document.hidden) refresh(); };
     document.addEventListener('visibilitychange', onVis);
-    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis); };
+    window.addEventListener('focus', onVis);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('focus', onVis);
+    };
   }, [refresh]);
-  return { count, refresh };
+  return { count, total, refresh };
 }
 
 export default function NotificationsDrawer({ open, onClose, onCountChange }: {
@@ -89,8 +104,12 @@ export default function NotificationsDrawer({ open, onClose, onCountChange }: {
     }
     const url = n.data?.action_url ?? n.data?.url;
     if (!url) return;
-    // Strip scheme + host so the SPA router takes the path.
-    const path = String(url).replace(/^https?:\/\/[^/]+/, '') || '/';
+    /* Strip scheme + host so the SPA router takes the path, and the Laravel
+       sub-folder base too (APP_URL is .../Cross_Border_Command/public) — the
+       router has no route for it, so it 404s straight to the dashboard. */
+    const path = String(url)
+      .replace(/^https?:\/\/[^/]+/, '')
+      .replace(/^.*\/public(?=\/)/, '') || '/';
     /* A notification names a page its recipient may not be allowed to open.
        A reporting manager is asked to decide their team's leave, but the
        approvals page under HRMS needs an hr.leave_approvals grant they often
@@ -186,7 +205,7 @@ export default function NotificationsDrawer({ open, onClose, onCountChange }: {
             groupByDay(visible).map(([label, group]) => (
               <div key={label}>
                 <div className="px-5 pt-4 pb-1 text-[11.5px] font-bold text-muted uppercase tracking-wide">{label}</div>
-                {group.map((n) => <NotificationRow key={n.id} item={n} onClick={() => openItem(n)} />)}
+                {group.map((n) => <NotificationRow key={n.id} item={n} viewerId={user?.id} onClick={() => openItem(n)} />)}
               </div>
             ))
           )}
@@ -244,7 +263,7 @@ function sourceOf(type: string): { module: string; what: string; icon: string; c
   }
 }
 
-function NotificationRow({ item, onClick }: { item: InAppNotification; onClick: () => void }) {
+function NotificationRow({ item, onClick, viewerId }: { item: InAppNotification; onClick: () => void; viewerId?: number }) {
   const kind = item.data?.kind ?? '';
   const isUnread = !item.read_at;
   const src = sourceOf(item.type);
@@ -294,6 +313,46 @@ function NotificationRow({ item, onClick }: { item: InAppNotification; onClick: 
     return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
   })();
 
+  /* Whose signature the document is waiting on. With two or more signers the
+     run reads Pending from the first signature onwards, so "Pending" alone says
+     nothing about whether the next move is yours. */
+  const pending = (() => {
+    if (kind !== 'hr_signature_request' && kind !== 'hr_signature_reminder') return null;
+    /* The server fills these from the run at read time, so they describe the
+       document now, not when the notification was written. */
+    const status = item.data?.run_status as string | undefined;
+    const role = item.data?.pending_role as string | undefined;
+    const who = item.data?.pending_user_id as number | undefined;
+    const done = item.data?.signed_count as number | undefined;
+    const all = item.data?.signers_total as number | undefined;
+    const count = typeof done === 'number' && typeof all === 'number' && all > 1 ? ` · ${done}/${all} signed` : '';
+    const grey = 'bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-300';
+
+    // Nobody is waiting any more — say so instead of naming a signer.
+    if (status === 'Completed') return { text: 'All signed', title: 'Every signature is in', cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300' };
+    if (status === 'Cancelled') return { text: 'Cancelled', title: 'This request was cancelled', cls: grey };
+    if (status === 'Rejected')  return { text: 'Declined', title: 'A signer declined this document', cls: grey };
+    if (!role && !who) return null;
+
+    const mine = !!who && !!viewerId && who === viewerId;
+    /* Short, because the drawer is narrow: Self / RM / CEO is how these roles
+       are spoken about; the full name rides on the tooltip. */
+    const r = (role ?? '').toLowerCase();
+    const label = mine ? 'Self'
+      : r.includes('reporting') ? 'RM'
+        : (r.includes('ceo') || r.includes('client')) ? 'CEO'
+          : r.includes('employee') ? 'Employee'
+            : (role || item.data?.pending_name || 'another signer');
+    return {
+      text: `Pending: ${label}${count}`,
+      title: `Waiting on ${mine ? 'you' : (item.data?.pending_name || role || 'the next signer')}`
+        + (typeof all === 'number' && all > 1 ? ` — ${done ?? 0} of ${all} signatures done` : ''),
+      cls: mine
+        ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300'
+        : grey,
+    };
+  })();
+
   /* The code the notification is about — "PO/2026-27/007 needs your GST
      approval" — so the row carries its own reference line. */
   const ref = /([A-Z]{2,}\/[0-9-]+\/[0-9]+|[A-Z]{2,}-[0-9]+)/.exec(String(item.data?.subject ?? ''))?.[1] ?? null;
@@ -317,10 +376,19 @@ function NotificationRow({ item, onClick }: { item: InAppNotification; onClick: 
             {src.module}{src.what ? ` · ${src.what}` : ''}
           </span>
           {state.label && <span className={`text-[10.5px] font-semibold ${state.cls}`}>{state.label}</span>}
+
           <span className="text-[10.5px] text-muted ml-auto">{when}</span>
         </div>
         <div className="mt-1 text-[12.5px] font-semibold text-primary truncate">{summary}</div>
         <div className="text-[11.5px] text-muted leading-snug mt-0.5">{sentence}</div>
+        {pending && (
+          <div className="mt-1">
+            <span title={pending.title}
+                  className={`inline-block text-[9.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${pending.cls}`}>
+              {pending.text}
+            </span>
+          </div>
+        )}
         {ref && <div className="text-[10.5px] text-muted mt-0.5 font-mono truncate">{ref}</div>}
       </div>
       {isUnread && <span className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-2" title="Unread" />}

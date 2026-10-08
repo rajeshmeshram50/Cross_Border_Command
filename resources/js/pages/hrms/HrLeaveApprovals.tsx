@@ -76,6 +76,41 @@ const accentFor = (id: number) => ACCENTS[id % ACCENTS.length];
 const initialsOf = (name: string) =>
   name.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
 
+/**
+ * The detail body, in outline, while it loads.
+ *
+ * The modal used to open on a small spinner block and then snap to full height
+ * the moment the request landed — opening it was a jump, and a slow network
+ * made the buttons move under the cursor. This stands in at the same size and
+ * in the same shape, so the dialog opens once and only fills in.
+ */
+function LeaveDetailSkeleton() {
+  const bar = (w: number | string, h = 12, mt = 0) => (
+    <span className="lva-sk" style={{ width: w, height: h, marginTop: mt }} />
+  );
+  return (
+    <div aria-busy="true" aria-label="Loading the leave request">
+      {/* avatar + name */}
+      <div className="d-flex align-items-center gap-3 mb-3">
+        <span className="lva-sk rounded-circle flex-shrink-0" style={{ width: 48, height: 48 }} />
+        <div className="d-flex flex-column gap-2">{bar(160, 14)}{bar(110, 11)}</div>
+      </div>
+      {/* the four tone cards */}
+      <div className="mb-3 d-flex gap-2 flex-wrap">
+        {[0, 1, 2, 3].map((i) => <span key={i} className="lva-sk flex-grow-1" style={{ height: 52, borderRadius: 10, minWidth: 120 }} />)}
+      </div>
+      {/* dates / reason block */}
+      <div className="mb-3 d-flex flex-column gap-2">{bar('45%', 11)}{bar('100%', 38)}</div>
+      {/* approval chain */}
+      <div className="mb-3" style={{ background: 'var(--vz-secondary-bg)', borderRadius: 10, padding: 12 }}>
+        <div className="d-flex flex-column gap-2">{bar('30%', 11)}{bar('100%', 34)}</div>
+      </div>
+      {/* comment box */}
+      <div className="mb-3 d-flex flex-column gap-2">{bar('25%', 11)}{bar('100%', 64)}</div>
+    </div>
+  );
+}
+
 export default function HrLeaveApprovals() {
   const navigate = useNavigate();
   const { theme } = useTheme();
@@ -463,7 +498,7 @@ export default function HrLeaveApprovals() {
         </div>
       </Col>
 
-      <Modal isOpen={openId !== null} toggle={closeDetail} centered size="lg" backdrop="static">
+      <Modal isOpen={openId !== null} toggle={closeDetail} centered size="lg" backdrop="static" contentClassName="lrd-modal">
         <ModalBody className="p-0">
           <div style={{ padding: '14px 22px 12px', background: 'linear-gradient(135deg, #5a3fd1, #7c5cfc)' }}>
             <div className="d-flex align-items-center justify-content-between gap-3">
@@ -481,10 +516,7 @@ export default function HrLeaveApprovals() {
 
           <div style={{ padding: '20px 24px' }}>
             {!detail ? (
-              <div className="text-center text-muted py-4">
-                <i className="ri-loader-4-line ri-spin d-block mb-2" style={{ fontSize: 28, opacity: 0.4 }} />
-                Loading...
-              </div>
+              <LeaveDetailSkeleton />
             ) : (
               <>
                 <div className="d-flex align-items-center gap-3 mb-3">

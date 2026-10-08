@@ -59,7 +59,9 @@ const HR_LEAF: Record<string, string> = {
   '/hr/devices': 'hr.attendance',   // Biometric Devices rides on the attendance grant
   '/hr/leave': 'hr.leave',
   '/hr/leave-plans': 'hr.leave',
-  '/hr/leave-approvals': 'hr.leave_approvals',
+  // No hr.leave_approvals module exists, so that slug can never be granted and
+  // the page was unreachable. Approvals ride on the leave grant, like leave-plans.
+  '/hr/leave-approvals': 'hr.leave',
   '/hr/holiday': 'hr.holiday',
   '/hr/pip': 'hr.pip',
   '/hr/expense': 'hr.expense',
@@ -118,20 +120,17 @@ const P2P_LEAF: Record<string, string> = {
   '/p2p/diagnosis': 'p2p.diagnosis',
   '/p2p/bulk-sourcing': 'p2p.bulk_sourcing',
   '/p2p/case-to-case': 'p2p.case_to_case',
-  '/p2p/purchase-order': 'p2p.po',
-  '/p2p/supplier-purchase-invoice': 'p2p.spi',
-  // Invoice — the rebuilt supplier purchase invoice. It rides on the SPI grant
-  // rather than introducing a module row of its own: it is the same business
-  // object, so anyone who may see supplier invoices may see this one, and
-  // nobody has to be re-granted anything when it replaces the old page.
-  '/p2p/invoice': 'p2p.spi',
-  '/p2p/debit-note': 'p2p.debit_note',
-  // New Order module (static frontend data, no DB module row of its own) —
-  // rides on the Purchase Order grant, same pattern as sales.sign_tracker.
+  // Invoice — the rebuilt supplier purchase invoice. It rides on the Purchase
+  // Order grant rather than introducing a module row of its own: it is part of
+  // the same business object, so nobody has to be re-granted anything. It rode
+  // on p2p.spi until that module was removed with the old screen.
+  '/p2p/invoice': 'p2p.order',
   '/p2p/order': 'p2p.order',
-  // Same for the new Payment Request module — no module row of its own yet.
   '/p2p/payment-request': 'p2p.payment_request',
-  '/p2p/advance-refund-adjustment': 'p2p.po',
+  /* Advance Refund has no module row of its own, so it rode on the legacy
+     p2p.po grant. That module is gone and its grants were carried over to
+     p2p.order, which this now follows — the same seven people keep it. */
+  '/p2p/advance-refund-adjustment': 'p2p.order',
 };
 
 // Known module prefixes — a path under any of these that fails to resolve to a

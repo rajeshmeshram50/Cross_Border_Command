@@ -2,13 +2,13 @@ import { useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 /* The shared P2P wizard chrome, and nothing of our own.
-   `supplier-purchase-invoice.css` carries the spi-dt-* shell — overlay, head
+   `p2p-detail.css` carries the spi-dt-* shell — overlay, head
    strip, pills, step cards, body and footer. `create-po.css` is imported for
    `.cpf-steps4`, the four-column step grid: the shared grid is two columns
    because the old SPI wizard has two stages, and the Create PO form already
    solved this exact problem. Between them there is nothing left for this form
    to define, which is why there is no invoice-form.css. */
-import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../p2p-detail.css';
 import '../order/create-po/create-po.css';
 /* Last, so it wins: the few places this form is deliberately not the PO. */
 import './invoice-form.css';

@@ -12,8 +12,6 @@ import AddProductModal from './AddProductModal';
 
 type AnyRec = Record<string, unknown>;
 
-// Zero-pad the trailing number in a product code to 3 digits (e.g. P-1 -> P-001),
-// matching the list cards. Keeps any non-numeric code untouched.
 function formatProductCode(raw: string): string {
   const m = raw.match(/^(.*?)(\d+)\s*$/);
   if (!m) return raw;
@@ -30,6 +28,9 @@ export type ProductDto = {
   brand: string | null;
   haz_type: string | null;
   confidential_info: string | null;
+  cold_chain?: boolean | null;
+  cold_chain_temp_min?: string | number | null;
+  cold_chain_temp_max?: string | number | null;
   primary_image: string | null;
   primary_image_url: string | null;
   secondary_images: string[] | null;
@@ -62,11 +63,7 @@ export type ProductDto = {
   updated_at?: string | null;
 };
 
-/** `readOnly`: opened from another screen just to look — one Close button, no edit / supplier / buy actions. */
 export default function ProductView(props: { productId?: number; onClose?: () => void; preview?: ProductDto; readOnly?: boolean } = {}) {
-  // Dual-mode: as a route it reads the :id param and "Back" navigates to the
-  // list; as a popup (opened from a product card) it takes `productId` and
-  // `onClose`, so it renders over the list instead of full-screen.
   const params = useParams<{ id: string }>();
   const id = props.productId != null ? String(props.productId) : params.id;
   const navigate = useNavigate();
@@ -308,13 +305,14 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
   }
   if (!product) return null;
 
-  // Active / Inactive mirrors the product list: a product is "Active" once it
-  // has at least one mapped supplier, "Inactive" otherwise. (Basing it on the
-  // raw `status` column drifted from the list, which shows every stale-status
-  // product as Active regardless of supplier mapping.)
   const isActive = product.vendor_maps.length > 0;
   const statusText = isActive ? 'Active' : 'Inactive';
   const isHaz = String(product.haz_type ?? '').toLowerCase() === 'haz';
+  const coldChainText = !product.cold_chain
+    ? 'No'
+    : (product.cold_chain_temp_min != null && product.cold_chain_temp_max != null
+      ? `${Number(product.cold_chain_temp_min)} to ${Number(product.cold_chain_temp_max)} °C`
+      : 'Yes');
 
   const segmentName    = (product.segment?.title as string) ?? '—';
   const hazClassName   = (product.haz_class?.name as string) ?? '—';
@@ -508,6 +506,11 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
               <div className="pv2pd-sec__title">
                 <span className="pv2pd-sec__ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></span>
                 Product Details
+                <Tooltip label={product.cold_chain ? 'Must be kept in cold chain within this temperature range' : 'Not a cold chain product'}>
+                  <span className={`pv2pd-coldchain${product.cold_chain ? '' : ' pv2pd-coldchain--off'}`}>
+                    <i className="ri-snowflake-line" /> Cold chain {product.cold_chain && coldChainText !== 'Yes' ? coldChainText : '–'}
+                  </span>
+                </Tooltip>
               </div>
               <div className="pv2pd-highlights">
                 {/* Tile icons are the EXACT Feather SVGs from the P2P Figma

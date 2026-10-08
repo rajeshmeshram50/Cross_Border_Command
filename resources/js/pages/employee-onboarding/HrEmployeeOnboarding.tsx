@@ -11,7 +11,7 @@ import {
   seedBreakup, absorbIntoSpecial, reseedSplit, planEarningRemoval, statutoryPt, pfDeduction, breakupSignature, validateBreakup,
   CTC_ROUNDING_SLACK,
 } from '../../utils/salaryBreakup';
-import { PF_WAGE_CEILING, PF_WAGE_CEILING_LABEL } from '../../constants';
+import { PF_WAGE_CEILING, PF_WAGE_CEILING_LABEL, PF_TYPE_OPTIONS } from '../../constants';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
@@ -76,7 +76,9 @@ const ONB_ACCESS_CARD  = OPT('Not Issued', 'Issued');
 
 const ONB_TAX_REGIME   = OPT('New Regime (115BAC)', 'Old Regime');
 const ONB_ACCOUNT_TYPE = OPT('Salary', 'Savings', 'Current');
-const ONB_PF_TYPE      = OPT('Statutory', 'Standard');
+/* Shared with the Employee form and the Salary Structure modal, so the same
+   field does not read differently depending on where you met it (#146). */
+const ONB_PF_TYPE      = PF_TYPE_OPTIONS;
 const ONB_BLOOD_GROUP  = OPT('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-');
 
 

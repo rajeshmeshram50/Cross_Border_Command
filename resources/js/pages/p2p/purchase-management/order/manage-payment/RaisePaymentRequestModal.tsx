@@ -9,7 +9,7 @@ import {
   Box, HeroRefChips, PAYMENT_TYPES, PaymentWait, PoSummaryCards, STAT_ICONS, Stat, rowBreakdown,
   ICON_PENCIL, ICON_X, ccySymbol, moneyIn,
 } from './payment-shared';
-import '../../supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../../p2p-detail.css';
 import './manage-payment-requests.css';
 import './raise-payment-request.css';
 import { poApprovalApi, type GstApprover } from '../api/po-api';

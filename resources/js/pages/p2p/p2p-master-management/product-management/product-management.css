@@ -4485,6 +4485,41 @@
   margin-bottom: 9px;
 }
 
+/* Cold chain pill, right-aligned in the Product Details header. Blue with
+   the °C range for cold-chain products, muted grey "–" otherwise. */
+.pv2pd-coldchain {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  border: 1px solid #bae6fd;
+  color: #0369a1;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+[data-bs-theme="dark"] .pv2pd-coldchain {
+  background: rgba(14, 165, 233, .14);
+  border-color: rgba(56, 189, 248, .35);
+  color: #7dd3fc;
+}
+
+.pv2pd-coldchain--off {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #94a3b8;
+}
+
+[data-bs-theme="dark"] .pv2pd-coldchain--off {
+  background: rgba(148, 163, 184, .1);
+  border-color: rgba(148, 163, 184, .25);
+  color: #94a3b8;
+}
+
 .pv2pd-sec__ico {
   width: 23px;
   height: 23px;
@@ -5460,6 +5495,60 @@
   grid-template-columns: 1fr 1fr 1fr;
   gap: 12px;
 }
+
+/* Cold chain temperature range: Min °C  to  Max °C, with preset chips. */
+.apm-span-2 { grid-column: span 2; min-width: 0; }
+.apm-temp-range { display: flex; align-items: center; gap: 10px; }
+.apm-temp-input { position: relative; flex: 1; min-width: 0; }
+.apm-temp-input .apm-input { padding-left: 32px !important; padding-right: 34px; }
+.apm-temp-ico {
+  position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+  font-size: 15px; color: #8b5cf6; pointer-events: none;
+}
+.apm-temp-input .apm-input:disabled + .apm-temp-unit,
+.apm-temp-input .apm-input:disabled ~ .apm-temp-unit { opacity: .6; }
+
+/* Cold chain panel: tinted, rounded box grouping the flag + range. */
+.apm-coldchain-box {
+  border: 1px solid color-mix(in srgb, #7c3aed 18%, #e2e8f0);
+  background: color-mix(in srgb, #7c3aed 3%, #fff);
+  border-radius: 14px;
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color .15s, background .15s;
+}
+.apm-coldchain-box.is-on {
+  border-color: color-mix(in srgb, #7c3aed 35%, #e2e8f0);
+  background: color-mix(in srgb, #7c3aed 5%, #fff);
+}
+.apm-coldchain-hint { font-size: 11.5px; color: #94a3b8; }
+[data-bs-theme="dark"] .apm-coldchain-box { background: #140e2b; border-color: #2e2357; }
+[data-bs-theme="dark"] .apm-coldchain-box.is-on { border-color: #4c3a8a; }
+.apm-temp-unit {
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  font-size: 12px; font-weight: 600; color: #94a3b8; pointer-events: none;
+}
+.apm-temp-to { font-size: 12px; font-weight: 600; color: #64748b; }
+/* Presets sit at the right end of the label row, so undo the label's
+   uppercase / letter-spacing for them. */
+.apm-field-label-extra { margin-left: auto; display: inline-flex; }
+.apm-temp-presets { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.apm-temp-chip {
+  border: 1px solid color-mix(in srgb, #7c3aed 22%, #e2e8f0);
+  background: color-mix(in srgb, #7c3aed 5%, #fff);
+  color: #64748b; border-radius: 999px; padding: 1px 9px;
+  font-size: 11px; font-weight: 500; line-height: 1.5; cursor: pointer;
+  text-transform: none; letter-spacing: normal;
+}
+.apm-temp-chip b { color: #6d28d9; font-weight: 700; }
+.apm-temp-chip:hover:not(:disabled) { border-color: #7c3aed; }
+.apm-temp-chip:disabled { opacity: .5; cursor: not-allowed; }
+[data-bs-theme="dark"] .apm-temp-chip { background: #110c25; border-color: #3b2a6b; color: #a5a0c0; }
+[data-bs-theme="dark"] .apm-temp-chip b { color: #c4b5fd; }
+@media (max-width: 768px) { .apm-span-2 { grid-column: auto; } }
+
 
 .apm-grid-5 {
   display: grid;
@@ -7161,6 +7250,16 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
 
 [data-bs-theme="dark"] .apm-input:disabled {
   background: #16102d;
+  color: #6d6391;
+}
+
+/* A disabled text input inside a disabled field (e.g. the cold chain Min / Max
+   while Cold Chain is No) matches a disabled dropdown such as Haz Class —
+   otherwise the light-mode `.apm-field.is-disabled .apm-input` !important
+   grey shows through in dark mode. */
+[data-bs-theme="dark"] .apm-field.is-disabled .apm-input {
+  background: color-mix(in srgb, #a78bfa 12%, #110c25) !important;
+  border-color: #3b2a6b !important;
   color: #6d6391;
 }
 

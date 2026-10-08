@@ -9,7 +9,7 @@ import { Box, Chip, HeroRefChips, ICON_X, STAT_ICONS, Stat, fmtDate, money } fro
 import { decidePaymentRequest, type PaymentRequestRow } from './paymentRequestData';
 import { PoApiError } from '../../purchase-management/order/api/po-api';
 import type { PaymentRequestDetail } from './paymentRequestDetailData';
-import '../../purchase-management/supplier-purchase-invoice/supplier-purchase-invoice.css';
+import '../../p2p-detail.css';
 import '../../purchase-management/order/manage-payment/manage-payment-requests.css';
 import '../../purchase-management/order/manage-payment/raise-payment-request.css';
 // For the apay-wait veil shown while the decision saves.

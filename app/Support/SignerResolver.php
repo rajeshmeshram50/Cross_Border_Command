@@ -35,7 +35,8 @@ final class SignerResolver
             if ($emp->reporting_manager_id) {
                 $mgr = Employee::with('user')->find($emp->reporting_manager_id);
                 if ($mgr) {
-                    return [$mgr->user_id ?? null, $mgr->display_name ?? 'Reporting Manager'];
+                    // resolved_user_id: the user_id link, else the employee code.
+                    return [$mgr->resolved_user_id, $mgr->display_name ?? 'Reporting Manager'];
                 }
             }
             if ($emp->reporting_manager_user_id) {
@@ -48,7 +49,7 @@ final class SignerResolver
         }
 
         if (str_contains($r, 'employee')) {
-            return [$emp->user_id ?? null, $emp->display_name ?? 'Employee'];
+            return [$emp->resolved_user_id, $emp->display_name ?? 'Employee'];
         }
 
         if (str_contains($r, 'ceo') || str_contains($r, 'client')) {

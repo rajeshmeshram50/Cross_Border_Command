@@ -3,12 +3,11 @@ import { segmentLabel, SegmentBadgeLine } from '../../../../components/ui/Segmen
 import './product-management.css';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
-import { resolveFileUrl, viewFile, downloadFile } from '../../../../utils/resolveFileUrl';
+import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { useAuth } from '../../../../contexts/AuthContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
-import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../../../components/ui/Tooltip';
 import SearchClear from '../../../../components/ui/SearchClear';
 import WorklistPager from '../../../../components/ui/WorklistPager';
@@ -20,12 +19,6 @@ import { MasterRecordModal } from '../../../master/MasterRecordModal';
 import { formatProductCode } from '../../../../utils/formatProductCode';
 import type { SupplierScope } from '../supplier-management/SupplierScopeGate';
 import { lazyPage } from '../../../../utils/lazyPage';
-
-/* The full Add Supplier wizard, reachable from the "+" beside Supplier Name in
-   the Map Supplier popup — the same component (and the same Domestic /
-   International gate in front of it) the Supplier master opens, so a supplier
-   added mid-mapping is a complete supplier, not a thin stub. Lazy so the
-   product form doesn't carry the vendor wizard's bundle unless it's asked for. */
 const SupplierScopeGate = lazyPage(() => import('../supplier-management/SupplierScopeGate'));
 const AddVendorModal    = lazyPage(() => import('../supplier-management/AddVendorModal'));
 
@@ -40,7 +33,6 @@ export type VendorEntry = {
   contactNo: string;
   email: string;
   designation: string;
-  attachments: number;
   purchasePrice: number;
   gstPct: number;
   gstAmt: number;
@@ -49,52 +41,16 @@ export type VendorEntry = {
   remarks: string;
 };
 
-export type AddProductPayload = {
-  name: string;
-  genericName: string;
-  description: string;
-  brand: string;
-  segment: string;
-  hazType: string;
-  hazClass: string;
-  uom: string;
-  hsn: string;
-  condition: string;
-  packagingMaterial: string;
-  confidential: string;
-  primaryImagePath: string | null;
-  secondaryImagePaths: string[];
-  basePrice: number;
-  gstPct: number;
-  gstAmt: number;
-  totalPrice: number;
-  markBottom: string;
-  netWeight: number;
-  grossWeight: number;
-  length: number;
-  width: number;
-  height: number;
-  qcRecords: QcRecord[];
-  documents: Array<{ name: string; type: string }>;
-  vendors: VendorEntry[];
-};
-
-export type QcRecord = {
-  id: number;
-  name: string;
-  purpose: string;
-  issuedBy: string;
-  testingParameter: string;
-  minAcceptance: string;
-  attachmentName: string;
-  attachmentUrl?: string;
-  attachmentFile?: File | null;
-  attachmentPath?: string;
-};
-
 const HAZ_TYPES = ['Non-Haz', 'Haz'];
-
-const QC_NAMES = ['COA', 'MSDS', 'FSSAI', 'AGMARK', 'ISO 9001', 'ISO 22000', 'HACCP', 'HALAL', 'KOSHER', 'FSSC 22000'];
+const COLD_CHAIN_OPTIONS = ['No', 'Yes'];
+// Common cold-chain bands (°C) offered as one-click presets for the range.
+const COLD_CHAIN_PRESETS = [
+  { label: 'Chilled',     min: 2,   max: 8 },
+  { label: 'Cool',        min: 8,   max: 15 },
+  { label: 'Frozen',      min: -25, max: -18 },
+  { label: 'Deep Frozen', min: -40, max: -25 },
+];
+const TEMP_LIMIT = 100;
 
 export type VendorOpt = {
   id: string;
@@ -111,7 +67,6 @@ export type VendorOpt = {
   segmentIds: number[];
 };
 
-/** Raw /products/master-bundle vendor row → the dropdown's VendorOpt. */
 type BundleVendorRow = {
   id: number | string;
   vendor_code?: string | null;
@@ -130,9 +85,6 @@ type BundleVendorRow = {
   } | null;
 };
 
-/* Shared by the initial bundle hydrate and the post-"Add Supplier" refresh, so
-   a supplier added from inside the Map Supplier popup lands in the dropdown
-   shaped exactly like the ones that came with the bundle. */
 const mapVendorRows = (rows?: BundleVendorRow[] | null): VendorOpt[] =>
   (rows || []).map(r => ({
     id:          String(r.id),
@@ -149,7 +101,7 @@ const mapVendorRows = (rows?: BundleVendorRow[] | null): VendorOpt[] =>
     segmentIds:  Array.isArray(r.segment_ids) ? r.segment_ids.map(Number).filter(Number.isFinite) : [],
   }));
 
-type Tab = 'core' | 'sales' | 'quality';
+type Tab = 'core' | 'sales';
 
 const SUP_PAGE_SIZE = 3;
 
@@ -195,14 +147,9 @@ export default function AddProductModal(props: {
   productId?: number | null;
   initialProduct?: any | null;
   supplierOnly?: boolean;
-  /** Hides this wizard's own supplier-mapping path. Set when it is opened from
-   *  inside a supplier — mapping a supplier back from there is a circle. */
   hideSupplierMapping?: boolean;
   onClose: () => void;
   onSaved: (productId: number, finalised: boolean) => void;
-  /** Fired once the product + masters have landed, i.e. the modal is showing
-   *  real content rather than a skeleton. Lets the opener drop whatever
-   *  loading state it put on the control that launched this. */
   onReady?: () => void;
 }) {
   const { productId: initialId, initialProduct, onClose, onSaved, onReady } = props;
@@ -214,7 +161,6 @@ export default function AddProductModal(props: {
   const isSalesDept    = dept === 'sales';
   const isPurchaseDept = dept === 'purchase';
 
-  const [step, setStep] = useState<1 | 2>(1);
   const [tab, setTab] = useState<Tab>('core');
   const [previousOpen, setPreviousOpen] = useState(false);
   const [productId, setProductId] = useState<number | null>(initialId ?? null);
@@ -232,11 +178,6 @@ export default function AddProductModal(props: {
   };
   const PRODUCT_NAME_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'%]/g;
 
-  /* Mirror the server caps in ProductController::storeCore (name max:100,
-     generic_name max:255). Without the generic-name limit here the only thing
-     enforcing it was the API, so an over-long value sailed through Core and
-     came back as a 422 after the GST mapping step — several screens away from
-     the field that caused it (QA #59). */
   const PRODUCT_NAME_MAX = 100;
   const GENERIC_NAME_MAX = 255;
   const NAME_FIELD_MAX: Record<'name' | 'genericName', number> = {
@@ -251,8 +192,6 @@ export default function AddProductModal(props: {
   ) => {
     const max = NAME_FIELD_MAX[fieldKey];
     const stripped = raw.replace(PRODUCT_NAME_INVALID_RE, '');
-    // Cap here as well as via maxLength: a paste that the browser truncates
-    // never reaches this handler, but a programmatic or IME-composed value can.
     const cleaned = stripped.slice(0, max);
     setter(cleaned);
     if (stripped.length > max) {
@@ -270,9 +209,6 @@ export default function AddProductModal(props: {
     }
   };
 
-  /* Mirrors the server's `description => max:10000` (ProductController::
-     storeCore). The cap guards the PI/PO PDF renderers, which chunk the
-     description into table rows — an uncapped paste OOM'd dompdf. */
   const DESCRIPTION_MAX = 10000;
 
   const HAS_ANGLE_BRACKET_RE = /[<>]/;
@@ -330,6 +266,9 @@ export default function AddProductModal(props: {
   const [conditionId, setConditionId] = useState('');
   const [packagingMaterialId, setPackagingMaterialId] = useState('');
   const [confidential, setConfidential] = useState('');
+  const [coldChain, setColdChain] = useState('No');
+  const [coldChainMin, setColdChainMin] = useState('');
+  const [coldChainMax, setColdChainMax] = useState('');
   const [primaryImagePath, setPrimaryImagePath] = useState<string | null>(null);
   const [primaryImageFile, setPrimaryImageFile] = useState<File | null>(null);
   const [secondaryImagePaths, setSecondaryImagePaths] = useState<string[]>([]);
@@ -380,7 +319,6 @@ export default function AddProductModal(props: {
   const canMapSupplier = !!gstId;
   const gstAmt    = +(basePriceNum * (gstPctNum / 100)).toFixed(2);
   const totalPrice = +(basePriceNum + gstAmt).toFixed(2);
-
   const [vendors, setVendors] = useState<VendorEntry[]>([]);
   const [vendorDraftOpen, setVendorDraftOpen] = useState(false);
   const [supplierPopupOpen, setSupplierPopupOpen] = useState(false);
@@ -389,20 +327,13 @@ export default function AddProductModal(props: {
   const [gstMapOpen, setGstMapOpen] = useState(false);
   const [gstMapValue, setGstMapValue] = useState('');
   const [gstMasterOpen, setGstMasterOpen] = useState(false);
-  /* True while /usage is being asked whether this product's GST % is pinned by
-     a PO / SPI — keeps the two entry points from firing twice. */
   const [gstChecking, setGstChecking] = useState(false);
   const [newGstRate, setNewGstRate] = useState('');
   const [gstBusy, setGstBusy] = useState(false);
   const [vendorOpts, setVendorOpts] = useState<VendorOpt[]>([]);
   const [vendorSelectedCode, setVendorSelectedCode] = useState('');
   const [vendorPurchasePrice, setVendorPurchasePrice] = useState<string>('');
-  const [vendorRemarks, setVendorRemarks] = useState('');
   const [vendorEditingId, setVendorEditingId] = useState<string | null>(null);
-
-  /* Mapped Suppliers popup: client-side search + a fixed 3-row page (no
-     rows-per-page picker — QA #74). Each row carries its master option so the
-     search and the Type / State columns read the same lookup. */
   const [supSearch, setSupSearch] = useState('');
   const [supPage, setSupPage] = useState(1);
   useEffect(() => {
@@ -421,20 +352,6 @@ export default function AddProductModal(props: {
   }, [vendors, vendorOpts, supSearch]);
   const supPages = Math.max(1, Math.ceil(supRows.length / SUP_PAGE_SIZE));
 
-  /* Suppliers already mapped to this product are not offered again. (#14)
-   *
-   * Picking one was already refused on save, with an "Already mapped" toast —
-   * but only after the user had chosen a supplier, typed a purchase price and
-   * pressed the button. Offering a choice that can only be rejected is the
-   * wrong half of the fix; the save guard stays as defence in depth.
-   *
-   * The row BEING EDITED is excluded from the exclusion, or editing a mapping
-   * would drop its own supplier out of the dropdown and leave the field blank.
-   *
-   * Matched on id AND code because `vendors` rows carry whichever the source
-   * gave them — a freshly mapped row has the id, one loaded from the server may
-   * only carry the code.
-   */
   const mappedVendorKeys = useMemo(() => {
     const ids = new Set<string>();
     const codes = new Set<string>();
@@ -454,27 +371,15 @@ export default function AddProductModal(props: {
   );
   const supPageSafe = Math.min(supPage, supPages);
   const supStart = (supPageSafe - 1) * SUP_PAGE_SIZE;
-
-  /* "+" beside Supplier Name → Domestic/International gate → the full Add
-     Supplier wizard. `supplierAddScope` doubles as the wizard's open flag: it
-     is only set once the gate has been answered, because the scope decides
-     which form the wizard renders. */
   const [supplierGateOpen, setSupplierGateOpen] = useState(false);
   const [supplierAddScope, setSupplierAddScope] = useState<SupplierScope | null>(null);
 
-  /* The vendor wizard's own backdrop sits at z-index 1090, below this modal's
-     Map Supplier popup (1100), so opened from here it would render UNDERNEATH.
-     A body class lifts it (and its gate) only while the product form is the one
-     that opened it — the Supplier master's own usage is untouched. */
   useEffect(() => {
     const open = supplierGateOpen || supplierAddScope !== null;
     document.body.classList.toggle('apm-supplier-wizard-open', open);
     return () => document.body.classList.remove('apm-supplier-wizard-open');
   }, [supplierGateOpen, supplierAddScope]);
 
-  /* Pull the master bundle again after a supplier is added so the dropdown has
-     it immediately, and preselect it. VendorController::store bumps the server
-     bundle cache, so this refetch really does come back with the new row. */
   const refreshVendorOpts = async (selectCompanyName?: string) => {
     try {
       const res = await api.get<{ vendors?: BundleVendorRow[] }>('/products/master-bundle');
@@ -488,8 +393,6 @@ export default function AddProductModal(props: {
         if (hit?.code) setVendorSelectedCode(hit.code);
       }
     } catch {
-      // Keep the list we already have — the supplier is saved either way, and
-      // reopening the popup (or the 5-minute TTL) will surface it.
     }
   };
 
@@ -584,16 +487,6 @@ export default function AddProductModal(props: {
     setProdAttachmentUrl(null);
   };
 
- const REMARKS_MIN = 3;
-  const REMARKS_MAX = 250;
-  const vendorRemarksError = (val: string): string | undefined => {
-    const t = val.trim();
-    if (t.length === 0)          return undefined;
-    if (t.length < REMARKS_MIN)  return `Remarks must be at least ${REMARKS_MIN} characters`;
-    if (val.length > REMARKS_MAX) return `Remarks must be ${REMARKS_MAX} characters or fewer`;
-    return undefined;
-  };
-
   const persistsImmediately = initialId != null;
 
   const commitVendorList = async (newList: VendorEntry[], successTitle: string, successMsg: string): Promise<boolean> => {
@@ -606,10 +499,6 @@ export default function AddProductModal(props: {
     toast.success(successTitle, successMsg);
     return true;
   };
-
-  /* There is deliberately no removeVendor() here any more. The only route that
-     unmaps a supplier from a product is unmapForSegmentChange(), reached from
-     the segment-change gate — see the Mapped Suppliers popup's Action column. */
 
   const requestSegmentChange = async (v: string) => {
     if (v === segmentId || segChecking) return;
@@ -687,19 +576,12 @@ export default function AddProductModal(props: {
     const missing: string[] = [];
     if (!vendorSelected)        missing.push('Vendor');
     if (String(vendorPurchasePrice ?? '').trim() === '') missing.push('Purchase Price');
-    if (missing.length) {
+    if (missing.length || !vendorSelected) {
       toast.error('Missing required fields', `Please fill: ${missing.join(', ')}`);
       return;
     }
-    if (!vendorSelected) return;
     if (!(vendorPp >= 1)) {
       toast.error('Invalid Purchase Price', 'Purchase Price must be 1 or greater.');
-      return;
-    }
-
-    const remarksErr = vendorRemarksError(vendorRemarks);
-    if (remarksErr) {
-      toast.error('Invalid remarks', remarksErr);
       return;
     }
 
@@ -741,7 +623,6 @@ export default function AddProductModal(props: {
           gstPct:        vendorGp,
           gstAmt:        vendorGsta,
           totalAmt:      vendorTota,
-          remarks:       vendorRemarks,
         }
       );
       if (await commitVendorList(newList, 'Supplier updated', `${vendorSelected.name} mapping updated`)) {
@@ -761,19 +642,16 @@ export default function AddProductModal(props: {
       contactNo: vendorSelected.phone,
       email: vendorSelected.email,
       designation: vendorSelected.designation,
-      attachments: 0,
       purchasePrice: vendorPp,
       gstPct: vendorGp,
       gstAmt: vendorGsta,
       totalAmt: vendorTota,
       mapDate: today(),
-      remarks: vendorRemarks,
+      remarks: '',
     };
     const newList = [...vendors, entry];
     if (await commitVendorList(newList, 'Supplier mapped', `${entry.vendorName} added to this product`)) {
       closeVendorDraft();
-      // New rows append, so land on the last page with the search cleared —
-      // otherwise the supplier just mapped sits out of view.
       setSupSearch('');
       setSupPage(Math.ceil(newList.length / SUP_PAGE_SIZE));
     }
@@ -784,7 +662,6 @@ export default function AddProductModal(props: {
     const opt = vendorOpts.find(o => (v.vendorId && o.id === String(v.vendorId)) || (v.vendorCode && o.code === v.vendorCode));
     setVendorSelectedCode(opt?.code ?? v.vendorCode);
     setVendorPurchasePrice(v.purchasePrice ? String(v.purchasePrice) : '');
-    setVendorRemarks(v.remarks ?? '');
     setVendorDraftOpen(true);
   };
 
@@ -793,7 +670,6 @@ export default function AddProductModal(props: {
     setVendorEditingId(null);
     setVendorSelectedCode('');
     setVendorPurchasePrice('');
-    setVendorRemarks('');
   };
 
   const closeSupplierPopup = () => {
@@ -856,23 +732,7 @@ export default function AddProductModal(props: {
       conditions:         Array<Row & { title?: string | null }>;
       packaging_material: Array<Row & { title?: string | null }>;
       gst_percentage:     Array<Row & { percentage?: number | string | null }>;
-      vendors: Array<{
-        id: number | string;
-        vendor_code?: string | null;
-        company_name?: string | null;
-        website?: string | null;
-        primary_email?: string | null;
-        status?: string | null;
-        vendor_type_name?: string | null;
-        state?: string | null;
-        segment_ids?: Array<number | string> | null;
-        primary_address?: {
-          contact_name?: string | null;
-          contact_no?: string | null;
-          email?: string | null;
-          designation?: string | null;
-        } | null;
-      }>;
+      vendors:            BundleVendorRow[];
     };
 
     const toOpt = <T extends Row>(rows: T[], labelKey: keyof T, extraKeys?: Array<keyof T>): MasterOpt[] =>
@@ -988,6 +848,7 @@ export default function AddProductModal(props: {
           segment_id?: number; haz_type?: string; haz_class_id?: number;
           uom_id?: number; hsn_id?: number; condition_id?: number;
           packaging_material_id?: number; confidential_info?: string;
+          cold_chain?: boolean | null; cold_chain_temp_min?: string | number | null; cold_chain_temp_max?: string | number | null;
           primary_image?: string | null; secondary_images?: string[] | null;
           primary_image_url?: string | null; secondary_images_url?: string[] | null;
           product_attachment?: string | null; product_attachment_url?: string | null;
@@ -1016,6 +877,9 @@ export default function AddProductModal(props: {
         setConditionId(p.condition_id ? String(p.condition_id) : '');
         setPackagingMaterialId(p.packaging_material_id ? String(p.packaging_material_id) : '');
         setConfidential(p.confidential_info ?? '');
+        setColdChain(p.cold_chain ? 'Yes' : 'No');
+        setColdChainMin(p.cold_chain_temp_min != null ? String(Number(p.cold_chain_temp_min)) : '');
+        setColdChainMax(p.cold_chain_temp_max != null ? String(Number(p.cold_chain_temp_max)) : '');
         setPrimaryImagePath(p.primary_image ?? null);
         setPrimaryImageUrl(p.primary_image_url ?? (p.primary_image ? resolveFileUrl(p.primary_image) : null));
         setPrimaryImageFile(null);
@@ -1043,7 +907,6 @@ export default function AddProductModal(props: {
           contactNo: String(v.contact_no ?? ''),
           email: String(v.email ?? ''),
           designation: String(v.designation ?? ''),
-          attachments: 0,
           purchasePrice: Number(v.purchase_price ?? 0),
           gstPct: Number(v.gst_percentage ?? 0),
           gstAmt: Number(v.gst_amount ?? 0),
@@ -1058,7 +921,6 @@ export default function AddProductModal(props: {
         setLoadingEdit(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialId]);
 
   const fileTag = (f: File | null) => (f ? `${f.name}:${f.size}:${f.lastModified}` : null);
@@ -1076,6 +938,9 @@ export default function AddProductModal(props: {
     condition_id: conditionId ? Number(conditionId) : null,
     packaging_material_id: packagingMaterialId ? Number(packagingMaterialId) : null,
     confidential_info: confidential,
+    cold_chain: coldChain === 'Yes',
+    cold_chain_temp_min: coldChain === 'Yes' ? coldChainMin : '',
+    cold_chain_temp_max: coldChain === 'Yes' ? coldChainMax : '',
     gst_id: (gstOverride ?? gstId) ? Number(gstOverride ?? gstId) : null,
     primary_image: primaryImagePath ?? '',
     primary_image_file: fileTag(primaryImageFile),
@@ -1085,15 +950,12 @@ export default function AddProductModal(props: {
     product_attachment_file: fileTag(prodAttachmentFile),
   });
 
-  /** Payload as of the last successful save — null until one lands. */
   const savedCoreRef = useRef<Record<string, unknown> | null>(null);
-  /** A record is settling (opened for edit, or just saved) and owes a fingerprint. */
   const coreBaselineArmedRef = useRef(false);
 
   const coreChangedKeys = (base: Record<string, unknown>, next: Record<string, unknown>): string[] =>
     Object.keys(next).filter(k => JSON.stringify(next[k]) !== JSON.stringify(base[k]));
 
-  /* Arm the fingerprint once an existing product has finished loading. */
   useEffect(() => {
     if (initialId && !loadingEdit) coreBaselineArmedRef.current = true;
   }, [initialId, loadingEdit]);
@@ -1111,19 +973,12 @@ export default function AddProductModal(props: {
   const saveCore = async () => {
     const errs: Record<string, string> = {};
     if (!name.trim())            errs.name              = 'Product name is required';
-    /* maxLength stops the user typing past the cap, but it does NOT apply to a
-       value put into state programmatically — editing a legacy product whose
-       stored generic_name is longer than 255 loads straight past it. Check on
-       Save so it is caught here rather than by the API after the GST step. */
     else if (name.length > PRODUCT_NAME_MAX)
       errs.name = `Product name must be ${PRODUCT_NAME_MAX} characters or fewer (currently ${name.length})`;
     if (!genericName.trim())     errs.genericName       = 'Generic name is required';
     else if (genericName.length > GENERIC_NAME_MAX)
       errs.genericName = `Generic name must be ${GENERIC_NAME_MAX} characters or fewer (currently ${genericName.length})`;
     if (!description.trim())     errs.description       = 'Printable description is required';
-    /* Same reason as the name fields above: the handler caps what is typed or
-       pasted, but a value loaded from a legacy record bypasses it. Catch it
-       here so it reads as a field error instead of a raw 422 from the API. */
     else if (description.length > DESCRIPTION_MAX)
       errs.description = `Printable description must be ${DESCRIPTION_MAX.toLocaleString()} characters or fewer (currently ${description.length.toLocaleString()})`;
     else if (HAS_ANGLE_BRACKET_RE.test(description)) errs.description = 'HTML-like syntax (<, >) is not allowed';
@@ -1136,6 +991,13 @@ export default function AddProductModal(props: {
     if (!hsnId)                  errs.hsnId             = 'HSN / SAC Code is required';
     if (!conditionId)            errs.conditionId       = 'Condition is required';
     if (!packagingMaterialId)    errs.packagingMaterialId = 'Packaging Material is required';
+    if (coldChain === 'Yes') {
+      const lo = Number(coldChainMin), hi = Number(coldChainMax);
+      if (coldChainMin === '' || coldChainMax === '') errs.coldChainTemp = 'Min and max temperature are required when Cold Chain is Yes';
+      else if (!Number.isFinite(lo) || !Number.isFinite(hi)) errs.coldChainTemp = 'Temperature must be a number';
+      else if (Math.abs(lo) > TEMP_LIMIT || Math.abs(hi) > TEMP_LIMIT) errs.coldChainTemp = `Temperature must be between -${TEMP_LIMIT} and ${TEMP_LIMIT} °C`;
+      else if (lo > hi) errs.coldChainTemp = 'Min temperature cannot be greater than max';
+    }
     const hasPrimary = !!primaryImageFile || !!primaryImagePath;
     const hasSecondary = secondaryImageFiles.length > 0 || secondaryImagePaths.length > 0;
     if (!hasPrimary)   errs.primaryImage   = 'Primary image is required';
@@ -1162,15 +1024,9 @@ export default function AddProductModal(props: {
   ): Promise<boolean> => {
     const advance = opts?.advance !== false;
 
-    /* Nothing moved since the last save — skip the round trip (and the image
-       re-upload that goes with it) and let the caller carry on, exactly as the
-       employee wizard does. Only ever skipped for a product that already
-       exists: the first save has no baseline to trust. */
     if (productId && savedCoreRef.current) {
       const next = buildCorePayload(gstToCommit);
       if (coreChangedKeys(savedCoreRef.current, next).length === 0) {
-        // Re-picking the rate already on record still deserves its
-        // confirmation — from the user's side the mapping did happen.
         if (opts?.successToast) toast.success('GST mapped', opts.successToast);
         if (advance) setTab('sales');
         return true;
@@ -1197,6 +1053,9 @@ export default function AddProductModal(props: {
       put('condition_id', conditionId ? Number(conditionId) : null);
       put('packaging_material_id', packagingMaterialId ? Number(packagingMaterialId) : null);
       put('confidential_info', confidential);
+      put('cold_chain', coldChain === 'Yes' ? '1' : '0');
+      put('cold_chain_temp_min', coldChain === 'Yes' ? coldChainMin : '');
+      put('cold_chain_temp_max', coldChain === 'Yes' ? coldChainMax : '');
       if (gstToCommit) put('gst_id', Number(gstToCommit));
 
       fd.append('primary_image', primaryImagePath ?? '');
@@ -1402,11 +1261,6 @@ export default function AddProductModal(props: {
 
   return createPortal((
     <div className={`apm-backdrop ${supplierOnly ? 'apm-backdrop-supplieronly' : ''}`}>
-      {/* Supplier-only mode hides the wizard and waits for the product +
-          masters before the real popup can open. Callers that don't pass
-          `initialProduct` (the product list) pay a fetch here, so stand the
-          popup's own frame up straight away and shimmer its body — the click
-          lands on a visible popup instead of an empty screen. */}
       {supplierOnly && (loadingEdit || mastersLoading) && <SupplierSkeleton onClose={onClose} />}
       <div className={`apm-modal ${supplierOnly ? 'apm-modal-hidden' : ''}`} onClick={(e) => e.stopPropagation()}>
         {saving && <div className="apm-busy-veil" aria-hidden />}
@@ -1420,19 +1274,15 @@ export default function AddProductModal(props: {
             </div>
             <div>
               <div className="apm-title">
-                {step === 2
-                  ? 'Map Product Supplier'
-                  : (initialId ? 'Edit Product' : 'Add Product')}
-                {(initialId != null || step === 2) && headerProductCode && (
+                {initialId ? 'Edit Product' : 'Add Product'}
+                {initialId != null && headerProductCode && (
                   <span className="apm-title-code">— {headerProductCode}</span>
                 )}
               </div>
               <div className="apm-sub">
-                {step === 2
-                  ? 'Link this product to one or more suppliers with purchase pricing.'
-                  : (initialId
-                      ? 'Update product details — identity, pricing, compliance and dimensions.'
-                      : 'Create products with pricing, compliance, quality controls, and supplier mapping for procurement and sales readiness.')}
+                {initialId
+                  ? 'Update product details — identity, pricing, compliance and dimensions.'
+                  : 'Create products with pricing, compliance, quality controls, and supplier mapping for procurement and sales readiness.'}
               </div>
             </div>
           </div>
@@ -1501,14 +1351,13 @@ export default function AddProductModal(props: {
         <div className="apm-body">
           {(mastersLoading || loadingEdit) ? (
             <FormSkeleton />
-          ) : step === 1 && (
+          ) : (
             <>
               {tab !== 'core' && (
                 <PreviousStages
                   open={previousOpen}
                   onToggle={() => setPreviousOpen(v => !v)}
                   completed={1}
-                  total={1}
                   stages={[
                     {
                       name: 'PRODUCT CORE',
@@ -1520,6 +1369,8 @@ export default function AddProductModal(props: {
                         { label: 'Segment',      value: labelOf(optSegments, segmentId), node: (() => { const o = optSegments.find(x => x.value === segmentId); return o ? <SegmentBadgeLine label={String(o.extra?.name ?? o.label)} status={o.extra?.regulatory_status as string} /> : undefined; })() },
                         { label: 'Haz/Non-Haz',  value: hazType || '—' },
                         { label: 'UOM',          value: labelOf(optUoms, uomId) },
+                        { label: 'Cold Chain',   value: coldChain || '—' },
+                        { label: 'Temperature Range', value: coldChain === 'Yes' && coldChainMin !== '' && coldChainMax !== '' ? `${coldChainMin} to ${coldChainMax} °C` : '—' },
                       ],
                     },
                   ]}
@@ -1643,6 +1494,85 @@ export default function AddProductModal(props: {
                       <Field label="Packaging Material" required addNew onAdd={() => setQuickAdd('packaging_material')} error={fieldErrors.packagingMaterialId}>
                         <SelectInput value={packagingMaterialId} onChange={(v) => { setPackagingMaterialId(v); clearFieldError('packagingMaterialId'); }} placeholder="Select" options={optPackaging} />
                       </Field>
+                    </div>
+                    <div className={`apm-coldchain-box${coldChain === 'Yes' ? ' is-on' : ''}`}>
+                      <div className="apm-grid-3">
+                        <Field label="Cold Chain" required>
+                          <SelectInput
+                            value={coldChain}
+                            onChange={(v) => {
+                              setColdChain(v);
+                              if (v !== 'Yes') {
+                                setColdChainMin('');
+                                setColdChainMax('');
+                                clearFieldError('coldChainTemp');
+                              }
+                            }}
+                            placeholder="Select"
+                            options={COLD_CHAIN_OPTIONS}
+                          />
+                        </Field>
+                        <div className="apm-span-2">
+                          <Field
+                            label="Temperature Range"
+                            required={coldChain === 'Yes'}
+                            disabled={coldChain !== 'Yes'}
+                            error={fieldErrors.coldChainTemp}
+                            labelExtra={
+                              <span className="apm-temp-presets">
+                                {COLD_CHAIN_PRESETS.map(pr => (
+                                  <button
+                                    key={pr.label}
+                                    type="button"
+                                    className="apm-temp-chip"
+                                    disabled={coldChain !== 'Yes'}
+                                    onClick={() => { setColdChainMin(String(pr.min)); setColdChainMax(String(pr.max)); clearFieldError('coldChainTemp'); }}
+                                  >
+                                    <b>{pr.label}</b> {pr.min}…{pr.max}°C
+                                  </button>
+                                ))}
+                              </span>
+                            }
+                          >
+                            <div className="apm-temp-range">
+                              <div className="apm-temp-input">
+                                <i className="ri-temp-cold-line apm-temp-ico" />
+                                <input
+                                  className="apm-input apm-input-mf"
+                                  type="number"
+                                  step="0.1"
+                                  min={-TEMP_LIMIT}
+                                  max={TEMP_LIMIT}
+                                  placeholder="Min"
+                                  value={coldChainMin}
+                                  disabled={coldChain !== 'Yes'}
+                                  onChange={e => { setColdChainMin(e.target.value); clearFieldError('coldChainTemp'); }}
+                                />
+                                <span className="apm-temp-unit">°C</span>
+                              </div>
+                              <span className="apm-temp-to">to</span>
+                              <div className="apm-temp-input">
+                                <i className="ri-temp-cold-line apm-temp-ico" />
+                                <input
+                                  className="apm-input apm-input-mf"
+                                  type="number"
+                                  step="0.1"
+                                  min={-TEMP_LIMIT}
+                                  max={TEMP_LIMIT}
+                                  placeholder="Max"
+                                  value={coldChainMax}
+                                  disabled={coldChain !== 'Yes'}
+                                  onChange={e => { setColdChainMax(e.target.value); clearFieldError('coldChainTemp'); }}
+                                />
+                                <span className="apm-temp-unit">°C</span>
+                              </div>
+                            </div>
+                          </Field>
+                        </div>
+                      </div>
+                      <div className="apm-coldchain-hint">
+                        Set whether this product needs cold chain and the minimum and maximum temperature it must be held at, or pick a preset.
+                      </div>
                     </div>
                     <Field label="Confidential Info" icon={<i className="ri-lock-2-line" />}>
                       <textarea
@@ -1824,7 +1754,6 @@ export default function AddProductModal(props: {
                                 const rest = segOpts.slice(MAX_INLINE);
                                 badges.push({
                                   text: `+${rest.length}`, tone: 'gray' as const, title: rest.map(o => o.label).join(', '),
-                                  // Objects, not plain text: the popup draws each segment's own Reg badge.
                                   items: rest.map(o => ({ text: String(o.extra?.name ?? o.label), reg: o.extra?.regulatory_status as string })),
                                 });
                               }
@@ -1886,19 +1815,6 @@ export default function AddProductModal(props: {
                   </div>
                 </div>
               ), document.body)}
-
-              {/* Scope first, wizard second — the same two-step the Supplier
-                  master uses, so the form knows whether it is building an
-                  India/GST supplier or an international one.
-
-                  PORTALLED to <body>: SupplierScopeGate renders inline, and
-                  rendered here it would sit inside .apm-sup-overlay — a
-                  positioned, z-indexed element, i.e. its own stacking context.
-                  Its z-index would then only compete INSIDE that context, so
-                  the Map Supplier popup (a body-level sibling at 1100) painted
-                  straight over it. As a body child it competes with the popups
-                  for real. (AddVendorModal already portals itself; it rides
-                  along here for symmetry.) */}
               {createPortal((
                 <>
                   {supplierGateOpen && (
@@ -1914,16 +1830,10 @@ export default function AddProductModal(props: {
                     <Suspense fallback={null}>
                       <AddVendorModal
                         scope={supplierAddScope}
-                        /* The product↔supplier link is being made on the popup
-                           underneath this one — mapping products from in here
-                           would be the same job pointed the other way. */
                         canMapProducts={false}
                         onClose={() => setSupplierAddScope(null)}
                         onSubmit={(payload) => {
                           setSupplierAddScope(null);
-                          // Refetch + preselect, so the user lands back on the
-                          // Map Supplier popup with the supplier they just
-                          // created already chosen and only the price to type.
                           void refreshVendorOpts(payload.companyName);
                         }}
                       />
@@ -1971,12 +1881,6 @@ export default function AddProductModal(props: {
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                                 </button>
                               </Tooltip>
-                              {/* No Remove here on purpose. Unmapping a supplier
-                                  is only offered by the segment-change gate
-                                  (see segGatePending below), where dropping the
-                                  mapping is the point of the dialog. Leaving a
-                                  delete on this popup meant a mapping could be
-                                  torn off in passing, with nothing asking why. */}
                             </div>
                           </td>
                         </tr>
@@ -2016,49 +1920,32 @@ export default function AddProductModal(props: {
             </span>
           </div>
           <div className="apm-foot-right">
-            {(step === 2 || (step === 1 && tab !== 'core')) && (
+            {tab === 'sales' && (
               <button
                 className="apm-btn-outline"
                 disabled={saving}
-                onClick={() => {
-                  if (step === 2)            { setStep(1); setTab('sales'); }
-                  else if (tab === 'sales')  { setTab('core'); }
-                }}
+                onClick={() => setTab('core')}
               >
                 ← Previous
               </button>
             )}
-            {step === 2 ? (
-              <button className="apm-btn-primary" onClick={saveVendorsAndFinish} disabled={saving || loadingEdit || mastersLoading}>
-                {saving ? (
-                  <span className="apm-spinner" />
-                ) : (
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                )}
-                {saving ? 'Saving…' : 'Save Product'}
-              </button>
-            ) : (
-              <button
-                className="apm-btn-primary"
-                disabled={saving || loadingEdit || mastersLoading}
-                onClick={() => {
-                  if (tab === 'core')       saveCore();
-                  else if (tab === 'sales') saveSales();
-                }}
-              >
-                {saving ? <span className="apm-spinner" /> : null}
-                {saving ? 'Saving…' : (tab === 'core' ? (isPurchaseDept ? <>Save &amp; Close</> : <>Save &amp; Next →</>) : <>Submit Product</>)}
-              </button>
-            )}
+            <button
+              className="apm-btn-primary"
+              disabled={saving || loadingEdit || mastersLoading}
+              onClick={() => {
+                if (tab === 'core') saveCore();
+                else                saveSales();
+              }}
+            >
+              {saving ? <span className="apm-spinner" /> : null}
+              {saving ? 'Saving…' : (tab === 'core' ? (isPurchaseDept ? <>Save &amp; Close</> : <>Save &amp; Next →</>) : <>Submit Product</>)}
+            </button>
           </div>
         </div>
       </div>
 
       {segGatePending && createPortal((
         <div className="apm-sup-overlay" onClick={() => { if (!saving) setSegGatePending(''); }}>
-          {/* Full width, not apm-sup-modal-narrow: this table carries the same
-              eleven columns as the Mapped Suppliers popup and 760px squeezed
-              them. */}
           <div className="apm-sup-modal" onClick={(e) => e.stopPropagation()}>
             <div className="apm-sup-head">
               <div className="apm-sup-head-ico">
@@ -2310,11 +2197,10 @@ function StepperItem(props: { n: number; title: string; sub: string; current: nu
 }
 
 function SectionCard(props: {
-  tone: 'blue' | 'violet' | 'amber' | 'green' | 'navy';
+  tone: 'violet';
   icon: ReactNode;
   title: string;
   subtitle: string;
-  headerAction?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -2327,18 +2213,13 @@ function SectionCard(props: {
             {props.subtitle && <span className="apm-section-sub">| {props.subtitle}</span>}
           </div>
         </div>
-        {props.headerAction}
       </div>
       <div className="apm-section-body">{props.children}</div>
     </div>
   );
 }
 
-/* Mapped Suppliers popup, pre-data. The chrome (header, count bar, table
- * headings) is static text, so it renders for real and only the rows
- * shimmer — the popup appears instantly and then fills in. */
 function SupplierSkeleton({ onClose }: { onClose: () => void }) {
-  // Portalled to <body> like the real popup, so the swap is seamless.
   return createPortal((
     <div className="apm-sup-overlay" onClick={onClose}>
       <div className="apm-sup-modal" onClick={(e) => e.stopPropagation()} aria-busy="true" aria-live="polite">
@@ -2436,6 +2317,8 @@ function Field(props: {
   icon?: ReactNode;
   error?: string;
   disabled?: boolean;
+  /** Extra content pushed to the right end of the label row (e.g. preset chips). */
+  labelExtra?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -2467,6 +2350,7 @@ function Field(props: {
             </button>
           </Tooltip>
         )}
+        {props.labelExtra && <span className="apm-field-label-extra">{props.labelExtra}</span>}
       </span>
       {props.icon ? (
         <div className="apm-master-field">
@@ -2657,22 +2541,14 @@ function UploadDropzone(props: {
 
 type PrevStage = {
   name: string;
-  tone: 'violet' | 'amber' | 'green';
+  tone: 'violet';
   fields: { label: string; value: string; node?: ReactNode }[];
-  extras?: PrevStageExtra[];
-};
-
-type PrevStageExtra = {
-  label: string;
-  pairs: { k: string; v: string }[];
-  attachment?: { name: string; href: string } | null;
 };
 
 function PreviousStages(props: {
   open: boolean;
   onToggle: () => void;
   completed: number;
-  total: number;
   stages: PrevStage[];
 }) {
   return (
@@ -2704,44 +2580,12 @@ function PreviousStages(props: {
                 {s.fields.map(f => (
                   <div key={f.label} className="apm-prev-sumcell">
                     <span className="apm-prev-sumk">{f.label}</span>
-                    {/* Same portal tooltip the product cards use, so a long
-                        value (product / generic name) reads in full on hover
-                        instead of relying on the browser's native title. */}
                     <Tooltip label={f.value} disabled={!f.value || f.value === '—'}>
                       <span className="apm-prev-sumv">{f.node ?? f.value}</span>
                     </Tooltip>
                   </div>
                 ))}
               </div>
-              {s.extras && s.extras.length > 0 && (
-                <div className="apm-prev-extras">
-                  {s.extras.map((ex, i) => (
-                    <div key={i} className="apm-prev-extra-row">
-                      <span className="apm-prev-extra-label">{ex.label}</span>
-                      {ex.pairs.map((p, j) => (
-                        <span key={j} className="apm-prev-extra-pair">
-                          <span className="apm-prev-extra-k">{p.k} :</span>{' '}
-                          <Tooltip label={p.v} disabled={!p.v || p.v === '—'}>
-                            <span className="apm-prev-extra-v">{p.v}</span>
-                          </Tooltip>
-                        </span>
-                      ))}
-                      {ex.attachment?.href && (
-                        <Tooltip label={`Open ${ex.attachment.name}`}>
-                          <a
-                            href={ex.attachment.href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="apm-prev-extra-attach"
-                          >
-                            <i className="ri-attachment-line" /> {ex.attachment.name}
-                          </a>
-                        </Tooltip>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           ))}
         </div>

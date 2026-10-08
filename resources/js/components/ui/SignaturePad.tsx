@@ -10,6 +10,43 @@ const PENCIL_CURSOR =
   + "</svg>\") 2 22, crosshair";
 
 // Google Fonts used in the Type tab. Loaded once, lazily, on first mount.
+/* Colours live here rather than inline so dark mode can reach them. Only the
+   on-screen preview changes in dark mode: typed names and drawn strokes are
+   shown in a lighter ink (--sigpad-ink / the canvas filter) so they stay
+   legible, while the exported PNG is still rendered in `penColor` on a
+   transparent background — the signed document looks the same either way. */
+const SIGPAD_CSS = `
+.sigpad-root {
+  --sigpad-tabs-bg: #f3f4f6; --sigpad-tab-fg: #6b7280;
+  --sigpad-surface: #fafaff; --sigpad-surface-hover: #f5f3ff;
+  --sigpad-card: #fff; --sigpad-card-border: #e5e7eb;
+  --sigpad-dash: #c4b5fd; --sigpad-muted: #9ca3af; --sigpad-sub: #6b7280; --sigpad-strong: #374151;
+  --sigpad-line: rgba(99,102,241,0.20);
+}
+[data-bs-theme="dark"] .sigpad-root {
+  --sigpad-tabs-bg: rgba(255,255,255,0.06); --sigpad-tab-fg: rgba(255,255,255,0.65);
+  --sigpad-surface: rgba(255,255,255,0.03); --sigpad-surface-hover: rgba(167,139,250,0.12);
+  --sigpad-card: var(--vz-secondary-bg, #1e1b2e); --sigpad-card-border: var(--vz-border-color, #2f2b45);
+  --sigpad-dash: rgba(167,139,250,0.45); --sigpad-muted: rgba(255,255,255,0.45); --sigpad-sub: rgba(255,255,255,0.6); --sigpad-strong: rgba(255,255,255,0.88);
+  --sigpad-line: rgba(167,139,250,0.30);
+  --sigpad-ink: #a5b4fc;
+}
+.sigpad-tabs { background: var(--sigpad-tabs-bg); border-radius: 8px; padding: 3px; gap: 2px; margin-bottom: 10px; }
+.sigpad-tab { color: var(--sigpad-tab-fg); }
+.sigpad-surface { border: 1px dashed var(--sigpad-dash); border-radius: 10px; background: var(--sigpad-surface); }
+.sigpad-surface.is-drag { border-color: #7c5cfc; background: var(--sigpad-surface-hover); }
+.sigpad-card { border: 1px solid var(--sigpad-card-border); background: var(--sigpad-card); }
+.sigpad-card.is-active { border: 2px solid #7c5cfc; background: var(--sigpad-surface-hover); }
+.sigpad-btn { border: 1px solid var(--sigpad-card-border); background: var(--sigpad-card); color: var(--sigpad-sub); }
+.sigpad-muted { color: var(--sigpad-muted); }
+.sigpad-sub { color: var(--sigpad-sub); }
+.sigpad-strong { color: var(--sigpad-strong); }
+.sigpad-line { background: var(--sigpad-line); }
+/* Display-only: lifts dark ink to a light tone on the dark pad. toDataURL()
+   reads the canvas bitmap, which CSS filters never touch. */
+[data-bs-theme="dark"] .sigpad-root canvas { filter: invert(1) hue-rotate(180deg); }
+`;
+
 const TYPE_FONTS = [
   { id: 'caveat',        label: 'Caveat',         family: 'Caveat, cursive' },
   { id: 'dancing',       label: 'Dancing Script', family: '"Dancing Script", cursive' },
@@ -191,16 +228,18 @@ export default function SignaturePad({
 
   return (
     <div className="sigpad-root" style={{ width: '100%' }}>
+      <style>{SIGPAD_CSS}</style>
       {/* Tabs */}
-      <div className="d-inline-flex" style={{ background: '#f3f4f6', borderRadius: 8, padding: 3, gap: 2, marginBottom: 10 }}>
+      <div className="d-inline-flex sigpad-tabs">
         {tabs.map(t => {
           const active = mode === t.id;
           return (
             <button key={t.id} type="button" onClick={() => setMode(t.id)} disabled={disabled}
+              className={active ? undefined : 'sigpad-tab'}
               style={{
                 padding: '6px 14px', borderRadius: 6, border: 0,
                 background: active ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'transparent',
-                color: active ? '#fff' : '#6b7280',
+                ...(active ? { color: '#fff' } : {}),
                 fontSize: 12, fontWeight: 700, cursor: disabled ? 'not-allowed' : 'pointer',
                 display: 'inline-flex', alignItems: 'center', gap: 6,
               }}>
@@ -250,9 +289,8 @@ function TypePanel({
 }) {
   if (!typedName.trim()) {
     return (
-      <div style={{
-        padding: '28px 20px', borderRadius: 10, border: '1px dashed #c4b5fd',
-        background: '#fafaff', color: '#9ca3af', fontSize: 13, textAlign: 'center',
+      <div className="sigpad-surface sigpad-muted" style={{
+        padding: '28px 20px', fontSize: 13, textAlign: 'center',
       }}>
         <i className="ri-keyboard-line" style={{ fontSize: 22, display: 'block', marginBottom: 6 }} />
         Type your name in the field above to see signature styles.
@@ -268,18 +306,18 @@ function TypePanel({
         const active = selectedFont === f.id;
         return (
           <button key={f.id} type="button" onClick={() => onSelectFont(f.id)}
+            className={`sigpad-card${active ? ' is-active' : ''}`}
             style={{
               textAlign: 'left', padding: '14px 16px',
-              border: active ? '2px solid #7c5cfc' : '1px solid #e5e7eb',
-              borderRadius: 10, background: active ? '#f5f3ff' : '#fff',
+              borderRadius: 10,
               cursor: 'pointer', transition: 'all 120ms',
               boxShadow: active ? '0 2px 10px rgba(124,92,252,0.18)' : 'none',
             }}>
-            <div style={{ fontSize: 10.5, color: '#6b7280', fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase' }}>
+            <div className="sigpad-sub" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase' }}>
               {f.label}
             </div>
             <div style={{
-              marginTop: 4, fontFamily: f.family, fontSize: 30, color: penColor,
+              marginTop: 4, fontFamily: f.family, fontSize: 30, color: `var(--sigpad-ink, ${penColor})`,
               lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}>
               {typedName}
@@ -419,11 +457,9 @@ function DrawPanel({
   return (
     <div ref={wrapRef} style={{ width: '100%' }}>
       <div
+        className="sigpad-surface"
         style={{
           position: 'relative',
-          border: '1px dashed #c4b5fd',
-          borderRadius: 10,
-          background: '#fafaff',
           overflow: 'hidden',
         }}
       >
@@ -444,34 +480,36 @@ function DrawPanel({
         />
         {!hasInk && (
           <div
+            className="sigpad-muted"
             style={{
               position: 'absolute', inset: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               pointerEvents: 'none',
-              color: '#9ca3af', fontSize: 13, fontStyle: 'italic',
+              fontSize: 13, fontStyle: 'italic',
             }}
           >
             <i className="ri-quill-pen-line me-1" />Draw your signature here
           </div>
         )}
         <div
+          className="sigpad-line"
           style={{
             position: 'absolute',
             left: 20, right: 20, bottom: '30%',
-            height: 1, background: 'rgba(99,102,241,0.20)',
+            height: 1,
             pointerEvents: 'none',
           }}
         />
       </div>
       <div className="d-flex align-items-center justify-content-between mt-2">
-        <div style={{ fontSize: 11, color: '#6b7280' }}>
+        <div className="sigpad-sub" style={{ fontSize: 11 }}>
           <i className="ri-information-line me-1" />Use your mouse, finger, or stylus.
         </div>
         <button type="button" onClick={clear} disabled={disabled || !hasInk}
+          className="sigpad-btn"
           style={{
             padding: '5px 12px', borderRadius: 8,
-            border: '1px solid #e5e7eb', background: '#fff',
-            fontSize: 12, fontWeight: 700, color: '#6b7280',
+            fontSize: 12, fontWeight: 700,
             cursor: hasInk ? 'pointer' : 'not-allowed', opacity: hasInk ? 1 : 0.55,
           }}>
           <i className="ri-eraser-line me-1" />Clear
@@ -495,21 +533,20 @@ function UploadPanel({
 
   if (uploadedUrl) {
     return (
-      <div style={{
-        position: 'relative', border: '1px dashed #c4b5fd', borderRadius: 10,
-        background: '#fafaff', padding: 14, textAlign: 'center',
+      <div className="sigpad-surface" style={{
+        position: 'relative', padding: 14, textAlign: 'center',
       }}>
         <img src={uploadedUrl} alt="Uploaded signature"
           style={{ maxWidth: '100%', maxHeight: 160, objectFit: 'contain' }} />
         <div className="d-flex align-items-center justify-content-between mt-2">
-          <div style={{ fontSize: 11, color: '#6b7280' }}>
+          <div className="sigpad-sub" style={{ fontSize: 11 }}>
             <i className="ri-checkbox-circle-fill me-1" style={{ color: '#16a34a' }} />
             Image attached — use this signature, or replace it.
           </div>
           <button type="button" onClick={onClear} disabled={disabled}
+            className="sigpad-btn"
             style={{
-              padding: '5px 12px', borderRadius: 8, border: '1px solid #e5e7eb',
-              background: '#fff', fontSize: 12, fontWeight: 700, color: '#6b7280',
+              padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700,
               cursor: 'pointer',
             }}>
             <i className="ri-delete-bin-line me-1" />Remove
@@ -529,21 +566,20 @@ function UploadPanel({
         const f = e.dataTransfer.files?.[0];
         if (f) onFile(f);
       }}
+      className={`sigpad-surface${dragging ? ' is-drag' : ''}`}
       style={{
         display: 'block', cursor: disabled ? 'not-allowed' : 'pointer',
-        padding: '32px 20px', borderRadius: 10, textAlign: 'center',
-        border: `1px dashed ${dragging ? '#7c5cfc' : '#c4b5fd'}`,
-        background: dragging ? '#f5f3ff' : '#fafaff',
+        padding: '32px 20px', textAlign: 'center',
         transition: 'all 120ms',
       }}>
       <input ref={inputRef} type="file" accept="image/*" disabled={disabled}
         onChange={(e) => onFile(e.target.files?.[0] || null)}
         style={{ display: 'none' }} />
       <i className="ri-upload-cloud-2-line" style={{ fontSize: 32, color: '#7c5cfc', display: 'block', marginBottom: 6 }} />
-      <div style={{ fontSize: 13.5, fontWeight: 700, color: '#374151' }}>
+      <div className="sigpad-strong" style={{ fontSize: 13.5, fontWeight: 700 }}>
         Click to upload, or drag and drop
       </div>
-      <div style={{ fontSize: 11.5, color: '#9ca3af', marginTop: 4 }}>
+      <div className="sigpad-muted" style={{ fontSize: 11.5, marginTop: 4 }}>
         PNG, JPG, GIF, WEBP, or SVG &middot; up to 4&nbsp;MB
       </div>
     </label>

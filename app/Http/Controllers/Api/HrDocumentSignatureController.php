@@ -94,7 +94,7 @@ class HrDocumentSignatureController extends Controller
          * on the HR grant now, which is the thing that actually distinguishes
          * the two cases. Anyone without it is still pinned to themselves. */
         if ($viewer && $viewer->user_type === 'employee' && !$this->mayReadOthersDocuments($viewer)) {
-            $q->where('employee_id', Employee::where('user_id', $viewer->id)->value('id') ?: 0);
+            $q->where('employee_id', $viewer->employee_id ?: 0);
         } elseif ($request->has('employee_id')) {
             /* An employee_id that is PRESENT but not a positive integer must
              * narrow to nothing, never widen to everything. `$request->integer()`
@@ -523,6 +523,9 @@ class HrDocumentSignatureController extends Controller
                 )),
             ]);
             $row->save();
+            /* A finished run waits on nobody — its "waiting on you" bell rows
+               would otherwise point the signer at an Inbox that has let it go. */
+            if ($row->status === 'Completed') $this->clearTurnNotifications($row);
             $row->load(self::WITH);
 
             return response()->json($row);
@@ -564,6 +567,7 @@ class HrDocumentSignatureController extends Controller
             $signers[$idx] = $current;
             $row->signers = $signers;
             $row->status  = 'Rejected';
+            $this->clearTurnNotifications($row);
             $row->audit_log = array_merge($row->audit_log ?? [], [
                 $this->event($user, 'rejected', "Rejected by {$user?->name}: {$data['reason']}"),
             ]);
@@ -585,6 +589,7 @@ class HrDocumentSignatureController extends Controller
             $this->event($user, 'cancelled', "Cancelled by {$user?->name}"),
         ]);
         $row->save();
+        $this->clearTurnNotifications($row);
         $row->load(self::WITH);
         return response()->json($row);
     }
@@ -675,6 +680,14 @@ class HrDocumentSignatureController extends Controller
                         'sender_name' => $senderName,
                         'message'     => "{$senderName} reminded you to {$action} {$docCode} — {$tplName}.",
                         'url'         => '/inbox',
+                        // A reminder only ever goes to the current signer, so the
+                        // badge reads the same way as on the turn notification.
+                        'pending_role'    => $current['role_name'] ?? null,
+                        'pending_name'    => $current['name'] ?? null,
+                        'pending_user_id' => isset($current['user_id']) ? (int) $current['user_id'] : null,
+                        'signed_count'    => collect($row->signers ?? [])
+                            ->filter(fn ($x) => in_array($x['status'] ?? '', ['Done', 'Skipped'], true))->count(),
+                        'signers_total'   => count($row->signers ?? []),
                     ]),
                     'read_at'         => null,
                     'created_at'      => now(),
@@ -713,6 +726,35 @@ class HrDocumentSignatureController extends Controller
      * send must not leave a notification behind. A failed insert is logged,
      * never surfaced — the Inbox still carries the document either way.
      */
+    /**
+     * Drop the "waiting for you to Sign" bell rows of a run that is no longer
+     * waiting on anyone — cancelled, rejected, or finished.
+     *
+     * Without this the bell kept advertising a document the Inbox had already
+     * let go: a signer saw "waiting for you to Sign", opened the Inbox and
+     * found nothing there, because inbox() only lists Pending / In Progress
+     * runs. Re-sending a document made it worse — the superseded run's
+     * notification sat beside the live one, indistinguishable.
+     *
+     * Only this run's rows go, matched on document_id inside the payload. Read
+     * state is no reason to keep one: the text says "waiting for you to Sign",
+     * which is wrong once nobody is waiting, opened or not. The run's own audit
+     * log is the history; this row is a prompt.
+     */
+    private function clearTurnNotifications(HrDocumentSignature $row): void
+    {
+        try {
+            DB::table('notifications')
+                ->where('type', 'App\Notifications\HrSignatureRequest')
+                ->whereRaw("data::text LIKE ?", ['%"document_id":' . (int) $row->id . '%'])
+                ->delete();
+        } catch (\Throwable $e) {
+            Log::warning('[hr-document-signatures] could not clear stale signer notifications', [
+                'id' => $row->id, 'err' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function notifySignersOfTurn(HrDocumentSignature $row, array $userIds, ?string $senderName): void
     {
         $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds))));
@@ -725,7 +767,15 @@ class HrDocumentSignatureController extends Controller
         $subject = $row->employee?->display_name
             ?: trim(($row->employee?->first_name ?? '') . ' ' . ($row->employee?->last_name ?? ''));
 
-        DB::afterCommit(function () use ($row, $userIds, $signers, $tplName, $docCode, $sender, $subject) {
+        /* Where the document stands, so the bell can say who it is waiting on
+           rather than only "waiting on you": with two or more signers the run
+           reads Pending from the moment the first one signs, and the badge is
+           the only thing that says whose turn it actually is. */
+        $acted  = $signers->filter(fn ($x) => in_array($x['status'] ?? '', ['Done', 'Skipped'], true))->count();
+        $total  = $signers->count();
+        $waiting = $signers->first(fn ($x) => !in_array($x['status'] ?? 'Pending', ['Done', 'Skipped', 'Rejected'], true));
+
+        DB::afterCommit(function () use ($row, $userIds, $signers, $tplName, $docCode, $sender, $subject, $acted, $total, $waiting) {
             foreach ($userIds as $uid) {
                 $action = $signers->firstWhere('user_id', $uid)['action'] ?? 'Sign';
                 try {
@@ -745,6 +795,12 @@ class HrDocumentSignatureController extends Controller
                             'message'       => "{$tplName} — waiting for you to {$action}"
                                 . ($subject ? " ({$subject})" : ''),
                             'url'           => '/inbox',
+                            // Whose signature the run is waiting on, and how far it has got.
+                            'pending_role'    => $waiting['role_name'] ?? null,
+                            'pending_name'    => $waiting['name'] ?? null,
+                            'pending_user_id' => isset($waiting['user_id']) ? (int) $waiting['user_id'] : null,
+                            'signed_count'    => $acted,
+                            'signers_total'   => $total,
                         ]),
                         'read_at'         => null,
                         'created_at'      => now(),
@@ -1088,7 +1144,7 @@ class HrDocumentSignatureController extends Controller
          * open it" can never disagree (CBC #25). */
         if ($this->mayReadOthersDocuments($user)) return;
 
-        $ownEmployeeId = Employee::where('user_id', $user->id)->value('id');
+        $ownEmployeeId = $user->employee_id;
         if ($ownEmployeeId && (int) $row->employee_id === (int) $ownEmployeeId) return;
 
         foreach ((is_array($row->signers) ? $row->signers : []) as $s) {

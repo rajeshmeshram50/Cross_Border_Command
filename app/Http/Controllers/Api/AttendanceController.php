@@ -2073,7 +2073,7 @@ class AttendanceController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401, 'Unauthenticated');
-        $row = Employee::where('user_id', $user->id)->first();
+        $row = Employee::find($user->employee_id);
         if (!$row) abort(404, 'No employee record linked to this account.');
         return $row;
     }

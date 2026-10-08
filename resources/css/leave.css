@@ -1411,3 +1411,29 @@
 :is([data-bs-theme="dark"], [data-layout-mode="dark"]) .lp-switch {
   background: rgba(255, 255, 255, 0.18);
 }
+
+/* Leave request detail — the outline shown while it loads. Sized like the real
+   body, so the dialog opens once at its final height instead of snapping when
+   the request lands. */
+.lva-sk {
+  display: block;
+  border-radius: 7px;
+  background: linear-gradient(90deg, #eef2f7 25%, #f7fafc 37%, #eef2f7 63%);
+  background-size: 400% 100%;
+  animation: lva-sk-shim 1.3s ease-in-out infinite;
+}
+@keyframes lva-sk-shim { from { background-position: 100% 50%; } to { background-position: 0 50%; } }
+[data-bs-theme="dark"] .lva-sk,
+[data-layout-mode="dark"] .lva-sk {
+  background: linear-gradient(90deg, rgba(148,163,184,.12) 25%, rgba(148,163,184,.2) 37%, rgba(148,163,184,.12) 63%);
+  background-size: 400% 100%;
+}
+
+/* App-standard modal shell (same contract as LeaveRequestDetailsModal): the
+   gradient header needs overflow:hidden or its square corners break the radius. */
+.lrd-modal {
+  border-radius: 16px !important;
+  overflow: hidden;
+  border: 0;
+  box-shadow: 0 25px 60px rgba(15, 23, 42, 0.25);
+}

@@ -551,7 +551,10 @@
 /* Reject & Send Back — the enabled (red gradient) state reads fine on
    dark, but the disabled state's light-pink fill / dark-red text looked
    out of place against the dark footer. Tone it to the dark palette. */
-[data-bs-theme="dark"] .inbox-btn-reject:disabled {
+[data-bs-theme="dark"] .inbox-btn-reject:disabled,
+/* Blocked (no remark yet) is not :disabled — the button stays clickable so
+   the click can toast why — so it needs the same dark tone explicitly. */
+[data-bs-theme="dark"] .ib-btn-sendback.is-blocked {
   background: rgba(239,68,68,0.16) !important;
   color: #fca5a5 !important;
 }

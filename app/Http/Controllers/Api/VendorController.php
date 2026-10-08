@@ -523,7 +523,10 @@ class VendorController extends Controller
         // Once this supplier is mapped to a Purchase Order, its STATE is baked into
         // that PO's GST/tax classification (intra vs inter-state). Changing it later
         // would desync the PO, so the form locks the State field. True = has a PO.
-        $data['state_locked'] = \App\Models\PurchaseOrder::where('vendor_id', $vendor->id)->exists();
+        // Reads the P2P purchase order since the legacy one was removed; the new
+        // PO derives tax_mode from this state the same way, so the lock stands.
+        $data['state_locked'] = \App\Models\P2p\PurchaseOrder::withoutGlobalScope('tenant')
+            ->where('client_id', $vendor->client_id)->where('vendor_id', $vendor->id)->exists();
 
         // Data for the removal guard's unique-document check (condition 2). Keyed
         // by segment ID (the vendor form keys segments by id): each segment's
