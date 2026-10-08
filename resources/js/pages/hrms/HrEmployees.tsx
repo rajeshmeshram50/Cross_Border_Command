@@ -812,7 +812,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
         `${onbExpiry}-day link emailed to ${onbEmail}.`,
       );
       if (inviteUrl) setGeneratedInviteUrl(inviteUrl);
-      else closeOnboard();
+      else resetOnboard();
     } catch (err: any) {
       const apiErrors = err?.response?.data?.errors;
       if (apiErrors) {
@@ -830,7 +830,14 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     }
   };
 
+  // User-initiated close (✕). Not while the link is being generated — the
+  // request would finish into a closed, already-reset popup.
   const closeOnboard = () => {
+    if (generatingInvite) return;
+    resetOnboard();
+  };
+
+  const resetOnboard = () => {
     setOnboardOpen(false);
     setOnbName('');
     setOnbEmail('');
@@ -4025,7 +4032,24 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
         keyboard={false}
       >
 
-        <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
+        <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)', position: 'relative' }} aria-busy={generatingInvite}>
+          {generatingInvite && (
+            <div
+              role="status"
+              aria-live="polite"
+              style={{
+                position: 'absolute', inset: 0, zIndex: 5, borderRadius: 'inherit',
+                background: 'color-mix(in srgb, var(--vz-card-bg) 78%, transparent)',
+                backdropFilter: 'blur(1.5px)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
+                cursor: 'progress',
+              }}
+            >
+              <div className="spinner-border" style={{ width: 38, height: 38, color: '#7c3aed' }} aria-hidden="true" />
+              <div className="fw-semibold" style={{ color: 'var(--vz-heading-color)', fontSize: 14 }}>Generating onboarding link…</div>
+              <div style={{ color: 'var(--vz-secondary-color)', fontSize: 12 }}>Please wait, this takes a few seconds.</div>
+            </div>
+          )}
           <div className="d-flex align-items-start justify-content-between" style={{ padding: '24px 28px 18px' }}>
             <div className="d-flex align-items-center gap-3">
               <div className="onb-header-icon d-flex align-items-center justify-content-center flex-shrink-0">
