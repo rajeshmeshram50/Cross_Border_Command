@@ -1493,77 +1493,83 @@ export default function AddProductModal(props: {
                         <SelectInput value={packagingMaterialId} onChange={(v) => { setPackagingMaterialId(v); clearFieldError('packagingMaterialId'); }} placeholder="Select" options={optPackaging} />
                       </Field>
                     </div>
-                    <div className="apm-grid-3">
-                      <Field label="Cold Chain" required>
-                        <SelectInput
-                          value={coldChain}
-                          onChange={(v) => {
-                            setColdChain(v);
-                            if (v !== 'Yes') {
-                              setColdChainMin('');
-                              setColdChainMax('');
-                              clearFieldError('coldChainTemp');
-                            }
-                          }}
-                          placeholder="Select"
-                          options={COLD_CHAIN_OPTIONS}
-                        />
-                      </Field>
-                      <div className="apm-span-2">
-                        <Field
-                          label="Temperature Range"
-                          required={coldChain === 'Yes'}
-                          disabled={coldChain !== 'Yes'}
-                          icon={<i className="ri-temp-cold-line" />}
-                          error={fieldErrors.coldChainTemp}
-                          labelExtra={
-                            <span className="apm-temp-presets">
-                              {COLD_CHAIN_PRESETS.map(pr => (
-                                <button
-                                  key={pr.label}
-                                  type="button"
-                                  className="apm-temp-chip"
-                                  disabled={coldChain !== 'Yes'}
-                                  onClick={() => { setColdChainMin(String(pr.min)); setColdChainMax(String(pr.max)); clearFieldError('coldChainTemp'); }}
-                                >
-                                  <b>{pr.label}</b> {pr.min}…{pr.max}°C
-                                </button>
-                              ))}
-                            </span>
-                          }
-                        >
-                          <div className="apm-temp-range">
-                            <div className="apm-temp-input">
-                              <input
-                                className="apm-input apm-input-mf"
-                                type="number"
-                                step="0.1"
-                                min={-TEMP_LIMIT}
-                                max={TEMP_LIMIT}
-                                placeholder="Min"
-                                value={coldChainMin}
-                                disabled={coldChain !== 'Yes'}
-                                onChange={e => { setColdChainMin(e.target.value); clearFieldError('coldChainTemp'); }}
-                              />
-                              <span className="apm-temp-unit">°C</span>
-                            </div>
-                            <span className="apm-temp-to">to</span>
-                            <div className="apm-temp-input">
-                              <input
-                                className="apm-input apm-input-mf"
-                                type="number"
-                                step="0.1"
-                                min={-TEMP_LIMIT}
-                                max={TEMP_LIMIT}
-                                placeholder="Max"
-                                value={coldChainMax}
-                                disabled={coldChain !== 'Yes'}
-                                onChange={e => { setColdChainMax(e.target.value); clearFieldError('coldChainTemp'); }}
-                              />
-                              <span className="apm-temp-unit">°C</span>
-                            </div>
-                          </div>
+                    <div className={`apm-coldchain-box${coldChain === 'Yes' ? ' is-on' : ''}`}>
+                      <div className="apm-grid-3">
+                        <Field label="Cold Chain" required>
+                          <SelectInput
+                            value={coldChain}
+                            onChange={(v) => {
+                              setColdChain(v);
+                              if (v !== 'Yes') {
+                                setColdChainMin('');
+                                setColdChainMax('');
+                                clearFieldError('coldChainTemp');
+                              }
+                            }}
+                            placeholder="Select"
+                            options={COLD_CHAIN_OPTIONS}
+                          />
                         </Field>
+                        <div className="apm-span-2">
+                          <Field
+                            label="Temperature Range"
+                            required={coldChain === 'Yes'}
+                            disabled={coldChain !== 'Yes'}
+                            error={fieldErrors.coldChainTemp}
+                            labelExtra={
+                              <span className="apm-temp-presets">
+                                {COLD_CHAIN_PRESETS.map(pr => (
+                                  <button
+                                    key={pr.label}
+                                    type="button"
+                                    className="apm-temp-chip"
+                                    disabled={coldChain !== 'Yes'}
+                                    onClick={() => { setColdChainMin(String(pr.min)); setColdChainMax(String(pr.max)); clearFieldError('coldChainTemp'); }}
+                                  >
+                                    <b>{pr.label}</b> {pr.min}…{pr.max}°C
+                                  </button>
+                                ))}
+                              </span>
+                            }
+                          >
+                            <div className="apm-temp-range">
+                              <div className="apm-temp-input">
+                                <i className="ri-temp-cold-line apm-temp-ico" />
+                                <input
+                                  className="apm-input apm-input-mf"
+                                  type="number"
+                                  step="0.1"
+                                  min={-TEMP_LIMIT}
+                                  max={TEMP_LIMIT}
+                                  placeholder="Min"
+                                  value={coldChainMin}
+                                  disabled={coldChain !== 'Yes'}
+                                  onChange={e => { setColdChainMin(e.target.value); clearFieldError('coldChainTemp'); }}
+                                />
+                                <span className="apm-temp-unit">°C</span>
+                              </div>
+                              <span className="apm-temp-to">to</span>
+                              <div className="apm-temp-input">
+                                <i className="ri-temp-cold-line apm-temp-ico" />
+                                <input
+                                  className="apm-input apm-input-mf"
+                                  type="number"
+                                  step="0.1"
+                                  min={-TEMP_LIMIT}
+                                  max={TEMP_LIMIT}
+                                  placeholder="Max"
+                                  value={coldChainMax}
+                                  disabled={coldChain !== 'Yes'}
+                                  onChange={e => { setColdChainMax(e.target.value); clearFieldError('coldChainTemp'); }}
+                                />
+                                <span className="apm-temp-unit">°C</span>
+                              </div>
+                            </div>
+                          </Field>
+                        </div>
+                      </div>
+                      <div className="apm-coldchain-hint">
+                        Set whether this product needs cold chain and the minimum and maximum temperature it must be held at, or pick a preset.
                       </div>
                     </div>
                     <Field label="Confidential Info" icon={<i className="ri-lock-2-line" />}>

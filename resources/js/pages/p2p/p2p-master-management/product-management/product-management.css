@@ -5500,7 +5500,32 @@
 .apm-span-2 { grid-column: span 2; min-width: 0; }
 .apm-temp-range { display: flex; align-items: center; gap: 10px; }
 .apm-temp-input { position: relative; flex: 1; min-width: 0; }
-.apm-temp-input .apm-input { padding-right: 34px; }
+.apm-temp-input .apm-input { padding-left: 32px !important; padding-right: 34px; }
+.apm-temp-ico {
+  position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+  font-size: 15px; color: #8b5cf6; pointer-events: none;
+}
+.apm-temp-input .apm-input:disabled + .apm-temp-unit,
+.apm-temp-input .apm-input:disabled ~ .apm-temp-unit { opacity: .6; }
+
+/* Cold chain panel: tinted, rounded box grouping the flag + range. */
+.apm-coldchain-box {
+  border: 1px solid color-mix(in srgb, #7c3aed 18%, #e2e8f0);
+  background: color-mix(in srgb, #7c3aed 3%, #fff);
+  border-radius: 14px;
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color .15s, background .15s;
+}
+.apm-coldchain-box.is-on {
+  border-color: color-mix(in srgb, #7c3aed 35%, #e2e8f0);
+  background: color-mix(in srgb, #7c3aed 5%, #fff);
+}
+.apm-coldchain-hint { font-size: 11.5px; color: #94a3b8; }
+[data-bs-theme="dark"] .apm-coldchain-box { background: #140e2b; border-color: #2e2357; }
+[data-bs-theme="dark"] .apm-coldchain-box.is-on { border-color: #4c3a8a; }
 .apm-temp-unit {
   position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
   font-size: 12px; font-weight: 600; color: #94a3b8; pointer-events: none;

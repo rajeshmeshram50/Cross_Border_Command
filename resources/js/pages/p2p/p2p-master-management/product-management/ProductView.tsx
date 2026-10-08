@@ -506,12 +506,11 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
               <div className="pv2pd-sec__title">
                 <span className="pv2pd-sec__ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></span>
                 Product Details
-                <span
-                  className={`pv2pd-coldchain${product.cold_chain ? '' : ' pv2pd-coldchain--off'}`}
-                  title={product.cold_chain ? 'Must be kept in cold chain within this temperature range' : 'Not a cold chain product'}
-                >
-                  <i className="ri-snowflake-line" /> Cold chain {product.cold_chain && coldChainText !== 'Yes' ? coldChainText : '–'}
-                </span>
+                <Tooltip label={product.cold_chain ? 'Must be kept in cold chain within this temperature range' : 'Not a cold chain product'}>
+                  <span className={`pv2pd-coldchain${product.cold_chain ? '' : ' pv2pd-coldchain--off'}`}>
+                    <i className="ri-snowflake-line" /> Cold chain {product.cold_chain && coldChainText !== 'Yes' ? coldChainText : '–'}
+                  </span>
+                </Tooltip>
               </div>
               <div className="pv2pd-highlights">
                 {/* Tile icons are the EXACT Feather SVGs from the P2P Figma
