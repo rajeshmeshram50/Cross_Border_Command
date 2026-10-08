@@ -235,8 +235,8 @@ class SegmentGuard
      */
     public static function vendorLockSources(int $vendorId, int $clientId): array
     {
-        $po = \Illuminate\Support\Facades\DB::table('purchase_orders as po')
-            ->join('purchase_order_items as poi', 'poi.purchase_order_id', '=', 'po.id')
+        $po = \Illuminate\Support\Facades\DB::table('p2p_purchase_orders as po')
+            ->join('p2p_purchase_order_items as poi', 'poi.purchase_order_id', '=', 'po.id')
             ->join('products as p', 'p.id', '=', 'poi.product_id')
             ->join('clm_segments as cs', 'cs.id', '=', 'p.segment_id')
             ->where('po.client_id', $clientId)
@@ -247,19 +247,24 @@ class SegmentGuard
             ->pluck('cs.name')
             ->all();
 
-        $spi = \Illuminate\Support\Facades\DB::table('supplier_purchase_invoices as spi')
-            ->join('supplier_purchase_invoice_items as si', 'si.supplier_purchase_invoice_id', '=', 'spi.id')
-            ->join('products as p', 'p.id', '=', 'si.product_id')
-            ->join('clm_segments as cs', 'cs.id', '=', 'p.segment_id')
-            ->where('spi.client_id', $clientId)
-            ->where('spi.vendor_id', $vendorId)
-            // Mirrors the PO_COMMITTED filter above — a Draft SPI commits
-            // nothing and must not lock the segment (QA #94).
-            ->whereIn('spi.status', self::SPI_COMMITTED)
-            ->whereNull('spi.deleted_at')
-            ->distinct()
-            ->pluck('cs.name')
-            ->all();
+        // The SPI tables are still being designed, so the vendor form must not
+        // 500 on a table that does not exist yet. The lock starts applying the
+        // day they land, with no further change here.
+        $spi = \Illuminate\Support\Facades\Schema::hasTable('supplier_purchase_invoices')
+            ? \Illuminate\Support\Facades\DB::table('supplier_purchase_invoices as spi')
+                ->join('supplier_purchase_invoice_items as si', 'si.supplier_purchase_invoice_id', '=', 'spi.id')
+                ->join('products as p', 'p.id', '=', 'si.product_id')
+                ->join('clm_segments as cs', 'cs.id', '=', 'p.segment_id')
+                ->where('spi.client_id', $clientId)
+                ->where('spi.vendor_id', $vendorId)
+                // Mirrors the PO_COMMITTED filter above — a Draft SPI commits
+                // nothing and must not lock the segment (QA #94).
+                ->whereIn('spi.status', self::SPI_COMMITTED)
+                ->whereNull('spi.deleted_at')
+                ->distinct()
+                ->pluck('cs.name')
+                ->all()
+            : [];
 
         return ['po' => array_values(array_unique($po)), 'spi' => array_values(array_unique($spi))];
     }
