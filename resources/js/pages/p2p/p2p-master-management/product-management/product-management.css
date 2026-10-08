@@ -7253,6 +7253,16 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   color: #6d6391;
 }
 
+/* A disabled text input inside a disabled field (e.g. the cold chain Min / Max
+   while Cold Chain is No) matches a disabled dropdown such as Haz Class —
+   otherwise the light-mode `.apm-field.is-disabled .apm-input` !important
+   grey shows through in dark mode. */
+[data-bs-theme="dark"] .apm-field.is-disabled .apm-input {
+  background: color-mix(in srgb, #a78bfa 12%, #110c25) !important;
+  border-color: #3b2a6b !important;
+  color: #6d6391;
+}
+
 [data-bs-theme="dark"] .apm-readonly {
   background: #221852;
   color: #c4b5fd;
