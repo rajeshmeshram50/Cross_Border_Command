@@ -178,7 +178,7 @@
       {{-- Payment Date --}}
       <tr>
         <td style="padding:12px 20px;font-size:12.5px;color:#6b7280;border-bottom:1px solid #f3f4f6;">Payment Date</td>
-        <td style="padding:12px 20px;font-size:12.5px;color:#111827;font-weight:700;border-bottom:1px solid #f3f4f6;">{{ $payment->created_at->format('d M Y, h:i A') }}</td>
+        <td style="padding:12px 20px;font-size:12.5px;color:#111827;font-weight:700;border-bottom:1px solid #f3f4f6;">{{ $payment->created_at->copy()->timezone('Asia/Kolkata')->format('d M Y, h:i A') }}</td>
       </tr>
 
       {{-- Payment Method --}}
