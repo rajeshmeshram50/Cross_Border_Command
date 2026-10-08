@@ -636,6 +636,9 @@ class ProductController extends Controller
             'condition_id'          => 'nullable|integer',
             'packaging_material_id' => 'nullable|integer',
             'confidential_info'     => 'nullable|string|max:2000',
+            'cold_chain'            => 'nullable|boolean',
+            'cold_chain_temp_min'   => 'nullable|required_if_accepted:cold_chain|numeric|between:-100,100',
+            'cold_chain_temp_max'   => 'nullable|required_if_accepted:cold_chain|numeric|between:-100,100|gte:cold_chain_temp_min',
             // GST is mapped at creation time now: a new product is only committed
             // once its GST % is chosen (the "Map GST" popup that opens on Save &
             // Next). Persisted here so the product is never listed without a GST.
@@ -691,6 +694,12 @@ class ProductController extends Controller
             $product->fill($ownership);
             $product->product_code = $this->nextProductCode($ownership['client_id'], $ownership['branch_id']);
             $product->status = 'draft';
+        }
+
+        if (array_key_exists('cold_chain', $data) && !$data['cold_chain']) {
+            $data['cold_chain'] = false;
+            $data['cold_chain_temp_min'] = null;
+            $data['cold_chain_temp_max'] = null;
         }
 
         // Apply scalar fields first (everything except the image inputs which

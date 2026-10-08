@@ -42,6 +42,15 @@ export type VendorEntry = {
 };
 
 const HAZ_TYPES = ['Non-Haz', 'Haz'];
+const COLD_CHAIN_OPTIONS = ['No', 'Yes'];
+// Common cold-chain bands (°C) offered as one-click presets for the range.
+const COLD_CHAIN_PRESETS = [
+  { label: 'Chilled',     min: 2,   max: 8 },
+  { label: 'Cool',        min: 8,   max: 15 },
+  { label: 'Frozen',      min: -25, max: -18 },
+  { label: 'Deep Frozen', min: -40, max: -25 },
+];
+const TEMP_LIMIT = 100;
 
 export type VendorOpt = {
   id: string;
@@ -257,6 +266,9 @@ export default function AddProductModal(props: {
   const [conditionId, setConditionId] = useState('');
   const [packagingMaterialId, setPackagingMaterialId] = useState('');
   const [confidential, setConfidential] = useState('');
+  const [coldChain, setColdChain] = useState('No');
+  const [coldChainMin, setColdChainMin] = useState('');
+  const [coldChainMax, setColdChainMax] = useState('');
   const [primaryImagePath, setPrimaryImagePath] = useState<string | null>(null);
   const [primaryImageFile, setPrimaryImageFile] = useState<File | null>(null);
   const [secondaryImagePaths, setSecondaryImagePaths] = useState<string[]>([]);
@@ -836,6 +848,7 @@ export default function AddProductModal(props: {
           segment_id?: number; haz_type?: string; haz_class_id?: number;
           uom_id?: number; hsn_id?: number; condition_id?: number;
           packaging_material_id?: number; confidential_info?: string;
+          cold_chain?: boolean | null; cold_chain_temp_min?: string | number | null; cold_chain_temp_max?: string | number | null;
           primary_image?: string | null; secondary_images?: string[] | null;
           primary_image_url?: string | null; secondary_images_url?: string[] | null;
           product_attachment?: string | null; product_attachment_url?: string | null;
@@ -864,6 +877,9 @@ export default function AddProductModal(props: {
         setConditionId(p.condition_id ? String(p.condition_id) : '');
         setPackagingMaterialId(p.packaging_material_id ? String(p.packaging_material_id) : '');
         setConfidential(p.confidential_info ?? '');
+        setColdChain(p.cold_chain ? 'Yes' : 'No');
+        setColdChainMin(p.cold_chain_temp_min != null ? String(Number(p.cold_chain_temp_min)) : '');
+        setColdChainMax(p.cold_chain_temp_max != null ? String(Number(p.cold_chain_temp_max)) : '');
         setPrimaryImagePath(p.primary_image ?? null);
         setPrimaryImageUrl(p.primary_image_url ?? (p.primary_image ? resolveFileUrl(p.primary_image) : null));
         setPrimaryImageFile(null);
@@ -922,6 +938,9 @@ export default function AddProductModal(props: {
     condition_id: conditionId ? Number(conditionId) : null,
     packaging_material_id: packagingMaterialId ? Number(packagingMaterialId) : null,
     confidential_info: confidential,
+    cold_chain: coldChain === 'Yes',
+    cold_chain_temp_min: coldChain === 'Yes' ? coldChainMin : '',
+    cold_chain_temp_max: coldChain === 'Yes' ? coldChainMax : '',
     gst_id: (gstOverride ?? gstId) ? Number(gstOverride ?? gstId) : null,
     primary_image: primaryImagePath ?? '',
     primary_image_file: fileTag(primaryImageFile),
@@ -972,6 +991,13 @@ export default function AddProductModal(props: {
     if (!hsnId)                  errs.hsnId             = 'HSN / SAC Code is required';
     if (!conditionId)            errs.conditionId       = 'Condition is required';
     if (!packagingMaterialId)    errs.packagingMaterialId = 'Packaging Material is required';
+    if (coldChain === 'Yes') {
+      const lo = Number(coldChainMin), hi = Number(coldChainMax);
+      if (coldChainMin === '' || coldChainMax === '') errs.coldChainTemp = 'Min and max temperature are required when Cold Chain is Yes';
+      else if (!Number.isFinite(lo) || !Number.isFinite(hi)) errs.coldChainTemp = 'Temperature must be a number';
+      else if (Math.abs(lo) > TEMP_LIMIT || Math.abs(hi) > TEMP_LIMIT) errs.coldChainTemp = `Temperature must be between -${TEMP_LIMIT} and ${TEMP_LIMIT} °C`;
+      else if (lo > hi) errs.coldChainTemp = 'Min temperature cannot be greater than max';
+    }
     const hasPrimary = !!primaryImageFile || !!primaryImagePath;
     const hasSecondary = secondaryImageFiles.length > 0 || secondaryImagePaths.length > 0;
     if (!hasPrimary)   errs.primaryImage   = 'Primary image is required';
@@ -1027,6 +1053,9 @@ export default function AddProductModal(props: {
       put('condition_id', conditionId ? Number(conditionId) : null);
       put('packaging_material_id', packagingMaterialId ? Number(packagingMaterialId) : null);
       put('confidential_info', confidential);
+      put('cold_chain', coldChain === 'Yes' ? '1' : '0');
+      put('cold_chain_temp_min', coldChain === 'Yes' ? coldChainMin : '');
+      put('cold_chain_temp_max', coldChain === 'Yes' ? coldChainMax : '');
       if (gstToCommit) put('gst_id', Number(gstToCommit));
 
       fd.append('primary_image', primaryImagePath ?? '');
@@ -1463,6 +1492,79 @@ export default function AddProductModal(props: {
                       <Field label="Packaging Material" required addNew onAdd={() => setQuickAdd('packaging_material')} error={fieldErrors.packagingMaterialId}>
                         <SelectInput value={packagingMaterialId} onChange={(v) => { setPackagingMaterialId(v); clearFieldError('packagingMaterialId'); }} placeholder="Select" options={optPackaging} />
                       </Field>
+                    </div>
+                    <div className="apm-grid-3">
+                      <Field label="Cold Chain" required>
+                        <SelectInput
+                          value={coldChain}
+                          onChange={(v) => {
+                            setColdChain(v);
+                            if (v !== 'Yes') {
+                              setColdChainMin('');
+                              setColdChainMax('');
+                              clearFieldError('coldChainTemp');
+                            }
+                          }}
+                          placeholder="Select"
+                          options={COLD_CHAIN_OPTIONS}
+                        />
+                      </Field>
+                      <div className="apm-span-2">
+                        <Field
+                          label="Temperature Range"
+                          required={coldChain === 'Yes'}
+                          disabled={coldChain !== 'Yes'}
+                          icon={<i className="ri-temp-cold-line" />}
+                          error={fieldErrors.coldChainTemp}
+                          labelExtra={
+                            <span className="apm-temp-presets">
+                              {COLD_CHAIN_PRESETS.map(pr => (
+                                <button
+                                  key={pr.label}
+                                  type="button"
+                                  className="apm-temp-chip"
+                                  disabled={coldChain !== 'Yes'}
+                                  onClick={() => { setColdChainMin(String(pr.min)); setColdChainMax(String(pr.max)); clearFieldError('coldChainTemp'); }}
+                                >
+                                  <b>{pr.label}</b> {pr.min}…{pr.max}°C
+                                </button>
+                              ))}
+                            </span>
+                          }
+                        >
+                          <div className="apm-temp-range">
+                            <div className="apm-temp-input">
+                              <input
+                                className="apm-input apm-input-mf"
+                                type="number"
+                                step="0.1"
+                                min={-TEMP_LIMIT}
+                                max={TEMP_LIMIT}
+                                placeholder="Min"
+                                value={coldChainMin}
+                                disabled={coldChain !== 'Yes'}
+                                onChange={e => { setColdChainMin(e.target.value); clearFieldError('coldChainTemp'); }}
+                              />
+                              <span className="apm-temp-unit">°C</span>
+                            </div>
+                            <span className="apm-temp-to">to</span>
+                            <div className="apm-temp-input">
+                              <input
+                                className="apm-input apm-input-mf"
+                                type="number"
+                                step="0.1"
+                                min={-TEMP_LIMIT}
+                                max={TEMP_LIMIT}
+                                placeholder="Max"
+                                value={coldChainMax}
+                                disabled={coldChain !== 'Yes'}
+                                onChange={e => { setColdChainMax(e.target.value); clearFieldError('coldChainTemp'); }}
+                              />
+                              <span className="apm-temp-unit">°C</span>
+                            </div>
+                          </div>
+                        </Field>
+                      </div>
                     </div>
                     <Field label="Confidential Info" icon={<i className="ri-lock-2-line" />}>
                       <textarea
@@ -2207,6 +2309,8 @@ function Field(props: {
   icon?: ReactNode;
   error?: string;
   disabled?: boolean;
+  /** Extra content pushed to the right end of the label row (e.g. preset chips). */
+  labelExtra?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -2238,6 +2342,7 @@ function Field(props: {
             </button>
           </Tooltip>
         )}
+        {props.labelExtra && <span className="apm-field-label-extra">{props.labelExtra}</span>}
       </span>
       {props.icon ? (
         <div className="apm-master-field">
