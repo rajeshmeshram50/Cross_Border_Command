@@ -19,45 +19,13 @@ import {
 import './supplier-management.css';
 import { lazyPage } from '../../../../utils/lazyPage';
 
-/* LAZY, not static. These three are only ever rendered behind a click, but a
-   static import pulls them into the module graph the moment the list route
-   loads — the browser downloaded the whole wizard, the whole vault (and its
-   jszip + file-saver) before the table had a single row on it.
-
-   Conditional RENDERING (which was already here) does not help: it decides
-   what to mount, not what to fetch. Only a dynamic import moves the code out
-   of this route's chunk, which is what Vite splits on.
-
-   MappedProductsViewPopup is a named export of AddVendorModal, so it is
-   mapped onto .default — both specifiers resolve to the SAME module, so the
-   wizard chunk is fetched once and shared, not twice. */
 const AddVendorModal = lazyPage(() => import('./AddVendorModal'));
 const MappedProductsViewPopup = lazyPage(() =>
   import('./AddVendorModal').then(m => ({ default: m.MappedProductsViewPopup })));
 const SupplierScopeGate = lazyPage(() => import('./SupplierScopeGate'));
 const SupplierEvidenceVaultModal = lazyPage(() => import('./SupplierEvidenceVaultModal'));
 
-/* Hover-prefetch. Making the wizard lazy moves its ~45 KB (gzipped) off page
-   load, but it has to arrive sometime — and 'sometime' would otherwise be
-   after the click, as a visible pause. Pointer-enter on the Add button fires
-   the same import ~300ms early, so the chunk is usually cached by the time the
-   click lands. Fire-and-forget: the import is idempotent and React.lazy reuses
-   the very same promise, so an in-flight prefetch is awaited rather than
-   repeated, and a failure here is retried by lazyPage() at render time. */
 const warmVendorWizard = () => { void import('./AddVendorModal'); };
-
-/* ────────────────────────────────────────────────────────────────────────────
- * Vendors — front-end only master list
- *
- * Mirrors the Clients master shell:
- *   • White surface card wrapping the page (no purple gradient hero)
- *   • Active / Inactive status filter pills
- *   • Velzon table chrome (table-card border rounded, table-light thead)
- *   • Add Vendor button → opens a 4-step wizard modal
- *
- * No API: vendors live in component state. When the backend ships, swap
- * SEED + the modal's submit handler for real fetch / POST calls.
- * ──────────────────────────────────────────────────────────────────────── */
 
 export type Vendor = {
   id: number;
@@ -73,34 +41,21 @@ export type Vendor = {
   phone: string;
   email: string;
   status: 'Active' | 'Inactive';
-  /* Number of distinct opportunities (leads) this supplier's mapped
-     products have been pulled into. 0 → Fresh, ≥1 → Recurring. */
   opportunityCount: number;
   segment?: string;
   segments?: string[];
-  /** Name + status kept apart so the list can draw the badge. */
   segmentItems?: { id?: number; name: string; reg?: string | null }[];
   risk?: string;
-  /* Compliance Behaviour master value ("Compliant", "Under Review",
-     "Flagged", …) — rendered as the Compliant Status pill. */
   compliance?: string;
-  /** vendors.supplier_category — commercial standing, not risk. */
   category?: string;
-  /* vendor_product_mappings row count for this supplier (withCount on
-     GET /vendors). Drives the Mapped Products badge + its popup. */
   mappedProducts: number;
   website?: string;
   address?: string;
   country?: string;
   pincode?: string;
-  /* All contact persons (primary first). Drives the "+N" badge + the
-     Contact Persons popup on the list. */
   contacts: SupplierContact[];
 };
 
-/* Facet counts for the Refine Suppliers panel. Counted server-side over the
-   whole scoped set MINUS the facet filters themselves, so a tile always says
-   how many rows ticking it would give and never shrinks as tiles are ticked. */
 export type SupplierFacets = {
   grand_total: number;
   category: { star: number; general: number; high_risk: number; blacklisted: number };
@@ -115,21 +70,10 @@ export type SupplierContact = {
   isPrimary: boolean;
 };
 
-/* Fresh vs Recurring tab key. Fresh = newly onboarded supplier with no
-   opportunity yet; Recurring = at least one opportunity created against it. */
-/* Per-screen key so other tables can adopt the same pattern without colliding —
-   the convention HrEmployees set.
-   .v2 — v1 stored a MANUAL rows-per-page pick and let it switch the screen fit
-   off for good, so anyone who once chose 5 saw five rows on every monitor from
-   then on. v2 holds only the last FITTED size, as the opening guess; a new key
-   so those stale picks are not read back. */
 const PER_PAGE_KEY = 'cbc.p2p.suppliers.perPage.v2';
 
 type SupplierTab = 'all' | 'fresh' | 'recurring';
 
-/* Shape of an item in the paginated GET /api/vendors response. Only
- * the fields the list page actually renders are typed — anything else
- * the backend ships is ignored. */
 type ApiVendor = {
   id: number;
   vendor_code: string | null;
@@ -141,14 +85,9 @@ type ApiVendor = {
   segment?: { id: number; name: string | null; regulatory_status?: string | null } | null;
   segments?: { id: number; name: string | null; regulatory_status?: string | null }[] | null;
   risk_level?: { id: number; name: string | null } | null;
-  /* Compliance Behaviour master row — eager-loaded by VendorController::index
-     for the Compliant Status column. */
   compliance_behaviour?: { id: number; name: string | null } | null;
-  /** Derived server-side from the document set — see App\Support\SupplierCompliance. */
   compliance_status?: string | null;
   supplier_category?: string | null;
-  /* withCount('productMappings') on the index query. Arrives as a number or a
-     numeric string depending on the driver, so it's coerced on map. */
   product_mappings_count?: number | string | null;
   /* Correlated-subquery count from VendorController::index — drives the
      Fresh / Recurring split. May arrive as a number or a numeric string
@@ -618,20 +557,12 @@ export default function Vendors() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  /* Standalone Evidence Vault modal target — clicking the Vault action
-   * on a row sets this; the modal pulls a fresh /vault payload from
-   * the API and renders KPI cards + per-bucket tables read-only. */
   const [vaultTarget, setVaultTarget] = useState<SupplierVaultTarget | null>(null);
-  /* When set, the Contact Persons popup lists all of this supplier's contacts. */
   const [contactsTarget, setContactsTarget] = useState<Vendor | null>(null);
   /* When set, the read-only Mapped Products popup lists this supplier's product
      mappings — opened from the Mapped Products count badge. */
   const [mappedTarget, setMappedTarget] = useState<Vendor | null>(null);
-  /* Segment "+N" popover — fixed-positioned card anchored to the clicked badge
-     so the table's overflow can't clip it. */
   const [segPop, setSegPop] = useState<{ segments: { name: string; reg?: string | null }[]; x: number; y: number; top: number } | null>(null);
-  // Measured placement for the segment popover — anchor to the badge, clamp to
-  // the viewport, and flip ABOVE when there isn't room below (never clipped).
   const segPopRef = useRef<HTMLDivElement>(null);
   const [segPopPos, setSegPopPos] = useState<{ left: number; top: number } | null>(null);
   useLayoutEffect(() => {
@@ -648,9 +579,6 @@ export default function Vendors() {
     setSegPopPos({ left, top });
   }, [segPop]);
 
-  /* Scroll lock — while ANY overlay (Segments / Contact Persons) is open, freeze
-     the page behind it. Lock BOTH <html> and <body>; a body-only lock still lets
-     the html element scroll on some layouts. */
   useEffect(() => {
     const anyOpen = contactsTarget !== null;
     if (!anyOpen) return;
@@ -661,10 +589,6 @@ export default function Vendors() {
     return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
   }, [segPop, contactsTarget]);
 
-  /* The Segment "+N" popover is anchored to fixed x/y captured on click, so on a
-     window resize OR a page/table scroll it would float at stale coordinates.
-     Close it in those cases — but ignore scrolling INSIDE the popover's own list
-     (so a 20-segment list can still be scrolled). */
   useEffect(() => {
     if (!segPop) return;
     const close = () => setSegPop(null);
@@ -678,52 +602,15 @@ export default function Vendors() {
     return () => { window.removeEventListener('resize', close); window.removeEventListener('scroll', onScroll, true); };
   }, [segPop]);
 
-  /* FIRST PAINT ONLY. `loading` swaps the whole page for a skeleton — header
-     strip, the four-step brief, the toolbar and the table — which is right once,
-     on arrival, and wrong for everything after it. Tick a category in the Filter
-     popover and that skeleton tears down the popover you ticked it in.
-     Every later fetch sets `refetching` instead, which only dims the rows. */
   const [loading, setLoading] = useState(true);
   const [refetching, setRefetching] = useState(false);
-  /* A THIRD loading state, for the two actions that replace the row set outright
-     rather than adjusting it: switching Domestic ⇄ International, and applying a
-     filter.
-     Dimming is the right feedback when the rows coming back are broadly the
-     rows already on screen — paging, resizing. It is the wrong feedback here,
-     because dimmed rows still READ as the answer, and for a second the user is
-     looking at Domestic suppliers under an International tab. A shimmer says
-     "this set is being replaced", which is what actually happened. */
   const [swapping, setSwapping] = useState(false);
   const bootedRef = useRef(false);
-  /* "What We Are Doing Here" stepper — collapsible, open by default to
-     mirror the Figma. Purely presentational. */
   const [brefOpen, setBrefOpen] = useState(true);
-  /* Client-side pagination — rows-per-page auto-fits the viewport height
-     (same dynamic behaviour as the CLM Segment Master). */
   const [page, setPage] = useState(1);
-  /* Row count across ALL pages, from the server. The pager can no longer derive
-     it from the rows in hand, because the rows in hand are one page. */
   const [total, setTotal] = useState(0);
-  /* Newest-request token. A scope switch, a filter and a debounced search can
-     each fire while the previous request is still out, so two can be in flight
-     at once and the slower must not overwrite the newer. */
   const reqRef = useRef(0);
-  /* Search is a network call now, so it waits for a pause in typing instead of
-     firing per keystroke. 350ms is the same delay HrEmployees uses. */
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  /* Rows per page — the HR Employees contract (HrEmployees.tsx + DataTable's
-     autoFitRows / minAutoRows={10}):
-       · the first request asks for 10;
-       · once the table is on screen the count is fitted to the space down to
-         the bottom of the window, never below 10, and re-fitted when the window
-         is resized (a different screen resolution, zoom, a docked devtools);
-       · a size picked from Rows per page wins over the fit for the rest of the
-         visit. It is not persisted — the next visit fits the screen again,
-         exactly as the Employees table does.
-     The last fitted size is remembered only as the opening guess, so a tall
-     monitor's first request is usually already the right size and no second
-     fetch goes out. Lazy initialiser so localStorage is read once on mount,
-     guarded because a private-mode browser can throw on access. */
   const [rpp, setRpp] = useState<number>(() => {
     try {
       const n = Number(localStorage.getItem(PER_PAGE_KEY));
@@ -734,8 +621,6 @@ export default function Vendors() {
   });
   /* True until the user picks a size this visit. */
   const autoFitRef = useRef(true);
-  /* Live copies for the resize handler, which is registered once per effect
-     run and would otherwise read the page / size it was created with. */
   const rppRef = useRef(rpp);
   rppRef.current = rpp;
   const pageRef = useRef(page);
@@ -743,12 +628,7 @@ export default function Vendors() {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  /* Map a paginated API row to the local list-page shape. Anything the
-     backend doesn't populate yet falls back to '—' so the table never
-     renders raw `null` cells. */
   const apiToVendor = (row: ApiVendor): Vendor => {
-    /* Build the contact list — primary address first, then extras. Each
-       address row carries one contact person. */
     const addrs = Array.isArray(row.addresses) ? row.addresses : [];
     const contacts: SupplierContact[] = addrs
       .filter(a => (a.contact_name ?? '').trim())
@@ -769,15 +649,9 @@ export default function Vendors() {
       companyName: row.company_name ?? 'Untitled Supplier',
       legalName:   row.legal_name ?? row.company_name ?? '—',
       type:        row.vendor_type?.name ?? 'Pending',
-      /* State NAME (e.g. "Maharashtra"); falls back to the code, then a dash.
-         The code lives in its own GST State Code column, so it is NOT appended
-         in brackets here any more. */
       state:       row.primary_address?.state?.name
                      || row.primary_address?.state_code
                      || '—',
-      /* GST state code (e.g. "27"). Kept whenever the address carries one —
-         it used to be dropped unless the state NAME also resolved, which blanked
-         the code for any supplier whose state_id points at a removed master row. */
       stateCode:   row.primary_address?.state_code || null,
       city:        row.primary_address?.city ?? '—',
       country:     row.primary_address?.country?.name ?? undefined,
@@ -788,9 +662,6 @@ export default function Vendors() {
       status:      row.status === 'active' ? 'Active' : 'Inactive',
       opportunityCount: Number(row.opportunity_count ?? 0) || 0,
       segment:     row.segment?.name ? segmentLabel(row.segment.name, row.segment.regulatory_status) : undefined,
-      // Prefer the multi-segment pivot; fall back to the legacy scalar `segment`
-      // relation so suppliers created before multi-segment still show their
-      // segment in the list (the list endpoint returns raw models — no fallback).
       segmentItems: (() => {
         const arr = (row.segments ?? []).filter(s => s.name).map(s => ({ id: s.id, name: String(s.name), reg: s.regulatory_status }));
         return arr.length ? arr : (row.segment?.name ? [{ id: row.segment.id, name: row.segment.name, reg: row.segment.regulatory_status }] : []);
@@ -800,9 +671,6 @@ export default function Vendors() {
         return arr.length ? arr : (row.segment?.name ? [segmentLabel(row.segment.name, row.segment.regulatory_status)] : []);
       })(),
       risk:        row.risk_level?.name ?? undefined,
-      /* The DERIVED status, not the Compliance Behaviour master. That master
-         value is still on the row but no longer means anything here: it was a
-         hand-picked label, while this is computed from the documents on file. */
       compliance:  row.compliance_status ?? undefined,
       category:    row.supplier_category ?? undefined,
       mappedProducts: Number(row.product_mappings_count ?? 0) || 0,
@@ -810,14 +678,7 @@ export default function Vendors() {
     };
   };
 
-  /* Search leaves the browser only once typing has actually STOPPED. The timer
-     restarts on every keystroke, so a 12-character code is one request, not
-     twelve. 350ms was short enough to fire between words — a typist pausing to
-     think mid-code sent a query for the half they had typed so far.
 
-     Clearing is exempt from the wait. An empty box means "show everything",
-     there is no query to spare the server, and holding the full list back for
-     half a second after the X is pressed just reads as lag. */
   useEffect(() => {
     const next = search.trim();
     if (!next) { setDebouncedSearch(''); return; }
@@ -826,20 +687,10 @@ export default function Vendors() {
   }, [search]);
 
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
-    // `silent` = refresh in the background WITHOUT flashing the loading skeleton
-    // (used after closing the Edit/Add modal — the list is already on screen, so
-    // showing the full skeleton again reads as a slow reload). Initial mount and
-    // manual reloads still show the skeleton.
     if (!opts?.silent) {
       if (bootedRef.current) setRefetching(true);
       else                   setLoading(true);
     }
-    /* SERVER-side pagination (was ?per_page=200 + slice-in-the-browser).
-       200 was a ceiling, not a page: a tenant with 201 suppliers silently lost
-       the rest, and every load shipped the whole table and its eager-loaded
-       relations to render ten rows. Page, size, search and both tab filters now
-       go to the API, which returns one page plus a total.
-       Mirrors HrEmployees.reloadEmployees. */
     const token = ++reqRef.current;
     try {
       const res = await api.get<{ data: ApiVendor[]; total?: number }>('/vendors', {
@@ -853,9 +704,6 @@ export default function Vendors() {
           tab,
         },
       });
-      // Stale-response guard: a filter or a debounced search can fire while the
-      // last request is still out, and the slower one must not overwrite the
-      // newer.
       if (token !== reqRef.current) return;
       const body: any = res.data ?? {};
       const rows: ApiVendor[] = Array.isArray(body) ? body : (body.data ?? []);
@@ -866,9 +714,6 @@ export default function Vendors() {
       if (token !== reqRef.current) return;
       toast.error('Load failed', 'Could not load suppliers');
     } finally {
-      /* Cleared on the WINNING response only — two fetches can be in flight
-         (a filter change while a search is still out) and the slower one must
-         not un-dim rows the newer one is still replacing. */
       if (token === reqRef.current) {
         bootedRef.current = true;
         setLoading(false);
@@ -876,142 +721,46 @@ export default function Vendors() {
         setSwapping(false);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, rpp, debouncedSearch, scopeTab, tab, catParam, compParam]);
  const allowed = user?.user_type === 'branch_user' || user?.user_type === 'employee';
 
   useEffect(() => { void refresh(); }, [refresh]);
-  /* Reset to page 1 whenever the tab or search changes so the user never
-     lands on an out-of-range page after the result set shrinks. */
-  /* scopeTab joins tab/search here: with server pagination, switching
-     Domestic → International while on page 3 would ask the API for page 3 of a
-     one-page result and render an empty table. */
   useEffect(() => { setPage(1); }, [tab, debouncedSearch, scopeTab, catParam, compParam]);
 
-  /* Raise the shimmer for anything that REPLACES the row set: a scope switch, a
-     filter, a search, a page turn, a sub-tab.
-     Dimming was the original answer for search and paging, on the reasoning
-     that the incoming rows resemble the outgoing ones. They do not. A search
-     narrows ten suppliers to one and a page turn swaps all ten, so the dim left
-     the previous page's rows legible underneath for the length of the round
-     trip — the user reads them as the result, then they change. The shimmer
-     says "these are being replaced", which is what happened.
-     Search hangs off `debouncedSearch`, not `search`, so it fires once per
-     pause in typing rather than once per keystroke — the reason the original
-     comment feared a strobe. The magnifier spinner still covers the gap
-     between the last keystroke and the debounce firing.
-     bootedRef keeps the first mount out of it — `loading` owns that paint, and
-     raising both would swap one skeleton for another. */
   useEffect(() => {
     if (bootedRef.current) setSwapping(true);
   }, [scopeTab, catParam, compParam, debouncedSearch, page, tab, rpp]);
 
-  /* Dynamic rows-per-page — pick the count that fits between the table's top
-     and the bottom of the viewport, so the page fills the screen and the rest
-     spills onto further pages (mirrors the CLM Segment Master). The card itself
-     is content-height — see the note beside `fit` below. */
   useEffect(() => {
     const recompute = () => {
       const el = scrollRef.current;
       if (!el) return;
 
-      /* Fit-to-viewport is a DESKTOP behaviour and has to be switched off on a
-         phone, not merely tuned for one.
-         The whole measurement assumes the table starts near the top of the
-         screen: it takes the space from there down to the bottom edge, fills
-         the card with it and scrolls the rows inside. On a phone everything
-         above the table — the header strip, the four step cards, the stacked
-         toolbar — has already used ~600px of a ~700px screen, so that space
-         comes out at or below zero and the card collapses to nothing. Which is
-         exactly what it did: tabs, Filter, then the footer, with no table.
-         Below 820px the page scrolls the way a page normally does: the card is
-         content-height and shows a fixed number of rows.
-
-         The min-height applied below is cleared on the way out — an inline
-         style set while the window was wide would otherwise survive the resize
-         down and pin a phone-width card to a desktop height. */
       if (window.innerWidth <= 820) { el.style.minHeight = ''; return; }
 
       const top = el.getBoundingClientRect().top;
       const THEAD = 42, ROW = 54, PAGER = 56;
-      // Card is CONTENT-HEIGHT (no forced stretch) — the footer always sits right
-      // after the rows, so a short list never leaves an internal gap. The row
-      // count auto-fits the space between the table's top and the viewport bottom,
-      // so on default load the rows fill the screen; a manual rows-per-page pick
-      // simply shows that many (compact, empty page background below — never a gap).
-      // Card height = space from the table's top down to the viewport bottom, so
-      // the whole thing fits WITHOUT the page itself scrolling. Auto-fit the row
-      // count into that space; the card always stretches to fill it (footer pinned
-      // to the bottom) — mirrors CLM Segment Master.
-      /* Reserve the APP FOOTER, measured live — same rule as DataTable's
-         bottomReserve() (see components/ui/DataTable.tsx), which is what the
-         HRMS Employees / Onboarding tables use. The flat 16px here assumed no
-         footer, so on any page that has one the card was sized ~40px too tall
-         and its last row sat behind "2026 © IGC Group". Measured rather than
-         hardcoded so it stays right at any zoom level or footer height; 15px
-         is the fallback when there is no footer (e.g. inside a modal). */
       const footerEl = document.querySelector('footer.footer') as HTMLElement | null;
       const footerH = footerEl?.offsetHeight ?? 0;
       const bottomReserve = footerH > 0 ? footerH + 8 : 15;
 
-      /* The HORIZONTAL scrollbar occupies height inside the scroll box. This
-         table is 15 columns wide so that bar is always there — ~12-15px, which
-         is exactly enough for the last row to miss the cut and the box to grow
-         a VERTICAL scrollbar as well. */
       const scrollbarH = Math.min(20, Math.max(0, el.offsetHeight - el.clientHeight));
 
       const cardH = Math.max(240, window.innerHeight - top - bottomReserve);
       const avail = cardH - THEAD - PAGER - scrollbarH;
-      /* GROW to fill a tall screen, never shrink below 10. A short viewport
-         keeps the standard page; a tall one uses the room it has instead of
-         leaving half the card empty under ten rows.
-         The floor is the whole safeguard: without it this served four-row pages
-         on a laptop, which reads as a broken list rather than a fitted one.
-         Guarded with prev === fit so a resize that lands on the same number
-         costs no render and no refetch — only a real change in how many rows
-         fit is worth a request. */
       const fit = Math.max(10, Math.floor(avail / ROW));
       if (autoFitRef.current && fit !== rppRef.current) {
-        /* Keep the row the user was looking at on screen: a resize on page 4
-           lands on whichever new page now holds that page's first row, rather
-           than on a page number that may no longer exist for the new size. */
         const firstRow = (pageRef.current - 1) * rppRef.current;
         setRpp(fit);
         setPage(Math.floor(firstRow / fit) + 1);
         try { localStorage.setItem(PER_PAGE_KEY, String(fit)); } catch { /* private mode */ }
       }
 
-      /* MIN height, so the card runs down to 8px above the app footer — the
-         same rule the HRMS tables get from DataTable's fitToViewport.
-         (components/ui/DataTable.tsx, the `size()` effect.)
-
-         This was removed once, because on a short page it leaves whitespace
-         between the last row and the pager. That was the wrong trade to make,
-         and DataTable had already settled it the other way (QA #59): without a
-         floor, an empty or narrowed list collapses to its content and leaves a
-         screen-tall dead gap between the card and the page footer — which is
-         the state in the bug report, a 90px card stranded above 350px of
-         nothing. Whitespace INSIDE a card that reaches the footer reads as an
-         empty table; a card that stops a third of the way down the page reads
-         as the page failing to load.
-
-         MIN rather than a fixed height on purpose: a manually chosen
-         rows-per-page larger than the fit must be free to push past the
-         viewport and let the PAGE scroll, instead of hiding the extra rows
-         behind an inner scrollbar. Leftover space lands in the flex column and
-         the pager — `.sl-table-scroll > .wl-pager { margin-top:auto }` — is
-         carried to the bottom edge with it. */
       const h = `${cardH}px`;
       if (el.style.minHeight !== h) el.style.minHeight = h;
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
-    // Mirror CLM Segment Master: measure only on mount, on a SETTLED window
-    // resize (debounced), and when the tab/search/data changes — NOT via a
-    // ResizeObserver on the root. Observing the root re-measured `top` mid-scroll
-    // / on the info-box collapse, so it read a stale (scrolled) top and stretched
-    // the card too tall → the page started scrolling and the layout looked broken
-    // until a hard refresh. A debounced window-resize keeps it stable.
     let settleTimer: ReturnType<typeof setTimeout> | null = null;
     const recomputeDebounced = () => { if (settleTimer) clearTimeout(settleTimer); settleTimer = setTimeout(recompute, 140); };
     window.addEventListener('resize', recomputeDebounced);
@@ -1057,27 +806,16 @@ useEffect(() => {
 }, [allowed]);
  
 
-  /* SERVER-side pagination math. `vendors` IS the current page — the search,
-     the Fresh/Recurring tab and the Domestic/International scope are all applied
-     by VendorController::index now, so there is nothing left to filter or slice
-     here. `total` is the server's count across every page, which is what the
-     pager needs to know how many pages exist. */
   const pages = Math.max(1, Math.ceil(total / rpp));
   const curPage = Math.min(page, pages);
   const start = (curPage - 1) * rpp;   // Sr No offset for the rows on this page
   const pageRows = vendors;
 
-  /* The wizard now persists each step to /api/vendors/* directly, so
-     this handler only re-fetches and closes the modal. The payload is
-     ignored — its fields are already in the database by the time
-     onSubmit fires from the final Save Vendor click. */
   const handleSave = () => {
     setAddOpen(false);
     setEditingId(null);
     setEditingStep(null);
     void refresh({ silent: true });
-    // Deep-linked from another page (e.g. Bulk Sourcing) — return there now
-    // that the supplier edit is saved.
     const ret = returnToRef.current;
     returnToRef.current = null;
     if (ret) navigate(ret);
@@ -1104,12 +842,8 @@ useEffect(() => {
       <Row>
         <Col xs={12}>
          <div className="sup-fig" ref={rootRef}>
-          {/* Whole-page shimmer while the supplier list loads — header strip,
-              4-step brief, toolbar tabs and table all resolve into shape at
-              once (reuses the shared full-page skeleton). */}
           {loading ? <ShimmerClmMaster cols={7} rows={8} twoTab /> : (<>
 
-          {/* HEADER STRIP — purple gradient hero (Figma "Supplier Management") */}
           <div className="cstrip">
             <span className="cstrip__accent" />
             <span className="cstrip__glow" />
@@ -1135,7 +869,6 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* WHAT WE ARE DOING HERE — collapsible 4-step guide */}
           <div className={`bref-box ${brefOpen ? '' : 'is-collapsed'}`}>
             <div className="bref-box__header" onClick={() => setBrefOpen(o => !o)}>
               <div className="bref-box__header-ico">
@@ -1192,18 +925,7 @@ useEffect(() => {
           </div>
 
           <div className="sl-wrap">
-            {/* Toolbar — purple Fresh / Recurring tabs + search (Figma sl-toolbar).
-                Fresh = supplier with no opportunity yet; Recurring = at least one
-                opportunity (lead) created against its mapped products. The split
-                is computed server-side (VendorController::index → opportunity_count). */}
             <div className="sl-toolbar">
-              {/* Domestic / International, moved here from the "What We Are Doing
-                  Here" panel — a scope switch belongs beside the list it scopes,
-                  not in the explainer above it.
-                  The All / Fresh / Recurring strip that used to sit here is gone:
-                  Recurring was always empty (opportunity_count is hardcoded 0
-                  until the case-to-case flow lands), so it offered a choice
-                  between everything and nothing. */}
               <div className="sup-scope sl-scope">
                 <button
                   type="button"
@@ -1221,17 +943,7 @@ useEffect(() => {
                 </button>
               </div>
               <div className="sl-search">
-                {/* Static magnifier. It used to flip to a spinner while the
-                    debounce ran, back when the table only dimmed and nothing
-                    else said a request was coming. The table shimmers on search
-                    now, which says it far more plainly, and two indicators for
-                    one request read as two things happening. */}
                 <svg className="sl-search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                {/* Autofill guard — Chrome ignores autocomplete="off" on a field it
-                    classifies as contact info and drops an email / address into it
-                    (QA #8 on Customers, QA #25 on Consignee). An explicit name,
-                    autocomplete="new-password" and the LastPass / Dashlane opt-outs
-                    keep it out of this one. */}
                 <input
                   type="text"
                   name="supplier-list-search"
@@ -1262,22 +974,10 @@ useEffect(() => {
                 onClear={() => { setCatSel([]); setCompSel([]); }}
               />
             </div>
-
-            {/* Table — purple Figma table wired to the real /vendors data.
-                Pagination is client-side (10 rows/page). */}
-            {/* cols follows the header — the international scope drops GST State
-                Code, and a skeleton that is one column wider than the table it
-                stands in for makes the layout jump when the rows land. */}
-            {/* Skeleton row count follows the page size, capped at 12. A fixed 8
-                meant the skeleton and the table it stood in for were different
-                heights, so the page jumped every time the rows landed. */}
             {loading || swapping ? (
               <div className="p-3"><ShimmerTable rows={Math.min(rpp, 12)} cols={isIntlScope ? 14 : 15} /></div>
             ) : (
-              <>
-                {/* Dimmed, not replaced: on a refetch the previous rows stay
-                    put so the table does not collapse and reflow the page under
-                    the popover that triggered it. */}
+              <>             
                 <div className={`sl-table-scroll${refetching ? ' is-refetching' : ''}`} ref={scrollRef}>
                   <table className="sl-table">
                     <thead>
@@ -1286,27 +986,12 @@ useEffect(() => {
                         <th className="sl-th-2line sl-col-c"><span>Supplier</span><span>Code</span></th>
                         <th>Supplier Name</th>
                         <th className="sl-col-c">Supplier Type</th>
-                        {/* Left, with the cell: a segment name is free text of
-                            unpredictable length and can carry a +N badge beside
-                            it, so it reads down a left edge like Supplier Name
-                            rather than shifting with every row's width. */}
                         <th className="sl-th-left">Segment</th>
                         <th className="sl-col-c">Country</th>
                         <th className="sl-col-c">State</th>
-                        {/* A GST state code is an Indian registration artefact —
-                            the first two digits of a GSTIN. An international
-                            supplier has no GSTIN, so the column could only ever
-                            render an em dash down its whole length: a column
-                            that occupies width to say nothing. It goes with the
-                            scope it belongs to. */}
                         {!isIntlScope && (
                           <th className="sl-th-2line sl-col-c"><span>GST State</span><span>Code</span></th>
                         )}
-                        {/* Left, not centred: a person's name is free text and
-                            the longest value in this column, so centring it
-                            leaves the column ragged on both edges instead of
-                            lining up down one — same reasoning as Supplier
-                            Name and Email. */}
                         <th className="sl-th-left">Contact Person</th>
                         <th className="sl-col-c">Contact No</th>
                         <th className="sl-th-email">Email</th>
@@ -1317,10 +1002,6 @@ useEffect(() => {
                       </tr>
                     </thead>
                     <tbody>
-                      {/* The empty row's span follows the header: dropping GST
-                          State Code for the international scope takes the count
-                          with it, or the row spans a column that is not there
-                          and the table's right edge pulls in. */}
                       {pageRows.length === 0 ? (
                         <tr><td colSpan={isIntlScope ? 14 : 15} className="sl-empty">No suppliers found.</td></tr>
                       ) : pageRows.map((v, i) => {
@@ -1409,9 +1090,6 @@ useEffect(() => {
                                 : <Tooltip label="No compliance behaviour set on this supplier yet"><span className="sl-state">—</span></Tooltip>}
                             </td>
                             <td className="sl-col-c">
-                              {/* Count badge → read-only Mapped Products popup.
-                                  Zero is rendered as a flat, non-clickable badge:
-                                  a button that opens an empty list is a dead end. */}
                               {v.mappedProducts > 0 ? (
                                 <Tooltip label="View mapped products">
                                   <button
@@ -1439,18 +1117,6 @@ useEffect(() => {
                                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
                                 </button>
                                 </Tooltip>
-                                {/* Zoho Entry — HIDDEN for now (UI only, not wired up yet).
-                                    Un-comment this block to bring the button back.
-                                <Tooltip label="Zoho Entry">
-                                <button
-                                  type="button"
-                                  className="sl-act-btn sl-act-btn--book"
-                                  onClick={() => toast.info('Coming soon', 'Zoho Entry will be available once it is wired up.')}
-                                >
-                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /><path d="M9 7h7" /><path d="M9 11h7" /></svg>
-                                </button>
-                                </Tooltip>
-                                */}
                                 <button
                                   type="button"
                                   className="sl-evault-btn"
@@ -1479,12 +1145,6 @@ useEffect(() => {
                       })}
                     </tbody>
                   </table>
-                  {/* Shared dynamic pager lives INSIDE the stretched scroll card and
-                      is pushed to its bottom (margin-top:auto) so a short list leaves
-                      no gap between the table and the footer — mirrors CLM Segment. */}
-                  {/* A size picked here stops the auto-fit and is remembered, so
-                      the next visit opens on the choice rather than re-deriving
-                      one over the top of it. */}
                   <WorklistPager total={total} page={curPage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} pageSizeOptions={[10, 25, 50]} />
                 </div>
               </>
@@ -1495,7 +1155,6 @@ useEffect(() => {
         </Col>
       </Row>
 
-      {/* Scope first, form second. */}
       {scopeGateOpen && (
         <Suspense fallback={null}>
         <SupplierScopeGate
@@ -1509,11 +1168,6 @@ useEffect(() => {
         <Suspense fallback={null}>
         <AddVendorModal
           vendorId={editingId}
-          /* The row already shows the code, so hand it over rather than making
-             the modal's header wait for /vendors/{id}. Read off the loaded list
-             instead of held in state — nothing to keep in sync. Resolves to
-             null on a deep-link open before the list has landed, which is the
-             old behaviour. */
           vendorCodeHint={editingId ? (vendors.find(x => x.id === editingId)?.code ?? null) : null}
           initialStep={editingStep ?? undefined}
           scope={addScope ?? undefined}
@@ -1523,13 +1177,6 @@ useEffect(() => {
         </Suspense>
       )}
 
-      {/* Segment "+N" popover — small anchored card at the badge (mirrors the
-          Customer list's segment overflow popover), not a full centered modal.
-          PORTALLED to <body>: the popover is position:fixed, and any ancestor
-          with a transform/will-change (the table hover effects, the auto-fit
-          card) turns "fixed" into "relative to that ancestor" — so after the
-          page scrolled, it opened at a stale, off-screen spot. A body portal has
-          no such ancestor, so it always positions against the real viewport. */}
       {segPop && createPortal(
         <div className="sup-fig">
           <div className="sl-seg-pop-backdrop" onClick={() => setSegPop(null)} />
@@ -1554,8 +1201,6 @@ useEffect(() => {
         document.body,
       )}
 
-      {/* Contact Persons popup — lists every contact for the chosen supplier
-          (primary first), with role badge, phone and email (Figma). */}
       {contactsTarget && (
         <div className="sup-fig">
           <div className="sc-ov" onClick={(e) => { if (e.target === e.currentTarget) setContactsTarget(null); }}>
@@ -1572,8 +1217,6 @@ useEffect(() => {
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                 </button>
               </div>
-              {/* No pagination — list every contact and let the body scroll
-                  after ~5 rows (max-height below). */}
               <div className="sc-body" style={{ maxHeight: 'min(60vh, 392px)' }}>
                 {contactsTarget.contacts.map((c, i) => (
                   <div className="sc-row" key={i}>
@@ -1600,9 +1243,6 @@ useEffect(() => {
         </div>
       )}
 
-      {/* Mapped Products popup — the rows are read-only (editing and removing a
-          mapping stay in the supplier form) but a new one can be mapped from
-          its header, so the list does not have to open the wizard for it. */}
       {mappedTarget && (
         <Suspense fallback={null}>
         <MappedProductsViewPopup
@@ -1612,23 +1252,10 @@ useEffect(() => {
           segments={mappedTarget.segments}
           segmentIds={(mappedTarget.segmentItems ?? []).map(s => s.id).filter((id): id is number => typeof id === 'number')}
           onClose={() => setMappedTarget(null)}
-          /* A new mapping changes the count the badge behind this popup shows. */
           onChanged={() => void refresh({ silent: true })}
         />
         </Suspense>
       )}
-
-      {/* Read-only Supplier Evidence Vault popup — pulls
-          /api/segment-uploads/supplier/{id}/vault to render KPI cards +
-          per-bucket tables (Company DD, Owner KYC, Trade Licenses,
-          Trade Documents, Shipment Agreements). Rows are the union of
-          the supplier's segment-rule docs and any files uploaded
-          against them in Stage 2. */}
-      {/* Mounted only while a vault is open. It already returned null when
-          closed (`if (!open || !supplier || !vault) return null`) and every
-          effect inside it short-circuits on !open, so gating the mount changes
-          nothing on screen — but it is what stops the chunk, jszip and
-          file-saver being fetched on page load. */}
       {vaultTarget && (
         <Suspense fallback={null}>
           <SupplierEvidenceVaultModal
