@@ -168,10 +168,25 @@ class SpiPutawayController extends Controller
                 $box, $row, $next);
         }
 
+        /* Resolve WHERE the scan points, not just that it happened. Without
+           this the row records four timestamps and no location, which is the
+           one thing Stage 04 exists to capture. */
+        $place = $this->resolveLocation($data['scan_type'], $data['scanned_value'], $spi, $row);
+        if (is_string($place)) {
+            return $this->refuse($spi, $data, $user,
+                $place === 'inactive' ? 'inactive_location' : ($place === 'not_on_rack' ? 'shelf_not_on_rack' : 'unknown_code'),
+                match ($place) {
+                    'inactive'    => "{$data['scanned_value']} is not active — pick another location.",
+                    'not_on_rack' => "{$data['scanned_value']} is not on the rack you scanned.",
+                    default       => "No {$data['scan_type']} matches {$data['scanned_value']}.",
+                },
+                $box, $row);
+        }
+
         // ── Accepted ──
 
-        $row = $this->inTransaction('record the scan', function () use ($spi, $box, $row, $data, $user, $full) {
-            $row->fill([
+        $row = $this->inTransaction('record the scan', function () use ($spi, $box, $row, $data, $user, $place) {
+            $row->fill($place + [
                 'supplier_invoice_id' => $spi->id,
                 'box_id'              => $box->id,
                 'warehouse_id'        => $spi->warehouse_id,
@@ -179,6 +194,8 @@ class SpiPutawayController extends Controller
                 'scanned_by'          => $user->id,
                 $data['scan_type'] . '_scanned_at' => now(),
             ])->save();
+
+            $row->forceFill(['destination' => $this->describe($row)])->save();
 
             $this->logScan($spi, $data, $user, 'success', null, null, $box, $row);
             $this->svc->log($spi, $data['scan_type'] . '_scanned', [
@@ -234,6 +251,62 @@ class SpiPutawayController extends Controller
             'box_code' => $row->box?->box_code,
             'spi_putaway_progress' => ['placed' => $placed, 'total' => $total, 'complete' => $placed >= $total],
         ]);
+    }
+
+    /**
+     * Turn a scanned barcode into the id it names.
+     *
+     * Returns the columns to write, or a string naming why it was refused:
+     * 'unknown' · 'inactive' · 'not_on_rack'.
+     *
+     * A box scan carries no location of its own, so it writes nothing here —
+     * the box has already been resolved by the caller.
+     */
+    private function resolveLocation(string $type, string $value, SupplierInvoice $spi, SpiPutaway $row): array|string
+    {
+        if ($type === 'box') return [];
+
+        if ($type === 'location') {
+            // The zone within the invoice's warehouse.
+            $zone = DB::table('master_zone_master')
+                ->where('warehouse', (string) $spi->warehouse_id)
+                ->where('zone_id', $value)->first();
+            if (!$zone) return 'unknown';
+            if (($zone->status ?? 'Active') !== 'Active') return 'inactive';
+
+            return ['zone_id' => $zone->id];
+        }
+
+        if ($type === 'rack') {
+            $rack = DB::table('master_racks')
+                ->where('warehouse', (string) $spi->warehouse_id)
+                ->where('rackName', $value)->first();
+            if (!$rack) return 'unknown';
+            // A rack in another zone than the one just scanned is a wrong turn.
+            if ($row->zone_id && (string) $rack->zone !== (string) $row->zone_id) return 'not_on_rack';
+
+            return ['rack_id' => $rack->id];
+        }
+
+        // shelf
+        $shelf = DB::table('master_shelf_master')->where('shelf_name', $value)->first();
+        if (!$shelf) return 'unknown';
+        if (($shelf->status ?? 'Active') === 'Under Maintenance') return 'inactive';
+        // The shelf must belong to the rack the operator just scanned.
+        if ($row->rack_id && (string) $shelf->rack_ref !== (string) $row->rack_id) return 'not_on_rack';
+
+        return ['shelf_id' => $shelf->id];
+    }
+
+    /** The human-readable placement, rebuilt after every scan. */
+    private function describe(SpiPutaway $row): string
+    {
+        $wh    = DB::table('master_warehouse_master')->where('id', $row->warehouse_id)->value('wh_id');
+        $zone  = $row->zone_id  ? DB::table('master_zone_master')->where('id', $row->zone_id)->value('zone_id') : null;
+        $rack  = $row->rack_id  ? DB::table('master_racks')->where('id', $row->rack_id)->value('rackName') : null;
+        $shelf = $row->shelf_id ? DB::table('master_shelf_master')->where('id', $row->shelf_id)->value('shelf_name') : null;
+
+        return implode(' / ', array_filter([$wh, $zone, $rack, $shelf]));
     }
 
     /* ══════════════════════════ SCAN LOG ══════════════════════════ */

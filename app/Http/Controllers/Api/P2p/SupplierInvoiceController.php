@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\P2p;
 
 use App\Http\Controllers\Api\P2p\Concerns\RunsInTransaction;
 use App\Http\Controllers\Controller;
+use App\Models\P2p\PoPaymentRequest;
 use App\Models\P2p\PurchaseOrder;
 use App\Models\P2p\SpiPoFulfilment;
 use App\Models\P2p\SupplierInvoice;
@@ -423,6 +424,79 @@ class SupplierInvoiceController extends Controller
         });
 
         return $this->ok(['id' => $id, 'deleted' => true]);
+    }
+
+    /**
+     * GET /p2p/spi/{id}/payment-requests — the Payment Requests History popup.
+     *
+     * Two summaries sit on that screen and they measure different things:
+     *
+     *   invoice  what THIS invoice claims — base, GST, grand total
+     *   requests what has been requested, approved and paid against it
+     *
+     * The ceiling and the balance still belong to the PURCHASE ORDER; an SPI
+     * amount is the supplier's claim, not a ledger. So `po` is returned
+     * alongside, and that is the figure a new request is validated against.
+     */
+    public function paymentRequests(Request $request, int $id): JsonResponse
+    {
+        $this->tenantUser($request);
+        $spi = $this->findSpi($id);
+        $po  = $spi->purchaseOrder;
+
+        $rows = PoPaymentRequest::where('supplier_invoice_id', $spi->id)
+            ->orderBy('id')->get();
+
+        $approved = $rows->where('status', 'Approved');
+        $paid     = round((float) $rows->sum('paid_amount'), 2);
+        $gst      = round((float) $spi->total_cgst + (float) $spi->total_sgst + (float) $spi->total_igst, 2);
+
+        return $this->ok([
+            'spi' => [
+                'id' => $spi->id, 'code' => $spi->code,
+                'base_amount'  => (float) $spi->taxable_total,   // without GST
+                'gst_amount'   => $gst,
+                'grand_total'  => (float) $spi->grand_total,     // with GST
+                'paid_amount'  => $paid,
+                'balance'      => round((float) $spi->grand_total - $paid, 2),
+            ],
+
+            'requests_summary' => [
+                'total'            => $rows->count(),
+                'requested_amount' => round((float) $rows->sum('requested_amount'), 2),
+                'awaiting'         => round((float) $rows->where('status', 'Pending')->sum('requested_amount'), 2),
+                'approved_amount'  => round((float) $approved->sum('approved_amount'), 2),
+                'paid_amount'      => $paid,
+                // Approved but not yet released — what the Make Payment button owes.
+                'ready_to_pay'     => round((float) $approved->sum(fn ($r) => max(0, (float) $r->approved_amount - (float) $r->paid_amount)), 2),
+            ],
+
+            /* The real ceiling. A request against this invoice is still checked
+               against the PO's balance, not the invoice's. */
+            'po' => $po ? [
+                'id' => $po->id, 'code' => $po->code,
+                'grand_total'    => (float) $po->grand_total,
+                'tds_amount'     => (float) $po->tds_amount,
+                'net_payable'    => round((float) $po->grand_total - (float) $po->tds_amount, 2),
+                'paid_amount'    => (float) $po->paid_amount,
+                'balance_amount' => (float) $po->balance_amount,
+            ] : null,
+
+            'requests' => $rows->map(fn ($r) => [
+                'id' => $r->id, 'code' => $r->code,
+                'payment_type'     => $r->payment_type,
+                'percentage'       => $r->percentage !== null ? (float) $r->percentage : null,
+                'requested_amount' => (float) $r->requested_amount,
+                'requested_to'     => $r->requested_to,
+                'requested_at'     => $r->requested_at,
+                'status'           => $r->status,
+                'approved_amount'  => $r->approved_amount !== null ? (float) $r->approved_amount : null,
+                'paid_amount'      => (float) $r->paid_amount,
+                'due'              => $r->approved_amount !== null
+                    ? max(0, round((float) $r->approved_amount - (float) $r->paid_amount, 2))
+                    : null,
+            ])->values(),
+        ]);
     }
 
     /* ══════════════════════════ ZOHO ══════════════════════════ */

@@ -116,6 +116,18 @@
     {
       "key": "grand_total",
       "value": "8000"
+    },
+    {
+      "key": "email",
+      "value": "agrotech@mailinator.com"
+    },
+    {
+      "key": "password",
+      "value": "Test@123"
+    },
+    {
+      "key": "user_id",
+      "value": "4"
     }
   ],
   "auth": {
@@ -129,6 +141,62 @@
     ]
   },
   "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login (sets {{token}})",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r.token) {",
+                  "    pm.collectionVariables.set('token', r.token);",
+                  "    pm.collectionVariables.set('user_id', r.user.id);",
+                  "    console.log('token set ·', r.user.name, '· branch', r.user.branch_id);",
+                  "} else {",
+                  "    console.warn('no token in the response — check the credentials');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "description": "Run this FIRST. The test script writes the token into the collection variable, so every other request authenticates on its own — the collection auth is already Bearer {{token}}.\n\nauth is set to noauth here on purpose: sending a stale bearer token to /login is harmless but noisy."
+          }
+        }
+      ]
+    },
     {
       "name": "0 · Lookups",
       "item": [

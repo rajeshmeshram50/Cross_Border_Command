@@ -539,6 +539,19 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::post  ('/{id}/putaway/scan',          [$put, 'scan'])->whereNumber('id');
         Route::put   ('/{id}/putaway/{row}/confirm', [$put, 'confirm'])->whereNumber('id')->whereNumber('row');
 
+        /* Payment Requests History for ONE invoice. The requests themselves are
+           still raised and decided on the PO — this is the read that scopes
+           them to the invoice they were raised against. */
+        Route::get   ('/{id}/payment-requests', [$spi, 'paymentRequests'])->whereNumber('id');
+        /* Raised from the invoice, but it still belongs to the PO — same
+           ceiling, same approver rules, same deduction. The SPI screen
+           therefore never needs to know the purchase order id. */
+        $pay = \App\Http\Controllers\Api\P2p\PoPaymentRequestController::class;
+        Route::post  ('/{id}/payment-requests',                  [$pay, 'storeFromSpi'])->whereNumber('id');
+        // The "Make SPI Payment" button. Still recorded against the PO.
+        Route::post  ('/{id}/payment-requests/{req}/payments',   [$pay, 'storePaymentFromSpi'])
+            ->whereNumber('id')->whereNumber('req');
+
         // Zoho Books — only a standalone invoice creates its own bill.
         Route::post  ('/{id}/zoho-sync',    [$spi, 'zohoSync'])->whereNumber('id');
         Route::get   ('/{id}/zoho-tracker', [$spi, 'zohoTracker'])->whereNumber('id');
