@@ -467,7 +467,7 @@ Tests folder is scaffolded but empty — only example stubs exist.
 
 1. **Don't push directly to shared branches.** Commit locally only; wait for the user to say "push" before `git push` or opening a PR.
 2. **For port tasks** (HTML prototype → React), pick the fullest faithful implementation and proceed. Don't ask scope/A-or-B questions; don't surface design forks even for bugs encountered mid-port.
-3. **The user is a QA engineer**, not a regular developer — they primarily log bugs and don't usually want code-level deep-dives unless asked. Frame explanations from a "where does this feature live and how do I reproduce it" angle when possible.
+3. **The user is a developer.** They design schemas, write and review backend code, and work from tickets — so go straight to the code, the query, or the file. Technical depth is wanted, not avoided; they will push back when something is wrong, and that pushback is usually worth taking seriously.
 4. **Multi-tenant safety first** — any new query, controller, or component must respect `client_id` / `branch_id` scoping.
 5. **Prefer editing existing files** over creating new ones. Don't add documentation files unless asked.
 6. **Don't bypass middleware or hooks** to "make it work." Investigate root causes.
