@@ -5876,13 +5876,18 @@ const SCOPED_CSS = `
   display: flex; align-items: center;
   position: relative;
   height: 42px;
-  /* Locked flex-basis (grow 0, shrink 0, basis 200px) so the box is EXACTLY
-     200px no matter which label is selected — the toolbar never reflows. */
-  flex: 0 0 200px;
-  width: 200px; min-width: 200px; max-width: 200px;
+  /* Locked basis so the box is the same width whichever label is selected and
+     the toolbar never reflows. Sized to the longest label rather than rounded
+     up, so no slack is left showing as a gap before Create (QA #60). */
+  flex: 0 0 186px;
+  width: 186px; min-width: 186px; max-width: 186px;
 }
 /* Force the MasterSelect wrap + toggle to the container's fixed width/height so
-   they never resize to their text content. */
+   they never resize to their text content. MasterSelect wraps its dropdown in a
+   bare unclassed <div>; as a flex item that sizes to its content, so without
+   this the dropdown sat short of the 200px box and the slack read as a gap
+   before the Create button (QA #60). */
+.qpi-doctype-filter > div { flex: 1 1 auto; width: 100%; min-width: 0; }
 .qpi-doctype-filter .master-select-wrap { width: 100% !important; }
 .qpi-doctype-filter .master-select-toggle { height: 42px; width: 100% !important; padding-left: 34px !important; }
 /* Funnel icon pinned to the left of the Doc Type dropdown. */

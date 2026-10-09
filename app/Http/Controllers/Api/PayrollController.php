@@ -267,6 +267,13 @@ class PayrollController extends Controller
                     && $existingRun->status !== 'paid'
                     && ($existing?->status !== 'locked')
                     && !$paidRunIds->has($existingRun->id),
+                // Some paid, some held: the run never reached 'paid' and the
+                // period never locked, so the cycle is neither finished nor
+                // reopenable. Without this the UI can only say "already paid",
+                // which contradicts the In Progress chip beside it.
+                'partially_paid' => (bool) $runLocked
+                    && $existingRun->status !== 'paid'
+                    && $paidRunIds->has($existingRun->id),
                 'processable' => !$isFuture && !$runLocked,
             ];
             $cursor->addMonth();
