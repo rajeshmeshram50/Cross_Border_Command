@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
-import { IcoBox, IcoCheck, IcoEye, IcoX } from '../../../icons';
+import { IcoBox, IcoCheck, IcoEye, IcoPencil, IcoX } from '../../../icons';
 import { lineTotals, truncateDesc, DESC_MAX, type ProductLine } from '../invoice-products';
 import type { SplitBox } from './MultiBoxPanel';
 
@@ -35,7 +35,11 @@ export interface PackedRow {
  * identically after it moves. What this table adds is how it was packed and
  * what came out: the scenario, the boxes generated, and a way to see them.
  */
-export default function PackedProducts({ rows }: { rows: PackedRow[] }) {
+export default function PackedProducts({ rows, onEdit }: {
+  rows: PackedRow[];
+  /** Send a packed product back to the box generator to be repacked. */
+  onEdit?: (code: string) => void;
+}) {
   /* Which row's boxes are being looked at. Null is closed — one piece of
      state rather than an open flag that could disagree with the row. */
   const [showing, setShowing] = useState<PackedRow | null>(null);
@@ -107,21 +111,35 @@ export default function PackedProducts({ rows }: { rows: PackedRow[] }) {
                   <td><span className="invf-scn-tag">{row.scenario}</span></td>
                   <td><span className="vti-qty-badge">{row.boxes.length}</span></td>
                   <td>
-                    {/* The box list is behind a popup rather than inline: a
-                        split can produce a hundred cartons, and a cell cannot
-                        hold them without setting the row's height.
-
-                        An eye, not a three-dot menu: this opens a list to read,
-                        and a kebab would promise actions that are not there. */}
-                    <button
-                      type="button"
-                      className="vti-btn-single vti-btn-single--ico"
-                      onClick={() => setShowing(row)}
-                      title={`View the ${row.boxes.length} box${row.boxes.length === 1 ? '' : 'es'} for ${row.line.spiName}`}
-                      aria-label={`View boxes for ${row.line.spiName}`}
-                    >
-                      <IcoEye size={14} />
-                    </button>
+                    <span className="vti-packed-acts">
+                      {/* The box list is behind a popup rather than inline: a
+                          split can produce a hundred cartons, and a cell cannot
+                          hold them without setting the row's height. */}
+                      <button
+                        type="button"
+                        className="vti-btn-single vti-btn-single--ico"
+                        onClick={() => setShowing(row)}
+                        title={`View the ${row.boxes.length} box${row.boxes.length === 1 ? '' : 'es'} for ${row.line.spiName}`}
+                        aria-label={`View boxes for ${row.line.spiName}`}
+                      >
+                        <IcoEye size={14} />
+                      </button>
+                      {/* Sends the product back to the table above with its
+                          scenario and boxes intact, so repacking is a change
+                          rather than a redo. Nothing is destroyed here, which
+                          is why it needs no confirmation. */}
+                      {onEdit && (
+                        <button
+                          type="button"
+                          className="vti-btn-single vti-btn-single--ico vti-btn-single--edit"
+                          onClick={() => onEdit(row.line.code)}
+                          title={`Repack ${row.line.spiName} — returns it to the box generator with its ${row.scenarioNo.toLowerCase()} and boxes kept`}
+                          aria-label={`Repack ${row.line.spiName}`}
+                        >
+                          <IcoPencil size={14} />
+                        </button>
+                      )}
+                    </span>
                   </td>
                 </tr>
               );

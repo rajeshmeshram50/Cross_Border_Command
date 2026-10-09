@@ -716,8 +716,13 @@
 
 /* The head strip wraps its reference pills onto a second line and pushes SPI
    Payment and Close off the row. The pills scroll sideways instead: they are
-   reference, and the two actions must stay reachable. */
-@media (max-width: 1500px) {
+   reference, and the two actions must stay reachable.
+
+   Stops at 761px. Below that the purchase order's own rule stacks the header —
+   title on one row, buttons under it — and this `nowrap` was overriding it all
+   the way down to a phone, where the row cannot hold both and `overflow:hidden`
+   on the head simply cut the Close button off the screen. */
+@media (min-width: 761px) and (max-width: 1500px) {
   .cpf-form .spi-dt-head { flex-wrap: nowrap; }
   .cpf-form .spi-dt-pills {
     flex-wrap: nowrap;
@@ -1616,46 +1621,43 @@
 [data-bs-theme="dark"] .vti-table-wrap,
 [data-bs-theme="dark"] .cpd-scroll { color-scheme: dark; }
 
-/* ── GST split on the 3-way match ─────────────────────────────────────────
-   The GST column says which tax it is charging, because CGST+SGST and IGST
-   are the same money split two ways and the difference is the supplier's
-   state — which is not on this table. */
+/* The GST split needs no styles of its own: the tax columns swap by mode the
+   way the purchase order's table does, and `cpd-th-amt--tax` already tints
+   them. Nothing here. */
 
-.cpd-th-sub--tax {
-  background: rgba(8, 47, 73, .22);
-  border: 1px solid rgba(224, 251, 255, .55);
-  color: #e0fbff;
+/* Step 03's box-generation header is a flex row whose three count pills do not
+   shrink, so on a phone the title column was squeezed to 10px wide and set one
+   word per line. The pills drop to their own row instead. */
+@media (max-width: 760px) {
+  .vti-header { flex-wrap: wrap; row-gap: 8px; }
+  .vti-header-text { flex: 1 1 160px; }
+  .vti-header-stats { flex-wrap: wrap; }
 }
 
-/* The halves, under the total they add up to. */
-.spi-taxsplit {
-  display: block;
-  margin-top: 2px;
-  font-family: inherit;
-  font-size: 8.5px;
-  font-weight: 700;
-  letter-spacing: .02em;
-  white-space: nowrap;
-  color: #6d8b9b;
+/* The packed row's two actions: view the boxes, or send the product back to
+   be repacked. */
+.vti-packed-acts {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
-[data-bs-theme="dark"] .spi-taxsplit { color: #8aa8b8; }
-
-/* An import is taxed at zero; the cell says so rather than printing "0%". */
-.spi-nogst {
-  display: inline-block;
-  padding: 1px 7px;
-  border-radius: 6px;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: .04em;
-  color: #7c93a4;
-  background: #eef3f7;
-  border: 1px solid #e0e9ef;
+/* Repack is the quieter of the two — viewing is what this row is mostly for,
+   and an edit that shouts invites undoing work that is already correct. */
+.vti-btn-single--edit {
+  color: #0e7490;
+  background: #eafaff;
+  border-color: #bfe3ee;
 }
 
-[data-bs-theme="dark"] .spi-nogst {
-  color: #9dbccb;
-  background: rgba(255, 255, 255, .05);
-  border-color: rgba(255, 255, 255, .1);
+.vti-btn-single--edit:hover {
+  color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+  border-color: transparent;
+}
+
+[data-bs-theme="dark"] .vti-btn-single--edit {
+  color: #67e8f9;
+  background: rgba(6, 182, 212, .14);
+  border-color: rgba(6, 182, 212, .28);
 }

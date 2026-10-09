@@ -143,11 +143,17 @@ export default function MapInvoiceModal({
             </div>
           )}
 
+          {/* Not built yet: a standalone invoice has no PO to match against,
+              and the form behind it still assumes one. Shown greyed rather
+              than removed, so the option is known to be coming. The branch
+              below stays, so turning it back on is one word. */}
           <button
             type="button"
-            className={`spi-mdl-card ${mode === 'without-po' ? 'is-sel is-amber' : ''}`}
+            disabled
+            className={`spi-mdl-card is-disabled ${mode === 'without-po' ? 'is-sel is-amber' : ''}`}
             onClick={() => choose('without-po')}
             aria-pressed={mode === 'without-po'}
+            title="Standalone invoices are not available yet"
           >
             <div className="spi-mdl-card-ico spi-mdl-ico-amber"><IcoWarn size={20} /></div>
             <div className="spi-mdl-card-mid">
@@ -156,9 +162,7 @@ export default function MapInvoiceModal({
               </div>
               <div className="spi-mdl-card-desc">Capture a supplier invoice not tied to any PO.</div>
             </div>
-            <span className={`spi-mdl-radio ${mode === 'without-po' ? 'is-on-amber' : ''}`}>
-              {mode === 'without-po' && <IcoCheck size={13} />}
-            </span>
+            <span className="spi-mdl-soon">Coming soon</span>
           </button>
 
           {mode === 'without-po' && (

@@ -319,3 +319,91 @@
    browser draws its scrollbars and pickers for a light page, which shows as
    pale tracks inside a dark sheet. */
 [data-bs-theme="dark"] .smod-backdrop { color-scheme: dark; }
+
+/* ── Fitting a short screen ───────────────────────────────────────────────
+   `.smod-box` had no height limit, so on a phone it grew past the viewport
+   and took its footer with it — at 360×800 the Next button sat at y=844 and
+   the storage step could not be completed at all. The box now caps at the
+   viewport and scrolls its own body, with the head and footer pinned, which
+   is what every other modal in this module does. */
+
+.smod-box {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 32px);
+}
+
+.smod-head,
+.smod-footer {
+  flex-shrink: 0;
+}
+
+.smod-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Two choice cards side by side do not fit a phone. */
+@media (max-width: 700px) {
+  .smod-cards { grid-template-columns: 1fr; gap: 12px; }
+  .smod-card { padding: 14px; }
+  .smod-head { padding: 12px 15px; gap: 10px; }
+  .smod-body { padding: 12px 15px 8px; }
+  .smod-footer { padding: 10px 15px 12px; gap: 10px; flex-wrap: wrap; }
+  .smod-footer-btns { flex: 1 1 auto; justify-content: flex-end; }
+}
+
+/* ── Not built yet ────────────────────────────────────────────────────────
+   Third Party Warehouse stays on screen, greyed, so the option is known to
+   be coming — hiding it would leave no sign it exists. Desaturated rather
+   than faded: at low opacity the feature ticks and crosses stop being
+   legible, and what the option WILL offer is the point of still showing it. */
+
+.smod-card.is-disabled {
+  cursor: not-allowed;
+  background: #f7fafc;
+  border-color: #e8eff6;
+  filter: grayscale(.85);
+  box-shadow: none;
+}
+
+.smod-card.is-disabled:hover {
+  border-color: #e8eff6;
+  box-shadow: none;
+  transform: none;
+}
+
+.smod-card.is-disabled .smod-card-title,
+.smod-card.is-disabled .smod-card-sub,
+.smod-card.is-disabled .smod-feature { color: #8aa0ae; }
+
+.smod-soon {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #64748b;
+  background: #eef3f7;
+  border: 1px solid #dde6ed;
+}
+
+[data-bs-theme="dark"] .smod-card.is-disabled {
+  background: rgba(255, 255, 255, .03);
+  border-color: rgba(255, 255, 255, .08);
+}
+
+[data-bs-theme="dark"] .smod-card.is-disabled .smod-card-title,
+[data-bs-theme="dark"] .smod-card.is-disabled .smod-card-sub,
+[data-bs-theme="dark"] .smod-card.is-disabled .smod-feature { color: #7f94a3; }
+
+[data-bs-theme="dark"] .smod-soon {
+  color: #9dbccb;
+  background: rgba(255, 255, 255, .06);
+  border-color: rgba(255, 255, 255, .1);
+}

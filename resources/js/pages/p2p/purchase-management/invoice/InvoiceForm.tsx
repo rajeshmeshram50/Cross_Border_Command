@@ -14,7 +14,7 @@ import '../order/create-po/create-po.css';
 import './invoice-form.css';
 import { HeadPill } from '../order/create-po/CreatePoForm';
 import {
-  IcoCard, IcoCheck, IcoChevronL, IcoChevronR, IcoDoc, IcoLines, IcoUser, IcoWarehouse, IcoX,
+  IcoCheck, IcoChevronL, IcoChevronR, IcoDoc, IcoLines, IcoUser, IcoWarehouse, IcoX,
 } from '../../icons';
 import Step1SupplierDetails from './steps/Step1SupplierDetails';
 import Step2InvoiceProducts from './steps/Step2InvoiceProducts';
@@ -71,7 +71,10 @@ export default function InvoiceForm({
   /* Everything the four steps collect. Held here, not inside a step, because
      Step 02 opens with a read-only recap of Step 01 — a step cannot summarise
      state it does not own. */
-  const { draft, set } = useInvoiceDraft({ supplier: input.supplier, invoiceNo, poNo: input.poNo });
+  const { draft, set } = useInvoiceDraft({
+    supplier: input.supplier, invoiceNo, poNo: input.poNo,
+    warehouse: warehouseLabel(input.storage),
+  });
 
   /* The invoice's product lines. Step 02 edits them and Step 03 turns them
      into boxes, so they belong to the form rather than to either step. Kept
@@ -144,8 +147,6 @@ export default function InvoiceForm({
             </div>
 
             <div className="spi-dt-head-r">
-              <button type="button" className="spi-dt-btn-pay"><IcoCard /> SPI Payment</button>
-              <span className="spi-dt-divider" />
               <button type="button" className="spi-dt-btn-close" onClick={onClose}><IcoX /> Close</button>
             </div>
           </div>

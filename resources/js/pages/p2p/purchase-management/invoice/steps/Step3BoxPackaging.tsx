@@ -575,7 +575,15 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
           />
       )}
 
-      <PackedProducts rows={packedRows} />
+      {/* Repack: clearing `saved` alone returns the row to the generator
+          above, because that table is "everything not yet saved". `packing`
+          is deliberately left alone, so the scenario and the boxes already
+          entered are still there when the drawer reopens — this is a change,
+          not a redo. */}
+      <PackedProducts
+        rows={packedRows}
+        onEdit={code => setSaved(s => { const next = { ...s }; delete next[code]; return next; })}
+      />
     </>
   );
 }

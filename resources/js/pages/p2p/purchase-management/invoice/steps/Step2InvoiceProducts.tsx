@@ -1,8 +1,8 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Field } from '../../order/create-po/form-fields';
 import { HeadPill } from '../../order/create-po/CreatePoForm';
-import { IcoBox, IcoChevron, IcoCheck, IcoDoc, IcoLines, IcoPaperclip, IcoPin, IcoSave, IcoUser } from '../../../icons';
+import { IcoBox, IcoChevron, IcoDoc, IcoLines, IcoPaperclip, IcoPin, IcoUser } from '../../../icons';
 import StageSummary from './StageSummary';
 import ProductTable from './ProductTable';
 import { DEFAULT_HOME_STATE_CODE, taxModeFor, type ProductLine } from '../invoice-products';
@@ -53,29 +53,6 @@ export default function Step2InvoiceProducts({
      the same Maharashtra default `App\Support\Gst` uses when a branch carries
      neither a gst_state_code nor a GSTIN. */
   const taxMode = taxModeFor(draft.country, draft.stateCode, DEFAULT_HOME_STATE_CODE);
-
-  /* Whether what is on screen has been saved. Reset on any edit below, because
-     a button that still reads "Saved" over a changed table is worse than one
-     that never said it. */
-  const [saved, setSaved] = useState(false);
-  const saveProducts = () => setSaved(true);
-
-  /* The table's own handlers, wrapped so an edit un-saves the section. The
-     wrapping happens here rather than in the table, which has no business
-     knowing this section has a save button.
-
-     Memoised on purpose: the form hands these down already wrapped in
-     `useCallback` so `memo` on the table row is worth having, and a fresh
-     function here each render would undo that and re-render every row on
-     every keystroke. */
-  const changeLine = useCallback((index: number, patch: Partial<ProductLine>) => {
-    setSaved(false);
-    onChangeLine(index, patch);
-  }, [onChangeLine]);
-  const removeLine = useCallback((index: number) => {
-    setSaved(false);
-    onRemoveLine(index);
-  }, [onRemoveLine]);
 
   return (
     <>
@@ -148,25 +125,8 @@ export default function Step2InvoiceProducts({
         </div>
 
         <div className="spi-dt-sec-body">
-          <ProductTable lines={lines} onChange={changeLine} onRemove={removeLine} taxMode={taxMode} />
-
-          {/* The match can be saved without leaving the step. The footer's
-              "Save & Next" commits the whole step and moves on, which is the
-              wrong shape for a table someone edits a row at a time. The chrome
-              already carries this pair — a right-aligned row and the save
-              button itself — so there is nothing to style here. */}
-          <div className="spi-dt-saverow-only">
-            <button
-              type="button"
-              className="spi-dt-save-btn"
-              onClick={saveProducts}
-              disabled={saved}
-              title={saved ? 'The 3-way match is saved' : 'Save the 3-way match and stay on this step'}
-            >
-              {saved ? <IcoCheck /> : <IcoSave />}
-              {saved ? 'Saved' : 'Save Product Details'}
-            </button>
-          </div>
+          {/* The footer's "Save & Next" is the only save on this step. */}
+          <ProductTable lines={lines} onChange={onChangeLine} onRemove={onRemoveLine} taxMode={taxMode} />
         </div>
       </div>
     </>

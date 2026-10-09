@@ -34,15 +34,15 @@ export interface ProductLine {
  * How the GST on a line is split.
  *
  * `intra` — supplier and our branch are in the same state: CGST + SGST, half
- * each. `inter` — different states: one IGST at the full rate. `none` — the
- * supplier is outside India, so Indian GST does not arise at all and the rate
- * is zero before any split is reached.
+ * each. `inter` — different states: one IGST at the full rate. `export` — the
+ * supplier is outside India, so Indian GST does not arise and the rate is zero
+ * before any split is reached.
  *
- * The same three cases the purchase order works in, named the same way:
- * PurchaseOrderService::taxMode() returns 'intra' | 'inter', and an
- * international PO zeroes `gst_pct` at the line before the split happens.
+ * The same three values the purchase order's own table takes, named the same
+ * way (create-po/steps/ProductTable.tsx), so the two screens can be read
+ * against each other. 'export' is the PO's word for an international document.
  */
-export type TaxMode = 'intra' | 'inter' | 'none';
+export type TaxMode = 'intra' | 'inter' | 'export';
 
 /**
  * The tax mode for a supplier, from the two things that decide it.
@@ -59,7 +59,7 @@ export function taxModeFor(country: string, supplierState: string, homeState: st
      purchase order is the behaviour being matched here, so an unanswered
      country is taxed rather than zero-rated. */
   const name = country.trim().toLowerCase();
-  if (name !== '' && name !== 'india') return 'none';
+  if (name !== '' && name !== 'india') return 'export';
   /* An unknown state falls to intra, which is what
      PurchaseOrderService::taxMode() does with a blank code. */
   if (!supplierState || !homeState) return 'intra';
@@ -91,6 +91,10 @@ export interface LineTotals {
   cgst: number;
   sgst: number;
   igst: number;
+  /** The rates behind that split, for the table's own % columns. */
+  cgstPct: number;
+  sgstPct: number;
+  igstPct: number;
   /** base + GST. */
   cost: number;
   /** Short of the PO, never negative — the overage is `extra`. */
@@ -114,18 +118,26 @@ export function lineTotals(l: ProductLine, mode: TaxMode = 'intra'): LineTotals 
   const base = round2(l.spiQty * l.spiRate);
   /* An import carries no Indian GST, so the rate is zeroed here rather than
      split to nothing later — the same thing the PO does at the line. */
-  const rate = mode === 'none' ? 0 : l.gst;
+  const rate = mode === 'export' ? 0 : l.gst;
   const gstAmount = round2((base * rate) / 100);
   const poBase = round2(l.poQty * l.poRate);
+
+  /* An import is one Tax pair at 0%, so it rides the single-column path
+     alongside inter-state. create-po's ProductTable makes the same join:
+     `const inter = taxMode === 'inter' || taxMode === 'export'`. */
+  const inter = mode === 'inter' || mode === 'export';
 
   /* SGST is the remainder, not a second half: on an odd paisa the two halves
      must still add back to the full GST. PurchaseOrderService::lineAmounts()
      takes the same care. */
-  const cgst = mode === 'intra' ? round2(gstAmount / 2) : 0;
-  const sgst = mode === 'intra' ? round2(gstAmount - cgst) : 0;
-  const igst = mode === 'inter' ? gstAmount : 0;
+  const cgst = inter ? 0 : round2(gstAmount / 2);
+  const sgst = inter ? 0 : round2(gstAmount - cgst);
+  const igst = inter ? gstAmount : 0;
 
   return {
+    cgstPct: inter ? 0 : rate / 2,
+    sgstPct: inter ? 0 : rate / 2,
+    igstPct: inter ? rate : 0,
     poCost: round2(poBase + round2((poBase * rate) / 100)),
     base,
     gstAmount,
