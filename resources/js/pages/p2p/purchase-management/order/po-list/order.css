@@ -1506,4 +1506,7 @@ body:has(.ord-page) .master-select-item.active { background: rgba(8, 145, 178, .
    The search moved up to the scope row, so this row holds only the shipment
    tabs. It is given the design's breathing space from the row above it, which
    a shared 6px margin did not provide once the two rows were separate. */
-.ord-page .spi-sub { margin-top: 16px; margin-bottom: 10px; }
+/* Measured: 16px here plus the tab row's own 10px padding put 26px above the
+   sub-tabs against 10px below them — the gap read as loose because it was
+   lopsided, not because it was large. 8px evens it to 18 over 10. */
+.ord-page .spi-sub { margin-top: 8px; margin-bottom: 10px; }
