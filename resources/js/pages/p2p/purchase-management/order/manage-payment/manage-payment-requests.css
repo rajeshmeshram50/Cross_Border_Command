@@ -851,6 +851,29 @@
   border: 1px solid #fecaca;
 }
 
+/* The three status pills are solid pastel fills, which is right on white and
+   reads as a lit badge on a dark panel. Each keeps its own hue — green, amber,
+   red still mean approved, waiting and declined — carried as a translucent
+   tint with light ink, so the pill is legible without glowing. The dot inherits
+   `currentColor`, so it follows along without a rule of its own. */
+[data-bs-theme="dark"] .mpr-st--done {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, .16);
+  border-color: rgba(16, 185, 129, .34);
+}
+
+[data-bs-theme="dark"] .mpr-st--wait {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, .16);
+  border-color: rgba(245, 158, 11, .34);
+}
+
+[data-bs-theme="dark"] .mpr-st--stop {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, .16);
+  border-color: rgba(239, 68, 68, .34);
+}
+
 .mpr-acts {
   display: inline-flex;
   align-items: center;
@@ -1465,4 +1488,41 @@
 
 @media (prefers-reduced-motion: reduce) {
   .mpr-wait__ring, .mpr-btnspin { animation-duration: 2.4s; }
+}
+
+/* ── One button scale across the payment cards ──────────────────────────────
+   These three screens — requests history, the release screen and the raise
+   form — grew their buttons at four different heights: the footer's Confirm at
+   39.5px, its Cancel at 42, Deduct TDS at 40 and Add New Payment at 32. The
+   mismatch is loudest in the footer, where Cancel and Confirm sit side by side:
+   Cancel carries a 1.5px border that Confirm does not, and with `height: auto`
+   that border lands outside the padding box and makes the pair 2.5px apart.
+
+   Everything here is a height, so the scale is set in one place rather than
+   nudged per button. The last rule is what actually settles the footer; the
+   `align-items` is what stops a stretched row re-deriving its own height. */
+
+.mpr-card .spi-mdl-foot-btns {
+  align-items: center;
+}
+
+.mpr-card .spi-mdl-cancel,
+.mpr-card .spi-mdl-confirm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* The panel's own add button is a footer-weight action, so it reads at the
+   footer's height rather than a step below it. */
+.mpr-card .cpay-add {
+  height: 36px;
+}
+
+/* The TDS button sits in a section header, one step down from the footer. */
+.mpr-card .mpr-tdsbtn {
+  height: 34px;
 }

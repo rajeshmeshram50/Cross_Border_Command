@@ -32,6 +32,9 @@ const ICON_X = (
 
 export type DeductTdsProps = {
   po: string;
+  /** What the document is called in this screen's wording. The supplier
+   *  invoice opens the same card against an SPI. */
+  docLabel?: string;
   base: number;
   gst: number;
   extra: number;
@@ -58,7 +61,8 @@ function Readonly({ label, value }: { label: string; value: number }) {
 }
 
 export default function DeductTdsModal({
-  po, base, gst, extra, total, room, saved, firstSave = false, readOnly = false, busy = false, onSave, onClose,
+  po, docLabel = 'PO', base, gst, extra, total, room, saved,
+  firstSave = false, readOnly = false, busy = false, onSave, onClose,
 }: DeductTdsProps) {
   useScrollLock(true, '.mtds-card');
 
@@ -113,16 +117,16 @@ export default function DeductTdsModal({
         role="dialog" aria-modal="true" aria-labelledby="mtds-title" tabIndex={-1} ref={cardRef}
         aria-busy={busy}
       >
-        {busy && <PaymentWait title="Saving the TDS deduction…" sub="Please wait, the PO is being updated" />}
+        {busy && <PaymentWait title="Saving the TDS deduction…" sub={`Please wait, the ${docLabel} is being updated`} />}
 
         <div className="mtds-hd">
           <span className="mtds-hd__ico">{ICON_TDS}</span>
           <div className="mtds-hd__ttl" id="mtds-title">
-            Deduct TDS Value from the total PO value
+            Deduct TDS Value from the total {docLabel} value
             <span className="mtds-hd__sub">
               {readOnly
                 ? `${po} · view only — the TDS is fixed once the first payment is recorded`
-                : `${po} · figures derived from the PO · enter the deduction to compute the net payable`}
+                : `${po} · figures derived from the ${docLabel} · enter the deduction to compute the net payable`}
             </span>
           </div>
           <button type="button" className="mtds-hd__x" onClick={onClose} aria-label="Close" disabled={busy}>{ICON_X}</button>
@@ -130,10 +134,10 @@ export default function DeductTdsModal({
 
         <div className="mtds-bd">
           <div className="mtds-grid">
-            <Readonly label="PO Base Amount (Without GST)" value={base} />
+            <Readonly label={`${docLabel} Base Amount (Without GST)`} value={base} />
             <Readonly label="GST Amount" value={gst} />
             <Readonly label="Extra Charges" value={extra} />
-            <Readonly label="Total PO Amount (Grand Total)" value={total} />
+            <Readonly label={`Total ${docLabel} Amount (Grand Total)`} value={total} />
 
             <div className="mtds-f mtds-f--in">
               <label htmlFor="mtds-pct">
@@ -181,7 +185,7 @@ export default function DeductTdsModal({
               {readOnly ? (
                 <>
                   <b>{money(saved)}</b> withheld ({pctOfBase}% of the {money(base)} base) · supplier receives <b>{money(net)}</b> ·
-                  locked because a payment is already recorded on this PO
+                  locked because a payment is already recorded on this {docLabel}
                 </>
               ) : amount > 0 ? (
                 <>
@@ -195,7 +199,7 @@ export default function DeductTdsModal({
                 </>
               ) : (
                 <>
-                  TDS is calculated on the PO base amount of <b>{money(base)}</b> · without GST or extra charges ·
+                  TDS is calculated on the {docLabel} base amount of <b>{money(base)}</b> · without GST or extra charges ·
                   fill either field and the other follows · up to {money(ceiling)} ({TDS_MAX_PCT}% max) can be withheld
                 </>
               )}

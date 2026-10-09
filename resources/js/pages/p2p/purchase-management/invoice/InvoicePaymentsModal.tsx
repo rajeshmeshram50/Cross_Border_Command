@@ -1,10 +1,20 @@
-import { useEffect, useRef } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import {
-  Box, Chip, Stat, STAT_ICONS, ICON_X, money, initials, shortDate,
+  Box, Stat, STAT_ICONS, ICON_X, money, initials, shortDate,
 } from '../order/manage-payment/payment-shared';
+import { InvoiceHeroChips } from './payment-chips';
 import { invoiceBalance, invoicePaidPercent, type InvoiceRow } from './types';
+
+/* The purchase order's own TDS card, opened against this invoice. Lazy: it is
+   a dialog most visits never open. */
+const DeductTdsModal = lazy(() => import('../order/manage-payment/DeductTdsModal'));
+/* The release screen for one request, opened by a row's eye. Lazy for the same
+   reason: most visits only read this table. */
+const InvoicePaymentModal = lazy(() => import('./InvoicePaymentModal'));
+/* The raise form, opened by the footer button. Lazy for the same reason. */
+const InvoiceRaiseRequestModal = lazy(() => import('./InvoiceRaiseRequestModal'));
 
 /* No stylesheet of its own. The purchase order's payments screen is the same
    screen with a PO where this has an SPI, so it wears that screen's markup and
@@ -44,7 +54,11 @@ function requestsFor(row: InvoiceRow): InvoicePaymentRequest[] {
       id: 'PRQ-001', date: row.invoiceDate, type: 'Advance Payment',
       pct: Math.round((approved / net) * 1000) / 10,
       amount: approved, approver: 'Sunita Rao', role: 'Finance Controller',
-      status: 'approved', approved, paid: Math.min(row.totalPaid, approved),
+      /* Part-released, not settled. The invoice's own paid figure is 50% of
+         net against an approved 35%, so capping at `approved` left every
+         request fully released — which disabled Add New Payment on the
+         release screen and left no headroom anywhere to demonstrate. */
+      status: 'approved', approved, paid: Math.min(row.totalPaid, Math.round(approved / 2)),
     });
   }
   for (let i = out.length; i < row.pendingPaymentRequests; i++) {
@@ -63,10 +77,22 @@ function requestsFor(row: InvoiceRow): InvoicePaymentRequest[] {
 const GST_PCT = 18;
 
 const STATUS = {
-  approved: { cls: 'is-approved', label: 'Approved' },
-  pending: { cls: 'is-pending', label: 'Awaiting Approval' },
-  declined: { cls: 'is-declined', label: 'Declined' },
+  approved: { cls: 'mpr-st--done', label: 'Approved' },
+  pending: { cls: 'mpr-st--wait', label: 'Awaiting Approval' },
+  declined: { cls: 'mpr-st--stop', label: 'Declined' },
 } as const;
+
+const ic = {
+  viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2.2,
+  strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const,
+};
+const ICON_RUPEE = (
+  <svg {...ic}><path d="M6 3h12" /><path d="M6 8h12" /><path d="m6 13 8.5 8" /><path d="M6 13h3" /><path d="M9 13c6.667 0 6.667-10 0-10" /></svg>
+);
+const ICON_EYE = (
+  <svg {...ic}><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>
+);
+const ICON_CHECK = <svg {...ic} strokeWidth={3}><path d="M20 6 9 17l-5-5" /></svg>;
 
 /**
  * Payment Requests History — every request raised against one supplier invoice.
@@ -80,6 +106,18 @@ export default function InvoicePaymentsModal({ row, onClose }: {
 }) {
   useScrollLock(true, '.mpr-card--history');
 
+  /* The TDS withheld on this invoice, and whether its card is open. Held here
+     because the summary above has to show the figure the card saves. */
+  const [tds, setTds] = useState(0);
+  const [tdsOpen, setTdsOpen] = useState(false);
+  /* The request whose release screen is open — the request itself rather than a
+     flag, because that screen is titled by it and reads its figures. */
+  const [payFor, setPayFor] = useState<InvoicePaymentRequest | null>(null);
+  const [raising, setRaising] = useState(false);
+  /* State, not a value derived each render: a request raised here has to join
+     the table it was raised from. */
+  const [list, setList] = useState(() => requestsFor(row));
+
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => { cardRef.current?.focus(); }, []);
   useEffect(() => {
@@ -88,7 +126,6 @@ export default function InvoicePaymentsModal({ row, onClose }: {
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const list = requestsFor(row);
   const balance = invoiceBalance(row);
   /* Every total is summed from the same list the table prints, so the cards and
      the rows can never disagree. */
@@ -100,6 +137,9 @@ export default function InvoicePaymentsModal({ row, onClose }: {
   const pendingCount = list.filter(q => q.status === 'pending').length;
   const readyToPay = approvedAmt - paid;
   const pctPaid = invoicePaidPercent(row);
+  /* What is still open to ask for: the net payable less everything already
+     requested, approved or not — an open request has that money spoken for. */
+  const available = Math.max(0, row.netPayable - requested);
   /* The grand total is base + GST + charges, so the base is derived from the
      total rather than guessed — gross minus net is the deduction, not the tax,
      which is what made the GST card read 570 against the design's 4,271. */
@@ -133,14 +173,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
 
           {/* The same six references the purchase order screen carries, with
               the SPI where the PO had its own number. */}
-          <div className="mpr-hero__chips">
-            <Chip label="Supplier" value={row.supplierName} mod="mpr-hero__chip--sup" />
-            <Chip label="PO Number" value={row.poNo || 'NA'} meta={row.poDate ? shortDate(row.poDate) : undefined} />
-            <Chip label="SPI Number" value={row.invoiceNo} meta={shortDate(row.invoiceDate)} />
-            <Chip label="Shipment ID" value={row.shipmentId || 'NA'} meta={row.shipmentDate ? shortDate(row.shipmentDate) : undefined} />
-            <Chip label="Opportunity ID" value={row.opportunityId} meta={shortDate(row.opportunityDate)} />
-            <Chip label="Procurement ID" value={row.procurementId} meta={shortDate(row.procurementDate)} />
-          </div>
+          <InvoiceHeroChips row={row} />
 
           <button type="button" className="mpr-hero__close" onClick={onClose} aria-label="Close">{ICON_X}</button>
         </div>
@@ -157,15 +190,17 @@ export default function InvoicePaymentsModal({ row, onClose }: {
               <div className="mpr-tds" onClick={e => e.stopPropagation()}>
                 <button
                   type="button"
-                  className="mpr-tdsbtn"
-                  title="Withhold tax at source against this invoice"
+                  className={`mpr-tdsbtn${tds > 0 ? ' mpr-tdsbtn--edit' : ''}`}
+                  title={tds > 0 ? 'Revise the tax deducted at source on this invoice'
+                    : 'Withhold tax at source against this invoice'}
+                  onClick={() => setTdsOpen(true)}
                 >
                   <span className="mpr-tdsbtn__ico">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
                       <line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" />
                     </svg>
                   </span>
-                  <span>Deduct TDS Here</span>
+                  <span>{tds > 0 ? 'Revise TDS' : 'Deduct TDS Here'}</span>
                 </button>
               </div>
             )}
@@ -233,6 +268,7 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                 {list.map((q, i) => {
                 const st = STATUS[q.status];
                 const due = q.approved - q.paid;
+                const settled = q.status === 'approved' && q.approved > 0 && due <= 0;
                 return (
                   <div className="mpr-row" key={q.id}>
                     <span className="mpr-c mpr-sr" data-l="Sr No">{i + 1}</span>
@@ -275,10 +311,43 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                     </span>
                     <span className="mpr-c" data-l="Action">
                       <span className="mpr-acts">
-                        {/* Releasing is the next screen; this one only lists. */}
-                        {q.status === 'approved' && due > 0 && (
-                          <button type="button" className="mpr-paybtn">Make SPI Payment</button>
+                        {/* Settled rows state the fact; the rest offer the
+                            release, disabled until the request is approved —
+                            disabled rather than hidden, so a row that cannot
+                            be paid still says why on hover. */}
+                        {settled ? (
+                          <span className="mpr-paid" title={`Released in full against ${q.id}`}>
+                            {ICON_CHECK}Paid
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="mpr-paybtn"
+                            disabled={q.status !== 'approved'}
+                            /* The same screen the eye opens: paying against a
+                               request and reading what has been paid against
+                               it are the same page, arrived at two ways. */
+                            onClick={() => setPayFor(q)}
+                            title={
+                              q.status === 'pending' ? 'Awaiting approval — payment opens once this request is approved'
+                                : q.status === 'declined' ? 'This request was declined — nothing to pay against it'
+                                  : `Release ${money(due)} against ${q.id}`
+                            }
+                          >
+                            {ICON_RUPEE}<span>Make SPI Payment</span>
+                          </button>
                         )}
+                        {/* Always offered: the release history of a request is
+                            worth reading whether or not anything is left to pay. */}
+                        <button
+                          type="button"
+                          className="mpr-viewbtn"
+                          title={`View Payment History — ${q.id}`}
+                          aria-label={`View payment history for ${q.id}`}
+                          onClick={() => setPayFor(q)}
+                        >
+                          {ICON_EYE}
+                        </button>
                       </span>
                     </span>
                   </div>
@@ -302,10 +371,61 @@ export default function InvoicePaymentsModal({ row, onClose }: {
           )}
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose}>Close</button>
-            <button type="button" className="spi-mdl-confirm mpr-raise">Raise New Request</button>
+            <button
+              type="button"
+              className="spi-mdl-confirm mpr-raise"
+              disabled={available <= 0}
+              title={available > 0
+                ? `Raise a payment request for up to ${money(available)} on this SPI`
+                : 'Nothing left to request — the balance is already covered by open requests'}
+              onClick={() => setRaising(true)}
+            >
+              Raise New Request
+            </button>
           </div>
         </div>
       </div>
+      {tdsOpen && (
+        <Suspense fallback={null}>
+          <DeductTdsModal
+            po={row.invoiceNo}
+            docLabel="SPI"
+            base={base}
+            gst={gst}
+            extra={extra}
+            total={row.totalPoAmount}
+            /* What is still unreleased is the ceiling: tax cannot be withheld
+               from money already paid out. */
+            room={balance}
+            saved={tds}
+            firstSave={tds === 0}
+            onSave={amount => { setTds(amount); setTdsOpen(false); }}
+            onClose={() => setTdsOpen(false)}
+          />
+        </Suspense>
+      )}
+      {payFor && (
+        <Suspense fallback={null}>
+          <InvoicePaymentModal row={row} request={payFor} onClose={() => setPayFor(null)} />
+        </Suspense>
+      )}
+      {raising && (
+        <Suspense fallback={null}>
+          <InvoiceRaiseRequestModal
+            row={row}
+            nextId={`PRQ-${String(list.length + 1).padStart(3, '0')}`}
+            requested={requested}
+            approvedTotal={approvedAmt}
+            pendingAmt={pendingAmt}
+            pendingCount={pendingCount}
+            approvedUnpaid={readyToPay}
+            requestCount={list.length}
+            available={available}
+            onSubmit={q => { setList(l => [...l, q]); setRaising(false); }}
+            onClose={() => setRaising(false)}
+          />
+        </Suspense>
+      )}
     </div>,
     document.body,
   );
