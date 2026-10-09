@@ -789,7 +789,11 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   );
 }
 
-export function HeadPill({ icon, label, value, mono, alt }: { icon: React.ReactNode; label: string; value: string; mono?: boolean; alt?: boolean }) {
+export function HeadPill({ icon, label, value, mono, alt, extra }: {
+  icon: React.ReactNode; label: string; value: string; mono?: boolean; alt?: boolean;
+  /** Anything that trails the value — a status dot, a short badge. */
+  extra?: React.ReactNode;
+}) {
   return (
     <div className="spi-dt-pill">
       <span className={`spi-dt-pill-ico ${alt ? 'spi-dt-pill-ico--alt' : ''}`}>{icon}</span>
@@ -799,6 +803,7 @@ export function HeadPill({ icon, label, value, mono, alt }: { icon: React.ReactN
           <div className={`spi-dt-pill-val ${mono ? 'spi-dt-pill-val--mono' : ''}`}>{value}</div>
         </FitTip>
       </div>
+      {extra}
     </div>
   );
 }
