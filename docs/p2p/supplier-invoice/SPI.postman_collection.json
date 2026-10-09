@@ -1,0 +1,1141 @@
+{
+  "info": {
+    "name": "P2P · Supplier Purchase Invoice (SPI)",
+    "description": "21 endpoints under /api/p2p/spi. PROPOSED — the tables are not migrated yet, so every call 500s until `php artisan migrate` has run.\n\nSet `base_url` and `token` in the collection variables. `spi_id`, `po_id`, `box_id` and `putaway_id` are filled in automatically by the test scripts on Create Draft, Create Box and Scan.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000/api"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "spi_id",
+      "value": ""
+    },
+    {
+      "key": "po_id",
+      "value": ""
+    },
+    {
+      "key": "po_item_id",
+      "value": ""
+    },
+    {
+      "key": "product_id",
+      "value": ""
+    },
+    {
+      "key": "vendor_id",
+      "value": ""
+    },
+    {
+      "key": "warehouse_id",
+      "value": ""
+    },
+    {
+      "key": "spi_item_id",
+      "value": ""
+    },
+    {
+      "key": "box_id",
+      "value": ""
+    },
+    {
+      "key": "putaway_id",
+      "value": ""
+    },
+    {
+      "key": "invoice_no",
+      "value": "INV-8841"
+    },
+    {
+      "key": "invoice_date",
+      "value": "2026-10-02"
+    },
+    {
+      "key": "eway_no",
+      "value": "381004412233"
+    },
+    {
+      "key": "qty_spi",
+      "value": "8"
+    },
+    {
+      "key": "rate",
+      "value": "1000"
+    },
+    {
+      "key": "extra_qty",
+      "value": "0"
+    },
+    {
+      "key": "gst_pct",
+      "value": "0"
+    },
+    {
+      "key": "taxable_amount",
+      "value": "8000"
+    },
+    {
+      "key": "cgst_amount",
+      "value": "0"
+    },
+    {
+      "key": "sgst_amount",
+      "value": "0"
+    },
+    {
+      "key": "igst_amount",
+      "value": "0"
+    },
+    {
+      "key": "line_total",
+      "value": "8000"
+    },
+    {
+      "key": "taxable_total",
+      "value": "8000"
+    },
+    {
+      "key": "total_cgst",
+      "value": "0"
+    },
+    {
+      "key": "total_sgst",
+      "value": "0"
+    },
+    {
+      "key": "total_igst",
+      "value": "0"
+    },
+    {
+      "key": "grand_total",
+      "value": "8000"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "0 · Lookups",
+      "item": [
+        {
+          "name": "Next code (preview only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/next-code",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "next-code"
+              ]
+            },
+            "description": "Read only — nothing is locked or reserved. Two users with the form open both see 004; whoever saves first keeps it.\n\nThis is the first call to make after migrating: it exercises auth, the tenant middleware, the branch guard, the service and the FY logic in one go."
+          }
+        },
+        {
+          "name": "PO lines for Stage 02",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/orders/{{po_id}}/lines?exclude_spi={{spi_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "orders",
+                "{{po_id}}",
+                "lines"
+              ],
+              "query": [
+                {
+                  "key": "exclude_spi",
+                  "value": "{{spi_id}}",
+                  "description": "On an EDIT only — stops the invoice counting its own quantity against itself."
+                }
+              ]
+            },
+            "description": "Each line comes back with qty_open = po.quantity − everything already invoiced. The same service method backs the save-time guard, so the number shown is the number enforced."
+          }
+        },
+        {
+          "name": "Suppliers (reused from the PO module)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/orders/suppliers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "orders",
+                "suppliers"
+              ]
+            },
+            "description": "Not an SPI route. The standalone flow picks a supplier directly and reuses PoLookupController."
+          }
+        },
+        {
+          "name": "Warehouses (reused from Masters)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/master/warehouse_master?search=Own Warehouse",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "master",
+                "warehouse_master"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "Own Warehouse"
+                }
+              ]
+            },
+            "description": "wh_type is already a declared field on the master with exactly two values: 'Own Warehouse' and 'Third Party Warehouse'. The own/3PL split is never stored on the invoice."
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 · List and detail",
+      "item": [
+        {
+          "name": "List — All SPI's",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi?per_page=10&page=1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi"
+              ],
+              "query": [
+                {
+                  "key": "per_page",
+                  "value": "10"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "po_mode",
+                  "value": "with_po",
+                  "disabled": true,
+                  "description": "with_po | without_po"
+                },
+                {
+                  "key": "shipment_mode",
+                  "value": "with_shipment",
+                  "disabled": true,
+                  "description": "with_shipment | without_shipment"
+                },
+                {
+                  "key": "status",
+                  "value": "draft",
+                  "disabled": true
+                },
+                {
+                  "key": "vendor_id",
+                  "value": "{{vendor_id}}",
+                  "disabled": true
+                },
+                {
+                  "key": "from",
+                  "value": "2026-04-01",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "2027-03-31",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns the flat 16-column row, plus `tabs` with the five counts (all / with_po / direct / with_shipment / without_shipment). The counts are unfiltered on purpose — a tab must still show its total while another tab is selected."
+          }
+        },
+        {
+          "name": "List — search box",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi?q=PO/2026-27",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "PO/2026-27"
+                }
+              ]
+            },
+            "description": "One query, LEFT JOINs out to the PO and through it to the shipment and opportunity.\n\nMatches: SPI code · invoice_no · status · document_type · po.code · po.po_type · po.procurement_request_code · shipment_code · opp_code · vendor name · vendor code.\n\nAlso: type 'direct spi without po' to pull up every standalone invoice — no column holds that phrase."
+          }
+        },
+        {
+          "name": "Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}"
+              ]
+            },
+            "description": "Everything for that id in ONE call: header, vendor, warehouse, purchase order, items, boxes with their contents and attachments, and the put-away rows — plus three summaries: match (Stage 02), packing_summary (Stage 03) and putaway (Stage 04)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 · Stage 01 — supplier and PO",
+      "item": [
+        {
+          "name": "Create draft (with PO)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r.status && r.data && r.data.id) {",
+                  "    pm.collectionVariables.set('spi_id', r.data.id);",
+                  "    console.log('spi_id =', r.data.id, '·', r.data.code);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purchase_order_id\": {{po_id}},\n  \"vendor_id\": {{vendor_id}},\n  \"document_type\": \"domestic\",\n  \"warehouse_id\": {{warehouse_id}}\n}"
+            },
+            "description": "Stage 01 asks only WHO the invoice is from and, if any, which order it is against. The supplier invoice number, date and attachments belong to Stage 02 — so the draft and its id exist from the first save and the frontend holds nothing."
+          }
+        },
+        {
+          "name": "Create draft (standalone — no PO)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purchase_order_id\": null,\n  \"vendor_id\": {{vendor_id}},\n  \"document_type\": \"international\"\n}"
+            },
+            "description": "purchase_order_id is null — the prototype's 'Without Purchase Order' flow. The supplier is picked directly, nothing consumes PO quantity, and THIS invoice owns its own Zoho bill.\n\ncurrency_code is required when document_type is international."
+          }
+        },
+        {
+          "name": "Update Stage 01",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/stage-1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "stage-1"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purchase_order_id\": {{po_id}},\n  \"vendor_id\": {{vendor_id}},\n  \"document_type\": \"domestic\",\n  \"warehouse_id\": {{warehouse_id}}\n}"
+            },
+            "description": "Draft or mapped only. Changing purchase_order_id after items exist is refused — it would orphan every mapped line."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 · Stage 02 — items (3-way match)",
+      "item": [
+        {
+          "name": "Save the grid (+ attachments)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/items",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "items"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invoice_no\": \"{{invoice_no}}\",\n  \"invoice_date\": \"{{invoice_date}}\",\n  \"eway_no\": \"{{eway_no}}\",\n  \"items\": [\n    {\n      \"po_item_id\": {{po_item_id}},\n      \"product_id\": {{product_id}},\n      \"qty_spi\": {{qty_spi}},\n      \"rate\": {{rate}},\n      \"extra_qty\": {{extra_qty}},\n      \"gst_pct\": {{gst_pct}},\n      \"taxable_amount\": {{taxable_amount}},\n      \"cgst_amount\": {{cgst_amount}},\n      \"sgst_amount\": {{sgst_amount}},\n      \"igst_amount\": {{igst_amount}},\n      \"line_total\": {{line_total}}\n    }\n  ],\n  \"taxable_total\": {{taxable_total}},\n  \"total_cgst\": {{total_cgst}},\n  \"total_sgst\": {{total_sgst}},\n  \"total_igst\": {{total_igst}},\n  \"grand_total\": {{grand_total}}\n}"
+            },
+            "description": "POST, not PUT: this is the only request that can carry files, and PHP does not populate $_FILES on a PUT.\n\nThe GRID calculates every amount and posts the result; the server stores it. Only qty_po, description and pi_item_id are filled in server-side, and those are snapshots of the order rather than calculations.\n\nThe whole grid saves at once — a line missing from items[] is DELETED and gives its quantity back to the PO.\n\nWITH FILES: switch Body to form-data and send the same keys as items[0][qty_spi] etc, plus invoice_file and eway_file as type File. Leave Content-Type unset.\n\nResponse carries \"match\" (ordered vs billed), not a packing summary — nothing is packed at Stage 02."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r.status && r.data.invoice.items?.length) {",
+                  "    pm.collectionVariables.set('spi_item_id', r.data.invoice.items[0].id);",
+                  "    console.log('spi_item_id =', r.data.invoice.items[0].id, '· missing:', r.data.match.missing_qty);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4 · Stage 03 — box packaging",
+      "item": [
+        {
+          "name": "List boxes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/boxes",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "boxes"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Packing summary (packed vs pending)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/packing-summary",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "packing-summary"
+              ]
+            },
+            "description": "qty_packed is DERIVED — SUM(box_items.quantity) WHERE deleted_at IS NULL. Nothing is stored on the item.\n\nQA case: pack 10, delete a box of 4, confirm pending reads 4 and not 0. A missing soft-delete filter makes a removed box still count as packed."
+          }
+        },
+        {
+          "name": "Create box",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r.status && r.data && r.data.box) {",
+                  "    pm.collectionVariables.set('box_id', r.data.box.id);",
+                  "    console.log('box_id =', r.data.box.id, '·', r.data.box.box_code);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/boxes",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "boxes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenario\": \"s3\",\n  \"length_cm\": 40,\n  \"width_cm\": 30,\n  \"height_cm\": 25,\n  \"weight_kg\": 12.5,\n  \"net_weight_kg\": 11.8,\n  \"gross_weight_kg\": 12.5,\n  \"condition\": \"perfect\",\n  \"items\": [\n    {\n      \"supplier_invoice_item_id\": {{spi_item_id}},\n      \"quantity\": 3000,\n      \"is_stackable\": true,\n      \"remark\": \"correct\",\n      \"flags\": [1, 4],\n      \"batch_no\": \"BT-2291\",\n      \"lot_no\": \"LT-114\",\n      \"expiry_date\": \"2027-04-30\"\n    }\n  ]\n}"
+            },
+            "description": "Box and contents in ONE payload — packed quantity is summed from the contents, so a box saved without them would read as empty.\n\nbox_code is allocated by the server, sequential WITHIN the invoice (BOX-01 … BOX-n). Three SPIs packed at once never interleave.\n\nAdvanced Details (batch, expiry, serial, lot) sit on the ITEM, not the box: one carton can hold two products from two batches.\n\nflags is an array of master ids — adding a flag is data, never a migration.\n\nResponse carries the recomputed packing_summary, so the 'remaining' table needs no second call."
+          }
+        },
+        {
+          "name": "Update box",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/boxes/{{box_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "boxes",
+                "{{box_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenario\": \"s3\",\n  \"length_cm\": 40,\n  \"width_cm\": 30,\n  \"height_cm\": 25,\n  \"weight_kg\": 13.0,\n  \"condition\": \"minor\",\n  \"items\": [\n    {\n      \"supplier_invoice_item_id\": {{spi_item_id}},\n      \"quantity\": 3500,\n      \"remark\": \"damaged\",\n      \"remark_note\": \"Two bags torn in transit\",\n      \"batch_no\": \"BT-2291\",\n      \"expiry_date\": \"2027-04-30\"\n    }\n  ]\n}"
+            },
+            "description": "Contents are replaced wholesale — a partial update would leave quantities from a product the user just removed.\n\nThe over-pack guard ignores THIS box's own current rows, or an edit could never keep its existing quantity."
+          }
+        },
+        {
+          "name": "Print sticker (freezes the box code)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/boxes/{{box_id}}/sticker",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "boxes",
+                "{{box_id}}",
+                "sticker"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"copies\": 1,\n  \"format\": \"pdf\"\n}"
+            },
+            "description": "Stamps sticker_printed_at and returns code_locked: true. From then on the box is never renumbered — the label is physically on a carton being scanned at put-away."
+          }
+        },
+        {
+          "name": "Delete box",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/boxes/{{box_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "boxes",
+                "{{box_id}}"
+              ]
+            },
+            "description": "Soft delete; the quantity goes back to pending. Returns `renumbered` — the boxes after it close the gap, EXCEPT any whose sticker is already printed.\n\nRefused when the box is already put away: it is on a shelf being scanned."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 · Stage 04 — temporary put-away",
+      "item": [
+        {
+          "name": "Set storage type (choose warehouse)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/storage-type",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "storage-type"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"warehouse_id\": {{warehouse_id}}\n}"
+            },
+            "description": "Only warehouse_id is stored. putaway_mode in the response is derived from master_warehouse_master.wh_type: 'full' for our own warehouse (rack → shelf), 'summary' for a 3PL (no rack/shelf allocation).\n\nOPEN: Stage 01 also accepts warehouse_id, so two places currently write this column."
+          }
+        },
+        {
+          "name": "Put-away rows",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "putaway"
+              ]
+            },
+            "description": "Each row carries next_scan and ready_to_confirm, so the handheld knows what it owes without computing the chain itself."
+          }
+        },
+        {
+          "name": "Scan — box",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r.status && r.data && r.data.id) {",
+                  "    pm.collectionVariables.set('putaway_id', r.data.id);",
+                  "    console.log('putaway_id =', r.data.id, '· next:', r.data.next_scan);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/scan",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "putaway",
+                "scan"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scan_type\": \"box\",\n  \"scanned_value\": \"BOX-01\",\n  \"device_serial\": \"TC27-004\",\n  \"latency_ms\": 42\n}"
+            },
+            "description": "POST, not PUT: each scan stamps its own timestamp, so it is not idempotent.\n\nEVERY attempt is written to p2p_spi_scan_logs, success and failure alike. A rejected scan never touches the put-away row, so without that log it would be invisible."
+          }
+        },
+        {
+          "name": "Scan — location",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/scan",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "putaway",
+                "scan"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scan_type\": \"location\",\n  \"scanned_value\": \"WH-001-Z03\",\n  \"box_code\": \"BOX-01\",\n  \"device_serial\": \"TC27-004\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Scan — rack",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/scan",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "putaway",
+                "scan"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scan_type\": \"rack\",\n  \"scanned_value\": \"R-14\",\n  \"box_code\": \"BOX-01\",\n  \"device_serial\": \"TC27-004\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Scan — shelf",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/scan",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "putaway",
+                "scan"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scan_type\": \"shelf\",\n  \"scanned_value\": \"S-56\",\n  \"box_code\": \"BOX-01\",\n  \"device_serial\": \"TC27-004\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Scan — out of order (expect 422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/scan",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "putaway",
+                "scan"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scan_type\": \"shelf\",\n  \"scanned_value\": \"S-56\",\n  \"box_code\": \"BOX-01\",\n  \"device_serial\": \"TC27-004\"\n}"
+            },
+            "description": "Run this BEFORE the location scan. Expect 422 'Scan the location before the shelf.' — and then check p2p_spi_scan_logs: the row is there with result=failed, failure_reason=out_of_order and expected_scan=location."
+          }
+        },
+        {
+          "name": "Confirm put-away",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/{{putaway_id}}/confirm",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "putaway",
+                "{{putaway_id}}",
+                "confirm"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"condition_at_putaway\": \"minor\",\n  \"note\": \"Corner dented in transit\"\n}"
+            },
+            "description": "Until confirmed_at is set the box is PICKED BUT NOT PLACED. condition_at_putaway records damage noticed AT THE RACK — a later moment than the condition recorded while unpacking in Stage 03."
+          }
+        }
+      ]
+    },
+    {
+      "name": "6 · Close",
+      "item": [
+        {
+          "name": "Submit",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/submit",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "submit"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Short by 200 KG against the PO — supplier confirmed by mail.\"\n}"
+            },
+            "description": "Refused while anything is unpacked: goods not in a box have no box code, so they cannot be scanned, racked or inspected.\n\nOPEN DECISION: whether full packing should be required is not yet agreed."
+          }
+        },
+        {
+          "name": "Delete invoice",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}"
+              ]
+            },
+            "description": "Soft delete. Before the invoice goes, every line gives its quantity BACK to the PO through the fulfilment ledger — skip that and the PO stays short forever with no trace why."
+          }
+        }
+      ]
+    },
+    {
+      "name": "7 · Zoho Books",
+      "item": [
+        {
+          "name": "Sync (standalone only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/zoho-sync",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "zoho-sync"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"force\": false\n}"
+            },
+            "description": "Only an invoice with NO purchase order creates its own bill — with a PO the bill already exists on the order and must not be created twice.\n\nCurrently returns 501: the bill call is not written yet."
+          }
+        },
+        {
+          "name": "Tracker",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/spi/{{spi_id}}/zoho-tracker",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "spi",
+                "{{spi_id}}",
+                "zoho-tracker"
+              ]
+            },
+            "description": "When the invoice does NOT own the bill, the response names the PO that does — rather than an empty state that reads like a failed sync."
+          }
+        }
+      ]
+    }
+  ]
+}

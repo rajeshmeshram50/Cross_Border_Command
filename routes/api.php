@@ -496,6 +496,53 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::post  ('/{po}/inspection/sign-off',       [$ins, 'signOff'])->whereNumber('po');
         Route::post  ('/{po}/inspection/withdraw',       [$ins, 'withdraw'])->whereNumber('po');
     });
+
+    /* P2P · Supplier Purchase Invoice (SPI). Four flavours — with / without a
+       PO, each with / without a shipment — and everything conditional keys off
+       purchase_order_id being null.
+
+       Supplier and warehouse pickers are NOT here: they reuse
+       /p2p/orders/suppliers and /master/warehouse_master. */
+    Route::prefix('p2p/spi')->group(function () {
+        $spi = \App\Http\Controllers\Api\P2p\SupplierInvoiceController::class;
+        $box = \App\Http\Controllers\Api\P2p\SpiBoxController::class;
+        $put = \App\Http\Controllers\Api\P2p\SpiPutawayController::class;
+
+        // Lookups first: /{id} would otherwise swallow them.
+        Route::get   ('/next-code',         [$spi, 'nextCode']);
+        Route::get   ('/orders/{po}/lines', [$spi, 'poLines'])->whereNumber('po');
+
+        // Header and stages 01–02
+        Route::get   ('/',             [$spi, 'index']);
+        Route::post  ('/',             [$spi, 'store']);              // Stage 01 — create draft
+        Route::get   ('/{id}',         [$spi, 'show'])->whereNumber('id');
+        Route::put   ('/{id}/stage-1', [$spi, 'updateStage1'])->whereNumber('id');
+        /* Stage 02 — the grid, the totals AND the two attachments, in one save.
+           POST rather than PUT because PHP does not populate $_FILES on a PUT;
+           the same endpoint still accepts plain JSON when there are no files. */
+        Route::post  ('/{id}/items',   [$spi, 'updateItems'])->whereNumber('id');
+        Route::put   ('/{id}/submit',  [$spi, 'submit'])->whereNumber('id');
+        Route::delete('/{id}',         [$spi, 'destroy'])->whereNumber('id');
+
+        // Stage 03 · box packaging
+        Route::get   ('/{id}/boxes',               [$box, 'index'])->whereNumber('id');
+        Route::get   ('/{id}/packing-summary',     [$box, 'packingSummary'])->whereNumber('id');
+        Route::post  ('/{id}/boxes',               [$box, 'store'])->whereNumber('id');
+        Route::put   ('/{id}/boxes/{box}',         [$box, 'update'])->whereNumber('id')->whereNumber('box');
+        Route::delete('/{id}/boxes/{box}',         [$box, 'destroy'])->whereNumber('id')->whereNumber('box');
+        Route::post  ('/{id}/boxes/{box}/sticker', [$box, 'printSticker'])->whereNumber('id')->whereNumber('box');
+
+        // Stage 04 · temporary put-away. The scan is POST, not PUT: each one
+        // stamps its own timestamp, so it is not idempotent.
+        Route::get   ('/{id}/putaway',               [$put, 'index'])->whereNumber('id');
+        Route::put   ('/{id}/storage-type',          [$put, 'setStorageType'])->whereNumber('id');
+        Route::post  ('/{id}/putaway/scan',          [$put, 'scan'])->whereNumber('id');
+        Route::put   ('/{id}/putaway/{row}/confirm', [$put, 'confirm'])->whereNumber('id')->whereNumber('row');
+
+        // Zoho Books — only a standalone invoice creates its own bill.
+        Route::post  ('/{id}/zoho-sync',    [$spi, 'zohoSync'])->whereNumber('id');
+        Route::get   ('/{id}/zoho-tracker', [$spi, 'zohoTracker'])->whereNumber('id');
+    });
     Route::get   ('/clm/leads/{leadId}/agreement-applicable',    [ClmAgreementController::class, 'applicableForLead'])->whereNumber('leadId');
     // Per-deal "is this document needed?" answers for the trade-doc / agreement popup.
     Route::post  ('/clm/leads/{leadId}/doc-needs',               [ClmAgreementController::class, 'setLeadDocNeed'])->whereNumber('leadId');
