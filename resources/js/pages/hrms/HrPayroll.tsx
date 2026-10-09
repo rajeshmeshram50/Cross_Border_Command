@@ -41,6 +41,8 @@ interface CycleMonth {
   run_locked?: boolean;
   /** Frozen but recoverable: approved with nothing disbursed yet. */
   can_reopen?: boolean;
+  /** Some payslips paid, some held — neither finished nor reopenable. */
+  partially_paid?: boolean;
 }
 
 interface SeqInfo {
@@ -49,6 +51,7 @@ interface SeqInfo {
   run_status?: string | null;
   run_locked?: boolean;
   can_reopen?: boolean;
+  partially_paid?: boolean;
 }
 
 interface PayrollRow {
@@ -205,6 +208,7 @@ const buildYearMonths = (
       run_status: seq?.run_status ?? null,
       run_locked: !isFuture && !!seq?.run_locked,
       can_reopen: !isFuture && !!seq?.can_reopen,
+      partially_paid: !isFuture && !!seq?.partially_paid,
     };
   });
 };
@@ -845,7 +849,12 @@ export default function HrPayroll() {
         // reopen that the server will refuse; the correction goes to next cycle.
         ? (canReopenCycle
             ? `${cycle?.label} is already ${cycle?.run_status} but not disbursed — reopen it to run payroll again.`
-            : `${cycle?.label} has already been paid — corrections must be posted as an adjustment in the next cycle.`)
+            /* Part paid, part held: the cycle is still In Progress, so saying
+               "already paid" contradicted the chip beside it and left HR with
+               no idea the held rows were the thing to act on. */
+            : cycle?.partially_paid
+              ? `${cycle?.label} is part paid — the held employees below still need releasing. Rerunning would re-pay everyone already disbursed, so clear each hold and pay those rows instead.`
+              : `${cycle?.label} has already been paid — corrections must be posted as an adjustment in the next cycle.`)
         : undefined;
 
   // Switch the displayed year — keep the same month if possible, else snap to

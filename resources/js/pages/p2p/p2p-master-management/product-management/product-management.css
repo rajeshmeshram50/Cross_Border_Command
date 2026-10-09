@@ -5539,12 +5539,10 @@
   border: 1px solid color-mix(in srgb, #7c3aed 22%, #e2e8f0);
   background: color-mix(in srgb, #7c3aed 5%, #fff);
   color: #64748b; border-radius: 999px; padding: 1px 9px;
-  font-size: 11px; font-weight: 500; line-height: 1.5; cursor: pointer;
+  font-size: 11px; font-weight: 500; line-height: 1.5; cursor: default;
   text-transform: none; letter-spacing: normal;
 }
 .apm-temp-chip b { color: #6d28d9; font-weight: 700; }
-.apm-temp-chip:hover:not(:disabled) { border-color: #7c3aed; }
-.apm-temp-chip:disabled { opacity: .5; cursor: not-allowed; }
 [data-bs-theme="dark"] .apm-temp-chip { background: #110c25; border-color: #3b2a6b; color: #a5a0c0; }
 [data-bs-theme="dark"] .apm-temp-chip b { color: #c4b5fd; }
 @media (max-width: 768px) { .apm-span-2 { grid-column: auto; } }
