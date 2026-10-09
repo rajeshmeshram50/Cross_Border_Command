@@ -1501,3 +1501,9 @@ body:has(.ord-page) .master-select-item.active { background: rgba(8, 145, 178, .
 .ord-po-cell > .ord-cancelbadge { margin: 0 auto; }
 .ord-card__tags .ord-status-badge { margin: 0; }
 
+
+/* ── Sub-row ───────────────────────────────────────────────────────────────
+   The search moved up to the scope row, so this row holds only the shipment
+   tabs. It is given the design's breathing space from the row above it, which
+   a shared 6px margin did not provide once the two rows were separate. */
+.ord-page .spi-sub { margin-top: 16px; margin-bottom: 10px; }

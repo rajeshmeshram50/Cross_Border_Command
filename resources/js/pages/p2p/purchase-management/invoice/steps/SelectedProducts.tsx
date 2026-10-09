@@ -3,13 +3,13 @@ import { IcoCheck, IcoX } from '../../../icons';
 import { DESC_MAX, truncateDesc, type ProductLine } from '../invoice-products';
 
 /**
- * The identifiers printed on one product inside a mixed carton.
+ * The identifiers printed on one product inside a box.
  *
  * Per product, not per box. A master carton holding four SKUs holds four
- * batches, four expiry dates and four lot numbers, so one set of box-level
- * fields could only ever describe one of them — and on a recall the other
- * three would be untraceable. The prototype keeps these at box level; this is
- * a deliberate difference, and the reason the table is this wide.
+ * batches, four expiry dates and four lot numbers, so one box-level set could
+ * only ever describe one of them — and on a recall the other three would be
+ * untraceable. A box holding one product has exactly one of each, which is the
+ * same rule with one row rather than a different rule.
  */
 export interface ProductIdentity {
   serial: string;
@@ -25,7 +25,14 @@ export const EMPTY_IDENTITY: ProductIdentity = {
   serial: '', lot: '', batch: '', cat: '', expiry: '', mfg: '', remarks: '',
 };
 
-/** The identity columns, in the order the prototype's Advanced Details lists them. */
+/** One line of a box's contents: the product, and how many of it are in THIS box. */
+export interface BoxContent {
+  line: ProductLine;
+  /** This box's share, which in a split is not the product's full quantity. */
+  qty: number;
+}
+
+/** The identity columns, in the order the prototype's Advanced Details listed them. */
 const IDENTITY_COLUMNS: {
   key: keyof ProductIdentity; label: string; placeholder: string; type: 'text' | 'date';
 }[] = [
@@ -35,48 +42,59 @@ const IDENTITY_COLUMNS: {
   { key: 'cat', label: 'Cat No.', placeholder: 'e.g. CT-001', type: 'text' },
   { key: 'expiry', label: 'Expiry Date', placeholder: '', type: 'date' },
   { key: 'mfg', label: 'MFG Date', placeholder: '', type: 'date' },
-  /* Last, and wider: it is a sentence rather than a code, and it is the one
-     field here whose length is not known in advance. */
+  /* Last, and wider: it is a sentence rather than a code, and the one field
+     here whose length is not known in advance. */
   { key: 'remarks', label: 'Remarks', placeholder: 'Any note about this product…', type: 'text' },
 ];
 
 /**
- * Selected Products — what is going into one mixed carton.
+ * What is inside one box, and the identifiers belonging to each thing in it.
  *
- * Scenario 03 packs several SKUs into a single master carton under one shared
- * label, so this table is the carton's contents list: what is inside, how many
- * of each, and the identifiers that belong to each one.
+ * Every box panel shows this, whatever the scenario: one row for a box holding
+ * a single product, several for a mixed carton. That is the point of it — the
+ * identifiers used to live in a box-level "Advanced Details" panel, which a
+ * mixed carton cannot answer, so there was one place to type a batch number
+ * for some boxes and another for the rest.
  */
 function SelectedProducts({
-  lines, identities, onIdentityChange, onRemove, onClear,
+  rows, identities, onIdentityChange, onRemove, onClear,
 }: {
-  /** The ticked products, in the order they were ticked. */
-  lines: ProductLine[];
+  rows: BoxContent[];
   identities: Record<string, ProductIdentity>;
   onIdentityChange: (code: string, patch: Partial<ProductIdentity>) => void;
-  /** Takes one product back out of the carton. */
-  onRemove: (code: string) => void;
-  onClear: () => void;
+  /** Given only where a product can be taken back out — a mixed carton. */
+  onRemove?: (code: string) => void;
+  onClear?: () => void;
 }) {
-  const totalUnits = lines.reduce((n, l) => n + l.spiQty, 0);
+  /* A selection, not a row count: packing ONE product into a mixed carton is
+     still a selection, and reading "Box Contents" there would deny the Clear
+     Selection button sitting beside it. */
+  const isSelection = !!onClear;
+
+  const totalUnits = rows.reduce((n, r) => n + r.qty, 0);
 
   return (
     <div className="vti-box invf-selprod">
       <div className="vti-header">
         <div className="vti-header-ico"><IcoCheck size={18} stroke={2.6} /></div>
         <div className="vti-header-text">
-          <div className="vti-header-title">Selected Products ({lines.length})</div>
+          <div className="vti-header-title">
+            {isSelection ? `Selected Products (${rows.length})` : 'Box Contents'}
+          </div>
           <div className="vti-header-sub">
-            Everything going into this carton &nbsp;·&nbsp; identifiers are per product
+            {isSelection ? 'Everything going into this carton' : 'What this box holds'}
+            &nbsp;·&nbsp; identifiers are per product
           </div>
         </div>
         <div className="vti-header-stats">
           <div className="vti-stat-pill total">
             <div className="vti-stat-dot" />Total: {totalUnits} unit{totalUnits === 1 ? '' : 's'}
           </div>
-          <button type="button" className="invf-selprod__clear" onClick={onClear}>
-            <IcoX size={11} stroke={2.6} /> Clear Selection
-          </button>
+          {onClear && (
+            <button type="button" className="invf-selprod__clear" onClick={onClear}>
+              <IcoX size={11} stroke={2.6} /> Clear Selection
+            </button>
+          )}
         </div>
       </div>
 
@@ -88,18 +106,18 @@ function SelectedProducts({
               <th>Product</th>
               <th>Code</th>
               <th className="vti-desc-h">Description</th>
-              <th>SPI Qty</th>
+              <th>Qty in Box</th>
               {IDENTITY_COLUMNS.map(c => <th key={c.key}>{c.label}</th>)}
-              <th>Remove</th>
+              {onRemove && <th>Remove</th>}
             </tr>
           </thead>
           <tbody>
-            {lines.map((line, i) => (
+            {rows.map((row, i) => (
               <IdentityRow
-                key={line.code}
+                key={row.line.code}
                 index={i}
-                line={line}
-                identity={identities[line.code] ?? EMPTY_IDENTITY}
+                row={row}
+                identity={identities[row.line.code] ?? EMPTY_IDENTITY}
                 onChange={onIdentityChange}
                 onRemove={onRemove}
               />
@@ -112,20 +130,22 @@ function SelectedProducts({
 }
 
 /**
- * One product in the carton.
+ * One product in the box.
  *
- * Memoised: there are six inputs per row, and without this every keystroke in
- * any of them would re-render every other row's six as well.
+ * Memoised: there are seven inputs per row, and without this every keystroke in
+ * any of them would re-render every other row's seven as well.
  */
 const IdentityRow = memo(function IdentityRow({
-  index, line, identity, onChange, onRemove,
+  index, row, identity, onChange, onRemove,
 }: {
   index: number;
-  line: ProductLine;
+  row: BoxContent;
   identity: ProductIdentity;
   onChange: (code: string, patch: Partial<ProductIdentity>) => void;
-  onRemove: (code: string) => void;
+  onRemove?: (code: string) => void;
 }) {
+  const { line, qty } = row;
+
   /* Bound to this row's code, so each cell below passes only its own value. */
   const patch = useCallback(
     (p: Partial<ProductIdentity>) => onChange(line.code, p),
@@ -147,7 +167,7 @@ const IdentityRow = memo(function IdentityRow({
       <td className="vti-desc" title={line.description.length > DESC_MAX ? line.description : undefined}>
         <span className="vti-desc__wrap">{truncateDesc(line.description)}</span>
       </td>
-      <td><span className="vti-qty-badge">{line.spiQty}</span></td>
+      <td><span className="vti-qty-badge">{qty}</span></td>
 
       {IDENTITY_COLUMNS.map(c => (
         <td key={c.key}>
@@ -162,17 +182,19 @@ const IdentityRow = memo(function IdentityRow({
         </td>
       ))}
 
-      <td>
-        <button
-          type="button"
-          className="invf-selprod__rm"
-          onClick={() => onRemove(line.code)}
-          title={`Take ${line.spiName} out of this carton`}
-          aria-label={`Remove ${line.spiName}`}
-        >
-          <IcoX size={12} stroke={2.6} />
-        </button>
-      </td>
+      {onRemove && (
+        <td>
+          <button
+            type="button"
+            className="invf-selprod__rm"
+            onClick={() => onRemove(line.code)}
+            title={`Take ${line.spiName} out of this carton`}
+            aria-label={`Remove ${line.spiName}`}
+          >
+            <IcoX size={12} stroke={2.6} />
+          </button>
+        </td>
+      )}
     </tr>
   );
 });

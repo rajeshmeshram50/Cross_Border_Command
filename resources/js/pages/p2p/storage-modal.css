@@ -191,3 +191,131 @@
 .smod-confirm-label { font-size: 8.5px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: #5b94a8; margin-bottom: 3px; }
 .smod-confirm-val { font-size: 13.5px; font-weight: 800; color: #0c4a6e; letter-spacing: -.2px; line-height: 1.25; }
 .smod-confirm-sub { font-size: 10.5px; font-weight: 500; color: #6b8a99; margin-top: 2px; }
+
+/* ── Dark mode ────────────────────────────────────────────────────────────
+   This modal was written light-only, so on a dark page it opened as a white
+   sheet. The values are the ones the P2P detail sheets already use, so it
+   matches the form it opens in front of: #0e1b24 cards on rgba(34,211,238,.16),
+   #0b1922 inner surfaces, #e2e8f0 headings and #7c93a8 secondary text.
+
+   The header is left alone — it is a deep navy gradient in both themes. */
+[data-bs-theme="dark"] .smod-box {
+  background: #0e1b24;
+  box-shadow: 0 0 0 1.5px rgba(34, 211, 238, .14), 0 24px 60px rgba(0, 0, 0, .6);
+}
+[data-bs-theme="dark"] .smod-steps {
+  background:
+    radial-gradient(120% 160% at 0% 0%, rgba(34, 211, 238, .1), transparent 52%),
+    linear-gradient(180deg, #0c2630 0%, #0b1922 100%);
+  border-bottom-color: rgba(34, 211, 238, .16);
+}
+/* Pending step: a dark disc, so only the active and done ones carry colour. */
+[data-bs-theme="dark"] .smod-step-num {
+  background: linear-gradient(180deg, #0c1c24, #0b1922);
+  border-color: rgba(34, 211, 238, .22);
+}
+[data-bs-theme="dark"] .smod-steps { --track: rgba(148, 163, 184, .22); --pending: #5b7585; }
+[data-bs-theme="dark"] .smod-step-label { color: #7c93a8; }
+[data-bs-theme="dark"] .smod-step.is-active .smod-step-label { color: #7dd3fc; }
+[data-bs-theme="dark"] .smod-step.is-done .smod-step-label { color: #67e8f9; }
+
+[data-bs-theme="dark"] .smod-question,
+[data-bs-theme="dark"] .smod-card-title { color: #e2e8f0; }
+[data-bs-theme="dark"] .smod-desc,
+[data-bs-theme="dark"] .smod-card-sub,
+[data-bs-theme="dark"] .smod-feature { color: #7c93a8; }
+[data-bs-theme="dark"] .smod-hint { color: #67e8f9; }
+
+/* The two storage-type cards, and the warehouse rows. */
+[data-bs-theme="dark"] .smod-card,
+[data-bs-theme="dark"] .smod-wh-row {
+  background: #0c1c24;
+  border-color: rgba(34, 211, 238, .18);
+}
+[data-bs-theme="dark"] .smod-card.is-selected,
+[data-bs-theme="dark"] .smod-wh-row.is-selected {
+  background: linear-gradient(145deg, #0e3540 0%, #0c2a33 60%, #0b222a 100%);
+  border-color: #22d3ee;
+}
+[data-bs-theme="dark"] .smod-card.is-selected .smod-card-title { color: #a5e9f5; }
+[data-bs-theme="dark"] .smod-card-divider { background: rgba(148, 163, 184, .16); }
+[data-bs-theme="dark"] .smod-card.is-selected .smod-card-divider { background: rgba(34, 211, 238, .28); }
+[data-bs-theme="dark"] .smod-card:not(.is-selected) .smod-card-radio,
+[data-bs-theme="dark"] .smod-wh-radio:not(.is-on) {
+  background: #0b1922;
+  border-color: rgba(34, 211, 238, .3);
+}
+[data-bs-theme="dark"] .smod-wh-ico { background: linear-gradient(145deg, #0e3540, #0c2630); }
+[data-bs-theme="dark"] .smod-wh-name { color: #e2e8f0; }
+[data-bs-theme="dark"] .smod-wh-meta { color: #7c93a8; }
+[data-bs-theme="dark"] .smod-wh-badge {
+  background: rgba(16, 185, 129, .16);
+  border-color: rgba(16, 185, 129, .34);
+  color: #6ee7b7;
+}
+/* Yes / no feature marks keep their hue on a translucent fill. */
+[data-bs-theme="dark"] .smod-feature-dot--yes { background: rgba(16, 185, 129, .18); color: #6ee7b7; }
+[data-bs-theme="dark"] .smod-feature-dot--no { background: rgba(239, 68, 68, .18); color: #fca5a5; }
+
+/* The confirm step's summary list. */
+[data-bs-theme="dark"] .smod-confirm-list {
+  background: linear-gradient(180deg, #0c1c24, #0b1922);
+  border-color: rgba(34, 211, 238, .16);
+}
+[data-bs-theme="dark"] .smod-confirm-ico { background: linear-gradient(145deg, #0e3540, #0c2630); }
+[data-bs-theme="dark"] .smod-confirm-row { border-bottom-color: rgba(148, 163, 184, .12); }
+[data-bs-theme="dark"] .smod-confirm-lbl { color: #7c93a8; }
+[data-bs-theme="dark"] .smod-confirm-val { color: #e2e8f0; }
+[data-bs-theme="dark"] .smod-confirm-sub { color: #7c93a8; }
+
+/* Footer and its outlined buttons. Next keeps its teal fill in both themes. */
+[data-bs-theme="dark"] .smod-footer {
+  background: linear-gradient(90deg, rgba(34, 211, 238, .05) 0%, transparent 50%), #0b1922;
+  border-top-color: rgba(34, 211, 238, .14);
+}
+[data-bs-theme="dark"] .smod-cancel,
+[data-bs-theme="dark"] .smod-back {
+  background: #0c1c24;
+  border-color: rgba(148, 163, 184, .22);
+  color: #9db3c1;
+}
+[data-bs-theme="dark"] .smod-cancel:hover,
+[data-bs-theme="dark"] .smod-back:hover {
+  background: rgba(34, 211, 238, .1);
+  border-color: rgba(34, 211, 238, .4);
+  color: #a5e9f5;
+}
+
+/* The chosen row's name is set by `.smod-wh-row.is-selected .smod-wh-name`,
+   three classes deep, so the plain dark rule above never reached it and the
+   selected warehouse stayed navy on a dark card — the one row you cannot read
+   being the one you just picked. */
+[data-bs-theme="dark"] .smod-wh-row.is-selected .smod-wh-name { color: #a5e9f5; }
+[data-bs-theme="dark"] .smod-wh-row.is-selected .smod-wh-meta { color: #9db3c1; }
+
+/* White inner hairlines are drawn for a light sheet; on a dark one they read
+   as a bright scratch along the top of every tile. */
+[data-bs-theme="dark"] .smod-confirm-ico,
+[data-bs-theme="dark"] .smod-wh-ico,
+[data-bs-theme="dark"] .smod-step-num { box-shadow: none; }
+[data-bs-theme="dark"] .smod-confirm-ico { border-color: rgba(34, 211, 238, .22); }
+[data-bs-theme="dark"] .smod-step.is-active .smod-step-num {
+  box-shadow: 0 0 0 5px rgba(34, 211, 238, .12), 0 8px 20px -6px rgba(6, 182, 212, .5);
+}
+
+/* The scrim. A 14px blur under an 80% navy wash is built for a light page
+   behind it; over a dark one the two compound and the whole sheet reads as
+   fogged. Darker and barely blurred keeps the modal's own edges crisp. */
+[data-bs-theme="dark"] .smod-backdrop {
+  background: rgba(2, 6, 14, .72);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+/* A real edge, so the sheet reads as a sheet and not as a lighter patch of
+   the page behind it. */
+[data-bs-theme="dark"] .smod-box { border: 1px solid rgba(34, 211, 238, .22); }
+
+/* Same reason as the invoice form: without a declared colour scheme the
+   browser draws its scrollbars and pickers for a light page, which shows as
+   pale tracks inside a dark sheet. */
+[data-bs-theme="dark"] .smod-backdrop { color-scheme: dark; }

@@ -483,6 +483,12 @@
 .spi-dt-sec.is-collapsed .spi-dt-sec-head { border-bottom-color:transparent; }
 [data-bs-theme="dark"] .spi-dt-sec-head { background: linear-gradient(110deg,#0c2630,#103642 60%,#0c2c38); border-bottom-color: rgba(34,211,238,.2); }
 [data-bs-theme="dark"] .spi-dt-sec-head::before { background-image: radial-gradient(ellipse at 10% 50%,rgba(34,211,238,.18) 0%,transparent 55%),radial-gradient(ellipse at 90% 50%,rgba(34,211,238,.1) 0%,transparent 55%); }
+/* The ::after above lays a 50% white gloss over the top half of every section
+   header. The header itself and its ::before were darkened; this was not, so
+   the band rendered as a silver strip — measured at the pixel as
+   rgb(119,137,143) while its own computed background was rgb(12,38,48).
+   Dimmed rather than removed, so the header keeps its curvature. */
+[data-bs-theme="dark"] .spi-dt-sec-head::after { background: linear-gradient(180deg,rgba(255,255,255,.05),transparent); }
 .spi-dt-sec-ico { width:36px; height:36px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; color:#fff;
   background: linear-gradient(135deg,#06b6d4,#0891b2); box-shadow: 0 3px 8px rgba(8,145,178,.3); }
 .spi-dt-sec-ico-2 { background: linear-gradient(135deg,#22d3ee,#0e7490); }

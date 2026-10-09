@@ -1,9 +1,13 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   IcoBox, IcoCamera, IcoChevronR, IcoSave, IcoTag, IcoThermometer, IcoUpload, IcoWarn,
 } from '../../../icons';
 import ProductFlagsModal, { type CustomFlag } from './ProductFlagsModal';
 import TemperatureModal, { formatRange, type TempRange } from './TemperatureModal';
+import SelectedProducts, {
+  EMPTY_IDENTITY, type BoxContent, type ProductIdentity,
+} from './SelectedProducts';
+import BoxStickerModal from './BoxStickerModal';
 import type { ProductLine } from '../invoice-products';
 
 /** How a box's contents came in. */
@@ -28,17 +32,24 @@ const FLAGS = [
   { id: 'fragile', cls: 'flag-fragile', label: 'Fragile' },
 ] as const;
 
-/** The dimension fields. The first three switch unit; the weights do not. */
+/** The box's measurements. Each one follows the toggle for its own kind. */
 const DIMENSIONS = [
   { key: 'length', label: 'Length', unit: 'dim' },
   { key: 'width', label: 'Width', unit: 'dim' },
   { key: 'height', label: 'Height', unit: 'dim' },
-  { key: 'weight', label: 'Weight', unit: 'kg' },
-  { key: 'netWeight', label: 'Net Weight', unit: 'kg' },
-  { key: 'grossWeight', label: 'Gross Weight', unit: 'kg' },
+  { key: 'weight', label: 'Weight', unit: 'wt' },
+  { key: 'netWeight', label: 'Net Weight', unit: 'wt' },
+  { key: 'grossWeight', label: 'Gross Weight', unit: 'wt' },
 ] as const;
 
-/** The optional identifiers, hidden behind Advanced Details. */
+/**
+ * The optional identifiers, behind Advanced Details.
+ *
+ * A box holding ONE product carries exactly one of each, so they belong to the
+ * box and sit here. A mixed carton does not — four SKUs have four lots and four
+ * expiry dates — so there they are per product, as columns in Selected
+ * Products, and this panel is not shown at all.
+ */
 const ADVANCED = [
   { key: 'serial', label: 'Serial No.', placeholder: 'e.g. SN-001', type: 'text' },
   { key: 'lot', label: 'Lot No.', placeholder: 'e.g. LT-001', type: 'text' },
@@ -65,7 +76,9 @@ export default function BoxDrawer({
   modeKey = 'Mode',
   modeLabel = 'Single Box',
   variant = 'accordion',
-  showAdvanced = true,
+  contents,
+  onRemoveContent,
+  onClearContents,
   onSave,
   customFlags = [],
   onAddFlag,
@@ -93,13 +106,16 @@ export default function BoxDrawer({
    */
   variant?: 'accordion' | 'panel';
   /**
-   * Whether the box carries its own Serial / Lot / Batch / Cat / Expiry / MFG.
+   * What is in this box, when it is more than the one product above.
    *
-   * True for a box holding one product, where the box's identifiers and the
-   * product's are the same thing. False for a mixed carton, where they are
-   * not: those are per product, in the Selected Products table.
+   * Left out for a single box or one carton of a split, where the contents are
+   * exactly `line` at `quantity` and saying so twice would only let the two
+   * disagree. A mixed carton passes its several products.
    */
-  showAdvanced?: boolean;
+  contents?: BoxContent[];
+  /** Given only where a product can be taken back out — a mixed carton. */
+  onRemoveContent?: (code: string) => void;
+  onClearContents?: () => void;
   /** Finalises the box. The product then leaves the table above and appears
    *  under Packed Products. */
   onSave?: () => void;
@@ -113,17 +129,40 @@ export default function BoxDrawer({
   onQuantityChange?: (qty: number) => void;
 }) {
   const [unit, setUnit] = useState<'cm' | 'm'>('cm');
+  /* Weight switches too. It used to be fixed at kg while the sides switched,
+     so half the row's unit tags could be changed and half could not, with
+     nothing saying why. */
+  const [wUnit, setWUnit] = useState<'kg' | 'g'>('kg');
   const [dims, setDims] = useState<Record<string, string>>({});
   const [remark, setRemark] = useState<string>('correct');
   const [condition, setCondition] = useState<string>('perfect');
   const [flags, setFlags] = useState<string[]>([]);
   const [stackable, setStackable] = useState(true);
-  const [advOpen, setAdvOpen] = useState(false);
   const [flagsOpen, setFlagsOpen] = useState(false);
   /* Kept as strings: an empty field is '' and a typed minus sign is '-', and
      neither survives a round trip through Number. */
   const [temp, setTemp] = useState<TempRange>({ min: '', max: '' });
   const [tempOpen, setTempOpen] = useState(false);
+  const [stickerOpen, setStickerOpen] = useState(false);
+  const [advOpen, setAdvOpen] = useState(false);
+  /* Wired, unlike the panel this restores: its inputs carried no value and no
+     onChange, so everything typed into them was discarded. */
+  const [boxIdentity, setBoxIdentity] = useState<Record<string, string>>({});
+
+  /* The identifiers for whatever is in THIS box, keyed by product code.
+     Held per drawer rather than per step: one product split across twenty
+     cartons is twenty boxes, and keying by product alone would give them all
+     the same lot number. One drawer is one box, so a code is unique here. */
+  const [identities, setIdentities] = useState<Record<string, ProductIdentity>>({});
+  const patchIdentity = useCallback((code: string, patch: Partial<ProductIdentity>) => {
+    setIdentities(m => ({ ...m, [code]: { ...(m[code] ?? EMPTY_IDENTITY), ...patch } }));
+  }, []);
+  /* A box with no explicit contents holds exactly the product above it, at
+     this box's own quantity — which in a split is its share, not the total. */
+  const contentRows: BoxContent[] = contents ?? [{ line, qty: quantity }];
+  /* Only a mixed carton is given contents; every other box holds exactly the
+     product above it, which is what tells the two layouts apart. */
+  const mixedCarton = !!contents;
 
 
   /* Volumetric weight — what a carrier bills when a box is bulky but light.
@@ -140,7 +179,11 @@ export default function BoxDrawer({
   const volumetric = (() => {
     const toCm = (v: string) => (Number(v) || 0) * (unit === 'm' ? 100 : 1);
     const cc = toCm(dims.length) * toCm(dims.width) * toCm(dims.height);
-    return cc > 0 ? (cc / VOLUMETRIC_DIVISOR).toFixed(2) : '';
+    if (cc <= 0) return '';
+    /* The divisor yields kilograms; shown in grams when that is what the
+       weights beside it are in, so the two can be read against each other. */
+    const kg = cc / VOLUMETRIC_DIVISOR;
+    return (wUnit === 'g' ? kg * 1000 : kg).toFixed(2);
   })();
 
   const toggleFlag = (id: string) =>
@@ -226,6 +269,19 @@ export default function BoxDrawer({
                 </button>
               ))}
             </div>
+            {/* The same control for the other half of the row. Without it the
+                sides could be switched and the weights could not, which is
+                only visible as unit tags that respond differently. */}
+            <span className="vti-dw-dim-label">Weight</span>
+            <div className="vti-dw-unit-toggle">
+              {(['kg', 'g'] as const).map(u => (
+                <button key={u} type="button"
+                  className={`vti-dw-unit-opt${wUnit === u ? ' is-active' : ''}`}
+                  onClick={() => setWUnit(u)}>
+                  {u.toUpperCase()}
+                </button>
+              ))}
+            </div>
             <button type="button" className="vti-dw-icon-btn" title="Upload Photo"><IcoUpload size={13} stroke={2.3} /> Upload</button>
             <button type="button" className="vti-dw-icon-btn" title="Camera"><IcoCamera size={13} stroke={2.3} /> Camera</button>
             <button type="button" className="vti-dw-icon-btn" title="Scan Barcode"><IcoBox size={13} stroke={2.3} /> Scan</button>
@@ -233,10 +289,28 @@ export default function BoxDrawer({
               <IcoSave size={12} stroke={2.5} /> Save
             </button>
           </div>
-          <button type="button" className="vti-dw-sticker-btn"><IcoBox size={13} stroke={2.3} /> Box Sticker</button>
+          <button type="button" className="vti-dw-sticker-btn" onClick={() => setStickerOpen(true)}>
+            <IcoBox size={13} stroke={2.3} /> Box Sticker
+          </button>
         </div>
 
         <div className="vti-dw-body">
+          {/* The carton's contents, above the figures that describe the
+              carton itself — what is in the box, then the box. A mixed carton
+              shows this INSTEAD of the Advanced Details panel at the foot:
+              four SKUs have four lots and four expiry dates, which one
+              box-level set cannot express, so the identifiers are columns
+              here. The two never appear together. */}
+          {mixedCarton && (
+            <SelectedProducts
+              rows={contentRows}
+              identities={identities}
+              onIdentityChange={patchIdentity}
+              onRemove={onRemoveContent}
+              onClear={onClearContents}
+            />
+          )}
+
           <div className="vti-dw-section">
             <div className="vti-dw-section-hd">
               <div className="vti-dw-section-title"><IcoBox size={13} stroke={2.3} /> Box Core Details</div>
@@ -250,7 +324,7 @@ export default function BoxDrawer({
                   {i === 3 && <div className="vti-dw-field-sep" />}
                   <div className="vti-dw-field">
                     <label className="vti-dw-field-lbl">
-                      {f.label} <span className="vti-dw-unit-tag">{f.unit === 'dim' ? unit : 'kg'}</span>
+                      {f.label} <span className="vti-dw-unit-tag">{f.unit === 'dim' ? unit : wUnit}</span>
                     </label>
                     <input className="vti-dw-inp" type="number" min={0} step="0.01" placeholder="0.00"
                       value={dims[f.key] ?? ''}
@@ -260,7 +334,7 @@ export default function BoxDrawer({
               ))}
               <div className="vti-dw-field vti-dw-field--auto">
                 <label className="vti-dw-field-lbl">
-                  Vol. Weight <span className="vti-dw-unit-tag">kg</span>{' '}
+                  Vol. Weight <span className="vti-dw-unit-tag">{wUnit}</span>{' '}
                   <span className="vti-dw-auto-tag">Auto</span>
                 </label>
                 {/* readOnly, not disabled: a disabled field is skipped by the
@@ -368,48 +442,66 @@ export default function BoxDrawer({
 
           </div>
 
-          {/* Closed by default: six identifiers most boxes never carry.
-
-              Absent entirely on a mixed carton. These describe ONE thing, and
-              a carton of four SKUs has four serials, four lots and four expiry
-              dates — so there the identifiers live per product, as columns in
-              Selected Products, and a box-level set beside them would only
-              invite two different answers to the same question. A box holding
-              one product, split or not, still has exactly one of each, so the
-              other two scenarios keep this. */}
-          {showAdvanced && (
-          <div className="vti-dw-advanced">
-            <button type="button" className={`vti-dw-adv-toggle${advOpen ? ' is-open' : ''}`}
-              onClick={() => setAdvOpen(o => !o)}>
-              <IcoChevronR size={10} stroke={2.8} className="adv-chev" />
-              {/* The gap is a non-breaking space INSIDE the span. The toggle is
-                  a flex row, and a whitespace-only text node between two flex
-                  items is not rendered at all — a plain space here vanishes. */}
-              Advanced Details<span style={{ fontWeight: 400, opacity: .6 }}>&nbsp;(optional)</span>
-            </button>
-            {advOpen && (
-              <div className="vti-dw-adv-body is-open">
-                <div className="vti-dw-adv-fields">
-                  <div className="vti-adv-line1">
-                    {ADVANCED.map(f => (
-                      <div className="vti-dw-field" key={f.key}>
-                        <label className="vti-dw-field-lbl">{f.label}</label>
-                        <input className="vti-dw-inp" type={f.type} placeholder={f.placeholder} />
+          {/* A box holding one product carries exactly one serial, one lot
+              and one batch, so they belong to the box and sit here, closed by
+              default — six fields most boxes never carry. A mixed carton has
+              its identifiers per product in the table above instead. */}
+          {!mixedCarton && (
+            <div className="vti-dw-advanced">
+              <button type="button" className={`vti-dw-adv-toggle${advOpen ? ' is-open' : ''}`}
+                onClick={() => setAdvOpen(o => !o)}>
+                <IcoChevronR size={10} stroke={2.8} className="adv-chev" />
+                {/* The gap is a non-breaking space INSIDE the span. The toggle
+                    is a flex row, and a whitespace-only text node between two
+                    flex items is not rendered at all — a plain space vanishes. */}
+                Advanced Details<span style={{ fontWeight: 400, opacity: .6 }}>&nbsp;(optional)</span>
+              </button>
+              {advOpen && (
+                <div className="vti-dw-adv-body is-open">
+                  <div className="vti-dw-adv-fields">
+                    <div className="vti-adv-line1">
+                      {ADVANCED.map(f => (
+                        <div className="vti-dw-field" key={f.key}>
+                          <label className="vti-dw-field-lbl">{f.label}</label>
+                          <input
+                            className="vti-dw-inp" type={f.type} placeholder={f.placeholder}
+                            value={boxIdentity[f.key] ?? ''}
+                            onChange={e => setBoxIdentity(m => ({ ...m, [f.key]: e.target.value }))}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="vti-adv-line2">
+                      <div className="vti-dw-field">
+                        <label className="vti-dw-field-lbl">Remarks</label>
+                        <input
+                          className="vti-dw-inp" type="text"
+                          placeholder="Any additional notes about this box..."
+                          value={boxIdentity.remarks ?? ''}
+                          onChange={e => setBoxIdentity(m => ({ ...m, remarks: e.target.value }))}
+                        />
                       </div>
-                    ))}
-                  </div>
-                  <div className="vti-adv-line2">
-                    <div className="vti-dw-field">
-                      <label className="vti-dw-field-lbl">Remarks</label>
-                      <input className="vti-dw-inp" type="text" placeholder="Any additional notes about this box..." />
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
           )}
         </div>
+      {stickerOpen && (
+        <BoxStickerModal
+          boxId={boxId}
+          rows={contentRows}
+          quantity={quantity}
+          scenario={scenario}
+          modeLabel={modeLabel}
+          /* The chosen condition by its label, not its id: the sticker is read
+             by a person at a rack, not by the code that set it. */
+          condition={CONDITIONS.find(c => c.id === condition)?.title ?? 'Perfect'}
+          onClose={() => setStickerOpen(false)}
+        />
+      )}
+
       {tempOpen && (
         <TemperatureModal
           range={temp}

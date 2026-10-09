@@ -212,25 +212,33 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
             {supCardOpen && (
               <div className="spi-dt-grid4 cpf-grid5">
                 <Field label="SELECT SUPPLIER" req>
-                  <MasterSelect
-                    value={supplier}
-                    options={[{ value: supplier, label: supplier }]}
-                    placeholder="— Select Supplier —"
-                    onChange={v => set({ supplier: v })}
-                  />
+                  {/* Frozen once chosen, as on the purchase order. The list
+                      only ever holds the supplier already on the invoice, so
+                      an open picker offered a choice that did not exist; the
+                      footer's Change Selection is how it is swapped. */}
+                  {hasSupplier ? (
+                    <EditSelect readOnly value={supplier} options={[]} onChange={() => {}} />
+                  ) : (
+                    <MasterSelect
+                      value={supplier}
+                      options={[{ value: supplier, label: supplier }]}
+                      placeholder="— Select Supplier —"
+                      onChange={v => set({ supplier: v })}
+                    />
+                  )}
                 </Field>
                 <Field label="COMPANY LEGAL NAME">
-                  <input className="spi-dt-inp" placeholder="Registered legal entity name"
+                  <input className="spi-dt-inp" placeholder={hasSupplier ? "—" : "Registered legal entity name"} readOnly={hasSupplier}
                     value={legalName} onChange={e => set({ legalName: e.target.value })} />
                 </Field>
                 <Field label="SUPPLIER TYPE">
-                  <EditSelect value={supplierType} options={SUPPLIER_TYPES} onChange={v => set({ supplierType: v })} />
+                  <EditSelect readOnly={hasSupplier} value={supplierType} options={SUPPLIER_TYPES} onChange={v => set({ supplierType: v })} />
                 </Field>
                 <Field label="RISK LEVEL">
-                  <EditSelect value={riskLevel} options={RISK_LEVELS} onChange={v => set({ riskLevel: v })} />
+                  <EditSelect readOnly={hasSupplier} value={riskLevel} options={RISK_LEVELS} onChange={v => set({ riskLevel: v })} />
                 </Field>
                 <Field label="SUPPLIER CATEGORY">
-                  <EditSelect value={category} options={SUPPLIER_CATEGORIES} onChange={v => set({ category: v })} />
+                  <EditSelect readOnly={hasSupplier} value={category} options={SUPPLIER_CATEGORIES} onChange={v => set({ category: v })} />
                 </Field>
               </div>
             )}
@@ -250,37 +258,37 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
                 {/* `full` spans the grid: an address needs the width, and a
                     quarter-width box would wrap a PIN code onto its own line. */}
                 <Field label="REGISTERED OFFICE ADDRESS" full>
-                  <input className="spi-dt-inp" placeholder="Building / street / area / landmark, with PIN code"
+                  <input className="spi-dt-inp" placeholder={hasSupplier ? "—" : "Building / street / area / landmark, with PIN code"} readOnly={hasSupplier}
                     value={address} onChange={e => set({ address: e.target.value })} />
                 </Field>
                 <Field label="COUNTRY">
-                  <EditSelect value={country} options={COUNTRIES} onChange={v => set({ country: v })} />
+                  <EditSelect readOnly={hasSupplier} value={country} options={COUNTRIES} onChange={v => set({ country: v })} />
                 </Field>
                 <Field label="STATE">
-                  <EditSelect value={state} options={STATES} onChange={v => set({ state: v })} />
+                  <EditSelect readOnly={hasSupplier} value={state} options={STATES} onChange={v => set({ state: v })} />
                 </Field>
                 <Field label="STATE CODE">
-                  <input className="spi-dt-inp" placeholder="e.g. 27"
+                  <input className="spi-dt-inp" placeholder={hasSupplier ? "—" : "e.g. 27"} readOnly={hasSupplier}
                     value={stateCode} onChange={e => set({ stateCode: e.target.value })} />
                 </Field>
                 <Field label="CITY">
-                  <input className="spi-dt-inp" placeholder="Enter city"
+                  <input className="spi-dt-inp" placeholder={hasSupplier ? "—" : "Enter city"} readOnly={hasSupplier}
                     value={city} onChange={e => set({ city: e.target.value })} />
                 </Field>
                 <Field label="CONTACT PERSON NAME">
-                  <input className="spi-dt-inp" placeholder="Full name"
+                  <input className="spi-dt-inp" placeholder={hasSupplier ? "—" : "Full name"} readOnly={hasSupplier}
                     value={contactName} onChange={e => set({ contactName: e.target.value })} />
                 </Field>
                 <Field label="DESIGNATION">
-                  <input className="spi-dt-inp" placeholder="e.g. Procurement Manager"
+                  <input className="spi-dt-inp" placeholder={hasSupplier ? "—" : "e.g. Procurement Manager"} readOnly={hasSupplier}
                     value={designation} onChange={e => set({ designation: e.target.value })} />
                 </Field>
                 <Field label="CONTACT NUMBER">
-                  <input className="spi-dt-inp" placeholder="+91"
+                  <input className="spi-dt-inp" placeholder={hasSupplier ? "—" : "+91"} readOnly={hasSupplier}
                     value={contactNumber} onChange={e => set({ contactNumber: e.target.value })} />
                 </Field>
                 <Field label="EMAIL ID">
-                  <input className="spi-dt-inp" type="email" placeholder="name@company.com"
+                  <input className="spi-dt-inp" type="email" placeholder={hasSupplier ? "—" : "name@company.com"} readOnly={hasSupplier}
                     value={email} onChange={e => set({ email: e.target.value })} />
                 </Field>
               </div>

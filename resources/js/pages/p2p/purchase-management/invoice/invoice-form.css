@@ -1060,3 +1060,558 @@
   border: 1.5px solid #fecaca;
 }
 .invf-selprod__rm:hover { background: #fee2e2; border-color: #fca5a5; }
+
+/* ── Temporary Putaway Sticker ────────────────────────────────────────────
+   The dialog wears the shared spi-mdl-* chrome; everything below is the
+   printed label inside it, which has no equivalent anywhere else. */
+/* Both classes: `.spi-mdl` sets `width: min(560px, 100%)` at the same single
+   class, and p2p-common.css wins that tie — a label is a narrower thing than a
+   form dialog, so it says so at (0,2,0) rather than hoping for load order. */
+.spi-mdl.invf-stk { width: min(460px, calc(100vw - 32px)); }
+/* Says the label is provisional, in the header where it cannot be missed. */
+.invf-stk__temp {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, .22);
+  border: 1px solid rgba(255, 255, 255, .4);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  color: #fff;
+  vertical-align: middle;
+}
+
+/* The label itself — bordered, so it reads as a thing that gets printed
+   rather than as more of the dialog. */
+.invf-stk__card {
+  border: 1.5px solid #BAE6FD;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(8, 145, 178, .1);
+}
+.invf-stk__strip {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 9px 13px;
+  background: linear-gradient(110deg, #0e7490, #0891b2 55%, #06b6d4);
+  color: #fff;
+}
+.invf-stk__strip-right { text-align: right; }
+.invf-stk__strip-lbl {
+  font-size: 7.5px;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: rgba(224, 250, 255, .8);
+}
+.invf-stk__strip-val { font-size: 13px; font-weight: 700; line-height: 1.3; }
+/* The box number is what a person reads off the carton, so it is the largest
+   thing on the label and monospaced — digits line up across a stack. */
+.invf-stk__strip-box {
+  font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  line-height: 1.25;
+}
+
+.invf-stk__name {
+  padding: 11px 13px 0;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #0c4a6e;
+}
+.invf-stk__chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 7px 13px 11px; }
+.invf-stk__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+.invf-stk__chip--code { color: #0891b2; background: #F0FDFF; border-color: #BAE6FD; font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace; }
+.invf-stk__chip--mode { color: #6d28d9; background: #f5f3ff; border-color: #ddd6fe; }
+.invf-stk__chip--cond { color: #15803d; background: #dcfce7; border-color: #bbf7d0; }
+
+.invf-stk__grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 13px;
+  padding: 0 13px 11px;
+  border-top: 1px solid #e8f4f8;
+  padding-top: 11px;
+}
+/* White behind the code whatever the card does: a scanner needs the quiet zone. */
+.invf-stk__qrbox {
+  padding: 7px;
+  border: 1.5px solid #e0f2fe;
+  border-radius: 9px;
+  background: #fff;
+  line-height: 0;
+}
+.invf-stk__qr { display: block; }
+.invf-stk__qrfail { font-size: 10px; font-weight: 700; color: #dc2626; }
+.invf-stk__facts-lbl {
+  font-size: 7.5px;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  margin-bottom: 5px;
+}
+.invf-stk__rows { margin: 0; }
+.invf-stk__rows > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+.invf-stk__rows > div:last-child { border-bottom: none; }
+.invf-stk__rows dt {
+  margin: 0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+.invf-stk__rows dd { margin: 0; font-size: 11px; font-weight: 800; color: #0c4a6e; text-align: right; }
+.invf-stk__mono { font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace; letter-spacing: -.01em; }
+
+.invf-stk__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 13px;
+  background: #F0FDFF;
+  border-top: 1px solid #e0f2fe;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #0c4a6e;
+}
+.invf-stk__foot-qty { display: inline-flex; align-items: center; gap: 6px; }
+.invf-stk__dot { width: 6px; height: 6px; border-radius: 50%; background: #06b6d4; }
+
+/* A mixed carton names no single SKU on the label, so its contents are listed
+   under it — the QR carries the same codes for a scanner. */
+.invf-stk__contents { list-style: none; margin: 10px 0 0; padding: 0; }
+.invf-stk__contents li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 2px;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 11px;
+  font-weight: 600;
+  color: #334155;
+}
+.invf-stk__contents li:last-child { border-bottom: none; }
+.invf-stk__contents li > b { margin-left: auto; font-weight: 800; color: #0c4a6e; }
+.invf-stk__contents .invf-stk__mono { font-size: 10px; font-weight: 700; color: #0891b2; }
+
+/* The cancel slot is the PDF action here, so it carries an icon. The shared
+   rule does not expect one and stacks it above the label. */
+.invf-stk .spi-mdl-cancel { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ── Dark mode ────────────────────────────────────────────────────────────
+   Step 03 was written light-only: on a dark page its card stayed pure white
+   while everything around it went dark. These are the module's own dark
+   values, taken from p2p-detail.css rather than invented — card #0e1b24 on
+   rgba(34,211,238,.16), inner surfaces #0b1922, inputs #0c1c24, body text
+   #cbd5e1 and the teal accents at .045 / .11 — so the step sits in the same
+   palette as every other card in the form. */
+
+/* Cards and their headers. */
+[data-bs-theme="dark"] .vti-box,
+[data-bs-theme="dark"] .pkg-box {
+  background: #0e1b24;
+  border-color: rgba(34, 211, 238, .16);
+}
+[data-bs-theme="dark"] .vti-header {
+  background: linear-gradient(110deg, #0c2630, #103642);
+  border-bottom-color: rgba(34, 211, 238, .2);
+}
+[data-bs-theme="dark"] .vti-header-title { color: #7dd3fc; }
+[data-bs-theme="dark"] .vti-header-sub { color: #7c93a8; }
+[data-bs-theme="dark"] .pkg-box__header-badge {
+  background: rgba(12, 38, 48, .7);
+  border-color: rgba(34, 211, 238, .25);
+  color: #7dd3fc;
+}
+
+/* Tables: header, body text, row dividers and the zebra / hover accents. */
+[data-bs-theme="dark"] .vti-table th {
+  color: #7c93a8;
+  background: rgba(12, 38, 48, .5);
+  border-bottom-color: rgba(34, 211, 238, .16);
+}
+[data-bs-theme="dark"] .vti-table td { color: #cbd5e1; }
+[data-bs-theme="dark"] .vti-prod-row { border-bottom-color: rgba(148, 163, 184, .12); }
+[data-bs-theme="dark"] .vti-prod-row:nth-child(even) { background: rgba(34, 211, 238, .045); }
+[data-bs-theme="dark"] .vti-prod-row:hover { background: rgba(34, 211, 238, .11); }
+[data-bs-theme="dark"] .vti-prod-name { color: #e2e8f0; }
+[data-bs-theme="dark"] .vti-prod-sku,
+[data-bs-theme="dark"] .vti-desc__wrap,
+[data-bs-theme="dark"] .invf-selprod__no { color: #7c93a8; }
+
+/* Chips and badges — the same hues, carried on translucent fills so they read
+   as accents rather than as light patches. */
+[data-bs-theme="dark"] .vti-code {
+  background: rgba(34, 211, 238, .12);
+  border-color: rgba(34, 211, 238, .3);
+  color: #7dd3fc;
+}
+[data-bs-theme="dark"] .vti-qty-badge {
+  background: rgba(129, 140, 248, .16);
+  color: #c7d2fe;
+}
+[data-bs-theme="dark"] .cpd-qtypill {
+  background: rgba(148, 163, 184, .12);
+  border-color: rgba(148, 163, 184, .22);
+  color: #9db3c1;
+}
+[data-bs-theme="dark"] .cpd-qtypill--miss { background: rgba(245, 158, 11, .16); border-color: rgba(245, 158, 11, .34); color: #fbbf24; }
+[data-bs-theme="dark"] .cpd-qtypill--extra { background: rgba(239, 68, 68, .16); border-color: rgba(239, 68, 68, .34); color: #fca5a5; }
+[data-bs-theme="dark"] .invf-scn-tag { color: #7dd3fc; }
+[data-bs-theme="dark"] .vti-stat-pill {
+  background: rgba(12, 38, 48, .6);
+  border-color: rgba(34, 211, 238, .25);
+  color: #a5e9f5;
+}
+
+/* Inputs and outlined buttons. */
+[data-bs-theme="dark"] .vti-subbox-inp,
+[data-bs-theme="dark"] .invf-selprod__in,
+[data-bs-theme="dark"] .vti-btn-single {
+  background: #0c1c24;
+  border-color: rgba(34, 211, 238, .22);
+  color: #e2e8f0;
+}
+[data-bs-theme="dark"] .vti-btn-single { color: #7dd3fc; }
+[data-bs-theme="dark"] .vti-btn-single:hover {
+  background: rgba(34, 211, 238, .12);
+  border-color: rgba(34, 211, 238, .4);
+  color: #a5e9f5;
+}
+[data-bs-theme="dark"] .vti-subbox-inp::placeholder,
+[data-bs-theme="dark"] .invf-selprod__in::placeholder,
+[data-bs-theme="dark"] .vti-dw-inp::placeholder { color: #5b7585; }
+
+/* The drawer body under a box, and the sticker's own card. */
+[data-bs-theme="dark"] .vti-dw-body,
+[data-bs-theme="dark"] .vti-dw-section { background: #0b1922; border-color: rgba(34, 211, 238, .16); }
+[data-bs-theme="dark"] .vti-dw-section-title { color: #7dd3fc; }
+[data-bs-theme="dark"] .vti-dw-field-lbl { color: #67e8f9; }
+[data-bs-theme="dark"] .vti-dw-adv-toggle { color: #7dd3fc; }
+[data-bs-theme="dark"] .invf-stk__card {
+  background: #0e1b24;
+  border-color: rgba(34, 211, 238, .22);
+}
+[data-bs-theme="dark"] .invf-stk__name { color: #e2e8f0; }
+[data-bs-theme="dark"] .invf-stk__rows > div { border-bottom-color: rgba(148, 163, 184, .12); }
+[data-bs-theme="dark"] .invf-stk__rows dt,
+[data-bs-theme="dark"] .invf-stk__facts-lbl { color: #7c93a8; }
+[data-bs-theme="dark"] .invf-stk__rows dd { color: #e2e8f0; }
+[data-bs-theme="dark"] .invf-stk__foot {
+  background: rgba(12, 38, 48, .6);
+  border-top-color: rgba(34, 211, 238, .16);
+  color: #a5e9f5;
+}
+/* The QR keeps a white quiet zone whatever the theme — a scanner needs the
+   light modules light, and inverting it is how a code stops reading. */
+[data-bs-theme="dark"] .invf-stk__qrbox { background: #fff; border-color: rgba(34, 211, 238, .25); }
+[data-bs-theme="dark"] .invf-stk__contents li {
+  color: #cbd5e1;
+  border-bottom-color: rgba(148, 163, 184, .12);
+}
+[data-bs-theme="dark"] .invf-stk__contents li > b { color: #e2e8f0; }
+
+/* Packaging Scenarios — the sweep found this card still carrying light-mode
+   text and chips: its own header and the three scenario cards have their own
+   classes, which the .vti-* rules above do not reach. */
+[data-bs-theme="dark"] .pkg-box__header-title { color: #7dd3fc; }
+[data-bs-theme="dark"] .pkg-box__header-sub,
+[data-bs-theme="dark"] .pkg-card__desc { color: #7c93a8; }
+[data-bs-theme="dark"] .pkg-card { border-right-color: rgba(34, 211, 238, .14); }
+[data-bs-theme="dark"] .pkg-card:hover { background: rgba(34, 211, 238, .06); }
+[data-bs-theme="dark"] .pkg-card__scenario { color: #67e8f9; }
+[data-bs-theme="dark"] .pkg-card__title { color: #e2e8f0; }
+[data-bs-theme="dark"] .pkg-card__title span { color: #22d3ee; }
+[data-bs-theme="dark"] .pkg-card__tag,
+[data-bs-theme="dark"] .pkg-card__use.is-on {
+  background: rgba(34, 211, 238, .12);
+  border-color: rgba(34, 211, 238, .3);
+  color: #7dd3fc;
+}
+
+/* The Mode select is disabled, and its disabled rule repeats the white fill —
+   so it needs overriding in both states or it stays a white tile. */
+[data-bs-theme="dark"] .vti-mode-sel,
+[data-bs-theme="dark"] .vti-mode-sel:disabled {
+  background: #0c1c24;
+  border-color: rgba(34, 211, 238, .22);
+  color: #9db3c1;
+}
+
+/* The table header sat at the same dim grey as the body text, which on a dark
+   card left the column names harder to read than the rows under them. */
+[data-bs-theme="dark"] .vti-table th { color: #a5e9f5; }
+
+/* The drawer's own surfaces. The light slab is `.vti-drawer-content`, the
+   wrapper around the whole panel — not the sections inside it, which is what
+   the first pass styled and why the body stayed light. */
+[data-bs-theme="dark"] .vti-drawer-content {
+  background: linear-gradient(175deg, #0c2028 0%, #0b1c24 25%, #0a1a21 100%);
+  border-color: rgba(34, 211, 238, .2);
+}
+[data-bs-theme="dark"] .vti-dw-section,
+[data-bs-theme="dark"] .vti-dw-advanced {
+  background: #0e1b24;
+  border-color: rgba(34, 211, 238, .18);
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .vti-dw-section-hd,
+[data-bs-theme="dark"] .vti-dw-adv-toggle {
+  background: linear-gradient(102deg, #0c2630, #103642 60%, #0e1b24 100%);
+  border-bottom-color: rgba(34, 211, 238, .18);
+}
+/* The field is a tile holding a transparent input, so the tile carries the
+   fill and the input only carries text. */
+[data-bs-theme="dark"] .vti-dw-field {
+  background: linear-gradient(145deg, #0c1c24 0%, #0b1922 100%);
+  border-color: rgba(34, 211, 238, .2);
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .vti-dw-field:hover {
+  background: #0d2029;
+  border-color: rgba(34, 211, 238, .45);
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .vti-dw-inp { color: #e2e8f0; }
+[data-bs-theme="dark"] .vti-dw-inp::placeholder { color: rgba(103, 232, 249, .45); }
+/* Volumetric weight stays the one lit field — it is the derived number the
+   whole section works towards. */
+[data-bs-theme="dark"] .vti-dw-field--auto {
+  background: linear-gradient(145deg, #0e3a44 0%, #115e6e 100%);
+  border-color: #22d3ee;
+}
+[data-bs-theme="dark"] .vti-dw-field--auto:hover { background: linear-gradient(145deg, #115e6e 0%, #0891b2 100%); }
+
+/* The remark / condition / flags band under Box Core Details, and its
+   unselected buttons — white tiles with the colour carried only by the active
+   one, so unselected they need the surface swapped rather than the hue. */
+[data-bs-theme="dark"] .vti-dw-row2-inner {
+  background: linear-gradient(108deg, #0b1922 0%, #0c1e27 50%, #0e1b24 100%);
+  border-top-color: rgba(34, 211, 238, .18);
+}
+/* `:not(.is-active)` matters: the chosen remark and condition carry their own
+   colour at the same specificity, so without it this rule beat them and the
+   selection became invisible. */
+[data-bs-theme="dark"] .vti-rmk-btn:not(.is-active),
+[data-bs-theme="dark"] .vti-cond-btn:not(.is-active) {
+  background: linear-gradient(145deg, #0c1c24 0%, #0b1922 100%);
+  border-color: rgba(148, 163, 184, .2);
+  color: #7c93a8;
+  box-shadow: none;
+}
+/* The white sheen over each tile reads as a grey wash on a dark surface. */
+[data-bs-theme="dark"] .vti-rmk-btn::after,
+[data-bs-theme="dark"] .vti-cond-btn::after,
+[data-bs-theme="dark"] .vti-flag-btn::before { opacity: .06; }
+[data-bs-theme="dark"] .vti-dw-dim-label { color: inherit; }
+
+/* The Packaging Scenarios header band itself. Its title and subtitle were
+   given dark colours earlier but the band under them was not, so it stayed a
+   pale teal gradient — CSS.getMatchedStylesForNode showed only the light rule
+   matching it, which is how it was missed by reading alone. */
+[data-bs-theme="dark"] .pkg-box__header {
+  background: linear-gradient(110deg, #0c2630 0%, #103642 55%, #0c2c38 100%);
+  border-bottom-color: rgba(34, 211, 238, .18);
+}
+[data-bs-theme="dark"] .pkg-box__body { background: #0b1922; }
+
+/* States written with `!important`.
+
+   An open or ticked row paints a near-white gradient marked `!important`, and
+   the expanded row's name turns navy. In dark mode that is the row you are
+   working in turning into a white slab with pale text on it — the one row that
+   must stay readable. `!important` can only be answered in kind, so these are
+   the four rules that carry it. */
+[data-bs-theme="dark"] .vti-prod-row.is-expanded {
+  background: linear-gradient(90deg, rgba(34, 211, 238, .14), rgba(34, 211, 238, .05)) !important;
+  box-shadow: inset 3px 0 0 #22d3ee;
+}
+[data-bs-theme="dark"] .vti-prod-row.is-selected {
+  background: linear-gradient(98deg, rgba(34, 211, 238, .16) 0%, rgba(34, 211, 238, .06) 100%) !important;
+  box-shadow: inset 3px 0 0 #22d3ee;
+}
+[data-bs-theme="dark"] .vti-prod-row.is-expanded .vti-prod-name { color: #a5e9f5; }
+[data-bs-theme="dark"] .vti-prod-row.is-expanded .vti-btn-single {
+  background: rgba(34, 211, 238, .16);
+  border-color: #22d3ee;
+  color: #a5e9f5;
+}
+/* Hover on a row that is already open must not undo the open state. */
+[data-bs-theme="dark"] .vti-prod-row:hover:not(.is-expanded):not(.is-selected) {
+  background: rgba(34, 211, 238, .11);
+}
+[data-bs-theme="dark"] .vti-dw-adv-toggle:hover,
+[data-bs-theme="dark"] .vti-dw-adv-toggle.is-open {
+  background: linear-gradient(102deg, #0e3540 0%, #0c2630 55%, #0e1b24 100%) !important;
+  color: #a5e9f5;
+  border-bottom-color: rgba(34, 211, 238, .2);
+}
+
+/* The chip on an opened row saying which scenario it was packed under. It is a
+   pale mint pill with navy text, so on a dark row it was the one washed-out
+   thing left — and the row it sits on is the row being worked in. An earlier
+   `color: inherit` here did nothing, because the pill's problem is its fill. */
+[data-bs-theme="dark"] .vti-scn-chip {
+  background: linear-gradient(135deg, rgba(34, 211, 238, .18), rgba(34, 211, 238, .08));
+  border-color: rgba(34, 211, 238, .34);
+  color: #a5e9f5;
+}
+[data-bs-theme="dark"] .vti-scn-chip:hover {
+  background: linear-gradient(135deg, rgba(34, 211, 238, .26), rgba(34, 211, 238, .12));
+  border-color: #22d3ee;
+}
+/* Its sibling in the locked state, same treatment. */
+[data-bs-theme="dark"] .vti-scn-lock {
+  background: rgba(148, 163, 184, .08);
+  border-color: rgba(148, 163, 184, .28);
+  color: #7c93a8;
+}
+
+/* ── Modal contents · dark mode ───────────────────────────────────────────
+   The spi-mdl shell is themed in p2p-common.css, but everything these three
+   dialogs put INSIDE it was written light-only — 65 rules across invf-temp,
+   invf-flags and invf-boxchip, which is why the Temperature preset cards sat
+   there as four white tiles on a dark sheet. The chosen preset keeps its
+   colour: that gradient is how the four bands are told apart. */
+
+/* Temperature Range. */
+[data-bs-theme="dark"] .invf-temp__lbl { color: #7c93a8; }
+/* `:not(.is-on)` because `.invf-temp__preset--frozen.is-on` carries the band's
+   gradient at the same specificity as this rule, which would otherwise win on
+   load order and leave the chosen preset looking unchosen. */
+[data-bs-theme="dark"] .invf-temp__preset:not(.is-on) {
+  background: #0c1c24;
+  border-color: rgba(34, 211, 238, .2);
+}
+[data-bs-theme="dark"] .invf-temp__preset:hover { box-shadow: 0 4px 14px rgba(34, 211, 238, .18); }
+/* Cold to coldest, brightened for a dark sheet — the light-mode inks are too
+   deep to read on it. */
+[data-bs-theme="dark"] .invf-temp__preset--chilled:not(.is-on) { border-color: rgba(34, 211, 238, .4); color: #67e8f9; }
+[data-bs-theme="dark"] .invf-temp__preset--cool:not(.is-on)    { border-color: rgba(56, 189, 248, .4); color: #7dd3fc; }
+[data-bs-theme="dark"] .invf-temp__preset--frozen:not(.is-on)  { border-color: rgba(129, 140, 248, .45); color: #a5b4fc; }
+[data-bs-theme="dark"] .invf-temp__preset--deep:not(.is-on)    { border-color: rgba(167, 139, 250, .45); color: #c4b5fd; }
+/* The chosen one keeps its fill and its white ink, so the selection still
+   reads at a glance. */
+[data-bs-theme="dark"] .invf-temp__preset.is-on { color: #fff; border-color: transparent; }
+[data-bs-theme="dark"] .invf-temp__field {
+  background: #0c1c24;
+  border-color: rgba(34, 211, 238, .22);
+}
+[data-bs-theme="dark"] .invf-temp__inp { color: #e2e8f0; }
+[data-bs-theme="dark"] .invf-temp__inp::placeholder { color: #5b7585; }
+[data-bs-theme="dark"] .invf-temp__ico,
+[data-bs-theme="dark"] .invf-temp__unit,
+[data-bs-theme="dark"] .invf-temp__to { color: #67e8f9; }
+[data-bs-theme="dark"] .invf-temp__hint { color: #7c93a8; }
+[data-bs-theme="dark"] .invf-temp__err { color: #fca5a5; }
+
+/* Product Flags. */
+[data-bs-theme="dark"] .invf-flags__card,
+[data-bs-theme="dark"] .invf-flags__list {
+  background: linear-gradient(180deg, #0c1c24, #0b1922);
+  border-color: rgba(34, 211, 238, .16);
+}
+[data-bs-theme="dark"] .invf-flags__cardhd,
+[data-bs-theme="dark"] .invf-flags__listhd { color: #7dd3fc; border-bottom-color: rgba(34, 211, 238, .16); }
+[data-bs-theme="dark"] .invf-flags__cardico { background: linear-gradient(145deg, #0e3540, #0c2630); }
+[data-bs-theme="dark"] .invf-flags__field {
+  background: #0b1922;
+  border-color: rgba(34, 211, 238, .22);
+}
+[data-bs-theme="dark"] .invf-flags__inp { color: #e2e8f0; }
+[data-bs-theme="dark"] .invf-flags__inp::placeholder { color: #5b7585; }
+[data-bs-theme="dark"] .invf-flags__lbl { color: #7c93a8; }
+[data-bs-theme="dark"] .invf-flags__fieldico { color: #67e8f9; }
+[data-bs-theme="dark"] .invf-flags__row { border-bottom-color: rgba(148, 163, 184, .12); }
+[data-bs-theme="dark"] .invf-flags__empty { color: #7c93a8; }
+[data-bs-theme="dark"] .invf-flags__err { color: #fca5a5; }
+[data-bs-theme="dark"] .invf-flags__del {
+  background: rgba(239, 68, 68, .14);
+  border-color: rgba(239, 68, 68, .3);
+  color: #fca5a5;
+}
+[data-bs-theme="dark"] .invf-flags__del:hover { background: rgba(239, 68, 68, .24); }
+
+/* Generated Boxes list. */
+[data-bs-theme="dark"] .invf-boxchip {
+  background: #0c1c24;
+  border-color: rgba(34, 211, 238, .2);
+}
+[data-bs-theme="dark"] .invf-boxchip__id { color: #7dd3fc; }
+[data-bs-theme="dark"] .invf-boxchip__qty { color: #cbd5e1; }
+[data-bs-theme="dark"] .invf-boxchip__qty.is-empty { color: #7c93a8; }
+[data-bs-theme="dark"] .invf-boxchip__shared {
+  background: rgba(245, 158, 11, .16);
+  border-color: rgba(245, 158, 11, .32);
+  color: #fbbf24;
+}
+
+/* ── The washed-out look ──────────────────────────────────────────────────
+   Two things, neither of which a computed background on the element itself
+   would have shown.
+
+   First, the table's header band is painted on `thead tr`, not on `th`. The
+   dark rules above coloured the cells and left the strip under them a pale
+   #F8FAFC→#F1F5F9 grey — the silver band across every table. */
+[data-bs-theme="dark"] .vti-table thead tr {
+  background: linear-gradient(180deg, #0c2630, #0b1f28);
+  border-bottom-color: rgba(34, 211, 238, .18);
+}
+
+/* Second, the "white blur": card headers carry a ::after that lays a 60–65%
+   white gradient over their top half. On a light header that is a gloss; on a
+   dark one it is a fog sitting over the title. Dimmed to a hint rather than
+   removed, so the headers keep their curvature. */
+[data-bs-theme="dark"] .vti-header::after,
+[data-bs-theme="dark"] .pkg-box__header::after {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .05), transparent);
+}
+/* The same gloss on the scenario cards and the sub-box input. */
+[data-bs-theme="dark"] .vti-subbox-inp {
+  background: linear-gradient(135deg, #0c1c24, #0b1922);
+  border-color: rgba(34, 211, 238, .22);
+  color: #e2e8f0;
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .vti-subbox-inp::placeholder { color: #5b7585; }
+
+/* Native chrome — the white strip under a scrolling table.
+
+   Nothing here declared `color-scheme`, so the browser kept drawing its own
+   widgets for a LIGHT page: the horizontal scrollbar on a wide table rendered
+   as a pale track across the full width, which is the white band that appears
+   between a drawer and the row under it. The date pickers in Selected Products
+   and the number spinners have the same problem, dark glyphs on a dark field.
+
+   Declaring it hands the browser the theme, and it draws all of them dark —
+   the same fix CtcRichEditor and the CLM toolbars already use. It is set on
+   the form, not the document, so only this screen is affected. */
+[data-bs-theme="dark"] .cpf-form,
+[data-bs-theme="dark"] .spi-dt-overlay,
+[data-bs-theme="dark"] .vti-table-wrap,
+[data-bs-theme="dark"] .cpd-scroll { color-scheme: dark; }

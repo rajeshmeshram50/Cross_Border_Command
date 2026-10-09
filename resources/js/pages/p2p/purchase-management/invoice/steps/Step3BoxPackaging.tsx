@@ -3,7 +3,6 @@ import { IcoBox, IcoCheck, IcoChevron, IcoLock, IcoShip } from '../../../icons';
 import StageSummary from './StageSummary';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import BoxDrawer from './BoxDrawer';
-import SelectedProducts, { EMPTY_IDENTITY, type ProductIdentity } from './SelectedProducts';
 import PackedProducts, { type PackedRow } from './PackedProducts';
 import type { CustomFlag } from './ProductFlagsModal';
 import MultiBoxPanel, { splitQuantity, type SplitBox } from './MultiBoxPanel';
@@ -82,13 +81,6 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
      `selected` because ticking is not packing — the carton can have products
      taken back out of it before it is saved. */
   const [mixedBox, setMixedBox] = useState<string[] | null>(null);
-  /* The identifiers printed on each product in that carton, keyed by code.
-     Per product, not per box: four SKUs in one carton means four batches. */
-  const [identities, setIdentities] = useState<Record<string, ProductIdentity>>({});
-
-  const patchIdentity = useCallback((code: string, patch: Partial<ProductIdentity>) => {
-    setIdentities(m => ({ ...m, [code]: { ...(m[code] ?? EMPTY_IDENTITY), ...patch } }));
-  }, []);
   /* Taking the last product out closes the carton: an empty master carton is
      not a thing to save. */
   const takeOutOfBox = useCallback((code: string) => {
@@ -184,11 +176,6 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
    */
   const packSelected = () => {
     setMixedBox(selected);
-    setIdentities(m => {
-      const next = { ...m };
-      for (const code of selected) next[code] ??= { ...EMPTY_IDENTITY };
-      return next;
-    });
     setSelected([]);
   };
 
@@ -564,14 +551,6 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
           below the table rather than inside a row: it belongs to several rows
           at once, so there is no one row to open it from. */}
       {mixedBox && mixedBox.length > 0 && (
-        <>
-          <SelectedProducts
-            lines={mixedLines}
-            identities={identities}
-            onIdentityChange={patchIdentity}
-            onRemove={takeOutOfBox}
-            onClear={() => setMixedBox(null)}
-          />
           <BoxDrawer
             /* MB for "mixed box", the prototype's own id for this carton —
                a single box reads PUT-B-001. */
@@ -584,16 +563,16 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
             modeKey="Products"
             modeLabel={`${mixedBox.length} SKU${mixedBox.length === 1 ? '' : 's'}`}
             variant="panel"
-            /* The identifiers are per product here, in the table above, so the
-               box-level set would be a second place to answer the same
-               question — and nothing to say which one counts. */
-            showAdvanced={false}
+            /* The several products this carton holds. Every other box takes
+               its contents from `line` alone, because it holds exactly that. */
+            contents={mixedLines.map(l => ({ line: l, qty: l.spiQty }))}
+            onRemoveContent={takeOutOfBox}
+            onClearContents={() => setMixedBox(null)}
             onSave={saveMixedBox}
             customFlags={customFlags}
             onAddFlag={addFlag}
             onRemoveFlag={removeFlag}
           />
-        </>
       )}
 
       <PackedProducts rows={packedRows} />

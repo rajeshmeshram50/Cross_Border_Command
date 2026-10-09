@@ -12,6 +12,7 @@ import { INVOICE_STEPS } from './steps';
 import { INVOICE_ROWS, NEXT_INVOICE_NO, STORAGE_WAREHOUSES } from './data';
 import { InvoiceTable } from './InvoiceTable';
 import MapInvoiceModal, { type InvoiceMapChoice } from './MapInvoiceModal';
+import InvoicePaymentsModal from './InvoicePaymentsModal';
 import StorageSelectionModal, { type StorageChoice } from './StorageSelectionModal';
 import InvoiceForm, { type InvoiceFormInput } from './InvoiceForm';
 import type { InvoiceAction } from './cells/RowActions';
@@ -105,9 +106,14 @@ export default function InvoiceList() {
   }, [storageFor]);
 
   /* One handler for every row control, stable so the rows stay memoised. */
+  /* The row whose payment requests are open, or null. One piece of state
+     rather than an open flag that could disagree with the row. */
+  const [paymentsRow, setPaymentsRow] = useState<InvoiceRow | null>(null);
+
   const handleRowAction = useCallback((action: InvoiceAction, row: InvoiceRow) => {
-    /* The detail screens this opens do not exist yet. Logging rather than
-       silently swallowing, so a click is visibly reaching the page. */
+    if (action === 'payment-requests') { setPaymentsRow(row); return; }
+    /* The other detail screens do not exist yet. Logging rather than silently
+       swallowing, so a click is visibly reaching the page. */
     // eslint-disable-next-line no-console
     console.info('[invoice] action', action, row.invoiceNo);
   }, []);
@@ -212,11 +218,24 @@ export default function InvoiceList() {
               </button>
             ))}
           </div>
+
+          <div className="spi-search">
+            <SearchIcon size={16} />
+            <input
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search SPI, supplier, PO or status..."
+              aria-label="Search invoices"
+              /* Browsers autofill anything that looks like a form field; a list
+                 filter is not one. */
+              autoComplete="off"
+            />
+          </div>
         </div>
 
-        {/* Sub-tabs and the search share ONE row, inside `.spi-sub`. The design
-            puts the search here, not up with the scope tabs — it narrows what the
-            sub-tab selected, so it belongs beside it. */}
+        {/* Sub-tabs on their own row. The search sits up on the scope row, as
+            it does on the purchase order list, so both pages read the same. */}
         <div className="spi-sub">
           <div className="spi-subtabs" role="tablist" aria-label="Shipment">
             {SHIP_TABS.map(tab => (
@@ -234,19 +253,6 @@ export default function InvoiceList() {
             ))}
           </div>
 
-          <div className="spi-search">
-            <SearchIcon size={16} />
-            <input
-              type="text"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Search SPI, supplier, PO or status..."
-              aria-label="Search invoices"
-              /* Browsers autofill anything that looks like a form field; a list
-                 filter is not one. */
-              autoComplete="off"
-            />
-          </div>
         </div>
 
         {/* The table takes only its rows. Everything that changes per keystroke
@@ -254,6 +260,10 @@ export default function InvoiceList() {
             input and not 22 x 60 cells. */}
         <InvoiceTable rows={visibleRows} onAction={handleRowAction} />
       </div>
+
+      {paymentsRow && (
+        <InvoicePaymentsModal row={paymentsRow} onClose={() => setPaymentsRow(null)} />
+      )}
 
       {mapOpen && <MapInvoiceModal onClose={closeMap} onConfirm={confirmMap} />}
 
