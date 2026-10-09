@@ -1,0 +1,1409 @@
+/* ── Temporary Putaway Summary ──────────────────────────────────────────────
+   Only what the wizard chrome has no equivalent for. The overlay, the section
+   heads, the head pills and the chevron all come from p2p-detail.css; this
+   file holds the card, its hero and the analytics tiles. */
+
+.pts-card {
+  width: min(1640px, 99vw);
+  max-height: 94vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 22px;
+  background: #fff;
+  /* `.spi-mdl` rings itself in a 1.5px white edge, which the other P2P modals
+     want and this card does not — the design has only the two shadows. */
+  box-shadow: 0 44px 110px rgba(6, 182, 212, .28), 0 10px 34px rgba(0, 0, 0, .22);
+}
+
+[data-bs-theme="dark"] .pts-card {
+  box-shadow: 0 44px 110px rgba(0, 0, 0, .5), 0 10px 34px rgba(0, 0, 0, .34);
+}
+
+.pts-backdrop {
+  padding: 24px;
+  background: rgba(5, 18, 32, .62);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+}
+
+.pts-card:focus {
+  outline: none;
+}
+
+[data-bs-theme="dark"] .pts-card {
+  background: #0b1623;
+}
+
+/* ── Hero ─────────────────────────────────────────────────────────────── */
+
+.pts-hero {
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 11px 18px 12px;
+  background: linear-gradient(108deg, #0a5f75 0%, #0891b2 48%, #06b6d4 78%, #22c9e5 100%);
+}
+
+/* The sheen across the top half the design lays over the gradient. */
+.pts-hero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .16), transparent);
+}
+
+.pts-hero__top {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 12px;
+}
+
+.pts-hero .pts-pills {
+  position: relative;
+  z-index: 1;
+}
+
+.pts-hero__ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  color: #fff;
+  background: rgba(255, 255, 255, .18);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .28);
+}
+
+.pts-hero__ico svg {
+  width: 17px;
+  height: 17px;
+}
+
+.pts-hero__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -.2px;
+  color: #fff;
+}
+
+.pts-hero__x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  color: #fff;
+  background: rgba(255, 255, 255, .16);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .26);
+  transition: background .14s;
+}
+
+.pts-hero__x:hover {
+  background: rgba(255, 255, 255, .28);
+}
+
+.pts-hero__x svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* ── The reference bar ────────────────────────────────────────────────────
+   One continuous strip divided into segments, not ten separate pills with
+   gaps between them: that is the shape in the design, and it is what the
+   wizard's own `.spi-dt-pill` is not. The pill keeps its icon and its two
+   lines of text; everything that made it a free-standing chip — the fill,
+   the border, the radius, the shadow — is dropped here, and the strip takes
+   them instead.
+
+   The strip grows to fill a wide row and scrolls below the width where ten
+   segments still read, rather than cutting every value to an ellipsis. */
+.pts-pills {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  gap: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  border: 1px solid rgba(255, 255, 255, .26);
+  border-radius: 13px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .08));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), 0 5px 18px rgba(2, 44, 54, .14);
+}
+
+/* The bar carries the fill and the one outline; a segment carries only the
+   divider on its leading edge. Giving each segment its own fill or outline as
+   well is what made the strip read as a row of boxed-in chips. */
+.pts-pills .spi-dt-pill {
+  flex: 1 1 auto;
+  gap: 8px;
+  padding: 8px 13px;
+  border: none;
+  border-left: 1px solid rgba(255, 255, 255, .18);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  white-space: nowrap;
+  transition: background .15s;
+}
+
+.pts-pills .spi-dt-pill:first-child {
+  border-left: none;
+}
+
+.pts-pills .spi-dt-pill:hover {
+  background: rgba(255, 255, 255, .08);
+}
+
+/* The warehouse is the one long value, and the design gives its cell the
+   extra share rather than letting it crowd its neighbours. Fifth of ten, in
+   a list that is fixed. */
+.pts-pills .spi-dt-pill:nth-child(5) {
+  flex: 1.6 1 auto;
+}
+
+/* Inside the bar the icon is a quiet translucent square, not the gradient
+   badge it is when a pill stands on its own. */
+.pts-pills .spi-dt-pill-ico,
+.pts-pills .spi-dt-pill-ico--alt {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: #fff;
+  background: rgba(255, 255, 255, .2);
+  border: 1px solid rgba(255, 255, 255, .3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+
+.pts-pills .spi-dt-pill-ico svg {
+  width: 13px;
+  height: 13px;
+}
+
+.pts-pills .spi-dt-pill-txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pts-pills .spi-dt-pill-lbl {
+  margin-bottom: 0;
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, .82);
+}
+
+.pts-pills .spi-dt-pill-val {
+  color: #fff;
+  max-width: none;
+}
+
+/* The text takes the slack so the status light and the Own badge sit at the
+   trailing edge of their segment, as in the design, rather than tucked
+   against the value. */
+.pts-pills .spi-dt-pill-txt {
+  flex: 1;
+}
+
+/* A status light at the trailing edge of a cell, ringed so it reads against
+   whichever part of the gradient it lands on. */
+.pts-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, .18);
+}
+
+.pts-dot--ok { color: #34d399; }
+.pts-dot--info { color: #60a5fa; }
+.pts-dot--violet { color: #c084fc; }
+.pts-dot--warn { color: #fbbf24; }
+
+/* "Own" / "3P" beside the warehouse: solid white on the teal bar, which is
+   the one thing in the strip that is meant to stand out of it. */
+.pts-badge {
+  flex-shrink: 0;
+  margin-left: 8px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  color: #0e7490;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(3, 37, 48, .22);
+}
+
+/* ── Body ─────────────────────────────────────────────────────────────── */
+
+.pts-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #8ecfdd transparent;
+  padding: 13px 18px 16px;
+  background: linear-gradient(180deg, #f4fbfe, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+[data-bs-theme="dark"] .pts-body {
+  background: linear-gradient(180deg, #0b1623, #0e1b2a);
+  scrollbar-color: rgba(34, 211, 238, .35) transparent;
+}
+
+/* A column flex item shrinks by default, so once the sections were taller
+   than the card every one of them squashed to a sliver instead of the body
+   scrolling — the tiles and the party cards were sheared off mid-row. They
+   keep their own height; the body is what scrolls. */
+.pts-body > * {
+  flex-shrink: 0;
+}
+
+/* ── Section heads ───────────────────────────────────────────────────────
+   The wizard's section head is built to be a quiet sub-heading inside a form
+   — 11px title, 9.5px label, a 36px icon. Here each section is a card of its
+   own and the head is its title, so the type and the icon scale up to match
+   the design. Scoped to `.pts-sec`, so the wizard's own sections keep the
+   size they were drawn at. */
+
+.pts-sec {
+  border: 1px solid #e3eef4;
+  border-radius: 13px;
+  box-shadow: 0 2px 9px rgba(8, 145, 178, .05);
+}
+
+.pts-sec:hover {
+  box-shadow: 0 6px 18px rgba(8, 145, 178, .1);
+}
+
+.pts-sec .spi-dt-sec-head {
+  gap: 12px;
+  padding: 11px 15px;
+  min-height: 0;
+  background: linear-gradient(102deg, #ddf3fa 0%, #eef9fc 46%, #e3f5fa 100%);
+  border-bottom-color: #d6ecf3;
+}
+
+.pts-sec .spi-dt-sec-body {
+  padding: 12px 14px;
+}
+
+.pts-sec .spi-dt-sec-head::before {
+  background-image:
+    radial-gradient(ellipse at 10% 50%, rgba(103, 232, 249, .22) 0%, transparent 55%),
+    radial-gradient(ellipse at 90% 50%, rgba(34, 211, 238, .14) 0%, transparent 60%);
+}
+
+/* The two rules above are the same weight as the chrome's own dark rules and
+   load after them, so without these the pale wash applied in dark mode too —
+   a white head with navy text on it, which is to say an invisible title. */
+[data-bs-theme="dark"] .pts-sec .spi-dt-sec-head {
+  background: linear-gradient(110deg, #0c2630, #103642 60%, #0c2c38);
+}
+
+[data-bs-theme="dark"] .pts-sec .spi-dt-sec-head::before {
+  background-image:
+    radial-gradient(ellipse at 10% 50%, rgba(34, 211, 238, .18) 0%, transparent 55%),
+    radial-gradient(ellipse at 90% 50%, rgba(34, 211, 238, .1) 0%, transparent 55%);
+}
+
+/* Every colour above is the design's, and the design is a light-theme
+   document. Each one is the same weight as the chrome's own dark rule and
+   loads after it, so without this block the light ink applies in dark mode
+   too — which is to say the section titles disappear. */
+[data-bs-theme="dark"] .pts-sec {
+  border-color: rgba(34, 211, 238, .18);
+}
+
+[data-bs-theme="dark"] .pts-sec .spi-dt-sec-head {
+  border-bottom-color: rgba(34, 211, 238, .2);
+}
+
+[data-bs-theme="dark"] .pts-sec .spi-dt-sec-lbl { color: #38d6f0; }
+[data-bs-theme="dark"] .pts-sec .spi-dt-sec-title { color: #e8f2f6; }
+[data-bs-theme="dark"] .pts-sec .spi-dt-sec-sub { color: #8fb2c2; }
+[data-bs-theme="dark"] .pts-sec .spi-dt-sec-sep { background: rgba(34, 211, 238, .3); }
+
+[data-bs-theme="dark"] .pts-count {
+  color: #a5f3fc;
+  border-color: rgba(6, 182, 212, .32);
+  background: rgba(6, 182, 212, .16);
+}
+
+/* The chevron: quiet while the section is open, and a filled teal tile once
+   it is closed — which is what says "there is something folded away here"
+   from across the page. */
+.pts-sec .cpf-chev {
+  width: 27px;
+  height: 27px;
+  border-radius: 8px;
+  color: #0891b2;
+  background: #eaf7fb;
+  border: 1px solid #cfe8f1;
+}
+
+.pts-sec .spi-dt-sec-head:hover .cpf-chev {
+  background: #d9f0f7;
+  border-color: #b9dfec;
+}
+
+.pts-sec.is-collapsed .cpf-chev {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+  box-shadow: 0 3px 9px rgba(8, 145, 178, .32);
+}
+
+[data-bs-theme="dark"] .pts-sec .cpf-chev {
+  color: #67e8f9;
+  background: #13242e;
+  border-color: rgba(34, 211, 238, .25);
+}
+
+[data-bs-theme="dark"] .pts-sec .spi-dt-sec-head:hover .cpf-chev {
+  background: #17313d;
+}
+
+[data-bs-theme="dark"] .pts-sec.is-collapsed .cpf-chev {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+}
+
+.pts-sec .spi-dt-sec-ico {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #0aa2c0, #0e7490);
+  box-shadow: 0 4px 11px rgba(8, 145, 178, .34), inset 0 1px 0 rgba(255, 255, 255, .24);
+}
+
+.pts-sec .spi-dt-sec-ico svg {
+  width: 19px;
+  height: 19px;
+}
+
+/* The row sets the size; the prefix, the separator and the title inherit it,
+   which is how the design keeps the three on one optical line. */
+.pts-sec .spi-dt-sec-row {
+  gap: 7px;
+  font-size: 13.5px;
+  letter-spacing: -.2px;
+  line-height: 1;
+  flex-wrap: wrap;
+}
+
+.pts-sec .spi-dt-sec-lbl {
+  font-size: inherit;
+  font-weight: 800;
+  color: #0891b2;
+}
+
+.pts-sec .spi-dt-sec-sep {
+  height: 13px;
+  background: #a7ccd8;
+}
+
+.pts-sec .spi-dt-sec-title {
+  font-size: inherit;
+  font-weight: 800;
+  color: #123542;
+}
+
+.pts-sec .spi-dt-sec-sub {
+  margin-top: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #5f8090;
+  opacity: 1;
+}
+
+/* The count beside a section title. */
+.pts-count {
+  flex-shrink: 0;
+  margin-left: 2px;
+  padding: 3px 9px;
+  border: 1px solid #c2e3ee;
+  border-radius: 999px;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  color: #0891b2;
+  background: #fff;
+}
+
+[data-bs-theme="dark"] .pts-count {
+  color: #a5f3fc;
+  background: rgba(6, 182, 212, .16);
+  box-shadow: inset 0 0 0 1px rgba(6, 182, 212, .3);
+}
+
+.pts-sec-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* ── Analytics tiles ──────────────────────────────────────────────────── */
+
+.pts-tiles {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 9px;
+}
+
+@media (max-width: 1500px) { .pts-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 820px) { .pts-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.pts-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 62px;
+  padding: 11px 8px;
+  border: 1px solid var(--pts-line);
+  border-radius: 13px;
+  text-align: center;
+  background: var(--pts-fill);
+  box-shadow: 0 7px 18px var(--pts-glow);
+  transition: transform .15s, box-shadow .15s;
+}
+
+.pts-tile:hover {
+  transform: translateY(-3px);
+}
+
+.pts-tile__n {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -.4px;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--pts-ink);
+}
+
+.pts-tile__l {
+  margin-top: 6px;
+  font-size: 7.5px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  line-height: 1.25;
+  text-transform: uppercase;
+  color: var(--pts-sub);
+}
+
+/* One hue per tile as four tokens — ink, fill, border, glow — so the tile
+   itself needs one rule and dark mode restates the tokens, not the layout.
+   The values are the design's own, including its vertical fills and the
+   separate, duller ink its labels take. */
+.pts-tile--boxes { --pts-ink: #0e7490; --pts-sub: #5f8f97; --pts-fill: linear-gradient(180deg, #ecfeff, #cbf6f9); --pts-line: #9fe9ef; --pts-glow: rgba(14, 116, 144, .16); }
+.pts-tile--prod  { --pts-ink: #4f46e5; --pts-sub: #7b7f9e; --pts-fill: linear-gradient(180deg, #eef1ff, #dee3ff); --pts-line: #c3cafe; --pts-glow: rgba(79, 70, 229, .16); }
+.pts-tile--qty   { --pts-ink: #059669; --pts-sub: #5f8f7c; --pts-fill: linear-gradient(180deg, #ecfdf5, #cbf6e0); --pts-line: #9fecc4; --pts-glow: rgba(5, 150, 105, .16); }
+.pts-tile--spi   { --pts-ink: #c2740a; --pts-sub: #8a7a4b; --pts-fill: linear-gradient(180deg, #fffbeb, #fdefbf); --pts-line: #fbe08a; --pts-glow: rgba(217, 119, 6, .16); }
+.pts-tile--haz   { --pts-ink: #dc2626; --pts-sub: #b45858; --pts-fill: linear-gradient(180deg, #fef2f2, #fdd9d9); --pts-line: #f7bcbc; --pts-glow: rgba(220, 38, 38, .15); }
+.pts-tile--cold  { --pts-ink: #2563eb; --pts-sub: #5b7288; --pts-fill: linear-gradient(180deg, #eff6ff, #d3e4fe); --pts-line: #b3d1fd; --pts-glow: rgba(37, 99, 235, .15); }
+.pts-tile--dmg   { --pts-ink: #ea580c; --pts-sub: #8a6a4b; --pts-fill: linear-gradient(180deg, #fff7ed, #ffe6cc); --pts-line: #fdcc9f; --pts-glow: rgba(234, 88, 12, .16); }
+.pts-tile--mis   { --pts-ink: #c026d3; --pts-sub: #8a6b8f; --pts-fill: linear-gradient(180deg, #fdf4ff, #f7dcfd); --pts-line: #f0c2fc; --pts-glow: rgba(192, 38, 211, .15); }
+
+/* Dark mode restates only the tokens: the pastel fills are near-white and
+   would read as lit cards on the dark panel. */
+[data-bs-theme="dark"] .pts-tile--boxes { --pts-ink: #67e8f9; --pts-sub: #7fb3c4; --pts-fill: rgba(6, 182, 212, .13); --pts-line: rgba(6, 182, 212, .3); }
+[data-bs-theme="dark"] .pts-tile--prod  { --pts-ink: #c7d2fe; --pts-sub: #9ba3c9; --pts-fill: rgba(129, 140, 248, .13); --pts-line: rgba(129, 140, 248, .3); }
+[data-bs-theme="dark"] .pts-tile--qty   { --pts-ink: #6ee7b7; --pts-sub: #83b3a0; --pts-fill: rgba(16, 185, 129, .13); --pts-line: rgba(16, 185, 129, .3); }
+[data-bs-theme="dark"] .pts-tile--spi   { --pts-ink: #fcd34d; --pts-sub: #b5a473; --pts-fill: rgba(245, 158, 11, .13); --pts-line: rgba(245, 158, 11, .3); }
+[data-bs-theme="dark"] .pts-tile--haz   { --pts-ink: #fda4af; --pts-sub: #c08b8b; --pts-fill: rgba(244, 63, 94, .13); --pts-line: rgba(244, 63, 94, .3); }
+[data-bs-theme="dark"] .pts-tile--cold  { --pts-ink: #93c5fd; --pts-sub: #8ba0b8; --pts-fill: rgba(59, 130, 246, .13); --pts-line: rgba(59, 130, 246, .3); }
+[data-bs-theme="dark"] .pts-tile--dmg   { --pts-ink: #fdba74; --pts-sub: #b4947a; --pts-fill: rgba(249, 115, 22, .13); --pts-line: rgba(249, 115, 22, .3); }
+[data-bs-theme="dark"] .pts-tile--mis   { --pts-ink: #f0abfc; --pts-sub: #b391b8; --pts-fill: rgba(192, 38, 211, .13); --pts-line: rgba(192, 38, 211, .3); }
+
+/* The coloured glows are tuned for white; on the dark panel they read as a
+   halo around every tile. */
+[data-bs-theme="dark"] .pts-tile { box-shadow: none; }
+
+/* ── Trading parties ──────────────────────────────────────────────────────
+   The design's `.pcard`: a row card whose hue is a 4px bar across the top and
+   the same glyph again, at a twentieth opacity, bleeding out of the bottom
+   corner. Values below are the prototype's own. */
+
+.pts-parties {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 1100px) { .pts-parties { grid-template-columns: 1fr; } }
+
+.pts-party {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 14px;
+  border: 1px solid var(--pts-line);
+  border-radius: 13px;
+  background: var(--pts-fill);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, .05);
+  transition: transform .18s cubic-bezier(.22, 1, .36, 1), box-shadow .18s;
+}
+
+.pts-party:hover {
+  box-shadow: 0 13px 26px var(--pts-glow);
+}
+
+.pts-party__bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  z-index: 2;
+  background: var(--pts-grad);
+}
+
+.pts-party__wm {
+  position: absolute;
+  right: -12px;
+  bottom: -16px;
+  width: 76px;
+  height: 76px;
+  opacity: .05;
+  pointer-events: none;
+  color: var(--pts-ink);
+}
+
+.pts-party__wm svg { width: 100%; height: 100%; stroke-width: 1.6; }
+
+.pts-party__ico {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  color: #fff;
+  background: var(--pts-grad);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .32);
+}
+
+.pts-party__ico svg { width: 19px; height: 19px; stroke-width: 2.1; }
+
+.pts-party__txt {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.pts-party__role {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--pts-role);
+}
+
+.pts-party__name {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -.3px;
+  line-height: 1.2;
+  color: #12303f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-bs-theme="dark"] .pts-party__name { color: #e2f4fb; }
+
+.pts-party__foot {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.pts-party__code,
+.pts-party__country {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.pts-party__code {
+  font-family: ui-monospace, monospace;
+  color: var(--pts-chip-ink);
+  background: var(--pts-chip-fill);
+  border: 1px solid var(--pts-chip-line);
+}
+
+.pts-party__country {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #334c60;
+  background: #eef3f7;
+  border: 1px solid #e0e9ef;
+}
+
+[data-bs-theme="dark"] .pts-party__country {
+  color: #9dbccb;
+  background: rgba(255, 255, 255, .06);
+  border-color: rgba(255, 255, 255, .1);
+}
+
+.pts-party--cust {
+  --pts-grad: linear-gradient(90deg, #0aa2c0, #0e7490);
+  --pts-ink: #0e7490; --pts-role: #0891b2;
+  --pts-fill: linear-gradient(155deg, #ffffff, #f1fafc); --pts-line: #d6ebf2;
+  --pts-glow: rgba(8, 145, 178, .16);
+  --pts-chip-ink: #0e7490; --pts-chip-fill: #e2f4f9; --pts-chip-line: #bfe4ee;
+}
+
+.pts-party--cons {
+  --pts-grad: linear-gradient(90deg, #22c9e5, #0891b2);
+  --pts-ink: #0891b2; --pts-role: #0aa2c0;
+  --pts-fill: linear-gradient(155deg, #ffffff, #eefbfd); --pts-line: #cfeff6;
+  --pts-glow: rgba(8, 145, 178, .18);
+  --pts-chip-ink: #0e7490; --pts-chip-fill: #e0f7fb; --pts-chip-line: #b6e9f3;
+}
+
+.pts-party--sup {
+  --pts-grad: linear-gradient(90deg, #a78bfa, #6366f1);
+  --pts-ink: #6366f1; --pts-role: #7c3aed;
+  --pts-fill: linear-gradient(155deg, #ffffff, #f4f1ff); --pts-line: #e0d9fb;
+  --pts-glow: rgba(99, 102, 241, .18);
+  --pts-chip-ink: #6d28d9; --pts-chip-fill: #f0ecfe; --pts-chip-line: #ddd2fb;
+}
+
+/* The three fills are near-white; on the dark panel the card itself goes dark
+   and only the accents keep their hue. */
+[data-bs-theme="dark"] .pts-party--cust,
+[data-bs-theme="dark"] .pts-party--cons,
+[data-bs-theme="dark"] .pts-party--sup {
+  --pts-fill: #0f1d2b;
+  --pts-line: rgba(34, 211, 238, .18);
+}
+
+[data-bs-theme="dark"] .pts-party--sup { --pts-line: rgba(129, 140, 248, .22); }
+
+[data-bs-theme="dark"] .pts-party--cust { --pts-chip-ink: #a5f3fc; --pts-chip-fill: rgba(6, 182, 212, .16); --pts-chip-line: rgba(6, 182, 212, .3); }
+[data-bs-theme="dark"] .pts-party--cons { --pts-chip-ink: #a5f3fc; --pts-chip-fill: rgba(6, 182, 212, .16); --pts-chip-line: rgba(6, 182, 212, .3); }
+[data-bs-theme="dark"] .pts-party--sup  { --pts-chip-ink: #ddd0fe; --pts-chip-fill: rgba(124, 58, 237, .2); --pts-chip-line: rgba(124, 58, 237, .34); }
+[data-bs-theme="dark"] .pts-party--cust { --pts-role: #38d6f0; }
+[data-bs-theme="dark"] .pts-party--cons { --pts-role: #67e8f9; }
+[data-bs-theme="dark"] .pts-party--sup  { --pts-role: #c4b5fd; }
+
+/* ── Document references & amounts ────────────────────────────────────────
+   The design's `.invx`: a column card with the same 4px top bar and a soft
+   white glow bleeding in from the top-right. The two money cards are the same
+   card filled — they drop the bar, because a solid card already says which it
+   is. */
+
+.pts-refs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) repeat(2, minmax(0, 1.05fr));
+  gap: 11px;
+}
+
+@media (max-width: 1400px) { .pts-refs { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 860px) { .pts-refs { grid-template-columns: 1fr; } }
+
+.pts-ref {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 14px 14px 13px;
+  border: 1px solid var(--pts-line);
+  border-radius: 14px;
+  background: var(--pts-fill);
+  box-shadow: 0 2px 9px rgba(15, 23, 42, .05);
+  transition: transform .2s cubic-bezier(.22, 1, .36, 1), box-shadow .2s;
+}
+
+.pts-ref__bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  z-index: 1;
+  background: var(--pts-grad);
+}
+
+.pts-ref__glow {
+  position: absolute;
+  right: -26px;
+  top: -30px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, .3), rgba(255, 255, 255, 0) 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.pts-ref__hd {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 11px;
+}
+
+.pts-ref__ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  color: #fff;
+  background: var(--pts-grad);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, .18), inset 0 1px 0 rgba(255, 255, 255, .35);
+}
+
+.pts-ref__ico svg { width: 15px; height: 15px; stroke-width: 2.1; }
+
+.pts-ref__lbl {
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: #7c93a4;
+}
+
+[data-bs-theme="dark"] .pts-ref__lbl { color: #8aa8b8; }
+
+.pts-ref__val {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+  align-self: flex-start;
+  max-width: 100%;
+  margin-top: 2px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--pts-pill-ink);
+  background: var(--pts-pill-fill);
+  border: 1px solid var(--pts-pill-line);
+}
+
+.pts-ref__amt {
+  position: relative;
+  z-index: 1;
+  margin-top: 2px;
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: -.6px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pts-ref__date {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: auto;
+  padding-top: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.pts-ref__date svg { width: 12px; height: 12px; stroke-width: 2; opacity: .85; flex-shrink: 0; }
+
+[data-bs-theme="dark"] .pts-ref__date { color: #8aa8b8; }
+
+.pts-ref--pi {
+  --pts-grad: linear-gradient(90deg, #0aa2c0, #0e7490);
+  --pts-fill: linear-gradient(160deg, #ffffff, #edf9fc); --pts-line: #cfeaf2;
+  --pts-pill-ink: #0e7490; --pts-pill-fill: #e2f4f9; --pts-pill-line: #bfe4ee;
+}
+
+.pts-ref--po {
+  --pts-grad: linear-gradient(90deg, #38bdf8, #2563eb);
+  --pts-fill: linear-gradient(160deg, #ffffff, #eef5ff); --pts-line: #d3e4fb;
+  --pts-pill-ink: #1d4ed8; --pts-pill-fill: #e6f0fe; --pts-pill-line: #c7ddfb;
+}
+
+.pts-ref--spi {
+  --pts-grad: linear-gradient(90deg, #a78bfa, #6366f1);
+  --pts-fill: linear-gradient(160deg, #ffffff, #f4f1ff); --pts-line: #e0d9fb;
+  --pts-pill-ink: #6d28d9; --pts-pill-fill: #f0ecfe; --pts-pill-line: #ddd2fb;
+}
+
+[data-bs-theme="dark"] .pts-ref--pi,
+[data-bs-theme="dark"] .pts-ref--po,
+[data-bs-theme="dark"] .pts-ref--spi {
+  --pts-fill: #0f1d2b;
+  --pts-line: rgba(34, 211, 238, .18);
+}
+
+/* The glow is a white highlight for a near-white card. On the dark tinted
+   cards it painted as a grey smudge in the corner; the filled pair keeps it,
+   because there it is still catching light on a saturated fill. */
+[data-bs-theme="dark"] .pts-ref:not(.pts-ref--fill) .pts-ref__glow {
+  background: radial-gradient(circle, rgba(34, 211, 238, .1), rgba(34, 211, 238, 0) 70%);
+}
+
+[data-bs-theme="dark"] .pts-ref--pi  { --pts-pill-ink: #a5f3fc; --pts-pill-fill: rgba(6, 182, 212, .16); --pts-pill-line: rgba(6, 182, 212, .3); }
+[data-bs-theme="dark"] .pts-ref--po  { --pts-pill-ink: #bfdbfe; --pts-pill-fill: rgba(59, 130, 246, .18); --pts-pill-line: rgba(59, 130, 246, .32); }
+[data-bs-theme="dark"] .pts-ref--spi { --pts-pill-ink: #ddd0fe; --pts-pill-fill: rgba(124, 58, 237, .2); --pts-pill-line: rgba(124, 58, 237, .34); }
+
+/* The filled pair. */
+.pts-ref--fill {
+  color: #fff;
+  border: none;
+}
+
+.pts-ref--fill .pts-ref__lbl { color: rgba(255, 255, 255, .9); }
+.pts-ref--fill .pts-ref__amt { color: #fff; }
+.pts-ref--fill .pts-ref__date { color: rgba(255, 255, 255, .82); }
+
+.pts-ref--fill .pts-ref__ico {
+  background: rgba(255, 255, 255, .22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3);
+}
+
+.pts-ref--pov {
+  background: linear-gradient(140deg, #10b981, #047857);
+  box-shadow: 0 7px 18px rgba(5, 150, 105, .28);
+}
+
+.pts-ref--pov:hover { box-shadow: 0 16px 32px rgba(5, 150, 105, .36); }
+
+.pts-ref--spiv {
+  background: linear-gradient(140deg, #6366f1, #4338ca);
+  box-shadow: 0 7px 18px rgba(79, 70, 229, .28);
+}
+
+.pts-ref--spiv:hover { box-shadow: 0 16px 32px rgba(79, 70, 229, .36); }
+
+/* ── Tables ───────────────────────────────────────────────────────────── */
+
+.pts-tblwrap {
+  overflow: hidden;
+  overflow-x: auto;
+  border: 1px solid #d3e7ef;
+  border-radius: 14px;
+  box-shadow: 0 6px 20px rgba(8, 145, 178, .09);
+}
+
+[data-bs-theme="dark"] .pts-tblwrap {
+  border-color: rgba(6, 182, 212, .2);
+  box-shadow: none;
+}
+
+.pts-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  background: #fff;
+}
+
+[data-bs-theme="dark"] .pts-tbl { background: #0f1d2b; }
+
+/* The head is one gradient across the whole row, so the cells are transparent
+   and divided by a hairline rather than each painting its own band. */
+.pts-tbl thead tr {
+  background: linear-gradient(90deg, #0e7490 0%, #0891b2 50%, #06b6d4 100%);
+}
+
+.pts-tbl thead th {
+  padding: 11px 14px;
+  text-align: left;
+  white-space: nowrap;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: #eafaff;
+  background: transparent;
+  border-right: 1px solid rgba(255, 255, 255, .12);
+}
+
+.pts-tbl thead th:last-child { border-right: none; }
+
+.pts-tbl tbody td {
+  padding: 10px 14px;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+  font-weight: 600;
+  color: #33475b;
+  border-bottom: 1px solid #eef4f7;
+}
+
+.pts-tbl tbody tr { transition: background .16s, box-shadow .16s; }
+.pts-tbl tbody tr:last-child td { border-bottom: none; }
+.pts-tbl tbody tr:nth-child(even) td { background: #f8fcfe; }
+.pts-tbl tbody tr:hover td { background: #ecf8fc; }
+
+/* The serial fills in on hover, which is what tells you which row you are on
+   when every cell in it is a chip. */
+.pts-tbl tbody tr:hover .pts-sr {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, #0aa2c0, #0e7490);
+  box-shadow: 0 3px 8px rgba(8, 145, 178, .32);
+}
+
+.pts-tbl tbody tr:hover .pts-chip { filter: saturate(1.15); }
+
+[data-bs-theme="dark"] .pts-tbl tbody td {
+  color: #cde4ef;
+  border-bottom-color: rgba(6, 182, 212, .14);
+}
+
+[data-bs-theme="dark"] .pts-tbl tbody tr:nth-child(even) td { background: rgba(6, 182, 212, .035); }
+[data-bs-theme="dark"] .pts-tbl tbody tr:hover td { background: rgba(6, 182, 212, .08); }
+
+.pts-tbl .pts-l { text-align: left; }
+
+.pts-sr {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  border: 1px solid #bfe4ee;
+  font-size: 11px;
+  font-weight: 800;
+  color: #0e7490;
+  background: linear-gradient(135deg, #e2f5fb, #c9ecf5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7);
+}
+
+[data-bs-theme="dark"] .pts-sr {
+  color: #a5f3fc;
+  border-color: rgba(6, 182, 212, .3);
+  background: rgba(6, 182, 212, .16);
+  box-shadow: none;
+}
+
+.pts-mono {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+
+.pts-dim { color: #6d8b9b; }
+[data-bs-theme="dark"] .pts-dim { color: #8aa8b8; }
+
+.pts-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: -.2px;
+  white-space: nowrap;
+  color: #51707f;
+  background: #f1f7fa;
+  border-color: #e0e9ef;
+  transition: filter .16s;
+}
+
+[data-bs-theme="dark"] .pts-chip {
+  color: #9dbccb;
+  background: rgba(255, 255, 255, .05);
+  border-color: rgba(255, 255, 255, .1);
+}
+
+.pts-chip--code {
+  font-weight: 800;
+  color: #0e7490;
+  background: #e2f6fb;
+  border-color: #bfe6f0;
+}
+
+[data-bs-theme="dark"] .pts-chip--code {
+  color: #a5f3fc;
+  background: rgba(6, 182, 212, .16);
+  border-color: rgba(6, 182, 212, .3);
+}
+
+/* Zone, rack and shelf each take their own hue, so a row reads as a path. */
+.pts-chip--zone  { color: #4f46e5; background: #eef1ff; border-color: #d9ddfd; }
+.pts-chip--rack  { color: #0e7490; background: #e2f6fb; border-color: #bfe6f0; }
+.pts-chip--shelf { color: #b45309; background: #fef4e6; border-color: #f8dcae; }
+
+[data-bs-theme="dark"] .pts-chip--zone  { color: #c7d2fe; background: rgba(129, 140, 248, .16); border-color: rgba(129, 140, 248, .3); }
+[data-bs-theme="dark"] .pts-chip--rack  { color: #a5f3fc; background: rgba(6, 182, 212, .16); border-color: rgba(6, 182, 212, .3); }
+[data-bs-theme="dark"] .pts-chip--shelf { color: #fcd34d; background: rgba(245, 158, 11, .16); border-color: rgba(245, 158, 11, .3); }
+
+/* The design's `.gs-loc`: the warehouse named in a cell. */
+.pts-whcell {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid #b9e2ef;
+  border-radius: 7px;
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #0e5e72;
+  background: #eafaff;
+}
+
+.pts-whcell svg { width: 12px; height: 12px; flex-shrink: 0; }
+
+[data-bs-theme="dark"] .pts-whcell {
+  color: #a5f3fc;
+  background: rgba(6, 182, 212, .14);
+  border-color: rgba(6, 182, 212, .28);
+}
+
+.pts-qty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(135deg, #0891b2, #06b6d4);
+}
+
+.pts-pname {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 700;
+}
+
+.pts-pdot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #22d3ee;
+}
+
+.pts-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #15803d;
+  background: #e7fbef;
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, .2);
+}
+
+.pts-flag__dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+.pts-flag--on {
+  color: #b91c1c;
+  background: #fee9e9;
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, .22);
+}
+
+[data-bs-theme="dark"] .pts-flag {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, .14);
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, .3);
+}
+
+[data-bs-theme="dark"] .pts-flag--on {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, .14);
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, .3);
+}
+
+.pts-ok { font-weight: 800; color: #15803d; }
+[data-bs-theme="dark"] .pts-ok { color: #6ee7b7; }
+
+/* The warehouse and "Temporary", pinned to the allocation section's head. */
+.pts-whpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #0e7490;
+  background: #e4fbfd;
+  box-shadow: inset 0 0 0 1px rgba(8, 145, 178, .2);
+}
+
+.pts-whpill svg { width: 12px; height: 12px; flex-shrink: 0; }
+
+[data-bs-theme="dark"] .pts-whpill {
+  color: #a5f3fc;
+  background: rgba(6, 182, 212, .16);
+  box-shadow: inset 0 0 0 1px rgba(6, 182, 212, .3);
+}
+
+.pts-temp {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  color: #b45309;
+  background: #fef6e0;
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, .26);
+}
+
+[data-bs-theme="dark"] .pts-temp {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, .16);
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, .32);
+}
+
+/* ── Box & product details ────────────────────────────────────────────── */
+
+.pts-boxes { display: flex; flex-direction: column; gap: 10px; }
+
+.pts-box {
+  border-radius: 13px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(8, 145, 178, .16);
+}
+
+[data-bs-theme="dark"] .pts-box {
+  background: #0f1d2b;
+  box-shadow: inset 0 0 0 1px rgba(6, 182, 212, .2);
+}
+
+/* The strip scrolls on its own rather than wrapping: a box's figures read as
+   one line or not at all. */
+.pts-box__strip {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 12px;
+  cursor: pointer;
+  overflow-x: auto;
+  color: #fff;
+  background: linear-gradient(135deg, #0e7490, #0891b2 60%, #06b6d4);
+}
+
+.pts-box__n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  font-size: 10.5px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, .2);
+}
+
+.pts-box__ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .18);
+}
+
+.pts-box__ico svg { width: 13px; height: 13px; }
+
+/* Each figure takes an equal share and centres in it, so the dimensions line
+   up as a row of readings rather than packing to the left with a gap at the
+   end. The id, the scenario and the location are given more room because
+   their values are long. */
+.pts-box__f {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 2px;
+  flex: 1 1 0;
+  min-width: 46px;
+  line-height: 1.2;
+}
+
+.pts-box__f--id { flex: 0 0 auto; align-items: flex-start; text-align: left; min-width: 86px; }
+.pts-box__f--scn { flex: 1.6 1 0; min-width: 118px; }
+.pts-box__f--loc { flex: 0 0 auto; min-width: 176px; }
+
+.pts-box__f i {
+  font-style: normal;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  opacity: .78;
+}
+
+.pts-box__f b { font-size: 12px; font-weight: 800; }
+.pts-box__f b em { font-style: normal; font-size: 9px; font-weight: 700; opacity: .8; }
+
+.pts-unit {
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 7.5px;
+  background: rgba(255, 255, 255, .22);
+}
+
+/* The chips carry a glyph, so they lay out as a row rather than a block. */
+.pts-chip--zone, .pts-chip--rack, .pts-chip--shelf {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pts-chip--zone svg, .pts-chip--rack svg, .pts-chip--shelf svg {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+}
+
+.pts-loc {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, .2);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .3);
+}
+
+.pts-loc svg { width: 11px; height: 11px; flex-shrink: 0; }
+
+.pts-box__act { flex-shrink: 0; }
+
+.pts-sticker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 13px;
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  color: #0e7490;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(3, 37, 48, .2);
+  transition: transform .14s, box-shadow .14s;
+}
+
+.pts-sticker:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(3, 37, 48, .28); }
+.pts-sticker svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+/* The chevron is built for a pale panel — a white fill and a pale border,
+   which on the teal strip painted as a white block. Translucent instead, so
+   it reads as part of the strip. */
+.pts-box__strip .cpf-chev {
+  flex-shrink: 0;
+  color: #fff;
+  background: rgba(255, 255, 255, .18);
+  border-color: rgba(255, 255, 255, .3);
+}
+
+.pts-box__strip .cpf-chev:hover { background: rgba(255, 255, 255, .3); }
+
+.pts-box__body { padding: 11px 12px 12px; }
+
+.pts-box__bt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+
+.pts-box__bico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: linear-gradient(135deg, #10b981, #059669);
+}
+
+.pts-box__bico svg { width: 12px; height: 12px; }
+
+.pts-box__btxt {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #0f2a38;
+}
+
+[data-bs-theme="dark"] .pts-box__btxt { color: #e2f4fb; }

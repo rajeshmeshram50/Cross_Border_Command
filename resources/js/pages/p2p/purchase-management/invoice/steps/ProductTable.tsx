@@ -2,7 +2,7 @@ import { memo, useCallback, useState } from 'react';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import { IcoPencil, IcoPlus, IcoTrash } from '../../../icons';
 import ProductDescription, { ProductDetailView } from '../../order/shared/ProductDescription';
-import { lineTotals, tableTotals, PRODUCT_CATALOGUE, type ProductLine } from '../invoice-products';
+import { lineTotals, tableTotals, PRODUCT_CATALOGUE, type ProductLine, type TaxMode } from '../invoice-products';
 
 /* Built once at module scope. `Intl.NumberFormat` is expensive to construct
    and this table formats roughly ten figures per row. */
@@ -22,13 +22,18 @@ const money = (n: number) => `₹${inr.format(n)}`;
  * the missing / extra pills and the row delete.
  */
 export default function ProductTable({
-  lines, onChange, onRemove,
+  lines, onChange, onRemove, taxMode = 'intra',
 }: {
   lines: ProductLine[];
   onChange: (index: number, patch: Partial<ProductLine>) => void;
   onRemove: (index: number) => void;
+  /** How this supplier's GST splits — see `taxModeFor`. */
+  taxMode?: TaxMode;
 }) {
-  const totals = tableTotals(lines);
+  const totals = tableTotals(lines, taxMode);
+  /* The GST column says which tax it is showing rather than making the reader
+     work it out from the supplier's address. */
+  const taxLabel = taxMode === 'inter' ? 'IGST' : taxMode === 'none' ? 'GST' : 'CGST + SGST';
   /* Which product "Read more" opened. Null is closed — one piece of state
      rather than an open flag that could disagree with the id beside it. */
   const [detailId, setDetailId] = useState<number | null>(null);
@@ -80,7 +85,9 @@ export default function ProductTable({
               <th className="cpd-th-amt cpd-c cpd-edh">Product Rate</th>
               <th className="cpd-th-amt">Product Cost<span className="cpd-th-sub cpd-th-sub--wo">Without GST</span></th>
               <th>GST (%)</th>
-              <th className="cpd-th-amt cpd-th-amt--tax">Total GST Amount</th>
+              <th className="cpd-th-amt cpd-th-amt--tax">
+                Total GST Amount<span className="cpd-th-sub cpd-th-sub--tax">{taxLabel}</span>
+              </th>
               <th className="cpd-th-amt cpd-th-final">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">With GST</span></th>
             </tr>
           </thead>
@@ -89,7 +96,7 @@ export default function ProductTable({
             {lines.map((line, i) => (
               <Row
                 key={line.code} line={line} index={i}
-                onChange={onChange} onRemove={onRemove}
+                onChange={onChange} onRemove={onRemove} taxMode={taxMode}
                 /* A setState function keeps the same identity for the life of
                    the table, so passing it straight through leaves the rows'
                    memoisation intact. */
@@ -114,7 +121,17 @@ export default function ProductTable({
                 <td />
                 <td className="cpd-r">{money(totals.base)}</td>
                 <td />
-                <td className="cpd-r">{money(totals.gstAmount)}</td>
+                <td className="cpd-r">
+                  {money(totals.gstAmount)}
+                  {taxMode === 'intra' && totals.gstAmount > 0 && (
+                    <span className="spi-taxsplit">
+                      CGST {money(totals.cgst)} · SGST {money(totals.sgst)}
+                    </span>
+                  )}
+                  {taxMode === 'inter' && totals.gstAmount > 0 && (
+                    <span className="spi-taxsplit">IGST {money(totals.igst)}</span>
+                  )}
+                </td>
                 <td className="cpd-r cpd-foot-final">{money(totals.cost)}</td>
                 <td />
               </tr>
@@ -133,15 +150,16 @@ export default function ProductTable({
  * this each of those keystrokes would re-render every other row too.
  */
 const Row = memo(function Row({
-  line, index, onChange, onRemove, onOpenDetail,
+  line, index, onChange, onRemove, onOpenDetail, taxMode,
 }: {
   line: ProductLine;
   index: number;
   onChange: (index: number, patch: Partial<ProductLine>) => void;
   onRemove: (index: number) => void;
   onOpenDetail: (productId: number) => void;
+  taxMode: TaxMode;
 }) {
-  const t = lineTotals(line);
+  const t = lineTotals(line, taxMode);
 
   /* Bound to this row's index so the cells below pass only their value. */
   const patch = useCallback(
@@ -225,8 +243,20 @@ const Row = memo(function Row({
         />
       </td>
       <td className="cpd-r">{money(t.base)}</td>
-      <td className="cpd-c">{line.gst}%</td>
-      <td className="cpd-r">{money(t.gstAmount)}</td>
+      {/* An import is taxed at zero, so the line says so rather than printing
+          a rate it is not charging. */}
+      <td className="cpd-c">{taxMode === 'none' ? <span className="spi-nogst">NA</span> : `${line.gst}%`}</td>
+      <td className="cpd-r">
+        {money(t.gstAmount)}
+        {taxMode === 'intra' && t.gstAmount > 0 && (
+          <span className="spi-taxsplit">
+            CGST {money(t.cgst)} · SGST {money(t.sgst)}
+          </span>
+        )}
+        {taxMode === 'inter' && t.gstAmount > 0 && (
+          <span className="spi-taxsplit">IGST {money(t.igst)}</span>
+        )}
+      </td>
       <td className="cpd-r">{money(t.cost)}</td>
 
       <td className="cpd-c">

@@ -30,6 +30,56 @@ export interface ProductLine {
   gst: number;
 }
 
+/**
+ * How the GST on a line is split.
+ *
+ * `intra` — supplier and our branch are in the same state: CGST + SGST, half
+ * each. `inter` — different states: one IGST at the full rate. `none` — the
+ * supplier is outside India, so Indian GST does not arise at all and the rate
+ * is zero before any split is reached.
+ *
+ * The same three cases the purchase order works in, named the same way:
+ * PurchaseOrderService::taxMode() returns 'intra' | 'inter', and an
+ * international PO zeroes `gst_pct` at the line before the split happens.
+ */
+export type TaxMode = 'intra' | 'inter' | 'none';
+
+/**
+ * The tax mode for a supplier, from the two things that decide it.
+ *
+ * Mirrors the server: the country decides whether Indian GST applies at all,
+ * and only then does state-vs-state decide the split. Derived, never stored —
+ * `App\Support\Gst` says the same of `gst_applicable`.
+ */
+export function taxModeFor(country: string, supplierState: string, homeState: string): TaxMode {
+  /* Blank country means DOMESTIC, matching
+     PurchaseOrderController::vendorOrigin() — `if (empty($vendor->country_id))
+     return 'domestic'`. Note this is deliberately the opposite of
+     App\Support\Gst::isDomestic(), where a blank country is not domestic; the
+     purchase order is the behaviour being matched here, so an unanswered
+     country is taxed rather than zero-rated. */
+  const name = country.trim().toLowerCase();
+  if (name !== '' && name !== 'india') return 'none';
+  /* An unknown state falls to intra, which is what
+     PurchaseOrderService::taxMode() does with a blank code. */
+  if (!supplierState || !homeState) return 'intra';
+  return supplierState === homeState ? 'intra' : 'inter';
+}
+
+/**
+ * Maharashtra — the home state assumed when a branch has no GSTIN on file.
+ *
+ * A stand-in until the branch is loaded into the draft. Note the server has
+ * two answers for this: `App\Support\Gst::homeStateCode()` defaults to '27'
+ * like this one, while `PurchaseOrderService::homeStateCode()` returns null,
+ * which then falls through `taxMode()` to intra. Worth settling on one before
+ * this is wired to the real branch.
+ */
+export const DEFAULT_HOME_STATE_CODE = '27';
+
+/** Paise, the way the server rounds. */
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 /** Everything derived from a line. Nothing here is stored. */
 export interface LineTotals {
   /** What the PO committed to, with GST — the figure being matched. */
@@ -37,6 +87,10 @@ export interface LineTotals {
   /** The invoice's own value before tax. */
   base: number;
   gstAmount: number;
+  /** The split of `gstAmount`. Two of the three are always zero. */
+  cgst: number;
+  sgst: number;
+  igst: number;
   /** base + GST. */
   cost: number;
   /** Short of the PO, never negative — the overage is `extra`. */
@@ -51,15 +105,34 @@ export interface LineTotals {
  * it once per row per render. Caching it would cost more in bookkeeping than
  * the arithmetic it saves.
  */
-export function lineTotals(l: ProductLine): LineTotals {
-  const base = l.spiQty * l.spiRate;
-  const gstAmount = (base * l.gst) / 100;
-  const poBase = l.poQty * l.poRate;
+export function lineTotals(l: ProductLine, mode: TaxMode = 'intra'): LineTotals {
+  /* Rounded at each step, in the same order as
+     PurchaseOrderService::lineAmounts(): taxable to paise, then the GST on
+     that rounded figure. Multiplying first and rounding once gives a different
+     paisa on some lines, and the two screens would then disagree about the
+     same invoice. */
+  const base = round2(l.spiQty * l.spiRate);
+  /* An import carries no Indian GST, so the rate is zeroed here rather than
+     split to nothing later — the same thing the PO does at the line. */
+  const rate = mode === 'none' ? 0 : l.gst;
+  const gstAmount = round2((base * rate) / 100);
+  const poBase = round2(l.poQty * l.poRate);
+
+  /* SGST is the remainder, not a second half: on an odd paisa the two halves
+     must still add back to the full GST. PurchaseOrderService::lineAmounts()
+     takes the same care. */
+  const cgst = mode === 'intra' ? round2(gstAmount / 2) : 0;
+  const sgst = mode === 'intra' ? round2(gstAmount - cgst) : 0;
+  const igst = mode === 'inter' ? gstAmount : 0;
+
   return {
-    poCost: poBase + (poBase * l.gst) / 100,
+    poCost: round2(poBase + round2((poBase * rate) / 100)),
     base,
     gstAmount,
-    cost: base + gstAmount,
+    cgst,
+    sgst,
+    igst,
+    cost: round2(base + gstAmount),
     /* Clamped at zero on both sides: a line is either short or over, never
        both, and a negative "missing" would read as an overage in disguise. */
     missing: Math.max(0, l.poQty - l.spiQty),
@@ -68,9 +141,9 @@ export function lineTotals(l: ProductLine): LineTotals {
 }
 
 /** The column totals, summed from the same function the rows display. */
-export function tableTotals(lines: ProductLine[]) {
+export function tableTotals(lines: ProductLine[], mode: TaxMode = 'intra') {
   return lines.reduce((t, l) => {
-    const c = lineTotals(l);
+    const c = lineTotals(l, mode);
     return {
       piQty: t.piQty + l.piQty,
       poQty: t.poQty + l.poQty,
@@ -80,9 +153,15 @@ export function tableTotals(lines: ProductLine[]) {
       poCost: t.poCost + c.poCost,
       base: t.base + c.base,
       gstAmount: t.gstAmount + c.gstAmount,
+      cgst: t.cgst + c.cgst,
+      sgst: t.sgst + c.sgst,
+      igst: t.igst + c.igst,
       cost: t.cost + c.cost,
     };
-  }, { piQty: 0, poQty: 0, spiQty: 0, missing: 0, extra: 0, poCost: 0, base: 0, gstAmount: 0, cost: 0 });
+  }, {
+    piQty: 0, poQty: 0, spiQty: 0, missing: 0, extra: 0,
+    poCost: 0, base: 0, gstAmount: 0, cgst: 0, sgst: 0, igst: 0, cost: 0,
+  });
 }
 
 /**

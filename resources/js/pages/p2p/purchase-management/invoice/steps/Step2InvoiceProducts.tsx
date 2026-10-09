@@ -1,11 +1,11 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Field } from '../../order/create-po/form-fields';
 import { HeadPill } from '../../order/create-po/CreatePoForm';
-import { IcoBox, IcoChevron, IcoDoc, IcoLines, IcoPaperclip, IcoPin, IcoUser } from '../../../icons';
+import { IcoBox, IcoChevron, IcoCheck, IcoDoc, IcoLines, IcoPaperclip, IcoPin, IcoSave, IcoUser } from '../../../icons';
 import StageSummary from './StageSummary';
 import ProductTable from './ProductTable';
-import type { ProductLine } from '../invoice-products';
+import { DEFAULT_HOME_STATE_CODE, taxModeFor, type ProductLine } from '../invoice-products';
 import type { InvoiceDraft, SetDraft } from '../invoice-draft';
 
 /* The same camera sheet the payment screens use, loaded only once someone
@@ -43,6 +43,39 @@ export default function Step2InvoiceProducts({
 }) {
   const [invOpen, setInvOpen] = useState(true);
   const [prodOpen, setProdOpen] = useState(true);
+
+  /* How this supplier's GST splits, from the two things that decide it: the
+     country says whether Indian GST arises at all, and only then does the
+     supplier's state against our own decide CGST+SGST or IGST. Derived here
+     rather than stored, the way the purchase order derives it server-side.
+
+     The home state is the fallback until the branch's own GSTIN is loaded —
+     the same Maharashtra default `App\Support\Gst` uses when a branch carries
+     neither a gst_state_code nor a GSTIN. */
+  const taxMode = taxModeFor(draft.country, draft.stateCode, DEFAULT_HOME_STATE_CODE);
+
+  /* Whether what is on screen has been saved. Reset on any edit below, because
+     a button that still reads "Saved" over a changed table is worse than one
+     that never said it. */
+  const [saved, setSaved] = useState(false);
+  const saveProducts = () => setSaved(true);
+
+  /* The table's own handlers, wrapped so an edit un-saves the section. The
+     wrapping happens here rather than in the table, which has no business
+     knowing this section has a save button.
+
+     Memoised on purpose: the form hands these down already wrapped in
+     `useCallback` so `memo` on the table row is worth having, and a fresh
+     function here each render would undo that and re-render every row on
+     every keystroke. */
+  const changeLine = useCallback((index: number, patch: Partial<ProductLine>) => {
+    setSaved(false);
+    onChangeLine(index, patch);
+  }, [onChangeLine]);
+  const removeLine = useCallback((index: number) => {
+    setSaved(false);
+    onRemoveLine(index);
+  }, [onRemoveLine]);
 
   return (
     <>
@@ -115,7 +148,25 @@ export default function Step2InvoiceProducts({
         </div>
 
         <div className="spi-dt-sec-body">
-          <ProductTable lines={lines} onChange={onChangeLine} onRemove={onRemoveLine} />
+          <ProductTable lines={lines} onChange={changeLine} onRemove={removeLine} taxMode={taxMode} />
+
+          {/* The match can be saved without leaving the step. The footer's
+              "Save & Next" commits the whole step and moves on, which is the
+              wrong shape for a table someone edits a row at a time. The chrome
+              already carries this pair — a right-aligned row and the save
+              button itself — so there is nothing to style here. */}
+          <div className="spi-dt-saverow-only">
+            <button
+              type="button"
+              className="spi-dt-save-btn"
+              onClick={saveProducts}
+              disabled={saved}
+              title={saved ? 'The 3-way match is saved' : 'Save the 3-way match and stay on this step'}
+            >
+              {saved ? <IcoCheck /> : <IcoSave />}
+              {saved ? 'Saved' : 'Save Product Details'}
+            </button>
+          </div>
         </div>
       </div>
     </>
@@ -140,7 +191,11 @@ export default function Step2InvoiceProducts({
  */
 function FilePick({ label, value, onPick }: { label: string; value: string; onPick: (name: string) => void }) {
   const ref = useRef<HTMLInputElement>(null);
+  /* The row positions the menu; the button opens it. Two refs because those
+     are two different jobs — the menu lines up with the whole field, but only
+     Browse is the control. */
   const rowRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
   /* Where the menu is pinned, or null when it is closed — one piece of state
      rather than an open flag that could disagree with the position. */
   const [pickAt, setPickAt] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -165,7 +220,10 @@ function FilePick({ label, value, onPick }: { label: string; value: string; onPi
     const close = () => setPickAt(null);
     const onDown = (e: MouseEvent) => {
       const t = e.target as Element | null;
-      if (t?.closest?.('.arf-att') || (t && rowRef.current?.contains(t))) return;
+      /* Only the menu and the button it came from are exempt. Guarding the
+         whole row would leave a click on the placeholder unable to dismiss
+         an open menu. */
+      if (t?.closest?.('.arf-att') || (t && btnRef.current?.contains(t))) return;
       close();
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
@@ -184,23 +242,21 @@ function FilePick({ label, value, onPick }: { label: string; value: string; onPi
   }, [pickAt]);
 
   return (
-    /* The whole row is the hit area, not just the button — that is how the
-       SPI wizard's own file field behaves, and a 60px button beside a wide
-       empty row invites clicking the row. */
-    <div
-      ref={rowRef}
-      className="spi-dt-file is-clickable"
-      role="button"
-      tabIndex={0}
-      aria-haspopup="menu"
-      aria-expanded={!!pickAt}
-      onClick={openMenu}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openMenu(); } }}
-    >
+    /* Browse is the hit area, not the whole row. The row carried the click at
+       first, which meant the menu also opened from the file name and from the
+       empty space beside it — nowhere near where the control looks to be. */
+    <div ref={rowRef} className="spi-dt-file">
       <span className="spi-dt-file-txt"><IcoPaperclip /> {value || 'Choose file…'}</span>
-      {/* tabIndex -1: the row already takes the focus, and a nested button
-          would make the same control stop twice on the way through. */}
-      <button type="button" className="spi-dt-file-btn" tabIndex={-1}>Browse</button>
+      <button
+        type="button"
+        ref={btnRef}
+        className="spi-dt-file-btn"
+        aria-haspopup="menu"
+        aria-expanded={!!pickAt}
+        onClick={openMenu}
+      >
+        Browse
+      </button>
       <input
         ref={ref}
         type="file"
@@ -218,8 +274,10 @@ function FilePick({ label, value, onPick }: { label: string; value: string; onPi
           a menu pinned to viewport coordinates must not be clipped by it. */}
       {pickAt && createPortal(
         /* A portal is outside this row in the DOM but still inside it in the
-           React tree, so a click on a menu item bubbles to the row's own
-           handler and reopens the menu it just closed. */
+           React tree, so a click inside the menu still bubbles through the row
+           on its way up. Nothing on the row listens any more — Browse is the
+           only control — but the menu keeps its own clicks to itself so that
+           stays true of whatever is added to the row later. */
         <div className="arf-att" role="menu" onClick={e => e.stopPropagation()}
           style={{ top: pickAt.top, left: pickAt.left, width: pickAt.width }}>
           <div className="arf-att__hd">Add attachment</div>
@@ -239,8 +297,8 @@ function FilePick({ label, value, onPick }: { label: string; value: string; onPi
 
       {camOpen && (
         <Suspense fallback={null}>
-          {/* Wrapped for the same reason as the menu: clicks inside the sheet
-              would otherwise bubble to the row and open the picker behind it. */}
+          {/* Loaded only once someone asks for it: the sheet pulls in
+              getUserMedia handling that no other field on this step needs. */}
           <CameraCaptureModal
             title={`Photograph the ${label.toLowerCase()}`}
             subject={label}

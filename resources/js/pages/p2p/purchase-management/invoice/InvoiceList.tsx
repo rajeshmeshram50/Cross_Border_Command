@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useDeferredValue } from 'react';
+import { lazy, Suspense, useState, useCallback, useMemo, useDeferredValue } from 'react';
 import type { ReactNode } from 'react';
 /* The P2P stylesheets, and NOTHING of our own.
    `p2p-common.css` carries the page chrome every P2P screen shares — the teal
@@ -13,6 +13,7 @@ import { INVOICE_ROWS, NEXT_INVOICE_NO, STORAGE_WAREHOUSES } from './data';
 import { InvoiceTable } from './InvoiceTable';
 import MapInvoiceModal, { type InvoiceMapChoice } from './MapInvoiceModal';
 import InvoicePaymentsModal from './InvoicePaymentsModal';
+const PutawaySummary = lazy(() => import('./PutawaySummary'));
 import StorageSelectionModal, { type StorageChoice } from './StorageSelectionModal';
 import InvoiceForm, { type InvoiceFormInput } from './InvoiceForm';
 import type { InvoiceAction } from './cells/RowActions';
@@ -109,9 +110,13 @@ export default function InvoiceList() {
   /* The row whose payment requests are open, or null. One piece of state
      rather than an open flag that could disagree with the row. */
   const [paymentsRow, setPaymentsRow] = useState<InvoiceRow | null>(null);
+  /* The row whose putaway summary is open. Same shape as above, and separate
+     from it so the two screens can never both be up. */
+  const [summaryRow, setSummaryRow] = useState<InvoiceRow | null>(null);
 
   const handleRowAction = useCallback((action: InvoiceAction, row: InvoiceRow) => {
     if (action === 'payment-requests') { setPaymentsRow(row); return; }
+    if (action === 'summary') { setSummaryRow(row); return; }
     if (action === 'edit') {
       /* The same four-step form a new invoice opens, carrying this row's own
          answers — editing an entry and creating one are the same screen, so
@@ -287,6 +292,14 @@ export default function InvoiceList() {
 
       {paymentsRow && (
         <InvoicePaymentsModal row={paymentsRow} onClose={() => setPaymentsRow(null)} />
+      )}
+
+      {/* Lazy: a read-only screen most visits never open, and it carries its
+          own stylesheet. */}
+      {summaryRow && (
+        <Suspense fallback={null}>
+          <PutawaySummary row={summaryRow} onClose={() => setSummaryRow(null)} />
+        </Suspense>
       )}
 
       {mapOpen && <MapInvoiceModal onClose={closeMap} onConfirm={confirmMap} />}
