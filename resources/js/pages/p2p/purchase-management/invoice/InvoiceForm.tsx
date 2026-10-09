@@ -42,6 +42,9 @@ export interface InvoiceFormInput {
    *  anchored to a supplier instead of a PO. */
   supplier: string;
   storage: StorageChoice;
+  /** Set when an existing invoice is being edited; a new one has no number
+   *  until the server allocates it. */
+  invoiceNo?: string;
 }
 
 /**

@@ -112,6 +112,30 @@ export default function InvoiceList() {
 
   const handleRowAction = useCallback((action: InvoiceAction, row: InvoiceRow) => {
     if (action === 'payment-requests') { setPaymentsRow(row); return; }
+    if (action === 'edit') {
+      /* The same four-step form a new invoice opens, carrying this row's own
+         answers — editing an entry and creating one are the same screen, so
+         there is no second form to keep in step with this one.
+
+         The storage wizard is skipped: this invoice already has a warehouse,
+         and asking for it again would invite changing it by accident. */
+      setFormFor({
+        poNo: row.poNo,
+        supplier: row.supplierName,
+        storage: row.warehouseKind === 'own'
+          ? {
+            type: 'own',
+            /* Matched by name against the master, so the form shows the real
+               site with its location rather than a bare label. */
+            warehouse: STORAGE_WAREHOUSES.find(w => w.name === row.warehouseName)
+              ?? { id: row.warehouseName, name: row.warehouseName, location: '—' },
+          }
+          : { type: 'third-party' },
+        /* Its own number, not the next free one — this is an edit. */
+        invoiceNo: row.invoiceNo,
+      });
+      return;
+    }
     /* The other detail screens do not exist yet. Logging rather than silently
        swallowing, so a click is visibly reaching the page. */
     // eslint-disable-next-line no-console
@@ -280,8 +304,9 @@ export default function InvoiceList() {
         />
       )}
 
+      {/* An edit carries its own number; a new invoice takes the next free one. */}
       {formFor && (
-        <InvoiceForm input={formFor} invoiceNo={NEXT_INVOICE_NO} onClose={closeForm} />
+        <InvoiceForm input={formFor} invoiceNo={formFor.invoiceNo ?? NEXT_INVOICE_NO} onClose={closeForm} />
       )}
     </div>
   );
