@@ -251,17 +251,19 @@ export default function InvoiceList() {
           />
         )}
 
-        {total > 0 && (
-          <WorklistPager
-            className="wl-teal"
-            total={total}
-            page={page}
-            pageSize={pageSize}
-            onPage={list.goTo}
-            onPageSize={changePageSize}
-            pageSizeOptions={PAGE_SIZE_OPTIONS}
-          />
-        )}
+        {/* Shown on an empty list too: it reads "No records" there, and the
+            rows-per-page choice stays where it was rather than vanishing with
+            the last row. Without it the card loses its bottom edge and simply
+            ends in white. */}
+        <WorklistPager
+          className="wl-teal"
+          total={total}
+          page={page}
+          pageSize={pageSize}
+          onPage={list.goTo}
+          onPageSize={changePageSize}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
+        />
       </div>
 
       {paymentsRow && (
