@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api\P2p;
 
 use App\Support\FxRate;
-use App\Http\Controllers\Api\P2p\Concerns\RunsInTransaction;
 use App\Http\Controllers\Api\VendorController;
 use App\Http\Controllers\Controller;
 use App\Models\P2p\PoGstApproval;
@@ -15,7 +14,6 @@ use App\Models\P2p\SpiActivity;
 use App\Models\P2p\SupplierInvoice;
 use App\Services\P2p\PurchaseOrderService;
 use App\Services\P2p\VendorCurrencyGuard;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -32,19 +30,7 @@ use Illuminate\Validation\ValidationException;
  */
 class PurchaseOrderController extends Controller
 {
-    use RunsInTransaction;
-
     public function __construct(private PurchaseOrderService $svc) {}
-
-    private function ok($data, int $code = 200): JsonResponse
-    {
-        return response()->json(['status' => true, 'data' => $data], $code);
-    }
-
-    private function fail(string $message, int $code = 422, array $extra = []): JsonResponse
-    {
-        return response()->json(['status' => false, 'message' => $message] + $extra, $code);
-    }
 
     /** Writes need a tenant: a super admin has no client to create a PO under. */
     private function tenantUser(Request $request)
@@ -63,32 +49,65 @@ class PurchaseOrderController extends Controller
     /* ══════════════════════════ LOOKUPS ══════════════════════════ */
 
     /** GET /p2p/orders/next-code — preview only; nothing is written until Step 01 is saved. */
-    public function nextCode(Request $request): JsonResponse
+    public function nextCode(Request $request)
     {
-        $user = $this->tenantUser($request);
-        $code = $this->svc->previewPoCode((int) $user->client_id);
-        return $this->ok(['code' => $code, 'financial_year' => $this->svc->financialYear()]);
+        try {
+            DB::beginTransaction();
+
+            $user = $this->tenantUser($request);
+            $code = $this->svc->previewPoCode((int) $user->client_id);
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => [
+                'code'           => $code,
+                'financial_year' => $this->svc->financialYear(),
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /**
      * GET /p2p/orders/shipments/{shipment}/pi-lines?exclude_po=
      * Each PI line with what is already ordered and what is still pending.
      */
-    public function piLines(Request $request, int $shipment): JsonResponse
+    public function piLines(Request $request, int $shipment)
     {
-        $user = $this->tenantUser($request);
-        $ship = $this->svc->scopeTenant(DB::table('shipment_orders'), 'shipment_orders')->where('id', $shipment)->first();
-        if (!$ship) return $this->fail('Shipment not found', 404);
+        try {
+            DB::beginTransaction();
 
-        $piId = $this->svc->piIdForShipment($ship);
-        if (!$piId) return $this->ok(['proforma_invoice_id' => null, 'lines' => []]);
+            $user = $this->tenantUser($request);
+            $ship = $this->svc->scopeTenant(DB::table('shipment_orders'), 'shipment_orders')->where('id', $shipment)->first();
+            if (!$ship) {
+                abort(response()->json(['status' => false, 'message' => 'Shipment not found'], 404));
+            }
 
-        $exclude = $request->integer('exclude_po') ?: null;
-        return $this->ok([
-            'proforma_invoice_id' => $piId,
-            'lines' => $this->piLinesWithPending($piId, (int) $user->client_id, $exclude),
-            'held_by' => $this->piHolders($piId, (int) $user->client_id, $exclude),
-        ]);
+            $piId = $this->svc->piIdForShipment($ship);
+            if (!$piId) {
+                DB::commit();
+
+                return response()->json(['status' => true, 'data' => [
+                    'proforma_invoice_id' => null,
+                    'lines'               => [],
+                ]], 200);
+            }
+
+            $exclude = $request->integer('exclude_po') ?: null;
+            $body = [
+                'proforma_invoice_id' => $piId,
+                'lines'               => $this->piLinesWithPending($piId, (int) $user->client_id, $exclude),
+                'held_by'             => $this->piHolders($piId, (int) $user->client_id, $exclude),
+            ];
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $body], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /**
@@ -191,104 +210,122 @@ class PurchaseOrderController extends Controller
      * GET /p2p/orders?tab=&search=&status=&link_type=&shipment_order_id=&procurement_request_id=&vendor_id=&page=&per_page=
      * Server-side paging (10 by default); meta.counts gives every tab's total in one query.
      */
-    public function index(Request $request): JsonResponse
+    public function index(Request $request)
     {
-        $request->validate([
-            'tab'       => ['nullable', Rule::in(array_keys(self::TABS))],
-            'status'    => ['nullable', Rule::in([PurchaseOrder::STATUS_DRAFT, PurchaseOrder::STATUS_SUBMITTED, PurchaseOrder::STATUS_CANCELLED])],
-            'link_type' => ['nullable', Rule::in(PurchaseOrder::LINK_TYPES)],
-            'per_page'  => 'nullable|integer|min:1|max:50',
-            'search'    => 'nullable|string|max:100',
-        ]);
+        try {
+            DB::beginTransaction();
 
-        // Filters every tab shares; the tab itself is applied after the counts.
-        $base = PurchaseOrder::query();
-        if ($s = $request->query('status')) $base->where('status', $s);
-        if ($id = $request->integer('shipment_order_id')) $base->where('shipment_order_id', $id);
-        if ($id = $request->integer('vendor_id')) $base->where('vendor_id', $id);
-        if ($t = $request->query('link_type')) $base->where('link_type', $t);
-        if ($id = $request->integer('procurement_request_id')) $base->where('procurement_request_id', $id);
-        // Every id the list shows is searchable, not just the PO number: the linked
-        // shipment / opportunity / PI codes live on other tables, so they match
-        // through their own id (the PO is already tenant-scoped).
-        if ($s = trim((string) $request->query('search'))) {
-            $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $s) . '%';
-            /* The list prints labels, not the values stored behind them, so the
-               words on screen are searchable too: "Domestics", "International",
-               "Material / Goods". Two letters would pull in half the list, so a
-               label only joins the search from three characters. */
-            $needle = mb_strtolower($s);
-            $byLabel = fn (array $labels) => mb_strlen($needle) < 3 ? []
-                : array_keys(array_filter($labels, fn ($label) => str_contains(mb_strtolower($label), $needle)));
-            $docTypes = $byLabel(PurchaseOrder::DOC_TYPE_LABELS);
-            $poTypes  = $byLabel(PurchaseOrder::PO_TYPE_LABELS);
-            // The search box has always offered status; it reads the same way.
-            $statuses = $byLabel(array_combine(
-                [PurchaseOrder::STATUS_DRAFT, PurchaseOrder::STATUS_SUBMITTED, PurchaseOrder::STATUS_CANCELLED],
-                ['Draft', 'Submitted', 'Cancelled'],
-            ));
+            $request->validate([
+                'tab'       => ['nullable', Rule::in(array_keys(self::TABS))],
+                'status'    => ['nullable', Rule::in([PurchaseOrder::STATUS_DRAFT, PurchaseOrder::STATUS_SUBMITTED, PurchaseOrder::STATUS_CANCELLED])],
+                'link_type' => ['nullable', Rule::in(PurchaseOrder::LINK_TYPES)],
+                'per_page'  => 'nullable|integer|min:1|max:50',
+                'search'    => 'nullable|string|max:100',
+            ]);
 
-            $base->where(function ($w) use ($like, $docTypes, $poTypes, $statuses) {
-                $w->where('code', 'ilike', $like)
-                    ->orWhere('procurement_request_code', 'ilike', $like)
-                    ->orWhereHas('vendor', fn ($v) => $v->where('vendor_code', 'ilike', $like)
-                        ->orWhere('company_name', 'ilike', $like)
-                        ->orWhere('legal_name', 'ilike', $like))
-                    ->orWhereIn('shipment_order_id', fn ($q) => $q->from('shipment_orders')
-                        ->where('shipment_code', 'ilike', $like)->select('id'))
-                    ->orWhereIn('proforma_invoice_id', fn ($q) => $q->from('proforma_invoices')
-                        ->where(fn ($p) => $p->where('code', 'ilike', $like)->orWhere('opp_code', 'ilike', $like))
-                        ->select('id'));
-                if ($docTypes) $w->orWhereIn('document_type', $docTypes);
-                if ($poTypes) $w->orWhereIn('po_type', $poTypes);
-                if ($statuses) $w->orWhereIn('status', $statuses);
-            });
+            // Filters every tab shares; the tab itself is applied after the counts.
+            $base = PurchaseOrder::query();
+            if ($s = $request->query('status')) $base->where('status', $s);
+            if ($id = $request->integer('shipment_order_id')) $base->where('shipment_order_id', $id);
+            if ($id = $request->integer('vendor_id')) $base->where('vendor_id', $id);
+            if ($t = $request->query('link_type')) $base->where('link_type', $t);
+            if ($id = $request->integer('procurement_request_id')) $base->where('procurement_request_id', $id);
+            // Every id the list shows is searchable, not just the PO number: the linked
+            // shipment / opportunity / PI codes live on other tables, so they match
+            // through their own id (the PO is already tenant-scoped).
+            if ($s = trim((string) $request->query('search'))) {
+                $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $s) . '%';
+                /* The list prints labels, not the values stored behind them, so the
+                   words on screen are searchable too: "Domestics", "International",
+                   "Material / Goods". Two letters would pull in half the list, so a
+                   label only joins the search from three characters. */
+                $needle = mb_strtolower($s);
+                $byLabel = fn (array $labels) => mb_strlen($needle) < 3 ? []
+                    : array_keys(array_filter($labels, fn ($label) => str_contains(mb_strtolower($label), $needle)));
+                $docTypes = $byLabel(PurchaseOrder::DOC_TYPE_LABELS);
+                $poTypes  = $byLabel(PurchaseOrder::PO_TYPE_LABELS);
+                // The search box has always offered status; it reads the same way.
+                $statuses = $byLabel(array_combine(
+                    [PurchaseOrder::STATUS_DRAFT, PurchaseOrder::STATUS_SUBMITTED, PurchaseOrder::STATUS_CANCELLED],
+                    ['Draft', 'Submitted', 'Cancelled'],
+                ));
+
+                $base->where(function ($w) use ($like, $docTypes, $poTypes, $statuses) {
+                    $w->where('code', 'ilike', $like)
+                        ->orWhere('procurement_request_code', 'ilike', $like)
+                        ->orWhereHas('vendor', fn ($v) => $v->where('vendor_code', 'ilike', $like)
+                            ->orWhere('company_name', 'ilike', $like)
+                            ->orWhere('legal_name', 'ilike', $like))
+                        ->orWhereIn('shipment_order_id', fn ($q) => $q->from('shipment_orders')
+                            ->where('shipment_code', 'ilike', $like)->select('id'))
+                        ->orWhereIn('proforma_invoice_id', fn ($q) => $q->from('proforma_invoices')
+                            ->where(fn ($p) => $p->where('code', 'ilike', $like)->orWhere('opp_code', 'ilike', $like))
+                            ->select('id'));
+                    if ($docTypes) $w->orWhereIn('document_type', $docTypes);
+                    if ($poTypes) $w->orWhereIn('po_type', $poTypes);
+                    if ($statuses) $w->orWhereIn('status', $statuses);
+                });
+            }
+
+            $counts = (clone $base)->toBase()->selectRaw(implode(', ', array_map(
+                fn ($key, $cond) => "COUNT(*) FILTER (WHERE {$cond}) AS \"{$key}\"", array_keys(self::TABS), self::TABS,
+            )))->first();
+
+            $tab = $request->query('tab', 'all');
+            $page = $base->whereRaw(self::TABS[$tab])
+                ->select(self::LIST_COLUMNS)
+                ->with(['vendor:id,vendor_code,company_name,legal_name,risk_level_id,supplier_category', 'vendor.riskLevel:id,name'])
+                // Request count and the two notes under the payment bar, as subqueries — not one query per row.
+                ->withCount('paymentRequests')
+                // The cancellation and, as a subquery, its refunds still to reach Zoho.
+                ->with(['refundAdjustment' => fn ($q) => $q->withCount(['recoveries as zoho_pending_recoveries' => fn ($r) => $r->whereNull('zoho_refund_id')])])
+                // Payments not yet posted to the Zoho bill.
+                ->withCount(['payments as zoho_unposted_payments' => fn ($q) => $q->whereColumn('zoho_applied_amount', '<', 'amount')])
+                // A document out for signature or signed — Edit PO becomes View PO.
+                ->withExists(['documents as signing_started' => fn ($q) => $q->whereIn('status', [PurchaseOrderDocument::STATUS_SENT, PurchaseOrderDocument::STATUS_SIGNED])])
+                ->withSum(['paymentRequests as pending_request_amount' => fn ($q) => $q->where('status', 'pending')], 'requested_amount')
+                ->selectSub(fn ($q) => $q->from('p2p_po_payment_requests as prr')->whereColumn('prr.purchase_order_id', 'p2p_purchase_orders.id')
+                    ->where('prr.status', 'approved')->selectRaw('COALESCE(SUM(prr.approved_amount - prr.paid_amount), 0)'), 'ready_to_pay_amount')
+                ->orderByDesc('id')
+                ->paginate($request->integer('per_page') ?: 10);
+            $refs = $this->linkRefs(collect($page->items()));
+
+            DB::commit();
+
+            return response()->json([
+                'status' => true,
+                'data'   => collect($page->items())->map(fn ($po) => $this->shapeRow($po) + ($refs[$po->id] ?? []))->all(),
+                'meta'   => [
+                    'total' => $page->total(), 'page' => $page->currentPage(), 'per_page' => $page->perPage(), 'last_page' => $page->lastPage(),
+                    'counts' => array_map('intval', (array) $counts),
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
         }
-
-        $counts = (clone $base)->toBase()->selectRaw(implode(', ', array_map(
-            fn ($key, $cond) => "COUNT(*) FILTER (WHERE {$cond}) AS \"{$key}\"", array_keys(self::TABS), self::TABS,
-        )))->first();
-
-        $tab = $request->query('tab', 'all');
-        $page = $base->whereRaw(self::TABS[$tab])
-            ->select(self::LIST_COLUMNS)
-            ->with(['vendor:id,vendor_code,company_name,legal_name,risk_level_id,supplier_category', 'vendor.riskLevel:id,name'])
-            // Request count and the two notes under the payment bar, as subqueries — not one query per row.
-            ->withCount('paymentRequests')
-            // The cancellation and, as a subquery, its refunds still to reach Zoho.
-            ->with(['refundAdjustment' => fn ($q) => $q->withCount(['recoveries as zoho_pending_recoveries' => fn ($r) => $r->whereNull('zoho_refund_id')])])
-            // Payments not yet posted to the Zoho bill.
-            ->withCount(['payments as zoho_unposted_payments' => fn ($q) => $q->whereColumn('zoho_applied_amount', '<', 'amount')])
-            // A document out for signature or signed — Edit PO becomes View PO.
-            ->withExists(['documents as signing_started' => fn ($q) => $q->whereIn('status', [PurchaseOrderDocument::STATUS_SENT, PurchaseOrderDocument::STATUS_SIGNED])])
-            ->withSum(['paymentRequests as pending_request_amount' => fn ($q) => $q->where('status', 'pending')], 'requested_amount')
-            ->selectSub(fn ($q) => $q->from('p2p_po_payment_requests as prr')->whereColumn('prr.purchase_order_id', 'p2p_purchase_orders.id')
-                ->where('prr.status', 'approved')->selectRaw('COALESCE(SUM(prr.approved_amount - prr.paid_amount), 0)'), 'ready_to_pay_amount')
-            ->orderByDesc('id')
-            ->paginate($request->integer('per_page') ?: 10);
-        $refs = $this->linkRefs(collect($page->items()));
-
-        return response()->json([
-            'status' => true,
-            'data'   => collect($page->items())->map(fn ($po) => $this->shapeRow($po) + ($refs[$po->id] ?? []))->all(),
-            'meta'   => [
-                'total' => $page->total(), 'page' => $page->currentPage(), 'per_page' => $page->perPage(), 'last_page' => $page->lastPage(),
-                'counts' => array_map('intval', (array) $counts),
-            ],
-        ]);
     }
 
     /** GET /p2p/orders/{id} */
-    public function show(int $id): JsonResponse
+    public function show(int $id)
     {
-        $po = $this->findPo($id);
-        // So signing_started reflects documents sent from Step 04 and any request Zoho has since declined.
-        $this->refreshSigning($po);
-        $out = $this->shapeDetail($po);
-        // The whole supplier record, alongside the short `supplier` block.
-        $out['supplier_details'] = $this->supplierDetails((int) $po->vendor_id);
+        try {
+            DB::beginTransaction();
 
-        return $this->ok($out);
+            $po = $this->findPo($id);
+            // So signing_started reflects documents sent from Step 04 and any request Zoho has since declined.
+            $this->refreshSigning($po);
+            $out = $this->shapeDetail($po);
+            // The whole supplier record, alongside the short `supplier` block.
+            $out['supplier_details'] = $this->supplierDetails((int) $po->vendor_id);
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $out], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /**
@@ -326,12 +363,22 @@ class PurchaseOrderController extends Controller
     }
 
     /** GET /p2p/orders/{id}/qty-history */
-    public function qtyHistory(int $id): JsonResponse
+    public function qtyHistory(int $id)
     {
-        $po = $this->findPo($id);
-        $rows = PoItemQtyHistory::where('purchase_order_id', $po->id)->with('changedBy:id,name')
-            ->orderBy('created_at')->orderBy('id')->get();
-        return $this->ok($rows);
+        try {
+            DB::beginTransaction();
+
+            $po = $this->findPo($id);
+            $rows = PoItemQtyHistory::where('purchase_order_id', $po->id)->with('changedBy:id,name')
+                ->orderBy('created_at')->orderBy('id')->get();
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $rows], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /* ══════════════════════════ STAGE 01 ══════════════════════════ */
@@ -382,14 +429,15 @@ class PurchaseOrderController extends Controller
     }
 
     /** POST /p2p/orders — Stage 01: create the PO as a draft. */
-    public function store(Request $request): JsonResponse
+    public function store(Request $request)
     {
-        $user = $this->tenantUser($request);
-        $data = $request->validate($this->stage1Rules(), $this->stage1Messages());
-        $resolved = $this->resolveStage1($data, $user);
-        if ($resolved instanceof JsonResponse) return $resolved;
+        try {
+            DB::beginTransaction();
 
-        $po = $this->inTransaction('create the PO', function () use ($user, $data, $resolved) {
+            $user     = $this->tenantUser($request);
+            $data     = $request->validate($this->stage1Rules(), $this->stage1Messages());
+            $resolved = $this->resolveStage1($data, $user);
+
             $po = PurchaseOrder::create($this->stage1Attributes($data, $resolved) + [
                 'client_id'    => $user->client_id,
                 'branch_id'    => $user->branch_id,
@@ -402,46 +450,59 @@ class PurchaseOrderController extends Controller
             ]);
             $this->rememberCurrency($po);
 
-            return $po;
-        });
+            $out = $this->shapeDetail($po->fresh());
 
-        return $this->ok($this->shapeDetail($po->fresh()), 201);
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $out], 201);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /** PUT /p2p/orders/{id}/stage-1 */
-    public function updateStage1(Request $request, int $id): JsonResponse
+    public function updateStage1(Request $request, int $id)
     {
-        $user = $this->tenantUser($request);
-        $po = $this->findPo($id);
-        if ($blocked = $this->editBlock($po)) return $blocked;
+        try {
+            DB::beginTransaction();
 
-        $data = $request->validate($this->stage1Rules(), $this->stage1Messages());
-        if (($data['shipment_order_id'] ?? null) != $po->shipment_order_id && $po->items()->exists()) {
-            return $this->fail('Remove the product lines before changing the shipment — they are matched to its PI.');
-        }
-        // The supplier stays open until the PO goes to the senior; an approval (or a pending request) fixes it.
-        $sentToSenior = $po->gstApprovals()->whereIn('status', [PoGstApproval::STATUS_PENDING, PoGstApproval::STATUS_APPROVED])->exists();
-        if ($sentToSenior && ((int) $data['vendor_id'] !== (int) $po->vendor_id || $data['document_type'] !== $po->document_type)) {
-            return $this->fail('This PO has gone to the senior for approval — the supplier and document type can no longer change.', 422,
-                ['errors' => ['vendor_id' => ['The supplier is fixed once the PO is sent for senior approval.']]]);
-        }
-        /* The lines may already be saved, so a new rate can push an order that
-           was fine past what Zoho takes. Checked here, where the rate is typed. */
-        $newRate = (float) ($data['exchange_rate'] ?? 0);
-        if ($newRate > 0 && (float) $po->grand_total > 0
-            && (float) $po->grand_total * $newRate > self::MAX_ZOHO_BASE) {
-            return $this->fail(
-                'At that exchange rate this PO converts to ' . number_format((float) $po->grand_total * $newRate, 2)
-                . ' in base currency, which Zoho Books will refuse. The converted total cannot exceed '
-                . number_format(self::MAX_ZOHO_BASE) . '.',
-                422, ['errors' => ['exchange_rate' => ['Too high for this order — Zoho would refuse the converted total.']]]
-            );
-        }
+            $user = $this->tenantUser($request);
+            $po = $this->findPo($id);
+            $this->editBlock($po);
 
-        $resolved = $this->resolveStage1($data, $user);
-        if ($resolved instanceof JsonResponse) return $resolved;
+            $data = $request->validate($this->stage1Rules(), $this->stage1Messages());
+            if (($data['shipment_order_id'] ?? null) != $po->shipment_order_id && $po->items()->exists()) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => 'Remove the product lines before changing the shipment — they are matched to its PI.',
+                ], 422));
+            }
+            // The supplier stays open until the PO goes to the senior; an approval (or a pending request) fixes it.
+            $sentToSenior = $po->gstApprovals()->whereIn('status', [PoGstApproval::STATUS_PENDING, PoGstApproval::STATUS_APPROVED])->exists();
+            if ($sentToSenior && ((int) $data['vendor_id'] !== (int) $po->vendor_id || $data['document_type'] !== $po->document_type)) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => 'This PO has gone to the senior for approval — the supplier and document type can no longer change.',
+                    'errors'  => ['vendor_id' => ['The supplier is fixed once the PO is sent for senior approval.']],
+                ], 422));
+            }
+            /* The lines may already be saved, so a new rate can push an order that
+               was fine past what Zoho takes. Checked here, where the rate is typed. */
+            $newRate = (float) ($data['exchange_rate'] ?? 0);
+            if ($newRate > 0 && (float) $po->grand_total > 0
+                && (float) $po->grand_total * $newRate > self::MAX_ZOHO_BASE) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => 'At that exchange rate this PO converts to ' . number_format((float) $po->grand_total * $newRate, 2)
+                        . ' in base currency, which Zoho Books will refuse. The converted total cannot exceed '
+                        . number_format(self::MAX_ZOHO_BASE) . '.',
+                    'errors'  => ['exchange_rate' => ['Too high for this order — Zoho would refuse the converted total.']],
+                ], 422));
+            }
 
-        $this->inTransaction('save Stage 01', function () use ($po, $user, $data, $resolved) {
+            $resolved = $this->resolveStage1($data, $user);
+
             $vendorChanged = (int) $po->vendor_id !== (int) $data['vendor_id'];
             $attrs = $this->stage1Attributes($data, $resolved) + ['updated_by' => $user->id];
             // A different supplier invalidates any GST approval taken on the old one.
@@ -462,9 +523,16 @@ class PurchaseOrderController extends Controller
                 $this->resupplyInvoices($po, $wasVendor);
             }
             $this->rememberCurrency($po);
-        });
 
-        return $this->ok($this->shapeDetail($po->fresh()));
+            $out = $this->shapeDetail($po->fresh());
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $out], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     private function currency(): VendorCurrencyGuard
@@ -524,34 +592,47 @@ class PurchaseOrderController extends Controller
     }
 
     /** Validates shipment and supplier against the tenant; returns what Stage 01 derives. */
-    private function resolveStage1(array $data, $user, ?int $exceptPoId = null): array|JsonResponse
+    private function resolveStage1(array $data, $user, ?int $exceptPoId = null): array
     {
         $ship = null;
         if (!empty($data['shipment_order_id'])) {
             $ship = $this->svc->scopeTenant(DB::table('shipment_orders'), 'shipment_orders')
                 ->where('id', $data['shipment_order_id'])->first();
-            if (!$ship) return $this->fail('Shipment not found', 422, ['errors' => ['shipment_order_id' => ['Shipment not found.']]]);
+            if (!$ship) abort(response()->json(['status' => false, 'message' => 'Shipment not found', 'errors' => ['shipment_order_id' => ['Shipment not found.']]], 422));
             // Stage 02 matches lines against this PI, so a shipment without one is unusable.
-            if (!$this->svc->piIdForShipment($ship)) return $this->fail('This shipment has no Proforma Invoice', 422, ['errors' => ['shipment_order_id' => ['This shipment has no Proforma Invoice to order against.']]]);
+            if (!$this->svc->piIdForShipment($ship)) abort(response()->json(['status' => false, 'message' => 'This shipment has no Proforma Invoice', 'errors' => ['shipment_order_id' => ['This shipment has no Proforma Invoice to order against.']]], 422));
         }
         $vendor = $this->loadVendor((int) $data['vendor_id']);
-        if (!$vendor) return $this->fail('Supplier not found', 422, ['errors' => ['vendor_id' => ['Supplier not found.']]]);
+        if (!$vendor) abort(response()->json(['status' => false, 'message' => 'Supplier not found', 'errors' => ['vendor_id' => ['Supplier not found.']]], 422));
         if (str_contains(strtolower((string) $vendor->supplier_category), 'blacklist')) {
-            return $this->fail('Blacklisted supplier', 422, ['errors' => ['vendor_id' => ['This supplier is blacklisted — a purchase order cannot be raised on it.']]]);
+            abort(response()->json([
+                'status'  => false,
+                'message' => 'Blacklisted supplier',
+                'errors'  => ['vendor_id' => ['This supplier is blacklisted — a purchase order cannot be raised on it.']],
+            ], 422));
         }
         // The supplier's type has to fit the PO type (a Material / Goods PO needs a Material / Goods supplier).
         $needType = PurchaseOrder::PO_TYPE_SUPPLIER_TYPE[$data['po_type']] ?? null;
         if ($needType && strcasecmp(trim((string) $vendor->vendor_type), $needType) !== 0) {
-            return $this->fail('Supplier type does not match the PO type', 422, ['errors' => ['vendor_id' => [
-                'This supplier is ' . ($vendor->vendor_type ?: 'not typed') . " — a {$needType} PO needs a {$needType} supplier.",
-            ]]]);
+            abort(response()->json([
+                'status'  => false,
+                'message' => 'Supplier type does not match the PO type',
+                'errors'  => ['vendor_id' => [
+                    'This supplier is ' . ($vendor->vendor_type ?: 'not typed') . " — a {$needType} PO needs a {$needType} supplier.",
+                ]],
+            ], 422));
         }
         // Document type follows the supplier's origin: India → domestic, any other country → international.
         $origin = $this->vendorOrigin($vendor);
         if ($data['document_type'] !== $origin) {
-            return $this->fail('Document type does not match the supplier', 422, ['errors' => ['document_type' => [
-                "This is " . ($origin === 'international' ? 'an international' : 'a domestic') . " supplier — the document type must be " . ($origin === 'international' ? 'International.' : 'Domestic.'),
-            ]]]);
+            abort(response()->json([
+                'status'  => false,
+                'message' => 'Document type does not match the supplier',
+                'errors'  => ['document_type' => [
+                    'This is ' . ($origin === 'international' ? 'an international' : 'a domestic')
+                        . ' supplier — the document type must be ' . ($origin === 'international' ? 'International.' : 'Domestic.'),
+                ]],
+            ], 422));
         }
 
         /* One currency per supplier: Zoho Books pins a contact to the currency of
@@ -566,16 +647,24 @@ class PurchaseOrderController extends Controller
            not a reason to stop someone raising a PO. */
         $enabled = app(\App\Services\ZohoBooksService::class)->enabledCurrencies();
         if ($currency && $enabled && !in_array(strtoupper($currency), $enabled, true)) {
-            return $this->fail('Currency not in Zoho Books', 422, ['errors' => ['currency_code' => [
-                strtoupper($currency) . ' is not one of the currencies enabled in Zoho Books, so this order could never'
-                . ' reach it. Add it under Settings → Currencies in Zoho, or choose one of: ' . implode(', ', $enabled) . '.',
-            ]]]);
+            abort(response()->json([
+                'status'  => false,
+                'message' => 'Currency not in Zoho Books',
+                'errors'  => ['currency_code' => [
+                    strtoupper($currency) . ' is not one of the currencies enabled in Zoho Books, so this order could never'
+                    . ' reach it. Add it under Settings → Currencies in Zoho, or choose one of: ' . implode(', ', $enabled) . '.',
+                ]],
+            ], 422));
         }
 
         $clash = $this->currency()
             ->conflict((int) $user->client_id, (int) $vendor->id, $currency, $exceptPoId);
         if ($clash) {
-            return $this->fail('Supplier currency mismatch', 422, ['errors' => ['currency_code' => [$clash]]]);
+            abort(response()->json([
+                'status'  => false,
+                'message' => 'Supplier currency mismatch',
+                'errors'  => ['currency_code' => [$clash]],
+            ], 422));
         }
 
         $home = $this->svc->homeStateCode($user->branch_id);
@@ -637,142 +726,146 @@ class PurchaseOrderController extends Controller
      * Lines are matched in place (by PI line, or by product for a line with no
      * PI line) so every quantity change lands in the history table.
      */
-    public function updateItems(Request $request, int $id): JsonResponse
+    public function updateItems(Request $request, int $id)
     {
-        $user = $this->tenantUser($request);
-        $po = $this->findPo($id);
-        if ($blocked = $this->editBlock($po)) return $blocked;
-        // The stored balance and TDS rest on this value once money has been paid against it.
-        if ((float) $po->paid_amount > 0) return $this->fail('Payments are already recorded on this PO — its product lines and charges can no longer change.');
+        try {
+            DB::beginTransaction();
 
-        /* Both ceilings are rupee ones, so what this PO may hold in ITS currency
-           is read back through its own rate. A domestic PO is already in rupees. */
-        $fx       = (float) ($po->exchange_rate ?: 0) ?: 1.0;
-        $maxRate  = self::MAX_UNIT_RATE_BASE / $fx;
-        $maxTotal = self::MAX_ZOHO_BASE / $fx;
-        $ccy      = $po->currency_code ?: 'INR';
-
-        $data = $request->validate([
-            'lines'               => 'required|array|min:1',
-            'lines.*.pi_item_id'  => 'nullable|integer|distinct',
-            'lines.*.product_id'  => 'nullable|integer|required_without:lines.*.pi_item_id',
-            'lines.*.quantity'    => 'required|numeric|gt:0|max:' . self::MAX_QUANTITY,
-            'lines.*.rate'        => 'required|numeric|min:0|max:' . $maxRate,
-            'lines.*.description' => 'nullable|string',
-            'shipping_charges'    => 'nullable|numeric|min:0|max:' . $maxTotal,
-            'packaging_charges'   => 'nullable|numeric|min:0|max:' . $maxTotal,
-            'other_charges'       => 'nullable|numeric|min:0|max:' . $maxTotal,
-        ], [
-            'lines.*.quantity.max'  => 'Quantity looks wrong — the most this PO takes on one line is ' . number_format(self::MAX_QUANTITY) . '.',
-            'lines.*.rate.max'      => "Rate looks wrong — the most this PO takes for one unit is {$ccy} " . number_format($maxRate, 2) . '.',
-            'shipping_charges.max'  => "Shipping charges look wrong — the most this PO takes is {$ccy} " . number_format($maxTotal, 2) . '.',
-            'packaging_charges.max' => "Packaging charges look wrong — the most this PO takes is {$ccy} " . number_format($maxTotal, 2) . '.',
-            'other_charges.max'     => "Other charges look wrong — the most this PO takes is {$ccy} " . number_format($maxTotal, 2) . '.',
-        ]);
-
-        $piItemIds = collect($data['lines'])->pluck('pi_item_id')->filter()->map(fn ($v) => (int) $v)->values()->all();
-        $piItems = $piItemIds
-            ? DB::table('proforma_invoice_items as i')->leftJoin('products as p', 'p.id', '=', 'i.product_id')
-                ->whereIn('i.id', $piItemIds)->select('i.*', 'p.product_code')->get()->keyBy('id')
-            : collect();
-
-        // Every PI line must belong to this PO's own PI.
-        $errors = [];
-        foreach ($data['lines'] as $i => $line) {
-            if (empty($line['pi_item_id'])) continue;
-            $pi = $piItems->get((int) $line['pi_item_id']);
-            if (!$pi || (int) $pi->proforma_invoice_id !== (int) $po->proforma_invoice_id) {
-                $errors["lines.$i.pi_item_id"] = ['This PI line does not belong to the PO\'s shipment PI.'];
+            $user = $this->tenantUser($request);
+            $po = $this->findPo($id);
+            $this->editBlock($po);
+            // The stored balance and TDS rest on this value once money has been paid against it.
+            if ((float) $po->paid_amount > 0) {
+                abort(response()->json(['status' => false, 'message' => 'Payments are already recorded on this PO — its product lines and charges can no longer change.'], 422));
             }
-        }
 
-        /* A PI line that is still open may be over-ordered — trade quantities
-           round to containers and minimum order sizes. Over-drawing takes the
-           line's pending to zero, which closes it to every later PO, so the
-           total across POs cannot compound: at most one PO draws over. */
-        $orderedElsewhere = $this->svc->orderedByPiItem((int) $po->client_id, $piItemIds, $po->id);
-        foreach ($data['lines'] as $i => $line) {
-            if (empty($line['pi_item_id']) || isset($errors["lines.$i.pi_item_id"])) continue;
-            $pi = $piItems->get((int) $line['pi_item_id']);
-            $pending = max(0, (float) $pi->quantity - ($orderedElsewhere[(int) $pi->id] ?? 0));
-            if ($pending <= 0.0005 && (float) $line['quantity'] > 0) {
-                $errors["lines.$i.quantity"] = ['This PI line is fully ordered — nothing is left to order against it.'];
-            }
-        }
+            /* Both ceilings are rupee ones, so what this PO may hold in ITS currency
+               is read back through its own rate. A domestic PO is already in rupees. */
+            $fx       = (float) ($po->exchange_rate ?: 0) ?: 1.0;
+            $maxRate  = self::MAX_UNIT_RATE_BASE / $fx;
+            $maxTotal = self::MAX_ZOHO_BASE / $fx;
+            $ccy      = $po->currency_code ?: 'INR';
 
-        // A shipment PO orders only its PI lines; a product the PI doesn't carry needs a standalone PO.
-        if ($po->link_type === 'with_shipment') {
+            $data = $request->validate([
+                'lines'               => 'required|array|min:1',
+                'lines.*.pi_item_id'  => 'nullable|integer|distinct',
+                'lines.*.product_id'  => 'nullable|integer|required_without:lines.*.pi_item_id',
+                'lines.*.quantity'    => 'required|numeric|gt:0|max:' . self::MAX_QUANTITY,
+                'lines.*.rate'        => 'required|numeric|min:0|max:' . $maxRate,
+                'lines.*.description' => 'nullable|string',
+                'shipping_charges'    => 'nullable|numeric|min:0|max:' . $maxTotal,
+                'packaging_charges'   => 'nullable|numeric|min:0|max:' . $maxTotal,
+                'other_charges'       => 'nullable|numeric|min:0|max:' . $maxTotal,
+            ], [
+                'lines.*.quantity.max'  => 'Quantity looks wrong — the most this PO takes on one line is ' . number_format(self::MAX_QUANTITY) . '.',
+                'lines.*.rate.max'      => "Rate looks wrong — the most this PO takes for one unit is {$ccy} " . number_format($maxRate, 2) . '.',
+                'shipping_charges.max'  => "Shipping charges look wrong — the most this PO takes is {$ccy} " . number_format($maxTotal, 2) . '.',
+                'packaging_charges.max' => "Packaging charges look wrong — the most this PO takes is {$ccy} " . number_format($maxTotal, 2) . '.',
+                'other_charges.max'     => "Other charges look wrong — the most this PO takes is {$ccy} " . number_format($maxTotal, 2) . '.',
+            ]);
+
+            $piItemIds = collect($data['lines'])->pluck('pi_item_id')->filter()->map(fn ($v) => (int) $v)->values()->all();
+            $piItems = $piItemIds
+                ? DB::table('proforma_invoice_items as i')->leftJoin('products as p', 'p.id', '=', 'i.product_id')
+                    ->whereIn('i.id', $piItemIds)->select('i.*', 'p.product_code')->get()->keyBy('id')
+                : collect();
+
+            // Every PI line must belong to this PO's own PI.
+            $errors = [];
             foreach ($data['lines'] as $i => $line) {
-                if (empty($line['pi_item_id'])) $errors["lines.$i.product_id"] = ['A PO against a shipment orders only its PI lines — remove this line.'];
+                if (empty($line['pi_item_id'])) continue;
+                $pi = $piItems->get((int) $line['pi_item_id']);
+                if (!$pi || (int) $pi->proforma_invoice_id !== (int) $po->proforma_invoice_id) {
+                    $errors["lines.$i.pi_item_id"] = ['This PI line does not belong to the PO\'s shipment PI.'];
+                }
             }
-        }
-        $manual = collect($data['lines'])->filter(fn ($l) => empty($l['pi_item_id']))->pluck('product_id');
-        if ($manual->count() !== $manual->unique()->count()) {
-            $errors['lines'] = ['The same product appears on two lines without a PI line — merge them into one.'];
-        }
-        // The ordered product: the replacement if given, else the PI line's own product.
-        $effective = [];
-        foreach ($data['lines'] as $i => $line) {
-            $pi = !empty($line['pi_item_id']) ? $piItems->get((int) $line['pi_item_id']) : null;
-            $effective[$i] = !empty($line['product_id']) ? (int) $line['product_id'] : (int) ($pi->product_id ?? 0);
-        }
-        $products = $this->loadProducts(array_values(array_filter($effective)));
-        // The PI line's own product decides the segment a replacement has to stay in.
-        $piProducts = $this->loadProducts($piItems->pluck('product_id')->filter()->map(fn ($v) => (int) $v)->all());
-        // A PO orders only products in a segment its supplier deals in.
-        $supplierSegments = $this->vendorSegmentIds((int) $po->vendor_id);
-        $supplierProducts = $this->svc->vendorProductIds((int) $po->vendor_id);
-        foreach ($data['lines'] as $i => $line) {
-            if (isset($errors["lines.$i.pi_item_id"])) continue;
-            $field = !empty($line['product_id']) ? "lines.$i.product_id" : "lines.$i.pi_item_id";
-            $piProduct = !empty($line['pi_item_id']) ? $piProducts->get((int) ($piItems->get((int) $line['pi_item_id'])->product_id ?? 0)) : null;
-            if (!$effective[$i] || !$products->has($effective[$i])) {
-                $errors[$field] = ['Product not found.'];
-            } elseif (($products->get($effective[$i])->status ?? 'active') !== 'active') {
-                $errors[$field] = ['This product is ' . $products->get($effective[$i])->status . ' in the product master — activate it there to order it.'];
-            } elseif ($piProduct && $piProduct->segment_id && (int) $piProduct->segment_id !== (int) $products->get($effective[$i])->segment_id) {
-                // The replacement must sit in the same segment as the PI line it covers.
-                $errors[$field] = ['The PI line is in ' . ($piProduct->segment_name ?: 'no segment') . ' — pick a product from the same segment.'];
-            } elseif ($po->document_type !== 'international' && $products->get($effective[$i])->gst_pct === null) {
-                // Purchase GST comes only from the product master, never the sales PI.
-                $errors[$field] = ['This product has no GST % in the product master — set it there first.'];
-            } elseif (!in_array((int) $products->get($effective[$i])->segment_id, $supplierSegments, true)
-                && !in_array((int) $effective[$i], $supplierProducts, true)) {
-                $seg = $products->get($effective[$i])->segment_name ?: 'no segment';
-                $errors[$field] = ["Not mapped — this product is in {$seg}, and neither that segment nor the product is mapped to the supplier. Map one of them first."];
+
+            /* A PI line that is still open may be over-ordered — trade quantities
+               round to containers and minimum order sizes. Over-drawing takes the
+               line's pending to zero, which closes it to every later PO, so the
+               total across POs cannot compound: at most one PO draws over. */
+            $orderedElsewhere = $this->svc->orderedByPiItem((int) $po->client_id, $piItemIds, $po->id);
+            foreach ($data['lines'] as $i => $line) {
+                if (empty($line['pi_item_id']) || isset($errors["lines.$i.pi_item_id"])) continue;
+                $pi = $piItems->get((int) $line['pi_item_id']);
+                $pending = max(0, (float) $pi->quantity - ($orderedElsewhere[(int) $pi->id] ?? 0));
+                if ($pending <= 0.0005 && (float) $line['quantity'] > 0) {
+                    $errors["lines.$i.quantity"] = ['This PI line is fully ordered — nothing is left to order against it.'];
+                }
             }
-        }
-        /* Each line can be within its own limits and the order still absurd, and
-           it is the TOTAL that Zoho converts and refuses. Checked here so the
-           mistake lands on the line that caused it, not on a sync hours later. */
-        $lineTotals = [];
-        foreach ($data['lines'] as $i => $line) {
-            $lineTotals[$i] = (float) $line['quantity'] * (float) $line['rate'];
-        }
-        $orderTotal = array_sum($lineTotals)
-            + (float) ($data['shipping_charges'] ?? 0)
-            + (float) ($data['packaging_charges'] ?? 0)
-            + (float) ($data['other_charges'] ?? 0);
-        /* The ceiling is a RUPEE one, because the rupee figure is the only one
-           Zoho judges: it converts at the PO's own rate and posts that to the
-           ledger. A cap in the PO's currency would mean something different for
-           every currency — AUD 10bn and USD 10bn are not the same order. */
-        $base = $orderTotal * $fx;   // $fx and $maxTotal come from the rules above
-        if ($base > self::MAX_ZOHO_BASE) {
-            arsort($lineTotals);
-            $worst   = (int) array_key_first($lineTotals);
-            $allowed = $maxTotal;    // the same ceiling said in their currency
-            $errors["lines.$worst.rate"] = [sprintf(
-                'This PO comes to %s in rupees, more than Zoho Books will accept. At an exchange rate of %s the most this PO can be is %s %s — check the rate on this line.',
-                number_format($base, 2),
-                rtrim(rtrim(number_format($fx, 6), '0'), '.'),
-                $ccy, number_format($allowed, 2)
-            )];
-        }
 
-        if ($errors) throw ValidationException::withMessages($errors);
+            // A shipment PO orders only its PI lines; a product the PI doesn't carry needs a standalone PO.
+            if ($po->link_type === 'with_shipment') {
+                foreach ($data['lines'] as $i => $line) {
+                    if (empty($line['pi_item_id'])) $errors["lines.$i.product_id"] = ['A PO against a shipment orders only its PI lines — remove this line.'];
+                }
+            }
+            $manual = collect($data['lines'])->filter(fn ($l) => empty($l['pi_item_id']))->pluck('product_id');
+            if ($manual->count() !== $manual->unique()->count()) {
+                $errors['lines'] = ['The same product appears on two lines without a PI line — merge them into one.'];
+            }
+            // The ordered product: the replacement if given, else the PI line's own product.
+            $effective = [];
+            foreach ($data['lines'] as $i => $line) {
+                $pi = !empty($line['pi_item_id']) ? $piItems->get((int) $line['pi_item_id']) : null;
+                $effective[$i] = !empty($line['product_id']) ? (int) $line['product_id'] : (int) ($pi->product_id ?? 0);
+            }
+            $products = $this->loadProducts(array_values(array_filter($effective)));
+            // The PI line's own product decides the segment a replacement has to stay in.
+            $piProducts = $this->loadProducts($piItems->pluck('product_id')->filter()->map(fn ($v) => (int) $v)->all());
+            // A PO orders only products in a segment its supplier deals in.
+            $supplierSegments = $this->vendorSegmentIds((int) $po->vendor_id);
+            $supplierProducts = $this->svc->vendorProductIds((int) $po->vendor_id);
+            foreach ($data['lines'] as $i => $line) {
+                if (isset($errors["lines.$i.pi_item_id"])) continue;
+                $field = !empty($line['product_id']) ? "lines.$i.product_id" : "lines.$i.pi_item_id";
+                $piProduct = !empty($line['pi_item_id']) ? $piProducts->get((int) ($piItems->get((int) $line['pi_item_id'])->product_id ?? 0)) : null;
+                if (!$effective[$i] || !$products->has($effective[$i])) {
+                    $errors[$field] = ['Product not found.'];
+                } elseif (($products->get($effective[$i])->status ?? 'active') !== 'active') {
+                    $errors[$field] = ['This product is ' . $products->get($effective[$i])->status . ' in the product master — activate it there to order it.'];
+                } elseif ($piProduct && $piProduct->segment_id && (int) $piProduct->segment_id !== (int) $products->get($effective[$i])->segment_id) {
+                    // The replacement must sit in the same segment as the PI line it covers.
+                    $errors[$field] = ['The PI line is in ' . ($piProduct->segment_name ?: 'no segment') . ' — pick a product from the same segment.'];
+                } elseif ($po->document_type !== 'international' && $products->get($effective[$i])->gst_pct === null) {
+                    // Purchase GST comes only from the product master, never the sales PI.
+                    $errors[$field] = ['This product has no GST % in the product master — set it there first.'];
+                } elseif (!in_array((int) $products->get($effective[$i])->segment_id, $supplierSegments, true)
+                    && !in_array((int) $effective[$i], $supplierProducts, true)) {
+                    $seg = $products->get($effective[$i])->segment_name ?: 'no segment';
+                    $errors[$field] = ["Not mapped — this product is in {$seg}, and neither that segment nor the product is mapped to the supplier. Map one of them first."];
+                }
+            }
+            /* Each line can be within its own limits and the order still absurd, and
+               it is the TOTAL that Zoho converts and refuses. Checked here so the
+               mistake lands on the line that caused it, not on a sync hours later. */
+            $lineTotals = [];
+            foreach ($data['lines'] as $i => $line) {
+                $lineTotals[$i] = (float) $line['quantity'] * (float) $line['rate'];
+            }
+            $orderTotal = array_sum($lineTotals)
+                + (float) ($data['shipping_charges'] ?? 0)
+                + (float) ($data['packaging_charges'] ?? 0)
+                + (float) ($data['other_charges'] ?? 0);
+            /* The ceiling is a RUPEE one, because the rupee figure is the only one
+               Zoho judges: it converts at the PO's own rate and posts that to the
+               ledger. A cap in the PO's currency would mean something different for
+               every currency — AUD 10bn and USD 10bn are not the same order. */
+            $base = $orderTotal * $fx;   // $fx and $maxTotal come from the rules above
+            if ($base > self::MAX_ZOHO_BASE) {
+                arsort($lineTotals);
+                $worst   = (int) array_key_first($lineTotals);
+                $allowed = $maxTotal;    // the same ceiling said in their currency
+                $errors["lines.$worst.rate"] = [sprintf(
+                    'This PO comes to %s in rupees, more than Zoho Books will accept. At an exchange rate of %s the most this PO can be is %s %s — check the rate on this line.',
+                    number_format($base, 2),
+                    rtrim(rtrim(number_format($fx, 6), '0'), '.'),
+                    $ccy, number_format($allowed, 2)
+                )];
+            }
 
-        $this->inTransaction('save the product lines', function () use ($po, $user, $data, $piItems, $products, $orderedElsewhere) {
+            if ($errors) throw ValidationException::withMessages($errors);
+
             $po->update([
                 'shipping_charges'  => $data['shipping_charges'] ?? 0,
                 'packaging_charges' => $data['packaging_charges'] ?? 0,
@@ -814,9 +907,16 @@ class PurchaseOrderController extends Controller
             }
 
             $this->svc->recomputeTotals($po);
-        });
 
-        return $this->ok($this->shapeDetail($po->fresh()));
+            $out = $this->shapeDetail($po->fresh());
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $out], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     private function lineAttributes(PurchaseOrder $po, array $line, ?object $pi, ?object $product, int $lineNo): array
@@ -858,73 +958,93 @@ class PurchaseOrderController extends Controller
     /* ══════════════════════════ STAGE 03 ══════════════════════════ */
 
     /** PUT /p2p/orders/{id}/terms — Stage 03: terms, and optionally submit the PO. */
-    public function updateTerms(Request $request, int $id): JsonResponse
+    public function updateTerms(Request $request, int $id)
     {
-        $user = $this->tenantUser($request);
-        $po = $this->findPo($id);
-        if ($blocked = $this->editBlock($po)) return $blocked;
+        try {
+            DB::beginTransaction();
 
-        $data = $request->validate([
-            'terms'  => 'nullable|string|max:20000',
-            'submit' => ['nullable', Rule::in(PurchaseOrder::YES_NO)],
-        ]);
-        $submit = ($data['submit'] ?? 'no') === 'yes';
+            $user = $this->tenantUser($request);
+            $po = $this->findPo($id);
+            $this->editBlock($po);
 
-        if ($submit) {
-            if (!$po->vendor_id) return $this->fail('Select a supplier before submitting.');
-            if (!$po->items()->exists()) return $this->fail('Add at least one product line before submitting.');
-            // The supplier may have changed after the lines were saved — every line must still be in its segments.
-            $segs = $this->vendorSegmentIds((int) $po->vendor_id);
-            $outside = DB::table('p2p_purchase_order_items as i')->join('products as p', 'p.id', '=', 'i.product_id')
-                ->where('i.purchase_order_id', $po->id)->where(fn ($w) => $w->whereNull('p.segment_id')->orWhereNotIn('p.segment_id', $segs ?: [0]))
-                ->whereNotIn('p.id', $this->svc->vendorProductIds((int) $po->vendor_id) ?: [0])
-                ->pluck('p.product_code');
-            if ($outside->isNotEmpty()) {
-                return $this->fail($outside->implode(', ') . ' — neither the product nor its segment is mapped to this supplier. Map one of them, or change the lines in Stage 02, before submitting.');
-            }
-            // Re-read the supplier's GST position at the moment of submission.
-            $gst = $this->svc->gstGate($po->vendor_id, $po->document_type === 'international');
-            $po->forceFill(['gst_gate' => $gst['gate'], 'gst_scrutiny_date' => $gst['scrutiny_date'], 'gst_last_filing_date' => $gst['filing_date']]);
-            if ($gst['gate'] === 'blocked') {
-                return $this->fail('GST scrutiny is older than ' . PurchaseOrderService::GST_STALE_MONTHS . ' months — refresh it on the supplier record before submitting.', 422, ['gst' => $gst]);
-            }
-            // Hard rule: an overdue return needs the latest request to be approved by the senior.
-            $approval = $po->latestGstApproval()->first();
-            if ($gst['gate'] === 'approval_required' && $approval?->status !== PoGstApproval::STATUS_APPROVED) {
-                $msg = match ($approval?->status) {
-                    PoGstApproval::STATUS_PENDING  => 'Senior approval is still pending — the PO can be submitted once it is approved.',
-                    PoGstApproval::STATUS_REJECTED => 'The senior rejected this PO: ' . $approval->reason,
-                    default => 'The supplier\'s last GST return is overdue — send it for senior approval before submitting.',
-                };
-                return $this->fail($msg, 422, ['gst' => $gst, 'gst_approval_status' => $approval?->status]);
+            $data = $request->validate([
+                'terms'  => 'nullable|string|max:20000',
+                'submit' => ['nullable', Rule::in(PurchaseOrder::YES_NO)],
+            ]);
+            $submit = ($data['submit'] ?? 'no') === 'yes';
+
+            if ($submit) {
+                if (!$po->vendor_id) {
+                    abort(response()->json(['status' => false, 'message' => 'Select a supplier before submitting.'], 422));
+                }
+                if (!$po->items()->exists()) {
+                    abort(response()->json(['status' => false, 'message' => 'Add at least one product line before submitting.'], 422));
+                }
+                // The supplier may have changed after the lines were saved — every line must still be in its segments.
+                $segs = $this->vendorSegmentIds((int) $po->vendor_id);
+                $outside = DB::table('p2p_purchase_order_items as i')->join('products as p', 'p.id', '=', 'i.product_id')
+                    ->where('i.purchase_order_id', $po->id)->where(fn ($w) => $w->whereNull('p.segment_id')->orWhereNotIn('p.segment_id', $segs ?: [0]))
+                    ->whereNotIn('p.id', $this->svc->vendorProductIds((int) $po->vendor_id) ?: [0])
+                    ->pluck('p.product_code');
+                if ($outside->isNotEmpty()) {
+                    abort(response()->json(['status' => false, 'message' => $outside->implode(', ')
+                        . ' — neither the product nor its segment is mapped to this supplier. Map one of them, or change the lines in Stage 02, before submitting.'], 422));
+                }
+                // Re-read the supplier's GST position at the moment of submission.
+                $gst = $this->svc->gstGate($po->vendor_id, $po->document_type === 'international');
+                $po->forceFill(['gst_gate' => $gst['gate'], 'gst_scrutiny_date' => $gst['scrutiny_date'], 'gst_last_filing_date' => $gst['filing_date']]);
+                if ($gst['gate'] === 'blocked') {
+                    abort(response()->json(['status' => false, 'message' => 'GST scrutiny is older than '
+                        . PurchaseOrderService::GST_STALE_MONTHS . ' months — refresh it on the supplier record before submitting.',
+                        'gst' => $gst], 422));
+                }
+                // Hard rule: an overdue return needs the latest request to be approved by the senior.
+                $approval = $po->latestGstApproval()->first();
+                if ($gst['gate'] === 'approval_required' && $approval?->status !== PoGstApproval::STATUS_APPROVED) {
+                    $msg = match ($approval?->status) {
+                        PoGstApproval::STATUS_PENDING  => 'Senior approval is still pending — the PO can be submitted once it is approved.',
+                        PoGstApproval::STATUS_REJECTED => 'The senior rejected this PO: ' . $approval->reason,
+                        default => 'The supplier\'s last GST return is overdue — send it for senior approval before submitting.',
+                    };
+                    abort(response()->json(['status' => false, 'message' => $msg,
+                        'gst' => $gst, 'gst_approval_status' => $approval?->status], 422));
+                }
+
+                // The supplier's standard paperwork must still be in date. An
+                // expired KYC / DD / trade licence is no cover at all, so the PO
+                // does not leave Stage 03 until it is renewed (CS-407).
+                if ($expired = $this->expiredStandardDocs($po)) {
+                    abort(response()->json(['status' => false, 'message' => $this->expiredDocsMessage($expired),
+                        'expired_documents' => $expired], 422));
+                }
+
+                // Case to Case: this supplier's earlier POs must have their necessary
+                // Stage 04 paperwork signed before another order is placed on it.
+                if ($outstanding = $this->unsignedCaseToCase($po)) {
+                    abort(response()->json(['status' => false, 'message' => $outstanding['message'],
+                        'case_to_case' => $outstanding['documents']], 422));
+                }
             }
 
-            // The supplier's standard paperwork must still be in date. An
-            // expired KYC / DD / trade licence is no cover at all, so the PO
-            // does not leave Stage 03 until it is renewed (CS-407).
-            if ($expired = $this->expiredStandardDocs($po)) {
-                return $this->fail($this->expiredDocsMessage($expired), 422, ['expired_documents' => $expired]);
-            }
-
-            // Case to Case: this supplier's earlier POs must have their necessary
-            // Stage 04 paperwork signed before another order is placed on it.
-            if ($outstanding = $this->unsignedCaseToCase($po)) {
-                return $this->fail($outstanding['message'], 422, ['case_to_case' => $outstanding['documents']]);
-            }
-        }
-
-        $this->inTransaction($submit ? 'submit the PO' : 'save the terms', function () use ($po, $user, $data, $submit) {
             $attrs = ['terms' => $data['terms'] ?? null, 'current_step' => max((int) $po->current_step, 3), 'updated_by' => $user->id];
             if ($submit && $po->status === PurchaseOrder::STATUS_DRAFT) {
                 $attrs += ['status' => PurchaseOrder::STATUS_SUBMITTED, 'submitted_at' => now(), 'submitted_by' => $user->id, 'current_step' => 4];
             }
             $po->update($attrs);
             if ($submit) $this->svc->ensureDefaultDocuments($po, $user->id);
-        });
-        // dompdf takes seconds, so the PO PDF renders in the background; Step 04 polls for it.
-        if ($submit) \App\Jobs\P2p\GeneratePoDocumentPdf::dispatch($po->id, $user->id)->afterCommit();
 
-        return $this->ok($this->shapeDetail($po->fresh()));
+            // dompdf takes seconds, so the PO PDF renders in the background; Step 04 polls for it.
+            if ($submit) \App\Jobs\P2p\GeneratePoDocumentPdf::dispatch($po->id, $user->id)->afterCommit();
+
+            $out = $this->shapeDetail($po->fresh());
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $out], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /**
@@ -1046,38 +1166,73 @@ class PurchaseOrderController extends Controller
     /* ══════════════════════════ CANCEL / DELETE ══════════════════════════ */
 
     /** POST /p2p/orders/{id}/cancel — releases every line's quantity back to the PI. */
-    public function cancel(Request $request, int $id): JsonResponse
+    public function cancel(Request $request, int $id)
     {
-        $user = $this->tenantUser($request);
-        $po = $this->findPo($id);
-        $data = $request->validate(['reason' => 'required|string|max:1000']);
-        if ($po->isCancelled()) return $this->fail('This PO is already cancelled.');
-        // Money released must be recovered through the advance refund adjustment, not dropped.
-        if ((float) $po->paid_amount > 0) return $this->fail('Payments are recorded on this PO — raise the advance refund adjustment to cancel it.');
+        try {
+            DB::beginTransaction();
 
-        $this->inTransaction('cancel the PO', function () use ($po, $user, $data) {
+            $user = $this->tenantUser($request);
+            $po = $this->findPo($id);
+            $data = $request->validate(['reason' => 'required|string|max:1000']);
+
+            if ($po->isCancelled()) {
+                abort(response()->json(['status' => false, 'message' => 'This PO is already cancelled.'], 422));
+            }
+            // Money released must be recovered through the advance refund adjustment, not dropped.
+            if ((float) $po->paid_amount > 0) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => 'Payments are recorded on this PO — raise the advance refund adjustment to cancel it.',
+                ], 422));
+            }
+
             $this->svc->releaseAll($po, 'cancelled', $user->id);
             $po->update(['status' => PurchaseOrder::STATUS_CANCELLED, 'cancelled_at' => now(),
                 'cancelled_by' => $user->id, 'cancel_reason' => $data['reason'], 'updated_by' => $user->id,
                 'cancel_stage' => PurchaseOrder::CANCEL_CLOSED, 'cancel_closed_at' => now()]);
             // A cancelled order no longer speaks for the supplier's currency.
             $this->currency()->forget((int) $po->client_id, (int) $po->vendor_id, (int) $po->id);
-        });
-        return $this->ok($this->shapeDetail($po->fresh()));
+
+            $out = $this->shapeDetail($po->fresh());
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $out], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /** POST /p2p/orders/{id}/zoho-sync — the whole chain: PO + bill, payments, vendor credit, refunds. */
-    public function zohoSync(Request $request, int $id): JsonResponse
+    public function zohoSync(Request $request, int $id)
     {
-        $user = $this->tenantUser($request);
-        $po = $this->findPo($id);
-        $zoho = app(\App\Services\P2p\PoZohoService::class);
         try {
-            $r = $zoho->syncAll($po, $user->id);
-        } catch (\RuntimeException $e) {
-            return $this->fail($e->getMessage());
+            DB::beginTransaction();
+
+            $user = $this->tenantUser($request);
+            $po   = $this->findPo($id);
+            $zoho = app(\App\Services\P2p\PoZohoService::class);
+
+            try {
+                $r = $zoho->syncAll($po, $user->id);
+            } catch (\RuntimeException $e) {
+                // Zoho saying no is an answer, not a server failure.
+                abort(response()->json(['status' => false, 'message' => $e->getMessage()], 422));
+            }
+
+            $summary = $zoho->summary($r);
+
+            DB::commit();
+
+            return response()->json([
+                'status'  => true,
+                'message' => 'Synced to Zoho Books — ' . $summary . '.',
+            ], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
         }
-        return response()->json(['status' => true, 'message' => 'Synced to Zoho Books — ' . $zoho->summary($r) . '.']);
     }
 
     /**
@@ -1085,72 +1240,106 @@ class PurchaseOrderController extends Controller
      * the refund adjustment raised on it, every payment released, and every refund
      * recovered back, each with the proof filed against it.
      */
-    public function proofs(Request $request, int $id): JsonResponse
+    public function proofs(Request $request, int $id)
     {
-        $this->tenantUser($request);
-        $po = $this->findPo($id);
+        try {
+            DB::beginTransaction();
 
-        $payments = DB::table('p2p_po_payments as p')
-            ->leftJoin('p2p_po_payment_requests as r', 'r.id', '=', 'p.payment_request_id')
-            ->where('p.purchase_order_id', $po->id)->whereNull('p.deleted_at')
-            ->orderBy('p.id')
-            ->get(['p.id', 'p.amount', 'p.utr_cheque_number', 'p.utr_cheque_date', 'p.proof_name', 'p.proof_path', 'r.code as request_code']);
+            $this->tenantUser($request);
+            $po = $this->findPo($id);
 
-        $recoveries = DB::table('p2p_po_refund_recoveries as c')
-            ->leftJoin('p2p_po_refund_adjustments as a', 'a.id', '=', 'c.refund_adjustment_id')
-            ->where('c.purchase_order_id', $po->id)->whereNull('c.deleted_at')
-            ->orderBy('c.id')
-            ->get(['c.id', 'c.amount', 'c.reference_no', 'c.recovered_date', 'c.proof_name', 'c.proof_path', 'a.code as adr_code']);
+            $payments = DB::table('p2p_po_payments as p')
+                ->leftJoin('p2p_po_payment_requests as r', 'r.id', '=', 'p.payment_request_id')
+                ->where('p.purchase_order_id', $po->id)->whereNull('p.deleted_at')
+                ->orderBy('p.id')
+                ->get(['p.id', 'p.amount', 'p.utr_cheque_number', 'p.utr_cheque_date', 'p.proof_name', 'p.proof_path', 'r.code as request_code']);
 
-        $file = fn ($r, string $ref) => [
-            'id'     => (int) $r->id,
-            'amount' => (float) $r->amount,
-            'date'   => $r->utr_cheque_date ?? $r->recovered_date ?? null,
-            'ref'    => $ref,
-            'name'   => $r->proof_name,
-            'url'    => $r->proof_path ? file_url($r->proof_path) : null,
-        ];
+            $recoveries = DB::table('p2p_po_refund_recoveries as c')
+                ->leftJoin('p2p_po_refund_adjustments as a', 'a.id', '=', 'c.refund_adjustment_id')
+                ->where('c.purchase_order_id', $po->id)->whereNull('c.deleted_at')
+                ->orderBy('c.id')
+                ->get(['c.id', 'c.amount', 'c.reference_no', 'c.recovered_date', 'c.proof_name', 'c.proof_path', 'a.code as adr_code']);
 
-        // The adjustment itself: its reference attachment, and the receipt that can be generated from it.
-        $adj = DB::table('p2p_po_refund_adjustments')
-            ->where('purchase_order_id', $po->id)->whereNull('deleted_at')
-            ->orderByDesc('id')->first();
+            $file = fn ($r, string $ref) => [
+                'id'     => (int) $r->id,
+                'amount' => (float) $r->amount,
+                'date'   => $r->utr_cheque_date ?? $r->recovered_date ?? null,
+                'ref'    => $ref,
+                'name'   => $r->proof_name,
+                'url'    => $r->proof_path ? file_url($r->proof_path) : null,
+            ];
 
-        return $this->ok([
-            'adjustment' => $adj ? [
-                'id'              => (int) $adj->id,
-                'code'            => $adj->code,
-                'date'            => $adj->refund_date,
-                'refund_amount'   => (float) $adj->refund_amount,
-                'attachment_name' => $adj->attachment_name,
-                'attachment_url'  => $adj->attachment_path ? file_url($adj->attachment_path) : null,
-            ] : null,
-            'payments'   => $payments->map(fn ($r) => $file($r, (string) ($r->request_code ?: $r->utr_cheque_number)))->all(),
-            'recoveries' => $recoveries->map(fn ($r) => $file($r, (string) ($r->adr_code ?: $r->reference_no)))->all(),
-        ]);
+            // The adjustment itself: its reference attachment, and the receipt that can be generated from it.
+            $adj = DB::table('p2p_po_refund_adjustments')
+                ->where('purchase_order_id', $po->id)->whereNull('deleted_at')
+                ->orderByDesc('id')->first();
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => [
+                'adjustment' => $adj ? [
+                    'id'              => (int) $adj->id,
+                    'code'            => $adj->code,
+                    'date'            => $adj->refund_date,
+                    'refund_amount'   => (float) $adj->refund_amount,
+                    'attachment_name' => $adj->attachment_name,
+                    'attachment_url'  => $adj->attachment_path ? file_url($adj->attachment_path) : null,
+                ] : null,
+                'payments'   => $payments->map(fn ($r) => $file($r, (string) ($r->request_code ?: $r->utr_cheque_number)))->all(),
+                'recoveries' => $recoveries->map(fn ($r) => $file($r, (string) ($r->adr_code ?: $r->reference_no)))->all(),
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /** GET /p2p/orders/{id}/zoho-tracker — where this PO stands in Zoho Books, from our own columns. */
-    public function zohoTracker(Request $request, int $id): JsonResponse
+    public function zohoTracker(Request $request, int $id)
     {
-        $this->tenantUser($request);
-        return $this->ok(app(\App\Services\P2p\PoZohoService::class)->tracker($this->findPo($id)));
+        try {
+            DB::beginTransaction();
+
+            $this->tenantUser($request);
+            $tracker = app(\App\Services\P2p\PoZohoService::class)->tracker($this->findPo($id));
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $tracker], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /** DELETE /p2p/orders/{id} — drafts only; a submitted PO is cancelled instead. */
-    public function destroy(Request $request, int $id): JsonResponse
+    public function destroy(Request $request, int $id)
     {
-        $user = $this->tenantUser($request);
-        $po = $this->findPo($id);
-        if ($po->status !== PurchaseOrder::STATUS_DRAFT) return $this->fail('Only a draft PO can be deleted — cancel a submitted PO instead.');
+        try {
+            DB::beginTransaction();
 
-        $this->inTransaction('delete the PO', function () use ($po, $user) {
+            $user = $this->tenantUser($request);
+            $po = $this->findPo($id);
+
+            if ($po->status !== PurchaseOrder::STATUS_DRAFT) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => 'Only a draft PO can be deleted — cancel a submitted PO instead.',
+                ], 422));
+            }
+
             $this->svc->releaseAll($po, 'deleted', $user->id);
             $po->update(['updated_by' => $user->id]);
             $this->currency()->forget((int) $po->client_id, (int) $po->vendor_id, (int) $po->id);
             $po->delete();
-        });
-        return $this->ok(['id' => $id, 'deleted' => true]);
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => ['id' => $id, 'deleted' => true]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /* ══════════════════════════ HELPERS ══════════════════════════ */
@@ -1171,13 +1360,30 @@ class PurchaseOrderController extends Controller
     }
 
     /** Stages 01–03 are editable only while the PO is not cancelled, out for signature / signed, or in payment. */
-    private function editBlock(PurchaseOrder $po): ?JsonResponse
+    private function editBlock(PurchaseOrder $po): void
     {
-        if ($po->isCancelled()) return $this->fail('This PO is cancelled and can no longer be edited.');
+        if ($po->isCancelled()) {
+            abort(response()->json([
+                'status'  => false,
+                'message' => 'This PO is cancelled and can no longer be edited.',
+            ], 422));
+        }
+
         $this->refreshSigning($po);
-        if ($po->signingStarted()) return $this->fail('Documents on this PO have been sent for signature — it is view-only now. It opens for editing again only if the request is declined or recalled.');
-        if ($po->paymentsStarted()) return $this->fail('Payments have started on this PO — it is view-only and can no longer be edited.');
-        return null;
+
+        if ($po->signingStarted()) {
+            abort(response()->json([
+                'status'  => false,
+                'message' => 'Documents on this PO have been sent for signature — it is view-only now.'
+                    . ' It opens for editing again only if the request is declined or recalled.',
+            ], 422));
+        }
+        if ($po->paymentsStarted()) {
+            abort(response()->json([
+                'status'  => false,
+                'message' => 'Payments have started on this PO — it is view-only and can no longer be edited.',
+            ], 422));
+        }
     }
 
     /** A supplier of this tenant, with its primary address state code. */

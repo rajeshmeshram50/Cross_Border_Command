@@ -1,0 +1,1503 @@
+{
+    "info": {
+        "name": "Inventory · Masters (Warehouse / Zone / Rack / Shelf / Product Flags)",
+        "description": "34 endpoints under /api/inventory.\n\nPROPOSED — the five tables are not migrated yet, so every call 500s until `php artisan migrate` has run.\n\nRun **Auth → Login** first; the script writes {{token}} and the collection auth is already Bearer {{token}}.\n\nThen run the folders in order: creating a warehouse sets {{warehouse_id}}, creating a zone sets {{zone_id}}, and so on down the chain. Each level's /options feeds the next level's dropdown.\n\n**No codes are ever sent.** WH-014, ZN-003, RK-001 and PF-004 are 'PREFIX-' plus the zero-padded id, and RK-001-SH-01 is the rack code plus the level. They come back on every row as wh_code / zone_code / rack_code / shelf_code / flag_code.\n\n**status is 0 or 1**, not a word. Nothing is hard-deleted once it has children — the toggle is how a location is retired, and deactivating cascades downwards.\n\n**Every list returns the same envelope**: { status, data[], tabs: { all, active, inactive }, meta: { page, per_page, total, last_page } }. The tab counts are taken before the search narrows anything.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "http://localhost:8000/api"
+        },
+        {
+            "key": "token",
+            "value": ""
+        },
+        {
+            "key": "email",
+            "value": "agrotech@mailinator.com"
+        },
+        {
+            "key": "password",
+            "value": "Test@123"
+        },
+        {
+            "key": "warehouse_id",
+            "value": ""
+        },
+        {
+            "key": "zone_id",
+            "value": ""
+        },
+        {
+            "key": "zone_floor_id",
+            "value": ""
+        },
+        {
+            "key": "zone_fridge_id",
+            "value": ""
+        },
+        {
+            "key": "rack_id",
+            "value": ""
+        },
+        {
+            "key": "shelf_id",
+            "value": ""
+        },
+        {
+            "key": "flag_id",
+            "value": ""
+        },
+        {
+            "key": "wh_name",
+            "value": "Bhiwandi Hub – Unit 2"
+        },
+        {
+            "key": "wh_type",
+            "value": "own"
+        },
+        {
+            "key": "wh_area_sqft",
+            "value": "48000"
+        }
+    ],
+    "auth": {
+        "type": "bearer",
+        "bearer": [
+            {
+                "key": "token",
+                "value": "{{token}}",
+                "type": "string"
+            }
+        ]
+    },
+    "item": [
+        {
+            "name": "Auth",
+            "item": [
+                {
+                    "name": "Login (sets {{token}})",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.token) {",
+                                    "    pm.collectionVariables.set('token', r.token);",
+                                    "    console.log('token set ·', r.user.name, '· branch', r.user.branch_id);",
+                                    "} else {",
+                                    "    console.warn('no token in the response — check the credentials');",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/login",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"email\": \"{{email}}\",\n    \"password\": \"{{password}}\"\n}"
+                        },
+                        "description": "Run this FIRST. The test script writes the token into the collection variable, so every other request authenticates on its own.\n\nauth is noauth here on purpose: sending a stale bearer token to /login is harmless but noisy."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "01 · Warehouse Master",
+            "item": [
+                {
+                    "name": "List warehouses",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/warehouses?tab=all&q=&wh_type=&per_page=10",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "warehouses"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "q",
+                                    "value": ""
+                                },
+                                {
+                                    "key": "wh_type",
+                                    "value": ""
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "10"
+                                }
+                            ]
+                        },
+                        "description": "The grid. tab counts All / Active / Inactive BEFORE the search narrows anything, so typing in the box never changes them.\n\nFilters: tab, q, wh_type, city, state, page, per_page (default 10, max 100).\n\nEach row carries zones_count and racks_count as subqueries — a page of ten costs two extra queries, not twenty."
+                    }
+                },
+                {
+                    "name": "Warehouse options (dropdown)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/warehouses/options",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "warehouses",
+                                "options"
+                            ]
+                        },
+                        "description": "Active warehouses only, with the four AUTO fields the Zone and Rack forms show beside the picker: wh_type, area_sqft and location.\n\nThis is the first step of the cascade — warehouse → zone → rack → shelf."
+                    }
+                },
+                {
+                    "name": "Create warehouse",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/warehouses",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "warehouses"
+                            ]
+                        },
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "wh_name",
+                                    "value": "{{wh_name}}",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "wh_type",
+                                    "value": "{{wh_type}}",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "area_sqft",
+                                    "value": "{{wh_area_sqft}}",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "address",
+                                    "value": "Plot 14, MIDC Phase II",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "country",
+                                    "value": "India",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "state",
+                                    "value": "Maharashtra",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "city",
+                                    "value": "Bhiwandi",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "pincode",
+                                    "value": "421302",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "map_url",
+                                    "value": "https://maps.google.com/?q=19.2813,73.0483",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "contact_person",
+                                    "value": "Ramesh Patil",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "contact_dial",
+                                    "value": "+91",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "contact_mobile",
+                                    "value": "9823011456",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "contact_email",
+                                    "value": "stores.bhiwandi@example.com",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "card",
+                                    "type": "file",
+                                    "src": [],
+                                    "description": "JPG, PNG or PDF · up to 5 MB · optional"
+                                }
+                            ]
+                        },
+                        "description": "multipart/form-data, because of the business-card upload. Send it as plain JSON instead when there is no card.\n\nwh_type is the field with consequences: 'own' means the site is zoned, racked and scanned to a shelf; 'tpl' means a third party holds the stock and a put-away is a summary drop.\n\nNo code is sent — WH-014 is derived from the id."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.status && r.data) {",
+                                    "    pm.collectionVariables.set('warehouse_id', r.data.id);",
+                                    "    console.log('warehouse_id =', r.data.id, '·', r.data.wh_code || '');",
+                                    "} else {",
+                                    "    console.warn(r.message || 'no data in the response');",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Show warehouse",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/warehouses/{{warehouse_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "warehouses",
+                                "{{warehouse_id}}"
+                            ]
+                        },
+                        "description": "Adds free_area_sqft: the warehouse area minus every zone already in it. The Add Zone form reads it to show how much room is left."
+                    }
+                },
+                {
+                    "name": "Update warehouse",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/warehouses/{{warehouse_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "warehouses",
+                                "{{warehouse_id}}"
+                            ]
+                        },
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "wh_name",
+                                    "value": "{{wh_name}} (updated)",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "wh_type",
+                                    "value": "{{wh_type}}",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "area_sqft",
+                                    "value": "{{wh_area_sqft}}",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "address",
+                                    "value": "Plot 14, MIDC Phase II",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "country",
+                                    "value": "India",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "state",
+                                    "value": "Maharashtra",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "city",
+                                    "value": "Bhiwandi",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "pincode",
+                                    "value": "421302",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "map_url",
+                                    "value": "https://maps.google.com/?q=19.2813,73.0483",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "contact_person",
+                                    "value": "Ramesh Patil",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "contact_dial",
+                                    "value": "+91",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "contact_mobile",
+                                    "value": "9823011456",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "contact_email",
+                                    "value": "stores.bhiwandi@example.com",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "card",
+                                    "type": "file",
+                                    "src": [],
+                                    "description": "JPG, PNG or PDF · up to 5 MB · optional"
+                                }
+                            ]
+                        },
+                        "description": "POST, not PUT — PHP does not populate $_FILES on a PUT. A new card replaces the old one only once it is on disk, so a failed upload cannot lose the existing file."
+                    }
+                },
+                {
+                    "name": "Toggle warehouse status",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/warehouses/{{warehouse_id}}/status",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "warehouses",
+                                "{{warehouse_id}}",
+                                "status"
+                            ]
+                        },
+                        "description": "1 = active, 0 = inactive.\n\nDeactivating CASCADES: every zone and rack under it goes inactive too, otherwise they would stay on the put-away picker under a warehouse nobody can use.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"status\": 0\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Delete warehouse",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/warehouses/{{warehouse_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "warehouses",
+                                "{{warehouse_id}}"
+                            ]
+                        },
+                        "description": "409 once it holds zones — the status toggle is how a warehouse is retired. Deleting one would orphan every rack and shelf beneath it.\n\nThe business card is removed from disk with the row."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "02 · Zone Master",
+            "item": [
+                {
+                    "name": "List zones",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/zones?warehouse_id={{warehouse_id}}&rack_mode=&tab=all&per_page=10",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "zones"
+                            ],
+                            "query": [
+                                {
+                                    "key": "warehouse_id",
+                                    "value": "{{warehouse_id}}"
+                                },
+                                {
+                                    "key": "rack_mode",
+                                    "value": ""
+                                },
+                                {
+                                    "key": "tab",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "10"
+                                }
+                            ]
+                        },
+                        "description": "Filters: tab, q, warehouse_id, rack_mode, cold_chain, hazardous, page, per_page."
+                    }
+                },
+                {
+                    "name": "Zone options (racked only)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/zones/options?warehouse_id={{warehouse_id}}&rack_mode=rack",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "zones",
+                                "options"
+                            ],
+                            "query": [
+                                {
+                                    "key": "warehouse_id",
+                                    "value": "{{warehouse_id}}"
+                                },
+                                {
+                                    "key": "rack_mode",
+                                    "value": "rack"
+                                }
+                            ]
+                        },
+                        "description": "The Rack form's zone dropdown. rack_mode=rack because a rack can only go in a racked zone.\n\nSends the zone's cold_chain, hazardous and temperature range too — the Rack form shows all three as AUTO and validates its own toggles against them."
+                    }
+                },
+                {
+                    "name": "Create zone · WITH rack",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/zones",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "zones"
+                            ]
+                        },
+                        "description": "A racked zone sends NO capacity figures — its racks carry them. Sending storage_mode, litres or dimensions here is ignored: the server nulls the half the rack_mode does not use.\n\nGuard: area_sqft must fit in what the warehouse has left. Only the server can see the other zones, so only the server can check it.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"warehouse_id\": \"{{warehouse_id}}\",\n    \"zone_name\": \"Zone A – Fast Movers\",\n    \"rack_mode\": \"rack\",\n    \"area_sqft\": 4500,\n    \"purpose\": \"Receiving / Inward\",\n    \"cold_chain\": 0,\n    \"hazardous\": 0\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.status && r.data) {",
+                                    "    pm.collectionVariables.set('zone_id', r.data.id);",
+                                    "    console.log('zone_id =', r.data.id);",
+                                    "} else {",
+                                    "    console.warn(r.message || 'no data in the response');",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Create zone · WITHOUT rack, open floor",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/zones",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "zones"
+                            ]
+                        },
+                        "description": "No shelf to scan, so the zone states its own capacity. Every figure (floor_area, volume, usable_volume) is computed on the screen and stored as sent.\n\nusable_pct is the share actually stackable once aisles and clearance come out — usable_volume is what planning reads, gross volume always overstates it.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"warehouse_id\": \"{{warehouse_id}}\",\n    \"zone_name\": \"Heavy Goods Floor\",\n    \"rack_mode\": \"norack\",\n    \"area_sqft\": 6458,\n    \"purpose\": \"Bulk Storage\",\n    \"cold_chain\": 0,\n    \"hazardous\": 0,\n    \"storage_mode\": \"regular\",\n    \"dim_unit\": \"m\",\n    \"length\": 30,\n    \"width\": 20,\n    \"height\": 8,\n    \"usable_pct\": 70,\n    \"floor_area\": 600,\n    \"volume\": 4800,\n    \"usable_volume\": 3360\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.status && r.data) {",
+                                    "    pm.collectionVariables.set('zone_floor_id', r.data.id);",
+                                    "    console.log('zone_floor_id =', r.data.id);",
+                                    "} else {",
+                                    "    console.warn(r.message || 'no data in the response');",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Create zone · WITHOUT rack, refrigerator",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/zones",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "zones"
+                            ]
+                        },
+                        "description": "A fridge is measured in litres, not dimensions. Sending both is rejected rather than ignored — a fridge saved with floor dimensions would show capacity it does not have.\n\ncold_chain=1 requires BOTH temperatures, min below max, each between -80 and +60 °C.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"warehouse_id\": \"{{warehouse_id}}\",\n    \"zone_name\": \"Cold Room 1 – Vaccines\",\n    \"rack_mode\": \"norack\",\n    \"area_sqft\": 400,\n    \"purpose\": \"Bulk Storage\",\n    \"cold_chain\": 1,\n    \"temp_min_c\": 2,\n    \"temp_max_c\": 8,\n    \"hazardous\": 0,\n    \"storage_mode\": \"fridge\",\n    \"capacity_litres\": 2500\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.status && r.data) {",
+                                    "    pm.collectionVariables.set('zone_fridge_id', r.data.id);",
+                                    "    console.log('zone_fridge_id =', r.data.id);",
+                                    "} else {",
+                                    "    console.warn(r.message || 'no data in the response');",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Show zone",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/zones/{{zone_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "zones",
+                                "{{zone_id}}"
+                            ]
+                        },
+                        "description": "Adds free_area_sqft — the zone area minus every rack already in it. The Add Rack form reads it."
+                    }
+                },
+                {
+                    "name": "Update zone",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/zones/{{zone_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "zones",
+                                "{{zone_id}}"
+                            ]
+                        },
+                        "description": "409 if you switch a zone that already has racks to 'norack' — the racks are only reachable through a racked zone, so they would be stranded.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"warehouse_id\": \"{{warehouse_id}}\",\n    \"zone_name\": \"Zone A – Fast Movers\",\n    \"rack_mode\": \"rack\",\n    \"area_sqft\": 5000,\n    \"purpose\": \"Receiving / Inward\",\n    \"cold_chain\": 0,\n    \"hazardous\": 0\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Toggle zone status",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/zones/{{zone_id}}/status",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "zones",
+                                "{{zone_id}}",
+                                "status"
+                            ]
+                        },
+                        "description": "Deactivating cascades to its racks. Re-activating is refused while its warehouse is inactive — the zone would be reachable through a warehouse nobody can use.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"status\": 0\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Delete zone",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/zones/{{zone_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "zones",
+                                "{{zone_id}}"
+                            ]
+                        },
+                        "description": "409 once it holds racks."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "03 · Rack Master",
+            "item": [
+                {
+                    "name": "List racks",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/racks?zone_id={{zone_id}}&tab=all&per_page=10",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "racks"
+                            ],
+                            "query": [
+                                {
+                                    "key": "zone_id",
+                                    "value": "{{zone_id}}"
+                                },
+                                {
+                                    "key": "tab",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "10"
+                                }
+                            ]
+                        },
+                        "description": "Filters: tab, q, warehouse_id, zone_id, cold_chain, hazardous, page, per_page.\n\nEach row carries shelves_count, capacity_kg, used_kg and load_pct — three subqueries for the whole page rather than three per row."
+                    }
+                },
+                {
+                    "name": "Rack options (put-away picker)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/racks/options?warehouse_id={{warehouse_id}}&zone_id=",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "racks",
+                                "options"
+                            ],
+                            "query": [
+                                {
+                                    "key": "warehouse_id",
+                                    "value": "{{warehouse_id}}"
+                                },
+                                {
+                                    "key": "zone_id",
+                                    "value": ""
+                                }
+                            ]
+                        },
+                        "description": "Active racks by warehouse or by zone — pass at least one. Returns height_cm already converted, which is the unit every shelf comparison is made in."
+                    }
+                },
+                {
+                    "name": "Create rack",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/racks",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "racks"
+                            ]
+                        },
+                        "description": "warehouse_id is NOT sent — it is taken from the zone, so the two can never disagree.\n\narea_sqft is computed server-side from length × width × unit, not taken from the payload: it is the number the zone-capacity guard sums, so letting the client send it would let the client decide whether the rack fits.\n\nGuards: the zone must be rack_mode=rack and active; the name must be unique inside it; cold_chain / hazardous cannot exceed what the zone allows; the footprint must fit in the zone's free area.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"zone_id\": \"{{zone_id}}\",\n    \"rack_name\": \"Rack A-01\",\n    \"cold_chain\": 0,\n    \"hazardous\": 0,\n    \"dim_unit\": \"cm\",\n    \"length\": 240,\n    \"width\": 100,\n    \"height\": 300\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.status && r.data) {",
+                                    "    pm.collectionVariables.set('rack_id', r.data.id);",
+                                    "    console.log('rack_id =', r.data.id);",
+                                    "} else {",
+                                    "    console.warn(r.message || 'no data in the response');",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Show rack",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/racks/{{rack_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "racks",
+                                "{{rack_id}}"
+                            ]
+                        },
+                        "description": "Adds free_height_cm and next_level_no, so the Add Shelf form opens already knowing its limits."
+                    }
+                },
+                {
+                    "name": "Update rack",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/racks/{{rack_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "racks",
+                                "{{rack_id}}"
+                            ]
+                        },
+                        "description": "Shrinking a rack below the height its shelves already use is refused — the next shelf save would otherwise be impossible to reason about.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"zone_id\": \"{{zone_id}}\",\n    \"rack_name\": \"Rack A-01\",\n    \"cold_chain\": 0,\n    \"hazardous\": 0,\n    \"dim_unit\": \"cm\",\n    \"length\": 240,\n    \"width\": 100,\n    \"height\": 320\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Toggle rack status",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/racks/{{rack_id}}/status",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "racks",
+                                "{{rack_id}}",
+                                "status"
+                            ]
+                        },
+                        "description": "Deactivating cascades to its shelves. Re-activating is refused while its zone is inactive.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"status\": 0\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Delete rack",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/racks/{{rack_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "racks",
+                                "{{rack_id}}"
+                            ]
+                        },
+                        "description": "409 once it holds shelves."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "04 · Shelf Master",
+            "item": [
+                {
+                    "name": "List shelves of a rack",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/racks/{{rack_id}}/shelves?tab=all&q=",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "racks",
+                                "{{rack_id}}",
+                                "shelves"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "q",
+                                    "value": ""
+                                }
+                            ]
+                        },
+                        "description": "The shelf drawer in one call: the levels, the KPI strip above them (levels, capacity_kg, used_kg, load_pct, boxes) and the rack's own limits including free_height_cm and next_level_no.\n\nNot paginated — a rack has levels, not pages."
+                    }
+                },
+                {
+                    "name": "Create shelf",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/racks/{{rack_id}}/shelves",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "racks",
+                                "{{rack_id}}",
+                                "shelves"
+                            ]
+                        },
+                        "description": "Nested under the rack because every rule it has to pass is a comparison against that rack: length and width are capped by the rack's, and height by what the shelves already stacked have left.\n\nAll of those are compared in CENTIMETRES whatever unit was typed, which is why height_cm is stored as well as height.\n\nused_weight_kg and boxes_count are NOT accepted here — they belong to the SPI put-away. A master form that could set them would let someone mark a shelf empty while boxes are still on it.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"shelf_name\": \"Shelf L1 – Picking\",\n    \"level_no\": 1,\n    \"shelf_type\": \"Standard Shelf\",\n    \"max_weight_kg\": 500,\n    \"purpose\": \"Fast-Moving Picking\",\n    \"cold_chain\": 0,\n    \"hazardous\": 0,\n    \"dim_unit\": \"cm\",\n    \"length\": 230,\n    \"width\": 95,\n    \"height\": 45,\n    \"area\": 21850,\n    \"volume\": 0.983\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.status && r.data) {",
+                                    "    pm.collectionVariables.set('shelf_id', r.data.id);",
+                                    "    console.log('shelf_id =', r.data.id);",
+                                    "} else {",
+                                    "    console.warn(r.message || 'no data in the response');",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Show shelf",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/shelves/{{shelf_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "shelves",
+                                "{{shelf_id}}"
+                            ]
+                        },
+                        "description": "occupancy (empty / partial / full / inactive) and load_pct are derived from used vs max, never stored — so they cannot contradict used_weight_kg."
+                    }
+                },
+                {
+                    "name": "Update shelf",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/shelves/{{shelf_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "shelves",
+                                "{{shelf_id}}"
+                            ]
+                        },
+                        "description": "max_weight_kg cannot drop below what is already stored on the shelf.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"shelf_name\": \"Shelf L1 – Picking\",\n    \"level_no\": 1,\n    \"shelf_type\": \"Standard Shelf\",\n    \"max_weight_kg\": 600,\n    \"purpose\": \"Fast-Moving Picking\",\n    \"cold_chain\": 0,\n    \"hazardous\": 0,\n    \"dim_unit\": \"cm\",\n    \"length\": 230,\n    \"width\": 95,\n    \"height\": 45,\n    \"area\": 21850,\n    \"volume\": 0.983\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Toggle shelf status",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/shelves/{{shelf_id}}/status",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "shelves",
+                                "{{shelf_id}}",
+                                "status"
+                            ]
+                        },
+                        "description": "409 while boxes are still on it. Re-activating is refused while its rack is inactive.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"status\": 0\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Delete shelf",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/shelves/{{shelf_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "shelves",
+                                "{{shelf_id}}"
+                            ]
+                        },
+                        "description": "409 while boxes are still on it."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "05 · Product Flags Master",
+            "item": [
+                {
+                    "name": "List product flags",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/product-flags?tab=all&q=&per_page=10",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "product-flags"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tab",
+                                    "value": "all"
+                                },
+                                {
+                                    "key": "q",
+                                    "value": ""
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "10"
+                                }
+                            ]
+                        },
+                        "description": "Filters: tab, q, page, per_page."
+                    }
+                },
+                {
+                    "name": "Product flag options",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/product-flags/options",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "product-flags",
+                                "options"
+                            ]
+                        },
+                        "description": "Active flags for the picker on the SPI box-item form. That form holds its selection in a json column, so this master names and explains the labels — it does not own the assignment, and nothing cascades from here."
+                    }
+                },
+                {
+                    "name": "Create product flag",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/product-flags",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "product-flags"
+                            ]
+                        },
+                        "description": "Two flags called 'Fragile' would be indistinguishable on the box form, so the name is unique per client.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"flag_name\": \"Cold Chain\",\n    \"purpose\": \"Requires controlled cold temperature\"\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.status && r.data) {",
+                                    "    pm.collectionVariables.set('flag_id', r.data.id);",
+                                    "    console.log('flag_id =', r.data.id);",
+                                    "} else {",
+                                    "    console.warn(r.message || 'no data in the response');",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Show product flag",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/product-flags/{{flag_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "product-flags",
+                                "{{flag_id}}"
+                            ]
+                        },
+                        "description": ""
+                    }
+                },
+                {
+                    "name": "Update product flag",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/product-flags/{{flag_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "product-flags",
+                                "{{flag_id}}"
+                            ]
+                        },
+                        "description": "",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"flag_name\": \"Cold Chain\",\n    \"purpose\": \"Requires controlled cold temperature (2–8 °C)\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Toggle product flag status",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/product-flags/{{flag_id}}/status",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "product-flags",
+                                "{{flag_id}}",
+                                "status"
+                            ]
+                        },
+                        "description": "Nothing cascades — a flag has no children.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"status\": 0\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Delete product flag",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/product-flags/{{flag_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "product-flags",
+                                "{{flag_id}}"
+                            ]
+                        },
+                        "description": "Allowed outright, unlike the other four: a flag has no children to orphan."
+                    }
+                }
+            ]
+        }
+    ]
+}

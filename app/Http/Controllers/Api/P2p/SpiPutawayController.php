@@ -2,14 +2,12 @@
 
 namespace App\Http\Controllers\Api\P2p;
 
-use App\Http\Controllers\Api\P2p\Concerns\RunsInTransaction;
 use App\Http\Controllers\Controller;
 use App\Models\P2p\SpiBox;
 use App\Models\P2p\SpiPutaway;
 use App\Models\P2p\SpiScanLog;
 use App\Models\P2p\SupplierInvoice;
 use App\Services\P2p\SupplierInvoiceService;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -30,19 +28,7 @@ use Illuminate\Validation\Rule;
  */
 class SpiPutawayController extends Controller
 {
-    use RunsInTransaction;
-
     public function __construct(private SupplierInvoiceService $svc) {}
-
-    private function ok($data, int $code = 200): JsonResponse
-    {
-        return response()->json(['status' => true, 'data' => $data], $code);
-    }
-
-    private function fail(string $message, int $code = 422, array $extra = []): JsonResponse
-    {
-        return response()->json(['status' => false, 'message' => $message] + $extra, $code);
-    }
 
     private function tenantUser(Request $request)
     {
@@ -67,55 +53,79 @@ class SpiPutawayController extends Controller
     /* ══════════════════════════ READ ══════════════════════════ */
 
     /** GET /p2p/spi/{id}/putaway */
-    public function index(Request $request, int $id): JsonResponse
+    public function index(Request $request, int $id)
     {
-        $this->tenantUser($request);
-        $spi  = $this->findSpi($id);
-        $full = $this->isFullPutaway($spi->warehouse_id);
+        try {
+            DB::beginTransaction();
 
-        $rows = SpiPutaway::where('supplier_invoice_id', $id)->with('box:id,box_code')->get()
-            ->map(fn ($p) => $p->toArray() + [
-                'box_code'         => $p->box?->box_code,
-                'next_scan'        => $p->nextScan($full),
-                'ready_to_confirm' => $p->isReadyToConfirm($full),
-            ]);
+            $this->tenantUser($request);
+            $spi  = $this->findSpi($id);
+            $full = $this->isFullPutaway($spi->warehouse_id);
 
-        return $this->ok([
-            'putaway_mode' => $full ? 'full' : 'summary',
-            'rows'         => $rows,
-            'progress'     => [
-                'placed' => $rows->whereNotNull('confirmed_at')->count(),
-                'total'  => SpiBox::where('supplier_invoice_id', $id)->count(),
-            ],
-        ]);
+            $rows = SpiPutaway::where('supplier_invoice_id', $id)->with('box:id,box_code')->get()
+                ->map(fn ($p) => $p->toArray() + [
+                    'box_code'         => $p->box?->box_code,
+                    'next_scan'        => $p->nextScan($full),
+                    'ready_to_confirm' => $p->isReadyToConfirm($full),
+                ]);
+
+            $body = [
+                'putaway_mode' => $full ? 'full' : 'summary',
+                'rows'         => $rows,
+                'progress'     => [
+                    'placed' => $rows->whereNotNull('confirmed_at')->count(),
+                    'total'  => SpiBox::where('supplier_invoice_id', $id)->count(),
+                ],
+            ];
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $body], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /* ══════════════════════════ WRITE ══════════════════════════ */
 
     /** PUT /p2p/spi/{id}/storage-type — step 1 of the screen: choose the warehouse. */
-    public function setStorageType(Request $request, int $id): JsonResponse
+    public function setStorageType(Request $request, int $id)
     {
-        $this->tenantUser($request);
-        $spi = $this->findSpi($id);
+        try {
+            DB::beginTransaction();
 
-        $data = $request->validate(['warehouse_id' => ['required', 'integer']]);
+            $this->tenantUser($request);
+            $spi  = $this->findSpi($id);
+            $data = $request->validate(['warehouse_id' => ['required', 'integer']]);
 
-        $wh = DB::table('master_warehouse_master')->where('id', $data['warehouse_id'])->first();
-        if (!$wh) return $this->fail('That warehouse does not exist.');
-        if ($wh->status !== 'Active') return $this->fail("{$wh->wh_name} is inactive — pick another warehouse.");
+            $wh = DB::table('master_warehouse_master')->where('id', $data['warehouse_id'])->first();
+            if (!$wh) {
+                abort(response()->json(['status' => false, 'message' => 'That warehouse does not exist.'], 422));
+            }
+            if ($wh->status !== 'Active') {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => "{$wh->wh_name} is inactive — pick another warehouse.",
+                ], 422));
+            }
 
-        $this->inTransaction('set the storage type', function () use ($spi, $data, $wh) {
             $spi->forceFill(['warehouse_id' => $data['warehouse_id']])->save();
             $this->svc->log($spi, 'storage_type_set', ['new_value' => $wh->wh_name, 'stage' => 4]);
-        });
 
-        return $this->ok([
-            'warehouse_id' => $wh->id,
-            'wh_name'      => $wh->wh_name,
-            'wh_type'      => $wh->wh_type,
-            // A third party gets no rack or shelf allocation.
-            'putaway_mode' => $wh->wh_type === 'Own Warehouse' ? 'full' : 'summary',
-        ]);
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => [
+                'warehouse_id' => $wh->id,
+                'wh_name'      => $wh->wh_name,
+                'wh_type'      => $wh->wh_type,
+                // A third party gets no rack or shelf allocation.
+                'putaway_mode' => $wh->wh_type === 'Own Warehouse' ? 'full' : 'summary',
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /**
@@ -123,8 +133,12 @@ class SpiPutawayController extends Controller
      *
      * POST, not PUT: each scan stamps its own timestamp, so it is not
      * idempotent. Every attempt is logged before anything is decided.
+     *
+     * The refusal checks run BEFORE the transaction opens, on purpose: a
+     * refusal writes its scan-log row and then aborts, and a rollback would
+     * destroy the one record the rejection exists to leave behind.
      */
-    public function scan(Request $request, int $id): JsonResponse
+    public function scan(Request $request, int $id)
     {
         $user = $this->tenantUser($request);
         $spi  = $this->findSpi($id);
@@ -141,29 +155,29 @@ class SpiPutawayController extends Controller
         $box  = SpiBox::where('supplier_invoice_id', $id)
             ->where('box_code', $data['box_code'] ?? $data['scanned_value'])->first();
 
-        // ── Refusals. Each one is logged with the reason before it returns. ──
+        // ── Refusals. Each one is logged with the reason before it aborts. ──
 
         if ($data['scan_type'] === 'box' && !$box) {
             $other = SpiBox::withoutGlobalScope('tenant')->where('box_code', $data['scanned_value'])->first();
 
-            return $this->refuse($spi, $data, $user,
+            $this->refuse($spi, $data, $user,
                 $other ? 'wrong_spi' : 'unknown_code',
                 $other ? "{$data['scanned_value']} belongs to another invoice." : "No box matches {$data['scanned_value']}.");
         }
 
         if (!$box) {
-            return $this->refuse($spi, $data, $user, 'no_spi_context', 'Scan the box before anything else.');
+            $this->refuse($spi, $data, $user, 'no_spi_context', 'Scan the box before anything else.');
         }
 
         $row  = SpiPutaway::firstOrNew(['box_id' => $box->id]);
         $next = $row->exists ? $row->nextScan($full) : 'box';
 
         if ($row->isPlaced()) {
-            return $this->refuse($spi, $data, $user, 'already_placed', "{$box->box_code} is already put away.", $box, $row);
+            $this->refuse($spi, $data, $user, 'already_placed', "{$box->box_code} is already put away.", $box, $row);
         }
 
         if ($next !== $data['scan_type']) {
-            return $this->refuse($spi, $data, $user, 'out_of_order',
+            $this->refuse($spi, $data, $user, 'out_of_order',
                 'Scan the ' . ($next ?? 'nothing — the chain is complete') . ' before the ' . $data['scan_type'] . '.',
                 $box, $row, $next);
         }
@@ -173,7 +187,7 @@ class SpiPutawayController extends Controller
            one thing Stage 04 exists to capture. */
         $place = $this->resolveLocation($data['scan_type'], $data['scanned_value'], $spi, $row);
         if (is_string($place)) {
-            return $this->refuse($spi, $data, $user,
+            $this->refuse($spi, $data, $user,
                 $place === 'inactive' ? 'inactive_location' : ($place === 'not_on_rack' ? 'shelf_not_on_rack' : 'unknown_code'),
                 match ($place) {
                     'inactive'    => "{$data['scanned_value']} is not active — pick another location.",
@@ -185,7 +199,9 @@ class SpiPutawayController extends Controller
 
         // ── Accepted ──
 
-        $row = $this->inTransaction('record the scan', function () use ($spi, $box, $row, $data, $user, $place) {
+        try {
+            DB::beginTransaction();
+
             $row->fill($place + [
                 'supplier_invoice_id' => $spi->id,
                 'box_id'              => $box->id,
@@ -202,34 +218,44 @@ class SpiPutawayController extends Controller
                 'box_id' => $box->id, 'new_value' => $data['scanned_value'], 'stage' => 4,
             ]);
 
-            return $row->refresh();
-        });
+            $row->refresh();
 
-        return $this->ok($row->toArray() + [
-            'box_code'         => $box->box_code,
-            'next_scan'        => $row->nextScan($full),
-            'ready_to_confirm' => $row->isReadyToConfirm($full),
-        ]);
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $row->toArray() + [
+                'box_code'         => $box->box_code,
+                'next_scan'        => $row->nextScan($full),
+                'ready_to_confirm' => $row->isReadyToConfirm($full),
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /** PUT /p2p/spi/{id}/putaway/{row}/confirm — the box is now placed. */
-    public function confirm(Request $request, int $id, int $rowId): JsonResponse
+    public function confirm(Request $request, int $id, int $rowId)
     {
-        $user = $this->tenantUser($request);
-        $spi  = $this->findSpi($id);
-        $row  = SpiPutaway::where('supplier_invoice_id', $id)->with('box:id,box_code')->findOrFail($rowId);
+        try {
+            DB::beginTransaction();
 
-        $full = $this->isFullPutaway($spi->warehouse_id);
-        if (!$row->isReadyToConfirm($full)) {
-            return $this->fail('Scan the ' . $row->nextScan($full) . " before confirming {$row->box?->box_code}.");
-        }
+            $user = $this->tenantUser($request);
+            $spi  = $this->findSpi($id);
+            $row  = SpiPutaway::where('supplier_invoice_id', $id)->with('box:id,box_code')->findOrFail($rowId);
 
-        $data = $request->validate([
-            'condition_at_putaway' => ['nullable', Rule::in(SpiPutaway::CONDITIONS)],
-            'note'                 => ['nullable', 'string'],
-        ]);
+            $full = $this->isFullPutaway($spi->warehouse_id);
+            if (!$row->isReadyToConfirm($full)) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => 'Scan the ' . $row->nextScan($full) . " before confirming {$row->box?->box_code}.",
+                ], 422));
+            }
 
-        $row = $this->inTransaction('confirm the put-away', function () use ($spi, $row, $data, $user) {
+            $data = $request->validate([
+                'condition_at_putaway' => ['nullable', Rule::in(SpiPutaway::CONDITIONS)],
+                'note'                 => ['nullable', 'string'],
+            ]);
+
             $row->forceFill([
                 'confirmed_at'         => now(),
                 'confirmed_by'         => $user->id,
@@ -241,16 +267,21 @@ class SpiPutawayController extends Controller
                 'note'   => $data['note'] ?? null, 'stage' => 4,
             ]);
 
-            return $row->refresh();
-        });
+            $row->refresh();
 
-        $total  = SpiBox::where('supplier_invoice_id', $id)->count();
-        $placed = SpiPutaway::where('supplier_invoice_id', $id)->whereNotNull('confirmed_at')->count();
+            $total  = SpiBox::where('supplier_invoice_id', $id)->count();
+            $placed = SpiPutaway::where('supplier_invoice_id', $id)->whereNotNull('confirmed_at')->count();
 
-        return $this->ok($row->toArray() + [
-            'box_code' => $row->box?->box_code,
-            'spi_putaway_progress' => ['placed' => $placed, 'total' => $total, 'complete' => $placed >= $total],
-        ]);
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $row->toArray() + [
+                'box_code'             => $row->box?->box_code,
+                'spi_putaway_progress' => ['placed' => $placed, 'total' => $total, 'complete' => $placed >= $total],
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /**
@@ -311,14 +342,17 @@ class SpiPutawayController extends Controller
 
     /* ══════════════════════════ SCAN LOG ══════════════════════════ */
 
-    /** Log the rejection, then return it. The log row is the point. */
+    /**
+     * Log the rejection, then abort with it. The log row is the point, which
+     * is why no transaction is open around the refusal path.
+     */
     private function refuse(
         SupplierInvoice $spi, array $data, $user, string $reason, string $message,
         ?SpiBox $box = null, ?SpiPutaway $row = null, ?string $expected = null
-    ): JsonResponse {
+    ): never {
         $this->logScan($spi, $data, $user, 'failed', $reason, $message, $box, $row, $expected);
 
-        return $this->fail($message);
+        abort(response()->json(['status' => false, 'message' => $message], 422));
     }
 
     private function logScan(
