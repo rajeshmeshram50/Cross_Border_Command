@@ -75,6 +75,11 @@ export default function Tooltip({
   const triggerRef = useRef<HTMLElement | null>(null);
   const tipRef = useRef<HTMLDivElement | null>(null);
   const showTimer = useRef<number | null>(null);
+  const hideTimer = useRef<number | null>(null);
+  /* True once the content is taller than the cap below — a long product
+     description rather than a short label. Only then does the tip take the
+     pointer, so an ordinary tooltip still never sits in front of a click. */
+  const [scrollable, setScrollable] = useState(false);
 
   // Compute the tooltip's screen position from the trigger's rect + the
   // tooltip's own measured size (so it's centred precisely along the
@@ -112,8 +117,18 @@ export default function Tooltip({
      which is what read as "slow to appear". Laying out before paint means
      the first frame the user sees is already in the right place. */
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!open) { setScrollable(false); return; }
     place();
+    /* Whether the content outgrew the cap. Read after `place`, so the tip has
+       its final width and the text has wrapped.
+
+       The margin is 12px, not 1: the arrow and the inner sheen are absolutely
+       positioned a few pixels outside the box, so every tooltip — including a
+       two-word one — overflows by about five. At 1px every tooltip counted as
+       scrollable and took the pointer, which is the one thing a tooltip must
+       not do. Real overflow here is hundreds of pixels. */
+    const el = tipRef.current;
+    if (el) setScrollable(el.scrollHeight - el.clientHeight > 12);
     const onScrollOrResize = () => setOpen(false);
     window.addEventListener('scroll', onScrollOrResize, true);
     window.addEventListener('resize', onScrollOrResize);
@@ -140,7 +155,17 @@ export default function Tooltip({
   };
   const onLeave = () => {
     if (showTimer.current) window.clearTimeout(showTimer.current);
+    /* A tooltip long enough to scroll has to survive the pointer leaving the
+       trigger, or it would close the moment you reached for its scrollbar.
+       One frame's grace: if the pointer lands on the tip it cancels this. */
+    if (scrollable) {
+      hideTimer.current = window.setTimeout(() => setOpen(false), 160) as unknown as number;
+      return;
+    }
     setOpen(false);
+  };
+  const keepOpen = () => {
+    if (hideTimer.current) window.clearTimeout(hideTimer.current);
   };
 
   // Compose hover/focus handlers + ref onto the child via React's
@@ -282,6 +307,10 @@ export default function Tooltip({
         <div
           ref={tipRef}
           role="tooltip"
+          /* Measured once it is on screen: taller than the cap means it has to
+             scroll, which in turn means it has to accept the pointer. */
+          onMouseEnter={keepOpen}
+          onMouseLeave={() => setOpen(false)}
           // Haptic-style entrance: combine soft scale-in (0.86 → 1) with
           // a directional slide so the tooltip *pops* toward its target
           // edge — feels like a gentle tap response rather than a flat
@@ -320,8 +349,17 @@ export default function Tooltip({
             wordBreak: 'break-word',
             overflowWrap: 'anywhere',
             maxWidth: maxWidth ?? `min(360px, calc(100vw - 16px))`,
+            /* And a height cap, for the same reason as the width one. Without
+               it a 2,000-character product description rendered as a column
+               taller than the screen, covering the table it came from. Past
+               the cap it scrolls. */
+            maxHeight: 'min(40vh, 320px)',
+            overflowY: scrollable ? 'auto' : 'hidden',
             zIndex,
-            pointerEvents: 'none',
+            /* Only a scrolling tip takes the pointer; every other tooltip stays
+               click-through, so it can never swallow a click on what is under
+               it. */
+            pointerEvents: scrollable ? 'auto' : 'none',
             animation: 'cbcTooltipSpring 0.12s cubic-bezier(0.34, 1.56, 0.64, 1)',
             transformOrigin:
               position === 'top'    ? 'center bottom' :
