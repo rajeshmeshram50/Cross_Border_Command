@@ -77,21 +77,15 @@ function InvoiceTableBase({ rows, onAction, startSr = 0, scrollRef }: InvoiceTab
             alternate tbody groups with `tbody:nth-of-type(even)`. PO renders a
             tbody per purchase order; an invoice is its own group, so the same
             rule alternates per row and this page needs no striping CSS. */}
-        {rows.length === 0 ? (
-          <tbody>
-            <tr>
-              <td className="ord-empty" colSpan={INVOICE_COLUMNS.length}>
-                No supplier purchase invoices to display in this category.
-              </td>
-            </tr>
+        {/* No empty case here on purpose: the page renders its message in
+            place of this whole table. A `colSpan` cell inside a fixed-layout
+            table 1500px wide centres itself across that width, which puts it
+            off-screen and under the horizontal scrollbar. */}
+        {rows.map((row, i) => (
+          <tbody key={row.id}>
+            <InvoiceTableRow row={row} index={startSr + i} onAction={onAction} />
           </tbody>
-        ) : (
-          rows.map((row, i) => (
-            <tbody key={row.id}>
-              <InvoiceTableRow row={row} index={startSr + i} onAction={onAction} />
-            </tbody>
-          ))
-        )}
+        ))}
       </table>
     </div>
   );

@@ -212,6 +212,15 @@
 .ord-table {
   table-layout: fixed;
   border-collapse: collapse;
+  /* The inline width is the sum of the colgroup's pixel widths, which is what
+     keeps the columns from reflowing. On a screen wider than that sum the
+     table simply stopped and left the rest of the card blank — 646px of white
+     beside the rows at 3840. `min-width` beats `width`, so this stretches the
+     table to the scroller whenever the screen is the wider of the two and does
+     nothing at all when the table is (the usual case, where it scrolls).
+     Under `table-layout: fixed` the surplus is shared out across the columns,
+     so the colgroup's proportions survive. */
+  min-width: 100%;
 }
 .ord-table th,
 .ord-table td {

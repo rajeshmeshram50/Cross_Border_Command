@@ -369,13 +369,18 @@
   }
 }
 
+/* Below this the section header has no room for the label, so the button goes
+   icon-only. `.mpr-tdsbtn span` was too broad: the icon is a <span> too, so it
+   went as well and the button became 14px of padding — an empty dark pill with
+   nothing in it. The label is the span that is NOT the icon. */
 @container mprcard (max-width: 1242px) {
-  .mpr-tdsbtn span {
+  .mpr-tdsbtn>span:not(.mpr-tdsbtn__ico) {
     display: none;
   }
 
+  /* Even padding, now that an icon and not a label is what is being framed. */
   .mpr-tdsbtn {
-    padding: 0 8px 0 6px;
+    padding: 0 6px;
   }
 }
 

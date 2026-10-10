@@ -328,10 +328,24 @@ export default function InvoiceList() {
         {/* The table takes only its rows. Everything that changes per keystroke
             stays up here, so `memo` on the table means typing re-renders the
             input and not 22 x 60 cells. */}
-        <InvoiceTable
-          rows={pagedRows} onAction={handleRowAction}
-          startSr={start} scrollRef={scrollRef}
-        />
+        {/* An empty list is a message, not a table — the PO list does the same
+            thing, and for the reason this page just proved: the table is
+            1500px wide with `table-layout: fixed`, so a centred colSpan cell
+            sits off to the right of the viewport and the horizontal scroll
+            cuts it in half. `.ord-empty` is `flex: 1 1 auto`, so it fills the
+            card the table was filling instead of leaving it blank. */}
+        {total === 0 ? (
+          <div className="ord-empty">
+            {query.trim()
+              ? 'No supplier purchase invoices match your search.'
+              : 'No supplier purchase invoices to display in this category.'}
+          </div>
+        ) : (
+          <InvoiceTable
+            rows={pagedRows} onAction={handleRowAction}
+            startSr={start} scrollRef={scrollRef}
+          />
+        )}
 
         {/* The footer the PO list carries, with the same band and the same
             controls: how much of the list is on screen, rows per page, and the

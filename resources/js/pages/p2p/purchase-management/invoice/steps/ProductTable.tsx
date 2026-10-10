@@ -1,6 +1,11 @@
-import { memo, useCallback, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useState } from 'react';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
+import { useToast } from '../../../../../contexts/ToastContext';
 import { IcoPencil, IcoPlus } from '../../../icons';
+/* The product master's own wizard, which is what the pencil and the plus open
+   on the purchase order's product table too. Lazy because it is a large form
+   that most visits to this step never open. */
+const AddProductModal = lazy(() => import('../../../p2p-master-management/product-management/AddProductModal'));
 import ProductDescription, { ProductDetailView } from '../../order/shared/ProductDescription';
 import { lineTotals, tableTotals, PRODUCT_CATALOGUE, type ProductLine, type TaxMode } from '../invoice-products';
 
@@ -41,6 +46,19 @@ export default function ProductTable({
      rather than an open flag that could disagree with the id beside it. */
   const [detailId, setDetailId] = useState<number | null>(null);
 
+  const toast = useToast();
+  /* The product wizard has two entry points and one component: an id edits
+     that product, no id creates one. Two pieces of state rather than one,
+     because `null` already means "not editing" and would otherwise have to
+     mean "adding" as well. */
+  const [editing, setEditing] = useState<number | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  /* Stable, so the memoised rows are not re-rendered by the buttons they own. */
+  const editProduct = useCallback((productId: number) => setEditing(productId), []);
+  const addProduct = useCallback(() => setAdding(true), []);
+  const closeProduct = useCallback(() => { setEditing(null); setAdding(false); }, []);
+
   return (
     <>
       <div className="cpd-legend">
@@ -54,6 +72,28 @@ export default function ProductTable({
           the PO product table does. */}
       <div className="cpd-scroll">
         <ProductDetailView productId={detailId} onClose={() => setDetailId(null)} />
+
+        {/* Saved straight into the product master, exactly as the purchase
+            order's table saves it. The line is not re-pointed afterwards: the
+            three-way match's rows come from the PI and the PO, so swapping the
+            product a line refers to is the picker's job, not the wizard's. */}
+        {(adding || editing != null) && (
+          <Suspense fallback={null}>
+            <AddProductModal
+              productId={editing}
+              onClose={closeProduct}
+              onSaved={(_id, finalised) => {
+                if (!finalised) return;
+                toast.success(
+                  editing != null ? 'Product updated' : 'Product added',
+                  'Saved in the product master.',
+                );
+                closeProduct();
+              }}
+            />
+          </Suspense>
+        )}
+
         <table className="cpd-tbl cpd-tbl--pd spi-prodtbl">
           <thead>
             <tr className="cpd-grp">
@@ -107,6 +147,7 @@ export default function ProductTable({
               <Row
                 key={line.code} line={line} index={i}
                 onChange={onChange} taxMode={taxMode}
+                onEditProduct={editProduct} onAddProduct={addProduct}
                 /* A setState function keeps the same identity for the life of
                    the table, so passing it straight through leaves the rows'
                    memoisation intact. */
@@ -153,13 +194,17 @@ export default function ProductTable({
  * this each of those keystrokes would re-render every other row too.
  */
 const Row = memo(function Row({
-  line, index, onChange, onOpenDetail, taxMode,
+  line, index, onChange, onOpenDetail, onEditProduct, onAddProduct, taxMode,
 }: {
   line: ProductLine;
   index: number;
   onChange: (index: number, patch: Partial<ProductLine>) => void;
 
   onOpenDetail: (productId: number) => void;
+  /** Opens the product master's wizard on this line's product. */
+  onEditProduct: (productId: number) => void;
+  /** Opens the same wizard with nothing in it, to create a product. */
+  onAddProduct: () => void;
   taxMode: TaxMode;
 }) {
   const t = lineTotals(line, taxMode);
@@ -191,7 +236,17 @@ const Row = memo(function Row({
               options={PRODUCT_CATALOGUE}
               onChange={() => { /* catalogue swap lands with the endpoint */ }}
             />
-            <button type="button" className="cpd-iconbtn" title="Edit this product">
+            {/* Disabled rather than hidden when the line has no product
+                behind it: there is nothing to edit, and a button that opens an
+                empty edit form is worse than one that says it cannot. */}
+            <button
+              type="button" className="cpd-iconbtn"
+              title={line.productId == null
+                ? 'This line is not linked to a product in the master'
+                : 'Edit this product in the product master'}
+              disabled={line.productId == null}
+              onClick={() => line.productId != null && onEditProduct(line.productId)}
+            >
               <IcoPencil />
             </button>
           </div>
@@ -199,7 +254,11 @@ const Row = memo(function Row({
             <span className="cpd-kv">HSN <b>{line.hsn}</b></span>
             <span className="cpd-prod__dot" />
             <span className="cpd-kv">GST <b>{line.gst}%</b></span>
-            <button type="button" className="cpd-addbtn" title="Add a product">
+            <button
+              type="button" className="cpd-addbtn"
+              title="Add a new product to the product master"
+              onClick={onAddProduct}
+            >
               <IcoPlus />
             </button>
           </div>
