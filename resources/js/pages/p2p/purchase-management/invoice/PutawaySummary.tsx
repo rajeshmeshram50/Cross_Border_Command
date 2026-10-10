@@ -11,19 +11,11 @@ import { proformaNo, putawayBoxes, putawayParties, putawayTotals } from './putaw
 import type { PutawayBox, PutawayParty } from './putaway-data';
 import type { InvoiceRow } from './types';
 
-/* The label preview, loaded when a box's sticker is actually asked for: it
-   pulls in the QR encoder and a stylesheet of its own. */
 const PutawayStickerModal = lazy(() => import('./PutawayStickerModal'));
 
-/* The icon list has no "users" or "truck" of its own, so the two parties that
-   want them borrow the nearest: a building for the ship-to, a vessel for the
-   supplier that sends the goods. */
 const IcoUsers = IcoUser;
 const IcoTruck = IcoShip;
 
-/* The three steps of a location, each with its own glyph so a row reads as a
-   path rather than three similar codes. Local and tiny: they exist only to
-   sit inside a chip. */
 const ic = {
   viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2.2,
   strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const,
@@ -38,24 +30,17 @@ const ICON_SHELF = (
   <svg {...ic}><path d="M4 7h16M4 12h16M4 17h16" /></svg>
 );
 
-/* The wizard chrome carries the overlay, the section head and the head pills;
-   this screen's own stylesheet holds only the parts that chrome has no
-   equivalent for. */
 import '../../p2p-detail.css';
 import './putaway-summary.css';
 
-/** `dd/mm/yyyy`, the form every reference on this screen is dated in. */
 const shortDate = (iso?: string) => {
   const [y, m, d] = (iso || '').split('-');
   return y && m && d ? `${d}/${m}/${y}` : '—';
 };
 
-/** A section of the summary, in the wizard's own collapsible head. */
 function Section({ icon, prefix, title, sub, meta, right, children }: {
   icon: ReactNode; prefix: string; title: string; sub: string;
-  /** The count beside the title — "8 metrics", "2 boxes". */
   meta?: string;
-  /** Anything pinned to the right of the head, outside the collapse toggle. */
   right?: ReactNode;
   children: ReactNode;
 }) {
@@ -73,8 +58,6 @@ function Section({ icon, prefix, title, sub, meta, right, children }: {
           </div>
           <div className="spi-dt-sec-sub">{sub}</div>
         </div>
-        {/* Outside the toggle: a control in the head must not collapse the
-            section it sits in. */}
         {right && <div className="pts-sec-right" onClick={e => e.stopPropagation()}>{right}</div>}
         <span className={`cpf-chev ${open ? '' : 'is-closed'}`}><IcoChevron /></span>
       </div>
@@ -83,7 +66,6 @@ function Section({ icon, prefix, title, sub, meta, right, children }: {
   );
 }
 
-/** One figure in the Analytics Overview. */
 function Tile({ value, label, tone }: { value: string; label: string; tone: string }) {
   return (
     <div className={`pts-tile pts-tile--${tone}`}>
@@ -93,12 +75,9 @@ function Tile({ value, label, tone }: { value: string; label: string; tone: stri
   );
 }
 
-/** One of the three trading parties. */
 function PartyCard({ party, icon, tone }: { party: PutawayParty; icon: ReactNode; tone: string }) {
   return (
     <div className={`pts-party pts-party--${tone}`}>
-      {/* The hue is a bar across the top of the card, and the same glyph again
-          at a twentieth opacity in the bottom corner. */}
       <span className="pts-party__bar" />
       <span className="pts-party__wm">{icon}</span>
       <span className="pts-party__ico">{icon}</span>
@@ -114,7 +93,6 @@ function PartyCard({ party, icon, tone }: { party: PutawayParty; icon: ReactNode
   );
 }
 
-/** One of the three document references, with its date underneath. */
 function RefCard({ label, value, date, tone }: { label: string; value: string; date?: string; tone: string }) {
   return (
     <div className={`pts-ref pts-ref--${tone}`}>
@@ -130,12 +108,6 @@ function RefCard({ label, value, date, tone }: { label: string; value: string; d
   );
 }
 
-/**
- * A money card: the two totals this invoice is read against.
- *
- * The same card as a reference, filled rather than tinted — it drops the top
- * bar, because a solid card does not need one to say which it is.
- */
 function AmountCard({ label, value, sub, tone }: { label: string; value: string; sub: string; tone: string }) {
   return (
     <div className={`pts-ref pts-ref--fill pts-ref--${tone}`}>
@@ -150,7 +122,6 @@ function AmountCard({ label, value, sub, tone }: { label: string; value: string;
   );
 }
 
-/** One box in Box & Product Details: a summary strip that opens its products. */
 function BoxRow({ box, row, index }: { box: PutawayBox; row: InvoiceRow; index: number }) {
   const [open, setOpen] = useState(index === 0);
   const [sticker, setSticker] = useState(false);
@@ -187,7 +158,6 @@ function BoxRow({ box, row, index }: { box: PutawayBox; row: InvoiceRow; index: 
           <i>Temporary Putaway Location</i>
           <b className="pts-loc"><IcoPin /> {box.allocationId}</b>
         </span>
-        {/* Outside the toggle: printing a sticker must not fold the box away. */}
         <span className="pts-box__act" onClick={e => e.stopPropagation()}>
           <button type="button" className="pts-sticker"
             title={`Preview the temporary putaway sticker for ${box.id}`}
@@ -245,7 +215,6 @@ function BoxRow({ box, row, index }: { box: PutawayBox; row: InvoiceRow; index: 
   );
 }
 
-/** A Yes/No handling flag, neutral when it is No. */
 function Flag({ on }: { on: boolean }) {
   return (
     <span className={`pts-flag${on ? ' pts-flag--on' : ''}`}>
@@ -254,15 +223,6 @@ function Flag({ on }: { on: boolean }) {
   );
 }
 
-/**
- * Temporary Putaway Summary — what an invoice became once it was put away.
- *
- * Opened by the row's Summary action. It reads the invoice back rather than
- * editing it: every figure here is derived, and nothing on the screen writes.
- *
- * Portalled to the body because the list renders inside a scrolling table
- * wrapper that would clip a full-screen overlay at its own edge.
- */
 export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onClose: () => void }) {
   useScrollLock(true, '.pts-card');
 
@@ -274,8 +234,6 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  /* Derived once per row: the boxes seed off the invoice number, so
-     recomputing them on every render would be work for an identical answer. */
   const boxes = useMemo(() => putawayBoxes(row), [row]);
   const totals = useMemo(() => putawayTotals(boxes, row), [boxes, row]);
   const parties = useMemo(() => putawayParties(row), [row]);
@@ -296,8 +254,6 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
             <button type="button" className="pts-hero__x" onClick={onClose} aria-label="Close"><IcoX /></button>
           </div>
 
-          {/* The nine references this putaway is read against. The chip itself
-              is the wizard's own head pill, so only the strip is ours. */}
           <div className="spi-dt-pills pts-pills">
             <HeadPill icon={<IcoDoc />} label="SPI ID" value={row.invoiceNo} mono
               extra={<span className="pts-dot pts-dot--ok" title="Mapped" />} />
@@ -307,7 +263,7 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
               extra={<span className="pts-dot pts-dot--violet" title="Opportunity" />} />
             <HeadPill icon={<IcoCart />} label="PROCUREMENT ID" value={row.procurementId || '—'} alt mono
               extra={<span className="pts-dot pts-dot--warn" title="Procurement" />} />
-            <HeadPill icon={<IcoWarehouse />} label="WAREHOUSE" value={row.warehouseName}
+            <HeadPill icon={<IcoWarehouse />} label="WAREHOUSE" value={row.warehouseName || '—'}
               extra={<span className="pts-badge">{ownWarehouse ? 'Own' : '3P'}</span>} />
             <HeadPill icon={<IcoTag />} label="SPI TYPE" value={row.poNo ? 'PO + SPI' : 'SPI Only'} alt />
             <HeadPill icon={<IcoLines />} label="SPI DATE" value={shortDate(row.invoiceDate)} mono />

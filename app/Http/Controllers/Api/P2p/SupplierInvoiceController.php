@@ -146,6 +146,7 @@ class SupplierInvoiceController extends Controller
 
         $q = $base->with([
             'vendor:id,vendor_code,company_name,legal_name,risk_level_id,supplier_category',
+            'vendor.riskLevel:id,name',
             // po_date was read by listRow but never selected, so the PO DATE
             // column came back blank on every row.
             'purchaseOrder:id,code,po_date,po_type,shipment_order_id,lead_id,proforma_invoice_id,'
@@ -642,6 +643,8 @@ class SupplierInvoiceController extends Controller
                 // the paperwork; the trading name is the fallback.
                 'name'          => $s->vendor?->legal_name ?: $s->vendor?->company_name,
                 'risk_level_id' => $s->vendor?->risk_level_id,
+                // The Risk Alert column prints the level's name, not its id.
+                'risk'          => $s->vendor?->riskLevel?->name,
                 'category'      => $s->vendor?->supplier_category,
             ],
 
